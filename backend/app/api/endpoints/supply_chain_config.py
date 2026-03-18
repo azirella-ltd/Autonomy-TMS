@@ -26,7 +26,7 @@ from app.models.supply_chain_config import (
     Lane,
     Market,
     MarketDemand,
-    Node,
+    Site as Node,
     NodeType,
     SupplyChainConfig,
     SupplyChainTrainingArtifact,
@@ -134,10 +134,10 @@ def get_config_or_404(db: Session, config_id: int):
             # Note: items and item_configs migrated to Product/ProductBom (SC compliant)
             # joinedload(SupplyChainConfig.items),  # DEPRECATED - use Product table
             # joinedload(SupplyChainConfig.nodes).joinedload(Node.item_configs),  # DEPRECATED - use InvPolicy
-            joinedload(SupplyChainConfig.nodes).joinedload(Node.upstream_lanes),
-            joinedload(SupplyChainConfig.nodes).joinedload(Node.downstream_lanes),
-            joinedload(SupplyChainConfig.lanes).joinedload(Lane.upstream_node),
-            joinedload(SupplyChainConfig.lanes).joinedload(Lane.downstream_node),
+            joinedload(SupplyChainConfig.sites).joinedload(Node.upstream_lanes),
+            joinedload(SupplyChainConfig.sites).joinedload(Node.downstream_lanes),
+            joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.upstream_site),
+            joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.downstream_site),
             joinedload(SupplyChainConfig.markets),
             joinedload(SupplyChainConfig.market_demands).joinedload(MarketDemand.market),
             # joinedload(SupplyChainConfig.market_demands).joinedload(MarketDemand.item),  # DEPRECATED - use .product
@@ -192,10 +192,14 @@ get_lane_or_404 = get_transportation_lane_or_404
 def _master_type_to_node_type(master_type: str) -> models.NodeType:
     canonical = str(master_type or "").strip().lower()
     mapping: Dict[str, models.NodeType] = {
-        "market_supply": models.NodeType.MARKET_SUPPLY,
-        "market_demand": models.NodeType.MARKET_DEMAND,
+        # Current names
+        "vendor": models.NodeType.VENDOR,
+        "customer": models.NodeType.CUSTOMER,
         "manufacturer": models.NodeType.MANUFACTURER,
         "inventory": models.NodeType.INVENTORY,
+        # Legacy names (backward compatibility)
+        "market_supply": models.NodeType.VENDOR,
+        "market_demand": models.NodeType.CUSTOMER,
     }
     return mapping.get(canonical, models.NodeType.MANUFACTURER)
 
@@ -525,7 +529,8 @@ def _compute_config_hash(db: Session, config_id: int) -> Optional[str]:
         "market_demands": [
             {
                 "product_id": md.product_id,
-                "market_id": md.market_id,
+                "trading_partner_id": md.trading_partner_id,
+                "market_id": md.market_id,  # deprecated — use trading_partner_id
                 "demand_pattern": md.demand_pattern,
             }
             for md in sorted(market_demands, key=lambda obj: obj.id)
@@ -805,22 +810,57 @@ def read_active_config(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
 ):
-    """Get the active BASELINE supply chain configuration for the user's tenant."""
+    """Get the active supply chain configuration for the current user.
+
+    Resolution order:
+    1. User's default_config_id (if set) — returns that specific config.
+    2. Tenant's is_active=True BASELINE config (existing behaviour).
+    """
+    # Priority 1: user has a personal default config selected
+    user_default_config_id = getattr(current_user, "default_config_id", None)
+    if user_default_config_id:
+        config = db.query(SupplyChainConfig).filter(
+            SupplyChainConfig.id == user_default_config_id
+        ).first()
+        if config:
+            # Validate the config still belongs to the user's tenant
+            user_tenant_id = getattr(current_user, "tenant_id", None)
+            user_type = getattr(current_user, "user_type", None)
+            if user_type == UserTypeEnum.SYSTEM_ADMIN or config.tenant_id == user_tenant_id:
+                return config
+            # Config no longer belongs to this tenant — fall through to default
+
+    # Priority 2: tenant's active baseline (existing behaviour)
     user_type = getattr(current_user, "user_type", None)
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
-        # System admin: try their tenant first, fall back to any active baseline
+        # System admin: tenant-agnostic. If tenant_id is set, use it;
+        # otherwise return the first provisioned production config.
+        # The frontend config selector lets sys admins switch tenants.
         tenant_id = getattr(current_user, "tenant_id", None)
         if tenant_id:
             config = deps.get_active_baseline_config(db, tenant_id)
         else:
-            config = (
-                db.query(SupplyChainConfig)
-                .filter(
-                    SupplyChainConfig.is_active == True,
-                    SupplyChainConfig.scenario_type == "BASELINE",
-                )
+            # No tenant assigned — find first PRODUCTION config that has
+            # been provisioned (has decisions seeded), or fall back to any active.
+            from app.models.user_directive import ConfigProvisioningStatus
+            provisioned = (
+                db.query(ConfigProvisioningStatus.config_id)
+                .filter(ConfigProvisioningStatus.overall_status == "completed")
                 .first()
             )
+            if provisioned:
+                config = db.query(SupplyChainConfig).filter(
+                    SupplyChainConfig.id == provisioned.config_id,
+                ).first()
+            else:
+                config = (
+                    db.query(SupplyChainConfig)
+                    .filter(
+                        SupplyChainConfig.is_active == True,
+                        SupplyChainConfig.scenario_type == "BASELINE",
+                    )
+                    .first()
+                )
     else:
         admin_tenant_id = _get_user_admin_tenant_id(db, current_user)
         tenant_id = admin_tenant_id or getattr(current_user, "tenant_id", None)
@@ -1336,7 +1376,7 @@ def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
             "name": site.name,
             "type": site.type,
             "dag_type": site.dag_type,
-            "master_type": site.master_type,
+            "master_type": _master_type_to_node_type(site.master_type).value,
             "priority": site.priority,
             "order_aging": site.order_aging,
             "lost_sale_cost": site.lost_sale_cost,
@@ -1345,6 +1385,9 @@ def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
             "segment_id": site.segment_id,
             "company_id": site.company_id,
         }
+        # Geographic coordinates: prefer Geography record, fall back to site columns,
+        # then to city/country in attributes for display.
+        attrs = site.attributes or {}
         if site.geography:
             site_dict["geography"] = {
                 "id": site.geography.id,
@@ -1352,8 +1395,18 @@ def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
                 "state_prov": site.geography.state_prov,
                 "region": region_map.get(site.geo_id),
                 "country": site.geography.country,
-                "latitude": site.geography.latitude,
-                "longitude": site.geography.longitude,
+                "latitude": site.geography.latitude or site.latitude,
+                "longitude": site.geography.longitude or site.longitude,
+            }
+        elif site.latitude is not None and site.longitude is not None:
+            site_dict["geography"] = {
+                "id": None,
+                "city": attrs.get("city"),
+                "state_prov": attrs.get("state"),
+                "region": None,
+                "country": attrs.get("country"),
+                "latitude": site.latitude,
+                "longitude": site.longitude,
             }
         else:
             site_dict["geography"] = None

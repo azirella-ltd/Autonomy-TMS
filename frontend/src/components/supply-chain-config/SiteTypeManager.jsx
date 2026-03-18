@@ -33,14 +33,10 @@ import {
   canonicalizeSiteTypeKey,
 } from '../../services/supplyChainConfigService';
 
+// AWS SC DM: Sites are ONLY company-controlled locations.
+// External parties (vendors/customers) are TradingPartner records managed
+// in the dedicated Vendors and Customers wizard steps.
 const MASTER_TYPE_OPTIONS = [
-  {
-    value: 'market_demand',
-    label: 'Market Demand',
-    description: 'Terminal demand sites (customers, retailers, end consumers)',
-    examples: 'Retail Stores, Online Customers, Wholesale Buyers',
-    color: 'bg-blue-100 text-blue-800 border-blue-200',
-  },
   {
     value: 'inventory',
     label: 'Inventory',
@@ -54,13 +50,6 @@ const MASTER_TYPE_OPTIONS = [
     description: 'Production sites with Bill of Materials (factories, plants)',
     examples: 'Manufacturing Plants, Assembly Lines, Bottling Facilities',
     color: 'bg-purple-100 text-purple-800 border-purple-200',
-  },
-  {
-    value: 'market_supply',
-    label: 'Market Supply',
-    description: 'Upstream source sites (suppliers, vendors, raw materials)',
-    examples: 'Raw Material Suppliers, Component Vendors, Ingredient Providers',
-    color: 'bg-orange-100 text-orange-800 border-orange-200',
   },
 ];
 
@@ -181,9 +170,9 @@ const SiteTypeManager = ({ definitions = [], onChange, loading = false, onDelete
       <CardHeader>
         <div className="flex items-center justify-between w-full">
           <div>
-            <CardTitle>Supply Chain Site Types</CardTitle>
+            <CardTitle>Internal Site Types</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Define site types organized by their role in the supply chain
+              Define internal (company-controlled) site types. External parties (vendors and customers) are configured in the dedicated Vendors and Customers steps.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -355,7 +344,7 @@ const SiteTypeManager = ({ definitions = [], onChange, loading = false, onDelete
       <Modal
         isOpen={dialogOpen}
         onClose={closeDialog}
-        title={dialogMode === 'edit' ? 'Edit DAG Site Type' : 'Add DAG Site Type'}
+        title={dialogMode === 'edit' ? 'Edit Internal Site Type' : 'Add Internal Site Type'}
         size="sm"
         footer={
           <div className="flex justify-end gap-2">

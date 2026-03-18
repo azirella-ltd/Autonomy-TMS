@@ -33,7 +33,7 @@ class DeploymentPipelineRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id"), index=True)
+    tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
 
     # Config template used
     config_template: Mapped[str] = mapped_column(String(100), nullable=False)

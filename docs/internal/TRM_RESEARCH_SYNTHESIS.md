@@ -389,6 +389,28 @@ See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16 for the comp
 | HydraLoRA: Asymmetric LoRA for Multi-Task | [2404.19245](https://arxiv.org/abs/2404.19245) | Shared A matrix, per-task B matrices |
 | Multi-Task Shared + Task-Specific Encodings | [2505.24281](https://arxiv.org/abs/2505.24281) | Dual-encoder framework |
 
+### Data Volume & Model Scaling (Learning by Watching)
+
+| Paper | Reference | Key Contribution |
+|-------|-----------|------------------|
+| Stöckl (RANLP 2021): "Watching a Language Model Learning Chess" | [ACL Anthology](https://aclanthology.org/2021.ranlp-1.148/) | Data volume scaling laws for small models: GPT2-small/medium/large trained on 99K/577K/2.2M chess games. Data volume >> model size for structured decision tasks. Standard metrics (perplexity) misleading — domain-specific eval needed. |
+| Kaplan et al. (2020): "Scaling Laws for Neural Language Models" | [arxiv:2001.08361](https://arxiv.org/abs/2001.08361) | Power-law relationship between model size, data volume, and compute. Scale model and data together — model size alone doesn't help. |
+
+**Stöckl 2021 findings applied to TRM training:**
+
+1. **Data volume matters more than model size** for structured decision tasks. GPT2-small (124M params) with enough data outperformed GPT2-large (774M params) with insufficient data on chess move legality. For our 7M-param TRMs, this means data volume is the primary lever — not architecture changes.
+
+2. **Standard loss metrics are misleading**. Low training loss did not predict correct game play. The models that appeared to converge (low perplexity) still made illegal moves. **Implication**: We cannot rely on BC loss alone — we need domain-specific evaluation (correct decision rate on held-out states).
+
+3. **Three-tier evaluation is essential**: (a) Memorization — can the model reproduce training data? (b) Generalization — can it handle unseen states from the same distribution? (c) Rule learning — has it internalized the underlying decision rules (tested via adversarial/edge-case states)?
+
+4. **Data volume thresholds for 7M-param models** (extrapolated from Stöckl + Kaplan):
+   - <10K samples: Memorization only, no generalization
+   - 50K–150K samples: "Medium" regime — rule learning begins
+   - 500K+ samples: Robust generalization, handles edge cases
+
+Our Phase 1 BC training now generates 50K samples/sub-phase × 3 sub-phases × 3 signal phases = 450K total BC samples per TRM, placing us solidly in the robust generalization regime. The `StochasticCurriculumWrapper.generate(multiplier=M)` method enables further scaling via independent Monte Carlo draws.
+
 ### Related Work (Recursive Models)
 
 - [Recursive Language Models](https://arxiv.org/abs/2512.24601) — Context folding via recursive LM calls

@@ -824,6 +824,291 @@ class InventoryBufferCurriculum(TRMCurriculumBase):
 
 
 # ---------------------------------------------------------------------------
+# Stochastic Curriculum — Monte Carlo from fitted distributions
+# ---------------------------------------------------------------------------
+
+class StochasticCurriculumWrapper:
+    """Wraps any TRMCurriculumBase and replaces hand-crafted ranges with
+    Monte Carlo samples from distributions fitted to actual DB data.
+
+    Falls back to the underlying curriculum if no DB data is available.
+
+    Usage (sync, typically called from provisioning or training scripts):
+        from app.db.session import sync_session_factory
+        db = sync_session_factory()
+        wrapper = StochasticCurriculumWrapper(
+            base_curriculum=MOExecutionCurriculum(sc_config),
+            config_id=22,
+            db=db,
+        )
+        data = wrapper.generate(phase=1, num_samples=1000)
+    """
+
+    def __init__(
+        self,
+        base_curriculum: TRMCurriculumBase,
+        config_id: int,
+        db=None,
+        n_mc_draws: int = 1000,
+    ):
+        self.base = base_curriculum
+        self.config_id = config_id
+        self.db = db
+        self.n_mc_draws = n_mc_draws
+        self._fitted_params: Optional[dict] = None
+
+    def _fit_distributions(self) -> dict:
+        """Fit distributions to actual Forecast, InvLevel, and VendorLeadTime data."""
+        if self._fitted_params is not None:
+            return self._fitted_params
+
+        if self.db is None:
+            return {}
+
+        fitted = {}
+        try:
+            from app.services.stochastic.distribution_fitter import DistributionFitter
+
+            # Fit demand distribution from Forecast data
+            from app.models.sc_entities import Forecast, InvLevel, VendorLeadTime
+            from sqlalchemy import func as sqla_func
+
+            forecasts = (
+                self.db.query(Forecast.forecast_quantity)
+                .filter(Forecast.config_id == self.config_id)
+                .filter(Forecast.forecast_quantity > 0)
+                .limit(5000)
+                .all()
+            )
+            if len(forecasts) >= 30:
+                demand_values = np.array([f[0] for f in forecasts], dtype=np.float64)
+                fitter = DistributionFitter()
+                result = fitter.fit(demand_values)
+                if result and result.get("best_fit"):
+                    fitted["demand"] = {
+                        "distribution": result["best_fit"]["distribution"],
+                        "params": result["best_fit"]["params"],
+                        "mean": float(np.mean(demand_values)),
+                        "std": float(np.std(demand_values)),
+                    }
+
+            # Fit inventory levels
+            inv_levels = (
+                self.db.query(InvLevel.on_hand_qty)
+                .filter(InvLevel.config_id == self.config_id)
+                .filter(InvLevel.on_hand_qty > 0)
+                .limit(5000)
+                .all()
+            )
+            if len(inv_levels) >= 30:
+                inv_values = np.array([i[0] for i in inv_levels], dtype=np.float64)
+                fitter = DistributionFitter()
+                result = fitter.fit(inv_values)
+                if result and result.get("best_fit"):
+                    fitted["inventory"] = {
+                        "distribution": result["best_fit"]["distribution"],
+                        "params": result["best_fit"]["params"],
+                        "mean": float(np.mean(inv_values)),
+                        "std": float(np.std(inv_values)),
+                    }
+
+            # Fit lead time distribution
+            lead_times = (
+                self.db.query(VendorLeadTime.lead_time_days)
+                .filter(VendorLeadTime.config_id == self.config_id)
+                .filter(VendorLeadTime.lead_time_days > 0)
+                .limit(5000)
+                .all()
+            )
+            if len(lead_times) >= 10:
+                lt_values = np.array([lt[0] for lt in lead_times], dtype=np.float64)
+                fitter = DistributionFitter()
+                result = fitter.fit(lt_values)
+                if result and result.get("best_fit"):
+                    fitted["lead_time"] = {
+                        "distribution": result["best_fit"]["distribution"],
+                        "params": result["best_fit"]["params"],
+                        "mean": float(np.mean(lt_values)),
+                        "std": float(np.std(lt_values)),
+                    }
+
+        except Exception:
+            pass  # Fall back to base curriculum if DB access fails
+
+        self._fitted_params = fitted
+        return fitted
+
+    def _sample_from_fitted(self, key: str, n: int) -> Optional[np.ndarray]:
+        """Sample n values from a fitted distribution."""
+        fitted = self._fit_distributions()
+        if key not in fitted:
+            return None
+
+        try:
+            from app.services.stochastic.distribution_fitter import DistributionFitter
+            info = fitted[key]
+            dist_name = info["distribution"]
+            params = info["params"]
+
+            # Use scipy to sample from fitted distribution
+            import scipy.stats as stats
+            dist_obj = getattr(stats, dist_name, None)
+            if dist_obj is None:
+                return None
+
+            samples = dist_obj.rvs(*params, size=n)
+            return np.maximum(samples, 0).astype(np.float32)  # Clip negative
+        except Exception:
+            return None
+
+    def generate(self, phase: int, num_samples: int, multiplier: int = 1) -> CurriculumData:
+        """Generate curriculum data using Monte Carlo samples from fitted distributions.
+
+        For state dimensions that correspond to demand, inventory, or lead time,
+        replaces the hand-crafted uniform ranges with samples from fitted
+        distributions. Falls back to the base curriculum for any dimension where
+        no fitted distribution is available.
+
+        Args:
+            phase: Curriculum sub-phase (1, 2, or 3).
+            num_samples: Number of base samples per draw.
+            multiplier: Number of independent Monte Carlo draws to generate.
+                When multiplier > 1, generates M independent batches of
+                num_samples each (with different random seeds for both the
+                base curriculum AND the stochastic overlay), producing
+                M × num_samples total samples. This is critical for data
+                volume scaling (Stöckl 2021): overlaying noise on the same
+                base samples does NOT produce truly independent training data.
+                Each draw uses a different random seed to ensure distinct
+                state-action trajectories.
+
+        Returns:
+            CurriculumData with (multiplier × num_samples) rows.
+        """
+        if multiplier <= 1:
+            return self._generate_single(phase, num_samples)
+
+        # Generate M independent batches and concatenate
+        all_states = []
+        all_act_disc = []
+        all_act_cont = []
+        all_rewards = []
+        all_next_states = []
+        all_is_expert = []
+        all_dones = []
+
+        for draw_idx in range(multiplier):
+            # Set a unique seed per draw so base curriculum + stochastic overlay
+            # produce genuinely different samples (not the same data M times)
+            draw_seed = (draw_idx + 1) * 7919  # Prime multiplier for spread
+            np.random.seed(draw_seed)
+
+            data = self._generate_single(phase, num_samples)
+            all_states.append(data.state_vectors)
+            all_act_disc.append(data.action_discrete)
+            all_act_cont.append(data.action_continuous)
+            all_rewards.append(data.rewards)
+            all_next_states.append(data.next_state_vectors)
+            all_is_expert.append(data.is_expert)
+            all_dones.append(data.dones)
+
+        # Reset numpy RNG to avoid side effects
+        np.random.seed(None)
+
+        return CurriculumData(
+            state_vectors=np.concatenate(all_states, axis=0),
+            action_discrete=np.concatenate(all_act_disc, axis=0),
+            action_continuous=np.concatenate(all_act_cont, axis=0),
+            rewards=np.concatenate(all_rewards, axis=0),
+            next_state_vectors=np.concatenate(all_next_states, axis=0),
+            is_expert=np.concatenate(all_is_expert, axis=0),
+            dones=np.concatenate(all_dones, axis=0),
+        )
+
+    def _generate_single(self, phase: int, num_samples: int) -> CurriculumData:
+        """Generate a single batch of curriculum data with stochastic overlay."""
+        # First generate from the base curriculum (hand-crafted)
+        base_data = self.base.generate(phase, num_samples)
+
+        # Try to overlay with stochastic samples
+        fitted = self._fit_distributions()
+        if not fitted:
+            return base_data  # No DB data → use hand-crafted as-is
+
+        # Sample from fitted distributions
+        demand_samples = self._sample_from_fitted("demand", num_samples)
+        inv_samples = self._sample_from_fitted("inventory", num_samples)
+        lt_samples = self._sample_from_fitted("lead_time", num_samples)
+
+        # Normalize samples to [0, 1] range for state vector injection
+        def normalize(arr):
+            if arr is None or len(arr) == 0:
+                return None
+            mn, mx = arr.min(), arr.max()
+            if mx - mn < 1e-8:
+                return np.full_like(arr, 0.5)
+            return (arr - mn) / (mx - mn)
+
+        norm_demand = normalize(demand_samples)
+        norm_inv = normalize(inv_samples)
+        norm_lt = normalize(lt_samples)
+
+        # Inject normalized samples into appropriate state dimensions
+        # The exact dimensions depend on the TRM type. We use a generic mapping
+        # that works across all curricula: demand-like dims get demand samples,
+        # inventory-like dims get inventory samples, lead-time dims get LT samples.
+        trm_type = self.base.trm_type
+        states = base_data.state_vectors.copy()
+
+        # Generic injection based on common patterns across TRM state vectors
+        # These map state index → fitted distribution key
+        INJECTION_MAP = {
+            "atp_executor": {2: "inventory", 3: "inventory", 5: "demand"},
+            "inventory_rebalancing": {0: "inventory", 1: "inventory", 2: "demand"},
+            "po_creation": {0: "inventory", 2: "demand", 4: "lead_time"},
+            "order_tracking": {3: "lead_time"},
+            "mo_execution": {2: "demand", 0: "inventory"},
+            "to_execution": {0: "inventory", 2: "demand"},
+            "quality_disposition": {},  # Quality is defect-rate driven, not demand
+            "maintenance_scheduling": {},  # Asset-driven, not demand
+            "subcontracting": {2: "demand"},
+            "forecast_adjustment": {0: "demand"},
+            "inventory_buffer": {0: "demand", 1: "inventory", 3: "lead_time"},
+        }
+
+        dim_map = INJECTION_MAP.get(trm_type, {})
+        sample_arrays = {
+            "demand": norm_demand,
+            "inventory": norm_inv,
+            "lead_time": norm_lt,
+        }
+
+        for dim_idx, dist_key in dim_map.items():
+            samples = sample_arrays.get(dist_key)
+            if samples is not None and dim_idx < states.shape[1]:
+                states[:, dim_idx] = samples
+
+        # Also inject into next_state_vectors with slight perturbation
+        next_states = base_data.next_state_vectors.copy()
+        for dim_idx, dist_key in dim_map.items():
+            samples = sample_arrays.get(dist_key)
+            if samples is not None and dim_idx < next_states.shape[1]:
+                # Add small noise to simulate state transition
+                noise = np.random.normal(0, 0.05, size=num_samples).astype(np.float32)
+                next_states[:, dim_idx] = np.clip(samples + noise, 0, 1)
+
+        return CurriculumData(
+            state_vectors=states,
+            action_discrete=base_data.action_discrete,
+            action_continuous=base_data.action_continuous,
+            rewards=base_data.rewards,
+            next_state_vectors=next_states,
+            is_expert=base_data.is_expert,
+            dones=base_data.dones,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
@@ -841,3 +1126,46 @@ HIVE_CURRICULUM_REGISTRY = {
     "maintenance": MaintenanceSchedulingCurriculum,
     "forecast_adj": ForecastAdjustmentCurriculum,
 }
+
+
+def generate_stochastic_curriculum(
+    trm_type: str,
+    config_id: int,
+    phase: int = 1,
+    num_samples: int = 50_000,
+    multiplier: int = 1,
+    db=None,
+    seed: Optional[int] = None,
+) -> CurriculumData:
+    """Convenience function to generate Monte Carlo curriculum for any TRM type.
+
+    Looks up the base curriculum class, wraps it with StochasticCurriculumWrapper,
+    and generates samples from fitted distributions.
+
+    Falls back to hand-crafted curriculum if DB data is insufficient.
+
+    Args:
+        trm_type: Canonical TRM type name (e.g. "atp_executor").
+        config_id: Supply chain config ID for distribution fitting.
+        phase: Curriculum sub-phase (1, 2, or 3).
+        num_samples: Samples per draw (default 50K per Stöckl 2021 guidance).
+        multiplier: Independent MC draws — total samples = multiplier × num_samples.
+            Use multiplier=3 for 150K total, matching the "medium" data regime.
+        db: Optional sync DB session for distribution fitting.
+        seed: Optional random seed for the base curriculum.
+    """
+    from .trm_curriculum import CURRICULUM_REGISTRY
+
+    # Try hive registry first, then main registry
+    curriculum_cls = HIVE_CURRICULUM_REGISTRY.get(trm_type) or CURRICULUM_REGISTRY.get(trm_type)
+    if curriculum_cls is None:
+        raise ValueError(f"No curriculum registered for TRM type: {trm_type}")
+
+    sc_config = SCConfigData()
+    base = curriculum_cls(sc_config, seed=seed)
+    wrapper = StochasticCurriculumWrapper(
+        base_curriculum=base,
+        config_id=config_id,
+        db=db,
+    )
+    return wrapper.generate(phase, num_samples, multiplier=multiplier)

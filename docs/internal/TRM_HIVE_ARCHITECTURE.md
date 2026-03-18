@@ -226,6 +226,8 @@ class UrgencyVector:
         self.last_updated = [None] * 11
 ```
 
+**Decision Stream Connection**: The UrgencyVector feeds directly into the Decision Stream's **urgency + likelihood prioritization**. Each TRM's urgency value (0.0–1.0) becomes the decision's *urgency* score. Combined with the TRM's output *likelihood* (confidence), these two dimensions determine whether the decision surfaces to a human planner: high urgency + low likelihood = top of stream (human needed); low urgency + low likelihood = abandoned; high likelihood at any urgency = autonomous. See `decision_stream_service.py:_prioritize_decisions()`.
+
 #### Mechanism 2: Signal Queue (Event-Driven) — <10ms
 
 A bounded ring buffer of `HiveSignal` objects. Producers append; consumers filter by signal type. Signals decay over time (pheromone behavior).
@@ -266,21 +268,28 @@ The Hive's signal bus receives signals not only from internal TRM decisions but 
 ```
 EXTERNAL WORLD                     CAPTURE GATEWAY              HIVE SIGNAL BUS
 ──────────────                     ───────────────              ───────────────
-Email (customer PO update) ───┐
-Slack (sales team @mention) ──┤
-Teams (planner message) ──────┤    Signal Ingestion            ┌──────────────┐
-WhatsApp (field report) ──────┤    Service              POST   │ Signal       │
-Telegram (supplier update) ───┤    (LLM classifies   ────────►│ Ingestion    │
-Voice note (sales call) ──────┘     via Claude Skills)  /ingest│ Service      │
-                                                               │              │
-Weather API (severe alerts) ──┐                                │  Validates   │
-Economic data (PMI, CPI) ────┤    Scheduled Jobs              │  → FcstAdj   │
-News RSS (disruption) ───────┤    (deterministic      POST    │    TRM eval  │
-Commodity prices ─────────────┤     cron scripts)    ────────►│  → Confidence│
-IoT sensor (temperature) ────┘    No LLM              /ingest │    gate      │
+Email (customer/supplier) ────┐    Email Signal                 ┌──────────────┐
+                              │    Intelligence                 │ Signal       │
+                              │    (IMAP/Gmail poll,    POST    │ Ingestion    │
+                              │     PII scrub,        ────────►│ Service      │
+                              │     LLM classify)      /ingest │              │
+                              │                                │  Validates   │
+Talk to Me directive ─────────┤    Directive Service            │  → FcstAdj   │
+  (natural language) ─────────┘    (LLM parse,          POST   │    TRM eval  │
+                                    gap detect,       ────────►│  → Confidence│
+                                    Powell routing)    /submit  │    gate      │
                                                                │  → HiveSignal│
+Weather API (severe alerts) ──┐                                │              │
+Economic data (PMI, CPI) ────┤    Scheduled Jobs              │              │
+News RSS (disruption) ───────┤    (deterministic      POST    │              │
+Commodity prices ─────────────┤     cron scripts)    ────────►│              │
+IoT sensor (temperature) ────┘    No LLM              /ingest │              │
                                                                └──────────────┘
 ```
+
+**Email Signal Intelligence** (`email_signal_service.py`): GDPR-safe email ingestion monitors IMAP/Gmail inboxes, strips PII before persistence, classifies emails into 12 supply chain signal types, and auto-routes to TRMs. See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md).
+
+**Talk to Me** (`directive_service.py`): Natural language directives parsed by LLM, routed to Powell layers based on user role. See [TALK_TO_ME.md](TALK_TO_ME.md).
 
 #### How External Signals Enter the Hive
 
@@ -309,7 +318,7 @@ When external signals pass the confidence gate, they appear on the signal bus as
 
 #### Security Boundary
 
-External signals pass through multiple security layers before reaching the hive (see [PICOCLAW_OPENCLAW_IMPLEMENTATION.md — Security](#security--risk-mitigation)):
+External signals pass through multiple security layers before reaching the hive:
 
 1. **Channel authentication**: SPF/DKIM/DMARC for email, webhook secrets for Telegram, bot tokens for Slack
 2. **Autonomy RBAC**: Signal Ingestion API requires authenticated service account

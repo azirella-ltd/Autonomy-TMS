@@ -77,9 +77,13 @@ def get_user_capabilities(user: User, db: Session) -> CapabilitySet:
                 except (ValueError, AttributeError):
                     pass
 
-            # If we found RBAC capabilities, use those instead of base
+            # Merge RBAC capabilities WITH base (user_type) capabilities.
+            # RBAC roles extend the base — they don't replace it.  A TENANT_ADMIN
+            # with a "Demo All Powell" role gets both the admin capabilities from
+            # their user_type AND the planning capabilities from the role.
             if rbac_capabilities:
-                return CapabilitySet(rbac_capabilities)
+                merged = base_caps.capabilities | rbac_capabilities
+                return CapabilitySet(merged)
     except Exception as e:
         # If RBAC query fails, fall back to base capabilities
         print(f"Error loading RBAC capabilities: {e}")

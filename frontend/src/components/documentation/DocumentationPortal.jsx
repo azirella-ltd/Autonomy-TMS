@@ -57,7 +57,7 @@ const DOCUMENTATION_STRUCTURE = [
       { id: 'agent-types', title: 'Agent Types' },
       { id: 'agent-config', title: 'Configuration' },
       { id: 'llm-agents', title: 'LLM Agents' },
-      { id: 'gnn-training', title: 'GNN Training' }
+      { id: 'gnn-training', title: 'Network Agent Training' }
     ]
   },
   {

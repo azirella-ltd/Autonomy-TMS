@@ -17,7 +17,7 @@ from sqlalchemy import select, and_, or_, func
 from app.models.sc_entities import OutboundOrderLine, InvLevel
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
-from app.models.supply_chain_config import Node, TransportationLane
+from app.models.supply_chain_config import Site, TransportationLane
 
 
 class ATPCalculationService:

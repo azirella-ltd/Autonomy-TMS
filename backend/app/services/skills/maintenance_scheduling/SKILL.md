@@ -95,3 +95,69 @@ Respond with JSON only:
   "requires_human_review": <true if critical asset or confidence < 0.7>
 }
 ```
+
+## Engine Heuristics Reference
+
+### Configuration Defaults (maintenance_engine.py)
+- max_defer_days: 30
+- max_defer_count: 2 (hard limit — cannot defer more than twice)
+- defer_risk_threshold: 0.3 (max breakdown prob to allow deferral)
+- preventive_schedule_window_days: 7
+- production_freeze_zone_days: 2 (no maintenance during peak)
+- min_combine_savings_pct: 0.15 (15% savings to combine windows)
+- max_combine_window_days: 3
+- outsource_cost_threshold: 1.5 (outsource if internal > 1.5x external)
+- outsource_lead_time_max_days: 14
+- high_risk_expedite_threshold: 0.7
+- critical_asset_multiplier: 1.5
+
+### Breakdown Probability Formula
+```
+base_prob = 0.05
+
+if days_overdue > 0:
+    base_prob += min(0.5, days_overdue / maintenance_frequency_days)
+
+usage_ratio = days_since_last / maintenance_frequency_days
+if usage_ratio > 1.0:
+    base_prob += min(0.3, (usage_ratio - 1.0) × 0.3)
+
+if recent_failure_count > 0:
+    base_prob += min(0.3, recent_failure_count × 0.1)
+
+if asset_age_years > 10:
+    base_prob += min(0.15, (asset_age_years - 10) × 0.015)
+
+base_prob += defer_count × 0.1
+
+if asset_criticality == "critical":
+    base_prob *= 1.5 (critical_asset_multiplier)
+
+return min(1.0, base_prob)
+```
+
+### Priority Score Formula
+```
+priority_map = {EMERGENCY: 1.0, CRITICAL: 0.9, HIGH: 0.7, NORMAL: 0.5, LOW: 0.3}
+score = min(1.0, 0.4 × priority + 0.4 × breakdown_prob + 0.2 × (defer_count / max_defer_count))
+```
+
+### Decision Tree
+1. maintenance_type in (emergency, corrective) OR priority == EMERGENCY → EXPEDITE (today)
+2. breakdown_prob >= 0.7 → EXPEDITE (today + 1)
+3. Can defer if ALL: defer_count < 2, breakdown_prob < 0.3, load > 85%, parts available, gap <= 30d → DEFER
+4. internal_cost / external_cost > 1.5 AND external_lead_time <= 14d → OUTSOURCE
+5. Default → SCHEDULE (scheduled_date or today + 7)
+
+## Guardrails
+- **Safety-critical deferral prohibition**: MUST NOT defer maintenance if `breakdown_probability >= 0.85`. At this risk level, the asset is near-certain to fail — deferral is unsafe regardless of production load or cost considerations.
+- **Peak production window protection**: MUST NOT schedule maintenance during peak production windows unless `capacity_slack > 15%`. Scheduling into a fully loaded window causes cascading production shortfalls.
+- **Outsource cost ceiling**: Outsource cost MUST NOT exceed `2x internal_maintenance_cost`. Beyond this threshold, the cost premium is not justified and requires strategic review.
+- **Downtime budget enforcement**: Combined maintenance window for any single period MUST NOT exceed the maximum allowed downtime per period. If scheduling this maintenance would breach the downtime budget, defer or split across periods.
+
+## Escalation Triggers
+Escalate to human review (set `requires_human_review: true` and flag as CRITICAL urgency) when ANY of the following conditions are met:
+- **Imminent failure on critical asset**: `breakdown_probability >= 0.90` on an asset with `criticality == "critical"`. This is beyond the TRM's authority — potential safety and production impact requires human judgment.
+- **Deferred maintenance backlog**: More than 5 deferred maintenance items exist for the same asset. Accumulated deferrals indicate a systemic issue that heuristic rules cannot safely resolve.
+- **Budget exhaustion**: Maintenance budget for the current period is exhausted. Further maintenance spending requires financial authorization beyond the skill's authority.
+- **Regulatory inspection deadline**: Asset is approaching a regulatory inspection deadline. Compliance obligations override cost and scheduling optimization — human must confirm readiness.

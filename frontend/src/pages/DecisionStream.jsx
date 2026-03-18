@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Input } from '../components/common';
 import AlertBanner from '../components/decision-stream/AlertBanner';
+import CDTReadinessBanner from '../components/decision-stream/CDTReadinessBanner';
+import DecisionSummaryHeader from '../components/decision-stream/DecisionSummaryHeader';
 import DigestMessage from '../components/decision-stream/DigestMessage';
 import DecisionCard from '../components/decision-stream/DecisionCard';
 import ChatDataBlock from '../components/decision-stream/ChatDataBlock';
@@ -51,6 +53,9 @@ const DecisionStream = () => {
   const [configs, setConfigs] = useState([]);
   const [selectedConfigId, setSelectedConfigId] = useState(null);
 
+  // Show All toggle: false = only decisions needing human attention (Critical/High urgency)
+  const [showAll, setShowAll] = useState(false);
+
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
   const initialPromptHandled = useRef(false);
@@ -60,7 +65,9 @@ const DecisionStream = () => {
     const loadConfigs = async () => {
       try {
         const data = await simulationApi.getSupplyChainConfigs();
-        const items = data.items || data || [];
+        const all = data.items || data || [];
+        // Filter out archived configs — they have no active decisions
+        const items = all.filter((c) => c.scenario_type !== 'ARCHIVED');
         setConfigs(items);
         if (items.length > 0 && !selectedConfigId) {
           const active = items.find((c) => c.is_active);
@@ -83,13 +90,25 @@ const DecisionStream = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, chatLoading]);
 
-  // Handle initial prompt from TopNavbar "Talk to me"
+  // Handle initial prompt or filters from TopNavbar "Talk to me"
   useEffect(() => {
     const initialPrompt = location.state?.initialPrompt;
+    const filters = location.state?.filters;
     if (initialPrompt && !initialPromptHandled.current) {
       initialPromptHandled.current = true;
       window.history.replaceState({}, '');
       handleSendMessage(initialPrompt);
+    } else if (filters?.fromTalkToMe && !initialPromptHandled.current) {
+      initialPromptHandled.current = true;
+      window.history.replaceState({}, '');
+      // If routed here with filters, inject as a context message
+      const filterSummary = Object.entries(filters)
+        .filter(([k]) => k !== 'fromTalkToMe')
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ');
+      if (filterSummary) {
+        handleSendMessage(`Show me decisions filtered by ${filterSummary}`);
+      }
     }
   }, [location.state]);
 
@@ -142,14 +161,15 @@ const DecisionStream = () => {
     }
   };
 
-  const handleOverride = async (decision, reasonCode, reasonText) => {
+  const handleOverride = async (decision, reasonCode, reasonText, action = 'modify', overrideValues = null) => {
     try {
       await decisionStreamApi.actOnDecision({
         decision_id: decision.id,
         decision_type: decision.decision_type,
-        action: 'override',
+        action,  // 'modify' or 'cancel'
         override_reason_code: reasonCode,
         override_reason_text: reasonText,
+        override_values: action === 'modify' ? overrideValues : null,
       });
       loadDigest();
     } catch (err) {
@@ -218,19 +238,29 @@ const DecisionStream = () => {
             <h1 className="text-2xl font-bold">Decision Stream</h1>
             <p className="text-sm text-muted-foreground">
               {digest?.total_pending ?? '...'} decisions made by Autonomy agents
+              {digest && (() => {
+                const all = digest.decisions || [];
+                const attention = all.filter(d => d.needs_attention !== false).length;
+                const auto = all.filter(d => d.auto_actioned).length;
+                const parts = [];
+                if (attention > 0) parts.push(`${attention} surfaced to you`);
+                if (auto > 0) parts.push(`${auto} auto-actioned`);
+                return parts.length ? ` \u00b7 ${parts.join(', ')}` : '';
+              })()}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           {configs.length > 0 && (
             <select
-              className="border rounded-md px-3 py-2 text-sm bg-background"
+              className="border rounded-md px-3 py-2 text-sm bg-background max-w-[240px] truncate"
               value={selectedConfigId || ''}
               onChange={(e) =>
                 setSelectedConfigId(
                   e.target.value ? parseInt(e.target.value, 10) : null
                 )
               }
+              title={configs.find(c => c.id === selectedConfigId)?.name || 'All Configs'}
             >
               <option value="">All Configs</option>
               {configs.map((cfg) => (
@@ -260,6 +290,9 @@ const DecisionStream = () => {
           {/* Alert banner */}
           <AlertBanner alerts={alerts} />
 
+          {/* CDT readiness — hidden when all TRMs calibrated */}
+          <CDTReadinessBanner configId={selectedConfigId} />
+
           {/* Digest */}
           {digestLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -269,13 +302,26 @@ const DecisionStream = () => {
               </span>
             </div>
           ) : digest ? (
-            <DigestMessage
-              digestText={digest.digest_text}
-              decisions={digest.decisions || []}
-              onAccept={handleAccept}
-              onOverride={handleOverride}
-              onAskWhy={handleAskWhy}
-            />
+            <>
+              {/* Decision summary header — always shows ALL decisions for full picture */}
+              <DecisionSummaryHeader
+                decisions={digest.decisions || []}
+                totalAgentDecisions={digest.total_pending || 0}
+                showAll={showAll}
+                onToggleShowAll={() => setShowAll(!showAll)}
+              />
+
+              <DigestMessage
+                digestText={digest.digest_text}
+                decisions={showAll
+                  ? (digest.decisions || [])
+                  : (digest.decisions || []).filter(d => d.needs_attention !== false)
+                }
+                onAccept={handleAccept}
+                onOverride={handleOverride}
+                onAskWhy={handleAskWhy}
+              />
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Inbox className="h-12 w-12 mb-3 opacity-40" />

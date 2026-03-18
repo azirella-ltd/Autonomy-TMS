@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import {
@@ -40,6 +41,7 @@ import {
   Download,
   Search,
   ChevronRight,
+  ChevronDown,
   Zap,
   Activity,
   BarChart3,
@@ -48,16 +50,19 @@ import {
   Plus,
   Eye,
   Shield,
+  MapPin,
 } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 
 const tabItems = [
+  { value: 'guided', label: 'Guided Setup', icon: <Zap className="h-4 w-4" /> },
   { value: 'overview', label: 'Overview', icon: <BarChart3 className="h-4 w-4" /> },
   { value: 'connections', label: 'Connections', icon: <Server className="h-4 w-4" /> },
   { value: 'tables', label: 'Tables & Mapping', icon: <Table2 className="h-4 w-4" /> },
   { value: 'jobs', label: 'Ingestion Jobs', icon: <Activity className="h-4 w-4" /> },
   { value: 'insights', label: 'Insights & Actions', icon: <Lightbulb className="h-4 w-4" /> },
   { value: 'user-import', label: 'User Import', icon: <Users className="h-4 w-4" /> },
+  { value: 'staging', label: 'Staging & Sync', icon: <RefreshCw className="h-4 w-4" /> },
 ];
 
 const systemTypes = [
@@ -267,9 +272,380 @@ const OverviewTab = ({ dashboardData, deploymentStatus, loading }) => {
   );
 };
 
+// -------------------------------------------------------------------------
+// Guided Setup Wizard — walks user through the SAP ingestion lifecycle
+// -------------------------------------------------------------------------
+
+const WIZARD_STEPS = [
+  {
+    key: 'connect',
+    label: 'Connect',
+    description: 'Configure an SAP connection',
+    detail: 'Set up a connection to your SAP system — CSV directory, HANA DB, RFC, or OData.',
+    icon: Server,
+    phase: null,
+  },
+  {
+    key: 'master_data',
+    label: 'Master Data',
+    description: 'Import master data & build SC Config',
+    detail: 'Extract sites (T001W), products (MARA/MARC), BOMs (STPO), vendors (LFA1), customers (KNA1), and more. Generates a new Supply Chain Config with sites, products, lanes, and inventory policies.',
+    icon: Database,
+    phase: 'master_data',
+  },
+  {
+    key: 'users',
+    label: 'User Import',
+    description: 'Provision SC-relevant users',
+    detail: 'Extract user masters (USR02), roles (AGR_USERS), and authorizations (AGR_1251). Filters to supply chain planners only, maps SAP roles to Powell roles (SC_VP, MPS_MANAGER, PO_ANALYST, etc.).',
+    icon: Users,
+    phase: null,
+  },
+  {
+    key: 'transaction',
+    label: 'Transaction Data',
+    description: 'Import orders, shipments & operational history',
+    detail: 'Extract purchase orders (EKKO/EKPO), sales orders (VBAK/VBAP), deliveries (LIKP/LIPS), production orders (AFKO/AFPO), and goods movements (MKPF/MSEG) against the active SC Config.',
+    icon: Activity,
+    phase: 'transaction',
+  },
+  {
+    key: 'provision',
+    label: 'Warm Start',
+    description: 'Provision AI models & generate plans',
+    detail: 'Run the 13-step Powell Cascade: train forecasting models, compute safety stocks, generate supply plans, calibrate TRM agents, and produce the executive briefing.',
+    icon: Zap,
+    phase: null,
+  },
+];
+
+const IngestionWizard = ({ connections, jobs, onCreateJob, onStartJob, onRefresh, onNavigateTab }) => {
+  // Derive current step status from actual data
+  const hasConnection = connections.length > 0;
+  const firstConnection = connections[0];
+
+  // Find most recent job per phase
+  const masterJob = jobs.find(j => j.phase === 'master_data' && (j.status === 'completed' || j.status === 'partial'));
+  const transactionJob = jobs.find(j => j.phase === 'transaction' && (j.status === 'completed' || j.status === 'partial'));
+  const runningJob = jobs.find(j => j.status === 'running');
+  const masterJobPending = jobs.find(j => j.phase === 'master_data' && j.status === 'pending');
+  const transactionJobPending = jobs.find(j => j.phase === 'transaction' && j.status === 'pending');
+
+  // Step completion status
+  const stepStatus = {
+    connect: hasConnection ? 'complete' : 'ready',
+    master_data: masterJob ? 'complete' : (runningJob?.phase === 'master_data' ? 'running' : (hasConnection ? 'ready' : 'locked')),
+    users: masterJob ? 'ready' : 'locked',
+    transaction: masterJob ? (transactionJob ? 'complete' : (runningJob?.phase === 'transaction' ? 'running' : 'ready')) : 'locked',
+    provision: transactionJob ? 'ready' : 'locked',
+  };
+
+  // Find current active step (first non-complete, non-locked)
+  const activeStepKey = WIZARD_STEPS.find(s => stepStatus[s.key] === 'running')?.key
+    || WIZARD_STEPS.find(s => stepStatus[s.key] === 'ready')?.key
+    || 'connect';
+
+  const [expandedStep, setExpandedStep] = useState(activeStepKey);
+
+  const handleRunPhase = async (phase) => {
+    if (!firstConnection) return;
+    // Create job with all tables for this phase (from_mapping uses confirmed file mappings)
+    await onCreateJob({
+      connection_id: firstConnection.id,
+      job_type: 'full_extract',
+      phase,
+      tables: ['from_mapping'],
+      save_csv: false,
+      update_tenant_data: true,
+    });
+  };
+
+  const handleStartPending = async (phase) => {
+    const pending = jobs.find(j => j.phase === phase && j.status === 'pending');
+    if (pending) await onStartJob(pending.id);
+  };
+
+  const getStepIcon = (status) => {
+    switch (status) {
+      case 'complete': return <CheckCircle className="h-6 w-6 text-green-500" />;
+      case 'running': return <Spinner size="sm" />;
+      case 'ready': return <Play className="h-6 w-6 text-blue-500" />;
+      default: return <Clock className="h-6 w-6 text-gray-300" />;
+    }
+  };
+
+  const getStepBorderColor = (status) => {
+    switch (status) {
+      case 'complete': return 'border-green-500 bg-green-50';
+      case 'running': return 'border-blue-500 bg-blue-50';
+      case 'ready': return 'border-blue-300';
+      default: return 'border-gray-200 bg-gray-50 opacity-60';
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5" />
+            SAP Ingestion Pipeline
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Follow these steps in order to deploy your SAP data into the platform.
+            Each step depends on the previous one completing successfully.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {WIZARD_STEPS.map((step, idx) => {
+              const status = stepStatus[step.key];
+              const isExpanded = expandedStep === step.key;
+              const StepIcon = step.icon;
+              const jobForPhase = step.phase ? jobs.find(j => j.phase === step.phase) : null;
+              const latestJob = step.phase ? jobs.find(j => j.phase === step.phase && j.status !== 'pending') : null;
+
+              return (
+                <div key={step.key}>
+                  {/* Step row */}
+                  <div
+                    className={cn(
+                      "flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all",
+                      getStepBorderColor(status),
+                      isExpanded && "ring-1 ring-blue-200",
+                    )}
+                    onClick={() => setExpandedStep(isExpanded ? null : step.key)}
+                  >
+                    {/* Step number */}
+                    <div className={cn(
+                      "flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold shrink-0",
+                      status === 'complete' ? "bg-green-500 text-white" :
+                      status === 'running' ? "bg-blue-500 text-white" :
+                      status === 'ready' ? "bg-blue-100 text-blue-700" :
+                      "bg-gray-100 text-gray-400"
+                    )}>
+                      {status === 'complete' ? <CheckCircle className="h-4 w-4" /> : idx + 1}
+                    </div>
+
+                    {/* Step info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <StepIcon className="h-4 w-4 shrink-0" />
+                        <span className="font-medium">{step.label}</span>
+                        {status === 'complete' && <Badge variant="default" className="text-xs">Done</Badge>}
+                        {status === 'running' && <Badge className="text-xs bg-blue-500">Running</Badge>}
+                        {status === 'locked' && <Badge variant="outline" className="text-xs text-gray-400">Waiting</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-0.5">{step.description}</p>
+                    </div>
+
+                    {/* Status icon */}
+                    <div className="shrink-0">
+                      {getStepIcon(status)}
+                    </div>
+
+                    {/* Expand arrow */}
+                    <div className="shrink-0">
+                      {isExpanded
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      }
+                    </div>
+                  </div>
+
+                  {/* Expanded detail panel */}
+                  {isExpanded && (
+                    <div className="ml-12 mt-2 p-4 rounded-lg border bg-muted/30 space-y-3">
+                      <p className="text-sm">{step.detail}</p>
+
+                      {/* Step-specific content */}
+                      {step.key === 'connect' && (
+                        <div className="space-y-2">
+                          {hasConnection ? (
+                            <div className="flex items-center gap-2 text-sm">
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span><strong>{firstConnection.name}</strong> ({firstConnection.connection_method})</span>
+                              {connections.length > 1 && <span className="text-muted-foreground">+ {connections.length - 1} more</span>}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-amber-600">No connections configured yet.</p>
+                          )}
+                          <Button
+                            variant={hasConnection ? "outline" : "default"}
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); onNavigateTab('connections'); }}
+                          >
+                            <Server className="h-3 w-3 mr-1" />
+                            {hasConnection ? 'Manage Connections' : 'Add Connection'}
+                          </Button>
+                        </div>
+                      )}
+
+                      {step.key === 'master_data' && (
+                        <div className="space-y-2">
+                          {masterJob && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span>
+                                SC Config #{masterJob.config_id} generated
+                                {masterJob.build_summary?.sites && ` — ${masterJob.build_summary.sites} sites, ${masterJob.build_summary.products} products, ${masterJob.build_summary.lanes} lanes`}
+                              </span>
+                            </div>
+                          )}
+                          {status === 'running' && (
+                            <div className="flex items-center gap-2 text-sm text-blue-600">
+                              <Spinner size="sm" />
+                              <span>Master data import in progress...</span>
+                            </div>
+                          )}
+                          {status === 'ready' && !masterJobPending && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={(e) => { e.stopPropagation(); handleRunPhase('master_data'); }}>
+                                <Play className="h-3 w-3 mr-1" />
+                                Run Master Data Import
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onNavigateTab('jobs'); }}>
+                                Advanced Options
+                              </Button>
+                            </div>
+                          )}
+                          {masterJobPending && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={(e) => { e.stopPropagation(); handleStartPending('master_data'); }}>
+                                <Play className="h-3 w-3 mr-1" />
+                                Start Pending Job #{masterJobPending.id}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {step.key === 'users' && (
+                        <div className="space-y-2">
+                          {status === 'locked' ? (
+                            <p className="text-sm text-muted-foreground">Complete master data import first to enable user provisioning.</p>
+                          ) : (
+                            <Button size="sm" onClick={(e) => { e.stopPropagation(); onNavigateTab('user-import'); }}>
+                              <Users className="h-3 w-3 mr-1" />
+                              Open User Import
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
+                      {step.key === 'transaction' && (
+                        <div className="space-y-2">
+                          {transactionJob && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span>
+                                Transaction data imported
+                                {transactionJob.build_summary?.total_records && ` — ${transactionJob.build_summary.total_records.toLocaleString()} records`}
+                              </span>
+                            </div>
+                          )}
+                          {status === 'running' && (
+                            <div className="flex items-center gap-2 text-sm text-blue-600">
+                              <Spinner size="sm" />
+                              <span>Transaction import in progress...</span>
+                            </div>
+                          )}
+                          {status === 'ready' && !transactionJob && !transactionJobPending && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={(e) => { e.stopPropagation(); handleRunPhase('transaction'); }}>
+                                <Play className="h-3 w-3 mr-1" />
+                                Run Transaction Import
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onNavigateTab('jobs'); }}>
+                                Advanced Options
+                              </Button>
+                            </div>
+                          )}
+                          {transactionJobPending && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={(e) => { e.stopPropagation(); handleStartPending('transaction'); }}>
+                                <Play className="h-3 w-3 mr-1" />
+                                Start Pending Job #{transactionJobPending.id}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {step.key === 'provision' && (
+                        <div className="space-y-2">
+                          {status === 'locked' ? (
+                            <p className="text-sm text-muted-foreground">Complete transaction data import first to enable warm start.</p>
+                          ) : (
+                            <>
+                              <p className="text-sm text-muted-foreground">
+                                Navigate to your Supply Chain Config and run the Provisioning Stepper to warm-start all AI models.
+                              </p>
+                              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.location.href = '/supply-chain'; }}>
+                                <Zap className="h-3 w-3 mr-1" />
+                                Go to Supply Chain Configs
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Show latest job info for phase-based steps */}
+                      {latestJob && (
+                        <div className="text-xs text-muted-foreground border-t pt-2 mt-2">
+                          Last run: Job #{latestJob.id} — {latestJob.status}
+                          {latestJob.total_rows_processed > 0 && ` — ${latestJob.total_rows_processed.toLocaleString()} rows`}
+                          {latestJob.completed_at && ` — ${new Date(latestJob.completed_at).toLocaleString()}`}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Connector line between steps */}
+                  {idx < WIZARD_STEPS.length - 1 && (
+                    <div className="flex justify-start ml-[1.75rem]">
+                      <div className={cn(
+                        "w-0.5 h-3",
+                        stepStatus[WIZARD_STEPS[idx + 1].key] === 'locked' ? "bg-gray-200" : "bg-blue-300"
+                      )} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick reference */}
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex items-start gap-3">
+            <Lightbulb className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="text-sm space-y-1">
+              <p><strong>How the phases work:</strong> Each phase uses the same SAP connection but processes different table categories.</p>
+              <ul className="list-disc ml-4 space-y-0.5 text-muted-foreground">
+                <li><strong>Master Data</strong> creates your supply chain topology (sites, products, lanes, BOMs) — run once at initial setup.</li>
+                <li><strong>User Import</strong> provisions planning users with appropriate roles — run after master data.</li>
+                <li><strong>Transaction Data</strong> loads operational history (orders, shipments, production) — run periodically (daily/weekly).</li>
+                <li><strong>CDC</strong> (available in the Jobs tab) detects master data changes and creates a child config — run periodically.</li>
+                <li><strong>Warm Start</strong> trains AI models on your data — run after loading sufficient history.</li>
+              </ul>
+              <p className="text-muted-foreground">For advanced options (dry run, CSV saving, individual table selection), use the <button className="text-blue-600 hover:underline" onClick={() => onNavigateTab('jobs')}>Ingestion Jobs</button> tab.</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
+
 // Connections Tab Component
-const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, onUpdateConnection, onDeleteConnection, loading }) => {
+const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, onUpdateConnection, onDeleteConnection, onConfirmFileMapping, loading }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [expandedMappings, setExpandedMappings] = useState({});
+  const [editingMappings, setEditingMappings] = useState({});
   const defaultFormData = {
     name: '',
     description: '',
@@ -490,6 +866,138 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, onU
                     Delete
                   </Button>
                 </div>
+
+                {/* File-to-Table Mapping (shown after test for CSV connections) */}
+                {conn.file_table_mapping && conn.file_table_mapping.length > 0 && (
+                  <div className="border-t pt-3">
+                    <button
+                      className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full"
+                      onClick={() => setExpandedMappings(prev => ({ ...prev, [conn.id]: !prev[conn.id] }))}
+                    >
+                      {expandedMappings[conn.id]
+                        ? <ChevronDown className="h-4 w-4" />
+                        : <ChevronRight className="h-4 w-4" />}
+                      <FileText className="h-4 w-4" />
+                      {conn.file_table_mapping.length} files identified
+                      {conn.file_table_mapping.some(f => !f.confirmed) && (
+                        <Badge variant="warning" className="ml-2">
+                          {conn.file_table_mapping.filter(f => !f.confirmed).length} need review
+                        </Badge>
+                      )}
+                      {conn.file_table_mapping.every(f => f.confirmed) && (
+                        <Badge variant="success" className="ml-2">All confirmed</Badge>
+                      )}
+                    </button>
+
+                    {expandedMappings[conn.id] && (
+                      <div className="mt-3 space-y-1">
+                        <div className="grid grid-cols-[1fr_120px_80px_60px_40px] gap-2 text-xs font-medium text-muted-foreground px-2 pb-1 border-b">
+                          <span>File</span>
+                          <span>SAP Table</span>
+                          <span>Confidence</span>
+                          <span>Rows</span>
+                          <span></span>
+                        </div>
+                        {conn.file_table_mapping.map((file, idx) => {
+                          const isEditing = editingMappings[`${conn.id}_${idx}`];
+                          const confidence = file.confidence || 0;
+                          return (
+                            <div
+                              key={idx}
+                              className={cn(
+                                "grid grid-cols-[1fr_120px_80px_60px_40px] gap-2 items-center text-sm px-2 py-1 rounded",
+                                !file.confirmed && "bg-yellow-50 border border-yellow-200",
+                                file.confirmed && "bg-green-50/50"
+                              )}
+                            >
+                              <span className="truncate text-xs font-mono">{file.filename}</span>
+                              {isEditing ? (
+                                <Input
+                                  className="h-6 text-xs"
+                                  defaultValue={file.table || ''}
+                                  onBlur={(e) => {
+                                    const newTable = e.target.value.toUpperCase().trim() || null;
+                                    onConfirmFileMapping(conn.id, [{
+                                      filename: file.filename,
+                                      table: newTable,
+                                      confirmed: !!newTable,
+                                    }]);
+                                    setEditingMappings(prev => ({ ...prev, [`${conn.id}_${idx}`]: false }));
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') e.target.blur();
+                                  }}
+                                  autoFocus
+                                />
+                              ) : (
+                                <span className={cn(
+                                  "text-xs font-mono",
+                                  !file.table && "text-red-500 italic"
+                                )}>
+                                  {file.table || 'Unknown'}
+                                </span>
+                              )}
+                              <Badge
+                                variant={confidence >= 0.7 ? 'success' : confidence >= 0.3 ? 'warning' : 'destructive'}
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {(confidence * 100).toFixed(0)}%
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">{file.row_count?.toLocaleString()}</span>
+                              <div className="flex gap-0.5">
+                                {!file.confirmed ? (
+                                  <>
+                                    {file.table && (
+                                      <button
+                                        className="text-green-600 hover:text-green-800"
+                                        title="Confirm this mapping"
+                                        onClick={() => onConfirmFileMapping(conn.id, [{
+                                          filename: file.filename,
+                                          table: file.table,
+                                          confirmed: true,
+                                        }])}
+                                      >
+                                        <CheckCircle className="h-4 w-4" />
+                                      </button>
+                                    )}
+                                    <button
+                                      className="text-blue-600 hover:text-blue-800"
+                                      title="Edit table assignment"
+                                      onClick={() => setEditingMappings(prev => ({ ...prev, [`${conn.id}_${idx}`]: true }))}
+                                    >
+                                      <Settings className="h-3.5 w-3.5" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <CheckCircle className="h-4 w-4 text-green-500" />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {conn.file_table_mapping.some(f => !f.confirmed) && (
+                          <div className="flex justify-end pt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const confirmable = conn.file_table_mapping
+                                  .filter(f => !f.confirmed && f.table && f.confidence >= 0.3)
+                                  .map(f => ({ filename: f.filename, table: f.table, confirmed: true }));
+                                if (confirmable.length > 0) {
+                                  onConfirmFileMapping(conn.id, confirmable);
+                                }
+                              }}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Confirm All ({conn.file_table_mapping.filter(f => !f.confirmed && f.table && f.confidence >= 0.3).length})
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -1240,24 +1748,57 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
 // Ingestion Jobs Tab Component
 // Table classifications for phase-based filtering
 const MASTER_DATA_PREFIXES = new Set([
-  'T001', 'TJ02T', 'T001W', 'T001L', 'ADRC',
-  'MARA', 'MAKT', 'MARC', 'MARM', 'MVKE',
-  'LFA1', 'KNA1', 'CRHD', 'EQUI',
-  'MBEW', 'MARD', 'EORD', 'EINA', 'EINE', 'EBAN',
+  // Org structure
+  'T001', 'TJ02T', 'T001W', 'T001L', 'T024E', 'ADRC',
+  // Material master
+  'MARA', 'MAKT', 'MARC', 'MARM', 'MARD', 'MVKE', 'MBEW',
+  // Partners
+  'LFA1', 'KNA1', 'KNVV',
+  // Equipment & work centers
+  'CRHD', 'EQUI', 'KAKO',
+  // Purchasing info & sourcing
+  'EORD', 'EINA', 'EINE', 'EBAN',
+  // BOM & routing
   'STKO', 'STPO', 'PLKO', 'PLPO',
-  'PBIM', 'PBED', 'PLAF',
+  // Forecast & MRP
+  'PBIM', 'PBED', 'PLAF', 'MPOP', 'MDKP', 'MDTB',
+  // Subcontracting
+  'MKAL',
+]);
+const USER_IMPORT_PREFIXES = new Set([
+  'USR02', 'USR21', 'ADRP', 'AGR_USERS', 'AGR_DEFINE', 'AGR_1251', 'AGR_TCODES',
 ]);
 const TRANSACTION_PREFIXES = new Set([
-  'EKKO', 'EKPO', 'EKET', 'VBAK', 'VBAP', 'VBUK', 'VBUP',
-  'LIKP', 'LIPS', 'AFKO', 'AFPO', 'AFVC', 'RESB',
-  'MKPF', 'MSEG', 'LTAK', 'LTAP',
-  'JEST', 'QMEL', 'QALS', 'QASE',
+  // Purchase orders
+  'EKKO', 'EKPO', 'EKET', 'EKBE',
+  // Sales orders
+  'VBAK', 'VBAP', 'VBEP', 'VBUK', 'VBUP',
+  // Deliveries & shipments
+  'LIKP', 'LIPS',
+  // Production orders
+  'AFKO', 'AFPO', 'AFVC', 'AFRU', 'RESB',
+  // Goods movements
+  'MKPF', 'MSEG',
+  // Transfer orders
+  'LTAK', 'LTAP',
+  // Quality
+  'QMEL', 'QMIH', 'QALS', 'QASE',
+  // Maintenance
+  'AUFK_PM', 'IHPA', 'MHIS',
+  // Status & pricing
+  'JEST', 'KONV', 'CRCO',
+  // Change documents
+  'CDHDR', 'CDPOS',
 ]);
 
 const getTablePrefix = (name) => {
   const upper = name.toUpperCase();
-  // Handle multi-part prefixes like T001W_plant_data
-  for (const prefix of ['T001W', 'T001L', 'TJ02T', 'T001']) {
+  // Handle multi-part prefixes (longest match first)
+  const MULTI_PART = [
+    'AGR_USERS', 'AGR_DEFINE', 'AGR_1251', 'AGR_TCODES',
+    'AUFK_PM', 'T001W', 'T001L', 'TJ02T', 'T024E', 'T001',
+  ];
+  for (const prefix of MULTI_PART) {
     if (upper.startsWith(prefix + '_') || upper === prefix) return prefix;
   }
   const parts = upper.split('_');
@@ -1276,7 +1817,26 @@ const PHASE_COLORS = {
   transaction: 'bg-amber-100 text-amber-800',
 };
 
-const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob, onDeleteJob, onScheduleJob, onRefresh, loading }) => {
+/** Geocoding progress bar with current address label on the right. */
+const GeocodingProgressBar = ({ done, total, currentLabel }) => {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return (
+    <div className="pl-8 pr-3 py-1.5 border-t bg-muted/30 space-y-1">
+      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+        <div
+          className="h-full bg-emerald-500 transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{done}/{total} locations</span>
+        {currentLabel && <span className="truncate ml-2 italic">{currentLabel}</span>}
+      </div>
+    </div>
+  );
+};
+
+const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob, onDeleteJob, onRerunJob, onScheduleJob, onRefresh, loading }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedConnectionId, setSelectedConnectionId] = useState('');
   const [jobType, setJobType] = useState('full_extract');
@@ -1285,6 +1845,56 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
   const [allTables, setAllTables] = useState([]);
   const [selectedTables, setSelectedTables] = useState([]);
   const [loadingTables, setLoadingTables] = useState(false);
+  const [identifiedFiles, setIdentifiedFiles] = useState(null); // null = not scanned, [] = empty
+  const [scanningFiles, setScanningFiles] = useState(false);
+  const [expandedJobs, setExpandedJobs] = useState({}); // { jobId: bool }
+  const [saveCsv, setSaveCsv] = useState(false);
+  const [updateTenantData, setUpdateTenantData] = useState(true);
+
+  // Scan files to identify SAP tables via the identify-files endpoint
+  const handleScanFiles = async () => {
+    if (!selectedConnectionId) return;
+    setScanningFiles(true);
+    setIdentifiedFiles(null);
+    try {
+      const resp = await api.post(`/sap-data/connections/${selectedConnectionId}/identify-files`);
+      setIdentifiedFiles(resp.data || []);
+    } catch (err) {
+      console.error('Failed to identify files:', err);
+      setIdentifiedFiles([]);
+    }
+    setScanningFiles(false);
+  };
+
+  // Toggle per-file list expansion on a job card
+  const toggleJobExpanded = (jobId) => {
+    setExpandedJobs(prev => ({ ...prev, [jobId]: !prev[jobId] }));
+  };
+
+  // Determine if a job's file list should be expanded by default
+  const isJobExpanded = (job) => {
+    if (expandedJobs[job.id] !== undefined) return expandedJobs[job.id];
+    // Auto-collapse file list once all files are read (building phase)
+    const tableStatuses = job.table_status ? Object.values(job.table_status) : [];
+    const completedFiles = tableStatuses.filter(s => s.status === 'completed').length;
+    const totalFiles = job.tables?.length || 0;
+    const allFilesRead = totalFiles > 0 && completedFiles >= totalFiles;
+    if (job.status === 'running' && allFilesRead) return false;
+    return job.status === 'running';
+  };
+
+  // The 9 build steps from SAPConfigBuilder
+  const BUILD_STEPS = [
+    "Creating supply chain config",
+    "Geocoding company addresses",
+    "Creating sites from plants & storage locations",
+    "Creating products from material master",
+    "Creating trading partners & sourcing rules",
+    "Building bill of materials",
+    "Generating forecasts & inventory policies",
+    "Importing orders & transactional data",
+    "Inferring transportation lanes from sourcing & shipping data",
+  ];
 
   // Filter tables by phase
   const filterTablesByPhase = (tables, phase) => {
@@ -1292,6 +1902,8 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
       return tables.filter(t => MASTER_DATA_PREFIXES.has(getTablePrefix(t)));
     } else if (phase === 'transaction') {
       return tables.filter(t => TRANSACTION_PREFIXES.has(getTablePrefix(t)));
+    } else if (phase === 'user_import') {
+      return tables.filter(t => USER_IMPORT_PREFIXES.has(getTablePrefix(t)));
     }
     // CDC uses master data tables
     return tables.filter(t => MASTER_DATA_PREFIXES.has(getTablePrefix(t)));
@@ -1303,6 +1915,7 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
     setSelectedTables([]);
     setAvailableTables([]);
     setAllTables([]);
+    setIdentifiedFiles(null);
     if (!connId) return;
 
     const conn = connections.find(c => c.id === parseInt(connId));
@@ -1319,7 +1932,7 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
       } else {
         try {
           const resp = await api.get(`/sap-data/connections/${connId}/tables`);
-          allFiles = resp.data.map(t => t.sap_table_name || t.name);
+          allFiles = resp.data.map(t => t.table_name || t.sap_table_name || t.name);
         } catch { allFiles = []; }
       }
       setAllTables(allFiles);
@@ -1349,12 +1962,17 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
       job_type: jobType,
       phase: jobPhase,
       tables: selectedTables,
+      save_csv: saveCsv,
+      update_tenant_data: updateTenantData,
     });
     setShowCreateDialog(false);
     setSelectedConnectionId('');
     setSelectedTables([]);
     setAvailableTables([]);
     setAllTables([]);
+    setIdentifiedFiles(null);
+    setSaveCsv(false);
+    setUpdateTenantData(true);
   };
 
   return (
@@ -1424,6 +2042,8 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                         <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", PHASE_COLORS[job.phase] || 'bg-gray-100 text-gray-800')}>
                           {PHASE_LABELS[job.phase] || job.phase}
                         </span>
+                        {job.save_csv && <Badge variant="outline" className="text-xs">CSV</Badge>}
+                        {job.update_tenant_data === false && <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Dry Run</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground">
                         Tables: {job.tables?.join(', ')}
@@ -1436,6 +2056,11 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                           {job.build_summary?.cdc_result === 'changes_detected' && ` — Changes: +${job.build_summary.sites_added || 0} sites, +${job.build_summary.products_added || 0} products`}
                           {job.build_summary?.transaction_import && ` — Transactions imported`}
                         </p>
+                      )}
+                      {job.status === 'failed' && job.error_message && (
+                        <pre className="text-sm text-red-600 mt-1 max-h-60 overflow-auto whitespace-pre-wrap break-words bg-red-50 border border-red-200 rounded p-2 font-mono">
+                          <span className="font-medium">Error:</span> {job.error_message}
+                        </pre>
                       )}
                     </div>
                   </div>
@@ -1453,21 +2078,167 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                     )}
                   </div>
                 </div>
-                {job.status === 'running' && (
-                  <div className="mt-3">
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 transition-all"
-                        style={{ width: `${job.progress_percent}%` }}
-                      />
+                {/* Progress section */}
+                {(() => {
+                  const tableStatuses = job.table_status ? Object.values(job.table_status) : [];
+                  const completedFiles = tableStatuses.filter(s => s.status === 'completed').length;
+                  const totalFiles = job.tables?.length || 0;
+                  const allFilesRead = totalFiles > 0 && completedFiles >= totalFiles;
+                  const buildStep = job.build_summary?.build_step;
+                  const buildTotal = job.build_summary?.build_total || 9;
+                  const buildDesc = job.build_summary?.build_description;
+                  const isBuilding = job.status === 'running' && allFilesRead;
+                  const isReading = job.status === 'running' && !allFilesRead;
+
+                  return (
+                    <div className="mt-3 space-y-2">
+                      {/* File reading progress */}
+                      {isReading && (
+                        <>
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 transition-all"
+                              style={{ width: `${job.progress_percent}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Reading files: {completedFiles}/{totalFiles} completed
+                            {job.current_table && ` — ${job.current_table}`}
+                          </p>
+                          {/* Expandable file list while reading */}
+                          <div>
+                            <button
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => toggleJobExpanded(job.id)}
+                            >
+                              {isJobExpanded(job)
+                                ? <ChevronDown className="h-3.5 w-3.5" />
+                                : <ChevronRight className="h-3.5 w-3.5" />}
+                              Show files
+                            </button>
+                            {isJobExpanded(job) && (
+                              <div className="mt-1 border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                                {(job.tables || []).map((tableName) => {
+                                  const fileStatus = job.table_status?.[tableName];
+                                  const status = fileStatus?.status || 'pending';
+                                  const rows = fileStatus?.rows ?? 0;
+                                  return (
+                                    <div key={tableName} className="flex items-center gap-2 px-3 py-1 text-xs border-b last:border-b-0">
+                                      {status === 'completed' ? <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                                        : status === 'in_progress' ? <Spinner size="sm" className="flex-shrink-0" />
+                                        : status === 'failed' ? <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                                        : <Clock className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
+                                      <span className="flex-1 truncate font-mono">{tableName}</span>
+                                      {rows > 0 && <span className="text-muted-foreground">{rows.toLocaleString()}</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      {/* All files read — collapsed summary + build progress */}
+                      {isBuilding && (
+                        <>
+                          <div className="flex items-center gap-2 text-xs text-green-600">
+                            <CheckCircle className="h-4 w-4" />
+                            <span>{totalFiles} files read successfully ({job.total_rows_processed?.toLocaleString()} rows)</span>
+                            <button
+                              className="text-muted-foreground hover:text-foreground ml-1"
+                              onClick={() => toggleJobExpanded(job.id)}
+                            >
+                              {isJobExpanded(job) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                            </button>
+                          </div>
+                          {isJobExpanded(job) && (
+                            <div className="border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                              {(job.tables || []).map((tableName) => {
+                                const rows = job.table_status?.[tableName]?.rows ?? 0;
+                                return (
+                                  <div key={tableName} className="flex items-center gap-2 px-3 py-1 text-xs border-b last:border-b-0">
+                                    <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                                    <span className="flex-1 truncate font-mono">{tableName}</span>
+                                    {rows > 0 && <span className="text-muted-foreground">{rows.toLocaleString()}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {/* Build steps checklist */}
+                          <div className="border rounded-lg overflow-hidden">
+                            {BUILD_STEPS.map((stepName, idx) => {
+                              const stepNum = idx + 1;
+                              const isCurrent = buildStep === stepNum;
+                              const isDone = buildStep > stepNum;
+                              const isPending = !buildStep || buildStep < stepNum;
+                              return (
+                                <React.Fragment key={stepNum}>
+                                  <div className="flex items-center gap-2 px-3 py-1.5 text-xs border-b last:border-b-0">
+                                    {isDone ? <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                                      : isCurrent ? <Spinner size="sm" className="flex-shrink-0" />
+                                      : <Clock className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
+                                    <span className={isCurrent ? 'font-medium' : isPending ? 'text-muted-foreground' : ''}>
+                                      {stepName}
+                                      {isCurrent && stepNum === 2 && job.build_summary?.geocoding_total > 0 && (
+                                        <span className="text-muted-foreground font-normal ml-1">
+                                          ({job.build_summary.geocoding_done || 0}/{job.build_summary.geocoding_total})
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  {/* Geocoding progress bar for step 2 */}
+                                  {isCurrent && stepNum === 2 && job.build_summary?.geocoding_total > 0 && (
+                                    <GeocodingProgressBar
+                                      done={job.build_summary.geocoding_done || 0}
+                                      total={job.build_summary.geocoding_total}
+                                      currentLabel={job.build_summary.geocoding_addresses?.[job.build_summary.geocoding_active] || ''}
+                                    />
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Completed/failed job — collapsed file summary */}
+                      {job.status !== 'running' && totalFiles > 0 && (
+                        <div>
+                          <button
+                            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => toggleJobExpanded(job.id)}
+                          >
+                            {isJobExpanded(job)
+                              ? <ChevronDown className="h-3.5 w-3.5" />
+                              : <ChevronRight className="h-3.5 w-3.5" />}
+                            <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                            {completedFiles}/{totalFiles} files read
+                          </button>
+                          {isJobExpanded(job) && (
+                            <div className="mt-1 border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                              {(job.tables || []).map((tableName) => {
+                                const fileStatus = job.table_status?.[tableName];
+                                const status = fileStatus?.status || 'completed';
+                                const rows = fileStatus?.rows ?? 0;
+                                return (
+                                  <div key={tableName} className="flex items-center gap-2 px-3 py-1 text-xs border-b last:border-b-0">
+                                    {status === 'failed'
+                                      ? <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                                      : <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />}
+                                    <span className="flex-1 truncate font-mono">{tableName}</span>
+                                    {rows > 0 && <span className="text-muted-foreground">{rows.toLocaleString()}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {job.current_table && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Processing: {job.current_table}
-                      </p>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
                 <div className="flex items-center gap-2 border-t pt-3 mt-3">
                   {job.status === 'pending' && (
                     <Button variant="outline" size="sm" onClick={() => onStartJob(job.id)}>
@@ -1504,19 +2275,33 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                   )}
                   <div className="flex-1" />
                   {job.status !== 'running' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 hover:bg-red-50 border-red-200"
-                      onClick={() => {
-                        if (window.confirm(`Delete Job #${job.id}?`)) {
-                          onDeleteJob(job.id);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (window.confirm(`Rerun Job #${job.id}? All stats will be reset.`)) {
+                            onRerunJob(job.id);
+                          }
+                        }}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-1" />
+                        Rerun
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:bg-red-50 border-red-200"
+                        onClick={() => {
+                          if (window.confirm(`Delete Job #${job.id}?`)) {
+                            onDeleteJob(job.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>
@@ -1554,11 +2339,13 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
               <label className="block text-sm font-medium mb-1">Ingestion Phase *</label>
               <NativeSelect value={jobPhase} onChange={(e) => handlePhaseChange(e.target.value)}>
                 <option value="master_data">Phase 1: Master Data → Generate SC Config</option>
-                <option value="cdc">Phase 2: CDC — Detect Master Data Changes</option>
+                <option value="user_import">Phase 2: User Import → Provision Users</option>
                 <option value="transaction">Phase 3: Transaction Data Import</option>
+                <option value="cdc">CDC — Detect Master Data Changes</option>
               </NativeSelect>
               <p className="text-xs text-muted-foreground mt-1">
                 {jobPhase === 'master_data' && 'Imports master data (sites, products, BOMs, etc.) and generates a new Supply Chain Config.'}
+                {jobPhase === 'user_import' && 'Extracts SAP user and role tables, filters to SC-relevant users, and provisions platform accounts.'}
                 {jobPhase === 'cdc' && 'Compares master data against the active SC Config. Creates a child config if topology changed.'}
                 {jobPhase === 'transaction' && 'Imports transaction data (orders, production, inventory movements) against the active SC Config.'}
               </p>
@@ -1571,6 +2358,36 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                 <option value="delta_extract">Delta Extract</option>
                 <option value="incremental">Incremental</option>
               </NativeSelect>
+            </div>
+
+            {/* Ingestion Toggles */}
+            <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
+              <p className="text-sm font-medium">Options</p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={saveCsv}
+                  onChange={(e) => setSaveCsv(e.target.checked)}
+                />
+                <div>
+                  <span className="text-sm font-medium">Save CSV files</span>
+                  <p className="text-xs text-muted-foreground">Save extracted data as CSV files for audit or backup</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={updateTenantData}
+                  onChange={(e) => setUpdateTenantData(e.target.checked)}
+                />
+                <div>
+                  <span className="text-sm font-medium">Update tenant data</span>
+                  <p className="text-xs text-muted-foreground">Create/update sites, products, lanes in the database. Uncheck for dry run.</p>
+                </div>
+              </label>
+              {!updateTenantData && (
+                <p className="text-xs text-amber-600 font-medium">Dry run mode — data will be extracted and validated but not written to the database.</p>
+              )}
             </div>
 
             {selectedConnectionId && (
@@ -1614,6 +2431,79 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                 </div>
               </div>
             )}
+
+            {/* Scan Files / File Identification */}
+            {selectedConnectionId && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium">File Identification</label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleScanFiles}
+                    disabled={scanningFiles}
+                  >
+                    {scanningFiles ? (
+                      <>
+                        <Spinner size="sm" className="mr-1" />
+                        Scanning...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-3 w-3 mr-1" />
+                        Scan Files
+                      </>
+                    )}
+                  </Button>
+                </div>
+                {identifiedFiles && identifiedFiles.length > 0 && (
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted sticky top-0">
+                        <tr>
+                          <th className="text-left px-3 py-1.5 font-medium">Filename</th>
+                          <th className="text-left px-3 py-1.5 font-medium">SAP Table</th>
+                          <th className="text-center px-3 py-1.5 font-medium">Confidence</th>
+                          <th className="text-right px-3 py-1.5 font-medium">Rows</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {identifiedFiles.map((file, idx) => (
+                          <tr key={idx} className="border-t hover:bg-muted/50">
+                            <td className="px-3 py-1.5 truncate max-w-[160px]" title={file.filename}>
+                              {file.filename}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              {(file.confidence ?? 0) < 0.3 ? (
+                                <span className="text-muted-foreground italic">Unknown</span>
+                              ) : (
+                                file.sap_table || file.table_name || 'Unknown'
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              <Badge variant={
+                                (file.confidence ?? 0) > 0.7 ? 'success' :
+                                (file.confidence ?? 0) >= 0.3 ? 'warning' : 'destructive'
+                              }>
+                                {((file.confidence ?? 0) * 100).toFixed(0)}%
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-muted-foreground">
+                              {file.row_count?.toLocaleString() ?? '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {identifiedFiles && identifiedFiles.length === 0 && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    No files could be identified. Check your connection configuration.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
@@ -1621,7 +2511,9 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
               onClick={handleSubmitJob}
               disabled={!selectedConnectionId || selectedTables.length === 0}
             >
-              {jobPhase === 'master_data' ? 'Create & Build SC Config' :
+              {!updateTenantData ? 'Extract Only (Dry Run)' :
+               jobPhase === 'master_data' ? 'Create & Build SC Config' :
+               jobPhase === 'user_import' ? 'Import & Provision Users' :
                jobPhase === 'cdc' ? 'Run Change Detection' :
                'Import Transactions'}
             </Button>
@@ -1632,12 +2524,98 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
   );
 };
 
+// Geography Geocoding Card
+const GeographyGeocoding = () => {
+  const [status, setStatus] = useState(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await api.get('/sap-data/geography/status');
+      setStatus(res.data);
+    } catch (err) {
+      console.error('Failed to load geography status:', err);
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const handleGeocode = async () => {
+    setGeocoding(true);
+    setResult(null);
+    try {
+      const res = await api.post('/sap-data/geography/geocode');
+      setResult(res.data);
+      loadStatus();
+    } catch (err) {
+      console.error('Geocoding failed:', err);
+      setResult({ error: err.response?.data?.detail || 'Geocoding failed' });
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  if (!status) return null;
+  if (status.total === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <MapPin className="h-4 w-4" />
+          Geography Coordinates
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-4 text-sm">
+          <span>{status.with_coordinates} / {status.total} sites have coordinates</span>
+          {status.missing_coordinates > 0 && (
+            <Badge variant="warning">{status.missing_coordinates} missing</Badge>
+          )}
+          {status.missing_coordinates === 0 && (
+            <Badge variant="outline" className="text-green-600 border-green-300">All geocoded</Badge>
+          )}
+        </div>
+        {status.missing_coordinates > 0 && (
+          <div className="flex items-center gap-3">
+            <button
+              className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+              onClick={handleGeocode}
+              disabled={geocoding}
+            >
+              {geocoding ? 'Geocoding...' : `Geocode ${status.missing_coordinates} addresses`}
+            </button>
+            <span className="text-xs text-muted-foreground">
+              Uses OpenStreetMap (~1 sec/address)
+            </span>
+          </div>
+        )}
+        {result && !result.error && (
+          <div className="text-sm text-green-600">
+            {result.message}
+            {result.failed?.length > 0 && (
+              <div className="mt-1 text-yellow-600">
+                Failed: {result.failed.map(f => f.city || f.id).join(', ')}
+              </div>
+            )}
+          </div>
+        )}
+        {result?.error && (
+          <div className="text-sm text-red-600">{result.error}</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 // Insights & Actions Tab Component
 const InsightsTab = ({ insights, actions, onAcknowledge, onUpdateAction, loading }) => {
   const [activeSubTab, setActiveSubTab] = useState('insights');
 
   return (
     <div className="space-y-6">
+      <GeographyGeocoding />
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-semibold">Insights & Actions</h2>
@@ -1818,7 +2796,7 @@ const InsightsTab = ({ insights, actions, onAcknowledge, onUpdateAction, loading
 };
 
 // User Import Tab Component
-const UserImportTab = () => {
+const UserImportTab = ({ connections = [] }) => {
   const [roleMappings, setRoleMappings] = useState([]);
   const [importLogs, setImportLogs] = useState([]);
   const [scFilterConfig, setScFilterConfig] = useState(null);
@@ -1827,6 +2805,15 @@ const UserImportTab = () => {
   const [uploading, setUploading] = useState(false);
   const [showAddMapping, setShowAddMapping] = useState(false);
   const [csvFiles, setCsvFiles] = useState({});
+
+  // Connection-based extraction state
+  const hasConnection = connections.length > 0;
+  const [dataSource, setDataSource] = useState(hasConnection ? 'connection' : 'csv');
+  const [selectedConnectionId, setSelectedConnectionId] = useState(
+    connections[0]?.id?.toString() || ''
+  );
+  const [extractedData, setExtractedData] = useState(null);
+  const [extracting, setExtracting] = useState(false);
 
   // New mapping form
   const [newMapping, setNewMapping] = useState({
@@ -1911,10 +2898,37 @@ const UserImportTab = () => {
     return raw;
   };
 
+  const handleExtractFromConnection = async () => {
+    if (!selectedConnectionId) return;
+    setExtracting(true);
+    setExtractedData(null);
+    setPreviewData(null);
+    try {
+      const res = await api.post(`/sap-data/connections/${selectedConnectionId}/extract-user-tables`);
+      setExtractedData(res.data);
+      // Auto-preview after successful extraction
+      if (res.data?.tables) {
+        const previewRes = await api.post('/sap-data/user-import/preview', res.data.tables);
+        setPreviewData(previewRes.data);
+      }
+    } catch (err) {
+      console.error('Extraction failed:', err);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const getRawDataForSource = async () => {
+    if (dataSource === 'connection' && extractedData?.tables) {
+      return extractedData.tables;
+    }
+    return await buildRawData();
+  };
+
   const handlePreview = async () => {
     setUploading(true);
     try {
-      const rawData = await buildRawData();
+      const rawData = await getRawDataForSource();
       const res = await api.post('/sap-data/user-import/preview', rawData);
       setPreviewData(res.data);
     } catch (err) {
@@ -1928,10 +2942,11 @@ const UserImportTab = () => {
     if (!window.confirm(`This will create/update ${previewData?.sc_eligible_users || 0} users. Continue?`)) return;
     setUploading(true);
     try {
-      const rawData = await buildRawData();
+      const rawData = await getRawDataForSource();
       await api.post('/sap-data/user-import/execute', rawData);
       setPreviewData(null);
       setCsvFiles({});
+      setExtractedData(null);
       loadData();
     } catch (err) {
       console.error('Import failed:', err);
@@ -1939,6 +2954,10 @@ const UserImportTab = () => {
       setUploading(false);
     }
   };
+
+  const canPreview = dataSource === 'connection'
+    ? !!extractedData
+    : !!(csvFiles.usr02 && csvFiles.agr_users);
 
   const csvTableDefs = [
     { key: 'usr02', label: 'USR02 (User Logon)', required: true },
@@ -2077,40 +3096,130 @@ const UserImportTab = () => {
         </CardContent>
       </Card>
 
-      {/* CSV Upload & Preview */}
+      {/* Data Source & Preview */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Data Upload & Preview
+            Data Source & Preview
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground mb-4">
-            Upload SAP user/role CSV extracts. USR02 and AGR_USERS are required; others improve accuracy.
-          </p>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            {csvTableDefs.map(t => (
-              <div key={t.key} className="flex items-center gap-2">
-                <label className="text-sm w-64 flex items-center gap-1">
-                  {t.label}
-                  {t.required && <span className="text-destructive">*</span>}
-                </label>
-                <input
-                  type="file"
-                  accept=".csv"
-                  className="text-sm"
-                  onChange={e => handleFileChange(t.key, e.target.files[0])}
-                />
-                {csvFiles[t.key] && <CheckCircle className="h-4 w-4 text-green-600" />}
-              </div>
-            ))}
-          </div>
+          {/* Data source toggle */}
+          {hasConnection && (
+            <div className="flex gap-2 mb-4">
+              <Button
+                variant={dataSource === 'connection' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => { setDataSource('connection'); setPreviewData(null); }}
+              >
+                <Database className="h-4 w-4 mr-1" />
+                Extract from Connection
+              </Button>
+              <Button
+                variant={dataSource === 'csv' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => { setDataSource('csv'); setPreviewData(null); setExtractedData(null); }}
+              >
+                <Upload className="h-4 w-4 mr-1" />
+                Manual CSV Upload
+              </Button>
+            </div>
+          )}
 
-          <div className="flex gap-2">
+          {/* Connection-based extraction */}
+          {dataSource === 'connection' && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Extract user and role tables (USR02, USR21, ADRP, AGR_USERS, AGR_DEFINE, AGR_1251, AGR_TCODES)
+                directly from your SAP connection.
+              </p>
+              <div className="flex items-end gap-3">
+                {connections.length > 1 ? (
+                  <div className="flex-1">
+                    <label className="text-sm font-medium mb-1 block">Connection</label>
+                    <NativeSelect
+                      value={selectedConnectionId}
+                      onChange={e => { setSelectedConnectionId(e.target.value); setExtractedData(null); setPreviewData(null); }}
+                    >
+                      {connections.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.connection_method.toUpperCase()}{c.hostname ? ` — ${c.hostname}` : ''}{c.csv_directory ? ` — ${c.csv_directory}` : ''})
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+                ) : connections.length === 1 ? (
+                  <div className="flex-1">
+                    <p className="text-sm">
+                      Using <span className="font-medium">{connections[0].name}</span>
+                      {' '}({connections[0].connection_method.toUpperCase()}
+                      {connections[0].hostname ? ` — ${connections[0].hostname}` : ''}
+                      {connections[0].csv_directory ? ` — ${connections[0].csv_directory}` : ''})
+                    </p>
+                  </div>
+                ) : null}
+                <Button
+                  onClick={handleExtractFromConnection}
+                  disabled={!selectedConnectionId || extracting}
+                >
+                  {extracting ? <Spinner size="sm" className="mr-2" /> : <Database className="h-4 w-4 mr-1" />}
+                  {extracting ? 'Extracting & Previewing...' : 'Extract & Preview Users'}
+                </Button>
+              </div>
+
+              {/* Extraction results summary */}
+              {extractedData && (
+                <div className="rounded border p-3 bg-muted/30">
+                  <p className="text-sm font-medium mb-2 flex items-center gap-1">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    Extraction complete — {extractedData.total_rows} rows from {Object.keys(extractedData.tables_with_data || {}).length} tables
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {csvTableDefs.map(t => {
+                      const count = extractedData.tables_with_data?.[t.key] || 0;
+                      return (
+                        <Badge key={t.key} variant={count > 0 ? 'default' : 'outline'}>
+                          {t.key.toUpperCase()}: {count} rows
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CSV upload (original mode) */}
+          {dataSource === 'csv' && (
+            <div>
+              <p className="text-sm text-muted-foreground mb-4">
+                Upload SAP user/role CSV extracts. USR02 and AGR_USERS are required; others improve accuracy.
+              </p>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {csvTableDefs.map(t => (
+                  <div key={t.key} className="flex items-center gap-2">
+                    <label className="text-sm w-64 flex items-center gap-1">
+                      {t.label}
+                      {t.required && <span className="text-destructive">*</span>}
+                    </label>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      className="text-sm"
+                      onChange={e => handleFileChange(t.key, e.target.files[0])}
+                    />
+                    {csvFiles[t.key] && <CheckCircle className="h-4 w-4 text-green-600" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 mt-4">
             <Button
               onClick={handlePreview}
-              disabled={uploading || !csvFiles.usr02 || !csvFiles.agr_users}
+              disabled={uploading || !canPreview}
             >
               {uploading ? <Spinner size="sm" className="mr-2" /> : <Eye className="h-4 w-4 mr-1" />}
               Preview Import
@@ -2295,10 +3404,265 @@ const UserImportTab = () => {
   );
 };
 
+// Staging & Sync Tab
+const StagingTab = ({ connections }) => {
+  const [selectedConnectionId, setSelectedConnectionId] = useState('');
+  const [selectedConfigId, setSelectedConfigId] = useState('');
+  const [configs, setConfigs] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+  const [result, setResult] = useState(null);
+  const [reconcileResult, setReconcileResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [history, setHistory] = useState([]);
+
+  // Load supply chain configs
+  useEffect(() => {
+    api.get('/supply-chain-config/').then(res => {
+      const list = Array.isArray(res.data) ? res.data : res.data?.configs || [];
+      setConfigs(list);
+      if (list.length > 0 && !selectedConfigId) setSelectedConfigId(String(list[0].id));
+    }).catch(err => { console.error('Failed to load SC configs for staging tab:', err); });
+  }, []);
+
+  // Auto-select first connection
+  useEffect(() => {
+    if (connections.length > 0 && !selectedConnectionId) {
+      setSelectedConnectionId(String(connections[0].id));
+    }
+  }, [connections]);
+
+  const handleRunStaging = async () => {
+    if (!selectedConnectionId || !selectedConfigId) return;
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await api.post('/sap-data/staging/run', {
+        connection_id: parseInt(selectedConnectionId),
+        config_id: parseInt(selectedConfigId),
+      });
+      setResult(res.data);
+      setHistory(prev => [{ ...res.data, timestamp: new Date().toISOString() }, ...prev].slice(0, 10));
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Staging pipeline failed');
+    }
+    setRunning(false);
+  };
+
+  const handleReconcile = async () => {
+    if (!selectedConnectionId || !selectedConfigId) return;
+    setReconciling(true);
+    setError(null);
+    setReconcileResult(null);
+    try {
+      const res = await api.post('/sap-data/staging/reconcile', {
+        connection_id: parseInt(selectedConnectionId),
+        config_id: parseInt(selectedConfigId),
+      });
+      setReconcileResult(res.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Reconciliation failed');
+    }
+    setReconciling(false);
+  };
+
+  const entityResults = result?.entities || {};
+  const reconData = reconcileResult?.reconciliation || reconcileResult || {};
+
+  return (
+    <div className="space-y-6">
+      {/* Controls */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5" />
+            SAP → AWS SC Staging Pipeline
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Extract data from SAP, map to AWS Supply Chain entities, and upsert into the operational database.
+            Automated sync runs every 6 hours with daily reconciliation at 01:00.
+          </p>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="min-w-[200px]">
+              <label className="text-sm font-medium mb-1 block">SAP Connection</label>
+              <NativeSelect value={selectedConnectionId} onChange={e => setSelectedConnectionId(e.target.value)}>
+                <option value="">Select connection...</option>
+                {connections.map(c => (
+                  <option key={c.id} value={String(c.id)}>{c.name} ({c.system_type})</option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="min-w-[200px]">
+              <label className="text-sm font-medium mb-1 block">Target Config</label>
+              <NativeSelect value={selectedConfigId} onChange={e => setSelectedConfigId(e.target.value)}>
+                <option value="">Select config...</option>
+                {configs.map(c => (
+                  <option key={c.id} value={String(c.id)}>{c.name}</option>
+                ))}
+              </NativeSelect>
+            </div>
+            <Button onClick={handleRunStaging} disabled={running || !selectedConnectionId || !selectedConfigId}>
+              {running ? <><Spinner className="h-4 w-4 mr-2" /> Running...</> : <><Play className="h-4 w-4 mr-2" /> Run Staging</>}
+            </Button>
+            <Button variant="outline" onClick={handleReconcile} disabled={reconciling || !selectedConnectionId || !selectedConfigId}>
+              {reconciling ? <><Spinner className="h-4 w-4 mr-2" /> Checking...</> : <><ArrowUpDown className="h-4 w-4 mr-2" /> Reconcile</>}
+            </Button>
+          </div>
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Staging Results */}
+      {Object.keys(entityResults).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-500" />
+              Staging Results
+              {result?.duration_seconds && (
+                <Badge variant="outline" className="ml-2">{result.duration_seconds.toFixed(1)}s</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3 font-medium">Entity</th>
+                    <th className="text-right py-2 px-3 font-medium">Inserted</th>
+                    <th className="text-right py-2 px-3 font-medium">Updated</th>
+                    <th className="text-right py-2 px-3 font-medium">Skipped</th>
+                    <th className="text-right py-2 px-3 font-medium">Errors</th>
+                    <th className="text-center py-2 px-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(entityResults).map(([entity, r]) => (
+                    <tr key={entity} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-3 font-mono text-xs">{entity}</td>
+                      <td className="text-right py-2 px-3 text-green-600">{r.inserted || 0}</td>
+                      <td className="text-right py-2 px-3 text-blue-600">{r.updated || 0}</td>
+                      <td className="text-right py-2 px-3 text-muted-foreground">{r.skipped || 0}</td>
+                      <td className="text-right py-2 px-3 text-red-600">{(r.validation_errors || []).length}</td>
+                      <td className="text-center py-2 px-3">
+                        {(r.validation_errors || []).length > 0 ? (
+                          <Badge variant="destructive">Error</Badge>
+                        ) : (r.inserted || 0) + (r.updated || 0) > 0 ? (
+                          <Badge variant="default">Synced</Badge>
+                        ) : (
+                          <Badge variant="secondary">No Change</Badge>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Reconciliation Results */}
+      {Object.keys(reconData).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowUpDown className="h-5 w-5" />
+              Reconciliation — SAP vs Postgres
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3 font-medium">Entity</th>
+                    <th className="text-right py-2 px-3 font-medium">SAP Count</th>
+                    <th className="text-right py-2 px-3 font-medium">DB Count</th>
+                    <th className="text-right py-2 px-3 font-medium">Diff</th>
+                    <th className="text-center py-2 px-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(reconData).map(([entity, r]) => {
+                    const diff = (r.sap_count || 0) - (r.db_count || 0);
+                    const match = diff === 0;
+                    return (
+                      <tr key={entity} className="border-b hover:bg-muted/50">
+                        <td className="py-2 px-3 font-mono text-xs">{entity}</td>
+                        <td className="text-right py-2 px-3">{r.sap_count ?? '—'}</td>
+                        <td className="text-right py-2 px-3">{r.db_count ?? '—'}</td>
+                        <td className={cn("text-right py-2 px-3 font-medium", match ? "text-green-600" : "text-amber-600")}>
+                          {diff === 0 ? '0' : (diff > 0 ? `+${diff}` : diff)}
+                        </td>
+                        <td className="text-center py-2 px-3">
+                          {match ? (
+                            <Badge variant="default"><CheckCircle className="h-3 w-3 mr-1" /> Match</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-amber-600 border-amber-300">
+                              <AlertTriangle className="h-3 w-3 mr-1" /> Mismatch
+                            </Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Run History */}
+      {history.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Recent Runs
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {history.map((run, i) => {
+                const entities = run.entities || {};
+                const totalInserted = Object.values(entities).reduce((s, r) => s + (r.inserted || 0), 0);
+                const totalUpdated = Object.values(entities).reduce((s, r) => s + (r.updated || 0), 0);
+                const totalErrors = Object.values(entities).reduce((s, r) => s + (r.validation_errors || []).length, 0);
+                return (
+                  <div key={i} className="flex items-center justify-between p-2 rounded border text-sm">
+                    <span className="text-muted-foreground">{new Date(run.timestamp).toLocaleString()}</span>
+                    <div className="flex gap-3">
+                      <span className="text-green-600">+{totalInserted} inserted</span>
+                      <span className="text-blue-600">{totalUpdated} updated</span>
+                      {totalErrors > 0 && <span className="text-red-600">{totalErrors} errors</span>}
+                      {run.duration_seconds && <span className="text-muted-foreground">{run.duration_seconds.toFixed(1)}s</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+
 // Main Component
 const SAPDataManagement = () => {
   const { user, isTenantAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('guided');
   const [loading, setLoading] = useState(true);
 
   // State
@@ -2392,11 +3756,25 @@ const SAPDataManagement = () => {
   const handleTestConnection = async (connectionId) => {
     try {
       const response = await api.post(`/sap-data/connections/${connectionId}/test`);
-      alert(response.data.message);
+      if (response.data.success) {
+        toast.success(response.data.message);
+      } else {
+        toast.error(response.data.message);
+      }
       loadData();
     } catch (error) {
       console.error('Failed to test connection:', error);
-      alert('Connection test failed');
+      toast.error('Connection test failed');
+    }
+  };
+
+  const handleConfirmFileMapping = async (connectionId, updates) => {
+    try {
+      await api.post(`/sap-data/connections/${connectionId}/confirm-file-mapping`, updates);
+      loadData();
+    } catch (error) {
+      console.error('Failed to update file mapping:', error);
+      alert('Failed to update file mapping: ' + (error.response?.data?.detail || error.message));
     }
   };
 
@@ -2427,6 +3805,16 @@ const SAPDataManagement = () => {
     } catch (error) {
       console.error('Failed to delete job:', error);
       alert('Failed to delete job: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleRerunJob = async (jobId) => {
+    try {
+      await api.post(`/sap-data/jobs/${jobId}/rerun`);
+      loadData();
+    } catch (error) {
+      console.error('Failed to rerun job:', error);
+      alert('Failed to rerun job: ' + (error.response?.data?.detail || error.message));
     }
   };
 
@@ -2478,7 +3866,7 @@ const SAPDataManagement = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6">
+          <TabsList className="mb-6 flex-wrap h-auto">
             {tabItems.map((tab) => (
               <Tab key={tab.value} value={tab.value}>
                 {tab.icon}
@@ -2488,6 +3876,17 @@ const SAPDataManagement = () => {
           </TabsList>
 
           {/* Tab Content */}
+          {activeTab === 'guided' && (
+            <IngestionWizard
+              connections={connections}
+              jobs={jobs}
+              onCreateJob={handleCreateJob}
+              onStartJob={handleStartJob}
+              onRefresh={loadData}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
           {activeTab === 'overview' && (
             <OverviewTab
               dashboardData={dashboardData}
@@ -2503,6 +3902,7 @@ const SAPDataManagement = () => {
               onUpdateConnection={handleUpdateConnection}
               onDeleteConnection={handleDeleteConnection}
               onTestConnection={handleTestConnection}
+              onConfirmFileMapping={handleConfirmFileMapping}
               loading={loading}
             />
           )}
@@ -2522,6 +3922,7 @@ const SAPDataManagement = () => {
               onCreateJob={handleCreateJob}
               onStartJob={handleStartJob}
               onDeleteJob={handleDeleteJob}
+              onRerunJob={handleRerunJob}
               onCancelJob={handleCancelJob}
               onScheduleJob={handleScheduleJob}
               onRefresh={loadData}
@@ -2540,7 +3941,11 @@ const SAPDataManagement = () => {
           )}
 
           {activeTab === 'user-import' && (
-            <UserImportTab />
+            <UserImportTab connections={connections} />
+          )}
+
+          {activeTab === 'staging' && (
+            <StagingTab connections={connections} />
           )}
         </Tabs>
       </div>

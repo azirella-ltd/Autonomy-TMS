@@ -117,6 +117,127 @@ Autonomy supports 20 probability distributions to model different types of uncer
 - **Normal**: Unbiased forecasts
 - **Lognormal**: If systematic bias (tends to under/over-forecast)
 
+### Data Population: SAP Operational Statistics → Distribution Parameters
+
+Distribution parameters are **automatically extracted** from SAP S/4HANA transaction history via HANA SQL aggregation queries, eliminating manual parameter estimation.
+
+**13 Operational Metrics Extracted**:
+
+| Metric | SAP Source Tables | Distribution Family | Target Entity |
+|--------|-------------------|--------------------|----|
+| Supplier lead time | EKKO, EKBE | Lognormal (right-skewed) | `vendor_lead_times.lead_time_dist` |
+| Supplier on-time rate | EKBE, EKET | Beta (0-1 bounded) | `supplier_on_time` |
+| Supplier qty accuracy | EKBE, EKPO | Beta | Supplier performance |
+| Manufacturing cycle time | AFKO, AFPO, AFRU | Lognormal | `production_process.operation_time_dist` |
+| Manufacturing yield | AFRU, AFPO | Beta | `production_process.yield_dist` |
+| Manufacturing setup time | AFRU, AFPO | Lognormal | `production_process.setup_time_dist` |
+| Manufacturing run time | AFRU, AFPO | Lognormal | Production process |
+| Machine MTBF | QMEL (M2 notifications) | Lognormal | `production_process.mtbf_dist` |
+| Machine MTTR | QMEL (M2 notifications) | Lognormal | `production_process.mttr_dist` |
+| Quality rejection rate | QALS | Beta | Quality metadata |
+| Transportation lead time | LIKP, LIPS | Lognormal | `transportation_lane.supply_lead_time_dist` |
+| Demand variability | VBAP (weekly aggregation) | Lognormal/Normal | Demand metadata |
+| Order fulfillment time | VBAK, LIPS, LIKP | Lognormal | Fulfillment metadata |
+
+**Distribution Fitting Heuristics** (from summary statistics only — no raw data transfer):
+- **Lognormal**: Selected when median < mean (right skew) or CV > 0.5. Parameters derived via method-of-moments: `μ_log = ln(μ²/√(σ²+μ²))`, `σ_log = √(ln(1+σ²/μ²))`
+- **Beta**: Selected for rate/ratio metrics bounded 0-1. Parameters via method-of-moments: `α = μ·((μ(1-μ)/σ²)-1)`, `β = (1-μ)·((μ(1-μ)/σ²)-1)`
+- **Normal**: Fallback when data is roughly symmetric
+- **Triangular**: Fallback when only min/mode/max available (< 5 observations)
+
+**Truncation**: P05/P95 percentiles stored as `min`/`max` bounds to exclude outliers.
+
+**Pipeline**: `extract_sap_hana.py --operational-stats` → HANA SQL aggregation → `operational_stats.json` → `SupplyChainMapper.map_operational_stats_to_distributions()` → `SAPDataStagingService._upsert_operational_stats()` → `*_dist` JSON columns
+
+**Convention**: `NULL` in any `*_dist` column = use the deterministic base field value (e.g., `lead_time_days`).
+
+### Per-Agent Stochastic Parameters
+
+Each of the 11 TRM agent types uses a specific subset of stochastic variables. The `agent_stochastic_params` table stores per-agent distribution values with source tracking:
+
+| TRM Agent | Stochastic Parameters |
+|---|---|
+| ATP Executor | demand_variability |
+| Inventory Rebalancing | demand_variability, supplier_lead_time, transport_lead_time |
+| PO Creation | supplier_lead_time, supplier_on_time |
+| Order Tracking | supplier_lead_time, transport_lead_time |
+| MO Execution | manufacturing_cycle_time, manufacturing_yield, setup_time, mtbf, mttr |
+| TO Execution | transport_lead_time |
+| Quality Disposition | quality_rejection_rate, manufacturing_yield |
+| Maintenance Scheduling | mtbf, mttr |
+| Subcontracting | manufacturing_cycle_time, supplier_lead_time |
+| Forecast Adjustment | demand_variability |
+| Inventory Buffer | demand_variability, supplier_lead_time |
+
+**Source tracking**: Each parameter row carries `is_default` (boolean) and `source` (industry_default / sap_import / manual_edit):
+- **industry_default**: Auto-populated based on tenant industry vertical (13 industries). Updated when industry changes — but ONLY if `is_default=True`.
+- **sap_import**: Derived from SAP operational statistics extraction. Protected from industry changes.
+- **manual_edit**: Set by user through the Stochastic Parameters editor UI. Protected from industry changes.
+
+**Hierarchy**: Config-wide defaults (`site_id=NULL`) apply to all sites. Site-specific overrides (`site_id=<id>`) take precedence.
+
+**Implementation**: Model in `agent_stochastic_param.py`, service in `industry_defaults_service.py` (`apply_agent_stochastic_defaults()`), API at `/api/v1/agent-stochastic-params/`, UI at `/admin/stochastic-params`.
+
+### Stochastic Pipeline Settings
+
+Each supply chain config carries a `stochastic_config` JSON column with per-config tuning parameters that control SAP extraction thresholds and distribution fitting behavior. These are surfaced in the admin UI under the "Pipeline Settings" panel on the Stochastic Parameters page.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `min_observations` | 10 | Minimum observations per group required for distribution fitting. Groups below this are excluded. |
+| `min_rows_sufficiency` | 50 | Minimum total rows in source table for a metric to be extracted at all (data sufficiency pre-check). |
+| `cv_lognormal_threshold` | 0.5 | Coefficient of variation above which lognormal is preferred over normal distribution. |
+| `min_group_count` | 3 | Minimum SQL HAVING COUNT threshold per group in aggregation queries. |
+
+**Merge behavior**: Per-config overrides are merged with system defaults via `get_stochastic_config()`. Missing keys fall back to `STOCHASTIC_CONFIG_DEFAULTS`. Resetting a setting removes the override, restoring the system default.
+
+**API**:
+- `GET /api/v1/agent-stochastic-params/pipeline-config/{config_id}` — returns merged settings, labels, and defaults
+- `PUT /api/v1/agent-stochastic-params/pipeline-config/{config_id}` — partial update (only valid keys accepted)
+
+**SAP wiring**: The staging service reads `min_observations` from the config's `stochastic_config` when populating `agent_stochastic_params` from SAP data. The extraction script's `check_data_sufficiency()` uses `min_rows_sufficiency` for the pre-check. Metrics with insufficient data fall back to industry defaults.
+
+### Relationship: Stochastic Parameters, Monte Carlo, and Conformal Prediction
+
+Three tiers with **deliberately separate** data sources:
+
+```
+Tier 1: Stochastic Parameters (source of truth)
+  ├── agent_stochastic_params table (per-TRM distributions)
+  ├── Entity *_dist columns (per-entity distributions)
+  └── Sources: SAP import → industry defaults → manual edit
+        ↓ feeds into
+Tier 2: Monte Carlo Simulation (scenario generation)
+  ├── Safety stock calculation (sl_fitted, econ_optimal policies)
+  ├── Digital twin training data (SimPy simulation)
+  └── What-if scenario analysis
+        ↓ produces decisions that are validated by
+Tier 3: Conformal Prediction (distribution-free validation)
+  ├── Calibrated from REAL observations vs predictions (never simulated data)
+  ├── Provides coverage guarantees: P(actual ∈ interval) ≥ 1-α
+  └── CDT risk_bound on every TRM decision
+```
+
+**Why conformal prediction must NOT use Monte Carlo data**: Conformal prediction's entire value is its distribution-free guarantee — it makes no assumptions about the underlying data distribution. Calibrating from simulated data would make the guarantee circular (coverage is only as good as the simulation model). Conformal prediction must always calibrate from real observations.
+
+**How better stochastic parameters improve conformal intervals indirectly**: More accurate distributions (from SAP data) → more realistic Monte Carlo simulations → better TRM training data → more accurate TRM decisions → smaller prediction errors → tighter conformal intervals. The improvement flows through the decision quality, not through the calibration data.
+
+**The `sl_conformal_fitted` hybrid** correctly bridges both worlds:
+- `sl_fitted` provides precision via Monte Carlo with fitted distributions
+- `conformal` provides distribution-free coverage guarantee from real prediction errors
+- Safety stock = `max(fitted_ss, conformal_ss)` — gets the best of both
+
+**Current integration status** (future work):
+
+| Consumer | Reads from | Status |
+|----------|-----------|--------|
+| `inventory_target_calculator` (sl_fitted) | Re-fits from raw data via `DistributionFitter` | Should optionally use `agent_stochastic_params` when admin-curated |
+| `StochasticSampler` (supply planning) | Entity-level `*_dist` columns | Aligned (both populated from SAP/defaults) |
+| TRM agent training (digital twin) | Not yet wired | Should sample from `agent_stochastic_params` during curriculum generation |
+| TRM agent inference | Not yet wired | Should load distributions as state features |
+| Conformal prediction | Real observations only | Correct by design — no changes needed |
+| CDT calibration | Decision-outcome pairs from `powell_*_decisions` | Correct by design — no changes needed |
+
 ---
 
 ## Operational vs. Control Variables

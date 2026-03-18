@@ -81,7 +81,7 @@ const GNNDirectiveReview = () => {
     try {
       const [allRes, pendingRes, effRes] = await Promise.all([
         api.get('/site-agent/gnn/directives'),
-        api.get('/site-agent/gnn/directives', { params: { status: 'PROPOSED' } }),
+        api.get('/site-agent/gnn/directives', { params: { status: 'INFORMED' } }),
         api.get('/site-agent/gnn/override-effectiveness'),
       ]);
       setDirectives(allRes.data || []);
@@ -96,8 +96,8 @@ const GNNDirectiveReview = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const pendingDirectives = directives.filter((d) => d.status === 'PROPOSED');
-  const acceptedCount = directives.filter((d) => d.status === 'ACCEPTED').length;
+  const pendingDirectives = directives.filter((d) => d.status === 'INFORMED');
+  const actionedCount = directives.filter((d) => d.status === 'ACTIONED').length;
   const overriddenCount = directives.filter((d) => d.status === 'OVERRIDDEN').length;
   const beneficialRate = effectiveness?.beneficial_rate;
 
@@ -171,8 +171,8 @@ const GNNDirectiveReview = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <H4>GNN Directive Review</H4>
-          <Text className="text-muted-foreground">Review and act on GNN-generated site directives</Text>
+          <H4>Network Agent Directive Review</H4>
+          <Text className="text-muted-foreground">Review and act on AI-generated site directives</Text>
         </div>
         <Button variant="outline" onClick={fetchData} disabled={loading} leftIcon={<RefreshCw className="h-4 w-4" />}>
           Refresh
@@ -185,7 +185,7 @@ const GNNDirectiveReview = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard icon={Clock} iconBg="bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-400" label="Pending Review" value={pendingCount}
           badge={pendingCount > 0 ? <Badge variant="warning" size="sm">Action Needed</Badge> : null} />
-        <SummaryCard icon={CheckCircle} iconBg="bg-emerald-100 dark:bg-emerald-900 text-emerald-600 dark:text-emerald-400" label="Accepted" value={acceptedCount} />
+        <SummaryCard icon={CheckCircle} iconBg="bg-emerald-100 dark:bg-emerald-900 text-emerald-600 dark:text-emerald-400" label="Actioned" value={actionedCount} />
         <SummaryCard icon={Edit3} iconBg="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400" label="Overridden" value={overriddenCount} />
         <SummaryCard icon={BarChart3} iconBg="bg-violet-100 dark:bg-violet-900 text-violet-600 dark:text-violet-400" label="Override Effectiveness"
           value={beneficialRate != null ? `${Math.round(beneficialRate)}%` : '-'}
@@ -232,20 +232,16 @@ const GNNDirectiveReview = () => {
                           ) : '-'}
                         </TableCell>
                         <TableCell className="text-sm max-w-[250px] truncate">{formatKeyValues(d.proposed_values)}</TableCell>
-                        <TableCell><Badge variant="warning" size="sm">PROPOSED</Badge></TableCell>
+                        <TableCell><Badge variant="warning" size="sm">INFORMED</Badge></TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
-                            <Button size="sm" variant="outline" onClick={() => handleReview(d, 'ACCEPTED')} disabled={actionLoading === d.id}
+                            <Button size="sm" variant="outline" onClick={() => handleReview(d, 'ACTIONED')} disabled={actionLoading === d.id}
                               className="text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950">
                               <CheckCircle className="h-3.5 w-3.5 mr-1" />Accept
                             </Button>
                             <Button size="sm" variant="outline" onClick={() => handleOverrideOpen(d)} disabled={actionLoading === d.id}
                               className="text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950">
                               <Edit3 className="h-3.5 w-3.5 mr-1" />Override
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => handleReview(d, 'REJECTED')} disabled={actionLoading === d.id}
-                              className="text-red-600 border-red-300 hover:bg-red-50 dark:hover:bg-red-950">
-                              <XCircle className="h-3.5 w-3.5 mr-1" />Reject
                             </Button>
                             <Button size="sm" variant="ghost" onClick={() => handleAskWhy(d)} disabled={actionLoading === d.id}>
                               <HelpCircle className="h-3.5 w-3.5 mr-1" />Ask Why
@@ -348,8 +344,8 @@ const GNNDirectiveReview = () => {
                       {Object.entries(effectiveness.by_status).map(([status, count]) => (
                         <div key={status} className="flex items-center gap-1.5 text-sm">
                           <Badge size="sm" variant={
-                            status === 'PROPOSED' ? 'warning' : status === 'ACCEPTED' ? 'success'
-                            : status === 'OVERRIDDEN' ? 'info' : status === 'REJECTED' ? 'destructive' : 'secondary'
+                            status === 'INFORMED' ? 'warning' : status === 'ACTIONED' ? 'success'
+                            : status === 'OVERRIDDEN' ? 'info' : status === 'INSPECTED' ? 'secondary' : 'secondary'
                           }>{status}</Badge>
                           <span className="font-medium">{count}</span>
                         </div>

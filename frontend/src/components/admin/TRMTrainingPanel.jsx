@@ -200,9 +200,9 @@ const TRMTrainingPanel = () => {
 
   return (
     <div>
-      <H5 className="mb-2">TRM Model Training</H5>
+      <H5 className="mb-2">AI Agent Training</H5>
       <Text className="text-muted-foreground mb-4">
-        Train Tiny Recursive Models using curriculum learning. The model will learn progressively
+        Train AI agents using curriculum learning. The model will learn progressively
         from simple single-node scenarios to complex multi-echelon supply chains.
       </Text>
 
@@ -225,7 +225,7 @@ const TRMTrainingPanel = () => {
             <li><strong>Start Training</strong>: Model learns progressively from simple to complex</li>
             <li><strong>Monitor Progress</strong>: Watch train/val loss decrease across phases</li>
             <li><strong>Complete Training</strong>: All 5 phases for best generalization</li>
-            <li><strong>Use Model</strong>: TRM provides fast (&lt;10ms) per-node decisions</li>
+            <li><strong>Use Model</strong>: AI agent provides fast (&lt;10ms) per-node decisions</li>
           </ol>
           <p className="text-xs text-muted-foreground mt-3">
             <strong>Architecture:</strong> 7M parameter transformer with 3-step recursive refinement for optimal ordering decisions

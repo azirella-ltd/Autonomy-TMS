@@ -128,6 +128,7 @@ class SAPConnectionConfig:
     validation_message: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    file_table_mapping: Optional[list] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -161,6 +162,7 @@ class SAPConnectionConfig:
             "validation_message": self.validation_message,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "file_table_mapping": self.file_table_mapping,
         }
 
     @classmethod
@@ -196,6 +198,7 @@ class SAPConnectionConfig:
             validation_message=row.validation_message,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            file_table_mapping=getattr(row, "file_table_mapping", None),
         )
 
 
@@ -416,6 +419,18 @@ STANDARD_SAP_TABLES = {
             "aws_sc_entity": "production_order_line",
             "key_fields": ["AUFNR", "POSNR"],
         },
+        "AFVC": {
+            "description": "Production Order Operations (routing steps)",
+            "priority": 2,
+            "aws_sc_entity": "production_process",
+            "key_fields": ["AUFPL", "APLZL"],
+        },
+        "AFRU": {
+            "description": "Production Order Confirmations (actual times/quantities)",
+            "priority": 2,
+            "aws_sc_entity": "production_order_line",
+            "key_fields": ["RUESSION", "AUFNR"],
+        },
         "STPO": {
             "description": "Bill of Materials Item",
             "priority": 1,
@@ -433,6 +448,88 @@ STANDARD_SAP_TABLES = {
             "priority": 3,
             "aws_sc_entity": "allocation",
             "key_fields": ["RSNUM", "RSPOS"],
+        },
+        # Goods movements (in-transit visibility)
+        "MKPF": {
+            "description": "Material Document Header (goods movement posting)",
+            "priority": 2,
+            "aws_sc_entity": "shipment",
+            "key_fields": ["MBLNR", "MJAHR"],
+        },
+        "MSEG": {
+            "description": "Material Document Item (individual goods movements)",
+            "priority": 2,
+            "aws_sc_entity": "shipment_line",
+            "key_fields": ["MBLNR", "MJAHR", "ZEESSION"],
+        },
+        # SO schedule lines (ATP promised dates)
+        "VBEP": {
+            "description": "Sales Order Schedule Lines (promised delivery dates)",
+            "priority": 2,
+            "aws_sc_entity": "outbound_order_line",
+            "key_fields": ["VBELN", "POSNR", "ETENR"],
+        },
+        # PO history (goods receipts, invoice receipts — vendor performance)
+        "EKBE": {
+            "description": "Purchase Order History (GR/IR for vendor performance)",
+            "priority": 2,
+            "aws_sc_entity": "inbound_order_line",
+            "key_fields": ["EBELN", "EBELP", "ZEESSION"],
+        },
+        # Pricing conditions
+        "KONV": {
+            "description": "Pricing Conditions (contract prices, discounts, surcharges)",
+            "priority": 3,
+            "aws_sc_entity": "vendor_product",
+            "key_fields": ["KNUMV", "KPOSN", "STUNR", "ZAESSION"],
+        },
+        # Work center cost assignments
+        "CRCO": {
+            "description": "Work Center Cost Assignments (cost rates)",
+            "priority": 3,
+            "aws_sc_entity": "production_process",
+            "key_fields": ["OBJID", "VEESSION"],
+        },
+        # Quality inspection results detail
+        "QASE": {
+            "description": "Quality Inspection Results (characteristic-level)",
+            "priority": 3,
+            "aws_sc_entity": "quality_order",
+            "key_fields": ["PRUESSION", "VESSION"],
+        },
+        # Sales data per product/sales org
+        "MVKE": {
+            "description": "Material Sales Data (pricing group, item category)",
+            "priority": 3,
+            "aws_sc_entity": "product",
+            "key_fields": ["MATNR", "VKORG", "VTWEG"],
+        },
+        # Customer sales data
+        "KNVV": {
+            "description": "Customer Sales Data (customer group, currency)",
+            "priority": 3,
+            "aws_sc_entity": "trading_partner",
+            "key_fields": ["KUNNR", "VKORG", "VTWEG", "SPART"],
+        },
+        # Planned orders from MRP
+        "PLAF": {
+            "description": "MRP Planned Orders (planned POs, MOs, TOs)",
+            "priority": 2,
+            "aws_sc_entity": "supply_plan",
+            "key_fields": ["PLNUM"],
+        },
+        # Change document audit trail
+        "CDHDR": {
+            "description": "Change Document Headers (master data change audit)",
+            "priority": 3,
+            "aws_sc_entity": None,
+            "key_fields": ["OBJECTCLAS", "OBJECTID", "CHANGENR"],
+        },
+        "CDPOS": {
+            "description": "Change Document Items (field-level changes)",
+            "priority": 3,
+            "aws_sc_entity": None,
+            "key_fields": ["OBJECTCLAS", "OBJECTID", "CHANGENR", "TABNAME", "FNAME"],
         },
         # Transfer Orders
         "LTAK": {
@@ -1098,55 +1195,25 @@ class SAPDeploymentService:
                     await self.db.commit()
                     return False, row.validation_message
 
-            elif method == ConnectionMethod.RFC:
-                # TODO: Use S4HANAConnector to test RFC connection
-                row.is_validated = True
-                row.last_validated_at = datetime.utcnow()
-                row.validation_message = "RFC connection successful (simulated)"
-                await self.db.commit()
-                return True, "RFC connection successful"
-
-            elif method == ConnectionMethod.ODATA:
-                # TODO: HTTP HEAD to odata_base_path
-                row.is_validated = True
-                row.last_validated_at = datetime.utcnow()
-                row.validation_message = "OData connection successful (simulated)"
-                await self.db.commit()
-                return True, "OData connection successful"
-
-            elif method == ConnectionMethod.HANA_DB:
-                import asyncio
+            elif method in (ConnectionMethod.RFC, ConnectionMethod.ODATA, ConnectionMethod.HANA_DB):
+                # Use unified extractors for real connection testing
+                from app.integrations.sap.extractors import create_extractor
                 password = _decrypt_password(row.sap_password_encrypted) if row.sap_password_encrypted else ""
-                hana_port = getattr(row, "hana_port", None) or 30215
-                hana_schema = getattr(row, "hana_schema", None) or "SAPHANADB"
-
-                def _test_hana():
-                    from hdbcli import dbapi
-                    conn = dbapi.connect(
-                        address=row.hostname,
-                        port=hana_port,
-                        user=row.sap_user,
-                        password=password,
-                    )
-                    cur = conn.cursor()
-                    cur.execute(f"SELECT COUNT(*) FROM {hana_schema}.T001W")
-                    count = cur.fetchone()[0]
-                    conn.close()
-                    return count
+                connection = SAPConnectionConfig.from_db(row)
 
                 try:
-                    plant_count = await asyncio.to_thread(_test_hana)
-                    msg = f"HANA DB connection successful ({plant_count} plants in {hana_schema}.T001W)"
-                    row.is_validated = True
+                    extractor = create_extractor(connection, password)
+                    success, msg = await extractor.test_connection()
+                    row.is_validated = success
                     row.last_validated_at = datetime.utcnow()
                     row.validation_message = msg
                     await self.db.commit()
-                    return True, msg
-                except ImportError:
+                    return success, msg
+                except ImportError as e:
                     row.is_validated = False
-                    row.validation_message = "hdbcli package not installed (pip install hdbcli)"
+                    row.validation_message = str(e)
                     await self.db.commit()
-                    return False, row.validation_message
+                    return False, str(e)
 
             else:
                 return False, f"Connection method not yet supported: {method.value}"
@@ -1192,7 +1259,11 @@ class SAPDeploymentService:
         tables = []
 
         # Get standard tables for this system type
-        standard_tables = STANDARD_SAP_TABLES.get(config.system_type.value, {})
+        # ECC uses the same tables as S/4HANA (predecessor system)
+        sys_key = config.system_type.value
+        if sys_key in ("ecc", "bw") and sys_key not in STANDARD_SAP_TABLES:
+            sys_key = "s4hana"
+        standard_tables = STANDARD_SAP_TABLES.get(sys_key, {})
 
         for table_name, table_info in standard_tables.items():
             table_config = SAPTableConfig(

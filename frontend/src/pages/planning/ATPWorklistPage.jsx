@@ -12,6 +12,7 @@
  * Adaptive Decision Hierarchy: Execution layer, VFA policy class.
  */
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
@@ -162,7 +163,7 @@ const ATP_OVERRIDE_FIELDS = [
       { value: 'DEFER', label: 'DEFER \u2014 Reschedule to later date' },
       { value: 'REJECT', label: 'REJECT \u2014 Cannot fulfill this order' },
     ],
-    helperText: 'Select the fulfillment action to apply instead of the TRM recommendation.',
+    helperText: 'Select the fulfillment action to apply instead of the agent recommendation.',
   },
 ];
 
@@ -186,7 +187,7 @@ const computeSummaryCards = (decisions) => {
   }
 
   // Pending: count of PROPOSED status
-  const pendingCount = decisions.filter((d) => d.status === 'PROPOSED').length;
+  const pendingCount = decisions.filter((d) => d.status === 'INFORMED').length;
 
   // Fill Rate: percentage of FULFILL decisions among those with a recommendation
   const withAction = decisions.filter((d) => d.recommended_action);
@@ -203,9 +204,9 @@ const computeSummaryCards = (decisions) => {
     ? ((confidences.reduce((sum, c) => sum + c, 0) / confidences.length) * 100).toFixed(1)
     : null;
 
-  // Override Rate: percentage of OVERRIDDEN among total actioned (non-PROPOSED)
+  // Override Rate: percentage of OVERRIDDEN among total actioned (non-INFORMED)
   const actioned = decisions.filter(
-    (d) => d.status !== 'PROPOSED' && d.status !== 'REVIEWED'
+    (d) => d.status !== 'INFORMED'
   );
   const overriddenCount = actioned.filter((d) => d.status === 'OVERRIDDEN').length;
   const overrideRate = actioned.length > 0
@@ -251,11 +252,16 @@ const computeSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const ATPWorklistPage = () => {
+  const location = useLocation();
   const { hasCapability, loading: capLoading } = useCapabilities();
   const { user } = useAuth();
 
   // Resolve configId from user's organization (TRM decisions endpoint uses tenant_id)
   const [configId, setConfigId] = useState(user?.tenant_id || null);
+
+  // Hydrate status filter from Talk To Me query routing
+  const locationFilters = location.state?.filters;
+  const initialStatusFilter = locationFilters?.status;
 
   useEffect(() => {
     if (user?.tenant_id) setConfigId(user.tenant_id);
@@ -297,6 +303,7 @@ const ATPWorklistPage = () => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

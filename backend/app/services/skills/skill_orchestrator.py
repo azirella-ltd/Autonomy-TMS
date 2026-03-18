@@ -67,7 +67,7 @@ class SkillOrchestrator:
         decision_memory_service=None,
         tenant_id: Optional[int] = None,
     ):
-        self._client = claude_client or ClaudeClient()
+        self._client = claude_client or ClaudeClient(purpose="skills")
         self._decision_memory = decision_memory_service
         self._tenant_id = tenant_id
         # Cache loaded SKILL.md prompts (they don't change at runtime)

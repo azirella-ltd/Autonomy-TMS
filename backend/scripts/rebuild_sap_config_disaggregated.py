@@ -1,0 +1,721 @@
+#!/usr/bin/env python3
+"""
+Rebuild SAP FAA config with disaggregated (individual) customer/supplier sites.
+
+Fixes three problems with the current config 82 ("Country Template IT SC Network"):
+1. Customers were aggregated into regional buckets (DEMAND_AMERICAS, DEMAND_EUROPE, etc.)
+   → Creates individual customer sites (one per active customer from sales orders)
+2. Suppliers were aggregated into regional buckets (SUPPLY_US, SUPPLY_EUROPE, etc.)
+   → Creates individual vendor sites (one per active vendor from purchase orders)
+3. Only 185 of 2790 products had inventory policies
+   → Creates abs_level inventory policies for ALL products at the manufacturing site
+
+Data source: SAP S/4HANA FAA (IDES) extract at imports/sap_faa_extract/
+Primary plant: 1710 (Plant 1 US, Palo Alto) — the only plant with transactional data
+
+Usage:
+    # Run inside Docker container:
+    docker compose exec backend python scripts/rebuild_sap_config_disaggregated.py
+
+    # Or locally:
+    python scripts/rebuild_sap_config_disaggregated.py [--config-id 82] [--dry-run]
+"""
+
+import argparse
+import csv
+import os
+import sys
+from collections import defaultdict, Counter
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+# Add backend to path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
+
+os.environ.setdefault("DATABASE_TYPE", "postgresql")
+
+# ---------------------------------------------------------------------------
+# CSV helpers
+# ---------------------------------------------------------------------------
+
+def read_csv(csv_dir: Path, filename: str) -> List[Dict[str, str]]:
+    """Read a CSV file, return list of dicts. Returns [] if missing."""
+    path = csv_dir / filename
+    if not path.exists():
+        print(f"  SKIP {filename} (not found)")
+        return []
+    with open(path, "r", encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    print(f"  READ {filename}: {len(rows)} rows")
+    return rows
+
+
+def safe_float(val: str, default: float = 0.0) -> float:
+    try:
+        return float(val) if val else default
+    except (ValueError, TypeError):
+        return default
+
+
+def strip_zeros(val: str) -> str:
+    if val and val.isdigit():
+        return val.lstrip("0") or "0"
+    return val.strip() if val else val
+
+
+# ---------------------------------------------------------------------------
+# Main rebuild
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(description="Rebuild SAP config with individual sites")
+    parser.add_argument("--config-id", type=int, default=82, help="Config ID to rebuild")
+    parser.add_argument("--csv-dir", type=str, default="imports/sap_faa_extract",
+                        help="Directory with SAP CSV extracts")
+    parser.add_argument("--plant", type=str, default="1710",
+                        help="Primary SAP plant code (default: 1710)")
+    parser.add_argument("--dry-run", action="store_true", help="Print plan without modifying DB")
+    args = parser.parse_args()
+
+    csv_dir = Path(args.csv_dir)
+    if not csv_dir.exists():
+        # Try relative to project root
+        csv_dir = Path(__file__).resolve().parent.parent / args.csv_dir
+    if not csv_dir.exists():
+        print(f"ERROR: CSV directory not found: {csv_dir}")
+        sys.exit(1)
+
+    print(f"\n{'='*70}")
+    print(f"Rebuild SAP Config (Disaggregated)")
+    print(f"  Config ID: {args.config_id}")
+    print(f"  CSV dir:   {csv_dir}")
+    print(f"  Plant:     {args.plant}")
+    print(f"  Dry run:   {args.dry_run}")
+    print(f"{'='*70}\n")
+
+    # -----------------------------------------------------------------------
+    # 1. Load SAP CSV data
+    # -----------------------------------------------------------------------
+    print("Phase 1: Loading SAP CSV data...")
+    t001w = read_csv(csv_dir, "T001W.csv")
+    kna1 = read_csv(csv_dir, "KNA1.csv")
+    lfa1 = read_csv(csv_dir, "LFA1.csv")
+    marc = read_csv(csv_dir, "MARC.csv")
+    makt = read_csv(csv_dir, "MAKT.csv")
+    mara = read_csv(csv_dir, "MARA.csv")
+    mard = read_csv(csv_dir, "MARD.csv")
+    vbak = read_csv(csv_dir, "VBAK.csv")
+    vbap = read_csv(csv_dir, "VBAP.csv")
+    ekko = read_csv(csv_dir, "EKKO.csv")
+    ekpo = read_csv(csv_dir, "EKPO.csv")
+    afko = read_csv(csv_dir, "AFKO.csv")
+
+    PRIMARY = args.plant
+
+    # -----------------------------------------------------------------------
+    # 2. Identify active entities for this plant
+    # -----------------------------------------------------------------------
+    print(f"\nPhase 2: Identifying active entities for plant {PRIMARY}...")
+
+    # Build lookup maps first (needed for filtering)
+    makt_map = {}
+    for r in makt:
+        mat = r.get("MATNR", "")
+        if mat and mat not in makt_map:
+            makt_map[mat] = r.get("MAKTX", mat)
+
+    mara_map = {}
+    for r in mara:
+        mat = r.get("MATNR", "")
+        if mat:
+            mara_map[mat] = r
+
+    # Materials at this plant — filter to physical products with transactional data
+    marc_plant = [r for r in marc if r.get("WERKS") == PRIMARY]
+    all_materials_at_plant = {r["MATNR"] for r in marc_plant}
+    print(f"  All materials at plant {PRIMARY}: {len(all_materials_at_plant)}")
+
+    # Exclude non-physical material types (services, packaging, vehicles, etc.)
+    EXCLUDE_MTART = {"SERV", "DIEN", "NLAG", "VERP", "LEIH", "PIPE", "VEHI", "SWNV", "UNSF", "UNFR"}
+    physical_materials = set()
+    for mat in all_materials_at_plant:
+        mara_row = mara_map.get(mat, {})
+        mtart = mara_row.get("MTART", "") if isinstance(mara_row, dict) else ""
+        if mtart not in EXCLUDE_MTART:
+            physical_materials.add(mat)
+
+    # Further filter to materials with actual orders (sales or purchase)
+    vbap_mats = {r.get("MATNR") for r in vbap if r.get("WERKS") == PRIMARY}
+    ekpo_mats = {r.get("MATNR") for r in ekpo if r.get("WERKS") == PRIMARY}
+    ordered_materials = vbap_mats | ekpo_mats
+    materials = physical_materials & ordered_materials
+    print(f"  Physical materials: {len(physical_materials)}")
+    print(f"  Materials with orders: {len(ordered_materials & all_materials_at_plant)}")
+    print(f"  Final product set (physical + ordered): {len(materials)}")
+
+    # Active customers (from sales orders targeting this plant)
+    vbap_plant = [r for r in vbap if r.get("WERKS") == PRIMARY]
+    vbeln_to_kunnr = {r["VBELN"]: r.get("KUNNR", "") for r in vbak}
+    customer_order_counts: Counter = Counter()
+    customer_materials: Dict[str, Set[str]] = defaultdict(set)
+    for r in vbap_plant:
+        kunnr = vbeln_to_kunnr.get(r.get("VBELN", ""), "")
+        if kunnr:
+            customer_order_counts[kunnr] += 1
+            customer_materials[kunnr].add(r.get("MATNR", ""))
+    print(f"  Active customers: {len(customer_order_counts)}")
+
+    # Customer master lookup
+    kna1_map = {}
+    for r in kna1:
+        k = r.get("KUNNR", "")
+        if k and k not in kna1_map:
+            kna1_map[k] = r
+
+    # Active vendors (from POs targeting this plant)
+    ekpo_plant = [r for r in ekpo if r.get("WERKS") == PRIMARY]
+    ebeln_to_lifnr = {r["EBELN"]: r.get("LIFNR", "") for r in ekko}
+    vendor_po_counts: Counter = Counter()
+    vendor_materials: Dict[str, Set[str]] = defaultdict(set)
+    for r in ekpo_plant:
+        lifnr = ebeln_to_lifnr.get(r.get("EBELN", ""), "")
+        if lifnr:
+            vendor_po_counts[lifnr] += 1
+            vendor_materials[lifnr].add(r.get("MATNR", ""))
+    print(f"  Active vendors: {len(vendor_po_counts)}")
+
+    # Production indicator (BESKZ): E = in-house, F = external procurement
+    mat_beskz = {}
+    for r in marc_plant:
+        mat_beskz[r["MATNR"]] = r.get("BESKZ", "")
+
+    # Safety stock from MARC
+    mat_eisbe = {}
+    mat_minbe = {}
+    for r in marc_plant:
+        mat = r["MATNR"]
+        mat_eisbe[mat] = safe_float(r.get("EISBE", "0"))
+        mat_minbe[mat] = safe_float(r.get("MINBE", "0"))
+
+    # Stock levels from MARD
+    mat_stock = defaultdict(float)
+    for r in mard:
+        if r.get("WERKS") == PRIMARY:
+            mat_stock[r["MATNR"]] += safe_float(r.get("LABST", "0"))
+
+    # Check for secondary plant (1720 in the US case)
+    secondary_plants = set()
+    for r in t001w:
+        werks = r.get("WERKS", "")
+        if werks != PRIMARY and werks.startswith(PRIMARY[:2]):
+            secondary_plants.add(werks)
+    print(f"  Secondary plants (same country prefix): {secondary_plants or 'none'}")
+
+    # -----------------------------------------------------------------------
+    # 3. Print summary
+    # -----------------------------------------------------------------------
+    print(f"\n{'='*70}")
+    print(f"REBUILD PLAN")
+    print(f"{'='*70}")
+
+    # Plant info
+    plant_info = next((r for r in t001w if r.get("WERKS") == PRIMARY), {})
+    plant_name = plant_info.get("NAME1", f"Plant {PRIMARY}")
+    plant_country = plant_info.get("LAND1", "??")
+    plant_city = plant_info.get("ORT01", "")
+    print(f"\n  Internal Sites:")
+    print(f"    {PRIMARY}: {plant_name} ({plant_city}, {plant_country}) — MANUFACTURER")
+    for sp in sorted(secondary_plants):
+        sp_info = next((r for r in t001w if r.get("WERKS") == sp), {})
+        print(f"    {sp}: {sp_info.get('NAME1', sp)} ({sp_info.get('ORT01', '')}, {sp_info.get('LAND1', '')}) — INVENTORY")
+
+    print(f"\n  Customer Sites ({len(customer_order_counts)} individual, NO aggregation):")
+    for cust_id, count in customer_order_counts.most_common():
+        info = kna1_map.get(cust_id, {})
+        name = info.get("NAME1", cust_id)
+        country = info.get("LAND1", "?")
+        city = info.get("ORT01", "")
+        n_mats = len(customer_materials.get(cust_id, set()))
+        print(f"    CUST-{cust_id}: {name} ({city}, {country}) — {count} order lines, {n_mats} products")
+
+    # Vendor master lookup
+    lfa1_map = {}
+    for r in lfa1:
+        v = r.get("LIFNR", "")
+        if v and v not in lfa1_map:
+            lfa1_map[v] = r
+
+    print(f"\n  Vendor Sites ({len(vendor_po_counts)} individual, NO aggregation):")
+    for v_id, count in vendor_po_counts.most_common():
+        info = lfa1_map.get(v_id, {})
+        name = info.get("NAME1", v_id)
+        country = info.get("LAND1", "?")
+        city = info.get("ORT01", "")
+        n_mats = len(vendor_materials.get(v_id, set()))
+        print(f"    VEND-{v_id}: {name} ({city}, {country}) — {count} PO lines, {n_mats} products")
+
+    print(f"\n  Products: {len(materials)} total")
+    n_manufactured = sum(1 for m in materials if mat_beskz.get(m) == "E")
+    n_procured = sum(1 for m in materials if mat_beskz.get(m) == "F")
+    print(f"    Manufactured (BESKZ=E): {n_manufactured}")
+    print(f"    Procured (BESKZ=F): {n_procured}")
+    print(f"    Other: {len(materials) - n_manufactured - n_procured}")
+
+    n_with_ss = sum(1 for m in materials if mat_eisbe.get(m, 0) > 0 or mat_minbe.get(m, 0) > 0)
+    print(f"\n  Inventory Policies:")
+    print(f"    Products with SAP safety stock/reorder point: {n_with_ss}")
+    print(f"    Products needing default policy: {len(materials) - n_with_ss}")
+    print(f"    TOTAL policies to create: {len(materials)} (one per product at plant)")
+
+    if args.dry_run:
+        print(f"\n  DRY RUN — no database changes made.")
+        return
+
+    # -----------------------------------------------------------------------
+    # 4. Connect to database and rebuild
+    # -----------------------------------------------------------------------
+    print(f"\nPhase 3: Rebuilding config {args.config_id} in database...")
+
+    from app.db.session import sync_session_factory
+    from sqlalchemy import text
+
+    session = sync_session_factory()
+
+    try:
+        config_id = args.config_id
+
+        # Verify config exists
+        row = session.execute(
+            text("SELECT id, name, tenant_id FROM supply_chain_configs WHERE id = :cid"),
+            {"cid": config_id},
+        ).fetchone()
+        if not row:
+            print(f"ERROR: Config {config_id} not found")
+            return
+        tenant_id = row[2]
+        print(f"  Config: {row[1]} (tenant_id={tenant_id})")
+
+        new_name = f"SAP IDES {PRIMARY} — {plant_name}"
+        print(f"  Will rename to: {new_name}")
+
+        # ---------------------------------------------------------------
+        # 4a. Delete existing sites, products, lanes, policies, etc.
+        # ---------------------------------------------------------------
+        print("  Deleting existing entities...")
+
+        # Use raw connection with a simple, reliable deletion approach.
+        # Temporarily disable FK checks, delete everything, re-enable.
+        from sqlalchemy import create_engine
+        engine = session.get_bind()
+        raw_conn = engine.raw_connection()
+        cur = raw_conn.cursor()
+        try:
+            # Collect site IDs and product IDs before deletion
+            cur.execute("SELECT id FROM site WHERE config_id = %s", (config_id,))
+            old_site_ids = [r[0] for r in cur.fetchall()]
+
+            cur.execute("SELECT id FROM product WHERE config_id = %s", (config_id,))
+            old_product_ids = [r[0] for r in cur.fetchall()]
+
+            # Disable FK triggers temporarily (requires superuser or table owner)
+            # Alternative: delete in correct order using explicit queries
+            tables_to_clean = []
+
+            # 1. Delete all rows from tables with config_id
+            cur.execute("""
+                SELECT table_name FROM information_schema.columns
+                WHERE column_name = 'config_id' AND table_schema = 'public'
+                  AND table_name != 'supply_chain_configs'
+                ORDER BY table_name
+            """)
+            config_tables = [r[0] for r in cur.fetchall()]
+
+            # 2. Delete product_bom via product FK
+            if old_product_ids:
+                pid_list = ",".join(["%s"] * len(old_product_ids))
+                cur.execute(f"DELETE FROM product_bom WHERE product_id IN ({pid_list}) OR component_product_id IN ({pid_list})",
+                           old_product_ids + old_product_ids)
+                if cur.rowcount > 0:
+                    print(f"    Deleted {cur.rowcount} rows from product_bom")
+
+            # 3. Delete site-referencing tables (that don't have config_id)
+            if old_site_ids:
+                sid_list = ",".join(["%s"] * len(old_site_ids))
+                # Find all tables that have site_id, from_site_id, or to_site_id columns
+                for col_name in ["site_id", "from_site_id", "to_site_id", "ship_from_site_id"]:
+                    cur.execute("""
+                        SELECT DISTINCT table_name FROM information_schema.columns
+                        WHERE column_name = %s AND table_schema = 'public'
+                    """, (col_name,))
+                    ref_tables = [r[0] for r in cur.fetchall()]
+                    for table in ref_tables:
+                        if table == "site":
+                            continue
+                        try:
+                            cur.execute(f"DELETE FROM {table} WHERE {col_name} IN ({sid_list})", old_site_ids)
+                            if cur.rowcount > 0:
+                                print(f"    Deleted {cur.rowcount} rows from {table} (via {col_name})")
+                        except Exception as e:
+                            raw_conn.rollback()
+                            cur = raw_conn.cursor()
+
+            # 4. Delete all config_id tables (except site and product — do last)
+            for table in config_tables:
+                if table in ("site", "product"):
+                    continue
+                try:
+                    cur.execute(f"DELETE FROM {table} WHERE config_id = %s", (config_id,))
+                    if cur.rowcount > 0:
+                        print(f"    Deleted {cur.rowcount} rows from {table}")
+                except Exception:
+                    raw_conn.rollback()
+                    cur = raw_conn.cursor()
+
+            # 5. Delete product
+            cur.execute("DELETE FROM product WHERE config_id = %s", (config_id,))
+            if cur.rowcount > 0:
+                print(f"    Deleted {cur.rowcount} rows from product")
+
+            # 6. Delete site
+            cur.execute("DELETE FROM site WHERE config_id = %s", (config_id,))
+            if cur.rowcount > 0:
+                print(f"    Deleted {cur.rowcount} rows from site")
+
+            # Update config name
+            cur.execute("UPDATE supply_chain_configs SET name = %s WHERE id = %s", (new_name, config_id))
+
+            raw_conn.commit()
+            print("  Deletion complete.")
+        except Exception as e:
+            raw_conn.rollback()
+            raise RuntimeError(f"Deletion failed: {e}") from e
+        finally:
+            cur.close()
+            raw_conn.close()
+
+        # Reopen session for inserts
+        session = sync_session_factory()
+
+        # ---------------------------------------------------------------
+        # 4b. Create internal sites (plants)
+        # ---------------------------------------------------------------
+        print("  Creating internal sites...")
+
+        site_ids = {}  # key -> DB id
+
+        # Primary manufacturing plant
+        session.execute(
+            text("""
+                INSERT INTO site (config_id, name, type, dag_type, master_type, priority, order_aging, is_external, company_id, attributes)
+                VALUES (:cid, :name, :type, 'MANUFACTURER', 'MANUFACTURER', 1, 0, false, :company, :attrs)
+            """),
+            {
+                "cid": config_id,
+                "name": PRIMARY,
+                "type": plant_name,
+                "company": f"CC_{PRIMARY}",
+                "attrs": f'{{"sap_plant": "{PRIMARY}", "city": "{plant_city}", "country": "{plant_country}"}}',
+            },
+        )
+        session.flush()
+        site_ids[PRIMARY] = session.execute(
+            text("SELECT id FROM site WHERE config_id = :cid AND name = :name"),
+            {"cid": config_id, "name": PRIMARY},
+        ).scalar()
+        print(f"    Created {PRIMARY}: {plant_name} (id={site_ids[PRIMARY]})")
+
+        # Secondary plants
+        for sp in sorted(secondary_plants):
+            sp_info = next((r for r in t001w if r.get("WERKS") == sp), {})
+            sp_name = sp_info.get("NAME1", f"Plant {sp}")
+            sp_city = sp_info.get("ORT01", "")
+            sp_country = sp_info.get("LAND1", "")
+            session.execute(
+                text("""
+                    INSERT INTO site (config_id, name, type, dag_type, master_type, priority, order_aging, is_external, company_id, attributes)
+                    VALUES (:cid, :name, :type, 'DISTRIBUTION_CENTER', 'INVENTORY', 2, 0, false, :company, :attrs)
+                """),
+                {
+                    "cid": config_id,
+                    "name": sp,
+                    "type": sp_name,
+                    "company": f"CC_{PRIMARY}",
+                    "attrs": f'{{"sap_plant": "{sp}", "city": "{sp_city}", "country": "{sp_country}"}}',
+                },
+            )
+            session.flush()
+            site_ids[sp] = session.execute(
+                text("SELECT id FROM site WHERE config_id = :cid AND name = :name"),
+                {"cid": config_id, "name": sp},
+            ).scalar()
+            print(f"    Created {sp}: {sp_name} (id={site_ids[sp]})")
+
+        # ---------------------------------------------------------------
+        # 4c. Create individual customer sites
+        # ---------------------------------------------------------------
+        print("  Creating individual customer sites...")
+
+        for cust_id, count in customer_order_counts.most_common():
+            info = kna1_map.get(cust_id, {})
+            name = info.get("NAME1", cust_id)
+            country = info.get("LAND1", "US")
+            city = info.get("ORT01", "")
+            site_key = f"CUST-{cust_id}"
+
+            session.execute(
+                text("""
+                    INSERT INTO site (config_id, name, type, dag_type, master_type, priority, order_aging, is_external, tpartner_type, attributes)
+                    VALUES (:cid, :name, :type, 'CUSTOMER', 'CUSTOMER', 10, 0, true, 'customer', :attrs)
+                """),
+                {
+                    "cid": config_id,
+                    "name": site_key,
+                    "type": name,
+                    "attrs": f'{{"sap_customer": "{cust_id}", "city": "{city}", "country": "{country}", "order_lines": {count}}}',
+                },
+            )
+            session.flush()
+            site_ids[site_key] = session.execute(
+                text("SELECT id FROM site WHERE config_id = :cid AND name = :name"),
+                {"cid": config_id, "name": site_key},
+            ).scalar()
+
+        print(f"    Created {len(customer_order_counts)} customer sites")
+
+        # ---------------------------------------------------------------
+        # 4d. Create individual vendor sites
+        # ---------------------------------------------------------------
+        print("  Creating individual vendor sites...")
+
+        for v_id, count in vendor_po_counts.most_common():
+            info = lfa1_map.get(v_id, {})
+            name = info.get("NAME1", v_id)
+            country = info.get("LAND1", "US")
+            city = info.get("ORT01", "")
+            site_key = f"VEND-{v_id}"
+
+            session.execute(
+                text("""
+                    INSERT INTO site (config_id, name, type, dag_type, master_type, priority, order_aging, is_external, tpartner_type, attributes)
+                    VALUES (:cid, :name, :type, 'SUPPLIER', 'VENDOR', 10, 0, true, 'vendor', :attrs)
+                """),
+                {
+                    "cid": config_id,
+                    "name": site_key,
+                    "type": name,
+                    "attrs": f'{{"sap_vendor": "{v_id}", "city": "{city}", "country": "{country}", "po_lines": {count}}}',
+                },
+            )
+            session.flush()
+            site_ids[site_key] = session.execute(
+                text("SELECT id FROM site WHERE config_id = :cid AND name = :name"),
+                {"cid": config_id, "name": site_key},
+            ).scalar()
+
+        print(f"    Created {len(vendor_po_counts)} vendor sites")
+
+        # ---------------------------------------------------------------
+        # 4e. Create products
+        # ---------------------------------------------------------------
+        print(f"  Creating {len(materials)} products...")
+
+        product_count = 0
+        for mat_id in sorted(materials):
+            desc = makt_map.get(mat_id, mat_id)
+            mara_row = mara_map.get(mat_id, {})
+            prod_id = f"CFG{config_id}_{mat_id}"
+            beskz = mat_beskz.get(mat_id, "")
+            prod_type = "FERT" if beskz == "E" else ("ROH" if beskz == "F" else "HAWA")
+
+            unit_cost = safe_float(mara_row.get("STPRS", "0"))
+            if unit_cost == 0:
+                unit_cost = safe_float(mara_row.get("VERPR", "0"))
+            base_uom = mara_row.get("MEINS", "EA")
+
+            session.execute(
+                text("""
+                    INSERT INTO product (id, config_id, description, product_type, item_type, base_uom, unit_cost, is_active, source)
+                    VALUES (:pid, :cid, :desc, :ptype, :itype, :uom, :cost, 'Y', 'SAP_IDES')
+                """),
+                {
+                    "pid": prod_id,
+                    "cid": config_id,
+                    "desc": desc[:500],
+                    "ptype": prod_type,
+                    "itype": "material",
+                    "uom": base_uom[:20] if base_uom else "EA",
+                    "cost": unit_cost if unit_cost > 0 else 10.0,
+                },
+            )
+            product_count += 1
+
+        session.flush()
+        print(f"    Created {product_count} products")
+
+        # ---------------------------------------------------------------
+        # 4f. Create transportation lanes
+        # ---------------------------------------------------------------
+        print("  Creating transportation lanes...")
+
+        lane_count = 0
+
+        # Vendor → Plant lanes (procurement)
+        for v_id in vendor_po_counts:
+            site_key = f"VEND-{v_id}"
+            from_id = site_ids.get(site_key)
+            to_id = site_ids.get(PRIMARY)
+            if from_id and to_id:
+                session.execute(
+                    text("""
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_site_id, supply_lead_time, capacity)
+                        VALUES (:cid, :from_id, :to_id, '{"mean": 7, "std": 2, "distribution": "lognormal"}', 10000)
+                    """),
+                    {"cid": config_id, "from_id": from_id, "to_id": to_id},
+                )
+                lane_count += 1
+
+        # Plant → Plant lanes (if secondary plants exist)
+        for sp in secondary_plants:
+            from_id = site_ids.get(PRIMARY)
+            to_id = site_ids.get(sp)
+            if from_id and to_id:
+                session.execute(
+                    text("""
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_site_id, supply_lead_time, capacity)
+                        VALUES (:cid, :from_id, :to_id, '{"mean": 2, "std": 0.5, "distribution": "normal"}', 10000)
+                    """),
+                    {"cid": config_id, "from_id": from_id, "to_id": to_id},
+                )
+                lane_count += 1
+
+        # Plant → Customer lanes (distribution)
+        for cust_id in customer_order_counts:
+            site_key = f"CUST-{cust_id}"
+            from_id = site_ids.get(PRIMARY)
+            to_id = site_ids.get(site_key)
+            if from_id and to_id:
+                session.execute(
+                    text("""
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_site_id, supply_lead_time, capacity)
+                        VALUES (:cid, :from_id, :to_id, '{"mean": 3, "std": 1, "distribution": "lognormal"}', 10000)
+                    """),
+                    {"cid": config_id, "from_id": from_id, "to_id": to_id},
+                )
+                lane_count += 1
+
+        session.flush()
+        print(f"    Created {lane_count} transportation lanes")
+
+        # ---------------------------------------------------------------
+        # 4g. Create inventory policies for ALL products at plant
+        # ---------------------------------------------------------------
+        print(f"  Creating inventory policies for ALL {len(materials)} products at plant {PRIMARY}...")
+
+        plant_site_id = site_ids[PRIMARY]
+        policy_count = 0
+
+        for mat_id in sorted(materials):
+            prod_id = f"CFG{config_id}_{mat_id}"
+            eisbe = mat_eisbe.get(mat_id, 0)
+            minbe = mat_minbe.get(mat_id, 0)
+
+            # Use SAP safety stock if available, otherwise set a reasonable default
+            if eisbe > 0:
+                ss_qty = eisbe
+                rop = minbe if minbe > 0 else eisbe * 1.5
+                policy_source = "SAP_EISBE"
+            elif minbe > 0:
+                ss_qty = minbe * 0.5  # Reorder point as basis, safety stock = 50% of ROP
+                rop = minbe
+                policy_source = "SAP_MINBE"
+            else:
+                # Default: set safety stock based on product type
+                beskz = mat_beskz.get(mat_id, "")
+                if beskz == "E":  # Manufactured — higher buffer
+                    ss_qty = 50.0
+                    rop = 100.0
+                else:  # Procured or other
+                    ss_qty = 25.0
+                    rop = 50.0
+                policy_source = "DEFAULT"
+
+            session.execute(
+                text("""
+                    INSERT INTO inv_policy (config_id, site_id, product_id, ss_policy, ss_quantity,
+                                           reorder_point, service_level, review_period, is_active, source)
+                    VALUES (:cid, :sid, :pid, 'abs_level', :ss, :rop, 0.95, 7, 'Y', :src)
+                """),
+                {
+                    "cid": config_id,
+                    "sid": plant_site_id,
+                    "pid": prod_id,
+                    "ss": ss_qty,
+                    "rop": rop,
+                    "src": policy_source,
+                },
+            )
+            policy_count += 1
+
+        session.flush()
+        print(f"    Created {policy_count} inventory policies")
+
+        # ---------------------------------------------------------------
+        # 4h. Create inventory levels (from MARD stock)
+        # ---------------------------------------------------------------
+        print(f"  Creating inventory levels...")
+
+        inv_count = 0
+        today = date.today()
+        for mat_id in sorted(materials):
+            prod_id = f"CFG{config_id}_{mat_id}"
+            stock = mat_stock.get(mat_id, 0.0)
+            # Even if stock is 0, create the record so the system knows about it
+            session.execute(
+                text("""
+                    INSERT INTO inv_level (config_id, site_id, product_id, on_hand_qty, in_transit_qty,
+                                          allocated_qty, inventory_date, source)
+                    VALUES (:cid, :sid, :pid, :qty, 0, 0, :dt, 'SAP_MARD')
+                """),
+                {
+                    "cid": config_id,
+                    "sid": plant_site_id,
+                    "pid": prod_id,
+                    "qty": stock,
+                    "dt": today,
+                },
+            )
+            inv_count += 1
+
+        session.flush()
+        print(f"    Created {inv_count} inventory level records")
+
+        # ---------------------------------------------------------------
+        # 4i. Commit
+        # ---------------------------------------------------------------
+        session.commit()
+        print(f"\n{'='*70}")
+        print(f"REBUILD COMPLETE")
+        print(f"  Config: {new_name} (id={config_id})")
+        print(f"  Internal sites: {1 + len(secondary_plants)}")
+        print(f"  Customer sites: {len(customer_order_counts)}")
+        print(f"  Vendor sites: {len(vendor_po_counts)}")
+        print(f"  Products: {product_count}")
+        print(f"  Transportation lanes: {lane_count}")
+        print(f"  Inventory policies: {policy_count}")
+        print(f"  Inventory levels: {inv_count}")
+        print(f"  Total sites: {len(site_ids)}")
+        print(f"{'='*70}")
+
+    except Exception as e:
+        session.rollback()
+        print(f"\nERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    finally:
+        session.close()
+
+
+if __name__ == "__main__":
+    main()

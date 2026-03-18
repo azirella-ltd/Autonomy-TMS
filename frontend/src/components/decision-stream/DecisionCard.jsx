@@ -2,11 +2,12 @@
  * Decision Card Component
  *
  * Compact actionable card for a pending TRM decision, displayed inline
- * in the Decision Stream. Supports Accept, Override, Ask Why, and Navigate.
+ * in the Decision Stream. Supports Inspect, Modify, Cancel, and Navigate.
  *
- * Reuses patterns from:
- *   - FeedbackSignalCards (card layout, deviation indicators)
- *   - TRMDecisionWorklist (confidence chips, override reason codes)
+ * Override flow:
+ *   - Modify: User changes decision values (qty, date, supplier, etc.) + reason
+ *   - Cancel: User rejects the action entirely (no execution) + reason
+ *   Both require a reason code and explanation for the learning flywheel.
  */
 import React, { useState } from 'react';
 import Markdown from 'react-markdown';
@@ -30,6 +31,7 @@ import {
   TrendingUp,
   Box,
   Loader2,
+  XCircle,
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent } from '../common';
 import { cn } from '../../lib/utils/cn';
@@ -49,6 +51,55 @@ const REASON_CODES = [
   { value: 'RISK_MITIGATION', label: 'Risk Mitigation' },
   { value: 'OTHER', label: 'Other' },
 ];
+
+// Decision-type-specific editable fields (must match backend EDITABLE_FIELDS_MAP)
+const EDITABLE_FIELDS = {
+  atp: [
+    { key: 'allocated_qty', label: 'Allocated Qty', type: 'number' },
+  ],
+  rebalancing: [
+    { key: 'qty', label: 'Transfer Qty', type: 'number' },
+  ],
+  po_creation: [
+    { key: 'qty', label: 'Order Qty', type: 'number' },
+    { key: 'supplier_id', label: 'Supplier', type: 'text' },
+    { key: 'due_date', label: 'Due Date', type: 'date' },
+  ],
+  order_tracking: [
+    { key: 'recommended_action', label: 'Action', type: 'select',
+      options: ['find_alternate', 'expedite', 'cancel', 'split', 'reroute', 'accept_delay'] },
+  ],
+  mo_execution: [
+    { key: 'qty', label: 'Planned Qty', type: 'number' },
+    { key: 'priority', label: 'Priority', type: 'number' },
+  ],
+  to_execution: [
+    { key: 'qty', label: 'Planned Qty', type: 'number' },
+  ],
+  quality: [
+    { key: 'disposition', label: 'Disposition', type: 'select',
+      options: ['accept', 'reject', 'rework', 'scrap', 'use_as_is', 'return_to_vendor'] },
+  ],
+  maintenance: [
+    { key: 'scheduled_date', label: 'Schedule Date', type: 'date' },
+    { key: 'action', label: 'Action', type: 'select',
+      options: ['schedule', 'defer', 'expedite', 'combine', 'outsource'] },
+  ],
+  subcontracting: [
+    { key: 'routing', label: 'Routing', type: 'select',
+      options: ['route_external', 'keep_internal', 'split', 'change_vendor'] },
+    { key: 'qty', label: 'Planned Qty', type: 'number' },
+  ],
+  forecast_adjustment: [
+    { key: 'direction', label: 'Direction', type: 'select',
+      options: ['up', 'down', 'no_change'] },
+    { key: 'magnitude_pct', label: 'Adjustment %', type: 'number' },
+  ],
+  inventory_buffer: [
+    { key: 'buffer_qty', label: 'Buffer Qty', type: 'number' },
+    { key: 'multiplier', label: 'Multiplier', type: 'number' },
+  ],
+};
 
 // Decision type icons
 const TYPE_ICONS = {
@@ -80,52 +131,81 @@ const TYPE_LABELS = {
   inventory_buffer: 'Inv. Buffer',
 };
 
+const URGENCY_COLORS = {
+  Critical: 'bg-red-100 text-red-700',
+  High: 'bg-orange-100 text-orange-700',
+  Medium: 'bg-amber-100 text-amber-700',
+  Low: 'bg-blue-100 text-blue-700',
+  Routine: 'bg-green-100 text-green-700',
+};
+
+const LIKELIHOOD_COLORS = {
+  'Certain': 'bg-green-100 text-green-700',
+  Likely: 'bg-blue-100 text-blue-700',
+  Possible: 'bg-amber-100 text-amber-700',
+  Unlikely: 'bg-orange-100 text-orange-700',
+  Never: 'bg-red-100 text-red-700',
+};
+
 const UrgencyBar = ({ value }) => {
   if (value == null) return null;
-  const pct = (value * 100).toFixed(1);
-  const color =
-    value >= 0.8
-      ? 'bg-red-500'
-      : value >= 0.5
-        ? 'bg-amber-500'
-        : 'bg-green-500';
+  const bg = URGENCY_COLORS[value] || 'bg-gray-100 text-gray-700';
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground font-medium">Urgency</span>
-      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-        <div
-          className={cn('h-full rounded-full', color)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-xs text-muted-foreground">{pct}%</span>
+      <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', bg)}>{value}</span>
     </div>
   );
 };
 
 const ConfidenceChip = ({ value }) => {
-  if (value == null)
+  if (value == null) return null;
+  const bg = LIKELIHOOD_COLORS[value] || 'bg-gray-100 text-gray-700';
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
+      <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', bg)}>{value}</span>
+    </div>
+  );
+};
+
+/** Render a single editable field */
+const EditableField = ({ field, value, onChange }) => {
+  const inputClass = 'w-full text-sm border rounded px-2 py-1.5 bg-background';
+
+  if (field.type === 'select') {
     return (
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
-        <Badge variant="outline" className="text-xs">
-          --
-        </Badge>
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 block">{field.label}</label>
+        <select className={inputClass} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
+          {(field.options || []).map((opt) => (
+            <option key={opt} value={opt}>
+              {opt.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+            </option>
+          ))}
+        </select>
       </div>
     );
-  const pct = (value * 100).toFixed(1);
-  const variant =
-    value >= 0.9
-      ? 'default'
-      : value >= 0.7
-        ? 'secondary'
-        : 'destructive';
+  }
+  if (field.type === 'date') {
+    return (
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 block">{field.label}</label>
+        <input type="date" className={inputClass} value={value ?? ''} onChange={(e) => onChange(e.target.value)} />
+      </div>
+    );
+  }
+  // number or text
   return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
-      <Badge variant={variant} className="text-xs">
-        {pct}%
-      </Badge>
+    <div>
+      <label className="text-xs font-medium text-muted-foreground mb-1 block">{field.label}</label>
+      <input
+        type={field.type === 'number' ? 'number' : 'text'}
+        className={inputClass}
+        value={value ?? ''}
+        onChange={(e) => onChange(field.type === 'number' ? e.target.value : e.target.value)}
+        step={field.type === 'number' ? 'any' : undefined}
+      />
     </div>
   );
 };
@@ -138,16 +218,41 @@ const DecisionCard = ({
   compact = false,
 }) => {
   const navigate = useNavigate();
-  const [showOverride, setShowOverride] = useState(false);
+  // overrideMode: null | 'choose' | 'modify' | 'cancel'
+  const [overrideMode, setOverrideMode] = useState(null);
   const [reasonCode, setReasonCode] = useState('');
   const [reasonText, setReasonText] = useState('');
+  const [modifiedValues, setModifiedValues] = useState({});
   const [acting, setActing] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
+  const [inspected, setInspected] = useState(false);
   const [reasoning, setReasoning] = useState(null);
   const [reasoningLoading, setReasoningLoading] = useState(false);
 
   const Icon = TYPE_ICONS[decision.decision_type] || Package;
   const typeLabel = TYPE_LABELS[decision.decision_type] || decision.decision_type;
+  const editableFields = EDITABLE_FIELDS[decision.decision_type] || [];
+
+  // Initialize modifiedValues from decision.editable_values when opening Modify
+  const openModify = () => {
+    const initial = {};
+    for (const f of editableFields) {
+      initial[f.key] = decision.editable_values?.[f.key] ?? '';
+    }
+    setModifiedValues(initial);
+    setOverrideMode('modify');
+  };
+
+  const openCancel = () => {
+    setOverrideMode('cancel');
+  };
+
+  const closeOverride = () => {
+    setOverrideMode(null);
+    setReasonCode('');
+    setReasonText('');
+    setModifiedValues({});
+  };
 
   const handleAccept = async () => {
     setActing(true);
@@ -162,10 +267,14 @@ const DecisionCard = ({
     if (!reasonCode || !reasonText.trim()) return;
     setActing(true);
     try {
-      await onOverride?.(decision, reasonCode, reasonText);
-      setShowOverride(false);
-      setReasonCode('');
-      setReasonText('');
+      await onOverride?.(
+        decision,
+        reasonCode,
+        reasonText,
+        overrideMode,
+        overrideMode === 'modify' ? modifiedValues : null,
+      );
+      closeOverride();
     } finally {
       setActing(false);
     }
@@ -177,10 +286,12 @@ const DecisionCard = ({
     }
   };
 
+  const showButtons = overrideMode === null;
+
   return (
     <Card className="border-l-4 border-l-primary/60 hover:shadow-md transition-shadow">
       <CardContent className={cn('pt-4', compact ? 'pb-3' : 'pb-4')}>
-        {/* Header row: type + product/site + urgency + confidence */}
+        {/* Header row: type + product/site + urgency + likelihood */}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 min-w-0">
             <Icon className="h-4 w-4 text-primary flex-shrink-0" />
@@ -200,7 +311,7 @@ const DecisionCard = ({
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <UrgencyBar value={decision.urgency} />
-            <ConfidenceChip value={decision.confidence} />
+            <ConfidenceChip value={decision.likelihood} />
           </div>
         </div>
 
@@ -212,8 +323,8 @@ const DecisionCard = ({
           </p>
         )}
 
-        {/* Action buttons — AIIO: Inspect (expand reasoning) and Override */}
-        {!showOverride ? (
+        {/* Action buttons — Inspect, Override */}
+        {showButtons && (
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -224,22 +335,24 @@ const DecisionCard = ({
                   setShowReasoning(false);
                   return;
                 }
-                // Use pre-computed reasoning if available
                 if (decision.decision_reasoning) {
                   setReasoning(decision.decision_reasoning);
                   setShowReasoning(true);
+                  setInspected(true);
                 } else if (reasoning) {
                   setShowReasoning(true);
+                  setInspected(true);
                 } else {
-                  // Fetch from ask-why endpoint
                   setReasoningLoading(true);
                   setShowReasoning(true);
                   try {
                     const { decisionStreamApi } = await import('../../services/decisionStreamApi');
                     const result = await decisionStreamApi.askWhy(decision.id, decision.decision_type);
                     setReasoning(result.reasoning || 'No reasoning available.');
+                    setInspected(true);
                   } catch {
                     setReasoning('Unable to retrieve reasoning for this decision.');
+                    setInspected(true);
                   } finally {
                     setReasoningLoading(false);
                   }
@@ -258,9 +371,15 @@ const DecisionCard = ({
             <Button
               size="sm"
               variant="outline"
-              className="h-7 text-xs border-amber-500 text-amber-600 hover:bg-amber-50"
-              onClick={() => setShowOverride(true)}
-              disabled={acting}
+              className={cn(
+                "h-7 text-xs",
+                inspected
+                  ? "border-orange-500 text-orange-600 hover:bg-orange-50"
+                  : "border-muted text-muted-foreground cursor-not-allowed opacity-50"
+              )}
+              onClick={() => inspected && setOverrideMode('choose')}
+              disabled={acting || !inspected}
+              title={!inspected ? "Inspect agent reasoning first" : "Override this decision"}
             >
               <Edit3 className="h-3 w-3 mr-1" />
               Override
@@ -276,7 +395,7 @@ const DecisionCard = ({
               <ArrowRight className="h-3 w-3" />
             </Button>
           </div>
-        ) : null}
+        )}
 
         {/* Ask Why reasoning panel (collapsible) */}
         {showReasoning && (
@@ -287,37 +406,83 @@ const DecisionCard = ({
                 <span>Loading reasoning...</span>
               </div>
             ) : (
-              <>
-                <div className="flex items-start gap-2">
-                  <HelpCircle className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                  <div className="leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-strong:text-blue-800">
-                    <Markdown>{reasoning || decision.decision_reasoning}</Markdown>
-                  </div>
+              <div className="flex items-start gap-2">
+                <HelpCircle className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                <div className="leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-strong:text-blue-800">
+                  <Markdown>{reasoning || decision.decision_reasoning}</Markdown>
                 </div>
-              </>
+              </div>
             )}
           </div>
         )}
 
-        {showOverride ? (
-          /* Override form (inline) */
-          <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
+        {/* Override chooser — Modify or Cancel */}
+        {overrideMode === 'choose' && (
+          <div className="space-y-2 p-3 bg-orange-50 border border-orange-200 rounded-md mt-2 animate-in slide-in-from-top-1 duration-200">
+            <div className="text-xs font-semibold text-orange-800 uppercase tracking-wide">
+              How would you like to override?
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-amber-500 text-amber-700 hover:bg-amber-100"
+                onClick={openModify}
+              >
+                <Edit3 className="h-3 w-3 mr-1" />
+                Modify Values
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-red-500 text-red-700 hover:bg-red-100"
+                onClick={openCancel}
+              >
+                <XCircle className="h-3 w-3 mr-1" />
+                Cancel Action
+              </Button>
+              <div className="flex-1" />
+              <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={closeOverride}>
+                Back
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Modify form — editable fields + reason */}
+        {overrideMode === 'modify' && (
+          <div className="space-y-3 p-3 bg-amber-50 border border-amber-200 rounded-md mt-2">
+            <div className="text-xs font-semibold text-amber-800 uppercase tracking-wide">
+              Modify Decision Values
+            </div>
+            {/* Decision-type-specific editable fields */}
+            <div className="grid grid-cols-2 gap-2">
+              {editableFields.map((field) => (
+                <EditableField
+                  key={field.key}
+                  field={field}
+                  value={modifiedValues[field.key]}
+                  onChange={(val) =>
+                    setModifiedValues((prev) => ({ ...prev, [field.key]: val }))
+                  }
+                />
+              ))}
+            </div>
+            {/* Reason code + text (required) */}
             <select
               className="w-full text-sm border rounded px-2 py-1 bg-background"
               value={reasonCode}
               onChange={(e) => setReasonCode(e.target.value)}
             >
-              <option value="">Select override reason...</option>
+              <option value="">Select reason for modification...</option>
               {REASON_CODES.map((rc) => (
-                <option key={rc.value} value={rc.value}>
-                  {rc.label}
-                </option>
+                <option key={rc.value} value={rc.value}>{rc.label}</option>
               ))}
             </select>
             <textarea
               className="w-full text-sm border rounded px-2 py-1 bg-background resize-none"
               rows={2}
-              placeholder="Explain your override (required)..."
+              placeholder="Explain your modification (required)..."
               value={reasonText}
               onChange={(e) => setReasonText(e.target.value)}
             />
@@ -329,19 +494,59 @@ const DecisionCard = ({
                 onClick={handleOverrideSubmit}
                 disabled={!reasonCode || !reasonText.trim() || acting}
               >
-                Submit Override
+                {acting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+                Submit Modification
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 text-xs"
-                onClick={() => setShowOverride(false)}
-              >
-                Cancel
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={closeOverride}>
+                Back
               </Button>
             </div>
           </div>
-        ) : null}
+        )}
+
+        {/* Cancel form — reason only */}
+        {overrideMode === 'cancel' && (
+          <div className="space-y-2 p-3 bg-red-50 border border-red-200 rounded-md mt-2">
+            <div className="text-xs font-semibold text-red-800 uppercase tracking-wide">
+              Cancel This Action
+            </div>
+            <p className="text-xs text-red-700">
+              This will reject the agent's recommendation entirely. No action will be taken.
+            </p>
+            <select
+              className="w-full text-sm border rounded px-2 py-1 bg-background"
+              value={reasonCode}
+              onChange={(e) => setReasonCode(e.target.value)}
+            >
+              <option value="">Select reason for cancellation...</option>
+              {REASON_CODES.map((rc) => (
+                <option key={rc.value} value={rc.value}>{rc.label}</option>
+              ))}
+            </select>
+            <textarea
+              className="w-full text-sm border rounded px-2 py-1 bg-background resize-none"
+              rows={2}
+              placeholder="Explain why this action should not be taken (required)..."
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="default"
+                className="h-7 text-xs bg-red-500 hover:bg-red-600 text-white"
+                onClick={handleOverrideSubmit}
+                disabled={!reasonCode || !reasonText.trim() || acting}
+              >
+                {acting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
+                Confirm Cancellation
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={closeOverride}>
+                Back
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

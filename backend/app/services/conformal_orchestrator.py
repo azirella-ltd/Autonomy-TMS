@@ -78,20 +78,29 @@ class ConformalOrchestrator:
     # GAP 6: Suite <-> DB Persistence
     # =======================================================================
 
-    async def hydrate_from_db(self, db: AsyncSession) -> int:
+    async def hydrate_from_db(
+        self, db: AsyncSession, tenant_id: Optional[int] = None,
+    ) -> int:
         """
         Startup: Load persisted calibration from PowellBeliefState
         into the in-memory SupplyChainConformalSuite.
 
+        Args:
+            db: Async database session.
+            tenant_id: If provided, only hydrate belief states for this tenant.
+                       Required for multi-tenant isolation.
+
         Returns number of predictors hydrated.
         """
+        filters = [
+            PowellBeliefState.recent_residuals.isnot(None),
+            PowellBeliefState.observation_count >= MIN_OBSERVATIONS_FOR_CALIBRATION,
+        ]
+        if tenant_id is not None:
+            filters.append(PowellBeliefState.tenant_id == tenant_id)
+
         result = await db.execute(
-            select(PowellBeliefState).where(
-                and_(
-                    PowellBeliefState.recent_residuals.isnot(None),
-                    PowellBeliefState.observation_count >= MIN_OBSERVATIONS_FOR_CALIBRATION,
-                )
-            )
+            select(PowellBeliefState).where(and_(*filters))
         )
         states = result.scalars().all()
         hydrated = 0
@@ -263,15 +272,17 @@ class ConformalOrchestrator:
                 continue
 
             # Check for historical error data to bootstrap calibration
+            # Tenant-scoped: only use this tenant's forecast data
+            error_filters = [
+                Forecast.product_id == product_id,
+                Forecast.site_id == site_id,
+                Forecast.forecast_error.isnot(None),
+            ]
+            if tenant_id is not None:
+                error_filters.append(Forecast.tenant_id == tenant_id)
             error_query = (
                 select(Forecast)
-                .where(
-                    and_(
-                        Forecast.product_id == product_id,
-                        Forecast.site_id == site_id,
-                        Forecast.forecast_error.isnot(None),
-                    )
-                )
+                .where(and_(*error_filters))
                 .order_by(Forecast.forecast_date)
             )
             result = await db.execute(error_query)
@@ -358,7 +369,7 @@ class ConformalOrchestrator:
         4. Log to PowellCalibrationLog
         5. Check if drift triggers emergency recalibration
         """
-        forecast = await self._match_forecast(db, product_id, site_id, order_date)
+        forecast = await self._match_forecast(db, product_id, site_id, order_date, tenant_id=tenant_id)
         if forecast is None:
             logger.debug(
                 f"No matching forecast for {product_id}@{site_id} on {order_date}"
@@ -398,19 +409,25 @@ class ConformalOrchestrator:
         product_id: str,
         site_id: int,
         observation_date: date,
+        tenant_id: Optional[int] = None,
     ) -> Optional[Forecast]:
-        """Find best matching active forecast: exact date first, then ±7 day window."""
+        """Find best matching active forecast: exact date first, then ±7 day window.
+
+        Tenant-scoped when tenant_id is provided.
+        """
         # Exact match
+        exact_filters = [
+            Forecast.product_id == product_id,
+            Forecast.site_id == site_id,
+            Forecast.forecast_date == observation_date,
+            Forecast.is_active == "Y",
+        ]
+        if tenant_id is not None:
+            exact_filters.append(Forecast.tenant_id == tenant_id)
+
         result = await db.execute(
             select(Forecast)
-            .where(
-                and_(
-                    Forecast.product_id == product_id,
-                    Forecast.site_id == site_id,
-                    Forecast.forecast_date == observation_date,
-                    Forecast.is_active == "Y",
-                )
-            )
+            .where(and_(*exact_filters))
             .order_by(Forecast.created_dttm.desc())
             .limit(1)
         )
@@ -421,16 +438,18 @@ class ConformalOrchestrator:
         # Window search: ±7 days, pick nearest
         window_start = observation_date - timedelta(days=7)
         window_end = observation_date + timedelta(days=7)
+        window_filters = [
+            Forecast.product_id == product_id,
+            Forecast.site_id == site_id,
+            Forecast.forecast_date.between(window_start, window_end),
+            Forecast.is_active == "Y",
+        ]
+        if tenant_id is not None:
+            window_filters.append(Forecast.tenant_id == tenant_id)
+
         result = await db.execute(
             select(Forecast)
-            .where(
-                and_(
-                    Forecast.product_id == product_id,
-                    Forecast.site_id == site_id,
-                    Forecast.forecast_date.between(window_start, window_end),
-                    Forecast.is_active == "Y",
-                )
-            )
+            .where(and_(*window_filters))
             .order_by(
                 func.abs(
                     func.extract("epoch", Forecast.forecast_date)
@@ -713,7 +732,8 @@ class ConformalOrchestrator:
         """
         indicator = (grid_points >= observed).astype(float)
         integrand = (cdf_values - indicator) ** 2
-        return float(np.trapezoid(integrand, grid_points))
+        _trapz = getattr(np, 'trapezoid', None) or np.trapz
+        return float(_trapz(integrand, grid_points))
 
     async def compute_crps_for_entity(
         self,

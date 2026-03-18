@@ -14,6 +14,7 @@
  * agent — narrow scope, per-order exception detection and recommended actions.
  */
 import React, { useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
@@ -206,7 +207,7 @@ const OVERRIDE_FIELDS = [
     label: 'Override Severity',
     type: 'text',
     options: SEVERITY_OPTIONS,
-    helperText: 'Adjust the severity level if the TRM assessment is incorrect',
+    helperText: 'Adjust the severity level if the AI assessment is incorrect',
   },
 ];
 
@@ -215,7 +216,7 @@ const OVERRIDE_FIELDS = [
 // ---------------------------------------------------------------------------
 
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const critical = decisions.filter((d) => d.severity === 'CRITICAL');
 
   // Average resolution time from completed decisions
@@ -282,6 +283,8 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const OrderTrackingWorklistPage = ({ configId = 1 }) => {
+  const location = useLocation();
+  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_order_tracking_worklist');
 
@@ -312,9 +315,9 @@ const OrderTrackingWorklistPage = ({ configId = 1 }) => {
             Order Tracking Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Review order exceptions detected by the Order Tracking TRM.
+            Review order exceptions detected by the AI agent.
             Accept recommended actions, override with reasoning, or reject
-            for re-evaluation. Overrides train the TRM via reinforcement learning.
+            for re-evaluation. Overrides train the agent via reinforcement learning.
           </Typography>
         </Box>
         <LayerModeIndicator layer="order_tracking_trm" mode="active" />
@@ -331,6 +334,7 @@ const OrderTrackingWorklistPage = ({ configId = 1 }) => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

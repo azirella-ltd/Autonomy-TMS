@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 import { Card, CardContent, Progress } from '../common';
+import Sparkline from './Sparkline';
 
 const STATUS_BORDER = {
   success: 'border-l-green-500',
@@ -33,6 +34,10 @@ const CompositeMetricCard = ({
   formula,
   components,
   lowerIsBetter = false,
+  ciLower,
+  ciUpper,
+  n,
+  sparkline,
 }) => {
   const trendGood = lowerIsBetter ? trend < 0 : trend > 0;
 
@@ -57,6 +62,9 @@ const CompositeMetricCard = ({
             {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : value}
           </span>
           <span className="text-sm text-muted-foreground">{unit}</span>
+          {sparkline && sparkline.length >= 2 && (
+            <Sparkline data={sparkline} status={status} />
+          )}
           {trend !== undefined && (
             <span className={cn(
               'flex items-center text-xs font-medium',
@@ -67,6 +75,14 @@ const CompositeMetricCard = ({
             </span>
           )}
         </div>
+
+        {/* Confidence interval */}
+        {ciLower != null && ciUpper != null && (
+          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground" title={`95% CI (n=${n || '?'})`}>
+            <span className="font-mono">[{ciLower.toLocaleString(undefined, {maximumFractionDigits: 1})} – {ciUpper.toLocaleString(undefined, {maximumFractionDigits: 1})}]</span>
+            {n && <span className="opacity-60">n={n}</span>}
+          </div>
+        )}
 
         {/* Target + benchmark */}
         <div className="flex justify-between text-xs text-muted-foreground mt-1">

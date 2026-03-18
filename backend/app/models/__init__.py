@@ -64,8 +64,6 @@ from .supply_chain_config import (
     # AWS SC DM compliant names
     Site,
     TransportationLane,
-    # Backward compatibility aliases (DEPRECATED)
-    Node,  # DEPRECATED: Use Site
     Lane,  # DEPRECATED: Use TransportationLane
     Market,
     MarketDemand,
@@ -327,6 +325,21 @@ from .executive_briefing import (
     BriefingType, BriefingStatus,
 )
 
+# 28. User Directives — "Talk to Me" context capture & Powell routing
+from .user_directive import UserDirective, ConfigProvisioningStatus
+
+# 29b. Scenario Events — What-if event injection for CDC cascade analysis
+from .scenario_event import ScenarioEvent
+
+# 29. Email Signals — GDPR-safe email ingestion for SC intelligence
+from .email_signal import EmailSignal, EmailConnection
+
+# 30. RCCP — Rough-Cut Capacity Planning (Bill of Resources + Validation Runs)
+from .rccp import BillOfResources, RCCPRun, RCCPMethod, ProductionPhase, RCCPRunStatus
+
+# 31. Agent Stochastic Parameters — Per-agent distribution values with default tracking
+from .agent_stochastic_param import AgentStochasticParam
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -357,8 +370,6 @@ __all__ = [
     # AWS SC DM compliant names
     'Site',
     'TransportationLane',
-    # Backward compatibility aliases (DEPRECATED)
-    'Node',  # DEPRECATED: Use Site
     'Lane',  # DEPRECATED: Use TransportationLane
     'Market',
     'MarketDemand',
@@ -599,6 +610,17 @@ __all__ = [
     'BriefingSchedule',
     'BriefingType',
     'BriefingStatus',
+    # Email Signals — GDPR-safe email ingestion
+    'EmailSignal',
+    'EmailConnection',
+    # RCCP — Rough-Cut Capacity Planning
+    'BillOfResources',
+    'RCCPRun',
+    'RCCPMethod',
+    'ProductionPhase',
+    'RCCPRunStatus',
+    # Agent Stochastic Parameters
+    'AgentStochasticParam',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

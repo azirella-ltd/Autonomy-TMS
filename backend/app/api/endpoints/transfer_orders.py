@@ -12,7 +12,7 @@ from sqlalchemy import and_, func
 from app.db.session import get_sync_db as get_db
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.scenario import Scenario
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 from app.services.sc_execution.to_analytics import TransferOrderAnalytics
 from app.services.sc_execution.site_id_mapper import SimulationIdMapper
 

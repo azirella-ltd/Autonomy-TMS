@@ -10065,7 +10065,7 @@ class MixedScenarioService:
                 select_parts.append(f"NULL AS {alias}")
 
         select_clause = ", ".join(select_parts)
-        query = f"SELECT {select_clause} FROM games g"
+        query = f"SELECT {select_clause} FROM {Game.__tablename__} g"
 
         filters: List[str] = []
         params: Dict[str, Any] = {}
@@ -10134,7 +10134,7 @@ class MixedScenarioService:
                    g.start_date,
                    g.current_period_start,
                    sc.name AS supply_chain_name
-            FROM games AS g
+            FROM scenarios AS g
             LEFT JOIN supply_chain_configs AS sc
                 ON g.supply_chain_config_id = sc.id
             WHERE g.id = :scenario_id

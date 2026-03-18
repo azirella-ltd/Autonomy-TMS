@@ -12,13 +12,17 @@ export const canonicalizeSiteTypeKey = (value = '') => {
   return cleaned;
 };
 
+// AWS SC DM compliant site type definitions.
+// Internal sites use master_type (inventory | manufacturer).
+// External parties (vendors/customers) are TradingPartner records with tpartner_type.
+// is_external=true entries appear in the Sankey but are managed via the
+// Vendors / Customers wizard steps, not the Sites step.
 export const DEFAULT_SITE_TYPE_DEFINITIONS = [
-  { type: 'market_demand', master_type: 'market_demand', label: 'Market Demand', order: 0, is_required: true },
-  { type: 'retailer', master_type: 'inventory', label: 'Retailer', order: 1, is_required: false },
-  { type: 'wholesaler', master_type: 'inventory', label: 'Wholesaler', order: 2, is_required: false },
-  { type: 'distributor', master_type: 'inventory', label: 'Distributor', order: 3, is_required: false },
-  { type: 'manufacturer', master_type: 'inventory', label: 'Manufacturer', order: 4, is_required: false },
-  { type: 'market_supply', master_type: 'market_supply', label: 'Market Supply', order: 5, is_required: true },
+  { type: 'customer',             tpartner_type: 'customer',     label: 'Customer',             is_required: true,  is_external: true },
+  { type: 'distribution_center',  master_type: 'inventory',      label: 'Distribution Center',  is_required: false, is_external: false },
+  { type: 'warehouse',            master_type: 'inventory',      label: 'Warehouse',            is_required: false, is_external: false },
+  { type: 'manufacturing_plant',  master_type: 'manufacturer',   label: 'Manufacturing Plant',  is_required: false, is_external: false },
+  { type: 'vendor',               tpartner_type: 'vendor',       label: 'Vendor',               is_required: true,  is_external: true },
 ];
 
 export const buildSiteTypeLabelMap = (definitions = DEFAULT_SITE_TYPE_DEFINITIONS) => {
@@ -46,10 +50,14 @@ export const buildSiteTypeLabelMap = (definitions = DEFAULT_SITE_TYPE_DEFINITION
 
 export const sortSiteTypeDefinitions = (definitions = DEFAULT_SITE_TYPE_DEFINITIONS) => {
   if (!Array.isArray(definitions)) return [...DEFAULT_SITE_TYPE_DEFINITIONS];
+  // Preserve definition array order (no longer sorted by a static `order` field).
+  // Configs that supply their own `site_type_definitions` with an `order` property
+  // can still be sorted, but the default definitions rely on array position.
   return [...definitions].sort((a, b) => {
-    const orderA = Number.isFinite(a?.order) ? a.order : 0;
-    const orderB = Number.isFinite(b?.order) ? b.order : 0;
-    return orderA - orderB;
+    const orderA = Number.isFinite(a?.order) ? a.order : Infinity;
+    const orderB = Number.isFinite(b?.order) ? b.order : Infinity;
+    if (orderA !== orderB) return orderA - orderB;
+    return 0; // preserve original array order when no explicit order
   });
 };
 
@@ -251,6 +259,13 @@ export const getNodeTypeDisplayName = getSiteTypeDisplayName;
 
 export const getSiteTypeColor = (siteType) => {
   const colors = {
+    // AWS SC DM types
+    customer: 'success',
+    distribution_center: 'info',
+    warehouse: 'info',
+    manufacturing_plant: 'warning',
+    vendor: 'primary',
+    // Legacy TBG types
     supplier: 'primary',
     retailer: 'success',
     wholesaler: 'error',

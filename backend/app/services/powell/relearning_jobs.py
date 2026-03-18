@@ -191,6 +191,18 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered Site tGNN training check job (every 12h at :50)")
 
+    # Every 4 hours: Risk alert condition monitoring
+    # Re-evaluates INFORMED risk alerts — auto-resolves (ACTIONED) if condition cleared
+    scheduler.add_job(
+        func=_run_risk_condition_monitor,
+        trigger=CronTrigger(hour="2,6,10,14,18,22", minute=15),
+        id="risk_condition_monitor",
+        name="Risk: Condition Monitor (every 4h)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info("Registered risk condition monitor job (every 4h at :15)")
+
 
 # ---------------------------------------------------------------------------
 # Job execution functions
@@ -268,24 +280,43 @@ def _run_skill_outcome_collection() -> None:
 
 
 def _run_cdt_calibration() -> None:
-    """Incrementally calibrate CDT wrappers from newly collected outcomes."""
+    """Incrementally calibrate CDT wrappers from newly collected outcomes.
+
+    Runs per-tenant to ensure calibration data isolation — each tenant's
+    decisions only calibrate that tenant's CDT wrappers.
+    """
     from app.db.session import SessionLocal
 
-    logger.info("Starting scheduled CDT calibration")
+    logger.info("Starting scheduled CDT calibration (per-tenant)")
 
     db = SessionLocal()
     try:
         from app.services.powell.cdt_calibration_service import CDTCalibrationService
+        from app.models.tenant import Tenant
 
-        service = CDTCalibrationService(db)
-        stats = service.calibrate_incremental()
-        total_added = sum(s.get("added", 0) for s in stats.values())
-        calibrated = sum(
-            1 for s in stats.values() if s.get("is_calibrated", False)
-        )
+        tenants = db.query(Tenant.id).all()
+        total_added_all = 0
+
+        for (tenant_id,) in tenants:
+            try:
+                service = CDTCalibrationService(db, tenant_id=tenant_id)
+                stats = service.calibrate_incremental()
+                total_added = sum(s.get("added", 0) for s in stats.values())
+                calibrated = sum(
+                    1 for s in stats.values() if s.get("is_calibrated", False)
+                )
+                total_added_all += total_added
+                if total_added > 0:
+                    logger.info(
+                        f"CDT calibration tenant {tenant_id}: {total_added} new pairs, "
+                        f"{calibrated}/11 agents calibrated"
+                    )
+            except Exception as e:
+                logger.warning(f"CDT calibration failed for tenant {tenant_id}: {e}")
+
         logger.info(
-            f"CDT calibration: {total_added} new pairs, "
-            f"{calibrated}/11 agents calibrated"
+            f"CDT calibration complete: {total_added_all} total new pairs "
+            f"across {len(tenants)} tenants"
         )
     except Exception as e:
         logger.error(f"CDT calibration job failed: {e}")
@@ -661,6 +692,39 @@ def _run_site_tgnn_training_check() -> None:
         logger.info("Site tGNN training check complete (no sites requiring training)")
     except Exception as e:
         logger.error(f"Site tGNN training check failed: {e}", exc_info=True)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _run_risk_condition_monitor() -> None:
+    """Re-evaluate INFORMED risk alerts and auto-resolve (ACTIONED) if condition cleared."""
+    from app.db.session import SessionLocal
+    import asyncio
+
+    logger.info("Starting risk condition monitor")
+
+    db = SessionLocal()
+    try:
+        from app.services.risk_detection_service import RiskDetectionService
+
+        service = RiskDetectionService(db)
+
+        # Run the async method in a sync context
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(service.resolve_informed_alerts())
+        finally:
+            loop.close()
+
+        logger.info(
+            "Risk condition monitor completed: %d auto-resolved, %d still informed",
+            result["resolved"], result["still_informed"],
+        )
+    except Exception as e:
+        logger.error(f"Risk condition monitor failed: {e}", exc_info=True)
     finally:
         try:
             db.close()

@@ -303,9 +303,9 @@ const PowellDashboard = () => {
 
   const policyOptions = [
     { id: 'pfa', name: 'Base Stock (PFA)', type: 'PFA', description: 'Direct mapping from state to order quantity using base-stock levels' },
-    { id: 'cfa', name: 'Parameterized (CFA)', type: 'CFA', description: 'Optimized parameters (s,S), (r,Q) from S&OP GraphSAGE' },
-    { id: 'vfa', name: 'TRM Agent (VFA)', type: 'VFA', description: 'Learned value function with recursive refinement' },
-    { id: 'dla', name: 'MPC Lookahead (DLA)', type: 'DLA', description: 'Model predictive control with GNN forecasts' },
+    { id: 'cfa', name: 'Parameterized (CFA)', type: 'CFA', description: 'Optimized parameters (s,S), (r,Q) from S&OP planning model' },
+    { id: 'vfa', name: 'AI Agent (VFA)', type: 'VFA', description: 'Learned value function with recursive refinement' },
+    { id: 'dla', name: 'MPC Lookahead (DLA)', type: 'DLA', description: 'Model predictive control with network model forecasts' },
   ];
 
   return (
@@ -419,7 +419,7 @@ const PowellDashboard = () => {
             <StatCard
               title="Decisions Today"
               value="127"
-              subtitle="85% TRM-adjusted"
+              subtitle="85% AI-adjusted"
               icon={Target}
               trend={12}
               color="blue"
@@ -729,7 +729,7 @@ const PowellDashboard = () => {
             {/* Active Policy Details */}
             <Card>
               <CardHeader>
-                <CardTitle>Active Policy: TRM (VFA)</CardTitle>
+                <CardTitle>Active Policy: AI Agent (VFA)</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="p-4 border rounded-lg bg-purple-50 dark:bg-purple-900/20">
@@ -745,7 +745,7 @@ const PowellDashboard = () => {
                 </div>
 
                 <div>
-                  <h4 className="font-medium mb-2">TRM Heads</h4>
+                  <h4 className="font-medium mb-2">Agent Heads</h4>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between p-2 border rounded">
                       <span>ATP Exception Head</span>
@@ -988,7 +988,7 @@ const PowellDashboard = () => {
                     </div>
                     <div className="flex items-center justify-between p-2 border rounded">
                       <span>ALLOCATION_ONLY</span>
-                      <span className="text-muted-foreground">Rerun tGNN allocations</span>
+                      <span className="text-muted-foreground">Rerun allocation model</span>
                     </div>
                     <div className="flex items-center justify-between p-2 border rounded">
                       <span>PARAM_ADJUSTMENT</span>
@@ -1495,7 +1495,7 @@ const PowellDashboard = () => {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b">
-                            <th className="text-left py-2 px-3 font-medium">TRM Type</th>
+                            <th className="text-left py-2 px-3 font-medium">Agent Type</th>
                             <th className="text-center py-2 px-3 font-medium">Tier</th>
                             <th className="text-right py-2 px-3 font-medium">Overrides</th>
                             <th className="text-right py-2 px-3 font-medium">Beneficial</th>
@@ -1544,7 +1544,7 @@ const PowellDashboard = () => {
                       </table>
                     </div>
                   ) : (
-                    <div className="text-center py-6 text-muted-foreground">No per-TRM override data available</div>
+                    <div className="text-center py-6 text-muted-foreground">No per-agent override data available</div>
                   )}
                 </CardContent>
               </Card>
@@ -1669,7 +1669,7 @@ const PowellDashboard = () => {
                         <thead>
                           <tr className="border-b">
                             <th className="text-left py-2 px-3 font-medium">User</th>
-                            <th className="text-left py-2 px-3 font-medium">TRM Type</th>
+                            <th className="text-left py-2 px-3 font-medium">Agent Type</th>
                             <th className="text-center py-2 px-3 font-medium">Tier</th>
                             <th className="text-right py-2 px-3 font-medium">Observations</th>
                             <th className="text-right py-2 px-3 font-medium">E[Effectiveness]</th>
@@ -1868,7 +1868,7 @@ const HiveSignalsTab = ({ siteKey }) => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            tGNN Site Directive
+            Network Agent Site Directive
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -1897,7 +1897,7 @@ const HiveSignalsTab = ({ siteKey }) => {
             </div>
           ) : (
             <div className="text-center py-6 text-muted-foreground">
-              No tGNN directive active — waiting for network-level optimization
+              No network agent directive active — waiting for network-level optimization
             </div>
           )}
         </CardContent>

@@ -12,18 +12,20 @@
  *   // Use effectiveConfigId for all planning API calls.
  */
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import simulationApi from '../services/api';
+import { api } from '../services/api';
 import { useAuth } from './AuthContext';
 
 const ActiveConfigContext = createContext({
   activeConfig: null,
   activeConfigId: null,
+  configMode: 'production',
   workingBranch: null,
   workingBranchId: null,
   effectiveConfigId: null,
   branches: [],
   loading: true,
   error: null,
+  provisioningRequired: false,
   setWorkingBranch: () => {},
   clearWorkingBranch: () => {},
   createBranch: async () => {},
@@ -37,8 +39,10 @@ export function ActiveConfigProvider({ children }) {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [provisioningRequired, setProvisioningRequired] = useState(false);
 
   const activeConfigId = activeConfig?.id ?? null;
+  const configMode = activeConfig?.mode ?? 'production';
   const workingBranchId = workingBranch?.id ?? null;
   const effectiveConfigId = workingBranchId ?? activeConfigId;
 
@@ -47,14 +51,29 @@ export function ActiveConfigProvider({ children }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await simulationApi.get('/supply-chain-configs/active');
+      const response = await api.get('/supply-chain-config/active');
       setActiveConfig(response.data);
+
+      // Check provisioning status — if no step is completed, user needs to provision
+      if (response.data?.id) {
+        try {
+          const provRes = await api.get(`/provisioning/status/${response.data.id}`);
+          const steps = provRes.data?.steps || [];
+          const anyCompleted = Array.isArray(steps)
+            ? steps.some((s) => s?.status === 'completed')
+            : Object.values(steps).some((s) => s?.status === 'completed');
+          setProvisioningRequired(!anyCompleted);
+        } catch {
+          // If no provisioning status exists, it definitely needs provisioning
+          setProvisioningRequired(true);
+        }
+      }
 
       // Fetch WORKING branches for this tenant
       if (response.data?.id) {
         try {
-          const childrenRes = await simulationApi.get(
-            `/supply-chain-configs/${response.data.id}/children`
+          const childrenRes = await api.get(
+            `/supply-chain-config/${response.data.id}/children`
           );
           const workingBranches = (childrenRes.data || []).filter(
             (c) => c.scenario_type === 'WORKING' && !c.committed_at
@@ -87,8 +106,8 @@ export function ActiveConfigProvider({ children }) {
   const createBranch = useCallback(
     async (name, description = '') => {
       if (!activeConfigId) throw new Error('No active baseline config');
-      const response = await simulationApi.post(
-        `/supply-chain-configs/${activeConfigId}/branch`,
+      const response = await api.post(
+        `/supply-chain-config/${activeConfigId}/branch`,
         {
           name,
           description,
@@ -108,12 +127,14 @@ export function ActiveConfigProvider({ children }) {
       value={{
         activeConfig,
         activeConfigId,
+        configMode,
         workingBranch,
         workingBranchId,
         effectiveConfigId,
         branches,
         loading,
         error,
+        provisioningRequired,
         setWorkingBranch,
         clearWorkingBranch,
         createBranch,

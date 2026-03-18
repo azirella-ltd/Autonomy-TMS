@@ -15,7 +15,7 @@ from app.models.forecast_pipeline import (
     ForecastPipelineRun,
     ForecastPipelinePublishLog,
 )
-from app.services.forecast_pipeline_service import ForecastPipelineService
+from app.services.forecast_pipeline_service import ForecastPipelineService, _get_lgbm_pipeline_class
 
 router = APIRouter()
 
@@ -515,3 +515,157 @@ def get_publish_log(
         }
         for item in logs
     ]
+
+
+# ---------------------------------------------------------------------------
+# LightGBM training endpoint
+# ---------------------------------------------------------------------------
+
+import logging as _logging
+
+_lgbm_logger = _logging.getLogger(__name__)
+
+
+def _run_lgbm_training_task(run_id: int) -> None:
+    """Background task: train LightGBM models for a completed pipeline run."""
+    import pandas as pd
+    from app.db.session import sync_session_factory
+    from app.services.forecast_pipeline_service import ForecastPipelineService
+
+    LGBMPipeline = _get_lgbm_pipeline_class()
+    if LGBMPipeline is None:
+        _lgbm_logger.error("LightGBM not installed; cannot train for run %d", run_id)
+        return
+
+    db = sync_session_factory()
+    try:
+        run = db.query(ForecastPipelineRun).filter(ForecastPipelineRun.id == run_id).first()
+        if not run:
+            _lgbm_logger.error("Run %d not found for LightGBM training", run_id)
+            return
+
+        cfg = db.query(ForecastPipelineConfig).filter(
+            ForecastPipelineConfig.id == run.pipeline_config_id
+        ).first()
+        if not cfg:
+            _lgbm_logger.error("Pipeline config not found for run %d", run_id)
+            return
+
+        svc = ForecastPipelineService(db)
+        history = svc._load_history(cfg)
+        if history.empty:
+            _lgbm_logger.warning("No history available for run %d LightGBM training", run_id)
+            return
+
+        history["unique_id"] = (
+            history["product_id"].astype(str) + "|" + history["site_id"].astype(str)
+        )
+        history = svc._filter_by_quality(history, cfg)
+        if history.empty:
+            _lgbm_logger.warning("All series filtered out for run %d LightGBM training", run_id)
+            return
+
+        clusters: Dict[str, int] = run.run_log.get("clusters", {}) if run.run_log else {}
+        if not clusters:
+            # Regenerate clusters if not cached
+            clusters = svc._cluster_series(history, cfg)
+
+        lgbm_pipeline = LGBMPipeline(config_id=run.config_id)
+        lgbm_results = lgbm_pipeline.run_stage4_lgbm(
+            run_id=run_id,
+            config_id=run.config_id,
+            history=history,
+            cluster_results=clusters,
+            censored_flags={},
+            n_periods=int(cfg.forecast_horizon or 13),
+            time_bucket=cfg.time_bucket or "W",
+            retrain=True,  # Always retrain when explicitly requested
+        )
+
+        # Persist LightGBM metadata back into run_log and new columns
+        run_log = dict(run.run_log or {})
+        run_log.update({
+            "lgbm_series_count": lgbm_results.get("lgbm_series_count", 0),
+            "lgbm_fallback_count": lgbm_results.get("lgbm_fallback_count", 0),
+            "lgbm_wape_p50": lgbm_results.get("lgbm_wape_p50", 0.0),
+            "lgbm_checkpoint_path": lgbm_results.get("lgbm_checkpoint_path", ""),
+            "lgbm_cluster_metrics": lgbm_results.get("cluster_metrics", {}),
+        })
+        run.run_log = run_log
+
+        # Update dedicated columns (added by migration 20260312_lgbm_forecast)
+        try:
+            run.lgbm_checkpoint_path = lgbm_results.get("lgbm_checkpoint_path", "")  # type: ignore[attr-defined]
+            run.lgbm_wape_p50 = lgbm_results.get("lgbm_wape_p50")                     # type: ignore[attr-defined]
+            run.lgbm_series_count = lgbm_results.get("lgbm_series_count")              # type: ignore[attr-defined]
+            run.lgbm_fallback_count = lgbm_results.get("lgbm_fallback_count")          # type: ignore[attr-defined]
+        except AttributeError:
+            # Columns not yet migrated — metadata stored in run_log only
+            pass
+
+        db.commit()
+        _lgbm_logger.info(
+            "LightGBM training completed for run %d: wape_p50=%.4f series=%d fallback=%d",
+            run_id,
+            lgbm_results.get("lgbm_wape_p50", 0.0),
+            lgbm_results.get("lgbm_series_count", 0),
+            lgbm_results.get("lgbm_fallback_count", 0),
+        )
+    except Exception:
+        db.rollback()
+        _lgbm_logger.exception("LightGBM training task failed for run %d", run_id)
+    finally:
+        db.close()
+
+
+@router.post("/runs/{run_id}/train-lgbm")
+def train_lgbm(
+    run_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Trigger LightGBM training for a completed stage-3 pipeline run.
+
+    Trains cluster-specific P10/P50/P90 quantile models using the history
+    associated with this run's supply chain config. Training runs in the
+    background; call GET /runs/{run_id} to check run_log for results.
+
+    Returns job status with estimated WAPE metrics once training completes.
+    LightGBM must be installed (lightgbm>=4.3.0) for this endpoint to succeed.
+    """
+    LGBMPipeline = _get_lgbm_pipeline_class()
+    if LGBMPipeline is None:
+        raise HTTPException(
+            status_code=503,
+            detail="LightGBM is not installed on this server. "
+                   "Add lightgbm==4.3.0 to requirements.txt and rebuild the backend container.",
+        )
+
+    run = (
+        db.query(ForecastPipelineRun)
+        .filter(
+            ForecastPipelineRun.id == run_id,
+            ForecastPipelineRun.tenant_id == current_user.tenant_id,
+        )
+        .first()
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    if run.status not in {"completed", "published"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"LightGBM training requires a completed run. Current status: '{run.status}'.",
+        )
+
+    background_tasks.add_task(_run_lgbm_training_task, run_id)
+
+    return {
+        "run_id": run_id,
+        "status": "training_started",
+        "message": (
+            "LightGBM training has been queued. "
+            "Check GET /runs/{run_id} run_log.lgbm_wape_p50 for results once complete."
+        ),
+    }

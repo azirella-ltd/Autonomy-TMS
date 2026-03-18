@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 import os
-from app.models.supply_chain_config import Item, Node
+from app.models.supply_chain_config import Item, Site
 from app.models.sc_entities import Product, ProductBom
 from datetime import datetime
 
@@ -257,8 +257,8 @@ def extract_boms_to_product_bom(db: Session, mapping: Dict[int, str], dry_run: b
     logger.info("=" * 80)
 
     # Query nodes with BOMs
-    nodes = db.query(Node).filter(
-        Node.attributes.isnot(None)
+    nodes = db.query(Site).filter(
+        Site.attributes.isnot(None)
     ).all()
 
     bom_entries_created = 0

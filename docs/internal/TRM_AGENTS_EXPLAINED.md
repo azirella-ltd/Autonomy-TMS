@@ -1,6 +1,10 @@
 # TRM Agents Explained
 
 > **INTERNAL DOCUMENT** — Contains implementation details, file paths, and architecture specifications.
+>
+> **Related documents**:
+> - [TRM_DECISION_ALGORITHMS.md](TRM_DECISION_ALGORITHMS.md) — **Detailed heuristic algorithms, urgency formulas, and likelihood calculation for all 11 TRMs**
+> - [GNN_DECISION_ARCHITECTURE.md](GNN_DECISION_ARCHITECTURE.md) — **Site tGNN, Network tGNN, and S&OP GraphSAGE decision algorithms**
 
 ## Overview
 
@@ -52,6 +56,22 @@ The layered architecture ensures the system works at every level of capability:
 | **Full** | Engine + trained TRM | Engine baseline + learned adjustments |
 | **Heuristic** | Engine only (TRM untrained) | Engine baseline = TRM heuristic fallback |
 | **Minimal** | Neither | Hard-coded defaults (safe but suboptimal) |
+
+### Urgency + Likelihood: Decision Prioritization
+
+Every TRM decision carries two scores that determine whether a human needs to see it:
+
+- **Urgency** (0.0–1.0): Time-sensitivity derived from the TRM's UrgencyVector, HiveSignalBus state, and exception severity. A rush order with depleted inventory scores high; a routine restock with weeks of supply scores low.
+- **Likelihood** (0.0–1.0): Agent confidence that the recommended action resolves the issue. Derived from the TRM's output confidence head, conformal prediction interval width, and CDT risk bound.
+
+| Urgency | Likelihood | Action |
+|---------|-----------|--------|
+| High | Low | **Decision Stream — top priority.** Human judgment needed; the clock is ticking and the agent is uncertain. |
+| High | High | Agent acts autonomously within guardrails, logged. |
+| Low | High | Agent acts autonomously within guardrails, logged. |
+| Low | Low | Abandoned. Not worth human attention. Available on audit/training pages. |
+
+The Decision Stream sorts by urgency descending, then likelihood ascending — so the decision at the top is always the most time-sensitive one where the agent is least confident. Abandonment uses a sliding scale: `urgency + likelihood` must exceed a threshold (default 0.5). High-urgency decisions are never abandoned.
 
 ### Agent Architecture
 
@@ -521,6 +541,12 @@ The TRM adds:
 
 **Delegation**: Engine provides deterministic signal classification and base adjustment. TRM refines with learned source reliability weights. Emits `FORECAST_ADJUSTED`, `DEMAND_SURGE`, or `DEMAND_DROP` signal. Persists to `powell_forecast_adjustment_decisions`.
 
+**Signal Sources**: The ForecastAdjustmentTRM accepts signals from multiple sources:
+- **Email Signal Intelligence**: GDPR-safe email ingestion monitors customer/supplier inboxes, strips PII, classifies emails into supply chain signals (demand_increase, supply_disruption, lead_time_change, etc.), and auto-routes to the ForecastAdjustmentTRM with `source="email"`. See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md).
+- **Talk to Me Directives**: Natural language directives from users (e.g., "Increase SW region forecast by 10% due to customer feedback") are parsed, validated, and routed to the ForecastAdjustmentTRM when the directive targets demand metrics. See [TALK_TO_ME.md](TALK_TO_ME.md).
+- **Market Intelligence**: External market data feeds (competitor actions, economic indicators)
+- **Customer Feedback**: Direct signals from trading partners via CPFR or manual entry
+
 ---
 
 ## Training Pipeline
@@ -605,11 +631,34 @@ Training is organized **per site x per TRM type** with a 3-phase progressive cur
 | 2 | **Context Learning (Supervised)** | Human expert override decision logs | ≥500 expert decisions for the site |
 | 3 | **Outcome Optimization (RL/VFA)** | Replay buffer with measured outcomes | ≥1000 outcome records for the site |
 
-**Phase 1** uses the `CURRICULUM_REGISTRY` with 3 sub-phases (simple → moderate → full complexity) and behavioral cloning to match engine baselines. Every site-TRM pair runs Phase 1.
+**Phase 1** uses the `CURRICULUM_REGISTRY` with 3 sub-phases (simple → moderate → full complexity) and behavioral cloning to match engine baselines. Every site-TRM pair runs Phase 1. Default: 50K samples/sub-phase × 3 sub-phases = 150K samples per signal phase, 450K total across the stigmergic curriculum.
 
 **Phase 2** trains on human expert overrides filtered by `site_id`. A DC with 200K frozen capacity develops different ATP patterns than a small regional warehouse — per-site training captures these differences.
 
 **Phase 3** uses TD learning + Conservative Q-Learning (CQL) from the replay buffer filtered by `site_id` to discover policies that outperform both engines and human experts.
+
+#### Data Volume: Learning by Watching (Stöckl 2021)
+
+Data volume targets are grounded in Stöckl's "Watching a Language Model Learning Chess" (RANLP 2021), which demonstrated that **data volume matters more than model size** for structured decision tasks. A GPT2-small (124M params) with sufficient training games outperformed GPT2-large (774M params) with insufficient data on chess move legality — learning the *rules* rather than memorizing patterns.
+
+TRM training follows the same "learning by watching" paradigm: the TRM observes deterministic engines making expert decisions across thousands of synthetic scenarios (curriculum data), then learns to reproduce and refine those decisions. The Kaplan (2020) scaling law governs the relationship:
+
+| Data Regime | Samples per TRM | Expected Behavior |
+|-------------|-----------------|-------------------|
+| Insufficient | <10K | Memorization only — fails on novel states |
+| Medium | 50K–150K | Rule learning begins — handles typical cases |
+| Robust | 500K+ | Generalizes to edge cases and novel combinations |
+
+Phase 1 now generates **450K samples** per TRM (robust regime). The `StochasticCurriculumWrapper` supports a `multiplier` parameter for independent Monte Carlo draws, enabling scaling to millions of samples. Coordinated simulation (`CoordinatedSimRunner`) recommends a minimum of **5,000 episodes** for Phases 2-3 data.
+
+**Critical insight from Stöckl**: Standard training loss is misleading for structured decision tasks. Models that appeared converged (low loss) still made illegal moves. Phase 1 therefore auto-runs a 3-tier evaluation after training:
+- **Tier 1 (Memorization)**: Accuracy on training data
+- **Tier 2 (Generalization)**: Accuracy on held-out states
+- **Tier 3 (Rule Learning)**: Accuracy on adversarial/edge-case states (zero inventory, demand spikes, capacity extremes)
+
+The `correct_decision_rate` metric (not loss) is the true measure of training success.
+
+**References**: Stöckl (2021) [ACL Anthology](https://aclanthology.org/2021.ranlp-1.148/); Kaplan et al. (2020) [arxiv:2001.08361](https://arxiv.org/abs/2001.08361). See `TRM_RESEARCH_SYNTHESIS.md` §8 for full analysis.
 
 #### TRM Applicability by Site Master Type
 
@@ -911,3 +960,13 @@ Training runs every 12h at :50 via the relearning jobs scheduler.
 | `integration_service.py` | Powell framework integration orchestration |
 
 All files are under `backend/app/services/powell/` unless noted otherwise.
+
+---
+
+## See Also
+
+- [TRM_DECISION_ALGORITHMS.md](TRM_DECISION_ALGORITHMS.md) — Step-by-step heuristic decision algorithms, urgency formulas (with exact calculations), and likelihood derivation for all 11 TRMs
+- [GNN_DECISION_ARCHITECTURE.md](GNN_DECISION_ARCHITECTURE.md) — Site tGNN node features, edge list, inference algorithm, Network tGNN LP formulation, S&OP GraphSAGE DE objective and inference algorithm
+- [AGENT_TRAINING_LIFECYCLE.md](AGENT_TRAINING_LIFECYCLE.md) — Training pipeline, oracle-based data generation, stochastic variable audit by agent tier
+- [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) — Hive signal bus, urgency vector, 6-phase decision cycle, multi-site coordination stack
+- [ESCALATION_ARCHITECTURE.md](ESCALATION_ARCHITECTURE.md) — When TRM urgency/CDT risk triggers vertical escalation to Network tGNN or S&OP

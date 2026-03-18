@@ -62,8 +62,8 @@ class AgentType(Enum):
     INVENTORY = "inventory"
     MANUFACTURER = "manufacturer"
     SUPPLIER = "supplier"
-    MARKET_DEMAND = "market_demand"
-    MARKET_SUPPLY = "market_supply"
+    VENDOR = "vendor"      # replaces MARKET_SUPPLY — TradingPartner(tpartner_type='vendor')
+    CUSTOMER = "customer"  # replaces MARKET_DEMAND — TradingPartner(tpartner_type='customer')
 
 class AgentStrategy(Enum):
     NAIVE = "naive"  # Simple strategy, always orders based on current demand

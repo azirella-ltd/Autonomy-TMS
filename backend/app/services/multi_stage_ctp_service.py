@@ -47,7 +47,7 @@ class StageResult:
     """Result for a single stage in the CTP traversal"""
     site_id: int
     site_name: str
-    site_type: str  # MANUFACTURER, INVENTORY, MARKET_SUPPLY, MARKET_DEMAND
+    site_type: str  # MANUFACTURER, INVENTORY, VENDOR, CUSTOMER
     product_id: str
     available_qty: float
     lead_time_days: int
@@ -317,7 +317,7 @@ class MultiStageCTPService:
         Logic depends on site master_type:
         - INVENTORY: Check on-hand - committed - safety_stock
         - MANUFACTURER: Check production capacity, BOM explosion
-        - MARKET_SUPPLY: Check vendor capacity/lead time (terminal)
+        - VENDOR: Check vendor capacity/lead time (terminal)
         """
         visit_key = (product_id, site.id)
         if visit_key in visited:
@@ -336,14 +336,14 @@ class MultiStageCTPService:
 
         master_type = (site.master_type or "").upper()
 
-        if master_type == "MARKET_SUPPLY":
+        if master_type in ("VENDOR", "VENDOR"):
             return self._check_vendor_stage(product_id, site, quantity, cumulative_lt)
         elif master_type == "MANUFACTURER":
             return self._check_manufacturer_stage(
                 product_id, site, quantity, cumulative_lt, visited
             )
         else:
-            # INVENTORY (DC, warehouse, store) or MARKET_DEMAND
+            # INVENTORY (DC, warehouse, store) or CUSTOMER
             return self._check_inventory_stage(
                 product_id, site, quantity, cumulative_lt, visited
             )
@@ -588,7 +588,7 @@ class MultiStageCTPService:
         cumulative_lt: int,
     ) -> StageResult:
         """
-        Check availability at a vendor (MARKET_SUPPLY) site.
+        Check availability at a vendor (VENDOR / MARKET_SUPPLY legacy) site.
 
         Terminal stage — assumes vendor can supply (with lead time).
         Uses vendor capacity if configured, otherwise assumes unlimited.
@@ -602,7 +602,7 @@ class MultiStageCTPService:
         return StageResult(
             site_id=site.id,
             site_name=site.name,
-            site_type="MARKET_SUPPLY",
+            site_type="VENDOR",
             product_id=product_id,
             available_qty=available,
             lead_time_days=vendor_lt,
@@ -661,7 +661,7 @@ class MultiStageCTPService:
     def _infer_order_type(self, stage: StageResult) -> str:
         """Infer order type from stage type."""
         st = stage.site_type.upper()
-        if st == "MARKET_SUPPLY":
+        if st in ("VENDOR", "VENDOR"):
             return "purchase_order"
         elif st == "MANUFACTURER":
             return "manufacturing_order"

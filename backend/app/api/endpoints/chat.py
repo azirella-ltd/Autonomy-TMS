@@ -297,6 +297,7 @@ async def request_agent_suggestion(
             scenario_id=scenario_id,
             agent_name=agent_name,
             request_data=request_data,
+            tenant_id=current_user.tenant_id,
         )
 
         # Stop typing indicator
@@ -487,7 +488,7 @@ async def run_what_if_analysis(
         from app.services.what_if_service import get_what_if_service
         import asyncio
 
-        what_if_service = get_what_if_service(chat_service.db)
+        what_if_service = get_what_if_service(chat_service.db, tenant_id=current_user.tenant_id)
 
         # Run in background
         asyncio.create_task(what_if_service.process_analysis(analysis.id))

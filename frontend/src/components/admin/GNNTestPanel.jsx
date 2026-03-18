@@ -101,9 +101,9 @@ const GNNTestPanel = ({ selectedConfig }) => {
 
   return (
     <div>
-      <H5 className="mb-2">GNN Model Testing</H5>
+      <H5 className="mb-2">Network Agent Testing</H5>
       <Text className="text-muted-foreground mb-4">
-        Test the loaded GNN model with custom supply chain state inputs.
+        Test the loaded network model with custom supply chain state inputs.
       </Text>
 
       {/* Config and Model Status */}
@@ -260,7 +260,7 @@ const GNNTestPanel = ({ selectedConfig }) => {
                         <TableCell className="font-semibold">Model Used</TableCell>
                         <TableCell className="text-right">
                           {testResult.model_used ? (
-                            <Chip variant="default" size="sm">GNN Model</Chip>
+                            <Chip variant="default" size="sm">Network Agent</Chip>
                           ) : (
                             <Chip variant="warning" size="sm">Fallback Heuristic</Chip>
                           )}
@@ -301,7 +301,7 @@ const GNNTestPanel = ({ selectedConfig }) => {
             ) : (
               <Alert variant="info">
                 <AlertDescription>
-                  Run a test to see results here. Make sure a GNN model is loaded first.
+                  Run a test to see results here. Make sure a network model is loaded first.
                 </AlertDescription>
               </Alert>
             )}

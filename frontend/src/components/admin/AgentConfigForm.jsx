@@ -23,7 +23,7 @@ const agentTypes = [
   { value: 'base', label: 'Base Agent' },
   { value: 'rule_based', label: 'Rule Based' },
   { value: 'reinforcement_learning', label: 'Reinforcement Learning' },
-  { value: 'trm', label: 'TRM (Tiny Recursive Model)' },
+  { value: 'trm', label: 'AI Agent' },
 ];
 
 const validate = (values) => {

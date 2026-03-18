@@ -8,7 +8,7 @@ IMPORTANT: This implementation follows the Supply Chain Data Model as the founda
 Extensions for simulation and platform-specific features are clearly marked.
 """
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Index, UniqueConstraint, text, Double
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Index, JSON, UniqueConstraint, text, Double
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -173,6 +173,10 @@ class VendorLeadTime(Base):
 
     # Extension: Lead Time Variability (for stochastic planning)
     lead_time_variability_days: Mapped[Optional[float]] = mapped_column(Double)  # Standard deviation
+    # Extension: Full distribution parameters (from SAP operational stats)
+    # JSON format: {"type": "lognormal", "mean_log": ..., "stddev_log": ..., "min": ..., "max": ...}
+    # NULL = use deterministic lead_time_days with optional lead_time_variability_days
+    lead_time_dist: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Extension: Audit Fields
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

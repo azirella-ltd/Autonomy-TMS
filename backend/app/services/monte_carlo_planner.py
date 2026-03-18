@@ -10,7 +10,7 @@ import numpy as np
 from sqlalchemy.orm import Session
 from dataclasses import dataclass
 
-from app.models.supply_chain_config import SupplyChainConfig, Node
+from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.sc_entities import Product
 from app.services.stochastic_sampling import (
     StochasticParameters,

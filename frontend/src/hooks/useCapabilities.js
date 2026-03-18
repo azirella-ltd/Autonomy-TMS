@@ -47,6 +47,10 @@ export const useCapabilities = () => {
     // System admin has all capabilities
     if (capabilities.includes('system_admin')) return true;
 
+    // Tenant admin has all admin capabilities by default
+    if (capabilities.includes('tenant_admin') && capability.startsWith('manage_')) return true;
+    if (capabilities.includes('tenant_admin') && capability.startsWith('view_')) return true;
+
     return capabilities.includes(capability);
   };
 

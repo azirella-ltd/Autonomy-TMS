@@ -42,6 +42,10 @@ import {
   Zap,
   BarChart3,
   Search,
+  Settings,
+  Server,
+  Cloud,
+  Cpu,
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -81,7 +85,7 @@ const OverviewTab = ({ stats }) => {
   if (!stats) return null;
 
   const escalationData = [
-    { name: 'TRM Decisions', value: stats.total_trm_decisions, fill: '#3b82f6' },
+    { name: 'Agent Decisions', value: stats.total_trm_decisions, fill: '#3b82f6' },
     { name: 'Skills Escalations', value: stats.total_skill_decisions, fill: '#f59e0b' },
   ];
 
@@ -104,7 +108,7 @@ const OverviewTab = ({ stats }) => {
           color="amber"
         />
         <StatCard
-          title="Total TRM Decisions"
+          title="Total AI Decisions"
           value={stats.total_trm_decisions.toLocaleString()}
           subtitle={`Last ${stats.period_days} days`}
           icon={Zap}
@@ -205,7 +209,7 @@ const OverviewTab = ({ stats }) => {
 };
 
 // ============================================================================
-// Per-TRM Type Tab
+// Per-Agent Role Tab
 // ============================================================================
 
 const TypeBreakdownTab = ({ stats }) => {
@@ -224,7 +228,7 @@ const TypeBreakdownTab = ({ stats }) => {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Decisions by TRM Type and Source</CardTitle>
+          <CardTitle className="text-sm font-medium">Decisions by Agent Type and Source</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>
@@ -234,7 +238,7 @@ const TypeBreakdownTab = ({ stats }) => {
               <YAxis dataKey="trm_type" type="category" width={120} tick={{ fontSize: 11 }} />
               <RechartsTooltip />
               <Legend />
-              <Bar dataKey="trm" name="TRM" fill="#3b82f6" stackId="a" />
+              <Bar dataKey="trm" name="Agent" fill="#3b82f6" stackId="a" />
               <Bar dataKey="skill_exception" name="Skills" fill="#f59e0b" stackId="a" />
               <Bar dataKey="engine" name="Engine" fill="#94a3b8" stackId="a" />
               <Bar dataKey="backfill" name="Backfill" fill="#e5e7eb" stackId="a" />
@@ -253,7 +257,7 @@ const TypeBreakdownTab = ({ stats }) => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left p-2">TRM Type</th>
+                  <th className="text-left p-2">Agent Role</th>
                   <th className="text-left p-2">Source</th>
                   <th className="text-right p-2">Count</th>
                   <th className="text-right p-2">Avg Confidence</th>
@@ -335,7 +339,7 @@ const RAGMemoryTab = ({ ragStats }) => {
       {/* Per-Type Breakdown */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">RAG Memory by TRM Type</CardTitle>
+          <CardTitle className="text-sm font-medium">RAG Memory by Agent Role</CardTitle>
         </CardHeader>
         <CardContent>
           {ragStats.by_type?.length > 0 ? (
@@ -396,7 +400,7 @@ const RecentDecisionsTab = ({ stats }) => {
     return (
       <Alert>
         <Clock className="h-4 w-4" />
-        <span>No recent decisions found. Skills decisions will appear here once the hybrid TRM + Skills pipeline processes exceptions.</span>
+        <span>No recent decisions found. Skills decisions will appear here once the AI agent pipeline processes exceptions.</span>
       </Alert>
     );
   }
@@ -412,7 +416,7 @@ const RecentDecisionsTab = ({ stats }) => {
             <thead>
               <tr className="border-b">
                 <th className="text-left p-2">Time</th>
-                <th className="text-left p-2">TRM Type</th>
+                <th className="text-left p-2">Agent Role</th>
                 <th className="text-left p-2">Source</th>
                 <th className="text-left p-2">Site</th>
                 <th className="text-right p-2">Confidence</th>
@@ -457,6 +461,161 @@ const RecentDecisionsTab = ({ stats }) => {
         </div>
       </CardContent>
     </Card>
+  );
+};
+
+// ============================================================================
+// LLM Settings Tab
+// ============================================================================
+
+const PROVIDER_OPTIONS = [
+  {
+    value: 'auto',
+    label: 'Auto',
+    description: 'Use Claude API if CLAUDE_API_KEY is set, otherwise fall back to vLLM.',
+    icon: Cpu,
+    color: 'text-gray-600',
+  },
+  {
+    value: 'claude',
+    label: 'Claude API',
+    description: 'Always use Anthropic Claude (claude-sonnet-4-6). Best quality. Requires CLAUDE_API_KEY.',
+    icon: Cloud,
+    color: 'text-purple-600',
+  },
+  {
+    value: 'vllm',
+    label: 'vLLM (Local)',
+    description: 'Always use local vLLM on LLM_API_BASE. Free but limited by GPU context window.',
+    icon: Server,
+    color: 'text-blue-600',
+  },
+];
+
+const ProviderCard = ({ value, selected, onSelect }) => {
+  const opt = PROVIDER_OPTIONS.find(o => o.value === value) || PROVIDER_OPTIONS[0];
+  const Icon = opt.icon;
+  return (
+    <div
+      onClick={() => onSelect(value)}
+      className={`cursor-pointer rounded-lg border-2 p-4 transition-all ${
+        selected === value
+          ? 'border-primary bg-primary/5'
+          : 'border-border hover:border-primary/50'
+      }`}
+    >
+      <div className="flex items-center gap-3 mb-2">
+        <Icon className={`h-5 w-5 ${opt.color}`} />
+        <span className="font-semibold text-sm">{opt.label}</span>
+        {selected === value && (
+          <Badge variant="default" className="ml-auto text-xs">Active</Badge>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">{opt.description}</p>
+    </div>
+  );
+};
+
+const LLMSettingsTab = () => {
+  const [settings, setSettings] = useState({ briefing_provider: 'auto', skills_provider: 'auto' });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.get('/config/llm')
+      .then(r => setSettings(r.data))
+      .catch(() => {/* use defaults */})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await api.put('/config/llm', settings);
+      setSettings(r.data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading settings…</div>;
+
+  return (
+    <div className="space-y-6 pt-4">
+      <Alert>
+        <Settings className="h-4 w-4" />
+        <div>
+          <strong>Changes take effect immediately</strong> — no restart required.
+          Settings are written to <code>data/llm_settings.json</code> and read on each request.
+        </div>
+      </Alert>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-purple-500" />
+            Executive Briefing Provider
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Weekly/monthly briefings. Low-frequency, quality-critical.
+            Recommended: Claude API (~$0.05/briefing).
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {PROVIDER_OPTIONS.map(opt => (
+              <ProviderCard
+                key={opt.value}
+                value={opt.value}
+                selected={settings.briefing_provider}
+                onSelect={v => setSettings(s => ({ ...s, briefing_provider: v }))}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Brain className="h-4 w-4 text-blue-500" />
+            Skills Exception Handler Provider
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Exception handling (~5% of decisions). Higher volume, latency-tolerant.
+            Recommended: vLLM for air-gapped or cost-sensitive deployments.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {PROVIDER_OPTIONS.map(opt => (
+              <ProviderCard
+                key={opt.value}
+                value={opt.value}
+                selected={settings.skills_provider}
+                onSelect={v => setSettings(s => ({ ...s, skills_provider: v }))}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <Spinner className="h-4 w-4 mr-2" /> : <Settings className="h-4 w-4 mr-2" />}
+          {saving ? 'Saving…' : 'Save Settings'}
+        </Button>
+        {saved && <span className="text-sm text-green-600 flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Saved — active immediately</span>}
+        {error && <span className="text-sm text-red-600">{error}</span>}
+      </div>
+    </div>
   );
 };
 
@@ -511,7 +670,7 @@ const SkillsDashboard = () => {
             Claude Skills Monitor
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Hybrid TRM + Claude Skills architecture — TRMs handle ~95%, Skills handle ~5% exceptions
+            Hybrid AI agent + Skills architecture — execution agents handle ~95%, Skills handle ~5% exceptions
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={fetchData}>
@@ -535,7 +694,7 @@ const SkillsDashboard = () => {
             <div className="text-sm">
               <p className="font-medium">LeCun JEPA Hybrid Architecture</p>
               <p className="text-muted-foreground">
-                TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retraining
+                Execution agents (TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retraininglt;10ms) TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retrainingrarr; Confidence routing TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retrainingrarr; Claude Skills (~5% exceptions) TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retrainingrarr; Decision recorded for agent retraining
               </p>
             </div>
           </div>
@@ -549,13 +708,16 @@ const SkillsDashboard = () => {
             <Activity className="h-4 w-4 mr-1" /> Overview
           </TabsTrigger>
           <TabsTrigger value="types">
-            <BarChart3 className="h-4 w-4 mr-1" /> By TRM Type
+            <BarChart3 className="h-4 w-4 mr-1" /> By Agent Role
           </TabsTrigger>
           <TabsTrigger value="rag">
             <Database className="h-4 w-4 mr-1" /> RAG Memory
           </TabsTrigger>
           <TabsTrigger value="recent">
             <Clock className="h-4 w-4 mr-1" /> Recent Decisions
+          </TabsTrigger>
+          <TabsTrigger value="llm-settings">
+            <Settings className="h-4 w-4 mr-1" /> LLM Settings
           </TabsTrigger>
         </TabsList>
 
@@ -570,6 +732,9 @@ const SkillsDashboard = () => {
         </TabsContent>
         <TabsContent value="recent">
           <RecentDecisionsTab stats={stats} />
+        </TabsContent>
+        <TabsContent value="llm-settings">
+          <LLMSettingsTab />
         </TabsContent>
       </Tabs>
     </div>

@@ -18,7 +18,7 @@ from app.core.demand_patterns import (
 )
 from app.models.supply_chain_config import (
     SupplyChainConfig,
-    Node,
+    Site,
     TransportationLane,  # AWS SC DM standard
     Market,
     MarketDemand,
@@ -330,7 +330,7 @@ class SupplyChainConfigService:
         
         # Get all related data
         products = self.db.query(Product).filter(Product.config_id == config_id).all()
-        nodes = self.db.query(Node).filter(Node.config_id == config_id).all()
+        nodes = self.db.query(Site).filter(Site.config_id == config_id).all()
         lanes = self.db.query(TransportationLane).filter(TransportationLane.config_id == config_id).all()
         markets = self.db.query(Market).filter(Market.config_id == config_id).all()
         # Note: ProductSiteConfig functionality migrated to InvPolicy (SC)
@@ -707,7 +707,7 @@ class SupplyChainConfigService:
                 return []
             return [token for token in re.split(r"[^0-9a-z]+", str(value).lower()) if token]
 
-        demand_node_entries: List[Tuple[Node, str, Set[str]]] = []
+        demand_node_entries: List[Tuple[Site, str, Set[str]]] = []
         for node in nodes:
             node_type_canonical = MixedScenarioService._normalise_node_type(getattr(node, "type", None))
             if node_type_canonical == "market_demand":
@@ -810,7 +810,7 @@ class SupplyChainConfigService:
             explicit_market = [
                 name
                 for name, ntype in node_types.items()
-                if ntype == NodeType.MARKET_DEMAND.value.lower() or ntype == "market_demand"
+                if ntype == NodeType.CUSTOMER.value.lower() or ntype == "market_demand"
             ]
             market_nodes = sorted(explicit_market)
 
@@ -820,7 +820,7 @@ class SupplyChainConfigService:
         market_supply_nodes = [
             name
             for name, ntype in node_types.items()
-            if ntype == NodeType.MARKET_SUPPLY.value.lower() or ntype == "market_supply"
+            if ntype == NodeType.VENDOR.value.lower() or ntype == "market_supply"
         ]
         if not market_supply_nodes:
             raise ValueError("Supply chain DAG must include at least one Market Supply node persisted in the database")
@@ -842,7 +842,7 @@ class SupplyChainConfigService:
                 sources.append(node)
                 continue
             node_type = node_types.get(node)
-            if node_type in {NodeType.MARKET_SUPPLY.value.lower(), "market_supply", NodeType.MARKET_DEMAND.value.lower(), "market_demand"}:
+            if node_type in {NodeType.VENDOR.value.lower(), "market_supply", NodeType.CUSTOMER.value.lower(), "market_demand"}:
                 sources.append(node)
         sinks = sorted([node for node in all_node_keys if node not in upstreams])
         def _normalize_node_type(node_key: str) -> Optional[str]:
@@ -862,9 +862,9 @@ class SupplyChainConfigService:
             return None
 
         allowed_source_types = {
-            MixedScenarioService._normalise_node_type(NodeType.MARKET_SUPPLY.value),
+            MixedScenarioService._normalise_node_type(NodeType.VENDOR.value),
             "market_supply",
-            MixedScenarioService._normalise_node_type(NodeType.MARKET_DEMAND.value),
+            MixedScenarioService._normalise_node_type(NodeType.CUSTOMER.value),
             "market_demand",
             MixedScenarioService._normalise_node_type(NodeType.SUPPLIER.value),
             "supplier",
@@ -884,9 +884,9 @@ class SupplyChainConfigService:
                 "Supply chain DAG sources must be Supplier / Component Supplier / Market Supply / Market Demand nodes; invalid sources: "
                 + ", ".join(invalid_sources)
             )
-        if not any(_normalize_node_type(node) in {NodeType.MARKET_SUPPLY.value.lower(), "market_supply"} for node in sources):
+        if not any(_normalize_node_type(node) in {NodeType.VENDOR.value.lower(), "market_supply"} for node in sources):
             raise ValueError("Supply chain DAG must include at least one Market Supply source node.")
-        if not any(_normalize_node_type(node) in {NodeType.MARKET_DEMAND.value.lower(), "market_demand"} for node in sinks):
+        if not any(_normalize_node_type(node) in {NodeType.CUSTOMER.value.lower(), "market_demand"} for node in sinks):
             raise ValueError("Supply chain DAG must include at least one Market Demand sink node.")
 
         md = market_demands[0]
@@ -1169,7 +1169,7 @@ class SupplyChainConfigService:
         errors: List[str] = []
 
         # Get all nodes and products
-        from app.models.supply_chain_config import Node as SCNode
+        from app.models.supply_chain_config import Site as SCNode
         from app.models.sc_entities import Product
 
         nodes = self.db.query(SCNode).filter(SCNode.config_id == config_id).all()

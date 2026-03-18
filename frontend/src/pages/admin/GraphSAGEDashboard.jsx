@@ -68,9 +68,9 @@ const phaseLabel = (phase) => {
   const map = {
     loading_config: 'Loading Config',
     generating_data: 'Generating Data',
-    training_sop: 'Training S&OP GraphSAGE',
-    training_tgnn: 'Training Execution tGNN',
-    training_trm: 'Training TRM Agents',
+    training_sop: 'Training S&OP Agent',
+    training_tgnn: 'Training Network Agent',
+    training_trm: 'Training AI Agents',
     completed: 'Completed',
     failed: 'Failed',
   };
@@ -103,7 +103,7 @@ const GraphSAGEDashboard = () => {
   // Create config form
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createForm, setCreateForm] = useState({
-    name: 'S&OP GraphSAGE',
+    name: 'S&OP Agent',
     description: 'S&OP-level network analysis and risk scoring',
     sop_hidden_dim: 128,
     sop_embedding_dim: 64,
@@ -223,7 +223,7 @@ const GraphSAGEDashboard = () => {
     setError(null);
     try {
       await api.post(`/powell-training/configs/${selectedPowellConfig.id}/start-training`);
-      setSuccess('S&OP GraphSAGE training started');
+      setSuccess('S&OP Agent training started');
       setTraining(true);
       await loadRuns();
     } catch (err) {
@@ -247,12 +247,12 @@ const GraphSAGEDashboard = () => {
         <ChevronRight className="h-4 w-4" />
         <Link to="/admin?section=training" className="hover:text-foreground">AI & Agents</Link>
         <ChevronRight className="h-4 w-4" />
-        <span className="text-foreground">GraphSAGE Training</span>
+        <span className="text-foreground">S&OP Agent Training</span>
       </nav>
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">S&OP GraphSAGE</h1>
+        <h1 className="text-3xl font-bold mb-2">S&OP Agent</h1>
         <p className="text-muted-foreground">
           Medium-term network structure analysis at aggregated hierarchy levels.
           Computes policy parameters θ (CFA) — criticality scores, bottleneck risk,
@@ -355,7 +355,7 @@ const GraphSAGEDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Architecture</p>
-                <p className="text-lg font-bold">3-Layer GraphSAGE</p>
+                <p className="text-lg font-bold">3-Layer Graph Model</p>
                 <p className="text-xs text-muted-foreground">Neighbor sampling, O(edges)</p>
               </div>
               <Network className="h-8 w-8 text-amber-500" />
@@ -472,8 +472,8 @@ const GraphSAGEDashboard = () => {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                The GraphSAGE model computes these per-node policy parameters at the aggregated
-                Country × Family level. These feed downstream to the Execution tGNN and TRM agents.
+                The S&OP model computes these per-node policy parameters at the aggregated
+                Country × Family level. These feed downstream to the Execution model and AI agents.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -567,14 +567,14 @@ const GraphSAGEDashboard = () => {
           {/* Data flow diagram */}
           <Card>
             <CardHeader>
-              <CardTitle>Data Flow: S&OP → Execution → TRM</CardTitle>
+              <CardTitle>Data Flow: S&OP → Execution → AI Agents</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3 font-mono text-sm">
                 <div className="p-3 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant="info">CFA</Badge>
-                    <strong>S&OP GraphSAGE</strong>
+                    <strong>S&OP Agent</strong>
                     <span className="text-muted-foreground ml-auto">Weekly / Monthly</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -585,7 +585,7 @@ const GraphSAGEDashboard = () => {
                 <div className="p-3 border rounded-lg bg-amber-50 dark:bg-amber-950/20">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant="warning">VFA</Badge>
-                    <strong>Execution tGNN</strong>
+                    <strong>Network Agent</strong>
                     <span className="text-muted-foreground ml-auto">Daily</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -596,7 +596,7 @@ const GraphSAGEDashboard = () => {
                 <div className="p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant="success">VFA</Badge>
-                    <strong>Narrow TRM Agents</strong>
+                    <strong>AI Agents</strong>
                     <span className="text-muted-foreground ml-auto">&lt;10ms per decision</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -677,7 +677,7 @@ const GraphSAGEDashboard = () => {
           {showCreateForm && (
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle>New S&OP GraphSAGE Training Configuration</CardTitle>
+                <CardTitle>New S&OP Agent Training Configuration</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

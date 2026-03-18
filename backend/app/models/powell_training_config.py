@@ -23,12 +23,21 @@ from .base import Base
 
 
 class TRMType(str, Enum):
-    """TRM role types - each has different decision scope"""
-    ATP_EXECUTOR = "ATP_EXECUTOR"  # Allocated ATP consumption decisions
-    REBALANCING = "REBALANCING"  # Cross-location inventory transfer
-    PO_CREATION = "PO_CREATION"  # Purchase order timing and quantity
-    ORDER_TRACKING = "ORDER_TRACKING"  # Exception detection and resolution
-    SAFETY_STOCK = "SAFETY_STOCK"  # Safety stock adjustment decisions
+    """TRM role types — all 11 narrow execution decision scopes."""
+    ATP_EXECUTOR = "ATP_EXECUTOR"
+    REBALANCING = "REBALANCING"
+    PO_CREATION = "PO_CREATION"
+    ORDER_TRACKING = "ORDER_TRACKING"
+    INVENTORY_BUFFER = "INVENTORY_BUFFER"
+    MO_EXECUTION = "MO_EXECUTION"
+    TO_EXECUTION = "TO_EXECUTION"
+    QUALITY_DISPOSITION = "QUALITY_DISPOSITION"
+    MAINTENANCE_SCHEDULING = "MAINTENANCE_SCHEDULING"
+    SUBCONTRACTING = "SUBCONTRACTING"
+    FORECAST_ADJUSTMENT = "FORECAST_ADJUSTMENT"
+
+    # Backward compatibility alias (DB may still have SAFETY_STOCK)
+    SAFETY_STOCK = "SAFETY_STOCK"
 
 
 class TrainingStatus(str, Enum):
@@ -58,24 +67,25 @@ class PhaseStatus(str, Enum):
     NOT_APPLICABLE = "not_applicable"  # TRM type not applicable for this site
 
 
-# TRM applicability by site master type
+# TRM applicability by site master type.
+# Mirrors site_capabilities.py get_active_trms() — kept in sync for DB-layer
+# references (TRMSiteTrainingConfig).  The canonical source of truth for
+# runtime hive composition is site_capabilities.py.
 TRM_APPLICABILITY = {
-    "INVENTORY": [
-        TRMType.ATP_EXECUTOR,
-        TRMType.PO_CREATION,
-        TRMType.SAFETY_STOCK,
-        TRMType.REBALANCING,
-        TRMType.ORDER_TRACKING,
+    "manufacturer": [
+        TRMType.ATP_EXECUTOR, TRMType.ORDER_TRACKING, TRMType.INVENTORY_BUFFER,
+        TRMType.FORECAST_ADJUSTMENT, TRMType.QUALITY_DISPOSITION, TRMType.PO_CREATION,
+        TRMType.SUBCONTRACTING, TRMType.MAINTENANCE_SCHEDULING, TRMType.MO_EXECUTION,
+        TRMType.TO_EXECUTION, TRMType.REBALANCING,
     ],
-    "MANUFACTURER": [
-        TRMType.ATP_EXECUTOR,
+    "inventory": [
+        TRMType.ATP_EXECUTOR, TRMType.ORDER_TRACKING, TRMType.INVENTORY_BUFFER,
+        TRMType.FORECAST_ADJUSTMENT, TRMType.TO_EXECUTION, TRMType.REBALANCING,
         TRMType.PO_CREATION,
-        TRMType.SAFETY_STOCK,
-        TRMType.ORDER_TRACKING,
     ],
-    # Market supply/demand sites don't use TRMs
-    "MARKET_SUPPLY": [],
-    "MARKET_DEMAND": [],
+    # External TradingPartner sites — no TRM hive
+    "vendor": [],
+    "customer": [],
 }
 
 
@@ -96,7 +106,7 @@ class PowellTrainingConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -332,30 +342,68 @@ DEFAULT_TRM_REWARD_WEIGHTS = {
         "fill_rate": 0.4,
         "on_time_bonus": 0.2,
         "priority_weight": 0.2,
-        "fairness_penalty": 0.2
+        "fairness_penalty": 0.2,
     },
     TRMType.REBALANCING: {
         "service_improvement": 0.5,
         "transfer_cost_penalty": 0.3,
-        "balance_improvement": 0.2
+        "balance_improvement": 0.2,
     },
     TRMType.PO_CREATION: {
         "stockout_penalty": 0.4,
         "dos_target_reward": 0.3,
         "cost_efficiency": 0.2,
-        "timing_accuracy": 0.1
+        "timing_accuracy": 0.1,
     },
     TRMType.ORDER_TRACKING: {
         "correct_exception_detection": 0.4,
         "resolution_speed": 0.3,
-        "escalation_appropriateness": 0.3
+        "escalation_appropriateness": 0.3,
     },
+    TRMType.INVENTORY_BUFFER: {
+        "stockout_penalty": 0.4,
+        "dos_target_reward": 0.3,
+        "excess_cost_penalty": 0.2,
+        "stability_bonus": 0.1,
+    },
+    TRMType.MO_EXECUTION: {
+        "on_time_completion": 0.3,
+        "sequence_efficiency": 0.3,
+        "utilization": 0.2,
+        "changeover_penalty": 0.2,
+    },
+    TRMType.TO_EXECUTION: {
+        "on_time_delivery": 0.4,
+        "consolidation_bonus": 0.3,
+        "cost_efficiency": 0.3,
+    },
+    TRMType.QUALITY_DISPOSITION: {
+        "correct_disposition": 0.5,
+        "cost_efficiency": 0.3,
+        "throughput_impact": 0.2,
+    },
+    TRMType.MAINTENANCE_SCHEDULING: {
+        "uptime_improvement": 0.4,
+        "cost_efficiency": 0.3,
+        "schedule_adherence": 0.3,
+    },
+    TRMType.SUBCONTRACTING: {
+        "cost_efficiency": 0.4,
+        "quality_score": 0.3,
+        "lead_time_adherence": 0.3,
+    },
+    TRMType.FORECAST_ADJUSTMENT: {
+        "forecast_accuracy": 0.5,
+        "signal_relevance": 0.3,
+        "adjustment_stability": 0.2,
+    },
+    # Legacy alias — same weights as INVENTORY_BUFFER
     TRMType.SAFETY_STOCK: {
         "stockout_penalty": 0.4,
         "dos_target_reward": 0.3,
         "excess_cost_penalty": 0.2,
-        "stability_bonus": 0.1
-    }
+        "stability_bonus": 0.1,
+    },
 }
 
 
@@ -461,7 +509,7 @@ class TRMBaseModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     master_type: Mapped[str] = mapped_column(String(50), nullable=False)
     trm_type: Mapped[str] = mapped_column(
         SAEnum(TRMType, name="trm_type_enum", create_constraint=False),

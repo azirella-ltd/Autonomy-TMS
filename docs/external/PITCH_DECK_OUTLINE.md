@@ -65,11 +65,11 @@ AI-Native Supply Chain Planning
 | **Explainability** | Black box | Natural language + full audit |
 | **Learning** | Consultant retraining | Continuous from overrides |
 
-**Speaker notes:** We deliver enterprise-grade supply chain planning at a fraction of the cost. 100% compatible with AWS Supply Chain data standards (35/35 entities), so customers don't sacrifice compliance. The 3 capabilities that make this possible: AI agents, stochastic planning, and simulation-based training.
+**Speaker notes:** We deliver enterprise-grade supply chain planning at a fraction of the cost. 100% compatible with AWS Supply Chain data standards (35/35 entities), so customers don't sacrifice compliance. The four pillars that make this possible: AI agents, causal AI, conformal prediction, and a digital twin.
 
 ---
 
-## SLIDE 5: Differentiator #1 — Three-Tier AI Architecture
+## SLIDE 5: Pillar #1 — AI Agents (Three-Tier Architecture)
 
 **AI agents that plan at machine speed with human-level judgment**
 
@@ -93,7 +93,7 @@ Execution tGNN (priority allocations, daily)
 
 ---
 
-## SLIDE 6: Differentiator #2 — The TRM Hive
+## SLIDE 6: AI Agents (cont.) — The TRM Hive
 
 **11 agents per site. Self-coordinating. Edge-deployable.**
 
@@ -119,12 +119,12 @@ Execution tGNN (priority allocations, daily)
 
 ---
 
-## SLIDE 7: Differentiator #3 — Stochastic Planning
+## SLIDE 7: Pillar #2 — Conformal Prediction + Digital Twin
 
-**Probability distributions instead of point estimates**
+**Distribution-free guarantees powered by stochastic simulation**
 
-- **20 distribution types** for operational uncertainty (lead times, yields, demand, capacity)
-- **1,000+ Monte Carlo scenarios** with variance reduction
+- **21 distribution types** for operational uncertainty (lead times, yields, demand, capacity)
+- **1,000+ Monte Carlo scenarios** with variance reduction (Digital Twin)
 - **Conformal prediction** — mathematically guaranteed coverage intervals
 - Output: **"85% chance service level > 95%"** instead of "service level = 97%"
 

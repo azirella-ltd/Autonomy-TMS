@@ -1403,15 +1403,18 @@ async def get_trm_decisions(
         AgentDecision.decision_type == decision_type,
     )
 
-    # Map frontend status names to model statuses
+    # Map frontend status names to model statuses (AIIO model)
     if status:
         status_map = {
-            "PROPOSED": DTStatus.PENDING,
-            "PENDING": DTStatus.PENDING,
-            "ACCEPTED": DTStatus.ACCEPTED,
-            "OVERRIDDEN": DTStatus.REJECTED,  # "rejected" in model = overridden by user
-            "REJECTED": DTStatus.REJECTED,
-            "EXECUTED": DTStatus.AUTO_EXECUTED,
+            "PROPOSED": DTStatus.INFORMED,
+            "PENDING": DTStatus.INFORMED,
+            "INFORMED": DTStatus.INFORMED,
+            "ACCEPTED": DTStatus.ACTIONED,
+            "ACTIONED": DTStatus.ACTIONED,
+            "OVERRIDDEN": DTStatus.OVERRIDDEN,
+            "REJECTED": DTStatus.OVERRIDDEN,
+            "EXECUTED": DTStatus.ACTIONED,
+            "INSPECTED": DTStatus.INSPECTED,
         }
         mapped = status_map.get(status.upper())
         if mapped:
@@ -1461,7 +1464,12 @@ async def submit_trm_decision_action(
     db: Session = Depends(get_db),
 ):
     """
-    Submit an action on a TRM decision (accept, override, or reject).
+    Submit an action on a TRM decision (AIIO model: accept, inspect, override).
+
+    AIIO actions:
+    - accept: Mark as ACTIONED (decision executed as recommended)
+    - inspect: Mark as INSPECTED (user reviewed, no action needed)
+    - override: Mark as OVERRIDDEN (user provided alternative values + reason)
 
     Override values + reason are stored for RL training feedback:
     - Stored in agent_decisions table (status, user_value, override_reason)
@@ -1475,7 +1483,7 @@ async def submit_trm_decision_action(
     if not decision:
         raise HTTPException(status_code=404, detail="TRM decision not found")
 
-    valid_actions = {"accept", "override", "reject"}
+    valid_actions = {"accept", "inspect", "override", "reject"}
     action = request.action.lower()
     if action not in valid_actions:
         raise HTTPException(status_code=400, detail=f"Invalid action. Valid: {valid_actions}")
@@ -1489,13 +1497,17 @@ async def submit_trm_decision_action(
     # Update decision record
     now = datetime.utcnow()
     if action == "accept":
-        decision.status = DTStatus.ACCEPTED
+        decision.status = DTStatus.ACTIONED
         decision.user_action = "accept"
+    elif action == "inspect":
+        decision.status = DTStatus.INSPECTED
+        decision.user_action = "inspect"
     elif action == "override":
-        decision.status = DTStatus.REJECTED  # model uses REJECTED for human overrides
+        decision.status = DTStatus.OVERRIDDEN
         decision.user_action = "override"
     elif action == "reject":
-        decision.status = DTStatus.REJECTED
+        # Backward compatibility: reject maps to OVERRIDDEN in AIIO model
+        decision.status = DTStatus.OVERRIDDEN
         decision.user_action = "reject"
 
     decision.user_id = user_id
@@ -1633,47 +1645,42 @@ async def get_trm_summary(
     total = total_result.scalar() or 0
 
     proposed_result = await db.execute(select(func.count(AgentDecision.id)).where(
-        *base_filters, AgentDecision.status == DTStatus.PENDING
+        *base_filters, AgentDecision.status == DTStatus.INFORMED
     ))
     proposed = proposed_result.scalar() or 0
 
     accepted_result = await db.execute(select(func.count(AgentDecision.id)).where(
-        *base_filters, AgentDecision.status == DTStatus.ACCEPTED
+        *base_filters, AgentDecision.status == DTStatus.ACTIONED
     ))
     accepted = accepted_result.scalar() or 0
 
     overridden_result = await db.execute(select(func.count(AgentDecision.id)).where(
-        *base_filters, AgentDecision.status == DTStatus.REJECTED, AgentDecision.user_action == "override"
+        *base_filters, AgentDecision.status == DTStatus.OVERRIDDEN
     ))
     overridden = overridden_result.scalar() or 0
 
-    rejected_result = await db.execute(select(func.count(AgentDecision.id)).where(
-        *base_filters, AgentDecision.status == DTStatus.REJECTED, AgentDecision.user_action == "reject"
+    inspected_result = await db.execute(select(func.count(AgentDecision.id)).where(
+        *base_filters, AgentDecision.status == DTStatus.INSPECTED
     ))
-    rejected = rejected_result.scalar() or 0
-
-    executed_result = await db.execute(select(func.count(AgentDecision.id)).where(
-        *base_filters, AgentDecision.status == DTStatus.AUTO_EXECUTED
-    ))
-    executed = executed_result.scalar() or 0
+    inspected = inspected_result.scalar() or 0
 
     avg_conf_result = await db.execute(select(func.avg(AgentDecision.agent_confidence)).where(*base_filters))
     avg_confidence = avg_conf_result.scalar() or 0.0
 
-    reviewed = accepted + overridden + rejected
+    reviewed = accepted + overridden
     override_rate = (overridden / reviewed * 100) if reviewed > 0 else 0.0
-    touchless_rate = (executed / total * 100) if total > 0 else 0.0
+    # Actioned with no user_action means auto-executed; compute touchless from actioned without user intervention
+    touchless_rate = 0.0  # TODO: refine once auto-executed vs user-accepted are tracked separately
 
     return {
         "config_id": config_id,
         "trm_type": trm_type,
         "total": total,
         "by_status": {
-            "proposed": proposed,
-            "accepted": accepted,
-            "overridden": overridden,
-            "rejected": rejected,
-            "executed": executed,
+            "INFORMED": proposed,
+            "ACTIONED": accepted,
+            "OVERRIDDEN": overridden,
+            "INSPECTED": inspected,
         },
         "avg_confidence": round(avg_confidence, 3),
         "override_rate": round(override_rate, 1),
@@ -1682,21 +1689,24 @@ async def get_trm_summary(
 
 
 def _map_status_to_frontend(status, user_action: Optional[str] = None) -> str:
-    """Map AgentDecision status + user_action to frontend-friendly status string."""
+    """Map AgentDecision status + user_action to frontend-friendly status string (AIIO model).
+
+    AIIO Model:
+    - INFORMED: Agent made a decision, user has been notified (awaiting action)
+    - ACTIONED: Decision was executed (user accepted, agent auto-executed, or time expired)
+    - INSPECTED: User reviewed the decision, no action needed
+    - OVERRIDDEN: User rejected and provided an alternative
+    """
     from app.models.decision_tracking import DecisionStatus as DTStatus
 
-    if status == DTStatus.PENDING:
-        return "PROPOSED"
-    elif status == DTStatus.ACCEPTED:
-        return "ACCEPTED"
-    elif status == DTStatus.REJECTED:
-        if user_action == "override":
-            return "OVERRIDDEN"
-        return "REJECTED"
-    elif status == DTStatus.AUTO_EXECUTED:
-        return "EXECUTED"
-    elif status == DTStatus.EXPIRED:
-        return "EXPIRED"
+    if status == DTStatus.INFORMED:
+        return "INFORMED"
+    elif status == DTStatus.ACTIONED:
+        return "ACTIONED"
+    elif status == DTStatus.OVERRIDDEN:
+        return "OVERRIDDEN"
+    elif status == DTStatus.INSPECTED:
+        return "INSPECTED"
     return str(status.value).upper() if hasattr(status, 'value') else str(status).upper()
 
 

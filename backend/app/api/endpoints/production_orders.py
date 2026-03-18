@@ -15,7 +15,7 @@ from app.api.deps import get_current_user, get_db
 from app.models.user import User
 from app.models.production_order import ProductionOrder, ProductionOrderComponent
 from app.models.mps import MPSPlan
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 from app.models.sc_entities import Product
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.schemas.production_order import (
@@ -278,7 +278,7 @@ async def create_production_order(
         raise HTTPException(status_code=404, detail="Item not found")
 
     # Validate site exists
-    site = db.query(Node).filter(Node.id == order_data.site_id).first()
+    site = db.query(Site).filter(Site.id == order_data.site_id).first()
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
 

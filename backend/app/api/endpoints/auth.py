@@ -39,7 +39,7 @@ from app.services.auth_service import AuthService, get_auth_service
 from app.schemas.mfa import MFAVerifyRequest
 from app.models.supply_chain_config import (
     SupplyChainConfig,
-    Node,
+    Site,
     Lane,
     Market,
     MarketDemand,
@@ -158,16 +158,16 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
         db.refresh(item)
 
         node_specs = [
-            ("Market Demand", NodeType.MARKET_DEMAND, "market_demand", "market_demand"),
+            ("Market Demand", NodeType.CUSTOMER, "market_demand", "market_demand"),
             ("Retailer", NodeType.RETAILER, "retailer", "inventory"),
             ("Wholesaler", NodeType.WHOLESALER, "wholesaler", "inventory"),
             ("Distributor", NodeType.DISTRIBUTOR, "distributor", "inventory"),
             ("Factory", NodeType.MANUFACTURER, "factory", "inventory"),
-            ("Market Supply", NodeType.MARKET_SUPPLY, "market_supply", "market_supply"),
+            ("Market Supply", NodeType.VENDOR, "market_supply", "market_supply"),
         ]
-        nodes: Dict[NodeType, Node] = {}
+        nodes: Dict[NodeType, Site] = {}
         for name, node_type, dag_type, master_type in node_specs:
-            node = Node(
+            node = Site(
                 config_id=config.id,
                 name=name,
                 type=dag_type,
@@ -183,7 +183,7 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
         lanes = [
             Lane(
                 config_id=config.id,
-                from_site_id=nodes[NodeType.MARKET_SUPPLY].id,
+                from_site_id=nodes[NodeType.VENDOR].id,
                 to_site_id=nodes[NodeType.MANUFACTURER].id,
                 capacity=cap,
                 lead_time_days={"min": 1, "max": 5},
@@ -220,7 +220,7 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
             Lane(
                 config_id=config.id,
                 from_site_id=nodes[NodeType.RETAILER].id,
-                to_site_id=nodes[NodeType.MARKET_DEMAND].id,
+                to_site_id=nodes[NodeType.CUSTOMER].id,
                 capacity=cap,
                 lead_time_days={"min": 1, "max": 5},
                 demand_lead_time={"type": "deterministic", "value": 1},

@@ -19,7 +19,7 @@ from decimal import Decimal
 from sqlalchemy import select, text
 
 from app.db.session import SessionLocal
-from app.models.supply_chain_config import SupplyChainConfig, Node, Item
+from app.models.supply_chain_config import SupplyChainConfig, Site, Item
 from app.models.aws_sc_planning import (
     InvPolicy, SourcingRules, VendorProduct, ProductionProcess,
     SourcingSchedule, SourcingScheduleDetails, ProductBom
@@ -55,7 +55,7 @@ async def seed_complete_aws_sc_example():
         items = list(result.scalars().all())
 
         result = await db.execute(
-            select(Node).filter(Node.config_id == config.id).limit(5)
+            select(Site).filter(Site.config_id == config.id).limit(5)
         )
         nodes = list(result.scalars().all())
 

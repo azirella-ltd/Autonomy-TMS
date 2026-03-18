@@ -118,6 +118,7 @@ class DecisionMemoryService:
         stmt = (
             select(DecisionEmbedding)
             .where(DecisionEmbedding.id == decision_id)
+            .where(DecisionEmbedding.tenant_id == self.tenant_id)
         )
         result = await self.db.execute(stmt)
         record = result.scalar_one_or_none()

@@ -1592,6 +1592,42 @@ See [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#self-hosted-llm-configuration) f
 
 ---
 
+## Human-to-AI Signal Channels
+
+### Talk to Me — Natural Language Directive Capture
+
+The "Talk to Me" prompt bar in the TopNavbar is the primary human-to-AI input channel. Users type natural language directives that the system parses, validates, and routes to the appropriate Powell Cascade layer.
+
+**Flow**: User types directive → POST `/directives/analyze` (LLM parse + gap detection) → Clarification panel (if missing fields) → POST `/directives/submit` (persist + route + auto-apply if confidence ≥ 0.7)
+
+**Powell Layer Routing by Role**:
+| User Role | Target Layer |
+|-----------|-------------|
+| VP / Executive | Layer 4: S&OP GraphSAGE |
+| S&OP Director | Layer 2: Execution tGNN |
+| MPS / Allocation Manager | Layer 1.5: Site tGNN |
+| Analysts (ATP, PO, etc.) | Layer 1: Individual TRM |
+
+**Effectiveness Tracking**: Bayesian posteriors per `(user_id, directive_type)` measure whether directives improve outcomes. Lifecycle: PARSED → APPLIED → MEASURED.
+
+Files: `directive_service.py`, `user_directives.py`, `TopNavbar.jsx`. See [TALK_TO_ME.md](TALK_TO_ME.md).
+
+### Email Signal Intelligence — GDPR-Safe Email Ingestion
+
+Automated email monitoring that extracts supply chain signals from customer/supplier communications without storing personal data.
+
+**Pipeline**: IMAP/Gmail → PII Scrubber → Domain→TradingPartner Resolution → LLM Classification (Haiku, ~$0.0018/call) → Scope Resolution → EmailSignal persisted → Auto-route to TRM(s) → Decision Stream alert
+
+**Signal→TRM Routing**: 12 signal types map to primary TRMs — demand_increase/decrease → ForecastAdjustmentTRM, supply_disruption/lead_time_change → POCreationTRM, quality_issue → QualityDispositionTRM, capacity_change → MOExecutionTRM, order_exception → OrderTrackingTRM.
+
+**GDPR Compliance**: PII scrubbed before persistence (regex, no NLP deps). Domain extracted for company identification. Original email never stored. No data subject rights complexity.
+
+**Heuristic Fallback**: Keyword-based classification when LLM unavailable — maintains availability for air-gapped deployments.
+
+Files: `email_signal_service.py`, `email_pii_scrubber.py`, `email_connector.py`, `EmailSignalsDashboard.jsx`. See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md).
+
+---
+
 ## Agent Integration with Planning
 
 ### How Agents Replace Human Planners

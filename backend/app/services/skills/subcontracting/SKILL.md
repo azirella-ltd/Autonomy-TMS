@@ -108,3 +108,54 @@ Respond with JSON only:
   }
 }
 ```
+
+## Engine Heuristics Reference
+
+### Configuration Defaults (subcontracting_engine.py)
+- min_cost_savings_pct: 0.10 (10% savings to route external)
+- max_cost_premium_pct: 0.20 (20% premium acceptable for capacity relief)
+- min_vendor_quality_score: 0.85
+- min_vendor_on_time_score: 0.80
+- internal_capacity_trigger_pct: 0.90 (consider subcontracting above 90%)
+- min_internal_capacity_reserve_pct: 0.10 (keep 10% internal)
+- min_split_quantity: 50 (minimum qty for split to be worthwhile)
+- max_external_pct: 0.70 (max 70% routed externally)
+- max_external_lead_time_days: 30
+- max_single_vendor_pct: 0.60 (concentration limit)
+
+### Decision Tree
+1. No subcontractor available → KEEP_INTERNAL (confidence 1.0)
+2. ip_sensitivity == "high" → KEEP_INTERNAL (confidence 0.95, ip_risk=1.0)
+3. vendor quality < 0.85 → KEEP_INTERNAL (confidence 0.85)
+4. internal_capacity >= 90% → capacity-driven evaluation (see below)
+5. cost_savings >= 10% → ROUTE_EXTERNAL (confidence 0.80)
+6. external lead time < internal AND cost premium <= 20% AND on-time >= 0.80 → ROUTE_EXTERNAL (confidence 0.75)
+7. Default → KEEP_INTERNAL (confidence 0.80)
+
+### Capacity-Driven Split Calculation
+```
+internal_available = max(0, total_capacity × (1 - 0.10) - (total_capacity × utilization%))
+internal_qty = min(required_qty, internal_available)
+external_qty = required_qty - internal_qty
+external_qty = min(external_qty, required_qty × 0.70)  # cap at 70%
+internal_qty = required_qty - external_qty
+
+if external_qty >= 50 (min_split_quantity):
+    SPLIT (or ROUTE_EXTERNAL if internal_qty == 0), confidence 0.80
+else:
+    KEEP_INTERNAL, confidence 0.60
+```
+
+## Guardrails
+- **IP protection (absolute)**: MUST keep internal if `ip_classification` is `"high"` or `"critical"`. No cost or capacity argument overrides IP protection — this is a non-negotiable constraint.
+- **Quality threshold enforcement**: MUST NOT route externally if no vendor meets the minimum quality threshold. For regulated products, the minimum is `quality_score >= 92`. Routing to a sub-threshold vendor risks compliance violations and recalls.
+- **Vendor concentration limit**: Vendor concentration MUST NOT exceed 60% of total volume for any single vendor. If `current_vendor_concentration >= 60%`, the decision must split or keep internal to diversify supply risk.
+- **Split ratio integrity**: When splitting between internal and external, `internal_qty + external_qty` MUST equal `order_qty` exactly. Split ratios must sum to 100% — no quantity may be lost or duplicated.
+- **Certification verification**: MUST verify that the selected vendor has valid certifications before routing any production externally. Uncertified vendors are excluded from selection regardless of cost or capacity advantages.
+
+## Escalation Triggers
+Escalate to human review (set `requires_human_review: true`) when ANY of the following conditions are met:
+- **No feasible option**: All internal capacity is exhausted AND no qualified vendor is available (all fail quality, certification, or concentration checks). The skill cannot produce a valid routing — human must find an alternative or negotiate an exception.
+- **Large cost differential**: Cost difference between make vs buy exceeds 30% in either direction. This magnitude of cost variance requires strategic review — it may indicate market shifts, pricing errors, or sourcing strategy misalignment.
+- **Vendor quality degradation**: A vendor's quality score has declined for 3 consecutive batches below the quality threshold. This trend suggests a systemic vendor issue that needs supplier development intervention, not just re-routing.
+- **New regulatory requirement**: A new regulatory requirement has been identified that affects vendor qualification status. Compliance changes require human assessment of which vendors remain qualified and whether re-certification timelines are acceptable.

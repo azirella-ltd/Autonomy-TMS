@@ -130,6 +130,7 @@ class TradingPartner(Base):
     longitude = Column(Double)
     os_id = Column(String(100))  # Open Supplier Hub organizational ID
     duns_number = Column(String(20))  # Dun & Bradstreet 9-digit ID
+    external_identifiers = Column(JSON, nullable=True, comment="Typed external IDs: {duns, lei, sap_vendor_number, ...}")
     source = Column(String(100))
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
@@ -204,9 +205,12 @@ class Product(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     priority = Column(Integer)
     unit_cost_range = Column(JSON)
+
+    # External identifier registry — typed IDs from external systems
+    external_identifiers = Column(JSON, nullable=True, comment="Typed external IDs: {sap_material_number, gtin, upc, ean, ...}")
 
     # Product hierarchy fields (for breadcrumb display)
     # Format: Category > Family > Group > Product
@@ -260,7 +264,7 @@ class SourcingRules(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
 
     # Relationships
     company = relationship("Company", back_populates="sourcing_rules")
@@ -326,7 +330,7 @@ class InvPolicy(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     inventory_target_range = Column(JSON)
     initial_inventory_range = Column(JSON)
     holding_cost_range = Column(JSON)
@@ -374,7 +378,7 @@ class InvLevel(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
     backorder_qty = Column(Double)       # Unfulfilled demand carried as backorder
@@ -450,7 +454,7 @@ class ProductBom(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
 
     # MPS Key Material Extension
     # Flag indicating if this component is a key/critical material that should be
@@ -497,8 +501,17 @@ class ProductionProcess(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
+    # Extension: Stochastic distribution parameters (from SAP operational stats)
+    # JSON format: {"type": "lognormal", "mean_log": ..., "stddev_log": ..., "min": ..., "max": ...}
+    # NULL = use deterministic base field value
+    operation_time_dist = Column(JSON, nullable=True)
+    setup_time_dist = Column(JSON, nullable=True)
+    yield_dist = Column(JSON, nullable=True)
+    mtbf_dist = Column(JSON, nullable=True)   # Mean time between failures (days)
+    mttr_dist = Column(JSON, nullable=True)   # Mean time to repair (hours)
+
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     manufacturing_leadtime = Column(Integer, default=0)
     manufacturing_capacity_hours = Column(Double)
 
@@ -553,7 +566,7 @@ class SupplyPlan(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
 
@@ -618,7 +631,7 @@ class Forecast(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     demand_pattern = Column(JSON)  # Classic simulation demand patterns
 
@@ -644,12 +657,85 @@ class Reservation(Base):
     reserved_quantity = Column(Double, nullable=False)
     reservation_type = Column(String(50))  # component, customer_order, transfer
     reference_id = Column(String(100))
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     __table_args__ = (
         Index('idx_reservation_lookup', 'product_id', 'site_id', 'reservation_date'),
+    )
+
+
+# ============================================================================
+# Outbound Order Entities
+# ============================================================================
+
+class OutboundOrder(Base):
+    """
+    Sales orders, returns, and outbound transfers
+    SC Entity: outbound_order
+    Tracks customer/sales orders and outbound transfers.
+    Mirrors the InboundOrder pattern for the outbound (customer) side.
+    """
+    __tablename__ = "outbound_order"
+
+    id = Column(String(100), primary_key=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    order_type = Column(String(50), nullable=False)  # SALES, RETURN, TRANSFER
+    customer_id = Column(String(100))  # FK to trading_partner
+    customer_name = Column(String(200))
+
+    # Sites
+    ship_from_site_id = Column(Integer, ForeignKey("site.id"))
+    ship_to_site_id = Column(Integer, ForeignKey("site.id"))
+
+    # Status
+    status = Column(String(30), nullable=False, server_default=text("'DRAFT'"))
+    # DRAFT, CONFIRMED, PARTIALLY_FULFILLED, FULFILLED, CANCELLED
+
+    # Dates
+    order_date = Column(Date, nullable=False)
+    requested_delivery_date = Column(Date)
+    promised_delivery_date = Column(Date)
+    actual_delivery_date = Column(Date)
+
+    # Totals
+    total_ordered_qty = Column(Double, server_default=text("0.0"))
+    total_fulfilled_qty = Column(Double, server_default=text("0.0"))
+    total_value = Column(Double)
+    currency = Column(String(10), server_default=text("'USD'"))
+
+    # Priority
+    priority = Column(String(20), server_default=text("'STANDARD'"))
+    # VIP, HIGH, STANDARD, LOW
+
+    # References
+    reference_number = Column(String(100))  # Customer PO number
+    contract_id = Column(String(100))
+
+    # Config
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"))
+
+    # Metadata
+    source = Column(String(100))
+    source_event_id = Column(String(100))
+    source_update_dttm = Column(DateTime)
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+
+    # Relationships
+    ship_from_site = relationship("Site", foreign_keys=[ship_from_site_id])
+    ship_to_site = relationship("Site", foreign_keys=[ship_to_site_id])
+    lines = relationship("OutboundOrderLine", back_populates="order", cascade="all, delete-orphan")
+    config = relationship("SupplyChainConfig")
+    scenario = relationship("Scenario")
+
+    __table_args__ = (
+        Index('idx_outbound_order_status', 'status', 'order_type'),
+        Index('idx_outbound_order_customer', 'customer_id'),
+        Index('idx_outbound_order_site', 'ship_from_site_id', 'requested_delivery_date'),
+        Index('idx_outbound_order_config', 'config_id'),
     )
 
 
@@ -667,14 +753,14 @@ class OutboundOrderLine(Base):
     __tablename__ = "outbound_order_line"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(String(100), nullable=False)
+    order_id = Column(String(100), ForeignKey("outbound_order.id", ondelete="SET NULL"))
     line_number = Column(Integer, nullable=False)
     product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
     site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
     ordered_quantity = Column(Double, nullable=False)
     requested_delivery_date = Column(Date, nullable=False)
     order_date = Column(Date)
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
 
     # Simulation execution extensions
@@ -689,6 +775,9 @@ class OutboundOrderLine(Base):
     market_demand_site_id = Column(Integer, ForeignKey("site.id"))  # Customer site (for simulation)
 
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    order = relationship("OutboundOrder", back_populates="lines")
 
     __table_args__ = (
         Index('idx_outbound_order_lookup', 'product_id', 'site_id', 'requested_delivery_date'),
@@ -758,6 +847,10 @@ class Shipment(Base):
     recommended_actions = Column(JSON)  # [{"action": "expedite", "impact": "...", "cost": "..."}]
     mitigation_status = Column(String(20))  # none, recommended, in_progress, completed
 
+    # Config / tenant context
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
+    tenant_id = Column(Integer, ForeignKey("tenants.id"))
+
     # Standard metadata
     source = Column(String(100))
     source_event_id = Column(String(100))
@@ -769,11 +862,13 @@ class Shipment(Base):
     from_site = relationship("Site", foreign_keys=[from_site_id])
     to_site = relationship("Site", foreign_keys=[to_site_id])
     transportation_lane = relationship("TransportationLane", foreign_keys=[transportation_lane_id])
+    config = relationship("SupplyChainConfig")
 
     __table_args__ = (
         Index('idx_shipment_status', 'status', 'expected_delivery_date'),
         Index('idx_shipment_risk', 'risk_level', 'status'),
         Index('idx_shipment_tracking', 'tracking_number', 'carrier_id'),
+        Index('idx_shipment_config', 'config_id'),
     )
 
 
@@ -818,6 +913,9 @@ class InboundOrder(Base):
     # References
     reference_number = Column(String(100))  # Vendor PO number
     contract_id = Column(String(100))
+
+    # Config
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
 
     # Metadata
     source = Column(String(100))
@@ -1601,7 +1699,7 @@ class Backorder(Base):
     supply_commit_id = Column(Integer)  # FK to planning cascade supply commit
 
     # Config/scenario context
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
 
     # Source tracking
@@ -1698,7 +1796,7 @@ class FinalAssemblySchedule(Base):
     priority = Column(Integer, server_default=text("3"))
 
     # Config/scenario context
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
 
     # Source tracking
     source = Column(String(100))

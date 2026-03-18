@@ -1649,11 +1649,11 @@ class SAPFieldMappingService:
                 available_fields = {f"{e}.{f}": info for e, fields in AWS_SC_FIELDS.items()
                                    for f, info in fields.items()}
 
-            # Retrieve RAG context for AWS SC data model knowledge
+            # Retrieve RAG context for AWS SC data model knowledge (tenant-scoped)
             from app.services.rag_context import get_rag_context
             kb_context = await get_rag_context(
                 f"AWS supply chain data model {sap_field} {sap_field_description} SAP field mapping",
-                top_k=3, max_tokens=1500, category="supply_chain_planning",
+                tenant_id=self.tenant_id, top_k=3, max_tokens=1500, category="supply_chain_planning",
             )
             kb_section = ""
             if kb_context:
@@ -1714,11 +1714,11 @@ Respond in JSON format:
                 for f in fields[:20]  # Limit to first 20 fields
             ])
 
-            # Retrieve RAG context for SAP integration knowledge
+            # Retrieve RAG context for SAP integration knowledge (tenant-scoped)
             from app.services.rag_context import get_rag_context
             kb_context = await get_rag_context(
                 f"AWS supply chain data model SAP Z-table {table_name} {table_description} integration",
-                top_k=3, max_tokens=1500, category="supply_chain_planning",
+                tenant_id=self.tenant_id, top_k=3, max_tokens=1500, category="supply_chain_planning",
             )
             kb_section = ""
             if kb_context:

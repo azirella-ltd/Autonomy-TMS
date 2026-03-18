@@ -180,7 +180,16 @@ router = APIRouter(prefix="/monte-carlo", tags=["Monte Carlo Simulation"])
 # ============================================================================
 
 def check_monte_carlo_permission(user: User, action: str) -> None:
-    """Check if user has permission for Monte Carlo actions"""
+    """Check if user has permission for Monte Carlo actions.
+
+    Uses the same RBAC pattern as other endpoints — checks role permissions
+    via the permission grants relationship.
+    """
+    # Tenant admins and system admins always have access
+    user_type = getattr(user, "user_type", None)
+    if user_type in ("SYSTEM_ADMIN", "TENANT_ADMIN"):
+        return
+
     required_permissions = {
         "view": "view_analytics",
         "manage": "manage_analytics",
@@ -190,10 +199,12 @@ def check_monte_carlo_permission(user: User, action: str) -> None:
     if not permission:
         return
 
+    # Check permissions via role_permission_grants → permissions
     has_permission = False
-    for role in user.roles:
-        for capability in role.capabilities:
-            if capability.key == permission:
+    for role in getattr(user, "roles", []):
+        for grant in getattr(role, "permission_grants", []):
+            perm = getattr(grant, "permission", None)
+            if perm and getattr(perm, "key", None) == permission:
                 has_permission = True
                 break
         if has_permission:

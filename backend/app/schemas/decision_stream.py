@@ -17,8 +17,11 @@ from pydantic import BaseModel, Field
 
 class DecisionAction(str, Enum):
     ACCEPT = "accept"
-    OVERRIDE = "override"
-    REJECT = "reject"
+    INSPECT = "inspect"
+    MODIFY = "modify"      # Override with changed values
+    CANCEL = "cancel"      # Reject the action entirely (no execution)
+    OVERRIDE = "override"  # Backward compat: treated as MODIFY
+    REJECT = "reject"      # Backward compat: treated as CANCEL
 
 
 class AlertSeverity(str, Enum):
@@ -43,8 +46,10 @@ class PendingDecisionItem(BaseModel):
     product_name: Optional[str] = None
     site_id: Optional[str] = None
     site_name: Optional[str] = None
-    urgency: Optional[float] = Field(None, description="Urgency score 0-1 from HiveSignalMixin")
-    confidence: Optional[float] = Field(None, description="TRM confidence 0-1")
+    urgency: Optional[str] = Field(None, description="Urgency label: Critical, High, Medium, Low, Routine")
+    urgency_score: Optional[float] = Field(None, description="Raw urgency score 0-1 (for sorting)")
+    likelihood: Optional[str] = Field(None, description="Likelihood label: Almost Certain, Likely, Possible, Unlikely, Never")
+    likelihood_score: Optional[float] = Field(None, description="Raw likelihood score 0-1 (for sorting)")
     economic_impact: Optional[float] = Field(None, description="Estimated $ impact")
     suggested_action: Optional[str] = Field(None, description="What the TRM recommends")
     reason: Optional[str] = Field(None, description="Short reason code (e.g. capacity_constraint, expedite)")
@@ -53,8 +58,20 @@ class PendingDecisionItem(BaseModel):
     )
     deep_link: str = Field(..., description="Frontend route for Console deep-link")
     created_at: Optional[datetime] = None
+    editable_values: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Current decision values that can be modified during override (decision-type-specific)",
+    )
     context: Optional[Dict[str, Any]] = Field(
         default=None, description="Additional context fields from the decision"
+    )
+    needs_attention: Optional[bool] = Field(
+        default=None,
+        description="True if this decision requires human review (agent uncertain)",
+    )
+    auto_actioned: Optional[bool] = Field(
+        default=None,
+        description="True if the agent auto-actioned this decision (high confidence)",
     )
 
     class Config:
@@ -79,7 +96,8 @@ class AlertItem(BaseModel):
 class DecisionDigestResponse(BaseModel):
     """Response for GET /decision-stream/digest."""
     digest_text: str = Field(
-        ..., description="LLM-synthesized natural language digest paragraph"
+        default="No decisions to report.",
+        description="LLM-synthesized natural language digest paragraph"
     )
     decisions: List[PendingDecisionItem] = Field(default_factory=list)
     alerts: List[AlertItem] = Field(default_factory=list)

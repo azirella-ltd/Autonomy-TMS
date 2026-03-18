@@ -33,7 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
-from app.models.supply_chain_config import SupplyChainConfig, Node, Lane
+from app.models.supply_chain_config import SupplyChainConfig, Site, Lane
 from app.models.sc_entities import Product, InvLevel, InvPolicy
 from app.models.tenant import Tenant
 

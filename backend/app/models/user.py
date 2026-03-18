@@ -171,6 +171,17 @@ class User(Base):
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
 
+    # Default supply chain config for this user (config-level mode feature).
+    # If set, /supply-chain-configs/active returns this config instead of the
+    # tenant's is_active=True BASELINE config. Used when a user has been migrated
+    # from a companion learning tenant and their preferred config differs from
+    # the tenant default.
+    default_config_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey('supply_chain_configs.id', ondelete='SET NULL'),
+        nullable=True,
+    )
+
     # Powell Framework Role - determines landing page for Production tenant users
     # NULL means use user_type for routing (e.g., TENANT_ADMIN → /admin/production)
     # This is separate from capabilities which can be customized by tenant admin

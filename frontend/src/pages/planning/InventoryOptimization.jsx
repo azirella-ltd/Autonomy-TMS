@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Card,
   CardContent,
@@ -68,10 +69,22 @@ import BranchPicker from '../../components/planning/BranchPicker';
  * Planning Horizon: Typically 3-12 months (tactical)
  */
 const InventoryOptimization = () => {
+  const location = useLocation();
+  const filtersApplied = useRef(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [activeTab, setActiveTab] = useState('policies');
+
+  // Hydrate tab from Talk To Me query routing
+  useEffect(() => {
+    const filters = location.state?.filters;
+    if (filters?.tab && !filtersApplied.current) {
+      filtersApplied.current = true;
+      setActiveTab(filters.tab);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
 
   const { effectiveConfigId } = useActiveConfig();
 

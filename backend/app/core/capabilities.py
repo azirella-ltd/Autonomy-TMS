@@ -1094,7 +1094,7 @@ def get_capabilities_for_user_type(user_type: str) -> CapabilitySet:
         return ORDER_TRACKING_ANALYST_CAPABILITIES
     # Special roles
     elif user_type_upper == "DEMO_ALL":
-        return TENANT_ADMIN_CAPABILITIES  # Full access for demo
+        return SYSTEM_ADMIN_CAPABILITIES  # Full access for demo
     elif user_type_upper == "EXECUTIVE":
         return EXECUTIVE_CAPABILITIES
     else:

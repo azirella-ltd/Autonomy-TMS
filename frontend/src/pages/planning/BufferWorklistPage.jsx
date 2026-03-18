@@ -10,6 +10,7 @@
  * (is_expert=True) for reinforcement learning.
  */
 import React, { useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
@@ -126,7 +127,7 @@ const BUFFER_COLUMNS = [
       const pct = (d.confidence * 100).toFixed(1);
       const color = d.confidence >= 0.8 ? 'success' : d.confidence >= 0.5 ? 'warning' : 'error';
       return (
-        <MuiTooltip title={`TRM confidence: ${pct}%`} arrow>
+        <MuiTooltip title={`Likelihood: ${pct}%`} arrow>
           <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
         </MuiTooltip>
       );
@@ -143,7 +144,7 @@ const BUFFER_OVERRIDE_FIELDS = [
     key: 'adjusted_ss',
     label: 'Override Buffer Level',
     type: 'number',
-    helperText: 'Enter a new buffer level to replace the TRM recommendation',
+    helperText: 'Enter a new buffer level to replace the AI recommendation',
   },
   {
     key: 'multiplier',
@@ -162,7 +163,7 @@ const BUFFER_OVERRIDE_FIELDS = [
  * Returns an array of { title, value, color?, subtitle? } objects.
  */
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
   // Average multiplier across all decisions
@@ -224,6 +225,8 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const BufferWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
+  const location = useLocation();
+  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_buffer_worklist');
 
@@ -249,7 +252,7 @@ const BufferWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review inventory buffer adjustment recommendations from the
-            Inventory Buffer TRM. Accept, override with reason, or reject
+            AI agent. Accept, override with reason, or reject
             each decision before execution.
           </Typography>
         </Box>
@@ -274,6 +277,7 @@ const BufferWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

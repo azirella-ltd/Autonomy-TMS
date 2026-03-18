@@ -24,7 +24,7 @@ from app.db.session import sync_engine
 from app.models.scenario import Scenario, ScenarioStatus
 from app.models.participant import ScenarioUser, ScenarioUserRole as PlayerRole, ScenarioUserType
 from app.models.agent_config import AgentConfig
-from app.models.supply_chain_config import SupplyChainConfig, Node, TransportationLane
+from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product
 
 # Food Dist constants
@@ -70,7 +70,7 @@ def build_scenario_config(session, config_id):
     if not config:
         raise ValueError(f"Config {config_id} not found")
 
-    nodes = session.query(Node).filter(Node.config_id == config_id).all()
+    nodes = session.query(Site).filter(Site.config_id == config_id).all()
     lanes = session.query(TransportationLane).filter(TransportationLane.config_id == config_id).all()
     products = session.query(Product).filter(Product.config_id == config_id).all()
 

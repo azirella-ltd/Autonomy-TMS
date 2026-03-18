@@ -96,7 +96,14 @@ A planner arrives, opens the planning system, and begins reviewing the weekly MP
 
 **Monday morning, with Autonomy:**
 
-The same planner arrives to a prioritized worklist of 14 items. Overnight, the system processed the same 847 potential exceptions. It auto-resolved 780 within pre-approved guardrails (reorder quantities adjusted, safety stock recalculated, minor schedule shifts executed). It flagged 53 for informational review — actions it took that the planner should be aware of but doesn't need to approve. And it escalated 14 that require human judgment: a supplier bankruptcy risk, a demand spike for a promotional item that exceeds capacity, a quality hold on a key component.
+The same planner arrives to a prioritized worklist of 14 items. Overnight, the system processed the same 847 potential exceptions:
+
+- **612 auto-resolved**: High-likelihood decisions executed within pre-approved guardrails (reorder quantities adjusted, safety stock recalculated, minor schedule shifts)
+- **168 abandoned**: Low urgency + low likelihood — not worth agent or human attention (combined urgency + likelihood score below threshold)
+- **53 informational**: Actions the agent took that the planner should be aware of but doesn't need to approve
+- **14 inspect & override**: High urgency but low agent confidence — exactly where human judgment creates the most value
+
+The 14 items are ranked by urgency descending, then likelihood ascending — the most time-critical decisions where the agent is least confident appear first.
 
 For each of those 14 items, she sees:
 - What happened (the triggering event)
@@ -158,6 +165,35 @@ In most organizations, this coordination happens through meetings, emails, and p
 - **Inline comments** on specific orders, plans, and recommendations create a threaded discussion trail tied to the artifact being discussed
 - **Activity feeds** show everyone involved what changed, who changed it, and why
 - **Plain-language explanations** make AI recommendations accessible to non-technical stakeholders — a VP of Supply Chain can understand *why* the system recommends a particular action without needing a data science background
+
+### Talk to Me — Natural Language Directive Capture
+
+Instead of navigating complex screens to change a planning parameter, any authenticated user can type a directive in plain language from the persistent "Talk to Me" bar in the top navigation:
+
+> *"I want to increase revenue by 10% in the Southwest region over the next quarter because customer feedback indicates growing demand."*
+
+The system:
+1. **Parses the directive** using an LLM to extract structured fields (direction, metric, magnitude, duration, scope, justification)
+2. **Detects missing information** and shows a smart clarification panel with targeted questions (e.g., "Which product families?" or "What magnitude?")
+3. **Routes to the correct Powell layer** based on the user's role — VP directives go to the strategic S&OP layer, analyst directives go to individual TRMs
+4. **Auto-applies with confidence gating** — only directives parsed with ≥70% confidence are auto-routed; lower-confidence directives are held for human review
+5. **Tracks effectiveness** using Bayesian posteriors to learn which users and directive types actually improve outcomes over time
+
+This is the primary human-to-AI input channel — where human judgment meets the agentic operating model.
+
+### Email Signal Intelligence — Automated External Signal Ingestion
+
+One of the most time-consuming tasks in supply chain management is evaluating customer and supplier communications. A planner receives dozens of emails daily — demand changes, lead time extensions, quality alerts, price increases — and must manually read, triage, and act on each one.
+
+Autonomy's Email Signal Intelligence automates this entirely:
+
+- **IMAP/Gmail inbox monitoring** polls configured mailboxes at regular intervals
+- **GDPR-safe by design**: Personal identifiers (names, email addresses, phone numbers, physical addresses, signature blocks) are stripped *before* any text is stored. Only the sending company is identified via domain-to-trading-partner resolution. The original email is never stored.
+- **AI classification** at the Haiku tier (~$0.0018/call) extracts structured supply chain signals: signal type (demand increase, supply disruption, lead time change, etc.), direction, magnitude, urgency, and confidence
+- **Automatic routing** to the appropriate TRM agents — demand signals feed the Forecast Adjustment TRM, supply disruptions feed PO Creation, quality issues feed Quality Disposition
+- **Decision Stream alerts** surface actionable signals to humans based on role relevance
+
+The result: instead of a planner manually reading 50 supplier emails and deciding which ones matter, the system classifies all 50, auto-routes the high-confidence ones to the appropriate agents, and surfaces only the ambiguous ones for human review — typically 5-10 instead of 50.
 
 ---
 
@@ -312,6 +348,81 @@ This alone justifies the platform for organizations that make even one significa
 
 ---
 
+## Part 6: Causal AI — How the System Knows What Actually Works
+
+### The Attribution Problem
+
+When an AI agent makes 1,000 decisions per day and supply chain performance improves, the natural assumption is that the AI caused the improvement. But that assumption is often wrong. Demand may have been favorable. Suppliers may have been unusually reliable. Seasonal patterns may have shifted in the agent's favor. Measuring correlation between decisions and outcomes is not the same as establishing causation — and an AI system that learns from correlation rather than causation will learn the wrong lessons.
+
+This is the fundamental challenge of any learning system: **determining whether a decision actually caused a positive outcome requires answering a question about a world that didn't happen** — "What would have occurred if we had made a different decision?" This counterfactual question cannot be answered by observation alone. It requires causal inference.
+
+### Why This Matters for Supply Chain
+
+In supply chain planning, the attribution problem is especially severe because:
+
+- **Multiple agents act simultaneously**: An ATP fulfillment improvement might be caused by the ATP agent's decision, the PO agent's earlier restocking, or the inventory buffer agent's preemptive safety stock increase. Attributing the outcome to any single agent without controlling for the others is misleading.
+- **Feedback delays vary dramatically**: ATP outcomes are observable in 4 hours. Inventory buffer adjustments take 14 days to evaluate. Purchase order quality takes 7 days. An agent trained on immediate feedback will overweight short-term outcomes.
+- **Human overrides create selection bias**: Planners override AI recommendations precisely when they disagree — which means overridden decisions are systematically different from non-overridden ones. Comparing override outcomes to agent outcomes without matching on context produces biased estimates of human vs. AI performance.
+
+A system that ignores these challenges will either: (a) train agents on spurious correlations, producing models that fail in novel conditions; or (b) misjudge which human overrides are beneficial, learning from the wrong planners.
+
+### How Autonomy Solves It: Three Tiers of Causal Inference
+
+Autonomy implements a tiered causal inference strategy, matched to the observability characteristics of each decision type:
+
+**Tier 1 — Analytical Counterfactuals** (ATP, Forecast Adjustment, Quality Disposition)
+
+For decisions where the outcome is directly observable and the counterfactual can be computed analytically. When a planner overrides an ATP decision (changing promised quantity from 80 to 100), and the actual demand turns out to be 90, the system computes both outcomes:
+- Agent's counterfactual: fill rate = min(1.0, 80/90) = 88.9%
+- Human's actual: fill rate = min(1.0, 100/90) = 100%
+- Delta: +11.1% — the override was beneficial
+
+This is the gold standard: a direct comparison of the decision that was made against the decision that would have been made, using the same actual environment outcome.
+
+**Tier 2 — Statistical Matching** (MO, TO, PO, Order Tracking)
+
+For decisions where analytical counterfactuals are not feasible (too many confounding variables), the system uses propensity-score matching. For each overridden decision, it finds a non-overridden decision made under similar conditions (same site, same decision type, similar inventory levels, demand patterns, and backlog) and compares their outcomes.
+
+The match quality determines the signal strength: high-quality matches (similar state vectors) produce strong causal signals; poor matches produce weak signals. This prevents the system from drawing strong conclusions from dissimilar comparisons.
+
+**Tier 3 — Bayesian Priors** (Inventory Buffer, Maintenance, Subcontracting)
+
+For decisions with long feedback delays (14-30 days) and high confounding, the system maintains uninformative Bayesian priors and updates them slowly as evidence accumulates. This prevents premature conclusions from limited data while still capturing long-term patterns.
+
+### The Override Effectiveness Engine
+
+Every planner who overrides an AI decision is tracked with a Bayesian probability distribution — not to evaluate the planner, but to calibrate how much influence their judgment should have on future AI training.
+
+A planner who consistently improves outcomes when overriding ATP decisions earns higher training weight for ATP — their judgment patterns are more heavily weighted when the agent learns from historical data. A planner whose overrides consistently produce worse outcomes earns lower weight — not as punishment, but as calibration. The system learns *whose judgment to trust for which decision types*.
+
+Critically, override effectiveness is measured at two scopes:
+- **Decision-local**: Did this specific override produce a better outcome?
+- **Site-wide**: Did the override improve the site's aggregate balanced scorecard?
+
+The site-wide scope prevents a subtle failure mode: an override that looks good for one decision but harms the broader system (e.g., expediting one order at the expense of ten others). The composite score weights systemic impact 60% and local impact 40%.
+
+### Conformal Decision Theory: Risk Bounds on Every Decision
+
+Every decision the AI makes carries a calibrated risk bound: **P(loss > threshold)**. This is not a point estimate — it's a distribution-free guarantee derived from historical decision-outcome pairs using conformal prediction.
+
+When a decision's risk bound exceeds 20%, it is automatically escalated to a human planner. When it's below 10%, the decision executes autonomously. The thresholds are configurable per organization, allowing gradual expansion of AI autonomy as the system accumulates calibration data.
+
+### The Causal Learning Flywheel
+
+```
+Decision made → Outcome observed (4h to 30d later) →
+Counterfactual computed → Treatment effect estimated →
+Override effectiveness updated → Training weights adjusted →
+Agent retrained with causally-grounded sample weights →
+Better decisions → Better outcomes → ...
+```
+
+This is what makes Autonomy's learning trustworthy. The system doesn't just learn from outcomes — it learns from *causally attributed* outcomes. An agent that happened to increase orders during a demand surge doesn't get credit for the surge. An agent whose specific decision pattern actually caused better fill rates does.
+
+Over 12 months, this produces agents that generalize to novel situations — because they learned *what works and why*, not *what happened to correlate with good outcomes*.
+
+---
+
 ## Revolutionary Continuous Autonomous Planning Architecture
 
 ### Transforming Supply Chain Management from Cadence to Event-Driven
@@ -364,6 +475,17 @@ Benefits: Minutes from event to action, only affected products replanned, human-
 
 The **Decision Stream** (`/decision-stream`) is the default landing page for all users. Every supply chain decision — whether made by an AI agent or a human planner — appears here in real time as a decision card showing what was decided, the confidence level, and the status (Decided, Suggested, Overridden).
 
+**Urgency + Likelihood Prioritization**: Every decision carries two scores — **urgency** (how time-sensitive is this?) and **likelihood** (how confident is the agent that its recommended action will resolve the issue?). These two dimensions determine what the human sees and what the system handles autonomously:
+
+| Urgency | Likelihood | What Happens |
+|---------|-----------|--------------|
+| **High** | **Low** | **Top of stream** — the clock is ticking and the agent's best guess isn't good enough. This is where human judgment creates the most value. |
+| **High** | **High** | Agent acts autonomously within guardrails, logged for awareness. |
+| **Low** | **High** | Agent acts autonomously, logged for awareness. |
+| **Low** | **Low** | Abandoned — not worth anyone's time. Available on audit/training pages but excluded from the active stream. |
+
+The result is a decision stream that directs human attention precisely where it matters most. Instead of reviewing 847 exceptions, the planner reviews the 14 where the situation is urgent and the AI needs help — the quadrant where human expertise compounds the most value.
+
 **Pre-Computed Decision Reasoning**: Every decision card includes an "Ask Why" button that expands inline to show the agent's reasoning instantly (<1ms). Reasoning is pre-computed at decision time from the actual signals the agent processed — not generated after the fact by an LLM. This covers all 11 TRM agents and all 3 GNN models (S&OP GraphSAGE strategic risk, Network tGNN daily directives, Site tGNN hourly cross-TRM coordination).
 
 **Hive Context Capture**: Each decision records the full signal bus state at the time of decision — urgency levels, triggering signals, cycle phase, and signals emitted — providing a complete audit trail of the multi-agent coordination context.
@@ -411,7 +533,7 @@ The traditional point-and-click planning UI (96+ pages covering demand planning,
 | **Sourcing Schedules** | ✅ 100% | Periodic ordering (weekly, monthly, custom) |
 | **Advanced Manufacturing** | ✅ 100% | Frozen horizon, setup/changeover, batch sizing, BOM alternates |
 
-*See [AWS_SC_100_PERCENT_COMPLETE.md](docs/progress/AWS_SC_100_PERCENT_COMPLETE.md) for full certification details.*
+*AWS SC compliance: 35/35 entities implemented. See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.*
 
 #### AWS SC Product Feature Parity (UI/UX - 100% Complete)
 
@@ -905,13 +1027,14 @@ LLM Supervisor reviews cascade impact, alerts planners if significant
 - Generate diverse training data from human decisions
 - RLHF (Reinforcement Learning from Human Feedback)
 
-**3. Stochastic Simulation Engine** (Model real-world uncertainty)
-- 20 distribution types for operational variability
+**3. Digital Twin — Stochastic Simulation Engine** (Model real-world uncertainty)
+- 21 distribution types for operational variability
 - Monte Carlo simulation (1000+ scenarios)
 - Probabilistic balanced scorecard (P10/P50/P90 KPIs)
 - Multi-echelon DAG topology support
+- Training data generation for TRM agents (28.6M+ records via six-phase pipeline)
 
-**4. Conformal Prediction Engine** (✅ Implemented January 2026)
+**4. Conformal Prediction — Distribution-Free Uncertainty Guarantees** (✅ Implemented January 2026)
 - **Distribution-Free Intervals**: Guaranteed prediction coverage without assuming normal/lognormal distributions
 - **Calibration from History**: Use Plan vs. Actual data to calibrate per-product, per-site uncertainty bounds
 - **Formal Guarantees**: If we promise "90% coverage", actual coverage will be ≥90% (mathematically proven)

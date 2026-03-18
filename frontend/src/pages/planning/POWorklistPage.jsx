@@ -10,6 +10,7 @@
  * (is_expert=True) for reinforcement learning.
  */
 import React, { useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
@@ -157,7 +158,7 @@ const PO_OVERRIDE_FIELDS = [
     key: 'recommended_qty',
     label: 'Override Order Qty',
     type: 'number',
-    helperText: 'Enter a new order quantity to replace the TRM recommendation',
+    helperText: 'Enter a new order quantity to replace the AI recommendation',
   },
   {
     key: 'supplier_id',
@@ -188,7 +189,7 @@ const PO_OVERRIDE_FIELDS = [
  * Returns an array of { title, value, color?, subtitle? } objects.
  */
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
   // Total spend of proposed POs
@@ -248,6 +249,8 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const POWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
+  const location = useLocation();
+  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_po_worklist');
 
@@ -272,7 +275,7 @@ const POWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
             PO Creation Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Review purchase order recommendations from the PO Creation TRM.
+            Review purchase order recommendations from the AI agent.
             Accept, override with reason, or reject each decision before
             execution.
           </Typography>
@@ -298,6 +301,7 @@ const POWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

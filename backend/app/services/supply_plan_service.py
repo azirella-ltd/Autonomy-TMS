@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.models.supply_chain_config import SupplyChainConfig, MarketDemand, Node
+from app.models.supply_chain_config import SupplyChainConfig, MarketDemand, Site
 from app.services.deterministic_planner import (
     DeterministicPlanner,
     DemandForecast,

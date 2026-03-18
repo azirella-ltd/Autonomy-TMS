@@ -12,7 +12,7 @@ from dataclasses import dataclass, asdict
 
 from sqlalchemy.orm import Session
 
-from app.models.supply_chain_config import SupplyChainConfig, Node, TransportationLane
+from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product
 from app.services.powell.site_agent import SiteAgent, SiteAgentConfig
 from app.services.powell.engines import (
@@ -119,9 +119,9 @@ class SiteAgentSupplyPlanAdapter:
         all_orders: List[PlannedOrderResult] = []
 
         # Get all inventory nodes
-        nodes = self.db.query(Node).filter(
-            Node.config_id == context.config_id,
-            Node.master_type == "INVENTORY"
+        nodes = self.db.query(Site).filter(
+            Site.config_id == context.config_id,
+            Site.master_type == "INVENTORY"
         ).all()
 
         for node in nodes:
@@ -179,7 +179,7 @@ class SiteAgentSupplyPlanAdapter:
 
     def _build_gross_requirements(
         self,
-        node: Node,
+        node: Site,
         demand_forecasts: Dict[Tuple[str, str], float],
         horizon_days: int
     ) -> List[GrossRequirement]:
@@ -213,7 +213,7 @@ class SiteAgentSupplyPlanAdapter:
 
     def _extract_node_inventory(
         self,
-        node: Node,
+        node: Site,
         on_hand_inventory: Dict[Tuple[str, str], int]
     ) -> Dict[str, int]:
         """Extract on-hand inventory for a node."""
@@ -225,7 +225,7 @@ class SiteAgentSupplyPlanAdapter:
 
     def _extract_node_receipts(
         self,
-        node: Node,
+        node: Site,
         scheduled_receipts: Dict[str, List[Tuple[date, int]]]
     ) -> Dict[str, List[Tuple[date, int]]]:
         """Extract scheduled receipts for a node."""
@@ -233,7 +233,7 @@ class SiteAgentSupplyPlanAdapter:
         # For now, return all receipts
         return scheduled_receipts
 
-    def _extract_bom(self, node: Node) -> Dict[str, List[Tuple[str, float]]]:
+    def _extract_bom(self, node: Site) -> Dict[str, List[Tuple[str, float]]]:
         """Extract BOM structure for manufacturer nodes from product_bom table."""
         # Only manufacturers have BOMs
         if node.master_type != "MANUFACTURER":
@@ -254,7 +254,7 @@ class SiteAgentSupplyPlanAdapter:
             bom[parent].append((component, qty))
         return bom
 
-    def _extract_lead_times(self, node: Node) -> Dict[str, int]:
+    def _extract_lead_times(self, node: Site) -> Dict[str, int]:
         """Extract lead times for items at this node."""
         lead_times = {}
 
@@ -282,7 +282,7 @@ class SiteAgentSupplyPlanAdapter:
 
     def _calculate_safety_stocks(
         self,
-        node: Node,
+        node: Site,
         demand_forecasts: Dict[Tuple[str, str], float],
         service_level: float,
         policy_type_str: str,
@@ -373,7 +373,7 @@ class SiteAgentSupplyPlanAdapter:
         self,
         site_agent: SiteAgent,
         planned_order: PlannedOrder,
-        node: Node,
+        node: Site,
         use_trm: bool
     ) -> PlannedOrderResult:
         """Apply TRM adjustments to a planned order."""

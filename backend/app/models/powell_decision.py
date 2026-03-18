@@ -207,7 +207,7 @@ class CDCThresholdConfig(Base):
 
     # Context
     site_key = Column(String(64), index=True, nullable=False)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
 
     # Thresholds
     demand_deviation = Column(Float, default=0.15)

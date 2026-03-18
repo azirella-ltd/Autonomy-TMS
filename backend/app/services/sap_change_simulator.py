@@ -227,7 +227,7 @@ class SAPChangeSimulator:
                 self.state.demand_baseline[p["id"]] = 50.0
 
         # Compute lead time baseline from lanes
-        supply_sites = {s["id"] for s in self.state.sites if s["master_type"] == "MARKET_SUPPLY"}
+        supply_sites = {s["id"] for s in self.state.sites if s["master_type"] in ("VENDOR", "VENDOR")}
         for ln in self.state.lanes:
             if ln["from_site_id"] in supply_sites:
                 site_name = next(
@@ -352,7 +352,7 @@ class SAPChangeSimulator:
 
     async def _generate_demand_events(self) -> int:
         """Generate new outbound orders (customer demand)."""
-        demand_sites = [s for s in self.state.sites if s["master_type"] == "MARKET_DEMAND"]
+        demand_sites = [s for s in self.state.sites if s["master_type"] in ("CUSTOMER", "CUSTOMER")]
         inventory_sites = [s for s in self.state.sites if s["master_type"] == "INVENTORY"]
         if not demand_sites or not inventory_sites or not self.state.products:
             return 0
@@ -438,7 +438,7 @@ class SAPChangeSimulator:
 
         # Generate new POs (replenishment)
         n_pos = np.random.poisson(self.config.po_receipts_per_day)
-        supply_sites = [s for s in self.state.sites if s["master_type"] == "MARKET_SUPPLY"]
+        supply_sites = [s for s in self.state.sites if s["master_type"] in ("VENDOR", "VENDOR")]
         inv_sites = [s for s in self.state.sites if s["master_type"] == "INVENTORY"]
 
         if supply_sites and inv_sites and self.state.products:
@@ -605,7 +605,7 @@ class SAPChangeSimulator:
         """Inject 2-3x demand surge on a subset of SKUs."""
         n_affected = max(1, int(len(self.state.products) * self.config.spike_sku_fraction))
         affected = random.sample(self.state.products, n_affected)
-        demand_sites = [s for s in self.state.sites if s["master_type"] == "MARKET_DEMAND"]
+        demand_sites = [s for s in self.state.sites if s["master_type"] in ("CUSTOMER", "CUSTOMER")]
         inv_sites = [s for s in self.state.sites if s["master_type"] == "INVENTORY"]
         if not demand_sites or not inv_sites:
             return 0
@@ -641,7 +641,7 @@ class SAPChangeSimulator:
 
     async def _apply_supplier_disruption(self) -> int:
         """Delay open POs from a subset of suppliers."""
-        supply_sites = [s for s in self.state.sites if s["master_type"] == "MARKET_SUPPLY"]
+        supply_sites = [s for s in self.state.sites if s["master_type"] in ("VENDOR", "VENDOR")]
         if not supply_sites:
             return 0
 

@@ -339,6 +339,28 @@ New:
 
 The 2-hour cadence balances responsiveness with avoiding false positives. The 48-hour look-back window means the Arbiter sees ~24 evaluations' worth of data.
 
+### 5.9 Urgency + Likelihood: Decision Stream Prioritization
+
+The Escalation Arbiter handles *vertical* routing (which tier replans). The Decision Stream handles *human* routing (which decisions need a planner's attention). These are complementary mechanisms — the Arbiter detects *systemic* failure patterns, while the Decision Stream surfaces *individual* decisions that need human judgment.
+
+Every TRM decision carries two scores:
+
+- **Urgency** (0.0–1.0): Time-sensitivity derived from the agent's UrgencyVector, HiveSignalBus state, and exception severity. A rush order with depleted inventory scores high. A routine restock with weeks of supply scores low.
+- **Likelihood** (0.0–1.0): Agent confidence that the recommended action resolves the issue. Derived from TRM output confidence, conformal prediction interval width, and CDT risk bounds.
+
+**The four quadrants**:
+
+| | Low Likelihood | High Likelihood |
+|---|---|---|
+| **High Urgency** | **Human needed** — top of Decision Stream. Clock is ticking and the agent's best guess isn't good enough. This is where human expertise creates the most value. | **Autonomous** — agent acts within guardrails, logged for awareness. |
+| **Low Urgency** | **Abandoned** — not worth anyone's time. Recorded for audit/training but excluded from the active stream. | **Autonomous** — agent acts within guardrails, logged for awareness. |
+
+**Abandonment uses a sliding scale**: `urgency + likelihood` must exceed a configurable threshold (default: 0.5). The lower the urgency, the higher the likelihood must be to survive. High-urgency decisions are never abandoned — the Kahneman insight applies: when time pressure is high and the agent is uncertain, that is precisely when System 2 (human judgment) must engage.
+
+**Relationship to confidence routing**: Confidence routing (Section 5.1) determines which *model* makes the decision (TRM vs. exception handler). Urgency+likelihood prioritization determines which decisions *humans see*. A decision can be handled by the TRM (high confidence in the confidence router) but still surface in the Decision Stream because the underlying situation is urgent and the outcome likelihood is uncertain.
+
+**Relationship to vertical escalation**: The Arbiter detects *patterns* across many decisions. Urgency+likelihood operates on *individual* decisions. A single high-urgency/low-likelihood decision triggers human review. A persistent pattern of such decisions triggers vertical escalation. Both mechanisms can fire independently — a planner might override a single high-urgency decision (urgency+likelihood) while the Arbiter simultaneously detects that the pattern across 50 similar decisions indicates a policy error (vertical escalation).
+
 ---
 
 ## 6. Implementation Files

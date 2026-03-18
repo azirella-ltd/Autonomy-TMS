@@ -11,10 +11,11 @@ from enum import Enum
 
 
 class DecisionActionEnum(str, Enum):
-    """Type of decision action."""
-    OVERRIDE = "override"
-    ACCEPT = "accept"
-    REJECT = "reject"
+    """Type of decision action (AIIO model)."""
+    ACCEPT = "accept"       # AIIO: ACTIONED
+    INSPECT = "inspect"     # AIIO: INSPECTED (reviewed, no action needed)
+    OVERRIDE = "override"   # AIIO: OVERRIDDEN
+    REJECT = "reject"       # Backward compat: maps to OVERRIDDEN
     DEFER = "defer"
     MODIFY = "modify"
     APPROVE = "approve"

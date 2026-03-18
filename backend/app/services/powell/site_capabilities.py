@@ -57,9 +57,9 @@ ALL_TRM_NAMES: FrozenSet[str] = frozenset([
 #                No production capabilities, so no MO, Quality, Maintenance,
 #                Subcontracting.  PO may or may not apply (see sc_site_type
 #                overrides below).
-# MARKET_SUPPLY — infinite supplier source.  Only PO creation (inbound) and
+# VENDOR — infinite supplier source.  Only PO creation (inbound) and
 #                 order tracking are meaningful.
-# MARKET_DEMAND — terminal demand sink.  Only order tracking (outbound
+# CUSTOMER — terminal demand sink.  Only order tracking (outbound
 #                 visibility) applies; the site itself makes no decisions.
 #
 # Rationale for each TRM inclusion/exclusion:
@@ -89,13 +89,10 @@ _MASTER_TYPE_TRMS: Dict[str, FrozenSet[str]] = {
         "po_creation",
     ]),
 
-    "market_supply": frozenset([
-        "order_tracking",
-    ]),
-
-    "market_demand": frozenset([
-        "order_tracking",
-    ]),
+    # External parties (TradingPartner): no TRM hive — outside company authority.
+    # is_external=True sites with tpartner_type='vendor' or 'customer' map here.
+    "vendor": frozenset(),
+    "customer": frozenset(),
 }
 
 # ---------------------------------------------------------------------------
@@ -131,8 +128,11 @@ def get_active_trms(
     """Return the set of TRM canonical names active for a given site type.
 
     Args:
-        master_type: One of "manufacturer", "inventory", "market_supply",
-            "market_demand" (lowercase, as stored in Site.master_type).
+        master_type: One of "manufacturer", "inventory" for internal sites, or
+            "vendor"/"customer" for external TradingPartner-backed sites
+            (lowercase, as stored in Site.master_type or Site.tpartner_type).
+            The legacy values "market_supply" and "market_demand" are mapped to
+            "vendor" and "customer" respectively for backward compatibility.
         sc_site_type: Optional NodeType value (uppercase, e.g. "RETAILER",
             "DISTRIBUTOR").  If provided AND an override exists, it takes
             precedence over the master_type default.
@@ -145,6 +145,10 @@ def get_active_trms(
         ValueError: If master_type is not recognized.
     """
     mt = master_type.lower()
+
+    # Backward-compatibility: map legacy MARKET_SUPPLY/MARKET_DEMAND to new names
+    _LEGACY_MAP = {"market_supply": "vendor", "market_demand": "customer"}
+    mt = _LEGACY_MAP.get(mt, mt)
 
     # Check sc_site_type override first
     if sc_site_type:

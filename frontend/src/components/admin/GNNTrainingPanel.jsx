@@ -227,9 +227,9 @@ const GNNTrainingPanel = ({ selectedConfig }) => {
 
   return (
     <div className="p-6">
-      <H4 className="mb-2">GNN Model Training</H4>
+      <H4 className="mb-2">Network Agent Training</H4>
       <Text className="text-muted-foreground mb-4">
-        Train Graph Neural Network using SimPy-based supply chain simulations
+        Train the network model using SimPy-based supply chain simulations
       </Text>
 
       {error && (
@@ -517,9 +517,9 @@ const GNNTrainingPanel = ({ selectedConfig }) => {
                 <li><strong>Select Configuration</strong>: Choose the supply chain network to train on</li>
                 <li><strong>Select Strategy</strong>: Naive is best for generating diverse training data</li>
                 <li><strong>Configure Simulation</strong>: Set runs (128) and timesteps (64) for adequate data</li>
-                <li><strong>Start Training</strong>: Model generates data, then trains the GNN</li>
+                <li><strong>Start Training</strong>: Model generates data, then trains the network model</li>
                 <li><strong>Monitor Loss</strong>: Watch train/val loss decrease over epochs</li>
-                <li><strong>Use Model</strong>: Trained GNN can make predictions for all nodes simultaneously</li>
+                <li><strong>Use Model</strong>: Trained model can make predictions for all nodes simultaneously</li>
               </ol>
               <p className="text-xs text-muted-foreground mt-3">
                 <strong>Architecture:</strong> GAT (graph attention) + TCN (temporal convolution) for network-wide predictions
@@ -673,7 +673,7 @@ const GNNTrainingPanel = ({ selectedConfig }) => {
         <div className="md:col-span-2">
           <Card>
             <CardContent className="pt-6">
-              <Text className="text-lg font-semibold mb-4">GNN Architecture Overview</Text>
+              <Text className="text-lg font-semibold mb-4">Model Architecture Overview</Text>
               <Table>
                 <TableHeader>
                   <TableRow>

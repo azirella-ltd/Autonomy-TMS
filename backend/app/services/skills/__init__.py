@@ -22,19 +22,25 @@ Controlled by USE_CLAUDE_SKILLS env var (read by SiteAgentConfig).
 from .base_skill import SkillDefinition, SkillResult, SkillError, SKILL_REGISTRY
 from .skill_orchestrator import SkillOrchestrator
 from .claude_client import ClaudeClient
+from .planning_skill_orchestrator import PlanningSkillOrchestrator, PlanningSkillResult
 
 # Import all skill subpackages to trigger registration
 from . import (  # noqa: F401
     atp_executor,
+    demand_planning,
     forecast_adjustment,
     inventory_buffer,
+    inventory_planning,
     inventory_rebalancing,
     maintenance_scheduling,
     mo_execution,
     order_tracking,
     po_creation,
     quality_disposition,
+    rccp,
+    sop_adjustment,
     subcontracting,
+    supply_planning,
     to_execution,
 )
 
@@ -45,4 +51,6 @@ __all__ = [
     "SkillOrchestrator",
     "ClaudeClient",
     "SKILL_REGISTRY",
+    "PlanningSkillOrchestrator",
+    "PlanningSkillResult",
 ]

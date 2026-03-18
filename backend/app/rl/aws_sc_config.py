@@ -107,10 +107,13 @@ SIMULATION_COMPATIBLE_FEATURES: List[str] = [
 
 class SiteType(str, Enum):
     """SC master node types for DAG routing."""
-    MARKET_DEMAND = "MARKET_DEMAND"      # Terminal demand sink
-    MARKET_SUPPLY = "MARKET_SUPPLY"      # Upstream source
+    CUSTOMER = "CUSTOMER"                # Terminal demand sink (TradingPartner tpartner_type='customer')
+    VENDOR = "VENDOR"                    # Upstream source (TradingPartner tpartner_type='vendor')
     INVENTORY = "INVENTORY"              # Storage/fulfillment
     MANUFACTURER = "MANUFACTURER"        # Transform node with BOM
+    # Legacy aliases kept for backward compatibility with existing DB rows
+    MARKET_DEMAND = "CUSTOMER"
+    MARKET_SUPPLY = "VENDOR"
 
 
 # Simulation role to SC site type mapping
@@ -481,16 +484,23 @@ def get_sc_node_features(
     Returns:
         List of feature values matching AWS_SC_NODE_FEATURES
     """
-    # Site type one-hot (4 types)
+    # Site type one-hot (4 types — CUSTOMER/VENDOR are the canonical names;
+    # MARKET_DEMAND/MARKET_SUPPLY are legacy aliases that map to the same slots)
     site_type_onehot = [0.0] * 4
     site_types = [
-        SiteType.MARKET_DEMAND.value,
-        SiteType.MARKET_SUPPLY.value,
+        SiteType.CUSTOMER.value,
+        SiteType.VENDOR.value,
         SiteType.INVENTORY.value,
         SiteType.MANUFACTURER.value
     ]
-    if params.site_type in site_types:
-        idx = site_types.index(params.site_type)
+    # Normalise legacy names before lookup
+    site_type_val = params.site_type
+    if site_type_val == SiteType.CUSTOMER.value:
+        site_type_val = SiteType.CUSTOMER.value
+    elif site_type_val == SiteType.VENDOR.value:
+        site_type_val = SiteType.VENDOR.value
+    if site_type_val in site_types:
+        idx = site_types.index(site_type_val)
         site_type_onehot[idx] = 1.0
 
     # Role one-hot (simulation compatibility)

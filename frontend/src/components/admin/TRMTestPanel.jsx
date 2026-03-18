@@ -126,10 +126,10 @@ const TRMTestPanel = () => {
   return (
     <div className="p-6">
       <H4 gutterBottom>
-        TRM Model Testing
+        AI Agent Testing
       </H4>
       <SmallText color="textSecondary" className="mb-4">
-        Test the TRM model with custom supply chain scenarios to validate predictions.
+        Test the AI agent with custom supply chain scenarios to validate predictions.
       </SmallText>
 
       {error && (
@@ -338,7 +338,7 @@ const TRMTestPanel = () => {
                           variant={testResult.model_used ? 'success' : 'warning'}
                           size="sm"
                         >
-                          {testResult.model_used ? 'TRM' : 'Heuristic'}
+                          {testResult.model_used ? 'AI Agent' : 'Heuristic'}
                         </Chip>
                       </div>
                     </div>

@@ -196,7 +196,7 @@ async def get_agent_performance(
 
 @router.get("/sop-worklist")
 async def get_sop_worklist(
-    status: Optional[str] = Query(None, description="Filter by status: pending, accepted, rejected"),
+    status: Optional[str] = Query(None, description="Filter by status: informed, actioned, inspected, overridden"),
     category: Optional[str] = Query(None, description="Filter by category"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

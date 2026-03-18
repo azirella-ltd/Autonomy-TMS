@@ -13,7 +13,7 @@
 
 ## 1. Platform Overview
 
-Autonomy is an enterprise supply chain planning and execution platform that combines continuous event-driven planning, three-tier AI decision-making, stochastic uncertainty modeling, and digital twin simulation into a single operating environment.
+Autonomy is an enterprise supply chain planning and execution platform built on four pillars: **AI agents** (three-tier decision-making at millisecond to weekly cadences), **causal AI** (counterfactual reasoning that determines which decisions actually caused positive outcomes — making the learning loop trustworthy), **conformal prediction** (distribution-free uncertainty guarantees on every agent decision, powered by stochastic simulation data), and **digital twin** (complete stochastic simulation that generates training data, calibration sets, and risk-free testing for everything else).
 
 The platform is built on the AWS Supply Chain data model (100% compliant, 35/35 entities) and uses what we call the **Adaptive Decision Hierarchy (ADH)** — a layered architecture where strategic, operational, and execution decisions are made at appropriate time scales by appropriate models, with intelligent escalation between layers.
 
@@ -33,6 +33,7 @@ The system replans only affected products and locations when events occur, rathe
 - **Response latency**: P0 critical events addressed in under 1 minute; P1 in under 5 minutes
 - **Incremental replanning**: Only affected SKU-location combinations are recalculated
 - **Guardrailed autonomy**: Routine decisions auto-execute within configurable bounds (max PO value, max safety stock change, min service level floor); exceptions escalate to planners
+- **Urgency + likelihood prioritization**: Every decision is scored on urgency (how time-sensitive?) and likelihood (how confident is the agent?). The Decision Stream surfaces high-urgency/low-likelihood decisions at the top — exactly where human expertise adds the most value. Low-urgency/low-likelihood decisions are abandoned automatically. High-likelihood decisions (regardless of urgency) execute autonomously.
 
 > **Screenshot 2 — MPS Worklist (Exception-Driven Planning)**
 > *Navigation: Insights & Analytics > MPS Worklist*
@@ -259,7 +260,37 @@ When an AI agent identifies an action that crosses functional boundaries (e.g., 
 - **Net benefit threshold**: Configurable threshold controls agent autonomy — above threshold = auto-resolve, near threshold = human reviews, below = reject
 - **25+ negotiation scenarios**: Manufacturing, distribution, channel allocation, procurement, logistics, finance, S&OP
 
-### 6.2 Collaboration and Approval Workflows
+### 6.2 Talk to Me — Natural Language Directive Capture
+
+A persistent AI prompt bar in the top navigation accepts natural language directives from any authenticated user. The system parses directives with an LLM, detects missing information via a smart clarification flow, and routes the completed directive to the appropriate Powell Cascade layer based on the user's role.
+
+- **Two-phase flow**: Analyze (LLM parse + gap detection) → Clarify (missing field questions) → Submit (with clarifications merged)
+- **Required fields**: Reason/justification (always required), direction, metric, magnitude, duration, geography, products
+- **Role-based routing**: VP/Executive → S&OP GraphSAGE (Layer 4), S&OP Director → Execution tGNN (Layer 2), MPS Manager → Site tGNN (Layer 1.5), Analysts → Individual TRM (Layer 1)
+- **Confidence-gated auto-apply**: ≥0.7 confidence auto-routed; below that, held for human review
+- **Effectiveness tracking**: Bayesian posteriors per (user, directive type) measure whether directives actually improve outcomes
+
+> **Screenshot 15a — Talk to Me Directive Bar**
+> *Navigation: Always visible in top navigation bar*
+> Shows the persistent "Talk to me..." input bar. When a directive is analyzed, a clarification panel appears with targeted questions for any missing fields.
+
+### 6.3 Email Signal Intelligence — Automated External Signal Ingestion
+
+GDPR-safe email ingestion that monitors customer and supplier inboxes, extracts supply chain signals, and routes them to appropriate TRM agents for action.
+
+- **IMAP/Gmail inbox monitoring**: Configurable connections with domain allowlist/blocklist filtering
+- **GDPR by design**: Personal identifiers stripped before persistence (names, emails, phones, addresses, signatures). Only the sending company is identified via domain→TradingPartner resolution. Original email never stored.
+- **12 signal types**: demand_increase, demand_decrease, supply_disruption, lead_time_change, price_change, quality_issue, new_product, discontinuation, order_exception, capacity_change, regulatory, general_inquiry
+- **LLM classification**: Haiku tier (~$0.0018/call) extracts signal type, direction, magnitude, urgency, confidence, product/site references
+- **Automatic TRM routing**: High-confidence signals (≥0.6) auto-routed to primary TRM (e.g., demand signals → Forecast Adjustment, supply disruptions → PO Creation)
+- **Heuristic fallback**: Keyword-based classification when LLM unavailable (air-gapped deployments)
+- **4-tab admin dashboard**: Signals (table with expand/dismiss), Connections (IMAP config), Analytics (breakdowns), Test Ingestion (paste email to test pipeline)
+
+> **Screenshot 15b — Email Signals Dashboard**
+> *Navigation: Administration > Email Signals*
+> Shows the 4-tab dashboard with classified signals, connection management, analytics breakdowns, and test ingestion interface.
+
+### 6.4 Collaboration and Approval Workflows
 
 - **Team messaging**: Channel-based messaging with threading, @mentions, read tracking
 - **Inline comments**: Comment on purchase orders, transfer orders, supply plans, recommendations
@@ -267,18 +298,22 @@ When an AI agent identifies an action that crosses functional boundaries (e.g., 
 - **Activity feed**: Chronological feed of all planning actions with user attribution
 - **Notification system**: Configurable per-user preferences, digest emails, quiet hours, multi-channel delivery
 
-> **Screenshot 15 — Collaboration Hub**
+> **Screenshot 16 — Collaboration Hub**
 > *Navigation: Planning > Collaboration Hub*
 > Shows team messaging with threaded conversations, @mentions, inline comments on orders/plans, and activity feed.
 
-### 6.3 Override Effectiveness Tracking
+### 6.5 Causal AI — Decision Outcome Attribution
 
-Human overrides are tracked and scored using Bayesian Beta posteriors:
+Determining whether an AI decision actually caused a positive outcome — not just correlated with one — is the foundational challenge of any learning system. The platform implements a full causal inference pipeline:
 
-- **Per-user, per-decision-type tracking**: Each override builds a statistical record of whether that person's overrides improve or worsen outcomes
-- **Systemic impact measurement**: Overrides measured at both decision-local and site-window scope to prevent locally-good but systemically-harmful overrides
-- **Training weight adjustment**: Override quality directly influences how much weight that user's decisions carry in future agent training
-- **Causal learning pipeline**: Progresses from Bayesian priors through propensity-score matching to causal forests
+- **Counterfactual computation**: For every overridden decision, computes what the agent's original recommendation would have earned given the actual environment. Example: agent recommended 80 units, human chose 100, actual demand was 90 → agent fill rate 88.9%, human 100%, treatment effect +11.1%.
+- **Three-tier causal inference**: Analytical counterfactuals (ATP, Forecast, Quality — full signal), propensity-score matching (MO, TO, PO — statistical controls), Bayesian priors (Inventory Buffer, Maintenance — slow accumulation from long feedback delays)
+- **Systemic impact measurement**: Overrides measured at both decision-local scope (did this specific override help?) and site-window balanced scorecard scope (did it improve the broader site?). Composite: 40% local + 60% systemic — prevents locally-good but systemically-harmful overrides.
+- **Bayesian training weight adjustment**: Each (user, decision type) pair carries a Beta(α, β) posterior. Override quality directly influences how much weight that user's decision patterns carry in future agent training.
+- **Conformal Decision Theory**: Every TRM decision carries a calibrated risk bound P(loss > threshold) — a distribution-free guarantee derived from historical decision-outcome pairs. Governs autonomous execution vs. human escalation.
+- **Causal learning progression**: Bayesian priors → propensity-score matching → doubly robust estimation → causal forests (Athey & Imbens 2018) that identify *when* overrides help vs. hurt
+
+**Why this is a pillar, not a feature**: Without causal inference, the learning loop trains on correlation — agents learn what happened to coincide with good outcomes. With causal inference, agents learn what actually *caused* good outcomes. This is the difference between a system that degrades when conditions change and one that generalizes.
 
 ---
 

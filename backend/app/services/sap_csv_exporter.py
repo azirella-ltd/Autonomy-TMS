@@ -740,9 +740,9 @@ class SAPCSVExporter:
         for site in self._topology.sites:
             master_type = getattr(site, 'master_type', 'INVENTORY')
             loc_type = '1001'  # Plant
-            if str(master_type).upper() == 'MARKET_SUPPLY':
+            if str(master_type).upper() in ('VENDOR', 'VENDOR'):
                 loc_type = '1002'  # Vendor
-            elif str(master_type).upper() == 'MARKET_DEMAND':
+            elif str(master_type).upper() in ('CUSTOMER', 'CUSTOMER'):
                 loc_type = '1010'  # Customer
             rows.append([
                 site.name,

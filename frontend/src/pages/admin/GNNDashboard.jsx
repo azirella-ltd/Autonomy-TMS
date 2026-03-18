@@ -69,14 +69,14 @@ const GNNDashboard = () => {
         <ChevronRight className="h-4 w-4" />
         <Link to="/admin?section=training" className="hover:text-foreground">AI & Agents</Link>
         <ChevronRight className="h-4 w-4" />
-        <span className="text-foreground">GNN Training</span>
+        <span className="text-foreground">Network Agent Training</span>
       </nav>
 
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">GNN (Graph Neural Network)</h1>
+        <h1 className="text-3xl font-bold mb-2">Network Agent</h1>
         <p className="text-muted-foreground">
-          Train, manage, and test 128M+ parameter graph neural networks for supply chain optimization.
-          GNN uses graph attention networks (GAT) with temporal processing for network-wide optimization.
+          Train, manage, and test 128M+ parameter network models for supply chain optimization.
+          Uses graph attention networks with temporal processing for network-wide optimization.
         </p>
       </div>
 

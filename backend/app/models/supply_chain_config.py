@@ -21,63 +21,73 @@ from app.core.time_buckets import TimeBucket
 if TYPE_CHECKING:
     from .tenant import Tenant
     from .scenario import Scenario
-    from .sc_entities import Product
+    from .sc_entities import Product, TradingPartner
 
 class NodeType(str, PyEnum):
+    # AWS SC DM internal site types
+    DISTRIBUTION_CENTER = "DISTRIBUTION_CENTER"
+    WAREHOUSE = "WAREHOUSE"
+    MANUFACTURING_PLANT = "MANUFACTURING_PLANT"
+    INVENTORY = "INVENTORY"           # generic inventory site
+    MANUFACTURER = "MANUFACTURER"     # generic manufacturer site
+    SUPPLIER = "SUPPLIER"
+    # External trading partners — represented by TradingPartner records, not internal sites.
+    # These values are retained for backward compatibility with existing DB rows during migration.
+    # New code must use Site.is_external=True + Site.trading_partner_id instead.
+    VENDOR = "VENDOR"       # replaces MARKET_SUPPLY
+    CUSTOMER = "CUSTOMER"   # replaces MARKET_DEMAND
+    # Legacy TBG types — retained for backward compatibility with existing DB rows.
+    # New configs should use DISTRIBUTION_CENTER, WAREHOUSE, MANUFACTURING_PLANT.
     RETAILER = "RETAILER"
     WHOLESALER = "WHOLESALER"
     DISTRIBUTOR = "DISTRIBUTOR"
-    INVENTORY = "INVENTORY"
-    MANUFACTURER = "MANUFACTURER"
-    SUPPLIER = "SUPPLIER"
-    MARKET_DEMAND = "MARKET_DEMAND"
-    MARKET_SUPPLY = "MARKET_SUPPLY"
 
 def _default_site_type_definitions() -> list:
-    """Return the default ordered list of site type definitions."""
+    """Return the default ordered list of site type definitions.
 
+    External parties (vendors and customers) are represented by TradingPartner records
+    linked via Site.trading_partner_id on is_external=True site entries.
+    """
     return [
         {
-            "type": NodeType.MARKET_DEMAND.value,
-            "label": "Market Demand",
+            "type": NodeType.CUSTOMER.value,
+            "label": "Customer",
             "order": 0,
             "is_required": True,
-            "master_type": "market_demand",
+            "is_external": True,
+            "tpartner_type": "customer",
         },
         {
-            "type": "RETAILER",
-            "label": "Retailer",
+            "type": "DISTRIBUTION_CENTER",
+            "label": "Distribution Center",
             "order": 1,
             "is_required": False,
+            "is_external": False,
             "master_type": "inventory",
         },
         {
-            "type": "WHOLESALER",
-            "label": "Wholesaler",
+            "type": "WAREHOUSE",
+            "label": "Warehouse",
             "order": 2,
             "is_required": False,
+            "is_external": False,
             "master_type": "inventory",
         },
         {
-            "type": "DISTRIBUTOR",
-            "label": "Distributor",
+            "type": "MANUFACTURING_PLANT",
+            "label": "Manufacturing Plant",
             "order": 3,
             "is_required": False,
-            "master_type": "inventory",
-        },
-        {
-            "type": NodeType.MANUFACTURER.value,
-            "label": "Manufacturer",
-            "order": 4,
-            "is_required": False,
+            "is_external": False,
             "master_type": "manufacturer",
         },
         {
-            "type": NodeType.MARKET_SUPPLY.value,
-            "label": "Market Supply",
-            "order": 5,
+            "type": NodeType.VENDOR.value,
+            "label": "Vendor",
+            "order": 4,
             "is_required": True,
-            "master_type": "market_supply",
+            "is_external": True,
+            "tpartner_type": "vendor",
         },
     ]
 
@@ -132,6 +142,11 @@ class SupplyChainConfig(Base):
     #     cascade="all, delete-orphan"
     # )
 
+    # Config-level operating mode: 'production' or 'learning'
+    # Mirrors the tenant mode for configs that belong to the tenant, or 'learning'
+    # for learning configs that have been migrated to a production tenant.
+    mode = Column(String(20), nullable=False, default='production')
+
     # Validation metadata
     validation_status = Column(String(20), nullable=False, default="unchecked")  # unchecked, valid, invalid
     validation_errors = Column(JSON, nullable=True)  # List of validation error messages
@@ -144,6 +159,16 @@ class SupplyChainConfig(Base):
         JSON,
         nullable=True,
         comment="Gartner SCOR metric config overrides. Keys: sop_weights, tgnn_weights, trm_weights.",
+    )
+
+    # Stochastic pipeline configuration (per-config tuning)
+    # Surfaced in admin UI; controls SAP extraction thresholds and distribution fitting.
+    # Keys: min_observations (int), min_rows_sufficiency (int),
+    #        fit_threshold_cv (float), default_distribution_type (str)
+    stochastic_config = Column(
+        JSON,
+        nullable=True,
+        comment="Stochastic pipeline tuning: min_observations, min_rows_sufficiency, etc.",
     )
 
     # Training metadata
@@ -219,7 +244,19 @@ class SupplyChainConfig(Base):
 # =============================================================================
 
 class Site(Base):
-    """AWS SC DM: Sites in the supply chain (retailer, distributor, etc.)"""
+    """AWS SC DM: Sites in the supply chain.
+
+    Internal sites (is_external=False): company-controlled locations — warehouses, factories,
+    distribution centres, retail stores. These are planned and managed by Autonomy.
+
+    External sites (is_external=True): network endpoints representing TradingPartner entities
+    (vendors or customers) that are outside the company's authority. Each external site carries
+    a mandatory trading_partner_id FK linking it to the corresponding TradingPartner record.
+    The tpartner_type field mirrors TradingPartner.tpartner_type for fast filtering without a JOIN.
+
+    Note: external site rows are transitional proxy records that allow DAG lane connectivity
+    to work while planning logic migrates to direct TradingPartner references.
+    """
     __tablename__ = "site"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -228,12 +265,27 @@ class Site(Base):
     type = Column(String(100), nullable=False)
     # DAG identity (e.g., retailer, wholesaler, distributor)
     dag_type = Column(String(100), nullable=True)
-    # Master processing type (e.g., inventory vs manufacturer vs market_supply)
+    # Master processing type for internal sites: "inventory", "manufacturer"
+    # For external sites this is None — use tpartner_type instead.
     master_type = Column(String(100), nullable=True)
+
+    # External party flags (Phase 1 of Site/TradingPartner refactor)
+    # is_external=True marks vendor/customer network endpoints (was MARKET_SUPPLY/MARKET_DEMAND).
+    is_external = Column(Boolean, nullable=False, default=False)
+    # FK to TradingPartner._id — mandatory when is_external=True.
+    trading_partner_id = Column(Integer, ForeignKey("trading_partners._id"), nullable=True)
+    # Mirrors TradingPartner.tpartner_type for fast filtering: "vendor" or "customer".
+    # Only set when is_external=True.
+    tpartner_type = Column(String(50), nullable=True)
+
     priority = Column(Integer, nullable=True)
     order_aging = Column(Integer, nullable=False, default=0)
     lost_sale_cost = Column(Float, nullable=True)
     attributes = Column(JSON, default=dict)  # Flexible metadata per node type
+
+    # Geographic coordinates (WGS84)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
 
     # SC Hierarchical fields
     geo_id = Column(String(100), ForeignKey("geography.id"), nullable=True)  # Geographic region
@@ -244,6 +296,7 @@ class Site(Base):
     config = relationship("SupplyChainConfig", back_populates="sites")
     company = relationship("Company", back_populates="sites")
     geography = relationship("Geography", back_populates="sites")
+    trading_partner = relationship("TradingPartner", foreign_keys=[trading_partner_id])
     upstream_lanes = relationship("TransportationLane", foreign_keys="TransportationLane.to_site_id", back_populates="downstream_site")
     downstream_lanes = relationship("TransportationLane", foreign_keys="TransportationLane.from_site_id", back_populates="upstream_site")
     # SC Planning relationships (from sc_entities.py)
@@ -257,13 +310,28 @@ def _default_demand_lead_time() -> dict:
 
 
 class TransportationLane(Base):
-    """AWS SC DM: Transportation lanes between sites with capacities and lead times"""
+    """AWS SC DM: Transportation lanes in the supply chain network.
+
+    A lane connects two network endpoints. Each endpoint is either an internal Site
+    (site_id columns) or an external TradingPartner (partner_id columns).
+    Exactly one of (from_site_id, from_partner_id) must be set; same for the to-side.
+
+    Internal-to-internal:  from_site_id + to_site_id          (transfer order)
+    Vendor-to-internal:    from_partner_id + to_site_id        (purchase order / inbound)
+    Internal-to-customer:  from_site_id + to_partner_id        (fulfillment / outbound)
+    """
     __tablename__ = "transportation_lane"
 
     id = Column(Integer, primary_key=True, index=True)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
-    from_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
-    to_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+
+    # Internal-site endpoints (nullable — external lanes use partner FKs instead)
+    from_site_id = Column(Integer, ForeignKey("site.id"), nullable=True)
+    to_site_id = Column(Integer, ForeignKey("site.id"), nullable=True)
+
+    # External trading-partner endpoints (nullable — internal lanes use site FKs instead)
+    from_partner_id = Column(Integer, ForeignKey("trading_partners._id"), nullable=True)
+    to_partner_id = Column(Integer, ForeignKey("trading_partners._id"), nullable=True)
 
     # Capacity in units per day
     capacity = Column(Integer, nullable=False)
@@ -275,9 +343,10 @@ class TransportationLane(Base):
     demand_lead_time = Column(JSON, default=_default_demand_lead_time)
 
     # Material flow lead time (shipments moving downstream)
+    # For vendor lanes: prefer VendorLeadTime records over this value.
     supply_lead_time = Column(JSON, default=_default_supply_lead_time)
 
-    # Phase 5: Stochastic lead time distribution parameters (JSON)
+    # Stochastic lead time distribution parameters (JSON)
     # NULL = use deterministic value from base field
     # Format: {"type": "normal|lognormal|triangular|...", "mean": 7, "stddev": 1.5, "min": 3, "max": 12}
     supply_lead_time_dist = Column(JSON, nullable=True)
@@ -287,10 +356,13 @@ class TransportationLane(Base):
     config = relationship("SupplyChainConfig", back_populates="transportation_lanes")
     upstream_site = relationship("Site", foreign_keys=[from_site_id], back_populates="downstream_lanes")
     downstream_site = relationship("Site", foreign_keys=[to_site_id], back_populates="upstream_lanes")
+    upstream_partner = relationship("TradingPartner", foreign_keys=[from_partner_id])
+    downstream_partner = relationship("TradingPartner", foreign_keys=[to_partner_id])
 
-    # Ensure we don't have duplicate lanes
+    # Unique constraint covers all four endpoint columns (NULLs are distinct in Postgres)
     __table_args__ = (
-        UniqueConstraint('from_site_id', 'to_site_id', name='_site_connection_uc'),
+        UniqueConstraint('from_site_id', 'to_site_id', 'from_partner_id', 'to_partner_id',
+                         name='_lane_endpoints_uc'),
     )
 
 # ProductSiteConfig merged into InvPolicy (see sc_entities.py)
@@ -298,16 +370,27 @@ class TransportationLane(Base):
 
 
 class MarketDemand(Base):
-    """Market demand configuration per product per market"""
+    """Demand pattern configuration per product per customer (TradingPartner).
+
+    Replaces the old market_id FK with trading_partner_id pointing to a
+    TradingPartner record with tpartner_type='customer'.  The legacy market_id
+    column is retained as nullable during migration; new rows must use
+    trading_partner_id.
+    """
     __tablename__ = "market_demands"
 
     id = Column(Integer, primary_key=True, index=True)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
-    # Updated to reference SC Product table with String PK
     product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
-    market_id = Column(Integer, ForeignKey("markets.id"), nullable=False)
 
-    # Demand pattern configuration (default classic-style demand)
+    # Phase 4: TradingPartner(customer) replaces Market as the demand-owner entity.
+    # New rows must set trading_partner_id.  Legacy rows that still reference
+    # market_id are migrated by 20260311_site_trading_partner_refactor.py.
+    trading_partner_id = Column(Integer, ForeignKey("trading_partners._id"), nullable=True)
+    # Deprecated: retained for migration compatibility only — prefer trading_partner_id.
+    market_id = Column(Integer, ForeignKey("markets.id"), nullable=True)
+
+    # Demand pattern configuration
     demand_pattern = Column(JSON, default={
         "demand_type": "classic",
         "variability": {"type": "flat", "value": 4},
@@ -327,12 +410,19 @@ class MarketDemand(Base):
 
     # Relationships
     config = relationship("SupplyChainConfig", back_populates="market_demands")
-    product = relationship("Product")  # Changed from "Item" to "Product"
+    product = relationship("Product")
+    trading_partner = relationship("TradingPartner", foreign_keys=[trading_partner_id])
+    # Deprecated: kept for backward compatibility during migration
     market = relationship("Market", back_populates="demands")
 
 
 class Market(Base):
-    """Markets represent downstream demand pools that items can sell into."""
+    """DEPRECATED: Demand pools replaced by TradingPartner(tpartner_type='customer').
+
+    Retained for migration compatibility.  All new demand owners must be
+    TradingPartner records, not Market rows.  This table will be dropped once
+    all market_demands.market_id references are migrated to trading_partner_id.
+    """
 
     __tablename__ = "markets"
 
@@ -590,7 +680,6 @@ class BusinessImpactSnapshot(Base):
 
 
 # =============================================================================
-# Backward compatibility aliases (DEPRECATED - use Site/TransportationLane)
+# Backward compatibility alias (DEPRECATED - use TransportationLane)
 # =============================================================================
-Node = Site  # DEPRECATED: Use Site
 Lane = TransportationLane  # DEPRECATED: Use TransportationLane

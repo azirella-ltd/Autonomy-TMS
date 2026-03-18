@@ -38,12 +38,18 @@ class DecisionType(str, Enum):
 
 
 class DecisionStatus(str, Enum):
-    """Status of the decision in the workflow."""
-    PENDING = "pending"           # Awaiting user action
-    ACCEPTED = "accepted"         # User accepted agent recommendation
-    REJECTED = "rejected"         # User rejected (overrode) agent recommendation
-    AUTO_EXECUTED = "auto_executed"  # Autonomous mode - auto-executed
-    EXPIRED = "expired"           # Decision window passed
+    """Status of the decision in the AIIO workflow.
+
+    AIIO Model:
+    - INFORMED: User was notified of the decision (awaiting action)
+    - ACTIONED: Decision was executed (user accepted, agent auto-executed, or time expired)
+    - INSPECTED: User reviewed, no action needed
+    - OVERRIDDEN: User rejected and provided an alternative
+    """
+    INFORMED = "INFORMED"         # User was notified, hasn't acted yet
+    ACTIONED = "ACTIONED"         # Decision executed (accepted, auto-executed, or expired)
+    INSPECTED = "INSPECTED"       # User reviewed, no action needed
+    OVERRIDDEN = "OVERRIDDEN"     # User rejected with alternative
 
 
 class DecisionUrgency(str, Enum):
@@ -101,7 +107,7 @@ class AgentDecision(Base):
     status: Mapped[DecisionStatus] = mapped_column(
         SAEnum(DecisionStatus, name="decision_status_enum"),
         nullable=False,
-        default=DecisionStatus.PENDING,
+        default=DecisionStatus.INFORMED,
         index=True
     )
     urgency: Mapped[DecisionUrgency] = mapped_column(
@@ -301,7 +307,7 @@ class SOPWorklistItem(Base):
     status: Mapped[DecisionStatus] = mapped_column(
         SAEnum(DecisionStatus, name="decision_status_enum"),
         nullable=False,
-        default=DecisionStatus.PENDING
+        default=DecisionStatus.INFORMED
     )
 
     # User response

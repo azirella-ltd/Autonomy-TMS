@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from ... import models
 from ...schemas.user import User, UserCreate, UserUpdate, UserInDB, UserPasswordChange
 from ...models.user import UserTypeEnum
+from ...models.supply_chain_config import SupplyChainConfig
 from ...db.session import get_db, sync_engine
 from ...core.security import get_current_active_user
 from ...services.user_service import UserService
@@ -342,3 +343,116 @@ async def update_user_status(
         "user_id": user_id,
         "is_active": is_active
     }
+
+
+# ===== Config-Level Mode Endpoints =====
+
+class ActiveConfigPayload(BaseModel):
+    """Request payload for setting the current user's active config."""
+    config_id: int
+
+
+@router.put("/me/active-config", response_model=dict)
+async def set_my_active_config(
+    payload: ActiveConfigPayload,
+    db: Session = Depends(get_sync_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """
+    Set the current user's preferred (default) supply chain config.
+
+    The config must belong to the same tenant as the current user.
+    After this call, GET /supply-chain-configs/active will return this config.
+
+    Args:
+        payload: { config_id: int }
+
+    Returns:
+        { default_config_id: int }
+    """
+    config = db.query(SupplyChainConfig).filter(
+        SupplyChainConfig.id == payload.config_id
+    ).first()
+
+    if not config:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Config not found")
+
+    # Validate the config belongs to the user's tenant
+    # System admins can use any config regardless of tenant
+    user_type = current_user.user_type
+    if user_type != UserTypeEnum.SYSTEM_ADMIN:
+        if config.tenant_id != current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Config not found",
+            )
+
+    # Fetch the actual DB user row (current_user may be a cached object)
+    db_user = db.query(models.User).filter(models.User.id == current_user.id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    db_user.default_config_id = payload.config_id
+    db.commit()
+
+    return {"default_config_id": payload.config_id}
+
+
+@router.put("/admin/users/{user_id}/default-config", response_model=dict)
+async def set_user_default_config(
+    user_id: int,
+    payload: ActiveConfigPayload,
+    db: Session = Depends(get_sync_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """
+    Admin endpoint: set another user's default supply chain config.
+
+    Tenant admins can only set configs for users within their own tenant.
+    System admins can set configs for any user.
+
+    Args:
+        user_id: Target user ID
+        payload: { config_id: int }
+
+    Returns:
+        { user_id: int, default_config_id: int }
+    """
+    is_system_admin = current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
+    is_tenant_admin = current_user.user_type == UserTypeEnum.TENANT_ADMIN
+
+    if not is_system_admin and not is_tenant_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant admin or system admin required",
+        )
+
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Tenant admins can only manage users in their own tenant
+    if is_tenant_admin:
+        if target_user.tenant_id != current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only manage users within your tenant",
+            )
+
+    config = db.query(SupplyChainConfig).filter(
+        SupplyChainConfig.id == payload.config_id
+    ).first()
+    if not config:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Config not found")
+
+    # Validate the config belongs to the target user's tenant
+    if not is_system_admin and config.tenant_id != target_user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Config not found",
+        )
+
+    target_user.default_config_id = payload.config_id
+    db.commit()
+
+    return {"user_id": user_id, "default_config_id": payload.config_id}

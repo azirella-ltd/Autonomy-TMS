@@ -153,6 +153,7 @@ class BatchApproveResponse(BaseModel):
     failed_ids: List[str] = []
 
 
+@router.get("/", response_model=RecommendationsDashboardResponse)
 @router.get("/dashboard", response_model=RecommendationsDashboardResponse)
 def get_recommendations_dashboard(
     config_id: Optional[int] = Query(None, description="Supply chain config ID to filter by"),

@@ -296,7 +296,7 @@ function TRMAgentsTab({ hasTRM }) {
   if (!hasTRM) {
     return (
       <Alert severity="info" sx={{ mt: 1 }}>
-        TRM agents require the AI Execution package. Contact your account team to enable
+        AI agents require the AI Execution package. Contact your account team to enable
         autonomous execution agents (ATP, Rebalancing, PO Creation, Order Tracking).
       </Alert>
     );
@@ -700,7 +700,7 @@ const ExecutionPage = ({ configId, tenantId }) => {
             Execution Dashboard
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Layer 5 — Foundation + TRM Agents
+            Layer 5 — Foundation + AI Agents
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -716,7 +716,7 @@ const ExecutionPage = ({ configId, tenantId }) => {
         scrollButtons="auto"
       >
         <Tab label="Foundation" />
-        <Tab label="TRM Agents" />
+        <Tab label="AI Agents" />
         <Tab label="Feed-back Signals" />
         <Tab label="CDC Monitor" />
       </Tabs>

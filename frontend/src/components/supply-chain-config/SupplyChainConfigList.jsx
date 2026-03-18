@@ -38,11 +38,13 @@ import {
   AlertTriangle,
   HelpCircle,
   Network,
+  Zap,
 } from 'lucide-react';
 import { useSnackbar } from 'notistack';
 import { format } from 'date-fns';
 import { api } from '../../services/api';
 import { getSupplyChainConfigs, trainSupplyChainConfig } from '../../services/supplyChainConfigService';
+import ProvisioningStepper from './ProvisioningStepper';
 
 const SupplyChainConfigList = ({
   title = 'Supply Chain Configurations',
@@ -189,7 +191,7 @@ const SupplyChainConfigList = ({
     if (!configToDelete) return;
 
     try {
-      await api.delete(`/supply-chain-config/${configToDelete.id}/`);
+      await api.delete(`/supply-chain-config/${configToDelete.id}`);
       enqueueSnackbar('Configuration deleted successfully', { variant: 'success' });
       await fetchConfigs();
     } catch (err) {
@@ -262,6 +264,12 @@ const SupplyChainConfigList = ({
     }
   };
 
+  const [provisioningConfig, setProvisioningConfig] = useState(null);
+
+  const handleProvision = (config) => {
+    setProvisioningConfig(config);
+  };
+
   const handleValidateConfig = async (configId) => {
     if (!configId || validatingConfig === configId) return;
 
@@ -319,7 +327,7 @@ const SupplyChainConfigList = ({
             <span className="font-semibold">{config.name}</span>
           </TableCell>
           <TableCell>
-            <span className="text-sm text-muted-foreground" title={config.description || 'No description provided'}>
+            <span className="text-sm text-muted-foreground line-clamp-2" title={config.description || 'No description provided'}>
               {config.description || 'No description provided'}
             </span>
           </TableCell>
@@ -344,8 +352,8 @@ const SupplyChainConfigList = ({
               </Badge>
             )}
           </TableCell>
-          <TableCell className="text-right">
-            <div className="flex items-center justify-end gap-1">
+          <TableCell className="text-right px-1">
+            <div className="flex items-center justify-end gap-0">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -392,6 +400,23 @@ const SupplyChainConfigList = ({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Edit</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
+              {!readOnly && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleProvision(config)}
+                      >
+                        <Zap className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Provision — warm start, train agents, and seed decision stream</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
@@ -506,14 +531,14 @@ const SupplyChainConfigList = ({
           )}
         </div>
 
-        <Table>
+        <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[20%]">Name</TableHead>
-              <TableHead className="w-[40%]">Description</TableHead>
-              <TableHead className="w-[12%]">Time Bucket</TableHead>
-              <TableHead className="w-[13%]">Status</TableHead>
-              <TableHead className="w-[15%] text-right">Actions</TableHead>
+              <TableHead style={{ width: 200 }}>Name</TableHead>
+              <TableHead style={{ width: 200 }}>Description</TableHead>
+              <TableHead style={{ width: 70 }}>Bucket</TableHead>
+              <TableHead style={{ width: 110 }}>Status</TableHead>
+              <TableHead className="text-right" style={{ width: 130 }}>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -549,6 +574,13 @@ const SupplyChainConfigList = ({
           Are you sure you want to delete the configuration &quot;{configToDelete?.name}&quot;? This action cannot be undone.
         </p>
       </Modal>
+
+      <ProvisioningStepper
+        configId={provisioningConfig?.id}
+        configName={provisioningConfig?.name}
+        isOpen={!!provisioningConfig}
+        onClose={() => setProvisioningConfig(null)}
+      />
     </>
   );
 };

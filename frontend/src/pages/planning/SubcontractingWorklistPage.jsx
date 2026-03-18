@@ -10,6 +10,7 @@
  * (is_expert=True) for reinforcement learning.
  */
 import React, { useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
@@ -113,7 +114,7 @@ const SUBCONTRACTING_COLUMNS = [
       const pct = (d.confidence * 100).toFixed(1);
       const color = d.confidence >= 0.8 ? 'success' : d.confidence >= 0.5 ? 'warning' : 'error';
       return (
-        <MuiTooltip title={`TRM confidence: ${pct}%`} arrow>
+        <MuiTooltip title={`Agent confidence: ${pct}%`} arrow>
           <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
         </MuiTooltip>
       );
@@ -141,7 +142,7 @@ const SUBCONTRACTING_OVERRIDE_FIELDS = [
     key: 'required_qty',
     label: 'Override Qty',
     type: 'number',
-    helperText: 'Enter a new required quantity to replace the TRM recommendation',
+    helperText: 'Enter a new required quantity to replace the agent recommendation',
   },
   {
     key: 'subcontractor_id',
@@ -160,7 +161,7 @@ const SUBCONTRACTING_OVERRIDE_FIELDS = [
  * Returns an array of { title, value, color?, subtitle? } objects.
  */
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
   // External rate: fraction of all decisions routed externally
@@ -233,6 +234,8 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const SubcontractingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
+  const location = useLocation();
+  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_subcontracting_worklist');
 
@@ -257,7 +260,7 @@ const SubcontractingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
             Subcontracting Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Review make-vs-buy routing recommendations from the Subcontracting TRM.
+            Review make-vs-buy routing recommendations from the subcontracting agent.
             Accept, override with reason, or reject each decision before
             execution.
           </Typography>
@@ -283,6 +286,7 @@ const SubcontractingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

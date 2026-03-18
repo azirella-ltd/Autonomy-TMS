@@ -15,6 +15,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import {
   TrendingUp,
   TrendingDown,
@@ -637,6 +638,7 @@ const PerformanceSummary = ({ summary }) => {
 const ExecutiveDashboard = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { activeConfigId } = useActiveConfig();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
@@ -660,7 +662,8 @@ const ExecutiveDashboard = () => {
           setData(dashResponse.value.data.data);
         }
         if (metricsResponse.status === 'fulfilled') {
-          setGartnerMetrics(metricsResponse.value.data);
+          const md = metricsResponse.value.data;
+          setGartnerMetrics(md?.data || md);
         }
         setError(null);
       } catch (err) {
@@ -842,7 +845,7 @@ const ExecutiveDashboard = () => {
       </div>
 
       {/* Row 2: Supply Chain Sankey (full width) */}
-      <PlanningCascadeSankey height={300} />
+      <PlanningCascadeSankey configId={activeConfigId} height={300} />
 
       {/* Row 3: Gartner Tier 1 ASSESS — Strategic Metrics */}
       <div>
@@ -875,6 +878,9 @@ const ExecutiveDashboard = () => {
                 tier="tier1"
                 scorCode={m.scor_code}
                 lowerIsBetter={m.lower_is_better}
+                ciLower={m.ci_lower}
+                ciUpper={m.ci_upper}
+                n={m.n}
                 compact
               />
             ))}
@@ -909,6 +915,9 @@ const ExecutiveDashboard = () => {
                 formula={m.formula}
                 components={m.components}
                 lowerIsBetter={m.lower_is_better}
+                ciLower={m.ci_lower}
+                ciUpper={m.ci_upper}
+                n={m.n}
               />
             ))}
           </div>
@@ -963,6 +972,42 @@ const ExecutiveDashboard = () => {
               }}
             />
           </div>
+        )}
+      </div>
+
+      {/* Row 3c: Gartner Tier 3 CORRECT — Operational Metrics */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Tier 3 — CORRECT</h2>
+        {gartnerMetrics?.tiers?.tier3_correct?.categories ? (
+          <div className="space-y-4">
+            {Object.entries(gartnerMetrics.tiers.tier3_correct.categories).map(([catKey, cat]) => (
+              <div key={catKey}>
+                <h3 className="text-sm font-medium text-muted-foreground mb-2">{cat.label || catKey}</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {cat.metrics && Object.entries(cat.metrics).map(([key, m]) => (
+                    <GartnerMetricCard
+                      key={key}
+                      label={m.label}
+                      value={m.value}
+                      unit={m.unit}
+                      target={m.target}
+                      trend={m.trend}
+                      status={m.status}
+                      tier="tier3"
+                      agent={m.agent}
+                      lowerIsBetter={m.lower_is_better}
+                      ciLower={m.ci_lower}
+                      ciUpper={m.ci_upper}
+                      n={m.n}
+                      compact
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground py-4">No Tier 3 data available.</div>
         )}
       </div>
 

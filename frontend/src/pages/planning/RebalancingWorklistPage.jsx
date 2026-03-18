@@ -11,6 +11,7 @@
  * columns, summary cards, and override fields.
  */
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -206,18 +207,18 @@ const OVERRIDE_FIELDS = [
  * Compute summary card data from the current set of decisions.
  *
  * Cards:
- * 1. Pending Transfers — count of PROPOSED decisions
+ * 1. Pending Transfers — count of INFORMED decisions
  * 2. DOS Improvement — average DOS improvement across recent completed transfers
  * 3. Transfer Cost — sum of expected_cost for recent decisions
- * 4. Override Rate — percentage of OVERRIDDEN vs (ACCEPTED + OVERRIDDEN)
+ * 4. Override Rate — percentage of OVERRIDDEN vs (ACTIONED + OVERRIDDEN)
  */
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
   // DOS improvement: average of dos_improvement field on completed decisions
   const withDos = decisions.filter(
-    (d) => d.dos_improvement != null && d.status !== 'PROPOSED'
+    (d) => d.dos_improvement != null && d.status !== 'INFORMED'
   );
   const avgDos =
     withDos.length > 0
@@ -233,9 +234,9 @@ const buildSummaryCards = (decisions) => {
       : '—';
 
   // Override rate
-  const accepted = decisions.filter((d) => d.status === 'ACCEPTED').length;
+  const actioned = decisions.filter((d) => d.status === 'ACTIONED').length;
   const overridden = decisions.filter((d) => d.status === 'OVERRIDDEN').length;
-  const reviewedTotal = accepted + overridden;
+  const reviewedTotal = actioned + overridden;
   const overrideRate =
     reviewedTotal > 0
       ? `${((overridden / reviewedTotal) * 100).toFixed(0)}%`
@@ -282,6 +283,8 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
+  const location = useLocation();
+  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_rebalancing_worklist');
 
@@ -305,7 +308,7 @@ const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review cross-location transfer recommendations from the Inventory
-            Rebalancing TRM. Accept, override, or reject each decision before
+            rebalancing agent. Accept, override, or reject each decision before
             execution. Override reasons are captured for RL training.
           </Typography>
         </Box>
@@ -331,6 +334,7 @@ const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

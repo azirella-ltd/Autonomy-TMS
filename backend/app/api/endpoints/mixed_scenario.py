@@ -19,7 +19,7 @@ from app.schemas.scenario import (
 from app.models.scenario import Scenario as ScenarioModel
 from app.models.scenario_user import ScenarioUser
 from app.models.supply_chain import ScenarioRound
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserResponse
 from app.services.llm_agent import AutonomyLLMError
 from app.services.mixed_scenario_service import MixedScenarioService
@@ -111,13 +111,13 @@ def get_mixed_scenario_service(db: Session = Depends(get_sync_db)) -> MixedScena
     return MixedScenarioService(db)
 
 
-def _get_participant_node(db: Session, scenario_user: ScenarioUser, scenario: ScenarioModel) -> Optional[Node]:
-    """Look up the Node for a scenario_user based on their site_key."""
+def _get_participant_node(db: Session, scenario_user: ScenarioUser, scenario: ScenarioModel) -> Optional[Site]:
+    """Look up the Site for a scenario_user based on their site_key."""
     if not scenario_user.site_key or not scenario.supply_chain_config_id:
         return None
-    return db.query(Node).filter(
-        Node.config_id == scenario.supply_chain_config_id,
-        Node.dag_type == scenario_user.site_key
+    return db.query(Site).filter(
+        Site.config_id == scenario.supply_chain_config_id,
+        Site.dag_type == scenario_user.site_key
     ).first()
 
 @router.post("/scenarios/", response_model=ScenarioSchema, status_code=status.HTTP_201_CREATED)
@@ -876,7 +876,7 @@ def get_pipeline(
         for to, _ in in_transit:
             for sid in (to.source_site_id, to.destination_site_id):
                 if sid and sid not in site_name_cache:
-                    node = scenario_service.db.query(Node).filter(Node.id == sid).first() if isinstance(sid, int) else None
+                    node = scenario_service.db.query(Site).filter(Site.id == sid).first() if isinstance(sid, int) else None
                     site_name_cache[sid] = node.name if node else str(sid)
 
         pipeline_list = [
@@ -1886,7 +1886,7 @@ async def get_pipeline_visualization(
                     base_lead_time = lane_lt
 
             # Get source node info
-            from app.models.supply_chain_config import Node as ConfigNode
+            from app.models.supply_chain_config import Site as ConfigNode
             source_node = scenario_service.db.query(ConfigNode).filter_by(id=lane.from_site_id).first()
             if source_node:
                 source_node_info = {"source_node": source_node.name, "source_node_id": source_node.id}

@@ -10,6 +10,7 @@
  * (is_expert=True) for reinforcement learning.
  */
 import React, { useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
@@ -121,7 +122,7 @@ const FORECAST_ADJ_COLUMNS = [
       const pct = (d.confidence * 100).toFixed(1);
       const color = d.confidence >= 0.8 ? 'success' : d.confidence >= 0.5 ? 'warning' : 'error';
       return (
-        <MuiTooltip title={`TRM confidence: ${pct}%`} arrow>
+        <MuiTooltip title={`Agent confidence: ${pct}%`} arrow>
           <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
         </MuiTooltip>
       );
@@ -138,7 +139,7 @@ const FORECAST_ADJ_OVERRIDE_FIELDS = [
     key: 'adjustment_pct',
     label: 'Override Adjustment %',
     type: 'number',
-    helperText: 'Enter a new adjustment percentage to replace the TRM recommendation',
+    helperText: 'Enter a new adjustment percentage to replace the agent recommendation',
   },
   {
     key: 'adjustment_direction',
@@ -167,7 +168,7 @@ const FORECAST_ADJ_OVERRIDE_FIELDS = [
  * Returns an array of { title, value, color?, subtitle? } objects.
  */
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
   // Average adjustment percentage
@@ -229,6 +230,8 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const ForecastAdjWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
+  const location = useLocation();
+  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_forecast_adj_worklist');
 
@@ -254,7 +257,7 @@ const ForecastAdjWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review signal-driven forecast adjustment recommendations from the
-            Forecast Adjustment TRM. Accept, override with reason, or reject
+            Forecast Adjustment agent. Accept, override with reason, or reject
             each decision before execution.
           </Typography>
         </Box>
@@ -279,6 +282,7 @@ const ForecastAdjWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

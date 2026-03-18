@@ -46,8 +46,8 @@ const FallbackWarningModal = ({
   // Map strategy names to user-friendly display names
   const getStrategyDisplayName = (strategy) => {
     const strategyNames = {
-      trm: 'TRM (Tiny Recursive Model)',
-      gnn: 'GNN (Graph Neural Network)',
+      trm: 'AI Agent',
+      gnn: 'Network Agent',
       rl: 'RL (Reinforcement Learning)',
       llm: 'LLM (Large Language Model)',
     };

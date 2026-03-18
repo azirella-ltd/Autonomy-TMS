@@ -748,6 +748,129 @@ def get_suite_status(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/cdt/readiness")
+def get_cdt_readiness(
+    config_id: Optional[int] = None,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get CDT (Conformal Decision Theory) calibration readiness per TRM type.
+
+    Returns per-agent calibration status so the UI can indicate which TRMs
+    have conformal coverage guarantees and which are still accumulating data.
+
+    If config_id is provided, uses the config's tenant_id for scoping
+    (important when the logged-in user is a system admin in a different tenant).
+
+    Status values:
+    - calibrated: 30+ decision-outcome pairs, full coverage guarantee active
+    - partial: 1-29 pairs, accumulating (auto-calibrates at threshold)
+    - uncalibrated: 0 pairs, decisions use conservative risk_bound=0.50
+    """
+    from ...services.conformal_prediction.conformal_decision import get_cdt_registry
+
+    # Resolve tenant_id: prefer config's tenant, fall back to user's tenant
+    tenant_id = getattr(current_user, 'tenant_id', None)
+    if config_id:
+        from ...db.session import sync_session_factory
+        try:
+            sync_db = sync_session_factory()
+            from sqlalchemy import text as sa_text
+            row = sync_db.execute(
+                sa_text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
+                {"c": config_id},
+            ).first()
+            if row and row[0]:
+                tenant_id = row[0]
+        finally:
+            sync_db.close()
+
+    registry = get_cdt_registry(tenant_id=tenant_id)
+    diagnostics = registry.get_all_diagnostics()
+
+    # Fall back to global registry if tenant registry has no calibrated agents
+    if not diagnostics or all(
+        d.get("calibration_size", 0) == 0 for d in diagnostics.values()
+    ):
+        global_registry = get_cdt_registry(tenant_id=None)
+        global_diag = global_registry.get_all_diagnostics()
+        if global_diag:
+            diagnostics = global_diag
+
+    # All 11 TRM types
+    all_trm_types = [
+        "atp", "inventory_rebalancing", "po_creation", "order_tracking",
+        "mo_execution", "to_execution", "quality_disposition",
+        "maintenance_scheduling", "subcontracting", "forecast_adjustment",
+        "inventory_buffer",
+    ]
+
+    trm_labels = {
+        "atp": "ATP Executor",
+        "inventory_rebalancing": "Inventory Rebalancing",
+        "po_creation": "PO Creation",
+        "order_tracking": "Order Tracking",
+        "mo_execution": "MO Execution",
+        "to_execution": "TO Execution",
+        "quality_disposition": "Quality Disposition",
+        "maintenance_scheduling": "Maintenance Scheduling",
+        "subcontracting": "Subcontracting",
+        "forecast_adjustment": "Forecast Adjustment",
+        "inventory_buffer": "Inventory Buffer",
+    }
+
+    min_required = 30  # ConformalDecisionWrapper.MIN_CALIBRATION_SIZE
+
+    results = []
+    calibrated_count = 0
+    partial_count = 0
+
+    for trm_type in all_trm_types:
+        diag = diagnostics.get(trm_type)
+        if diag and diag.get("calibration_size", 0) >= min_required:
+            status = "calibrated"
+            calibrated_count += 1
+            pairs = diag["calibration_size"]
+            timestamp = diag.get("calibration_timestamp")
+        elif diag and diag.get("calibration_size", 0) > 0:
+            status = "partial"
+            partial_count += 1
+            pairs = diag["calibration_size"]
+            timestamp = None
+        else:
+            status = "uncalibrated"
+            pairs = 0
+            timestamp = None
+
+        results.append({
+            "trm_type": trm_type,
+            "label": trm_labels.get(trm_type, trm_type),
+            "status": status,
+            "calibration_pairs": pairs,
+            "min_required": min_required,
+            "calibrated_at": timestamp,
+            "loss_stats": diag.get("loss_stats") if diag else None,
+        })
+
+    return {
+        "trm_types": results,
+        "summary": {
+            "total": len(all_trm_types),
+            "calibrated": calibrated_count,
+            "partial": partial_count,
+            "uncalibrated": len(all_trm_types) - calibrated_count - partial_count,
+        },
+        "ready": calibrated_count == len(all_trm_types),
+        "message": (
+            "All TRM agents have conformal coverage guarantees"
+            if calibrated_count == len(all_trm_types)
+            else f"{calibrated_count}/{len(all_trm_types)} TRM agents calibrated. "
+                 f"Decisions without calibration use conservative risk bounds (risk_bound=0.50) "
+                 f"which may trigger more escalations to human review."
+        ),
+    }
+
+
 @router.post("/suite/scenarios/generate")
 def generate_conformal_scenarios(
     request: GenerateScenariosRequest,
@@ -1179,10 +1302,10 @@ def calibrate_demo_data(
         db.close()
         raise HTTPException(status_code=404, detail=f"No supply chain config found for your tenant")
 
-    # Pick up to 4 demand sites (MARKET_DEMAND)
+    # Pick up to 4 demand sites (CUSTOMER)
     demand_sites = (
         db.query(Site)
-        .filter(Site.config_id == config.id, Site.master_type == "MARKET_DEMAND")
+        .filter(Site.config_id == config.id, Site.master_type == "CUSTOMER")
         .limit(4)
         .all()
     )
@@ -1196,10 +1319,10 @@ def calibrate_demo_data(
         .limit(2)
         .all()
     )
-    # Pick up to 2 supplier (MARKET_SUPPLY) sites
+    # Pick up to 2 supplier (VENDOR) sites
     supplier_sites = (
         db.query(Site)
-        .filter(Site.config_id == config.id, Site.master_type == "MARKET_SUPPLY")
+        .filter(Site.config_id == config.id, Site.master_type == "VENDOR")
         .limit(2)
         .all()
     )
@@ -1266,7 +1389,7 @@ def calibrate_demo_data(
         .filter(
             Forecast.config_id == config.id,
             Forecast.is_active == "true",
-            Site.master_type == "MARKET_DEMAND",
+            Site.master_type == "CUSTOMER",
             Forecast.forecast_date >= today,
             Forecast.forecast_date < horizon_end,
         )

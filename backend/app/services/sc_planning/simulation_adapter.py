@@ -26,7 +26,7 @@ from app.models.scenario_user import ScenarioUser
 # Aliases for backwards compatibility
 Game = Scenario
 ScenarioUser = ScenarioUser
-from app.models.supply_chain_config import SupplyChainConfig, Node
+from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.sc_entities import Product
 from app.models.sc_entities import (
     InvLevel,

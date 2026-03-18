@@ -15,7 +15,7 @@ from sqlalchemy import select, delete
 from app.db.session import SessionLocal
 from app.models.mps import MPSPlan, MPSPlanItem, MPSStatus
 from app.models.production_order import ProductionOrder
-from app.models.supply_chain_config import SupplyChainConfig, Item, Node
+from app.models.supply_chain_config import SupplyChainConfig, Item, Site
 from app.models.user import User
 
 
@@ -55,7 +55,7 @@ def test_production_order_generation():
         # Get first product and factory node
         product = db.execute(select(Item)).scalars().first()
         factory = db.execute(
-            select(Node).where(Node.sc_node_type == "Factory")
+            select(Site).where(Site.sc_node_type == "Factory")
         ).scalars().first()
 
         if not product or not factory:

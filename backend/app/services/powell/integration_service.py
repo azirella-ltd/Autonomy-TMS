@@ -28,7 +28,7 @@ from sqlalchemy import select, and_, func
 from app.models.sc_entities import InvLevel, OutboundOrderLine
 from app.models.purchase_order import PurchaseOrder
 from app.models.transfer_order import TransferOrder
-from app.models.supply_chain_config import Node, TransportationLane
+from app.models.supply_chain_config import Site, TransportationLane
 
 # Powell services
 from app.services.powell.allocation_service import (
@@ -903,7 +903,7 @@ class PowellIntegrationService:
         suppliers = []
         for lane in lanes:
             # Get source node
-            source_node = await self.db.get(Node, lane.from_site_id)
+            source_node = await self.db.get(Site, lane.from_site_id)
             if source_node:
                 lead_time = 1.0  # Default
                 if lane.supply_lead_time and isinstance(lane.supply_lead_time, dict):
@@ -1022,7 +1022,7 @@ class PowellIntegrationService:
         states = []
         for inv in inv_levels:
             # Get node info
-            node = await self.db.get(Node, inv.site_id)
+            node = await self.db.get(Site, inv.site_id)
 
             # Calculate days of supply (simplified)
             avg_demand = 100.0  # Placeholder - should come from forecast
@@ -1079,10 +1079,10 @@ class PowellIntegrationService:
 
         # Query by name
         result = await self.db.execute(
-            select(Node.id).where(
+            select(Site.id).where(
                 and_(
-                    Node.config_id == config_id,
-                    Node.name == site_name,
+                    Site.config_id == config_id,
+                    Site.name == site_name,
                 )
             )
         )
@@ -1273,7 +1273,9 @@ class PowellIntegrationService:
 
             impact = recommendation.expected_impact if hasattr(recommendation, 'expected_impact') else {}
 
-            from app.services.powell.decision_reasoning import rebalancing_reasoning
+            from app.services.powell.decision_reasoning import rebalancing_reasoning, get_product_costs
+            from app.db.session import sync_session_factory
+            _sync_db = sync_session_factory()
             record = PowellRebalanceDecision(
                 config_id=config_id,
                 product_id=recommendation.product_id,
@@ -1295,6 +1297,11 @@ class PowellIntegrationService:
                     recommended_qty=recommendation.recommended_qty,
                     confidence=recommendation.confidence,
                     reason=recommendation.reason.value,
+                    source_dos_before=impact.get("source_dos_before") if isinstance(impact, dict) else None,
+                    dest_dos_before=impact.get("dest_dos_before") if isinstance(impact, dict) else None,
+                    dest_dos_after=impact.get("dest_dos_after") if isinstance(impact, dict) else None,
+                    expected_cost=impact.get("expected_cost") if isinstance(impact, dict) else None,
+                    **dict(zip(("unit_cost", "unit_price"), get_product_costs(_sync_db, recommendation.product_id))),
                 ),
             )
             self.db.add(record)

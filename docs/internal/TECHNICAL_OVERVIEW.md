@@ -241,6 +241,49 @@ When escalation triggers, the exception handler receives the full state context 
 
 **The meta-learning effect**: Over time, the execution agent learns to handle situations that previously required escalation. The 95/5 boundary is not static — it shifts as the agent absorbs more training examples. This is the cost-reduction flywheel described in the executive summary: early in deployment, the exception handler handles more decisions (higher cost); as the agent learns, the exception handler handles fewer (lower cost).
 
+### Urgency + Likelihood: Directing Human Attention Where It Matters
+
+Confidence routing governs *which model* makes the decision (fast agent vs. deep exception handler). A second mechanism governs *whether a human needs to see it at all* — the **urgency + likelihood matrix**.
+
+Every decision carries two scores:
+
+- **Urgency** (0.0–1.0): How time-sensitive is this? Derived from the agent's urgency vector, signal bus state, and exception severity. A rush order with no inventory scores 0.95. A routine restock with 3 weeks of supply scores 0.1.
+- **Likelihood** (0.0–1.0): How confident is the agent that its recommended action will resolve the issue? Derived from the TRM's output confidence, conformal prediction intervals, and CDT risk bounds.
+
+These two dimensions create four operating quadrants:
+
+```
+                        Likelihood (agent confidence)
+                    LOW                         HIGH
+            ┌───────────────────┬───────────────────┐
+    HIGH    │  HUMAN NEEDED     │  AUTONOMOUS        │
+  Urgency   │  Top of stream    │  Agent acts,       │
+            │  Clock ticking,   │  logged for        │
+            │  agent uncertain  │  awareness          │
+            ├───────────────────┼───────────────────┤
+    LOW     │  ABANDONED        │  AUTONOMOUS        │
+            │  Not worth        │  Agent acts,       │
+            │  anyone's time    │  logged for        │
+            │                   │  awareness          │
+            └───────────────────┴───────────────────┘
+```
+
+The Decision Stream — the primary interface for planners — surfaces decisions sorted by urgency descending, then likelihood ascending. This means the decision at the top of the stream is always the most urgent one where the agent is least confident — precisely the situation where human expertise adds the most value.
+
+Decisions with both low urgency and low likelihood are abandoned automatically using a sliding-scale guardrail: `urgency + likelihood` must exceed a configurable threshold (default: 0.5). This means the lower the urgency, the higher the likelihood must be to survive. High-urgency decisions are never abandoned regardless of likelihood — if the clock is ticking, the planner needs to see it even if the agent's best guess is weak.
+
+Abandoned decisions are not deleted. They are recorded with their abandon reason and available on audit and training pages — useful for evaluating agent calibration and identifying patterns where the agent consistently generates low-value decisions.
+
+### Two-Level Conformal Prediction Architecture
+
+The confidence engine relies on two complementary levels of conformal prediction:
+
+1. **Forecast-level CP** (intervals): Distribution-free prediction intervals on demand, lead time, yield, price, and service level. These feed into planning decisions — safety stock calculation, supply plan generation, and ATP promising. Managed by `ConformalOrchestrator` + `SupplyChainConformalSuite`.
+
+2. **Decision-level CDT** (risk bounds): Every TRM decision carries `risk_bound = P(loss > threshold)` calibrated from historical decision-outcome pairs. CDT applies specifically to execution-level decisions with discrete, observable outcomes. Upper planning layers (S&OP, tGNN, MPS/MRP) use forecast-level CP on their inputs rather than CDT on their outputs, because they produce continuous/multi-dimensional outputs without binary loss semantics.
+
+Both levels are **tenant-scoped** — calibration data from one tenant never leaks to another. Per-tenant CDT registries and conformal suites are created lazily and isolated. Uncalibrated agents (< 30 decision-outcome pairs) default to maximum uncertainty (`risk_bound=0.50`), forcing escalation until sufficient data accumulates. The CDT Readiness Banner on the Decision Stream and the Provisioning Stepper's conformal step show calibration status per TRM type.
+
 ---
 
 ## Part 4: The Learning Loop — How the System Gets Smarter
@@ -613,7 +656,45 @@ The parameterized optimization policy optimizer — which performs global search
 
 ---
 
-## Part 12: Decision Intelligence — From Planning Tool to Decision Platform
+## Part 12: Human-to-AI Signal Channels — Talk to Me & Email Signal Intelligence
+
+Two input channels allow humans and external communications to inject signals directly into the AI decision pipeline, complementing the autonomous agent-driven workflows with human intent and external intelligence.
+
+### Talk to Me — Natural Language Directive Capture
+
+A persistent AI prompt bar in the TopNavbar accepts natural language directives from any authenticated user. The two-phase flow (analyze → clarify → submit) uses LLM parsing to extract structured fields (direction, metric, magnitude, duration, scope, justification), detects missing information via smart gap detection, and routes the completed directive to the appropriate Powell Cascade layer based on the user's `powell_role`.
+
+**Key design decisions**:
+- **Reason always required**: A directive without justification ("increase revenue") cannot be tracked for effectiveness. The system insists on the "why."
+- **Strategic leniency**: VP/Executive directives legitimately target the entire network — geography and product scope are not marked missing for strategic-layer directives.
+- **Confidence-gated auto-apply**: Only directives parsed with ≥0.7 confidence are auto-routed to TRMs. Below that, the directive is persisted but held for human review.
+- **Effectiveness tracking**: Bayesian posteriors per `(user_id, directive_type)` learn which users and directive types actually improve outcomes over time.
+
+Implementation: `backend/app/services/directive_service.py`, `backend/app/api/endpoints/user_directives.py`, `frontend/src/components/TopNavbar.jsx`
+
+See [TALK_TO_ME.md](TALK_TO_ME.md) for full architecture documentation.
+
+### Email Signal Intelligence — GDPR-Safe External Signal Ingestion
+
+Email Signal Intelligence monitors customer and supplier inboxes, extracts supply chain signals from incoming emails, and routes them to the appropriate TRM agents. Personal identifiers are stripped before any text is stored — only the sending company (resolved via domain→TradingPartner) is persisted. The original email is never stored.
+
+**Pipeline**: IMAP/Gmail Inbox → PII Scrubber (regex-based, no external deps) → TradingPartner Resolution (domain→company) → LLM Classification (Haiku tier, ~$0.0018/call) → Scope Resolution (fuzzy-match product/site refs) → EmailSignal persisted (GDPR-safe) → Auto-route to TRM(s) if confidence ≥ threshold + Decision Stream alert.
+
+**12 signal types** map to primary/secondary TRMs: demand_increase/decrease → Forecast Adjustment, supply_disruption/lead_time_change → PO Creation, quality_issue → Quality Disposition, capacity_change → MO Execution, etc.
+
+**Key design decisions**:
+- **GDPR by design**: PII scrubbed *before* persistence, not after. No "right to erasure" complexity.
+- **Emails are signal sources, not decision types**: No 12th TRM — emails feed existing TRMs via the ForecastAdjustmentTRM's `source="email"` path.
+- **Company, not person**: Domain→TradingPartner resolution captures the valuable SC intelligence without personal identity.
+- **Heuristic fallback**: Keyword-based classification when LLM unavailable (air-gapped), lower confidence (0.2-0.4) but maintains availability.
+
+Implementation: `backend/app/services/email_signal_service.py`, `backend/app/services/email_pii_scrubber.py`, `backend/app/services/email_connector.py`, `frontend/src/pages/admin/EmailSignalsDashboard.jsx`
+
+See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md) for full architecture documentation.
+
+---
+
+## Part 13: Decision Intelligence — From Planning Tool to Decision Platform
 
 Gartner designated Decision Intelligence as a "transformational" technology in the 2025 AI Hype Cycle and published its inaugural Magic Quadrant for Decision Intelligence Platforms in January 2026. The framework defines four lifecycle capabilities that every Decision Intelligence Platform must deliver: decision modeling, decision orchestration, decision monitoring, and decision governance. Separately, Gartner's 2025 Hype Cycle for Supply Chain Planning Technologies identifies decision-centric planning and agentic AI as two of four interdependent technologies reshaping supply chain management — predicting that 50% of cross-functional SCM solutions will use intelligent agents by 2030.
 
@@ -707,6 +788,102 @@ The decision cycle phases proceed in order:
 ### Cold Start and Graceful Degradation
 
 When no trained model exists, the site coordinator outputs zero adjustments — an identity pass-through. Agents operate exactly as they would without it. The coordinator is enabled per-tenant when sufficient multi-agent trace data exists (minimum 1,000 complete decision cycles). If inference fails or exceeds the latency timeout, the decision cycle proceeds with unmodified urgency vectors.
+
+---
+
+## Part 14: Causal AI — The Fourth Pillar
+
+> The platform's four pillars are **AI Agents** (Parts 1-5), **Conformal Prediction** (Part 6), **Digital Twin** (Parts 8-9), and **Causal AI** (this section). Each pillar reinforces the others: the digital twin generates training data and calibration sets, conformal prediction provides uncertainty guarantees that govern agent autonomy, agents make the decisions, and causal AI determines which decisions actually worked — closing the learning loop.
+
+### The Outcome Attribution Problem
+
+The learning loop described in Part 4 depends on a critical assumption: that we can correctly attribute outcomes to the decisions that caused them. In practice, this is the hardest problem in the entire architecture.
+
+When an ATP agent promises 80 units and the order ships on time, was that because of the ATP decision, the PO agent's earlier restocking, the inventory buffer agent's preemptive increase, or favorable demand that would have produced a good outcome regardless? Attributing the outcome to the ATP agent without controlling for these confounders produces biased training data — and biased training data produces agents that learn the wrong lessons.
+
+This is not an academic concern. It is the difference between an AI system that gets genuinely smarter over time and one that overfits to historical accidents.
+
+### Counterfactual Reasoning: The Foundation
+
+The only rigorous way to determine whether a decision caused a positive outcome is to compare the actual outcome against what *would have happened* under a different decision — the counterfactual. For decisions where a human planner overrides the agent, both paths can be estimated:
+
+- **Agent's counterfactual**: Given the actual environment outcome (real demand, real lead times), what reward would the agent's original recommendation have earned?
+- **Human's actual**: Given the same environment, what reward did the override produce?
+- **Treatment effect**: The difference is the causal effect of the override.
+
+For ATP decisions, this computation is direct: if the agent recommended 80 units, the human overrode to 100, and actual demand was 90, the agent's counterfactual fill rate is 88.9% vs. the human's actual 100%. The override was demonstrably beneficial.
+
+For more complex decisions (production scheduling, maintenance timing), analytical counterfactuals are not feasible — too many confounding variables interact. The system uses **propensity-score matching** instead: finding non-overridden decisions made under similar conditions (same site, similar inventory, demand, and backlog) and comparing their outcomes as statistical controls.
+
+### Three Tiers of Causal Inference
+
+The tiered strategy matches causal inference methods to each decision type's observability characteristics:
+
+| Tier | Decision Types | Method | Signal Strength | Feedback Delay |
+|------|---------------|--------|-----------------|----------------|
+| **1** | ATP, Forecast Adjustment, Quality | Analytical counterfactual | 1.0 | 4h–7d |
+| **2** | MO, TO, PO, Order Tracking | Propensity-score matching (L2 nearest-neighbor on state vectors) | 0.3–0.9 (scales with match count) | 1d–14d |
+| **3** | Inventory Buffer, Maintenance, Subcontracting | Bayesian Beta prior (high confounding, long delays) | 0.15 | 14d–30d |
+
+Tier 2 signal strength increases as the matching service accumulates more comparison pairs — 0 matches yields 0.30, 50+ matches yields 0.90. This prevents the system from drawing strong causal conclusions from insufficient evidence.
+
+### From Causation to Training Weights
+
+The causal inference pipeline feeds directly into the TRM training loop through **Bayesian override effectiveness posteriors**. Each (user, TRM type) pair maintains a Beta(α, β) distribution:
+
+- When an override outcome exceeds the agent's counterfactual → α increases (beneficial signal)
+- When an override outcome is worse → β increases (detrimental signal)
+- Neutral outcomes → no update
+
+The posterior's expected value E[p] = α/(α+β) translates to a **training weight**: users with historically beneficial overrides get higher sample weights when their decision patterns are used to train agents. This is not evaluation of planners — it is calibration of how much each planner's judgment should influence the AI's learning.
+
+### Systemic Impact: Beyond Decision-Local Attribution
+
+A subtle failure mode: an override that looks beneficial for one decision but harms the broader system. A planner who expedites one order may improve that order's on-time delivery while consuming capacity that delays ten other orders. The decision-local counterfactual shows a win; the systemic impact is a loss.
+
+The system measures both scopes:
+- **Local**: Counterfactual comparison for the specific decision
+- **Site-window**: Balanced scorecard comparison across the entire site for a window surrounding the override
+
+The composite score weights systemic impact 60% and local impact 40%, preventing locally-good but systemically-harmful overrides from inflating training weights.
+
+### Why This Is a Pillar, Not a Feature
+
+Causal AI is not a monitoring dashboard or an analytics add-on. It is the mechanism that makes the entire learning loop trustworthy:
+
+- Without causal inference, the learning loop trains on **correlation** — agents learn what happened to co-occur with good outcomes, including favorable demand, lucky timing, and other agents' contributions
+- With causal inference, the learning loop trains on **causation** — agents learn which specific decision patterns actually produce better outcomes, controlling for confounders
+
+This is the difference between an AI system that degrades when conditions change (because its correlations break) and one that generalizes (because it learned actual causal relationships). For supply chain planning — where conditions change constantly — this distinction is not optional.
+
+---
+
+## Part 15: SAP Operational Statistics — Automated Distribution Parameter Extraction
+
+The stochastic planning engine requires distribution parameters for operational variables — supplier lead times, manufacturing yields, machine reliability, transportation times. Rather than downloading millions of raw transaction records and fitting distributions locally, the platform executes **13 HANA SQL aggregation queries** directly in SAP's in-memory columnar engine. Each query computes a full statistical summary (min, P05, P25, median, P75, P95, max, mean, stddev, count) grouped by the appropriate business dimensions (vendor × material × plant, material × plant, equipment × plant, etc.).
+
+The extraction script (`extract_sap_hana.py --operational-stats`) outputs a JSON file of pre-computed statistics. The mapper (`SupplyChainMapper.map_operational_stats_to_distributions()`) then fits the best distribution family from summary statistics alone — lognormal for right-skewed positive durations (detected when median < mean or CV > 0.5), beta for bounded rates and ratios (yields, on-time rates), normal for symmetric data, triangular as a fallback when fewer than 5 observations are available. P05/P95 percentiles serve as truncation bounds to exclude outliers.
+
+Distribution parameters are stored as JSON in `*_dist` columns on the relevant entity tables: `vendor_lead_times.lead_time_dist`, `production_process.operation_time_dist/setup_time_dist/yield_dist/mtbf_dist/mttr_dist`, and `transportation_lane.supply_lead_time_dist`. A NULL `*_dist` column signals "use the deterministic base field." The stochastic sampler checks for `*_dist` first and falls back to the scalar column, preserving backward compatibility.
+
+This design follows Lokad's principle that **distribution parameters should come from production data, not guesswork** — while keeping the computation in HANA where it belongs (leveraging columnar storage, in-memory processing, and native PERCENTILE_CONT/LAG window functions) rather than transferring raw transaction history over the network.
+
+### Part 15b: Per-Agent Stochastic Parameter Specialization
+
+While entity-level `*_dist` columns provide the base distributions, each TRM agent type has its own stochastic parameter values stored in the `agent_stochastic_params` table. This enables per-agent tuning without modifying the underlying entity data:
+
+- **11 TRM types × 1-5 parameters each** = up to 30 distribution parameters per config
+- **Three sources** with protection hierarchy: `industry_default` (auto-updated on industry change) → `sap_import` (protected) → `manual_edit` (protected)
+- **`is_default` flag**: When a tenant's industry changes, only parameters still at their industry default (`is_default=True`) are updated. Manually edited or SAP-imported values are preserved.
+- **Config-wide + site-specific**: Parameters default to config-wide scope (`site_id=NULL`); site-specific overrides take precedence when present.
+
+The `TRM_PARAM_MAP` in `agent_stochastic_param.py` defines which parameters each agent uses — e.g., MO Execution uses manufacturing_cycle_time, yield, setup_time, mtbf, and mttr, while ATP Executor only uses demand_variability.
+
+Admin UI at `/admin/stochastic-params` provides grouped editing by TRM type with inline JSON editing, source badges, and reset-to-default.
+
+**Pipeline Settings** (per-config tuning): Each supply chain config carries a `stochastic_config` JSON column with 4 configurable thresholds — `min_observations` (per-group for fitting, default 10), `min_rows_sufficiency` (data sufficiency pre-check, default 50), `cv_lognormal_threshold` (lognormal vs normal cutoff, default 0.5), and `min_group_count` (SQL HAVING threshold, default 3). The Pipeline Settings panel in the admin UI allows system admins to override these per config. The SAP staging service reads these settings when populating agent stochastic params, using `min_observations` to determine whether SAP data is sufficient or should fall back to industry defaults. API: `GET/PUT /agent-stochastic-params/pipeline-config/{config_id}`.
+
+**Architectural relationship to conformal prediction**: Stochastic parameters, Monte Carlo simulation, and conformal prediction form a three-tier pipeline with deliberately separate data sources. Stochastic parameters (Tier 1) feed into Monte Carlo scenario generation and TRM training (Tier 2), which produces decisions that are validated by conformal prediction (Tier 3) using real observations only. Conformal prediction must never calibrate from simulated data — its distribution-free guarantee requires real prediction errors. The connection is indirect: better stochastic params → more realistic simulation → better TRM training → more accurate decisions → tighter conformal intervals. The `sl_conformal_fitted` inventory policy bridges both: `max(monte_carlo_ss, conformal_ss)` provides both precision (when the fitted distribution is accurate) and coverage guarantee (when it's wrong). See STOCHASTIC_PLANNING.md for the full data flow diagram.
 
 ---
 

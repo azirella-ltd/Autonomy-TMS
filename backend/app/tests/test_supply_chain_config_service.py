@@ -47,7 +47,7 @@ from app.models.supply_chain_config import (
     Lane,
     Market,
     MarketDemand,
-    Node,
+    Site as Node,
     NodeType,
     SupplyChainConfig,
 )
@@ -158,7 +158,7 @@ def test_create_game_from_config_parses_string_pattern():
     wholesaler = _make_node(4, "Wholesaler", NodeType.WHOLESALER)
     distributor = _make_node(3, "Distributor", NodeType.DISTRIBUTOR)
     manufacturer = _make_node(2, "Manufacturer", NodeType.MANUFACTURER)
-    market_supply = _make_node(1, "Market Supply", NodeType.MARKET_SUPPLY)
+    market_supply = _make_node(1, "Market Supply", NodeType.VENDOR)
 
     nodes = [market_supply, manufacturer, distributor, wholesaler, retailer]
 

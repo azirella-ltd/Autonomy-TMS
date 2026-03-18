@@ -20,6 +20,8 @@ export const Modal = ({
   isOpen,
   onClose,
   children,
+  title,
+  footer,
   size = 'md',
   closeOnOverlayClick = true,
   closeOnEsc = true,
@@ -44,7 +46,7 @@ export const Modal = ({
       {...props}
     >
       <DialogContent
-        className={cn(sizes[size], className)}
+        className={cn(sizes[size], 'max-h-[85vh] flex flex-col', className)}
         onEscapeKeyDown={(e) => {
           if (!closeOnEsc) e.preventDefault();
         }}
@@ -55,7 +57,17 @@ export const Modal = ({
           if (!closeOnOverlayClick) e.preventDefault();
         }}
       >
-        {children}
+        {title && (
+          <DialogHeader className="flex-shrink-0">
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+        )}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {children}
+        </div>
+        {footer && (
+          <DialogFooter className="flex-shrink-0">{footer}</DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

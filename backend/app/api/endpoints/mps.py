@@ -15,7 +15,7 @@ from app.models.user import User
 from app.core.capabilities import Capability
 from app.services.capability_service import user_has_capability
 from app.models.mps import MPSPlan, MPSPlanItem, MPSCapacityCheck, MPSStatus, MPSKeyMaterialRequirement
-from app.models.supply_chain_config import SupplyChainConfig, Node
+from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.production_order import ProductionOrder
 from app.models.sc_entities import Product, SourcingRules
 from app.models.supplier import VendorLeadTime
@@ -805,7 +805,7 @@ async def generate_production_orders(
     for item in plan_items:
         # Get product and site details
         product = db.get(Item, item.product_id)
-        site = db.get(Node, item.site_id)
+        site = db.get(Site, item.site_id)
 
         if not product or not site:
             continue
@@ -969,7 +969,7 @@ async def explode_key_materials(
         # Get product and site names
         parent_product = db.get(Item, key_mat.parent_product_id)
         key_material_product = db.get(Item, key_mat.key_material_product_id)
-        key_material_site = db.get(Node, key_mat.key_material_site_id)
+        key_material_site = db.get(Site, key_mat.key_material_site_id)
 
         key_material_responses.append(MPSKeyMaterialResponse(
             id=key_mat.id,
@@ -1029,7 +1029,7 @@ async def get_key_materials(
         # Get product and site names
         parent_product = db.get(Item, key_mat.parent_product_id)
         key_material_product = db.get(Item, key_mat.key_material_product_id)
-        key_material_site = db.get(Node, key_mat.key_material_site_id)
+        key_material_site = db.get(Site, key_mat.key_material_site_id)
 
         key_material_responses.append(MPSKeyMaterialResponse(
             id=key_mat.id,

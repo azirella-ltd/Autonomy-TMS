@@ -43,9 +43,11 @@ import {
 import SankeyDiagram from '../charts/SankeyDiagram';
 import SankeyMetricLegend from '../charts/SankeyMetricLegend';
 import GeospatialSupplyChain from '../visualization/GeospatialSupplyChain';
+import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../metrics/HierarchyAggregationBar';
 
-const MARKET_DEMAND_TYPE = 'MARKET_DEMAND';
-const MARKET_SUPPLY_TYPE = 'MARKET_SUPPLY';
+// External TradingPartner node types (AWS SC DM)
+const VENDOR_TYPE = 'VENDOR';     // external supplier (tpartner_type='vendor')
+const CUSTOMER_TYPE = 'CUSTOMER'; // external demand  (tpartner_type='customer')
 
 const canonicalizeTypeKey = (value) => {
   if (value === undefined || value === null) {
@@ -232,6 +234,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
   const [activeTab, setActiveTab] = useState('diagram');
   const [sankeyScaleMode, setSankeyScaleMode] = useState('flow');
   const [viewMode, setViewMode] = useState('sankey'); // 'sankey' or 'map'
+  const [hierarchy, setHierarchy] = useState(null); // lazy init from HierarchyAggregationBar
   const forwardStroke = SANKEY_COLORS.text.secondary;
   const returnStroke = SANKEY_COLORS.grey[500];
 
@@ -248,93 +251,67 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     [siteTypeDefinitions]
   );
 
-  const { dagDefinitionOrderMap, descendingDefinitionTokens } = useMemo(() => {
+  // Set of known type tokens from definitions — used by resolveSiteTypeToken
+  // to recognise named types (e.g. "retailer", "manufacturer") vs. free-text
+  // site names. Column ordering is derived entirely from DAG topology.
+  const dagDefinitionOrderMap = useMemo(() => {
     const map = new Map();
-    const orderedTokens = [];
-    sortSiteTypeDefinitions(siteTypeDefinitions).forEach((definition, index) => {
-      const orderValue = Number.isFinite(definition?.order) ? definition.order : index;
+    sortSiteTypeDefinitions(siteTypeDefinitions).forEach((definition) => {
       const candidateTokens = new Set([
         definition?.type,
         definition?.label,
         definition?.group_type,
         definition?.groupType,
+        definition?.master_type,
+        definition?.tpartner_type,
       ]);
       candidateTokens.forEach((token) => {
         const normalized = normalizeTypeToken(token);
-        if (!normalized || map.has(normalized)) {
-          return;
+        if (normalized && !map.has(normalized)) {
+          map.set(normalized, true);
         }
-        map.set(normalized, orderValue);
-        orderedTokens.push(normalized);
       });
     });
-
-    const sortedTokens = [...orderedTokens].sort((a, b) => {
-      const orderA = Number.isFinite(map.get(a)) ? map.get(a) : -Infinity;
-      const orderB = Number.isFinite(map.get(b)) ? map.get(b) : -Infinity;
-      if (orderA !== orderB) {
-        return orderB - orderA;
+    // Always recognise AWS SC market types so SAP-imported configs resolve
+    // correctly even when definitions don't explicitly list them.
+    ['MARKET_DEMAND', 'MARKET_SUPPLY', 'CUSTOMER', 'VENDOR', 'INVENTORY', 'MANUFACTURER',
+     'DISTRIBUTION_CENTER', 'WAREHOUSE', 'MANUFACTURING_PLANT',
+     'RETAILER', 'WHOLESALER', 'DISTRIBUTOR'].forEach(
+      (token) => {
+        if (!map.has(token)) map.set(token, true);
       }
-      return a.localeCompare(b);
-    });
-
-    return {
-      dagDefinitionOrderMap: map,
-      descendingDefinitionTokens: sortedTokens,
-    };
+    );
+    return map;
   }, [siteTypeDefinitions]);
-
-  const applyDescendingDagDisplayOrder = useCallback(
-    (tokens = []) => {
-      if (!Array.isArray(tokens)) {
-        return descendingDefinitionTokens;
-      }
-      const seen = new Set();
-      const enriched = [];
-      tokens.forEach((token, index) => {
-        const normalized = normalizeTypeToken(token);
-        if (!normalized || seen.has(normalized)) {
-          return;
-        }
-        seen.add(normalized);
-        const orderValue = dagDefinitionOrderMap.has(normalized)
-          ? dagDefinitionOrderMap.get(normalized)
-          : null;
-        enriched.push({
-          token: normalized,
-          order: Number.isFinite(orderValue) ? orderValue : null,
-          fallbackIndex: index,
-        });
-      });
-
-      if (!enriched.length) {
-        return descendingDefinitionTokens;
-      }
-
-      enriched.sort((a, b) => {
-        if (Number.isFinite(a.order) && Number.isFinite(b.order) && a.order !== b.order) {
-          return b.order - a.order;
-        }
-        if (Number.isFinite(a.order)) return -1;
-        if (Number.isFinite(b.order)) return 1;
-        return a.fallbackIndex - b.fallbackIndex;
-      });
-
-      return enriched.map((entry) => entry.token);
-    },
-    [dagDefinitionOrderMap, descendingDefinitionTokens]
-  );
 
   const resolveSiteTypeToken = useCallback((site) => {
     if (!site) return '';
     const dagType = normalizeTypeToken(site.dag_type || site.dagType);
     if (dagType) return dagType;
-    const explicitType = normalizeTypeToken(site.type || site.site_type || site.node_type);
-    if (explicitType) return explicitType;
+
     const masterType = normalizeTypeToken(site.master_type || site.masterType);
-    if (masterType) return masterType;
-    return '';
-  }, []);
+    const explicitType = normalizeTypeToken(site.type || site.site_type || site.node_type);
+
+    // AWS SC canonical mapping — normalize external trading partner master types
+    // to their human-friendly equivalents so all configs use consistent tokens.
+    const MARKET_TYPE_CANONICAL = {
+      MARKET_DEMAND: 'CUSTOMER',
+      MARKET_SUPPLY: 'VENDOR',
+    };
+    if (masterType && MARKET_TYPE_CANONICAL[masterType]) {
+      return MARKET_TYPE_CANONICAL[masterType];
+    }
+
+    // Prefer explicit type when it matches a known definition (e.g., "retailer",
+    // "wholesaler") so Beer Game configs with master_type="inventory" get distinct
+    // columns per echelon rather than collapsing all INVENTORY sites together.
+    if (explicitType && dagDefinitionOrderMap.has(explicitType)) return explicitType;
+
+    // Fall back to master_type (works for MANUFACTURER, INVENTORY, etc.)
+    if (masterType && dagDefinitionOrderMap.has(masterType)) return masterType;
+
+    return explicitType || masterType || '';
+  }, [dagDefinitionOrderMap]);
 
   const typeOrder = useMemo(() => {
     const siteLookup = new Map();
@@ -366,16 +343,8 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       }
     });
 
-    if (tokenSet.size && descendingDefinitionTokens.length) {
-      const missing = [...tokenSet].filter((token) => !dagDefinitionOrderMap.has(token));
-      if (missing.length === 0) {
-        const subset = descendingDefinitionTokens.filter((token) => tokenSet.has(token));
-        if (subset.length) {
-          return subset;
-        }
-      }
-    }
-
+    // Always derive column order from the DAG topology (topological sort of lanes).
+    // Never short-circuit to static definition order — the DAG is authoritative.
     if (edges.length) {
       const adjacency = new Map();
       const inDegree = new Map();
@@ -402,14 +371,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
       const sortQueue = () => {
         if (queue.length <= 1) return;
-        queue.sort((a, b) => {
-          const defA = dagDefinitionOrderMap.has(a) ? dagDefinitionOrderMap.get(a) : Infinity;
-          const defB = dagDefinitionOrderMap.has(b) ? dagDefinitionOrderMap.get(b) : Infinity;
-          if (defA !== defB) {
-            return defA - defB;
-          }
-          return a.localeCompare(b);
-        });
+        queue.sort((a, b) => a.localeCompare(b));
       };
       sortQueue();
 
@@ -428,19 +390,14 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       }
 
       if (topoOrder.length === tokenSet.size) {
-        return applyDescendingDagDisplayOrder(topoOrder);
+        return topoOrder;
       }
     }
 
-    const fallbackTokens = [
-      ...descendingDefinitionTokens,
-      ...Array.from(tokenSet.values()),
-    ];
-    return applyDescendingDagDisplayOrder(fallbackTokens);
+    // Fallback: return whatever tokens we found, in Set iteration order
+    return Array.from(tokenSet.values());
   }, [
-    applyDescendingDagDisplayOrder,
     dagDefinitionOrderMap,
-    descendingDefinitionTokens,
     lanes,
     sites,
     resolveSiteTypeToken,
@@ -459,17 +416,14 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
   const getTypeOrderIndex = useCallback(
     (type) => {
-      const normalizedDefinitionOrder = dagDefinitionOrderMap.get(normalizeTypeToken(type));
-      if (Number.isFinite(normalizedDefinitionOrder)) {
-        return normalizedDefinitionOrder;
-      }
+      // Use only topology-derived ordering (from DAG traversal), never static definitions.
       const normalized = normalizeTypeToken(type);
       if (Object.prototype.hasOwnProperty.call(siteTypeOrderMap, normalized)) {
         return siteTypeOrderMap[normalized];
       }
       return typeOrder.length;
     },
-    [dagDefinitionOrderMap, siteTypeOrderMap, typeOrder]
+    [siteTypeOrderMap, typeOrder]
   );
 
   const getTypeLabel = useCallback(
@@ -508,7 +462,12 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       setConfigOptions(filtered);
       setConfigsError(null);
       if (filtered.length > 0) {
-        setSelectedConfigId((current) => current ?? filtered[0]?.id ?? null);
+        const isTbgOrLearning = (c) => /tbg|learning/i.test(c.name || '');
+        const productionConfigs = filtered.filter((c) => !isTbgOrLearning(c));
+        const candidates = productionConfigs.length > 0 ? productionConfigs : filtered;
+        // Prefer active configs over archived/inactive versions
+        const defaultConfig = candidates.find((c) => c.is_active) || candidates[0];
+        setSelectedConfigId((current) => current ?? defaultConfig?.id ?? null);
       } else {
         setSelectedConfigId(null);
       }
@@ -583,14 +542,10 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
   const typeStyles = useMemo(
     () => ({
+      // ── Internal company-controlled sites ─────────────────────────────────
       SUPPLIER: {
         fill: SANKEY_COLORS.primary.light,
         stroke: SANKEY_COLORS.primary.main,
-        renderer: 'roundedRect',
-      },
-      MARKET_SUPPLY: {
-        fill: SANKEY_COLORS.primary.main,
-        stroke: SANKEY_COLORS.primary.dark,
         renderer: 'roundedRect',
       },
       MANUFACTURER: {
@@ -613,10 +568,22 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         stroke: SANKEY_COLORS.secondary.dark,
         renderer: 'pill',
       },
-      MARKET_DEMAND: {
-        fill: SANKEY_COLORS.error.main,
-        stroke: SANKEY_COLORS.error.dark,
+      // ── External TradingPartner nodes (dashed border = outside authority) ─
+      // Vendors (upstream sources) — blue-tinted diamond
+      [VENDOR_TYPE]: {
+        fill: '#dbeafe',
+        stroke: '#1d4ed8',
+        strokeDasharray: '4 2',
         renderer: 'diamond',
+        badge: 'Vendor',
+      },
+      // Customers (downstream sinks) — rose-tinted diamond
+      [CUSTOMER_TYPE]: {
+        fill: '#ffe4e6',
+        stroke: '#be123c',
+        strokeDasharray: '4 2',
+        renderer: 'diamond',
+        badge: 'Customer',
       },
       DEFAULT: {
         fill: SANKEY_COLORS.grey[500],
@@ -1355,16 +1322,27 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       registerEdge(link.sourceType, link.targetType);
     });
 
-    // Only register MARKET_DEMAND / MARKET_SUPPLY if sites with those types actually exist
-    const demandKey = normalizeTypeToken(MARKET_DEMAND_TYPE);
-    const supplyKey = normalizeTypeToken(MARKET_SUPPLY_TYPE);
-    if (normalizedTypeSet.has(demandKey)) registerType(MARKET_DEMAND_TYPE);
-    if (normalizedTypeSet.has(supplyKey)) registerType(MARKET_SUPPLY_TYPE);
+    // Register external TradingPartner endpoint types if nodes of those types exist.
+    const customerKey = normalizeTypeToken(CUSTOMER_TYPE);
+    const vendorKey = normalizeTypeToken(VENDOR_TYPE);
+    // Also recognize AWS SC master types that resolve to CUSTOMER/VENDOR
+    const marketDemandKey = normalizeTypeToken('MARKET_DEMAND');
+    const marketSupplyKey = normalizeTypeToken('MARKET_SUPPLY');
+    if (normalizedTypeSet.has(customerKey)) registerType(CUSTOMER_TYPE);
+    if (normalizedTypeSet.has(vendorKey)) registerType(VENDOR_TYPE);
 
+    // BFS from customer/demand (downstream sink) backward through the DAG
+    // to assign column positions. Distance 0 = demand endpoint, increasing
+    // toward supply sources. We reverse later so vendors are on the left.
     const distanceByType = new Map();
     const queue = [];
-    if (normalizedTypeSet.has(demandKey)) {
-      queue.push([demandKey, 0]);
+    // Seed from CUSTOMER and/or MARKET_DEMAND (both resolve to CUSTOMER via
+    // resolveSiteTypeToken, but handle configs that use either convention)
+    if (normalizedTypeSet.has(customerKey)) {
+      queue.push([customerKey, 0]);
+    }
+    if (normalizedTypeSet.has(marketDemandKey)) {
+      queue.push([marketDemandKey, 0]);
     }
 
     while (queue.length > 0) {
@@ -1411,10 +1389,39 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       }
     }
 
+    // If BFS didn't seed (no CUSTOMER/MARKET_DEMAND), seed from terminal sink
+    // types (no outgoing edges = demand endpoints) and re-run.
+    if (distanceByType.size === 0) {
+      normalizedTypeSet.forEach((typeKey) => {
+        const successors = typeSuccessors.get(typeKey);
+        if (!successors || successors.size === 0) {
+          queue.push([typeKey, 0]);
+        }
+      });
+      while (queue.length > 0) {
+        const [typeKey, distance] = queue.shift();
+        const previous = distanceByType.get(typeKey);
+        if (previous !== undefined && previous >= distance) {
+          continue;
+        }
+        distanceByType.set(typeKey, distance);
+        const predecessors = typePredecessors.get(typeKey);
+        if (predecessors) {
+          predecessors.forEach((neighbor) => {
+            queue.push([neighbor, distance + 1]);
+          });
+        }
+      }
+    }
+
     const assignedDistances = Array.from(distanceByType.values());
     const maxDistance = assignedDistances.length ? Math.max(...assignedDistances) : 0;
-    if (normalizedTypeSet.has(supplyKey) && !distanceByType.has(supplyKey)) {
-      distanceByType.set(supplyKey, maxDistance + 1);
+    // Place vendor/supply source at the highest distance (will sort to leftmost column)
+    if (normalizedTypeSet.has(vendorKey) && !distanceByType.has(vendorKey)) {
+      distanceByType.set(vendorKey, maxDistance + 1);
+    }
+    if (normalizedTypeSet.has(marketSupplyKey) && !distanceByType.has(marketSupplyKey)) {
+      distanceByType.set(marketSupplyKey, maxDistance + 1);
     }
 
     const unresolvedTypes = typeList.filter((typeKey) => !distanceByType.has(typeKey));
@@ -1432,7 +1439,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         const noun = unresolvedLabels.length === 1 ? 'site type' : 'site types';
         return {
           data: null,
-          error: `Unable to derive a lane-based order for ${noun} ${unresolvedList}. Ensure every type participates in a forward lane path that eventually reaches Market Demand.`,
+          error: `Unable to derive a lane-based order for ${noun} ${unresolvedList}. Ensure every type participates in a forward lane path that eventually reaches a Customer endpoint.`,
         };
       }
     }
@@ -1441,12 +1448,13 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       const distA = distanceByType.get(a);
       const distB = distanceByType.get(b);
       if (distA !== distB) {
-        return (distA ?? Infinity) - (distB ?? Infinity);
+        // Sort DESCENDING by distance from demand endpoint so that supply
+        // sources (highest distance) are on the LEFT and demand endpoints
+        // (distance 0) are on the RIGHT — standard supply chain flow.
+        return (distB ?? -Infinity) - (distA ?? -Infinity);
       }
       return a.localeCompare(b);
     });
-
-    layeredTypes = applyDescendingDagDisplayOrder(layeredTypes);
 
     const deriveLayering = () => {
       const typeTokens = new Set();
@@ -1585,15 +1593,11 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         };
       }
 
-      const reversedTopo = [...topoOrder].reverse();
-      let layeredTypes = applyDescendingDagDisplayOrder(reversedTopo);
-      if (!layeredTypes.length && reversedTopo.length) {
-        layeredTypes = applyDescendingDagDisplayOrder([...reversedTopo]);
-      }
-
+      // Topo order is upstream→downstream (supply sources first, demand last).
+      // This maps directly to left→right in the Sankey diagram.
       return {
-        layeredTypes,
-        columnOrder: layeredTypes.map((token) => token.toLowerCase()),
+        layeredTypes: topoOrder,
+        columnOrder: topoOrder.map((token) => token.toLowerCase()),
         error: null,
       };
     };
@@ -1654,14 +1658,21 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         }
       : null;
 
-    const supplyNode = normalizedEffectiveNodes.find(
-      (node) => String(node.type || '').toUpperCase() === 'MARKET_SUPPLY'
+    // Return links: customer sinks back to vendor sources (for circular/feedback display)
+    const vendorNode = normalizedEffectiveNodes.find(
+      (node) => {
+        const t = String(node.type || '').toUpperCase();
+        return t === 'VENDOR';
+      }
     );
 
     const returnLinks = [];
-    if (supplyNode) {
+    if (vendorNode) {
       normalizedEffectiveNodes
-        .filter((node) => String(node.type || '').toUpperCase() === 'MARKET_DEMAND')
+        .filter((node) => {
+          const t = String(node.type || '').toUpperCase();
+          return t === 'CUSTOMER';
+        })
         .forEach((marketNode) => {
           const inboundTotal = effectiveLinks
             .filter((link) => String(link.target) === String(marketNode.id))
@@ -1674,9 +1685,9 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
           const feedbackMagnitude = Math.max(inboundTotal, outboundTotal);
           const value = feedbackMagnitude > 0 ? feedbackMagnitude : MIN_LINK_VALUE;
           returnLinks.push({
-            id: `return-${marketNode.id}-${supplyNode.id}`,
+            id: `return-${marketNode.id}-${vendorNode.id}`,
             sourceId: String(marketNode.id),
-            targetId: String(supplyNode.id),
+            targetId: String(vendorNode.id),
             value,
           });
         });
@@ -1746,51 +1757,56 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     // --- Flow conservation: balance link values at intermediate nodes ---
     // d3-sankey sizes each node to max(sum_in, sum_out). If the two differ,
     // the smaller side's links don't fill the node, leaving visual gaps.
-    // Fix: for every non-terminal node, scale the smaller side's links up
-    // so sum_in === sum_out, preserving relative proportions within each side.
+    // Fix: iteratively scale the smaller side's links up at each intermediate
+    // node so sum_in === sum_out. Iterate because scaling links at one node
+    // changes the sums at adjacent nodes.
+    // Terminal nodes = external TradingPartner endpoints (vendor sources + customer sinks).
+    // Flow conservation balancing skips these since they are unbounded sources/sinks.
     const terminalTypes = new Set([
-      normalizeTypeToken(MARKET_SUPPLY_TYPE),
-      normalizeTypeToken(MARKET_DEMAND_TYPE),
+      normalizeTypeToken(VENDOR_TYPE),
+      normalizeTypeToken(CUSTOMER_TYPE),
     ]);
-    const nodeInSum = new Map();
-    const nodeOutSum = new Map();
-    const nodeInLinks = new Map();
-    const nodeOutLinks = new Map();
-    sankeyLinks.forEach((link, idx) => {
-      const src = String(link.source);
-      const tgt = String(link.target);
-      nodeOutSum.set(src, (nodeOutSum.get(src) ?? 0) + link.value);
-      nodeInSum.set(tgt, (nodeInSum.get(tgt) ?? 0) + link.value);
-      if (!nodeOutLinks.has(src)) nodeOutLinks.set(src, []);
-      nodeOutLinks.get(src).push(idx);
-      if (!nodeInLinks.has(tgt)) nodeInLinks.set(tgt, []);
-      nodeInLinks.get(tgt).push(idx);
-    });
     const nodeLookupById = new Map(
       sankeyNodes.map((n) => [String(n.id), n])
     );
-    nodeLookupById.forEach((node, nodeId) => {
-      const typeKey = normalizeTypeToken(node.type);
-      if (terminalTypes.has(typeKey)) return;
-      const sumIn = nodeInSum.get(nodeId) ?? 0;
-      const sumOut = nodeOutSum.get(nodeId) ?? 0;
-      if (sumIn <= 0 || sumOut <= 0) return;
-      if (Math.abs(sumIn - sumOut) < MIN_LINK_VALUE) return;
-      const target = Math.max(sumIn, sumOut);
-      if (sumIn < sumOut) {
-        // Scale up incoming links
-        const scale = target / sumIn;
-        (nodeInLinks.get(nodeId) ?? []).forEach((idx) => {
-          sankeyLinks[idx] = { ...sankeyLinks[idx], value: sankeyLinks[idx].value * scale };
-        });
-      } else {
-        // Scale up outgoing links
-        const scale = target / sumOut;
-        (nodeOutLinks.get(nodeId) ?? []).forEach((idx) => {
-          sankeyLinks[idx] = { ...sankeyLinks[idx], value: sankeyLinks[idx].value * scale };
-        });
-      }
-    });
+    for (let pass = 0; pass < 5; pass++) {
+      let changed = false;
+      const inSum = new Map();
+      const outSum = new Map();
+      const inIdx = new Map();
+      const outIdx = new Map();
+      sankeyLinks.forEach((link, idx) => {
+        const src = String(link.source);
+        const tgt = String(link.target);
+        outSum.set(src, (outSum.get(src) ?? 0) + link.value);
+        inSum.set(tgt, (inSum.get(tgt) ?? 0) + link.value);
+        if (!outIdx.has(src)) outIdx.set(src, []);
+        outIdx.get(src).push(idx);
+        if (!inIdx.has(tgt)) inIdx.set(tgt, []);
+        inIdx.get(tgt).push(idx);
+      });
+      nodeLookupById.forEach((node, nodeId) => {
+        if (terminalTypes.has(normalizeTypeToken(node.type))) return;
+        const si = inSum.get(nodeId) ?? 0;
+        const so = outSum.get(nodeId) ?? 0;
+        if (si <= 0 || so <= 0) return;
+        if (Math.abs(si - so) / Math.max(si, so) < 0.01) return;
+        const target = Math.max(si, so);
+        if (si < so) {
+          const scale = target / si;
+          (inIdx.get(nodeId) ?? []).forEach((i) => {
+            sankeyLinks[i] = { ...sankeyLinks[i], value: sankeyLinks[i].value * scale };
+          });
+        } else {
+          const scale = target / so;
+          (outIdx.get(nodeId) ?? []).forEach((i) => {
+            sankeyLinks[i] = { ...sankeyLinks[i], value: sankeyLinks[i].value * scale };
+          });
+        }
+        changed = true;
+      });
+      if (!changed) break;
+    }
 
     // Recompute node flow totals after balancing
     const balancedFlowTotals = new Map();
@@ -1822,7 +1838,6 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       error: null,
     };
   }, [
-    applyDescendingDagDisplayOrder,
     configDetail,
     extractArray,
     extractLanes,
@@ -2427,7 +2442,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
               <SelectContent>
                 {configOptions.map((cfg) => (
                   <SelectItem key={cfg.id} value={String(cfg.id)}>
-                    {cfg.name || `Configuration ${cfg.id}`}
+                    {cfg.name || `Configuration ${cfg.id}`}{cfg.is_active === false ? ' (archived)' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -2477,6 +2492,13 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
               <TabsContent value="diagram" className="mt-4">
                 <div className="flex flex-col gap-2">
+                  {/* Hierarchy aggregation bar */}
+                  <HierarchyAggregationBar
+                    sites={sites}
+                    products={products}
+                    value={hierarchy || DEFAULT_HIERARCHY_VALUE}
+                    onChange={setHierarchy}
+                  />
                   <div className="flex justify-between items-center">
                     {/* View mode toggle: Sankey vs Map */}
                     <ToggleGroup
@@ -2543,6 +2565,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
                             id: site.id,
                             name: site.name,
                             role: site.type || site.dag_type,
+                            master_type: site.master_type || site.dag_type,
                             latitude: site.geography?.latitude,
                             longitude: site.geography?.longitude,
                             capacity: Number.isFinite(cap) ? cap : 0,
@@ -2551,6 +2574,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
                                   .filter(Boolean)
                                   .join(', ')
                               : null,
+                            attributes: attrs,
                           };
                         });
                         // Transform lanes to edges for map component

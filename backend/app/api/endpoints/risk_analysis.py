@@ -38,6 +38,9 @@ class RiskAlertResponse(BaseModel):
     recommended_action: str
     factors: Optional[Dict] = None
     status: str
+    resolution_condition: Optional[Dict] = None
+    resolution_notes: Optional[str] = None
+    resolved_at: Optional[datetime] = None
     created_at: datetime
     acknowledged_by: Optional[int] = None
     acknowledged_at: Optional[datetime] = None
@@ -132,7 +135,7 @@ class AlertResolveRequest(BaseModel):
 async def get_risk_alerts(
     severity: Optional[str] = Query(None, pattern="^(LOW|MEDIUM|HIGH|CRITICAL)$"),
     alert_type: Optional[str] = Query(None, pattern="^(STOCKOUT|OVERSTOCK|VENDOR_LEADTIME)$"),
-    status: Optional[str] = Query(None, pattern="^(ACTIVE|ACKNOWLEDGED|RESOLVED|DISMISSED)$"),
+    status: Optional[str] = Query(None, pattern="^(INFORMED|ACTIONED|INSPECTED|OVERRIDDEN)$"),
     config_id: Optional[int] = None,
     product_id: Optional[str] = None,
     site_id: Optional[str] = None,
@@ -146,7 +149,7 @@ async def get_risk_alerts(
     Filters:
     - severity: LOW, MEDIUM, HIGH, CRITICAL
     - alert_type: STOCKOUT, OVERSTOCK, VENDOR_LEADTIME
-    - status: ACTIVE, ACKNOWLEDGED, RESOLVED, DISMISSED
+    - status: INFORMED, ACTIONED, INSPECTED, OVERRIDDEN (AIIO model)
     - config_id: Filter by supply chain config
     - product_id: Filter by product
     - site_id: Filter by site
@@ -211,10 +214,10 @@ async def acknowledge_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Risk alert not found")
 
-    if alert.status != "ACTIVE":
-        raise HTTPException(status_code=400, detail="Only active alerts can be acknowledged")
+    if alert.status != "INFORMED":
+        raise HTTPException(status_code=400, detail="Only informed alerts can be inspected")
 
-    alert.status = "ACKNOWLEDGED"
+    alert.status = "INSPECTED"
     alert.acknowledged_by = current_user.id
     alert.acknowledged_at = datetime.utcnow()
 
@@ -240,10 +243,10 @@ async def resolve_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Risk alert not found")
 
-    if alert.status == "RESOLVED":
-        raise HTTPException(status_code=400, detail="Alert is already resolved")
+    if alert.status == "ACTIONED":
+        raise HTTPException(status_code=400, detail="Alert is already actioned")
 
-    alert.status = "RESOLVED"
+    alert.status = "ACTIONED"
     alert.resolved_at = datetime.utcnow()
     alert.resolution_notes = request.resolution_notes
 
@@ -269,7 +272,7 @@ async def dismiss_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Risk alert not found")
 
-    alert.status = "DISMISSED"
+    alert.status = "OVERRIDDEN"
     alert.acknowledged_by = current_user.id
     alert.acknowledged_at = datetime.utcnow()
 
@@ -358,13 +361,16 @@ async def generate_alerts(
     """
     risk_service = RiskDetectionService(db)
 
-    # Generate alerts
+    # Step 1: Re-evaluate existing INFORMED alerts — auto-resolve if condition cleared
+    resolution = await risk_service.resolve_informed_alerts()
+
+    # Step 2: Generate new alerts from current conditions
     alerts = await risk_service.generate_risk_alerts(
         config_id=config_id,
         severity_filter=severity_filter
     )
 
-    # Persist alerts to database
+    # Step 3: Persist new/updated alerts (status=INFORMED for human review)
     persisted_count = 0
     updated_count = 0
 
@@ -374,14 +380,16 @@ async def generate_alerts(
         ).first()
 
         if existing_alert:
-            # Update existing alert
-            for key, value in alert_data.items():
-                if key != "alert_id":
-                    setattr(existing_alert, key, value)
-            existing_alert.updated_at = datetime.utcnow()
-            updated_count += 1
+            # Only update if still INFORMED (don't overwrite human actions)
+            if existing_alert.status == "INFORMED":
+                for key, value in alert_data.items():
+                    if key != "alert_id":
+                        setattr(existing_alert, key, value)
+                existing_alert.updated_at = datetime.utcnow()
+                updated_count += 1
         else:
-            # Create new alert
+            # New alert — starts as INFORMED (needs human attention)
+            alert_data["status"] = "INFORMED"
             new_alert = RiskAlert(**alert_data)
             db.add(new_alert)
             persisted_count += 1
@@ -392,7 +400,9 @@ async def generate_alerts(
         "message": "Alert generation completed",
         "total_alerts": len(alerts),
         "new_alerts": persisted_count,
-        "updated_alerts": updated_count
+        "updated_alerts": updated_count,
+        "auto_resolved": resolution["resolved"],
+        "still_informed": resolution["still_informed"],
     }
 
 

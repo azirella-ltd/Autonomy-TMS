@@ -185,6 +185,7 @@ class ChatService:
         scenario_id: int,
         agent_name: str,
         request_data: Optional[AgentSuggestionRequest] = None,
+        tenant_id: Optional[int] = None,
     ) -> AgentSuggestion:
         """
         Request an agent suggestion (LLM-powered).
@@ -227,6 +228,7 @@ class ChatService:
                 agent_name=agent_name,
                 context=context,
                 request_data=request_data.dict() if request_data else None,
+                tenant_id=tenant_id,
             )
 
             order_quantity = llm_response['order_quantity']

@@ -1,25 +1,27 @@
-# Autonomy Platform - Executive Summary
+# Autonomy — Decision Intelligence Platform for Supply Chain
 
-**Version**: 2.0
-**Last Updated**: 2026-01-22
-**Status**: Production Ready with AI & Gamification
+**Version**: 3.0
+**Last Updated**: 2026-03-12
+**Status**: Production Ready
 
 ---
 
 ## Overview
 
-Autonomy is an enterprise-grade supply chain planning and execution platform that combines AWS Supply Chain standards with three powerful differentiators: **AI-powered planning agents**, **stochastic planning with uncertainty quantification**, and **gamification for training and validation**.
+Autonomy is an enterprise-grade supply chain planning and execution platform built on the AWS Supply Chain data model (100% compliant, 35/35 entities) with four pillars:
 
-### Platform Positioning
+### The Four Pillars of Autonomous Planning
 
 ```
-Core Foundation: AWS SC Planning & Execution (60% complete, 21/35 entities)
+Core Foundation: AWS SC Planning & Execution (35/35 entities)
         ↓
-Differentiator #1: AI Agents (TRM, GNN, LLM) - 20-35% cost reduction
+Pillar #1: AI Agents — 11 specialized agents, <10ms, 20-35% cost reduction
         ↓
-Differentiator #2: Stochastic Planning - Risk-aware decisions with probabilistic outcomes
+Pillar #2: Conformal Prediction — Distribution-free uncertainty guarantees
         ↓
-Differentiator #3: The Beer Game - Training, validation, and confidence building
+Pillar #3: Digital Twin — Stochastic simulation for training, calibration, and testing
+        ↓
+Pillar #4: Causal AI — Counterfactual outcome attribution for trustworthy learning
 ```
 
 ---
@@ -87,9 +89,9 @@ Three complementary AI approaches that achieve 20-35% cost reduction vs. naive p
 
 ---
 
-### 3. Stochastic Planning (Probabilistic Outcomes)
+### 3. Conformal Prediction & Digital Twin
 
-Risk-aware planning with full uncertainty quantification:
+Distribution-free uncertainty guarantees powered by stochastic simulation:
 
 #### Distribution Framework
 - **20 Distribution Types**: Normal, lognormal, beta, gamma, Weibull, exponential, triangular, mixture, empirical, custom
@@ -174,6 +176,18 @@ The Beer Game uses the same AWS SC services underneath:
 - Transfer orders for inter-site shipments
 
 **This ensures The Beer Game validates production capabilities.**
+
+---
+
+### 5. Human-to-AI Input Channels
+
+Two mechanisms allow humans to inject signals into the AI decision pipeline:
+
+#### Talk to Me — Natural Language Directive Capture
+A persistent AI prompt bar in the top navigation accepts natural language directives (e.g., *"Increase revenue by 10% in SW region next quarter due to customer feedback"*). The system parses with LLM, detects missing fields via clarification flow, and routes to the appropriate Powell layer based on the user's role. Effectiveness tracked via Bayesian posteriors.
+
+#### Email Signal Intelligence — GDPR-Safe Email Ingestion
+Monitors customer/supplier inboxes (IMAP/Gmail), strips personal identifiers before persistence (GDPR-safe by design), classifies emails into 12 supply chain signal types using LLM, and auto-routes to appropriate TRM agents. Only the sending company is identified — never the individual. Cost: ~$5.40/month at 100 emails/day.
 
 ---
 
@@ -296,8 +310,9 @@ The Beer Game uses the same AWS SC services underneath:
 - **[AGENT_SYSTEM.md](AGENT_SYSTEM.md)** - Agent strategies and implementation
 - **[TRANSFER_ORDER_INTEGRATION_GUIDE.md](TRANSFER_ORDER_INTEGRATION_GUIDE.md)** - Transfer order AWS SC compliance
 
-### Progress & Historical
-- **[docs/progress/](docs/progress/)** - Refactoring progress, status reports, deployment checklists
+### References
+- **[docs/external/SAP_INTEGRATION_GUIDE.md](docs/external/SAP_INTEGRATION_GUIDE.md)** - SAP S/4HANA integration setup guide
+- **[docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md](docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md)** - AWS SC compliance status (35/35 entities)
 
 ---
 

@@ -3837,6 +3837,12 @@ Per-TRM cost mapping (estimated → actual → loss):
 
 Key files: `cdt_calibration_service.py`, `conformal_decision.py`, `outcome_collector.py`, `relearning_jobs.py`
 
+**Multi-Tenant Isolation**: CDT registries and forecast-level conformal suites are **per-tenant** — calibration data from one tenant never leaks to another. `get_cdt_registry(tenant_id)` returns isolated registries; `CDTCalibrationService(db, tenant_id)` filters extraction by tenant's config IDs; `_run_cdt_calibration()` in `relearning_jobs.py` iterates all tenants independently. `SiteAgent.connect_trm()` replaces global CDT wrappers with tenant-scoped ones. See `Conformal_Prediction_Framework_Guide.md` for full tenant scoping details.
+
+**CDT Cold Start**: Uncalibrated TRMs (< 30 pairs) default to `risk_bound=0.50` (maximum uncertainty) with `escalation_recommended=True`, forcing escalation to Claude Skills or human review. The CDT Readiness Banner on the Decision Stream and CDT Readiness Panel in the Provisioning Stepper show per-TRM calibration status. API: `GET /conformal-prediction/cdt/readiness`.
+
+**Two-Level CP Architecture**: (1) Forecast-level CP provides intervals on demand/lead time/yield/price/service level for planning decisions. (2) Decision-level CDT provides risk bounds on all 11 TRM execution decisions. CDT requires measurable binary outcomes with computable loss — upper planning layers (S&OP, tGNN, MPS/MRP) produce continuous/multi-dimensional outputs where forecast-level CP on inputs is more appropriate. See `Conformal_Prediction_Framework_Guide.md` §Two-Level Architecture.
+
 **Architecture Summary**:
 ```
 Batch Layer (DES/SimPy)           Real-Time Layer (Conformal)
@@ -5232,14 +5238,37 @@ The `_classify_demand_robust()` function uses MAD/median ratio instead of coeffi
 
 **Decision metadata**: Distribution parameters are stored in the JSON metadata column of `powell_*_decisions` tables, making them available for offline analysis, retraining, and audit. This enables post-hoc analysis of whether distribution shifts correlate with decision quality changes — a direct input to the CDC → Relearning feedback loop.
 
-##### 5.17.5 Implementation Files
+##### 5.17.5 Per-Agent Stochastic Parameters and Pipeline Configuration
+
+Each TRM agent type maintains its own stochastic variable values in the `agent_stochastic_params` table, with source tracking (`industry_default` / `sap_import` / `manual_edit`) and an `is_default` flag for selective industry-change propagation. The `TRM_PARAM_MAP` in `agent_stochastic_param.py` defines which of the 10 stochastic variables each of the 11 TRM types uses (23 total parameter slots).
+
+**Pipeline settings**: Each supply chain config carries a `stochastic_config` JSON column with 4 configurable thresholds that control SAP extraction and distribution fitting: `min_observations` (default 10), `min_rows_sufficiency` (default 50), `cv_lognormal_threshold` (default 0.5), `min_group_count` (default 3). Admin-configurable via the Pipeline Settings panel in the Stochastic Parameters UI.
+
+**Three-tier data flow — deliberately separated by design**:
+
+| Tier | Purpose | Data Source | Never Uses |
+|------|---------|-------------|------------|
+| 1. Stochastic Parameters | Source of truth for distributions | SAP transactional data, industry defaults, manual edit | — |
+| 2. Monte Carlo / Digital Twin | Scenario generation, safety stock, TRM training | Distributions from Tier 1 | Real observation data |
+| 3. Conformal Prediction | Distribution-free validation of decisions | Real observations vs predictions | Simulated data |
+
+**Why Tier 3 must never use Tier 2 data**: Conformal prediction's distribution-free guarantee (P(actual ∈ interval) ≥ 1-α) requires calibration from real prediction errors. Calibrating from Monte Carlo output would make the guarantee dependent on simulation model accuracy, defeating the purpose. The connection is indirect: better Tier 1 params → more realistic Tier 2 simulations → better TRM training → more accurate decisions → smaller real prediction errors → tighter Tier 3 conformal intervals.
+
+**Powell framework mapping**: Stochastic parameters are part of the **belief state Bₜ** in Powell's state decomposition (Sₜ = Rₜ ∪ Iₜ ∪ Bₜ). They encode the system's belief about the statistical processes generating demand, lead times, yields, etc. The `is_default` flag tracks whether this belief comes from a prior (industry default) or from evidence (SAP data / manual calibration).
+
+##### 5.17.6 Implementation Files
 
 | File | Purpose |
 |------|---------|
 | `backend/app/services/stochastic/distribution_fitter.py` | MLE fitting, KS test, AIC/BIC ranking across 20 distribution types |
 | `backend/app/services/stochastic/feature_extractor.py` | Distribution-aware feature extraction for TRM state vectors |
 | `backend/app/services/aws_sc_planning/inventory_target_calculator.py` | `sl_fitted` policy with Monte Carlo DDLT |
+| `backend/app/models/agent_stochastic_param.py` | Per-agent stochastic param model, TRM_PARAM_MAP, pipeline config defaults |
+| `backend/app/services/industry_defaults_service.py` | Industry default distributions, `apply_agent_stochastic_defaults()` |
+| `backend/app/services/sap_data_staging_service.py` | SAP import → `agent_stochastic_params` population with sufficiency check |
+| `backend/app/api/endpoints/agent_stochastic_params.py` | CRUD API + pipeline config GET/PUT |
 | `backend/app/api/endpoints/stochastic.py` | `POST /api/v1/stochastic/fit` endpoint |
+| `frontend/src/pages/admin/StochasticParamsEditor.jsx` | Admin UI: per-agent distributions + pipeline settings |
 
 ---
 
@@ -5669,6 +5698,84 @@ The urgency adjustments are additive and clamped: `new_urgency = clamp(current_u
 | `backend/app/services/powell/site_tgnn.py` | `SiteTGNN` model (GATv2+GRU, ~25K params) |
 | `backend/app/services/powell/site_tgnn_inference_service.py` | Hourly inference, urgency modulation |
 | `backend/app/services/powell/site_tgnn_trainer.py` | 3-phase training (BC, PPO, calibration) |
+
+---
+
+#### 5.21 Human-to-AI Signal Channels (Talk to Me & Email Signal Intelligence)
+
+Two external signal channels inject information into the Powell framework's exogenous information process (Wₜ₊₁):
+
+**Talk to Me — Natural Language Directives**: Users type directives in the TopNavbar (e.g., "Increase SW region revenue by 10% next quarter"). The directive service parses via LLM, detects missing fields via gap detection, and routes to the appropriate Powell layer based on the user's `powell_role`:
+- VP/Executive → Layer 4: S&OP GraphSAGE (policy parameter θ adjustment)
+- S&OP Director → Layer 2: Execution tGNN (multi-site daily directives)
+- MPS Manager → Layer 1.5: Site tGNN (single-site cross-TRM modulation)
+- Analyst → Layer 1: Individual TRM (specific execution decision)
+
+Directives with parser confidence ≥0.7 auto-apply. Effectiveness tracked via Bayesian posteriors per `(user_id, directive_type)`, following the same override effectiveness methodology (§5.9.10). Files: `directive_service.py`, `user_directives.py`. See [TALK_TO_ME.md](TALK_TO_ME.md).
+
+**Email Signal Intelligence — GDPR-Safe Email Ingestion**: IMAP/Gmail inbox monitoring extracts supply chain signals from customer/supplier emails. PII stripped before persistence. LLM classification (Haiku tier) extracts signal type, direction, magnitude, urgency. High-confidence signals (≥0.6) auto-route to primary TRM — feeding the ForecastAdjustmentTRM's `source="email"` path for demand signals, POCreationTRM for supply disruptions, QualityDispositionTRM for quality issues. Heuristic fallback for air-gapped deployments. Files: `email_signal_service.py`, `email_pii_scrubber.py`, `email_connector.py`. See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md).
+
+Both channels map to Powell's exogenous information framework: they represent state-dependent information arrivals that modify the belief state Bₜ and trigger transition function evaluations.
+
+#### 5.21 Urgency + Likelihood: Decision Stream Prioritization
+
+The Decision Stream is the primary human interface for the Powell framework. It surfaces the decisions where human judgment adds the most value by scoring every TRM decision on two dimensions:
+
+- **Urgency** (0.0–1.0): Time-sensitivity of the decision. Powell mapping: urgency reflects the *cost of delay* — the gradient of the objective function with respect to decision timing. High urgency means delaying the decision degrades the objective rapidly. Derived from UrgencyVector, HiveSignalBus state, and exception severity.
+
+- **Likelihood** (0.0–1.0): Agent confidence that its recommended action resolves the issue. Powell mapping: likelihood approximates the *value function accuracy* at the current state — how well the VFA/CFA policy maps this state to a good action. Derived from TRM output confidence, conformal prediction interval width, and CDT risk bound P(loss > τ).
+
+**Four operating quadrants** (2×2 urgency × likelihood routing matrix):
+
+| | Agent Uncertain (likelihood < threshold) | Agent Confident (likelihood ≥ threshold) |
+|---|---|---|
+| **Urgent** (urgency ≥ threshold) | **Surface for judgment** — top of Decision Stream. Cost of delay is high and the VFA estimate is unreliable. Human judgment provides the exploration signal (Powell: "exploration vs. exploitation" trade-off). | **Surface for awareness** — agent is confident but stakes are high. Human reviews but likely accepts. |
+| **Routine** (urgency < threshold) | **Surface for validation** — agent is unsure about a low-stakes decision. Human validates before auto-actioning. | **Auto-actioned** — agent handles autonomously within guardrails. Low urgency, high confidence — routine execution. Shown in Decision Stream under "Show All" toggle. |
+
+**Two configurable thresholds** (per-tenant, set by tenant admin in BSC Configuration):
+
+| Threshold | Default | Question it answers | DB column |
+|-----------|---------|---------------------|-----------|
+| **Urgency Threshold** | 0.65 (High) | "How urgent must a decision be before I want to see it?" | `tenant_bsc_config.urgency_threshold` |
+| **Likelihood Threshold** | 0.70 | "How confident must the agent be to act without my review?" | `tenant_bsc_config.likelihood_threshold` |
+
+**Routing logic** (implemented in `_prioritize_decisions()`):
+```
+if urgency >= urgency_threshold:
+    → needs_attention = True   # Always surface — urgent
+elif likelihood >= likelihood_threshold:
+    → auto_actioned = True     # Agent acts alone — routine + confident
+else:
+    → needs_attention = True   # Surface for validation — routine + uncertain
+```
+
+**How urgency is calculated** (per-decision, at seeding/execution time):
+- **Base signal**: `UrgencyVector` value from the HiveSignalBus (0.0–1.0)
+- **Exception severity**: `exception_severity` mapping (critical=0.9, high=0.7, medium=0.5, low=0.3)
+- **Inventory position gap**: `gap / reorder_point` for PO decisions
+- **Backlog ratio**: `backlog / (demand × lead_time)` for order tracking
+- **DOS imbalance**: Cross-site days-of-supply variance for rebalancing
+- **Capacity utilization**: `utilization - threshold` for MO/maintenance/subcontracting
+- **Forecast error**: `|actual - forecast| / forecast` for forecast adjustment
+- Mapped to tiers: Critical (≥0.85), High (≥0.65), Medium (≥0.40), Low (≥0.20), Routine (<0.20)
+
+**How likelihood is calculated** (per-decision, at seeding/execution time):
+- **TRM output confidence**: Model's self-assessed confidence (0.0–1.0)
+- **CDT risk bound**: `1.0 - risk_bound` (conformal prediction P(loss > τ))
+- **Conformal interval width**: `1.0 - interval_width` (wide intervals reduce confidence)
+- **Network fill rate**: Weighted average fill rate across the DAG
+- **Demand predictability**: `1.0 - demand_cv × 1.5` (high variability reduces confidence)
+- Mapped to tiers: Certain (≥0.85), Likely (≥0.65), Possible (≥0.40), Unlikely (≥0.20)
+
+**Tenant admin control**: The BSC Configuration page (Administration → BSC Configuration) exposes both sliders:
+- **Urgency slider**: "How urgent must a decision be before you want to see it?" (marks: Low/Medium/High/Critical)
+- **Confidence slider**: "How confident must the agent be to act without your review?" (marks: Unlikely/Possible/Likely/Certain)
+
+**Maturity progression**: New tenants start with conservative defaults (urgency=0.65, likelihood=0.70). As they build trust in the agents and observe auto-actioned decisions performing well, they can progressively lower the urgency threshold (see fewer decisions) and/or lower the likelihood threshold (trust less-confident agents). This maps to Gartner's three-level DI maturity: Support → Augmentation → Automation.
+
+**Powell connection**: This mechanism implements what Powell (SDAM 2nd Ed, Ch. 7) calls the "value of information" — the expected improvement from obtaining better information before deciding. The urgency threshold governs the *cost of delay* boundary, while the likelihood threshold governs the *value of information* boundary. Together they operationalize the exploration-vs-exploitation trade-off for human-agent collaboration.
+
+**Implementation**: `backend/app/services/decision_stream_service.py` — `_prioritize_decisions()` method. Per-tenant thresholds stored in `tenant_bsc_config` table, editable via `PUT /bsc-config` API. Legacy combined threshold (`DECISION_STREAM_ABANDON_THRESHOLD` env var) is retained for backward compatibility but the split thresholds take precedence when configured.
 
 ---
 

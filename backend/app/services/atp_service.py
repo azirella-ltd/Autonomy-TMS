@@ -386,15 +386,15 @@ class ATPService:
     def _get_upstream_lanes(self, scenario_user: ScenarioUser, game: Game) -> List[TransportationLane]:
         """Get transportation lanes feeding into this scenario_user's site"""
         try:
-            from app.models.supply_chain_config import Node
+            from app.models.supply_chain_config import Site
 
             # Get scenario_user's site
             if not scenario_user.site_key or not game.supply_chain_config_id:
                 return []
 
-            node = self.db.query(Node).filter(
-                Node.config_id == game.supply_chain_config_id,
-                Node.dag_type == scenario_user.site_key
+            node = self.db.query(Site).filter(
+                Site.config_id == game.supply_chain_config_id,
+                Site.dag_type == scenario_user.site_key
             ).first()
 
             if not node:
@@ -573,12 +573,12 @@ class ATPService:
 
     def _get_scenario_user_node_id(self, scenario_user: ScenarioUser, game: Game) -> Optional[int]:
         """Look up the Node ID for a scenario_user based on their site_key."""
-        from app.models.supply_chain_config import Node
+        from app.models.supply_chain_config import Site
         if not scenario_user.site_key or not game.supply_chain_config_id:
             return None
-        node = self.db.query(Node).filter(
-            Node.config_id == game.supply_chain_config_id,
-            Node.dag_type == scenario_user.site_key
+        node = self.db.query(Site).filter(
+            Site.config_id == game.supply_chain_config_id,
+            Site.dag_type == scenario_user.site_key
         ).first()
         return node.id if node else None
 
@@ -1086,17 +1086,17 @@ class ATPService:
             SAP plant code or None
         """
         try:
-            from app.models.supply_chain_config import Node
+            from app.models.supply_chain_config import Site
 
             # Get node from scenario_user's site_key and game config
             if not game or not game.supply_chain_config_id:
                 return None
 
             node = (
-                self.db.query(Node)
+                self.db.query(Site)
                 .filter(
-                    Node.supply_chain_config_id == game.supply_chain_config_id,
-                    Node.node_key == scenario_user.site_key
+                    Site.supply_chain_config_id == game.supply_chain_config_id,
+                    Site.node_key == scenario_user.site_key
                 )
                 .first()
             )

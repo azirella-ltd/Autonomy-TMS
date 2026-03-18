@@ -35,6 +35,7 @@ import { Network } from 'lucide-react';
 import SankeyDiagram from '../charts/SankeyDiagram';
 import SankeyMetricLegend from '../charts/SankeyMetricLegend';
 import GeospatialSupplyChain from '../visualization/GeospatialSupplyChain';
+import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../metrics/HierarchyAggregationBar';
 import {
   getSupplyChainConfigs,
   getSites,
@@ -42,26 +43,27 @@ import {
   getProducts,
 } from '../../services/supplyChainConfigService';
 
-// Column order: upstream (supply) → downstream (demand)
+// Column order: upstream (vendor source) → downstream (customer sink)
+// AWS SC DM: VENDOR = external supplier (TradingPartner), CUSTOMER = external demand
 const COLUMN_ORDER = [
-  'MARKET_SUPPLY',
+  'VENDOR',
   'INVENTORY',
   'MANUFACTURER',
   'DISTRIBUTOR',
   'WHOLESALER',
   'RETAILER',
-  'MARKET_DEMAND',
+  'CUSTOMER',
 ];
 
 // Site type colors (consistent with SupplyChainConfigSankey)
 const TYPE_COLORS = {
-  MARKET_SUPPLY: '#8b5cf6',   // violet
+  VENDOR: '#1d4ed8',          // blue (external supplier diamond)
   INVENTORY: '#0ea5e9',       // sky blue
   MANUFACTURER: '#0891b2',    // cyan
   DISTRIBUTOR: '#f59e0b',     // amber
   WHOLESALER: '#f97316',      // orange
   RETAILER: '#3b82f6',        // blue
-  MARKET_DEMAND: '#ef4444',   // red
+  CUSTOMER: '#be123c',        // rose (external customer diamond)
 };
 
 // Geography hierarchy levels
@@ -113,8 +115,16 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
 
   // ── 1. Build site ID → metadata map ──────────────────────────────
   const siteMap = {};
+  // Normalize AWS SC master_type to display tokens used in COLUMN_ORDER/TYPE_COLORS
+  const normalizeMasterType = (raw) => {
+    const t = (raw || '').toUpperCase();
+    if (t === 'MARKET_SUPPLY') return 'VENDOR';
+    if (t === 'MARKET_DEMAND') return 'CUSTOMER';
+    return t;
+  };
+
   sites.forEach(s => {
-    const masterType = (s.master_type || s.type || '').toUpperCase();
+    const masterType = normalizeMasterType(s.master_type || s.type);
     const geoLabel = getGeoLabel(s, geoLevel);
     siteMap[s.id] = { masterType, geoLabel, name: s.name };
   });
@@ -205,10 +215,12 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
   const [viewMode, setViewMode] = useState('sankey');
   const [resolvedConfigId, setResolvedConfigId] = useState(configIdProp || null);
 
-  // Hierarchy navigation state
-  const [geoLevel, setGeoLevel] = useState('state');
-  const [productCategory, setProductCategory] = useState('all');
-  const [timeBucket, setTimeBucket] = useState('monthly');
+  // Hierarchy navigation state (unified via HierarchyAggregationBar)
+  const [hierarchy, setHierarchy] = useState(DEFAULT_HIERARCHY_VALUE);
+  // Backward-compat aliases used by existing Sankey builder logic
+  const geoLevel = hierarchy?.geo?.level === 'all' ? 'state' : hierarchy?.geo?.level || 'state';
+  const productCategory = hierarchy?.product?.categoryKey || 'all';
+  const timeBucket = 'monthly';
 
   // Auto-resolve configId: if none passed, pick the first available config
   useEffect(() => {
@@ -341,18 +353,23 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
     );
     if (sitesWithCoords.length === 0) return null;
 
-    const mapSites = rawSites.map((site) => ({
-      id: site.id,
-      name: site.name,
-      role: site.type || site.dag_type || site.master_type,
-      latitude: site.geography?.latitude,
-      longitude: site.geography?.longitude,
-      location: site.geography
-        ? [site.geography.city, site.geography.state_prov, site.geography.country]
-            .filter(Boolean)
-            .join(', ')
-        : null,
-    }));
+    const mapSites = rawSites.map((site) => {
+      const attrs = typeof site.attributes === 'object' && site.attributes ? site.attributes : {};
+      return {
+        id: site.id,
+        name: site.name,
+        role: site.type || site.dag_type || site.master_type,
+        master_type: site.master_type || site.dag_type,
+        latitude: site.geography?.latitude,
+        longitude: site.geography?.longitude,
+        location: site.geography
+          ? [site.geography.city, site.geography.state_prov, site.geography.country]
+              .filter(Boolean)
+              .join(', ')
+          : null,
+        attributes: attrs,
+      };
+    });
 
     const mapEdges = rawLanes.map((lane) => ({
       from: lane.from_site_id,
@@ -458,40 +475,6 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
           </div>
           {!error && (
             <div className="flex items-center gap-2 shrink-0">
-              <Select value={geoLevel} onValueChange={setGeoLevel}>
-                <SelectTrigger className="h-8 w-[110px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GEO_LEVELS.map(g => (
-                    <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={productCategory} onValueChange={setProductCategory}>
-                <SelectTrigger className="h-8 w-[130px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Products</SelectItem>
-                  {productCategories.map(cat => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={timeBucket} onValueChange={setTimeBucket}>
-                <SelectTrigger className="h-8 w-[100px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIME_BUCKETS.map(t => (
-                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
               <ToggleGroup
                 type="single"
                 size="sm"
@@ -506,6 +489,12 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
         </div>
       </CardHeader>
       <CardContent className="px-2 pb-2">
+        <HierarchyAggregationBar
+          sites={rawSites}
+          products={rawProducts}
+          value={hierarchy}
+          onChange={setHierarchy}
+        />
         {renderContent()}
       </CardContent>
     </Card>

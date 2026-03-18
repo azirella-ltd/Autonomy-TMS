@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.db.session import SessionLocal
-from app.models.supply_chain_config import SupplyChainConfig, Node, Item, Lane
+from app.models.supply_chain_config import SupplyChainConfig, Site, Item, Lane
 from app.models.aws_sc_planning import (
     Forecast, ProductBom, SourcingRules, ProductionProcess
 )
@@ -50,7 +50,7 @@ async def seed_planning_data():
 
         # Get all nodes and items
         nodes_result = await db.execute(
-            select(Node).filter(Node.config_id == config_id)
+            select(Site).filter(Site.config_id == config_id)
         )
         nodes = {n.id: n for n in nodes_result.scalars().all()}
 

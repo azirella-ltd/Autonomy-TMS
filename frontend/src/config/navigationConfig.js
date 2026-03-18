@@ -70,6 +70,12 @@ import {
   Award as AwardIcon,
   ThumbsUp as ThumbsUpIcon,
   Trophy as TrophyIcon,
+  Mail as MailIcon,
+  Dice5 as MonteCarloIcon,
+  Zap as ScenarioEventIcon,
+  Scale as GovernanceIcon,
+  Monitor as MonitoringIcon,
+  Workflow as HierarchyIcon,
 } from 'lucide-react';
 
 /**
@@ -93,6 +99,13 @@ export const NAVIGATION_CONFIG = [
         icon: SparklesIcon,
         requiredCapability: null, // Always visible
         description: 'LLM-first decision inbox with conversational triage',
+      },
+      {
+        label: 'Scenario Events',
+        path: '/scenario-events',
+        icon: ScenarioEventIcon,
+        requiredCapability: null, // Always visible
+        description: 'Inject what-if events and see CDC cascade responses',
       },
       {
         label: 'Dashboard',
@@ -188,6 +201,48 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_order_tracking_worklist',
         description: 'Order tracking exceptions and anomaly alerts',
       },
+      {
+        label: 'Monte Carlo Simulation',
+        path: '/planning/monte-carlo',
+        icon: MonteCarloIcon,
+        requiredCapability: 'view_uncertainty_quantification',
+        description: 'Stochastic simulation and scenario analysis',
+      },
+      {
+        label: 'AI Recommendations',
+        path: '/planning/recommendations',
+        icon: RecommendIcon,
+        requiredCapability: 'view_recommendations',
+        description: 'AI agent recommendation history and outcomes',
+      },
+      {
+        label: 'Performance Reports',
+        path: '/reports/performance',
+        icon: StatsIcon,
+        requiredCapability: 'view_executive_dashboard',
+        description: 'Performance reporting and insights landing',
+      },
+      {
+        label: 'Capacity Analytics',
+        path: '/analytics/capacity-optimization',
+        icon: AssessmentIcon,
+        requiredCapability: 'view_capacity_planning',
+        description: 'Capacity optimization deep-dive analytics',
+      },
+      {
+        label: 'Inventory Analytics',
+        path: '/analytics/inventory-optimization',
+        icon: InventoryIcon,
+        requiredCapability: 'view_inventory_optimization',
+        description: 'Inventory optimization analytics and what-if',
+      },
+      {
+        label: 'Network Analytics',
+        path: '/analytics/network-optimization',
+        icon: NetworkIcon,
+        requiredCapability: 'view_network_design',
+        description: 'Network design and optimization analysis',
+      },
     ],
   },
 
@@ -254,6 +309,27 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_inventory_optimization',
         description: 'Safety stock and reorder point optimization',
       },
+      {
+        label: 'Promotional Planning',
+        path: '/planning/promotions',
+        icon: CalendarIcon,
+        requiredCapability: 'view_demand_planning',
+        description: 'Promotion calendar, demand uplift tracking, ROI analysis',
+      },
+      {
+        label: 'Product Lifecycle',
+        path: '/planning/product-lifecycle',
+        icon: ForecastIcon,
+        requiredCapability: 'view_demand_planning',
+        description: 'NPI pipeline, EOL management, lifecycle stage tracking',
+      },
+      {
+        label: 'Markdown & Clearance',
+        path: '/planning/markdown-clearance',
+        icon: InventoryIcon,
+        requiredCapability: 'view_inventory_optimization',
+        description: 'Clearance pricing, sell-through tracking, inventory liquidation',
+      },
 
       // --- OPERATIONAL PLANNING (0-3 month horizon) ---
       {
@@ -306,6 +382,13 @@ export const NAVIGATION_CONFIG = [
         path: '/planning/supply-plan',
         icon: ViewIcon,
         requiredCapability: 'view_supply_plan',
+      },
+      {
+        label: 'Planning Board',
+        path: '/planning/board',
+        icon: LayersIcon,
+        requiredCapability: 'view_supply_planning',
+        description: 'Unified demand-supply netting with fan chart and MRP grid',
       },
       {
         label: 'Production Processes',
@@ -417,11 +500,11 @@ export const NAVIGATION_CONFIG = [
         path: '/planning/execution',
         icon: ExecutionIcon,
         requiredCapability: 'view_execution_dashboard',
-        description: 'Layer 5: MRP, Inventory Buffer, AATP, TRM agents, feed-back signals',
+        description: 'Layer 5: MRP, Inventory Buffer, AATP, AI agents, feed-back signals',
       },
       // --- TRM SPECIALIST WORKLISTS ---
       {
-        label: '— TRM WORKLISTS —',
+        label: '— AI AGENT WORKLISTS —',
         path: null,
         icon: null,
         requiredCapability: null,
@@ -730,14 +813,14 @@ export const NAVIGATION_CONFIG = [
         path: '/admin/graphsage',
         icon: BrainIcon,
         requiredCapability: 'view_gnn_training',
-        description: 'S&OP GraphSAGE — network structure and risk scoring',
+        description: 'S&OP Agent — network structure and risk scoring',
       },
       {
         label: 'Operational Agent',
         path: '/admin/gnn',
         icon: BrainIcon,
         requiredCapability: 'view_gnn_training',
-        description: 'Execution tGNN — priority allocations and context',
+        description: 'Network Agent — priority allocations and context',
       },
       {
         label: 'Execution Agents',
@@ -758,7 +841,7 @@ export const NAVIGATION_CONFIG = [
         path: '/admin/rl',
         icon: BrainIcon,
         requiredCapability: 'view_rl_training',
-        description: 'Reinforcement Learning — VFA fine-tuning for TRMs',
+        description: 'Reinforcement Learning — VFA fine-tuning for AI agents',
       },
       {
         label: 'Agent Benchmark',
@@ -863,6 +946,13 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'manage_approval_templates',
       },
       {
+        label: 'Context Engine',
+        path: '/admin/context-engine',
+        icon: LayersIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Unified hub for all external context sources',
+      },
+      {
         label: 'SAP Data Management',
         path: '/admin/sap-data',
         icon: DatabaseIcon,
@@ -870,11 +960,74 @@ export const NAVIGATION_CONFIG = [
         description: 'SAP connections, field mapping, and data ingestion',
       },
       {
+        label: 'Stochastic Parameters',
+        path: '/admin/stochastic-params',
+        icon: TuneIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Per-agent distribution parameters for stochastic simulation',
+      },
+      {
+        label: 'Metric Configuration',
+        path: '/admin/metric-config',
+        icon: TuneIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Choose which SCOR metrics to display and set custom targets',
+      },
+      {
+        label: 'Email Signals',
+        path: '/admin/email-signals',
+        icon: MailIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'GDPR-safe email ingestion for supply chain intelligence',
+      },
+      {
         label: 'Knowledge Base',
         path: '/admin/knowledge-base',
         icon: BookOpenIcon,
         requiredCapability: 'manage_tenant_users',
         description: 'Upload documents for AI agent context (RAG)',
+      },
+      {
+        label: 'BSC Configuration',
+        path: '/admin/bsc-config',
+        icon: TuneIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Set balanced scorecard weights for AI calibration',
+      },
+      {
+        label: 'Governance',
+        path: '/admin/governance',
+        icon: GovernanceIcon,
+        requiredCapability: 'manage_approval_templates',
+        description: 'Governance workflows and compliance controls',
+      },
+      {
+        label: 'Planning Hierarchy',
+        path: '/admin/tenant/planning-hierarchy',
+        icon: HierarchyIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Configure MPS/MRP/S&OP planning levels',
+      },
+      {
+        label: 'Model Setup',
+        path: '/admin/model-setup',
+        icon: SettingsIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'AI model architecture and training configuration',
+      },
+      {
+        label: 'System Monitoring',
+        path: '/admin/monitoring',
+        icon: MonitoringIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'System health, telemetry, and performance monitoring',
+      },
+      {
+        label: 'Synthetic Data Wizard',
+        path: '/admin/synthetic-data',
+        icon: WandIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'AI-guided company and supply chain data generation',
       },
     ],
   },

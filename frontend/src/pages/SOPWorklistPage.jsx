@@ -420,7 +420,7 @@ const SOPWorklistPage = () => {
   const [data, setData] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
   const [reasoning, setReasoning] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('pending');
+  const [statusFilter, setStatusFilter] = useState('INFORMED');
   const [categoryFilter, setCategoryFilter] = useState(null);
 
   useEffect(() => {
@@ -626,9 +626,10 @@ const SOPWorklistPage = () => {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="text-sm border rounded-md px-2 py-1 bg-background"
             >
-              <option value="pending">Pending</option>
-              <option value="accepted">Accepted</option>
-              <option value="rejected">Overridden</option>
+              <option value="INFORMED">Informed</option>
+              <option value="ACTIONED">Actioned</option>
+              <option value="INSPECTED">Inspected</option>
+              <option value="OVERRIDDEN">Overridden</option>
               <option value="">All</option>
             </select>
             <Button variant="outline" size="sm">

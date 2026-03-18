@@ -197,7 +197,7 @@ const TRMTrainingPanelEnhanced = () => {
         setSuccess(`Training completed for site ${selectedSiteId}`);
       } else {
         result = await trmApi.trainAllSites(selectedConfigId, config);
-        setSuccess(`Training completed: ${result.completed}/${result.total_pairs} site-TRM pairs`);
+        setSuccess(`Training completed: ${result.completed}/${result.total_pairs} site-agent pairs`);
       }
       // Refresh site data
       await loadSites();
@@ -211,10 +211,10 @@ const TRMTrainingPanelEnhanced = () => {
   return (
     <div>
       <Typography variant="h5" gutterBottom>
-        Per-Site TRM Training
+        Per-Site Agent Training
       </Typography>
       <Typography variant="body2" color="textSecondary" className="mb-4">
-        Train Narrow TRM models for each site using the 3-phase learning-depth curriculum.
+        Train AI agents for each site using the 3-phase learning-depth curriculum.
         Each site gets models tailored to its specific patterns and scale.
       </Typography>
 
@@ -332,7 +332,7 @@ const TRMTrainingPanelEnhanced = () => {
               <Typography variant="h6">Learning-Depth Curriculum</Typography>
             </div>
             <Typography variant="body2" className="mb-3">
-              Each site-TRM pair trains through 3 progressive phases based on data availability:
+              Each site-agent pair trains through 3 progressive phases based on data availability:
             </Typography>
             <Table>
               <TableHeader>
@@ -365,9 +365,9 @@ const TRMTrainingPanelEnhanced = () => {
               </TableBody>
             </Table>
             <Typography variant="caption" className="text-muted-foreground mt-3 block">
-              <strong>TRM Applicability:</strong> Inventory sites get all 5 TRMs.
+              <strong>Agent Applicability:</strong> Inventory sites get all 5 agents.
               Manufacturer sites get 4 (no Rebalancing).
-              Market sites don&apos;t use TRMs.
+              Market sites don&apos;t use agents.
             </Typography>
           </CardContent>
         </Card>

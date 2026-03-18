@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import Sparkline from './Sparkline';
 import {
   TrendingUp,
   TrendingDown,
@@ -41,6 +42,10 @@ const GartnerMetricCard = ({
   scorCode,
   lowerIsBetter = false,
   compact = false,
+  ciLower,
+  ciUpper,
+  n,
+  sparkline,
 }) => {
   const tierBadge = tier ? TIER_BADGES[tier] : null;
   const trendPositive = lowerIsBetter ? trend < 0 : trend > 0;
@@ -72,12 +77,15 @@ const GartnerMetricCard = ({
         {/* Metric name */}
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
 
-        {/* Value + trend */}
-        <div className="mt-1 flex items-baseline gap-2">
+        {/* Value + unit + sparkline + trend */}
+        <div className="mt-1 flex items-center gap-2">
           <span className={cn('font-bold', compact ? 'text-xl' : 'text-2xl')}>
             {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : value}
           </span>
           {unit && <span className="text-sm text-muted-foreground">{unit}</span>}
+          {sparkline && sparkline.length >= 2 && (
+            <Sparkline data={sparkline} status={status} />
+          )}
           {trend !== undefined && trend !== null && (
             <span className={cn(
               'flex items-center text-xs font-medium',
@@ -93,12 +101,20 @@ const GartnerMetricCard = ({
           )}
         </div>
 
+        {/* Confidence interval */}
+        {ciLower != null && ciUpper != null && (
+          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground" title={`95% CI (n=${n || '?'})`}>
+            <span className="font-mono">[{ciLower.toLocaleString(undefined, {maximumFractionDigits: 1})} – {ciUpper.toLocaleString(undefined, {maximumFractionDigits: 1})}]</span>
+            {n && <span className="opacity-60">n={n}</span>}
+          </div>
+        )}
+
         {/* Target + progress */}
         {target !== undefined && target !== null && (
           <div className="mt-2">
             <div className="flex justify-between text-xs text-muted-foreground mb-1">
               <span>Target: {target}{unit}</span>
-              {benchmark && <span className="text-[10px]">{benchmark}</span>}
+              {benchmark && <span className="text-[10px] text-muted-foreground" title="Industry benchmark range">Ref: {benchmark}</span>}
             </div>
             <Progress
               value={Math.min(

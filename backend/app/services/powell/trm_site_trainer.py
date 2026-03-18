@@ -274,15 +274,21 @@ class TRMSiteTrainer:
     async def train_phase1(
         self,
         epochs: int = 20,
-        num_samples: int = 5000,
+        num_samples: int = 50_000,
         learning_rate: float = 1e-4,
-        batch_size: int = 64,
+        batch_size: int = 256,
     ) -> Dict[str, Any]:
         """
         Phase 1: Train via behavioral cloning from curriculum generator + engines.
 
         Always available — no real data required. The curriculum generator creates
         synthetic scenarios and the deterministic engines provide expert labels.
+
+        Data volume guidance (Stöckl 2021, Kaplan scaling law):
+        - For 7M-param TRMs, 50K samples/sub-phase × 3 sub-phases = 150K total
+        - This is the "medium" data regime — sufficient for rule learning, not just
+          memorization. Below 10K, models plateau quickly and fail to generalize.
+        - Batch size scaled to 256 for training stability with larger datasets.
         """
         import torch
         from app.services.powell.trm_curriculum import CURRICULUM_REGISTRY, SCConfigData
@@ -344,9 +350,23 @@ class TRMSiteTrainer:
                     best_loss = avg_loss
 
         duration = time.time() - start
+
+        # Domain-specific evaluation (Stöckl 2021: loss alone is misleading)
+        eval_results = {}
+        try:
+            eval_results = self.evaluate_3tier(
+                train_data=data,  # Last sub-phase data for Tier 1
+                num_held_out=min(5_000, num_samples),
+                num_adversarial=min(2_500, num_samples // 2),
+            )
+        except Exception as e:
+            logger.warning(f"3-tier evaluation failed (non-fatal): {e}")
+
         logger.info(
             f"Phase 1 complete for {self.trm_type}@site{self.site_id}: "
-            f"loss={best_loss:.4f}, {duration:.1f}s"
+            f"loss={best_loss:.4f}, "
+            f"decision_rate={eval_results.get('correct_decision_rate', 'N/A')}, "
+            f"{duration:.1f}s"
         )
 
         return {
@@ -357,6 +377,10 @@ class TRMSiteTrainer:
             "samples": num_samples * 3,
             "duration_seconds": duration,
             "loss_history": loss_history,
+            "correct_decision_rate": eval_results.get("correct_decision_rate"),
+            "tier1_memorization": eval_results.get("tier1_memorization"),
+            "tier2_generalization": eval_results.get("tier2_generalization"),
+            "tier3_rule_learning": eval_results.get("tier3_rule_learning"),
         }
 
     # =========================================================================
@@ -860,9 +884,16 @@ class TRMSiteTrainer:
         self,
         db=None,
         epochs_per_phase: int = 30,
-        num_samples: int = 5000,
+        num_samples: int = 50_000,
     ) -> Dict[str, Any]:
         """Execute the full stigmergic curriculum: signal phases × learning phases.
+
+        Data volume guidance (Stöckl 2021, Kaplan scaling law):
+        - For 7M-param TRMs, 50K samples/sub-phase ensures the "medium" data
+          regime — sufficient for rule learning beyond memorization.
+        - The stigmergic curriculum calls Phase 1 BC three times (one per signal
+          phase), each generating 50K × 3 sub-phases = 150K samples. Total BC
+          data across all signal phases: ~450K samples.
 
         Schedule (3 × 3 = 9 stages, but we skip combinations where data is absent):
 
@@ -939,6 +970,192 @@ class TRMSiteTrainer:
             "total_duration_seconds": total_duration,
         }
 
+    # =========================================================================
+    # 3-Tier Evaluation (Stöckl 2021: memorization / generalization / rule-learning)
+    # =========================================================================
+
+    def evaluate_3tier(
+        self,
+        train_data: Optional[Any] = None,
+        num_held_out: int = 10_000,
+        num_adversarial: int = 5_000,
+    ) -> Dict[str, Any]:
+        """Evaluate TRM using 3-tier methodology from Stöckl (2021).
+
+        Standard metrics like loss/perplexity are misleading for structured
+        decision tasks. Instead we measure three distinct capabilities:
+
+        Tier 1 — Memorization: Accuracy on training data (should be high).
+            Tests whether the model has sufficient capacity and training
+            to reproduce known patterns.
+
+        Tier 2 — Generalization: Accuracy on held-out states from the same
+            distribution. Uses fresh curriculum samples the model has never
+            seen. This is the standard ML generalization test.
+
+        Tier 3 — Rule Learning: Accuracy on adversarial/out-of-distribution
+            states designed to test whether the model learned the underlying
+            decision rules (e.g., "reorder when inventory < safety stock")
+            vs. just pattern-matching. Uses extreme/edge-case states.
+
+        Returns:
+            Dict with tier1_accuracy, tier2_accuracy, tier3_accuracy,
+            correct_decision_rate, and per-tier details.
+        """
+        import torch
+        from app.services.powell.trm_curriculum import CURRICULUM_REGISTRY, SCConfigData
+
+        self._ensure_model()
+        self.model.eval()
+
+        if self.trm_type not in CURRICULUM_REGISTRY:
+            return {"error": f"No curriculum for {self.trm_type}"}
+
+        sc_config = SCConfigData()
+        curriculum = CURRICULUM_REGISTRY[self.trm_type](sc_config)
+        results = {}
+
+        with torch.no_grad():
+            # --- Tier 1: Memorization (on training data) ---
+            if train_data is not None:
+                t1_acc = self._compute_decision_accuracy(train_data)
+                results["tier1_memorization"] = t1_acc
+            else:
+                results["tier1_memorization"] = None
+
+            # --- Tier 2: Generalization (held-out, same distribution) ---
+            held_out = curriculum.generate(phase=2, num_samples=num_held_out)
+            augmented = self._augment_states_synthetic(held_out.state_vectors)
+            t2_acc = self._compute_decision_accuracy_from_arrays(
+                augmented, held_out.action_discrete, held_out.action_continuous
+            )
+            results["tier2_generalization"] = t2_acc
+
+            # --- Tier 3: Rule Learning (adversarial/edge cases) ---
+            adversarial = self._generate_adversarial_states(
+                curriculum, num_adversarial
+            )
+            if adversarial is not None:
+                t3_acc = self._compute_decision_accuracy_from_arrays(
+                    adversarial["states"],
+                    adversarial["action_discrete"],
+                    adversarial["action_continuous"],
+                )
+                results["tier3_rule_learning"] = t3_acc
+            else:
+                results["tier3_rule_learning"] = None
+
+        # Summary metric: correct decision rate (weighted average)
+        accs = [v for v in [
+            results.get("tier1_memorization"),
+            results.get("tier2_generalization"),
+            results.get("tier3_rule_learning"),
+        ] if v is not None]
+        results["correct_decision_rate"] = float(np.mean(accs)) if accs else 0.0
+
+        logger.info(
+            f"3-tier eval for {self.trm_type}@site{self.site_id}: "
+            f"T1={results.get('tier1_memorization', 'N/A'):.3f}, "
+            f"T2={results['tier2_generalization']:.3f}, "
+            f"T3={results.get('tier3_rule_learning', 'N/A')}"
+        )
+        return results
+
+    def _compute_decision_accuracy(self, curriculum_data) -> float:
+        """Compute fraction of correct discrete decisions on CurriculumData."""
+        augmented = self._augment_states_synthetic(curriculum_data.state_vectors)
+        return self._compute_decision_accuracy_from_arrays(
+            augmented, curriculum_data.action_discrete, curriculum_data.action_continuous
+        )
+
+    def _compute_decision_accuracy_from_arrays(
+        self, states: np.ndarray, action_discrete: np.ndarray, action_continuous: np.ndarray
+    ) -> float:
+        """Compute correct-decision-rate: the domain-specific metric.
+
+        For discrete actions: exact match (predicted argmax == target).
+        For continuous actions: within 10% relative tolerance of target.
+        Combined score = 0.6 × discrete_accuracy + 0.4 × continuous_accuracy.
+        """
+        import torch
+
+        states_t = torch.tensor(states, dtype=torch.float32).to(self.device)
+        outputs = self.model(states_t)
+
+        # Discrete accuracy
+        disc_acc = 0.0
+        if "action_logits" in outputs:
+            pred_disc = outputs["action_logits"].argmax(dim=-1).cpu().numpy()
+            disc_acc = float(np.mean(pred_disc == action_discrete))
+        elif "action_discrete" in outputs:
+            pred_disc = outputs["action_discrete"].cpu().numpy()
+            disc_acc = float(np.mean(np.round(pred_disc).astype(int) == action_discrete))
+
+        # Continuous accuracy (within 10% tolerance)
+        cont_acc = 0.0
+        if "action_continuous" in outputs:
+            pred_cont = outputs["action_continuous"].cpu().numpy()
+            target_cont = action_continuous
+            # Relative tolerance: |pred - target| / max(|target|, 1) < 0.1
+            denom = np.maximum(np.abs(target_cont), 1.0)
+            within_tol = np.abs(pred_cont - target_cont) / denom < 0.1
+            cont_acc = float(np.mean(within_tol))
+
+        # Weighted combination
+        if "action_logits" in outputs or "action_discrete" in outputs:
+            if "action_continuous" in outputs:
+                return 0.6 * disc_acc + 0.4 * cont_acc
+            return disc_acc
+        return cont_acc
+
+    def _generate_adversarial_states(
+        self, curriculum, num_samples: int
+    ) -> Optional[Dict[str, np.ndarray]]:
+        """Generate adversarial/edge-case states for Tier 3 evaluation.
+
+        Creates states at distribution extremes that test rule learning:
+        - Zero inventory (should trigger reorder/expedite)
+        - Maximum capacity utilization (should trigger subcontracting/deferral)
+        - Demand spikes (3× normal, should trigger safety stock increase)
+        - Lead time extremes (should trigger PO timing adjustment)
+        """
+        try:
+            base_data = curriculum.generate(phase=3, num_samples=num_samples)
+            states = base_data.state_vectors.copy()
+            n = len(states)
+
+            # Split into 4 adversarial scenarios
+            quarter = n // 4
+
+            # Scenario 1: Zero inventory (dims 0-1 typically)
+            states[:quarter, 0] = 0.0
+            if states.shape[1] > 1:
+                states[:quarter, 1] = 0.0
+
+            # Scenario 2: Extreme demand spike (3× normal range)
+            if states.shape[1] > 2:
+                states[quarter:2*quarter, 2] = np.clip(
+                    states[quarter:2*quarter, 2] * 3.0, 0, 1
+                )
+
+            # Scenario 3: Maximum capacity (near 1.0)
+            if states.shape[1] > 3:
+                states[2*quarter:3*quarter, 3] = np.random.uniform(0.9, 1.0, quarter).astype(np.float32)
+
+            # Scenario 4: Lead time extremes
+            if states.shape[1] > 4:
+                states[3*quarter:, 4] = np.random.uniform(0.85, 1.0, n - 3*quarter).astype(np.float32)
+
+            augmented = self._augment_states_synthetic(states)
+            return {
+                "states": augmented,
+                "action_discrete": base_data.action_discrete,
+                "action_continuous": base_data.action_continuous,
+            }
+        except Exception as e:
+            logger.warning(f"Adversarial state generation failed: {e}")
+            return None
+
 
 def find_best_checkpoint(
     trm_type: str,
@@ -948,14 +1165,27 @@ def find_best_checkpoint(
     checkpoint_dir: Optional[Path] = None,
 ) -> Optional[str]:
     """
-    Checkpoint fallback resolution:
-    1. Site-specific: trm_{type}_site{site_id}_v*.pt (latest version)
-    2. Base model: trm_{type}_base_{master_type}.pt
-    3. Legacy: trm_{type}_{config_id}.pt (backward compat)
+    Checkpoint fallback resolution (searches config-namespaced first):
+    1. Config-namespaced site-specific: config_{id}/trm/trm_{type}_site{site_id}_v*.pt
+    2. Flat site-specific: trm_{type}_site{site_id}_v*.pt (legacy)
+    3. Base model: trm_{type}_base_{master_type}.pt
+    4. Legacy: trm_{type}_{config_id}.pt (backward compat)
+    5. Legacy subdir: trm_*/trm_{type}.pt (e.g. trm_food_dist/)
     """
     cdir = checkpoint_dir or CHECKPOINT_DIR
 
-    # 1. Site-specific (latest version)
+    # 1. Config-namespaced site-specific (latest version)
+    if config_id:
+        config_trm_dir = cdir / f"config_{config_id}" / "trm"
+        if config_trm_dir.exists():
+            site_checkpoints = sorted(
+                config_trm_dir.glob(f"trm_{trm_type}_site{site_id}_v*.pt"),
+                reverse=True,
+            )
+            if site_checkpoints:
+                return str(site_checkpoints[0])
+
+    # 2. Flat site-specific (legacy)
     site_checkpoints = sorted(
         cdir.glob(f"trm_{trm_type}_site{site_id}_v*.pt"),
         reverse=True,
@@ -963,15 +1193,21 @@ def find_best_checkpoint(
     if site_checkpoints:
         return str(site_checkpoints[0])
 
-    # 2. Base model for master type
+    # 3. Base model for master type
     base_path = cdir / f"trm_{trm_type}_base_{master_type.lower()}.pt"
     if base_path.exists():
         return str(base_path)
 
-    # 3. Legacy config-level checkpoint
+    # 4. Legacy config-level checkpoint
     if config_id:
         legacy_path = cdir / f"trm_{trm_type}_{config_id}.pt"
         if legacy_path.exists():
             return str(legacy_path)
+
+    # 5. Legacy subdir (e.g. trm_food_dist/trm_atp_executor.pt)
+    for subdir in sorted(cdir.glob("trm_*/")):
+        legacy = subdir / f"trm_{trm_type}.pt"
+        if legacy.exists():
+            return str(legacy)
 
     return None

@@ -938,7 +938,7 @@ def seed_sop_worklist(db: Session, tenant: Tenant) -> int:
             urgency=urgency_map.get(item_def["urgency"], DecisionUrgency.STANDARD),
             agent_recommendation=item_def.get("agent_recommendation"),
             agent_reasoning=item_def.get("agent_reasoning"),
-            status=DecisionStatus.PENDING,
+            status=DecisionStatus.INFORMED,
             created_at=datetime.now() - timedelta(hours=random.randint(1, 72)),
         )
         db.add(item)
@@ -994,9 +994,9 @@ def seed_agent_decisions(db: Session, tenant: Tenant, products: list) -> int:
     ]
 
     categories = ["Frozen Proteins", "Refrigerated Dairy", "Dry Goods", "Frozen Desserts", "Beverages"]
-    statuses = [DecisionStatus.PENDING, DecisionStatus.ACCEPTED, DecisionStatus.ACCEPTED,
-                DecisionStatus.ACCEPTED, DecisionStatus.REJECTED, DecisionStatus.AUTO_EXECUTED,
-                DecisionStatus.AUTO_EXECUTED, DecisionStatus.AUTO_EXECUTED]
+    statuses = [DecisionStatus.INFORMED, DecisionStatus.ACTIONED, DecisionStatus.ACTIONED,
+                DecisionStatus.ACTIONED, DecisionStatus.OVERRIDDEN, DecisionStatus.ACTIONED,
+                DecisionStatus.ACTIONED, DecisionStatus.ACTIONED]
 
     count = 0
     for i in range(35):
@@ -1055,10 +1055,10 @@ def seed_agent_decisions(db: Session, tenant: Tenant, products: list) -> int:
             created_at=datetime.now() - timedelta(hours=random.randint(1, 240)),
         )
 
-        if status in (DecisionStatus.ACCEPTED, DecisionStatus.REJECTED):
+        if status in (DecisionStatus.ACTIONED, DecisionStatus.OVERRIDDEN):
             decision.action_timestamp = decision.created_at + timedelta(hours=random.randint(1, 24))
-            decision.user_action = "accept" if status == DecisionStatus.ACCEPTED else "reject"
-            if status == DecisionStatus.REJECTED:
+            decision.user_action = "accept" if status == DecisionStatus.ACTIONED else "reject"
+            if status == DecisionStatus.OVERRIDDEN:
                 decision.override_reason = random.choice([
                     "Supplier confirmed delay, adjusting timing",
                     "Customer requested hold on this order",
@@ -1066,7 +1066,7 @@ def seed_agent_decisions(db: Session, tenant: Tenant, products: list) -> int:
                     "Budget constraint - deferring to next cycle",
                 ])
 
-        if status == DecisionStatus.AUTO_EXECUTED:
+        if status == DecisionStatus.ACTIONED:
             decision.action_timestamp = decision.created_at + timedelta(minutes=random.randint(1, 30))
             decision.outcome_measured = True
             decision.outcome_value = float(qty * random.uniform(0.9, 1.1))
@@ -1221,11 +1221,10 @@ def seed_trm_worklist_decisions(
     Generate TRM-specific worklist decisions for each of the 4 TRM specialist users.
 
     Creates a realistic mix of decisions per TRM type:
-    - PENDING (proposed, awaiting review)
-    - ACCEPTED (accepted by specialist user)
+    - INFORMED (proposed, awaiting review)
+    - ACTIONED (accepted by specialist user or auto-executed)
     - OVERRIDDEN (with structured reason_code + reason_text)
-    - REJECTED (agent re-evaluates)
-    - AUTO_EXECUTED (high confidence, touchless)
+    - INSPECTED (reviewed, no action needed)
 
     Also writes expert overrides to trm_replay_buffer with is_expert=True.
     """
@@ -1280,18 +1279,18 @@ def seed_trm_worklist_decisions(
     # Status distribution per TRM type (realistic)
     # (status, user_action, is_override)
     status_mix = [
-        (DecisionStatus.PENDING, None, False),           # 3 pending
-        (DecisionStatus.PENDING, None, False),
-        (DecisionStatus.PENDING, None, False),
-        (DecisionStatus.ACCEPTED, "accept", False),      # 3 accepted
-        (DecisionStatus.ACCEPTED, "accept", False),
-        (DecisionStatus.ACCEPTED, "accept", False),
-        (DecisionStatus.REJECTED, "override", True),     # 3 overridden
-        (DecisionStatus.REJECTED, "override", True),
-        (DecisionStatus.REJECTED, "override", True),
-        (DecisionStatus.REJECTED, "reject", False),      # 1 rejected
-        (DecisionStatus.AUTO_EXECUTED, None, False),      # 2 auto-executed
-        (DecisionStatus.AUTO_EXECUTED, None, False),
+        (DecisionStatus.INFORMED, None, False),           # 3 informed (awaiting action)
+        (DecisionStatus.INFORMED, None, False),
+        (DecisionStatus.INFORMED, None, False),
+        (DecisionStatus.ACTIONED, "accept", False),      # 3 actioned (user accepted)
+        (DecisionStatus.ACTIONED, "accept", False),
+        (DecisionStatus.ACTIONED, "accept", False),
+        (DecisionStatus.OVERRIDDEN, "override", True),     # 3 overridden (user provided alternative)
+        (DecisionStatus.OVERRIDDEN, "override", True),
+        (DecisionStatus.OVERRIDDEN, "override", True),
+        (DecisionStatus.OVERRIDDEN, "reject", False),      # 1 overridden (rejected)
+        (DecisionStatus.ACTIONED, None, False),      # 2 actioned (auto-executed)
+        (DecisionStatus.ACTIONED, None, False),
     ]
 
     # Supplier names for templates
@@ -1433,9 +1432,9 @@ def seed_trm_worklist_decisions(
                 reasoning = template["reasoning"]
 
             # Confidence: higher for auto-executed, lower for those needing review
-            if status == DecisionStatus.AUTO_EXECUTED:
+            if status == DecisionStatus.ACTIONED:
                 confidence = round(random.uniform(0.92, 0.99), 3)
-            elif status == DecisionStatus.PENDING:
+            elif status == DecisionStatus.INFORMED:
                 confidence = round(random.uniform(0.65, 0.85), 3)
             else:
                 confidence = round(random.uniform(0.72, 0.93), 3)
@@ -1473,13 +1472,13 @@ def seed_trm_worklist_decisions(
                 created_at=created_at,
             )
 
-            # Apply user action for non-PENDING statuses
-            if status == DecisionStatus.ACCEPTED:
+            # Apply user action for non-INFORMED statuses
+            if status == DecisionStatus.ACTIONED:
                 decision.user_id = user.id
                 decision.user_action = "accept"
                 decision.action_timestamp = created_at + timedelta(hours=random.randint(1, 12))
 
-            elif status == DecisionStatus.REJECTED and user_action == "override":
+            elif status == DecisionStatus.OVERRIDDEN and user_action == "override":
                 override_info = template["override"]
                 reason_code = override_info["reason_code"]
                 reason_text = override_info["reason_text"]
@@ -1497,7 +1496,7 @@ def seed_trm_worklist_decisions(
                     },
                 }
 
-            elif status == DecisionStatus.REJECTED and user_action == "reject":
+            elif status == DecisionStatus.OVERRIDDEN and user_action == "reject":
                 decision.user_id = user.id
                 decision.user_action = "reject"
                 decision.action_timestamp = created_at + timedelta(hours=random.randint(1, 6))
@@ -1505,7 +1504,7 @@ def seed_trm_worklist_decisions(
                 decision.override_reason = f"[{reject_reason}] Rejected — agent should re-evaluate with updated context"
                 decision.context_data = {**context_data, "reason_code": reject_reason}
 
-            elif status == DecisionStatus.AUTO_EXECUTED:
+            elif status == DecisionStatus.ACTIONED:
                 decision.action_timestamp = created_at + timedelta(minutes=random.randint(1, 15))
                 decision.outcome_measured = True
                 decision.outcome_value = float(qty * random.uniform(0.92, 1.08))

@@ -443,7 +443,7 @@ const HiveDashboard = () => {
           <TabsTrigger value="urgency">Urgency Heatmap</TabsTrigger>
           <TabsTrigger value="signals">Signal Bus</TabsTrigger>
           <TabsTrigger value="cycle">Decision Cycle</TabsTrigger>
-          <TabsTrigger value="directive">tGNN Directive</TabsTrigger>
+          <TabsTrigger value="directive">Network Agent Directive</TabsTrigger>
           <TabsTrigger value="health">Hive Health</TabsTrigger>
           <TabsTrigger value="authorization">Authorization</TabsTrigger>
         </TabsList>
@@ -454,7 +454,7 @@ const HiveDashboard = () => {
             {/* Heatmap Grid */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Urgency Vector (11 TRM Slots)</CardTitle>
+                <CardTitle className="text-lg">Urgency Vector (11 Agent Slots)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
@@ -581,7 +581,7 @@ const HiveDashboard = () => {
           {/* Phase-TRM Assignment */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Phase → TRM Assignment</CardTitle>
+              <CardTitle className="text-lg">Phase → Agent Assignment</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -663,7 +663,7 @@ const HiveDashboard = () => {
               <CardContent>
                 <DivergenceGauge score={hiveStatus?.signal_divergence || 0} />
                 <p className="text-xs text-muted-foreground mt-3">
-                  Measures L1 distance between local hive signal distribution and tGNN exception predictions.
+                  Measures L1 distance between local hive signal distribution and network agent exception predictions.
                   When divergence exceeds threshold, a TGNN_REFRESH is triggered via CDC.
                 </p>
               </CardContent>
@@ -673,7 +673,7 @@ const HiveDashboard = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Network className="h-5 w-5" /> tGNN Site Directive
+                  <Network className="h-5 w-5" /> Network Site Directive
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -705,9 +705,9 @@ const HiveDashboard = () => {
                 ) : (
                   <div className="text-center py-8">
                     <Network className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-muted-foreground">No tGNN directive received</p>
+                    <p className="text-muted-foreground">No network directive received</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Directive is pushed by the tGNN inter-hive model during network-level optimization
+                      Directive is pushed by the network agent during network-level optimization
                     </p>
                   </div>
                 )}

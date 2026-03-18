@@ -1365,6 +1365,95 @@ GET /api/v1/planning-cascade/gnn-analysis/{config_id}/node/{node_id}/ask-why?mod
 
 ---
 
+## Talk to Me — Directive API
+
+Natural language directive capture via the TopNavbar prompt bar.
+
+### Endpoints
+
+```bash
+POST /api/v1/directives/analyze    # Parse + gap detect (no persist)
+POST /api/v1/directives/submit     # Persist + route (with clarifications)
+GET  /api/v1/directives/           # List recent directives for tenant
+GET  /api/v1/directives/{id}       # Get single directive by ID
+```
+
+### Analyze Request
+
+```json
+POST /api/v1/directives/analyze
+{
+  "text": "I want to increase revenue by 10% in the SW region next quarter because customer feedback indicates growing demand",
+  "config_id": 22
+}
+```
+
+### Submit Request (with clarifications)
+
+```json
+POST /api/v1/directives/submit
+{
+  "text": "I want to increase revenue by 10% in the SW region next quarter because customer feedback indicates growing demand",
+  "config_id": 22,
+  "clarifications": {
+    "products": "Beverages, Dry Goods"
+  }
+}
+```
+
+See [TALK_TO_ME.md](TALK_TO_ME.md) for full documentation.
+
+---
+
+## Email Signal Intelligence — API
+
+GDPR-safe email ingestion for supply chain signal extraction.
+
+### Connection Management
+
+```bash
+POST   /api/v1/email-signals/connections                # Create IMAP/Gmail connection
+GET    /api/v1/email-signals/connections                # List connections
+PUT    /api/v1/email-signals/connections/{id}           # Update connection
+DELETE /api/v1/email-signals/connections/{id}           # Delete connection
+POST   /api/v1/email-signals/connections/{id}/test      # Test connectivity
+POST   /api/v1/email-signals/connections/{id}/poll      # Manual poll
+```
+
+### Signal Management
+
+```bash
+GET  /api/v1/email-signals/signals                     # List (filterable by config_id, status, signal_type, partner_type)
+GET  /api/v1/email-signals/signals/{id}                # Detail
+POST /api/v1/email-signals/signals/{id}/dismiss        # Dismiss with reason
+POST /api/v1/email-signals/signals/{id}/reclassify     # Re-run LLM classification
+```
+
+### Dashboard & Testing
+
+```bash
+GET  /api/v1/email-signals/dashboard                   # Summary stats
+POST /api/v1/email-signals/ingest-manual               # Manual email paste for testing
+```
+
+### Manual Ingestion Example
+
+```json
+POST /api/v1/email-signals/ingest-manual
+{
+  "config_id": 22,
+  "from_header": "Sarah Johnson <sarah@acme-supplies.com>",
+  "subject": "Lead Time Extension Notice",
+  "body": "Due to raw material constraints, lead times for Widget-A and Widget-B will be extended by 3 weeks starting March 15."
+}
+```
+
+The from_header is used only for domain extraction (acme-supplies.com → ACME Supplies trading partner). Personal identity is stripped before storage.
+
+See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md) for full documentation.
+
+---
+
 ## Self-Hosted LLM Configuration
 
 **Last Updated**: 2026-02-19

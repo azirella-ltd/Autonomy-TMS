@@ -8,6 +8,7 @@ import SystemAdminRoute from "./components/SystemAdminRoute";
 import { isSystemAdmin } from "./utils/authUtils";
 import Dashboard from "./pages/Dashboard";
 import DashboardRouter from "./pages/DashboardRouter";
+import ProvisioningPage from "./pages/ProvisioningPage";
 import ScenariosList from "./pages/ScenariosList";
 import CreateScenario from "./pages/CreateScenario";
 import CreateScenarioFromConfig from "./components/scenario/CreateScenarioFromConfig";
@@ -45,6 +46,11 @@ import { ScenarioComparison } from "./components/stochastic";
 import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
 import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
+import EmailSignalsDashboard from "./pages/admin/EmailSignalsDashboard.jsx";
+import BscConfigPage from "./pages/admin/BscConfigPage.jsx";
+import ContextEngine from "./pages/admin/ContextEngine.jsx";
+import StochasticParamsEditor from "./pages/admin/StochasticParamsEditor.jsx";
+import MetricConfigPage from "./pages/admin/MetricConfigPage.jsx";
 
 import HiveDashboard from "./pages/admin/HiveDashboard.jsx";
 import SkillsDashboard from "./pages/admin/SkillsDashboard.jsx";
@@ -111,6 +117,10 @@ import OrderManagement from "./pages/planning/OrderManagement.jsx";
 import RecommendedActionsDashboard from "./pages/RecommendedActionsDashboard.jsx";
 import SalesOperationsPlanning from "./pages/planning/SalesOperationsPlanning.jsx";
 import InventoryOptimization from "./pages/planning/InventoryOptimization.jsx";
+import PlanningBoard from "./pages/planning/PlanningBoard.jsx";
+import PromotionalPlanning from "./pages/planning/PromotionalPlanning.jsx";
+import ProductLifecycle from "./pages/planning/ProductLifecycle.jsx";
+import MarkdownClearance from "./pages/planning/MarkdownClearance.jsx";
 import InventoryVisibility from "./pages/visibility/InventoryVisibility.jsx";
 import SOPPolicyPage from "./pages/planning/SOPPolicyPage.jsx";
 import MPSCandidatesPage from "./pages/planning/MPSCandidatesPage.jsx";
@@ -133,6 +143,7 @@ import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
 import DecisionStream from "./pages/DecisionStream";
+import ScenarioEvents from "./pages/ScenarioEvents";
 import AgentPerformancePage from "./pages/AgentPerformancePage";
 import SOPWorklistPage from "./pages/SOPWorklistPage";
 import DemoSystemBuilder from "./pages/deployment/DemoSystemBuilder.jsx";
@@ -198,6 +209,7 @@ const AppContent = () => {
         <Route element={<RequireAuth />}>
           <Route element={<LayoutWrapper />}>
             <Route path="/dashboard" element={<DashboardRouter />} />
+            <Route path="/provisioning" element={<ProvisioningPage />} />
 
             {/* AIIO Framework - Insights & Actions Landing Page */}
             <Route path="/insights" element={<InsightsLanding />} />
@@ -466,8 +478,26 @@ const AppContent = () => {
               path="/admin/sap-data"
               element={<SAPDataManagement />}
             />
-
-
+            <Route
+              path="/admin/stochastic-params"
+              element={<StochasticParamsEditor />}
+            />
+            <Route
+              path="/admin/metric-config"
+              element={<MetricConfigPage />}
+            />
+            <Route
+              path="/admin/email-signals"
+              element={<EmailSignalsDashboard />}
+            />
+            <Route
+              path="/admin/bsc-config"
+              element={<BscConfigPage />}
+            />
+            <Route
+              path="/admin/context-engine"
+              element={<ContextEngine />}
+            />
 
             <Route
               path="/admin/hive"
@@ -800,6 +830,33 @@ const AppContent = () => {
               }
             />
 
+            <Route
+              path="/planning/promotions"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_demand_planning">
+                  <PromotionalPlanning />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/product-lifecycle"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_demand_planning">
+                  <ProductLifecycle />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/markdown-clearance"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_inventory_optimization">
+                  <MarkdownClearance />
+                </CapabilityProtectedRoute>
+              }
+            />
+
             {/* Operational Planning */}
             <Route
               path="/planning/demand"
@@ -914,6 +971,15 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_supply_plan">
                   <SupplyPlanGeneration />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/board"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_supply_planning">
+                  <PlanningBoard />
                 </CapabilityProtectedRoute>
               }
             />
@@ -1158,6 +1224,10 @@ const AppContent = () => {
             <Route
               path="/decision-stream"
               element={<DecisionStream />}
+            />
+            <Route
+              path="/scenario-events"
+              element={<ScenarioEvents />}
             />
 
             <Route

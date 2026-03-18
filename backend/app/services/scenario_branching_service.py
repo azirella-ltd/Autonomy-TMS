@@ -24,7 +24,7 @@ from app.models.supply_chain_config import (
     SupplyChainConfig,
     ConfigDelta,
     ConfigLineage,
-    Node,
+    Site as Node,
     TransportationLane,
     Market,
     MarketDemand,
@@ -43,8 +43,8 @@ class EntityType:
     """Entity type constants"""
     NODE = "node"
     LANE = "lane"
-    MARKET_DEMAND = "market_demand"
-    MARKET_SUPPLY = "market_supply"
+    CUSTOMER = "customer"
+    VENDOR = "vendor"
     BOM = "bom"
     ITEM = "item"
     CONFIG = "config"

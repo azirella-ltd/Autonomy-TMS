@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import {
   ChevronDown, ChevronRight, AlertTriangle, TrendingUp, TrendingDown,
-  Bot, Shield, Radio, BarChart3, Target, Star,
+  Bot, Shield, Radio, BarChart3, Target, Star, GitCompare,
 } from 'lucide-react';
 
 const SECTION_META = {
+  whats_changed: { label: "What's Changed", icon: GitCompare, color: 'text-indigo-600' },
   situation_overview: { label: 'Situation Overview', icon: BarChart3, color: 'text-blue-600' },
   scorecard_narrative: { label: 'Balanced Scorecard', icon: Target, color: 'text-green-600' },
   agent_performance_digest: { label: 'Agent Performance', icon: Bot, color: 'text-purple-600' },
@@ -137,7 +138,7 @@ export default function BriefingRenderer({ narrative, recommendations, dataQuali
   }
 
   const sectionOrder = [
-    'situation_overview', 'scorecard_narrative', 'agent_performance_digest',
+    'whats_changed', 'situation_overview', 'scorecard_narrative', 'agent_performance_digest',
     'risk_report', 'external_signals', 'trend_analysis',
   ];
 

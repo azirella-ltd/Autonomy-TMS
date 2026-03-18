@@ -32,14 +32,21 @@ import {
 } from '../../services/supplyChainConfigService';
 
 const SITE_TYPE_VARIANTS = {
-  supplier: 'default',
-  retailer: 'success',
-  wholesaler: 'destructive',
-  distributor: 'info',
+  // AWS SC DM types
+  customer: 'success',
+  distribution_center: 'info',
+  warehouse: 'info',
+  manufacturing_plant: 'warning',
+  vendor: 'default',
   inventory: 'info',
   manufacturer: 'warning',
   market_supply: 'default',
   market_demand: 'secondary',
+  // Legacy TBG types
+  supplier: 'default',
+  retailer: 'success',
+  wholesaler: 'destructive',
+  distributor: 'info',
 };
 
 const createAttributeState = (source = {}) => ({

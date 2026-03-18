@@ -52,7 +52,7 @@ ScenarioUser = ScenarioUser
 PlayerModelType = ScenarioUserModelType
 from app.models.supply_chain_config import (
     SupplyChainConfig,
-    Node,
+    Site,
     Lane,
     Market,
     MarketDemand,
@@ -62,9 +62,10 @@ from app.models.compatibility import Item
 from app.models.sc_entities import Product, ProductHierarchy, InvPolicy
 
 # Preserve references to SQLAlchemy models before defining local Pydantic helpers
-# AWS SC DM terminology: Product, Site (DB: Node), TransportationLane (DB: Lane)
+# AWS SC DM terminology: Product, Site, TransportationLane (Lane alias)
 SupplyProductModel = Product  # AWS SC Product model
-SupplySiteModel = Node  # AWS SC Site model (DB table: site)
+SupplySiteModel = Site  # AWS SC Site model (DB table: site)
+Node = Site  # DEPRECATED alias for backward compatibility
 SupplyLaneModel = Lane  # AWS SC TransportationLane model
 SupplyMarketModel = Market
 SupplyMarketDemandModel = MarketDemand
@@ -309,6 +310,7 @@ class MeResponse(BaseModel):
     tenant_id: Optional[int] = None
     user_type: Optional[str] = None
     is_superuser: bool = False
+    default_config_id: Optional[int] = None
 
 
 class OrderSubmission(BaseModel):
@@ -500,6 +502,13 @@ async def startup_event():
         # This prevents relationship resolution errors and runs configure_mappers()
         import app.models  # noqa: F401 - ensures all models are loaded and configured
 
+        # Initialize Knowledge Base database engine (separate pgvector DB)
+        try:
+            from app.db.kb_session import init_kb_engine
+            init_kb_engine()
+        except Exception as kb_err:
+            logger.warning("KB engine initialization failed (non-fatal): %s", kb_err)
+
         # Now import services that depend on models
         from app.services.sync_scheduler_service import SyncSchedulerService
         from app.services.retention_jobs import register_retention_jobs
@@ -529,15 +538,64 @@ async def startup_event():
             from app.services.executive_briefing_jobs import register_executive_briefing_jobs
             register_executive_briefing_jobs(scheduler_service)
 
+            # Register SAP data staging jobs (incremental sync every 6h, daily reconciliation)
+            from app.services.sap_staging_jobs import register_sap_staging_jobs
+            register_sap_staging_jobs(scheduler_service)
+
             # Batch calibrate CDT wrappers from historical decision data
+            # Calibrate both global (for monitoring) and per-tenant registries
             try:
                 from app.services.powell.cdt_calibration_service import CDTCalibrationService
+                from sqlalchemy import text as sa_text
                 cdt_db = sync_session_factory()
                 try:
+                    # Global calibration (all tenants combined)
                     cdt_svc = CDTCalibrationService(cdt_db)
                     cdt_stats = cdt_svc.calibrate_all()
                     calibrated = sum(1 for s in cdt_stats.values() if s.get("status") == "calibrated")
-                    logger.info(f"CDT startup calibration: {calibrated}/11 agents calibrated")
+                    logger.info(f"CDT startup calibration (global): {calibrated}/11 agents calibrated")
+
+                    # Per-tenant calibration so readiness endpoint works
+                    # Also runs simulation bootstrap for any tenant with uncalibrated agents
+                    tenant_rows = cdt_db.execute(
+                        sa_text(
+                            "SELECT DISTINCT sc.tenant_id, sc.id "
+                            "FROM supply_chain_configs sc "
+                            "WHERE sc.tenant_id IS NOT NULL "
+                            "ORDER BY sc.tenant_id"
+                        )
+                    ).fetchall()
+                    seen_tenants = set()
+                    for tid, config_id in tenant_rows:
+                        if tid in seen_tenants:
+                            continue
+                        seen_tenants.add(tid)
+                        try:
+                            tenant_svc = CDTCalibrationService(cdt_db, tenant_id=tid)
+                            tenant_stats = tenant_svc.calibrate_all()
+                            t_cal = sum(1 for s in tenant_stats.values() if s.get("status") == "calibrated")
+                            logger.info(f"CDT startup calibration (tenant {tid}): {t_cal}/11 agents calibrated")
+
+                            # If not all calibrated, run simulation bootstrap
+                            if t_cal < 11 and config_id:
+                                try:
+                                    from app.services.powell.simulation_calibration_service import (
+                                        run_simulation_calibration_bootstrap,
+                                    )
+                                    sim_stats = run_simulation_calibration_bootstrap(
+                                        db=cdt_db,
+                                        config_id=config_id,
+                                        tenant_id=tid,
+                                        n_episodes=50,
+                                    )
+                                    logger.info(
+                                        f"CDT startup simulation bootstrap (tenant {tid}): "
+                                        f"{sim_stats.get('agents_calibrated', 0)}/11 agents calibrated"
+                                    )
+                                except Exception as sim_err:
+                                    logger.warning(f"CDT simulation bootstrap (tenant {tid}): {sim_err}")
+                        except Exception as te:
+                            logger.debug(f"CDT tenant {tid} calibration: {te}")
                 finally:
                     cdt_db.close()
             except Exception as e:
@@ -729,6 +787,7 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
         tenant_id=user.get("tenant_id"),
         user_type=user.get("user_type"),
         is_superuser=bool(user.get("is_superuser", False)),
+        default_config_id=user.get("default_config_id"),
     )
 
 @api.post("/auth/refresh", response_model=TokenResponse, tags=["auth"])
@@ -855,6 +914,105 @@ async def list_supply_chain_configs(
 
         configs = query.all()
         return [_serialize_supply_chain_config(cfg) for cfg in configs]
+    finally:
+        db.close()
+
+
+@api.get("/supply-chain-config/active")
+async def get_active_supply_chain_config(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Return the active SC config for the current user.
+
+    Resolution order:
+    1. User's default_config_id (set by tenant admin).
+    2. Tenant's is_active=True BASELINE config.
+    """
+    db = SyncSessionLocal()
+    try:
+        from app.models.user import User as UserModel
+        user_obj = db.query(UserModel).filter(UserModel.id == current_user.get("id")).first()
+        if user_obj and user_obj.default_config_id:
+            cfg = db.query(SupplyChainConfig).filter(
+                SupplyChainConfig.id == user_obj.default_config_id
+            ).first()
+            if cfg:
+                return _serialize_supply_chain_config(cfg)
+
+        # Fallback: tenant's active baseline
+        tenant_id = _extract_tenant_id(current_user)
+        if not tenant_id:
+            return {}
+        cfg = db.query(SupplyChainConfig).filter(
+            SupplyChainConfig.tenant_id == tenant_id,
+            SupplyChainConfig.is_active == True,
+            SupplyChainConfig.scenario_type == "BASELINE",
+        ).first()
+        if not cfg:
+            return {}
+        return _serialize_supply_chain_config(cfg)
+    finally:
+        db.close()
+
+
+@api.put("/users/me/active-config")
+async def set_user_active_config(
+    payload: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Allow tenant admin to switch their active SC config (production ↔ learning)."""
+    config_id = payload.get("config_id")
+    if not config_id:
+        raise HTTPException(status_code=400, detail="config_id is required")
+    db = SyncSessionLocal()
+    try:
+        from app.models.user import User as UserModel
+        cfg = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+        if not cfg:
+            raise HTTPException(status_code=404, detail="Config not found")
+        # Validate config belongs to user's tenant
+        tenant_id = _extract_tenant_id(current_user)
+        is_admin = _is_system_admin_user(current_user)
+        if not is_admin and cfg.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="Config does not belong to your tenant")
+        user_obj = db.query(UserModel).filter(UserModel.id == current_user.get("id")).first()
+        if not user_obj:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_obj.default_config_id = config_id
+        db.commit()
+        return {"default_config_id": config_id, "mode": cfg.mode}
+    finally:
+        db.close()
+
+
+@api.put("/admin/users/{user_id}/default-config")
+async def admin_set_user_default_config(
+    user_id: int,
+    payload: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Tenant admin sets a user's default config (learning vs production assignment)."""
+    config_id = payload.get("config_id")
+    if not config_id:
+        raise HTTPException(status_code=400, detail="config_id is required")
+    db = SyncSessionLocal()
+    try:
+        from app.models.user import User as UserModel
+        cfg = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+        if not cfg:
+            raise HTTPException(status_code=404, detail="Config not found")
+        tenant_id = _extract_tenant_id(current_user)
+        is_admin = _is_system_admin_user(current_user)
+        if not is_admin and cfg.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="Config does not belong to your tenant")
+        target_user = db.query(UserModel).filter(UserModel.id == user_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not is_admin and target_user.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="User does not belong to your tenant")
+        target_user.default_config_id = config_id
+        db.commit()
+        return {"user_id": user_id, "default_config_id": config_id, "mode": cfg.mode}
     finally:
         db.close()
 
@@ -1044,6 +1202,104 @@ def update_supply_chain_config_basic(
         db.commit()
         db.refresh(config)
         return _serialize_supply_chain_config_detail(config)
+    finally:
+        db.close()
+
+
+@api.delete("/supply-chain-config/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_supply_chain_config(
+    config_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Delete a supply chain configuration and all its child entities."""
+    from sqlalchemy import text
+
+    db = SyncSessionLocal()
+    try:
+        config = _get_supply_chain_config_or_404(db, config_id)
+        _ensure_can_manage_supply_chain_config(current_user, config)
+
+        cid = {"cid": config_id}
+
+        # All tables with config_id FK to supply_chain_configs (ordered: dependents first).
+        # Column is config_id unless noted otherwise.
+        config_ref_tables = [
+            # Powell decision tables
+            "powell_atp_decisions", "powell_buffer_decisions", "powell_exception_resolution",
+            "powell_forecast_adjustment_decisions", "powell_hierarchical_constraints",
+            "powell_maintenance_decisions", "powell_mo_decisions", "powell_order_exceptions",
+            "powell_po_decisions", "powell_policy_parameters", "powell_quality_decisions",
+            "powell_rebalance_decisions", "powell_stochastic_solution", "powell_subcontracting_decisions",
+            "powell_to_decisions", "powell_training_config", "powell_value_function", "powell_allocations",
+            # TRM decision logs
+            "trm_atp_decision_log", "trm_order_tracking_decision_log", "trm_po_decision_log",
+            "trm_rebalancing_decision_log", "trm_replay_buffer", "trm_safety_stock_decision_log",
+            # Planning tables
+            "forecast", "forecast_exception", "forecast_exception_rule", "forecast_pipeline_run",
+            "forecast_pipeline_config", "forecast_versions",
+            "supply_plan", "supply_plan_requests", "supply_commit", "supply_demand_pegging",
+            "supply_baseline_pack", "solver_baseline_pack",
+            "sourcing_schedule_details", "sourcing_schedule", "sourcing_rules",
+            "inv_level", "inv_policy", "inv_projection",
+            "inbound_order", "inbound_order_line", "outbound_order_line",
+            "atp_projection", "ctp_projection", "aatp_consumption_record",
+            "product_bom", "production_capacity", "production_orders", "production_process",
+            "purchase_order", "transfer_order", "maintenance_order", "turnaround_order",
+            "project_order", "reservation",
+            # MPS/MRP/S&OP
+            "planning_cycles", "planning_feedback_signal", "planning_hierarchy_config",
+            "planning_policy_envelope", "consensus_plans",
+            "mrp_run", "order_aggregation_policy",
+            # Agent/training
+            "agent_decision_metrics", "supply_chain_training_artifacts", "tactical_tgnn_checkpoints",
+            "data_drift_alerts", "data_drift_records",
+            # Misc
+            "aggregated_order", "allocation_commit", "authority_definitions",
+            "collaboration_scenarios", "config_deltas", "config_lineage",
+            "config_provisioning_status", "exception_workflow_template",
+            "items", "market_demands", "markets", "risk_alerts",
+            "sap_ingestion_jobs", "user_directives", "watchlists",
+        ]
+        # Tables with non-standard config FK column name
+        config_ref_alt = [
+            ("capacity_plans", "supply_chain_config_id"),
+            ("monte_carlo_runs", "supply_chain_config_id"),
+            ("mps_plans", "supply_chain_config_id"),
+            ("scenarios", "supply_chain_config_id"),
+        ]
+
+        for table in config_ref_tables:
+            try:
+                db.execute(text(f"DELETE FROM {table} WHERE config_id = :cid"), cid)
+            except Exception:
+                pass  # Table may not exist in all deployments
+        for table, col in config_ref_alt:
+            try:
+                db.execute(text(f"DELETE FROM {table} WHERE {col} = :cid"), cid)
+            except Exception:
+                pass
+
+        # Self-referencing FKs
+        db.execute(text("UPDATE supply_chain_configs SET base_config_id = NULL WHERE base_config_id = :cid"), cid)
+        db.execute(text("UPDATE supply_chain_configs SET parent_config_id = NULL WHERE parent_config_id = :cid"), cid)
+        db.execute(text("UPDATE users SET default_config_id = NULL WHERE default_config_id = :cid"), cid)
+
+        # Core entities
+        db.execute(text("DELETE FROM transportation_lane WHERE config_id = :cid"), cid)
+        db.execute(text("DELETE FROM product WHERE config_id = :cid"), cid)
+        db.execute(text("DELETE FROM site WHERE config_id = :cid"), cid)
+
+        # Finally delete the config itself
+        db.execute(text("DELETE FROM supply_chain_configs WHERE id = :cid"), cid)
+
+        db.commit()
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting config {config_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete configuration: {e}")
     finally:
         db.close()
 
@@ -1287,6 +1543,7 @@ def _build_user_payload_from_model(user: User) -> Dict[str, Any]:
         "tenant_id": data.get("tenant_id"),
         "is_superuser": bool(data.get("is_superuser")),
         "user_type": user_type,
+        "default_config_id": getattr(user, "default_config_id", None),
     }
     return payload
 
@@ -1325,6 +1582,7 @@ def _serialize_supply_chain_config(cfg: SupplyChainConfig) -> Dict[str, Any]:
         "name": cfg.name,
         "description": cfg.description,
         "is_active": bool(cfg.is_active),
+        "mode": getattr(cfg, "mode", "production") or "production",
         "tenant_id": cfg.tenant_id,
         "parent_config_id": cfg.parent_config_id,
         "base_config_id": getattr(cfg, "base_config_id", None),
@@ -1538,6 +1796,7 @@ def _serialize_site(site: SupplySiteModel, region_map: Optional[Dict[str, str]] 
     geography = getattr(site, "geography", None)
     geo_id = getattr(site, "geo_id", None)
     geo_data = None
+    attrs = getattr(site, "attributes", None) or {}
     if geography:
         geo_data = {
             "id": geography.id,
@@ -1545,8 +1804,18 @@ def _serialize_site(site: SupplySiteModel, region_map: Optional[Dict[str, str]] 
             "state_prov": geography.state_prov,
             "region": region_map.get(geo_id) if region_map and geo_id else None,
             "country": geography.country,
-            "latitude": geography.latitude,
-            "longitude": geography.longitude,
+            "latitude": geography.latitude or getattr(site, "latitude", None),
+            "longitude": geography.longitude or getattr(site, "longitude", None),
+        }
+    elif getattr(site, "latitude", None) is not None and getattr(site, "longitude", None) is not None:
+        geo_data = {
+            "id": None,
+            "city": attrs.get("city") if isinstance(attrs, dict) else None,
+            "state_prov": attrs.get("state") if isinstance(attrs, dict) else None,
+            "region": None,
+            "country": attrs.get("country") if isinstance(attrs, dict) else None,
+            "latitude": site.latitude,
+            "longitude": site.longitude,
         }
 
     return {
@@ -1754,6 +2023,50 @@ def put_system_config(cfg: SystemConfigModel):
             db.close()
         except Exception:
             pass
+
+
+# ---------------------- LLM Settings (runtime, no restart required) ----------------------
+
+import os as _os
+from typing import Literal as _Literal
+
+_LLM_SETTINGS_PATH = _os.path.abspath(
+    _os.path.join(_os.path.dirname(__file__), "data", "llm_settings.json")
+)
+
+
+class LLMSettings(BaseModel):
+    """Runtime LLM routing. Changes take effect immediately — no restart needed."""
+    briefing_provider: _Literal["auto", "claude", "vllm"] = "auto"
+    skills_provider: _Literal["auto", "claude", "vllm"] = "auto"
+
+
+def _read_llm_settings() -> LLMSettings:
+    try:
+        if _os.path.exists(_LLM_SETTINGS_PATH):
+            with open(_LLM_SETTINGS_PATH) as f:
+                return LLMSettings(**json.load(f))
+    except Exception:
+        pass
+    return LLMSettings()
+
+
+@api.get("/config/llm", response_model=LLMSettings, tags=["config"])
+def get_llm_settings(current_user=Depends(get_current_user)):
+    """Get current LLM provider routing settings."""
+    return _read_llm_settings()
+
+
+@api.put("/config/llm", response_model=LLMSettings, tags=["config"])
+def put_llm_settings(settings: LLMSettings, current_user=Depends(get_current_user)):
+    """Update LLM provider routing. Takes effect immediately — no restart required."""
+    try:
+        _os.makedirs(_os.path.dirname(_LLM_SETTINGS_PATH), exist_ok=True)
+        with open(_LLM_SETTINGS_PATH, "w") as f:
+            json.dump(settings.dict(), f, indent=2)
+        return settings
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save LLM settings: {e}")
 
 
 # ---------------------- Model Config ----------------------
@@ -2025,9 +2338,11 @@ def _actor_nodes_from_order(
     ordered_nodes: Sequence[str],
     node_types: Mapping[str, Any],
 ) -> List[str]:
-    """Filter nodes that represent playable positions (exclude markets)."""
+    """Filter nodes that represent playable positions (exclude external trading partners)."""
 
-    skip_types = {"market_demand", "market_supply"}
+    # External TradingPartner node types — not managed by internal planners.
+    # "vendor"/"customer" are the current names; legacy aliases kept for backward compat.
+    skip_types = {"vendor", "customer", "market_demand", "market_supply"}
     actors: List[str] = []
     for node in ordered_nodes:
         node_type = str(node_types.get(node, "") or "").lower()
@@ -2036,13 +2351,15 @@ def _actor_nodes_from_order(
         actors.append(node)
     return actors or list(ordered_nodes)
 
+# Canonical site type definitions aligned with AWS SC Data Model.
+# External parties (Vendor / Customer) are TradingPartner records — not internal sites.
 DEFAULT_SITE_TYPE_DEFINITIONS: List[Dict[str, Any]] = [
-    {"type": "MARKET_DEMAND", "label": "Market Demand", "order": 0, "is_required": True, "master_type": "market_demand"},
-    {"type": "RETAILER", "label": "Retailer", "order": 1, "is_required": False, "master_type": "inventory"},
-    {"type": "WHOLESALER", "label": "Wholesaler", "order": 2, "is_required": False, "master_type": "inventory"},
-    {"type": "DISTRIBUTOR", "label": "Distributor", "order": 3, "is_required": False, "master_type": "inventory"},
-    {"type": "MANUFACTURER", "label": "Manufacturer", "order": 4, "is_required": False, "master_type": "manufacturer"},
-    {"type": "MARKET_SUPPLY", "label": "Market Supply", "order": 5, "is_required": True, "master_type": "market_supply"},
+    {"type": "CUSTOMER", "label": "Customer", "order": 0, "is_required": True, "is_external": True, "tpartner_type": "customer"},
+    {"type": "RETAILER", "label": "Retailer", "order": 1, "is_required": False, "is_external": False, "master_type": "inventory"},
+    {"type": "WHOLESALER", "label": "Wholesaler", "order": 2, "is_required": False, "is_external": False, "master_type": "inventory"},
+    {"type": "DISTRIBUTOR", "label": "Distributor", "order": 3, "is_required": False, "is_external": False, "master_type": "inventory"},
+    {"type": "MANUFACTURER", "label": "Manufacturer", "order": 4, "is_required": False, "is_external": False, "master_type": "manufacturer"},
+    {"type": "VENDOR", "label": "Vendor", "order": 5, "is_required": True, "is_external": True, "tpartner_type": "vendor"},
 ]
 
 
@@ -2062,10 +2379,16 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
 
     def _master_type(value: Any) -> str:
         canonical = MixedScenarioService._canonical_role(value)
+        # Current names
+        if canonical in {"customer"}:
+            return "customer"
+        if canonical in {"vendor"}:
+            return "vendor"
+        # Legacy backward-compat aliases
         if canonical in {"market_demand", "market"}:
-            return "market_demand"
+            return "customer"
         if canonical == "market_supply":
-            return "market_supply"
+            return "vendor"
         if canonical == "manufacturer":
             return "manufacturer"
         return canonical
@@ -2126,23 +2449,23 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
     if not observed_types:
         observed_types.update(default_label_map.keys())
 
-    observed_types.add("market_demand")
-    observed_types.add("market_supply")
-    label_map.setdefault("market_demand", default_label_map.get("market_demand", "Market Demand"))
-    label_map.setdefault("market_supply", default_label_map.get("market_supply", "Market Supply"))
+    observed_types.add("customer")
+    observed_types.add("vendor")
+    label_map.setdefault("customer", default_label_map.get("customer", "Customer"))
+    label_map.setdefault("vendor", default_label_map.get("vendor", "Vendor"))
 
     fallback_start = max(order_hints.values(), default=0) + 1
     for slug in sorted(observed_types):
         if slug not in label_map:
             label_map[slug] = default_label_map.get(slug, slug.replace("_", " ").title())
-        if slug not in order_hints and slug not in {"market_demand", "market_supply"}:
+        if slug not in order_hints and slug not in {"customer", "vendor", "market_demand", "market_supply"}:
             order_hints[slug] = fallback_start
             fallback_start += 1
 
     interior_types = [
         node_type
         for node_type in observed_types
-        if node_type not in {"market_demand", "market_supply"} and node_type
+        if node_type not in {"customer", "vendor", "market_demand", "market_supply"} and node_type
     ]
     interior_types.sort(key=lambda slug: (order_hints.get(slug, default_order_map.get(slug, 0)), slug))
 
@@ -2154,11 +2477,12 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
 
     definitions.append(
         {
-            "type": "market_demand",
-            "label": label_map.get("market_demand", "Market Demand"),
+            "type": "customer",
+            "label": label_map.get("customer", label_map.get("market_demand", "Customer")),
             "sequence": 0,
             "is_required": True,
-            "master_type": _definition_master("market_demand", "market_demand"),
+            "is_external": True,
+            "tpartner_type": "customer",
         }
     )
     sequence_counter = 1
@@ -2169,17 +2493,19 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
                 "label": label_map.get(slug, slug.replace("_", " ").title()),
                 "sequence": sequence_counter,
                 "is_required": False,
+                "is_external": False,
                 "master_type": _definition_master(slug),
             }
         )
         sequence_counter += 1
     definitions.append(
         {
-            "type": "market_supply",
-            "label": label_map.get("market_supply", "Market Supply"),
+            "type": "vendor",
+            "label": label_map.get("vendor", label_map.get("market_supply", "Vendor")),
             "sequence": sequence_counter,
             "is_required": True,
-            "master_type": _definition_master("market_supply", "market_supply"),
+            "is_external": True,
+            "tpartner_type": "vendor",
         }
     )
 
@@ -5752,6 +6078,24 @@ def list_tenants_endpoint(
     return service.get_tenants()
 
 
+@api.get("/tenants/{tenant_id}", response_model=TenantSchema, tags=["tenants"])
+def get_tenant_endpoint(
+    tenant_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_sync_session),
+):
+    """Get a single tenant by ID. Accessible to system admins and users of that tenant."""
+    user_tenant_id = current_user.get("tenant_id")
+    is_admin = current_user.get("user_type") in ("SYSTEM_ADMIN", "TENANT_ADMIN")
+    if not is_admin and user_tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    service = TenantService(db)
+    tenant = service.get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant
+
+
 @api.post("/tenants/default", response_model=TenantSchema, tags=["tenants"])
 def ensure_default_tenant_endpoint(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -5892,6 +6236,8 @@ from app.api.endpoints.rl import router as rl_router
 from app.api.endpoints.model import router as model_router
 api.include_router(production_orders_router, prefix="/production-orders", tags=["production-orders"])
 api.include_router(capacity_plans_router, prefix="/capacity-plans", tags=["capacity-plans"])
+from app.api.endpoints.rccp import router as rccp_router
+api.include_router(rccp_router, prefix="/rccp", tags=["rccp"])
 api.include_router(suppliers_router, prefix="/suppliers", tags=["suppliers"])
 api.include_router(inventory_projection_router, prefix="/inventory-projection", tags=["inventory-projection"])
 api.include_router(lot_sizing_router, prefix="/lot-sizing", tags=["lot-sizing"])
@@ -5961,6 +6307,10 @@ api.include_router(forecast_exceptions_router)  # prefix="/forecast-exceptions" 
 from app.api.endpoints.conformal_prediction import router as conformal_prediction_router
 api.include_router(conformal_prediction_router)  # prefix="/conformal-prediction" defined in router
 
+# Agent Stochastic Parameters API
+from app.api.endpoints.agent_stochastic_params import router as agent_stochastic_params_router
+api.include_router(agent_stochastic_params_router)  # prefix="/agent-stochastic-params" defined in router
+
 # Rebalancing API
 from app.api.endpoints.rebalancing import router as rebalancing_router
 api.include_router(rebalancing_router)  # prefix="/rebalancing" defined in router
@@ -5980,6 +6330,34 @@ api.include_router(forecast_pipeline_router, prefix="/forecast-pipeline", tags=[
 # Warm Start API
 from app.api.endpoints.warm_start import router as warm_start_router
 api.include_router(warm_start_router, tags=["warm-start"])
+
+# User Directives API — "Talk to Me" natural language context capture
+from app.api.endpoints.user_directives import router as directives_router
+api.include_router(directives_router, tags=["directives"])
+
+# Provisioning API — Powell Cascade warm-start stepper
+from app.api.endpoints.provisioning import router as provisioning_router
+api.include_router(provisioning_router, tags=["provisioning"])
+
+# Email Signal Intelligence — GDPR-safe email ingestion for SC signals
+from app.api.endpoints.email_signals import router as email_signals_router
+api.include_router(email_signals_router, tags=["email-signals"])
+
+# BSC Configuration — tenant-admin BSC weights for CDT calibration loss function
+from app.api.endpoints.bsc_config import router as bsc_config_router
+api.include_router(bsc_config_router, tags=["bsc-config"])
+
+# Slack Signal Intelligence — SC signals from Slack channels
+from app.api.endpoints.slack_signals import router as slack_signals_router
+api.include_router(slack_signals_router, tags=["slack-signals"])
+
+# Promotional Planning — Extension to AWS SC supplementary_time_series (PROMOTION)
+from app.api.endpoints.promotional_planning import router as promotional_planning_router
+api.include_router(promotional_planning_router, tags=["promotional-planning"])
+
+# Product Lifecycle — NPI, EOL, Markdown/Clearance management
+from app.api.endpoints.product_lifecycle import router as product_lifecycle_router
+api.include_router(product_lifecycle_router, tags=["product-lifecycle"])
 
 # Consensus Planning API
 from app.api.endpoints.consensus_planning import router as consensus_planning_router
@@ -6069,6 +6447,10 @@ api.include_router(advanced_analytics_router, prefix="/advanced-analytics", tags
 api.include_router(mps_router, tags=["mps"])
 api.include_router(monte_carlo_router, tags=["monte-carlo"])
 api.include_router(supply_plan_crud_router, prefix="/supply-plan-crud", tags=["supply-plan-crud"])
+
+# Planning Board (Netting Timeline & Filter Options)
+from app.api.endpoints.planning_board import router as planning_board_router
+api.include_router(planning_board_router, prefix="/planning-board", tags=["planning-board"])
 api.include_router(atp_ctp_router, prefix="/atp-ctp", tags=["atp-ctp"])
 api.include_router(vendor_lead_time_router, prefix="/vendor-lead-time", tags=["vendor-lead-time"])
 api.include_router(production_process_router, prefix="/production-process", tags=["production-process"])
@@ -6109,6 +6491,10 @@ api.include_router(skills_monitoring_router, tags=["skills-monitoring"])
 # Data Drift Monitor API (long-horizon distributional shift detection)
 from app.api.endpoints.data_drift import router as data_drift_router
 api.include_router(data_drift_router, tags=["data-drift"])
+
+# Scenario Events API (what-if event injection)
+from app.api.endpoints.scenario_events import router as scenario_events_router
+api.include_router(scenario_events_router, tags=["scenario-events"])
 
 # ------------------------------------------------------------------------------
 # Mount routers

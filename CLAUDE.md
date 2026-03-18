@@ -57,6 +57,14 @@ When implementing any entity:
 | PowellSSDecision | PowellBufferDecision | SQLAlchemy model |
 | SS_INCREASED / SS_DECREASED | BUFFER_INCREASED / BUFFER_DECREASED | HiveSignalType |
 | "safety_stock" (TRM type) | "inventory_buffer" | TRM type identifier |
+| PENDING (DecisionStatus) | INFORMED | AIIO: user notified, awaiting action |
+| ACCEPTED (DecisionStatus) | ACTIONED | AIIO: decision executed |
+| AUTO_EXECUTED (DecisionStatus) | ACTIONED | AIIO: agent auto-executed |
+| EXPIRED (DecisionStatus) | ACTIONED | AIIO: time expired, auto-resolved |
+| REJECTED (DecisionStatus) | OVERRIDDEN | AIIO: user rejected with alternative |
+| — | INSPECTED | AIIO: user reviewed, no action needed (new) |
+
+> **Terminology Note — AIIO Decision Status (Mar 2026)**: The `DecisionStatus` enum in `decision_tracking.py` (used by `agent_decisions` and `sop_worklist_items` tables) has been renamed to the **AIIO model**: **A**ctioned, **I**nformed, **I**nspected, **O**verridden. This applies only to the agent decision workflow — the planning decision workflow (`planning_decision.py`: PENDING/APPLIED/PENDING_APPROVAL/APPROVED/REJECTED/REVERTED/SUPERSEDED) and AAP ThreadStatus are unchanged. The `commit_status` enum (PROPOSED/REVIEWED/ACCEPTED/OVERRIDDEN/SUBMITTED) used in planning commit workflows also remains unchanged.
 
 > **Terminology Note — Inventory Buffer (Feb 2026)**: At the TRM/Powell execution layer, "SafetyStockTRM" has been renamed to **InventoryBufferTRM**. This addresses the DDMRP critique that "safety stock" as a concept causes MRP to treat it as a hard demand target, generating planned orders that compete with real customer demand for upstream capacity. At the TRM level, the inventory buffer is an **uncertainty absorber**, NOT a hard demand target for MRP. Buffer-replenishment planned orders get lower priority than demand-driven orders (soft-buffer netting). **Important**: The AWS SC data model fields (`safety_stock` column, `ss_quantity`, `inv_policy` policy types) remain unchanged for compliance — the rename applies only to TRM agent names, Powell decision tables, and hive signal types.
 
@@ -88,7 +96,7 @@ When implementing any entity:
 
 ## Project Overview
 
-**Autonomy Platform with AI & Simulation** - An enterprise-grade supply chain planning and execution system compatible with AWS Supply Chain standards, enhanced with three unique differentiators:
+**Autonomy Platform — Decision Intelligence for Supply Chain** - An enterprise-grade supply chain planning and execution system compatible with AWS Supply Chain standards, built on four pillars:
 
 ### Core: AWS Supply Chain Compliance
 
@@ -104,13 +112,13 @@ When implementing any entity:
 - **Order Management**: Inbound/outbound orders, shipment tracking, fulfillment
 - **Network Design**: DAG-based supply chain topology (35 AWS SC entities)
 
-**AWS SC Compliance**: ✅ 100% (35/35 entities implemented). See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/progress/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.
+**AWS SC Compliance**: ✅ 100% (35/35 entities implemented). See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.
 
 **AWS SC References**:
 - **Features**: Target feature parity (excluding Data Lakes) with AWS Supply Chain capabilities: https://aws.amazon.com/aws-supply-chain/features/
 - **Resources**: UI/UX guidance and implementation examples: https://aws.amazon.com/aws-supply-chain/resources/
 
-### Differentiator #1: AI Agents (Automated Planners)
+### Pillar #1: AI Agents (Automated Planners)
 
 **Purpose**: Replace or assist human planners with AI agents that achieve 20-35% cost reduction vs naive policies.
 
@@ -158,6 +166,7 @@ Narrow TRMs (VFA - Value Function Approximation)
      - RL/VFA fine-tuning (TD learning with actual outcomes)
      - Narrow scope makes RL tractable (small state, fast feedback, clear reward)
      - CGAR curriculum ([arxiv:2511.08653](https://arxiv.org/abs/2511.08653)): Progressive recursion depth during training reduces FLOPs ~40%
+     - Data volume scaling (Stöckl, RANLP 2021, [ACL Anthology](https://aclanthology.org/2021.ranlp-1.148/)): "Learning by watching" — data volume >> model size for structured decisions. 50K samples/sub-phase × 3 × 3 signal phases = 450K total BC samples. 3-tier evaluation (memorization/generalization/rule-learning) replaces loss-only tracking.
    - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `inventory_buffer_trm.py`, `trm_trainer.py`
    - **CDC → Relearning Loop**: Autonomous feedback pipeline for continuous TRM improvement
      - `cdc_monitor.py`: Event-driven metric deviation detection (6 thresholds, rate limiting)
@@ -194,16 +203,22 @@ Narrow TRMs (VFA - Value Function Approximation)
 - Simulation (as opponents or teammates)
 - Validation (compare AI vs human decisions)
 
-### Differentiator #2: Stochastic Planning (Probabilistic Outcomes)
+### Pillar #2: Conformal Prediction (Distribution-Free Uncertainty Guarantees)
 
-**Purpose**: Plan with uncertainty quantification instead of point estimates, enabling risk-aware decision-making.
+**Purpose**: Every agent decision carries a calibrated likelihood guarantee — if the system says "90% confident," actual coverage will be ≥90%.
 
-**Stochastic Framework**:
+**What it provides**:
+- **Distribution-free guarantees**: No assumptions about underlying data distribution. Coverage guarantees hold regardless of whether demand is Normal, Lognormal, or any other shape.
+- **Conformal Decision Theory (CDT)**: Every TRM decision carries `risk_bound` = P(loss > threshold). Calibrated hourly from historical decision-outcome pairs.
+- **Principled escalation**: Wide conformal intervals trigger escalation to Claude Skills or human review. Tight intervals allow autonomous execution. This replaces arbitrary fixed thresholds with statistically rigorous routing.
+- **8 inventory policy types**: Including `conformal` (pure distribution-free), `sl_conformal_fitted` (hybrid), and `econ_optimal` (marginal economic return via Monte Carlo DDLT)
+
+**Powered by the Stochastic Simulation Engine**:
 - **21 Distribution Types**: Normal, lognormal, beta, gamma, Weibull, exponential, triangular, log-logistic, mixture, empirical, etc.
-- **Operational Variables** (stochastic): Lead times, yields, capacities, demand, forecast error
-- **Control Variables** (deterministic): Inventory targets, costs, policy parameters
 - **Monte Carlo Simulation**: 1000+ scenarios for full uncertainty propagation
 - **Variance Reduction**: Common random numbers, antithetic variates, Latin hypercube sampling
+- **Operational Variables** (stochastic): Lead times, yields, capacities, demand, forecast error
+- **Control Variables** (deterministic): Inventory targets, costs, policy parameters
 
 **Probabilistic Balanced Scorecard**:
 - **Financial**: E[Total Cost], P(Cost < Budget), P10/P50/P90 cost distribution
@@ -213,23 +228,56 @@ Narrow TRMs (VFA - Value Function Approximation)
 
 **Output**: Likelihood distributions for KPIs instead of single-point estimates (e.g., "85% chance service level > 95%")
 
-### Differentiator #3: Simulation (The Beer Game Module)
+### Pillar #3: Digital Twin (Stochastic Simulation Engine)
 
-**Purpose**: Learn, validate, and build confidence through scenario-based simulation.
+**Purpose**: A complete simulation of the supply chain that generates the training data, calibration sets, and risk-free testing environment that everything else depends on.
 
-**The Beer Game**:
-- **Classic Simulation**: Multi-echelon supply chain (Retailer → Wholesaler → Distributor → Factory)
-- **Bullwhip Effect**: Demonstrates demand amplification through supply chain
-- **Multi-user**: 2-8 users in real-time WebSocket scenarios
-- **Mixed Human-AI**: Humans compete alongside/against AI agents
+**What it provides**:
+- **Monte Carlo scenario generation**: 1000+ stochastic scenarios sampling from 21 distribution types across demand, lead times, yields, and capacities
+- **Training data pipeline**: Six-phase digital twin pipeline generates 28.6M+ training records for TRM agents, from individual behavioral cloning through coordinated multi-agent simulation
+- **Conformal calibration sets**: Simulation outputs feed conformal prediction calibration — the digital twin powers the uncertainty guarantees
+- **Risk-free agent validation**: Test AI agents in simulation before production deployment
+- **What-if analysis**: Scenario branching at machine speed for planning decisions
 
-**Use Cases**:
-1. **Employee Training**: Scenario-based learning (3-5x higher engagement vs traditional training)
-2. **Agent Validation**: Test AI agents in risk-free environment before production deployment
-3. **Confidence Building**: Human vs AI competitions demonstrate AI effectiveness
-4. **Continuous Improvement**: Human decisions generate training data for AI agents (RLHF)
+**The Beer Game** (Learning Tenant):
+- Classic multi-echelon supply chain simulation (Retailer → Wholesaler → Distributor → Factory)
+- Demonstrates bullwhip effect and demand amplification
+- 2-8 users in real-time WebSocket scenarios with mixed human-AI play
+- Used for employee training (3-5x higher engagement), confidence building, and continuous improvement
 
-**Integration**: Beer Game scenarios use core AWS SC services underneath (demand planning, supply planning, inventory management).
+**Integration**: Beer Game scenarios use core AWS SC services underneath (demand planning, supply planning, inventory management). The Beer Game is ONLY used within the Learning Tenant.
+
+### Pillar #4: Causal AI (Decision Outcome Attribution)
+
+**Purpose**: Rigorously determine whether decisions actually caused positive outcomes — not just correlate "we did X and Y happened" but answer "what would have happened if we hadn't done X?" (the counterfactual).
+
+**The core problem**: When an AI agent makes 1,000 decisions per day, and outcomes improve, you cannot simply attribute the improvement to the agent. Demand may have been favorable. Suppliers may have been on time. Competing decisions from other agents may have helped. Without causal inference, you're measuring correlation, not causation — and training on correlation produces agents that learn the wrong lessons.
+
+**Three-Tier Causal Inference Strategy**:
+
+| Tier | Decision Types | Method | Signal Strength |
+|------|---------------|--------|-----------------|
+| **1 — Analytical Counterfactual** | ATP, Forecast Adjustment, Quality | Direct computation: "What reward would the agent's recommendation have earned given the actual environment outcome?" | 1.0 (full) |
+| **2 — Statistical Matching** | MO, TO, PO, Order Tracking | Propensity-score matching: find similar non-overridden decisions as controls, compute treatment effect | 0.3–0.9 (scales with match availability) |
+| **3 — Bayesian Prior** | Inventory Buffer, Maintenance, Subcontracting | Beta posterior only (high confounding, long feedback horizons). Future: causal forests (Athey & Imbens 2018) | 0.15 (minimal) |
+
+**Five Causal AI Systems (all deployed and scheduled)**:
+
+1. **Counterfactual Computation** (`outcome_collector.py`): For every overridden decision, computes what the agent's original recommendation would have earned. Four specialized counterfactual methods (ATP, inventory, PO, general) + site-window BSC for systemic impact.
+
+2. **Propensity-Score Matching** (`causal_matching_service.py`): Daily job finds matched pairs of overridden vs. non-overridden decisions with similar state vectors (L2 distance on normalized features). Enables causal treatment effect estimation for Tier 2 decisions.
+
+3. **Bayesian Override Effectiveness** (`override_effectiveness_service.py`): Each (user, TRM type) pair carries a Beta(α, β) posterior tracking whether that user's overrides improve outcomes. Feeds directly into TRM training weights — users with historically beneficial overrides get higher training influence.
+
+4. **Conformal Decision Theory** (`conformal_prediction/conformal_decision.py`, `cdt_calibration_service.py`): Every TRM decision carries a distribution-free risk bound P(loss > threshold). Calibrated hourly from historical decision-outcome pairs. Governs autonomous vs. escalated execution.
+
+5. **Outcome Collection Pipeline** (`outcome_collector.py`, `relearning_jobs.py`): Three parallel collection paths — SiteAgentDecision (:30), all 11 TRM types (:32), Claude Skills decisions (:33). Feedback horizons matched to decision type (ATP: 4h, PO: 7d, inventory buffer: 14d).
+
+**Why this matters**: Causal AI is what makes the learning flywheel trustworthy. Without it, the system would learn from spurious correlations — an agent that happened to increase orders during a demand surge would appear successful, even though any action would have succeeded. With causal inference, the system learns *which specific decision patterns actually cause better outcomes*, producing agents that generalize to novel situations rather than overfitting to historical accidents.
+
+**Implementation files**: `outcome_collector.py`, `override_effectiveness_service.py`, `causal_matching_service.py`, `conformal_prediction/conformal_decision.py`, `cdt_calibration_service.py`, `relearning_jobs.py`
+**Database tables**: `override_effectiveness_posteriors`, `override_causal_match_pairs`, `powell_*_decisions` (11 tables with outcome columns)
+**Documentation**: [OVERRIDE_EFFECTIVENESS_METHODOLOGY.md](docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md), [POWELL_APPROACH.md](POWELL_APPROACH.md) §5.9.10
 
 ---
 
@@ -417,6 +465,7 @@ make proxy-logs
 - `conformal_orchestrator.py`: Automatic conformal prediction feedback loop for demand, lead time, price, yield, and service level (forecast load hooks, multi-entity actuals observation, drift monitoring, scheduled recalibration, suite ↔ DB persistence)
 - `agent_context_explainer.py`: Context-aware explainability orchestrator — authority boundaries, guardrails, policy parameters, conformal intervals, feature attribution, counterfactuals for all 11 TRM agents and both GNN models
 - `explanation_templates.py`: 39 Jinja2-style templates (13 agent types × 3 verbosity levels) for inline decision explanations
+- `decision_stream_service.py`: Decision Stream inbox — collects decisions from all 11 powell_*_decisions tables, routes via 3-dimensional framework: **Urgency** (cost_of_inaction × time_pressure), **Likelihood** (agent confidence), **Benefit** (expected $ net gain). Per-tenant thresholds in `tenant_bsc_config` (`urgency_threshold` default 0.65, `likelihood_threshold` default 0.70, `benefit_threshold` default $0). Per-TRM-type overrides in `tenant_decision_thresholds`. Queue sort is Kahneman-aligned: urgency DESC (loss prevention first — Prospect Theory: losses loom ~2× larger than gains), benefit DESC, likelihood ASC. Digest persisted to `decision_stream_digests` table. See [DECISION_ROUTING.md](docs/internal/DECISION_ROUTING.md) for full framework and [POWELL_APPROACH.md](docs/internal/POWELL_APPROACH.md) §5.21 for integration details.
 
 **API Endpoints** (`api/endpoints/`):
 - `mps.py`: Master Production Scheduling endpoints
@@ -427,6 +476,10 @@ make proxy-logs
 - `model.py`: Training and dataset generation endpoints
 - `auth.py`: Authentication (login, register, MFA)
 - `websocket.py`: Real-time scenario updates
+- `user_directives.py`: "Talk to Me" directive capture (analyze/submit/list)
+- `provisioning.py`: Powell Cascade 14-step provisioning stepper
+- `email_signals.py`: GDPR-safe email signal ingestion and management
+- `agent_stochastic_params.py`: Per-agent stochastic parameters CRUD, pipeline config settings
 
 **Database Models** (`models/`):
 - `aws_sc_planning.py`: AWS SC planning entities (forecast, supply_plan, sourcing_rules, inv_policy, etc.)
@@ -434,6 +487,7 @@ make proxy-logs
 - `scenario.py`: Scenario, Period, ScenarioUserAction (simulation module)
 - `participant.py`: ScenarioUser, ScenarioUserRole, ScenarioUserPeriod (simulation module)
 - `agent_config.py`: AgentConfig, AgentScenarioConfig
+- `agent_stochastic_param.py`: AgentStochasticParam, TRM_PARAM_MAP, STOCHASTIC_CONFIG_DEFAULTS, pipeline config helpers
 - `tenant.py`: Tenant model (Autonomy organization/tenant)
 - `user.py`: User, Role, Permission
 - `rbac.py`: Role-Based Access Control
@@ -473,6 +527,8 @@ make proxy-logs
 - `KnowledgeBase.jsx`: RAG document management, vector search, embedding config
 - `SkillsDashboard.jsx`: Claude Skills monitoring (stats, RAG memory, escalation metrics)
 - `SAPDataManagement.jsx`: SAP integration (connections, field mapping, ingestion, insights)
+- `StochasticParamsEditor.jsx`: Per-agent stochastic parameters (TRM distributions, pipeline settings, source tracking)
+- `EmailSignalsDashboard.jsx`: GDPR-safe email signal ingestion (connections, signals, analytics, test)
 - `SyntheticDataWizard.jsx`: AI-guided company/data generation wizard
 - `ModelSetup.jsx`: Model architecture configuration
 - `UserManagement.jsx` / `UserRoleManagement.jsx`: User and role administration
@@ -716,6 +772,12 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `roles`: RBAC roles
 - `permissions`: Granular permissions
 - `user_roles`: Role assignments
+
+**Directive & Signal Tables**:
+- `user_directives`: Natural language directive capture, LLM parsing, Powell routing, effectiveness tracking
+- `config_provisioning_status`: 14-step provisioning pipeline with dependency tracking
+- `email_connections`: IMAP/Gmail inbox configurations per tenant
+- `email_signals`: GDPR-safe supply chain signals extracted from emails (no PII stored)
 
 **Powell Framework Tables** (see [POWELL_APPROACH.md](POWELL_APPROACH.md)):
 - `powell_belief_state`: Uncertainty quantification via conformal prediction (auto-populated by orchestrator)
@@ -999,7 +1061,128 @@ GET  /api/v1/sap-data/actions             # Get remediation actions
 
 **Access**: Navigation > Administration > SAP Data Management (Group Admin required)
 
-**SAP System Access**: Free S/4HANA FAA (Fully-Activated Appliance) with IDES sample data available via [cal.sap.com](https://cal.sap.com). Requires SAP ID ([register here](https://account.sap.com/core/create/register)) and a cloud provider account (AWS/Azure/GCP, ~$1-3/hr compute). See [SAP_INTEGRATION_GUIDE.md](docs/progress/SAP_INTEGRATION_GUIDE.md#getting-access-to-sap-s4hana-free) for full setup instructions.
+### Talk to Me — Natural Language Directive Capture & Query Routing
+
+A persistent "Talk to me" input in the TopNavbar accepts natural language input from any user. The system handles two modes: **directives** (actionable instructions routed to Powell layers) and **questions** (informational queries that navigate to the relevant page with pre-applied filters). Directives use a two-phase flow to ensure completeness before routing.
+
+**Two-Phase Flow**:
+1. `POST /directives/analyze` — LLM parse + gap detection (no persist). Returns structured fields + `missing_fields` list.
+2. If `missing_fields` is non-empty, the UI shows a clarification panel with appropriate inputs (text/select/number). User answers are collected.
+3. `POST /directives/submit` — Merges original text + clarifications, re-parses, persists, and routes to the appropriate Powell layer.
+
+**Required Fields** (gaps trigger clarification questions):
+- **Reason/justification** (ALWAYS required — a directive without "why" cannot be tracked)
+- **Direction** (increase/decrease/maintain/reallocate)
+- **Metric** (revenue/cost/service_level/inventory/capacity/quality/lead_time)
+- **Magnitude** (by what percentage)
+- **Duration** (for how long)
+- **Geography** (which sites/regions — lenient for strategic layer)
+- **Products** (which product families — lenient for strategic layer)
+
+**Powell Routing** (based on user's `powell_role`):
+- VP/Executive → Layer 4: S&OP GraphSAGE (network-wide policy parameters)
+- S&OP Director → Layer 2: Execution tGNN (multi-site daily directives)
+- MPS/Allocation Manager → Layer 1.5: Site tGNN (single-site coordination)
+- Analysts → Layer 1: Individual TRM (specific execution decision)
+
+**Provisioning Stepper** (replaces warm-start button):
+14-step Powell Cascade warm-start pipeline with dependency tracking:
+warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → supply_plan → rccp_validation → decision_seed → site_tgnn → conformal → briefing
+
+**"Learn by Watching" — Decision Seed + CDT Calibration**:
+The `decision_seed` step generates realistic decisions from the digital twin simulation AND populates synthetic outcomes (was_committed, actual_cost, etc.) on every record. This implements the Stöckl (2021) "learn by watching" paradigm: deterministic heuristics execute during warm-start and outcomes are observed. The subsequent `conformal` step reads these decision-outcome pairs via `CDTCalibrationService.calibrate_all()` to calibrate all active TRM agents' risk bounds. If fewer than 11 agents are calibrated from DB outcomes, the conformal step also runs a simulation bootstrap (50 episodes × 365 days = 18,250 pairs per agent) as a second pass. After provisioning, **all active TRM agents must show as calibrated** (no "0/11 agents ready" banner).
+
+**Topology-Aware Decision Seeding**: The seeder uses `get_active_trms(master_type)` from `site_capabilities.py` to only generate decisions valid for the config's DAG topology. A distribution network (no manufacturers) gets 7 TRM types; a network with manufacturers gets all 11. Invalid TRM types (e.g., MO/quality/maintenance for distribution-only) are never seeded.
+
+**Config Versioning on Reprovisioning**: When `reprovision(config_id)` is called, the current config is archived as a read-only snapshot (e.g., "SAP IDES 1710 (v2)") with `scenario_type=ARCHIVED`, `is_active=False`, and the original `created_at` preserved. The active config's `version` is incremented. Archived configs appear in the SC config list for audit trail.
+
+**Implementation Files**:
+- `backend/app/services/directive_service.py` — LLM parsing, gap detection, routing
+- `backend/app/api/endpoints/user_directives.py` — Analyze/submit/list API
+- `backend/app/models/user_directive.py` — UserDirective + ConfigProvisioningStatus models
+- `backend/app/services/provisioning_service.py` — 14-step pipeline orchestrator
+- `backend/app/api/endpoints/provisioning.py` — Provisioning stepper API
+- `frontend/src/components/TopNavbar.jsx` — Talk to me input + clarification panel
+- `frontend/src/components/supply-chain-config/ProvisioningStepper.jsx` — Stepper modal
+- `backend/app/services/query_router.py` — Route registry (~60 routes), TF-IDF embedding fallback for query routing
+- Documentation: [docs/internal/TALK_TO_ME.md](docs/internal/TALK_TO_ME.md) (directives + query routing), [docs/internal/PROVISIONING_STEPPER.md](docs/internal/PROVISIONING_STEPPER.md) (14-step pipeline)
+
+**Query Routing** (question mode):
+- LLM classifies questions and returns `target_page` + `filters` from a route registry of ~60 pages
+- TF-IDF cosine similarity fallback when LLM doesn't suggest a page
+- Routes filtered by user capabilities (users only see pages they can access)
+- TopNavbar shows "Go to [page]" button; target pages hydrate filters from `location.state.filters`
+
+**API Endpoints**:
+```bash
+# Directive capture
+POST /api/v1/directives/analyze           # Parse + gap detect (no persist)
+POST /api/v1/directives/submit            # Persist + route (with clarifications)
+GET  /api/v1/directives/                   # List recent directives
+GET  /api/v1/directives/{id}              # Get single directive
+
+# Provisioning stepper
+GET  /api/v1/provisioning/status/{config_id}          # Get stepper state
+POST /api/v1/provisioning/run/{config_id}/{step_key}  # Run single step
+POST /api/v1/provisioning/run-all/{config_id}         # Run all steps
+POST /api/v1/provisioning/reset/{config_id}/{step_key} # Reset failed step
+```
+
+### Email Signal Intelligence
+
+GDPR-safe email ingestion that extracts supply chain signals from customer/supplier emails. Personal identifiers are stripped; only the sending company (resolved via domain→TradingPartner) is stored. Signals are classified by LLM and routed to existing TRMs.
+
+**GDPR Compliance**:
+- NO sender name, email address, or personal identifiers stored
+- Only sender domain and resolved TradingPartner (company) persisted
+- PII scrubber removes names, emails, phones, addresses, signatures before any text is stored
+- Original email is NEVER persisted — only scrubbed text
+
+**Pipeline**: Email → PII scrub → domain→TradingPartner resolution → LLM classification (Haiku) → scope resolution → TRM routing → Decision Stream alert
+
+**Signal Types**: demand_increase, demand_decrease, supply_disruption, lead_time_change, price_change, quality_issue, new_product, discontinuation, order_exception, capacity_change, regulatory, general_inquiry
+
+**Signal→TRM Routing**:
+| Signal | Primary TRM | Secondary TRM |
+|--------|-------------|---------------|
+| demand_increase/decrease | forecast_adjustment | inventory_buffer |
+| supply_disruption | po_creation | to_execution |
+| lead_time_change | po_creation | inventory_buffer |
+| price_change | po_creation | — |
+| quality_issue | quality_disposition | mo_execution |
+| order_exception | order_tracking | atp_executor |
+| capacity_change | mo_execution | maintenance_scheduling |
+
+**Implementation Files**:
+- `backend/app/services/email_pii_scrubber.py` — PII removal (regex-based, no external NLP)
+- `backend/app/services/email_signal_service.py` — Classification, routing, query methods
+- `backend/app/services/email_connector.py` — IMAP connector for enterprise email
+- `backend/app/api/endpoints/email_signals.py` — REST API endpoints
+- `backend/app/models/email_signal.py` — EmailSignal + EmailConnection models
+- `frontend/src/pages/admin/EmailSignalsDashboard.jsx` — Admin UI (signals, connections, analytics, test)
+
+**API Endpoints**:
+```bash
+# Connections
+POST /api/v1/email-signals/connections           # Create connection
+GET  /api/v1/email-signals/connections           # List connections
+POST /api/v1/email-signals/connections/{id}/test # Test connection
+POST /api/v1/email-signals/connections/{id}/poll # Manual poll
+
+# Signals
+GET  /api/v1/email-signals/signals               # List signals (filterable)
+GET  /api/v1/email-signals/signals/{id}          # Signal detail
+POST /api/v1/email-signals/signals/{id}/dismiss  # Dismiss signal
+POST /api/v1/email-signals/signals/{id}/reclassify # Re-classify
+
+# Dashboard & testing
+GET  /api/v1/email-signals/dashboard             # Summary stats
+POST /api/v1/email-signals/ingest-manual         # Manual email paste
+```
+
+**Access**: Navigation > Administration > Email Signals (Tenant Admin required)
+
+**SAP System Access**: Free S/4HANA FAA (Fully-Activated Appliance) with IDES sample data available via [cal.sap.com](https://cal.sap.com). Requires SAP ID ([register here](https://account.sap.com/core/create/register)) and a cloud provider account (AWS/Azure/GCP, ~$1-3/hr compute). See [SAP_INTEGRATION_GUIDE.md](docs/external/SAP_INTEGRATION_GUIDE.md#getting-access-to-sap-s4hana-free) for full setup instructions.
 
 ---
 
@@ -1322,7 +1505,10 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ RAG Decision Memory (pgvector-based decision embeddings for cost reduction)
 - ✅ PicoClaw/OpenClaw removed (replaced by Claude Skills ecosystem)
 - ✅ Executive Strategy Briefing (LLM-synthesized briefings with follow-up Q&A). See [docs/EXECUTIVE_BRIEFING.md](docs/EXECUTIVE_BRIEFING.md)
-- ✅ Beer Game repositioned as simulation/training module (not primary focus)
+- ✅ Beer Game repositioned as Digital Twin / Learning Tenant module (not primary focus)
+- ✅ "Talk to Me" directive capture with smart clarification flow (two-phase: analyze→clarify→submit) + query routing (LLM + TF-IDF fallback → page navigation with filters)
+- ✅ Provisioning Stepper (14-step Powell Cascade warm-start pipeline with dependency tracking)
+- ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)
 
 ---
 

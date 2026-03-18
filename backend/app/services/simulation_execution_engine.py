@@ -33,7 +33,7 @@ Game = Scenario
 from app.models.sc_entities import OutboundOrderLine, InvLevel, InvPolicy, Product
 from app.models.purchase_order import PurchaseOrder
 from app.models.transfer_order import TransferOrder
-from app.models.supply_chain_config import Node, SupplyChainConfig, TransportationLane
+from app.models.supply_chain_config import Site, SupplyChainConfig, TransportationLane
 from app.models.compatibility import Item
 from app.models.round_metric import RoundMetric
 from app.services.order_management_service import OrderManagementService
@@ -182,7 +182,7 @@ class SimulationExecutionEngine:
         # Get Market Demand sites
         market_demand_sites = await self._get_sites_by_master_type(
             config_id=config_id,
-            master_type="MARKET_DEMAND",
+            master_type="CUSTOMER",
         )
 
         # Get downstream sites (Retailers) connected to Market Demand
@@ -244,7 +244,7 @@ class SimulationExecutionEngine:
 
     async def _fulfill_orders_all_sites(
         self,
-        sites: List[Node],
+        sites: List[Site],
         scenario_id: int,
         config_id: int,
         current_round: int,
@@ -262,7 +262,7 @@ class SimulationExecutionEngine:
         fulfillment_by_site = {}
 
         for site in sites:
-            if site.master_type == "MARKET_DEMAND" or site.master_type == "MARKET_SUPPLY":
+            if site.master_type == "CUSTOMER" or site.master_type == "VENDOR":
                 continue
 
             # Fulfill customer orders (for Retailer)
@@ -297,7 +297,7 @@ class SimulationExecutionEngine:
 
     async def _evaluate_replenishment(
         self,
-        sites: List[Node],
+        sites: List[Site],
         scenario_id: int,
         config_id: int,
         current_round: int,
@@ -313,7 +313,7 @@ class SimulationExecutionEngine:
         agent_decisions = agent_decisions or {}
 
         for site in sites:
-            if site.master_type == "MARKET_DEMAND" or site.master_type == "MARKET_SUPPLY":
+            if site.master_type == "CUSTOMER" or site.master_type == "VENDOR":
                 continue
 
             # Get upstream supplier
@@ -413,7 +413,7 @@ class SimulationExecutionEngine:
 
     async def _calculate_and_save_metrics(
         self,
-        sites: List[Node],
+        sites: List[Site],
         scenario_id: int,
         config_id: int,
         current_round: int,
@@ -430,7 +430,7 @@ class SimulationExecutionEngine:
         metrics_by_site = {}
 
         for site in sites:
-            if site.master_type == "MARKET_DEMAND" or site.master_type == "MARKET_SUPPLY":
+            if site.master_type == "CUSTOMER" or site.master_type == "VENDOR":
                 continue
 
             # Get current state
@@ -552,16 +552,16 @@ class SimulationExecutionEngine:
     # Helper Methods
     # ========================================================================
 
-    async def _get_sites_in_topology_order(self, config_id: int) -> List[Node]:
+    async def _get_sites_in_topology_order(self, config_id: int) -> List[Site]:
         """
         Get sites in topology order (downstream to upstream).
 
         Order: Retailer → Wholesaler → Distributor → Manufacturer
         """
         result = await self.db.execute(
-            select(Node)
-            .where(Node.config_id == config_id)
-            .order_by(Node.id)  # Simplified: assume ID order matches topology
+            select(Site)
+            .where(Site.config_id == config_id)
+            .order_by(Site.id)  # Simplified: assume ID order matches topology
         )
         return list(result.scalars().all())
 
@@ -575,13 +575,13 @@ class SimulationExecutionEngine:
         product = result.scalar_one_or_none()
         return product.product_id if product else "CASES"
 
-    async def _get_sites_by_master_type(self, config_id: int, master_type: str) -> List[Node]:
+    async def _get_sites_by_master_type(self, config_id: int, master_type: str) -> List[Site]:
         """Get sites by master type."""
         result = await self.db.execute(
-            select(Node)
+            select(Site)
             .where(and_(
-                Node.config_id == config_id,
-                Node.master_type == master_type
+                Site.config_id == config_id,
+                Site.master_type == master_type
             ))
         )
         return list(result.scalars().all())
@@ -591,15 +591,15 @@ class SimulationExecutionEngine:
         config_id: int,
         upstream_master_type: str,
         sc_node_type: Optional[str] = None
-    ) -> List[Node]:
+    ) -> List[Site]:
         """Get downstream sites of a specific type."""
-        query = select(Node).where(and_(
-            Node.config_id == config_id,
-            Node.master_type == upstream_master_type
+        query = select(Site).where(and_(
+            Site.config_id == config_id,
+            Site.master_type == upstream_master_type
         ))
 
         if sc_node_type:
-            query = query.where(Node.sc_node_type == sc_node_type)
+            query = query.where(Site.sc_node_type == sc_node_type)
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -654,7 +654,7 @@ class SimulationExecutionEngine:
         except Exception:
             return None
 
-    async def _get_upstream_supplier(self, site_id: int, config_id: int) -> Optional[Node]:
+    async def _get_upstream_supplier(self, site_id: int, config_id: int) -> Optional[Site]:
         """Get upstream supplier site via TransportationLane."""
         result = await self.db.execute(
             select(TransportationLane)
@@ -669,7 +669,7 @@ class SimulationExecutionEngine:
         if not lane:
             return None
 
-        return await self.db.get(Node, lane.source_node_id)
+        return await self.db.get(Site, lane.source_node_id)
 
     async def _get_pipeline_quantity(
         self,

@@ -45,12 +45,16 @@ class RiskAlert(Base):
     # Risk factors (JSON)
     factors = Column(JSON, nullable=True)  # Detailed factors contributing to risk
 
-    # Status tracking
-    status = Column(String(20), default="ACTIVE", index=True)  # ACTIVE, ACKNOWLEDGED, RESOLVED, DISMISSED
+    # AIIO status tracking
+    status = Column(String(20), default="INFORMED", index=True)  # AIIO: INFORMED, ACTIONED, INSPECTED, OVERRIDDEN
     acknowledged_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     acknowledged_at = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)
     resolution_notes = Column(Text, nullable=True)
+
+    # Condition-based resolution: what must change for auto-resolution
+    # JSON: {"metric": "stockout_probability", "operator": "lt", "threshold": 40, "description": "..."}
+    resolution_condition = Column(JSON, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
@@ -84,7 +88,7 @@ class Watchlist(Base):
 
     # Ownership
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
 
     # Monitoring configuration
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)

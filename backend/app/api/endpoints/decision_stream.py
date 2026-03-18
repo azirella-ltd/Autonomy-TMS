@@ -71,6 +71,7 @@ async def refresh_digest(
     result = await service.get_decision_digest(
         powell_role=powell_role,
         config_id=config_id,
+        force_refresh=True,
     )
     return result
 

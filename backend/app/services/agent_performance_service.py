@@ -159,7 +159,7 @@ class AgentPerformanceService:
                     .join(Site, Forecast.site_id == Site.id)
                     .filter(Forecast.config_id == config.id)
                     .filter(Forecast.is_active == "true")
-                    .filter(Site.master_type == "MARKET_DEMAND")
+                    .filter((Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"))
                     .filter(Forecast.forecast_date >= horizon_start)
                     .filter(Forecast.forecast_date < horizon_end)
                     .filter(Product.unit_price.isnot(None))
@@ -301,7 +301,7 @@ class AgentPerformanceService:
                 .join(Site, Forecast.site_id == Site.id)
                 .filter(Forecast.config_id == config.id)
                 .filter(Forecast.is_active == "true")
-                .filter(Site.master_type == "MARKET_DEMAND")
+                .filter((Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"))
                 .filter(Forecast.forecast_date >= horizon_start)
                 .filter(Forecast.forecast_date < horizon_end)
                 .filter(Product.category.isnot(None))
@@ -314,7 +314,7 @@ class AgentPerformanceService:
                 return None
 
             # Look up real PerformanceMetric data per category
-            from app.models.performance_metrics import PerformanceMetric
+            from app.models.decision_tracking import PerformanceMetric
             cat_metrics = (
                 self.db.query(PerformanceMetric)
                 .filter(
@@ -361,7 +361,7 @@ class AgentPerformanceService:
         """
         Compute Business Outcome KPIs from actual SC config + SOP worklist data.
 
-        - gross_margin: weighted average from Forecast × Product for MARKET_DEMAND sites
+        - gross_margin: weighted average from Forecast × Product for CUSTOMER sites
         - capacity_utilization: ratio of on-hand inv to safety stock capacity from InvLevel
         - revenue_at_risk: sum of impact_value for urgent SOP items
         - escalations: count of pending urgent/high SOP items
@@ -380,7 +380,7 @@ class AgentPerformanceService:
             horizon_start = date.today()
             horizon_end = date(horizon_start.year + 1, horizon_start.month, horizon_start.day)
 
-            # Gross margin from forecast-weighted product margins (MARKET_DEMAND, next year)
+            # Gross margin from forecast-weighted product margins (CUSTOMER, next year)
             margin_row = None
             if config:
                 margin_row = (
@@ -392,7 +392,7 @@ class AgentPerformanceService:
                     .join(Site, Forecast.site_id == Site.id)
                     .filter(Forecast.config_id == config.id)
                     .filter(Forecast.is_active == "true")
-                    .filter(Site.master_type == "MARKET_DEMAND")
+                    .filter((Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"))
                     .filter(Forecast.forecast_date >= horizon_start)
                     .filter(Forecast.forecast_date < horizon_end)
                     .filter(Product.unit_price.isnot(None))
@@ -414,7 +414,7 @@ class AgentPerformanceService:
                 self.db.query(SOPWorklistItem)
                 .filter(
                     SOPWorklistItem.tenant_id == tenant_id,
-                    SOPWorklistItem.status == DecisionStatus.PENDING,
+                    SOPWorklistItem.status == DecisionStatus.INFORMED,
                     SOPWorklistItem.urgency.in_([DecisionUrgency.URGENT, DecisionUrgency.STANDARD]),
                 )
                 .all()
@@ -462,7 +462,7 @@ class AgentPerformanceService:
 
     def _build_historical_trends_from_sc_data(self, tenant_id: int) -> Dict[str, List]:
         """
-        Build monthly revenue and margin trends from Forecast data (MARKET_DEMAND sites).
+        Build monthly revenue and margin trends from Forecast data (CUSTOMER sites).
 
         Returns a dict of {revenue: [...], margin: [...]} covering the next 12 months.
         capacity_utilization and service_level are omitted until order fulfillment data
@@ -496,7 +496,7 @@ class AgentPerformanceService:
                 .join(Site, Forecast.site_id == Site.id)
                 .filter(Forecast.config_id == config.id)
                 .filter(Forecast.is_active == "true")
-                .filter(Site.master_type == "MARKET_DEMAND")
+                .filter((Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"))
                 .filter(Forecast.forecast_date >= horizon_start)
                 .filter(Forecast.forecast_date < horizon_end)
                 .filter(Product.unit_price.isnot(None))
@@ -540,7 +540,7 @@ class AgentPerformanceService:
                 self.db.query(SOPWorklistItem)
                 .filter(
                     SOPWorklistItem.tenant_id == tenant_id,
-                    SOPWorklistItem.status == DecisionStatus.PENDING,
+                    SOPWorklistItem.status == DecisionStatus.INFORMED,
                 )
                 .all()
             )
@@ -586,7 +586,7 @@ class AgentPerformanceService:
                 .first()
             )
 
-            # Annual forecast revenue (MARKET_DEMAND, next year)
+            # Annual forecast revenue (CUSTOMER, next year)
             horizon_start = date.today()
             horizon_end = date(horizon_start.year + 1, horizon_start.month, horizon_start.day)
 
@@ -600,7 +600,7 @@ class AgentPerformanceService:
                     .join(Site, Forecast.site_id == Site.id)
                     .filter(Forecast.config_id == config.id)
                     .filter(Forecast.is_active == "true")
-                    .filter(Site.master_type == "MARKET_DEMAND")
+                    .filter((Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"))
                     .filter(Forecast.forecast_date >= horizon_start)
                     .filter(Forecast.forecast_date < horizon_end)
                     .first()
@@ -710,7 +710,7 @@ class AgentPerformanceService:
                     .filter(
                         Forecast.config_id == config.id,
                         Forecast.is_active == "true",
-                        Site.master_type == "MARKET_DEMAND",
+                        (Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"),
                         Forecast.forecast_date >= horizon_start,
                         Forecast.forecast_date < horizon_end,
                         Product.unit_price.isnot(None),
@@ -735,7 +735,7 @@ class AgentPerformanceService:
                 self.db.query(SOPWorklistItem)
                 .filter(
                     SOPWorklistItem.tenant_id == tenant_id,
-                    SOPWorklistItem.status == DecisionStatus.PENDING,
+                    SOPWorklistItem.status == DecisionStatus.INFORMED,
                 )
                 .all()
             )
@@ -841,7 +841,7 @@ class AgentPerformanceService:
         if not item:
             raise ValueError(f"Worklist item {item_id} not found")
 
-        item.status = DecisionStatus.ACCEPTED if action == "accept" else DecisionStatus.REJECTED
+        item.status = DecisionStatus.ACTIONED if action == "accept" else DecisionStatus.OVERRIDDEN
         item.resolved_by = user_id
         item.resolution_action = action
         item.resolution_notes = notes

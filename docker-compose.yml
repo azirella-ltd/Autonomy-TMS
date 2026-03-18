@@ -72,9 +72,9 @@ services:
       - OPENAI_PROJECT=${OPENAI_PROJECT:-}
       - AUTONOMY_LLM_MODEL=${AUTONOMY_LLM_MODEL:-gpt-5-mini}
 
-      # Knowledge Base (RAG) — separate pgvector database
-      - KB_DATABASE_URL=postgresql+psycopg2://${KB_POSTGRESQL_USER:-kb_user}:${KB_POSTGRESQL_PASSWORD:-kb_password}@kb-db:5432/${KB_POSTGRESQL_DATABASE:-autonomy_kb}
-      - KB_ASYNC_DATABASE_URL=postgresql+asyncpg://${KB_POSTGRESQL_USER:-kb_user}:${KB_POSTGRESQL_PASSWORD:-kb_password}@kb-db:5432/${KB_POSTGRESQL_DATABASE:-autonomy_kb}
+      # Knowledge Base (RAG) — pgvector database (local kb-db or remote worker)
+      - KB_DATABASE_URL=${KB_DATABASE_URL:-postgresql+psycopg2://${KB_POSTGRESQL_USER:-kb_user}:${KB_POSTGRESQL_PASSWORD:-kb_password}@kb-db:5432/${KB_POSTGRESQL_DATABASE:-autonomy_kb}}
+      - KB_ASYNC_DATABASE_URL=${KB_ASYNC_DATABASE_URL:-postgresql+asyncpg://${KB_POSTGRESQL_USER:-kb_user}:${KB_POSTGRESQL_PASSWORD:-kb_password}@kb-db:5432/${KB_POSTGRESQL_DATABASE:-autonomy_kb}}
 
       # RAG / Embedding configuration
       - LLM_API_BASE=${LLM_API_BASE:-}
@@ -109,6 +109,7 @@ services:
       start_period: 30s
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "Acer-Nitro.local:192.168.1.180"
     security_opt:
       - seccomp:unconfined
     ulimits:

@@ -34,8 +34,8 @@ class NodeTypeEmbedding(nn.Module):
     Learnable embeddings for different supply chain node types.
 
     Supports AWS SC master types:
-    - MARKET_SUPPLY: Upstream sources (suppliers)
-    - MARKET_DEMAND: Downstream sinks (customers)
+    - VENDOR: Upstream sources (suppliers)
+    - CUSTOMER: Downstream sinks (customers)
     - INVENTORY: Storage/fulfillment (DC, Warehouse)
     - MANUFACTURER: Production facilities
 
@@ -45,8 +45,8 @@ class NodeTypeEmbedding(nn.Module):
 
     # AWS SC master types
     MASTER_TYPES = {
-        'MARKET_SUPPLY': 0,
-        'MARKET_DEMAND': 1,
+        'VENDOR': 0,
+        'CUSTOMER': 1,
         'INVENTORY': 2,
         'MANUFACTURER': 3,
     }

@@ -66,6 +66,9 @@ from .fulfillment_orders import router as fulfillment_orders_router
 # Decision Metrics (Agent Performance) for Powell Framework Dashboards
 from .decision_metrics import router as decision_metrics_router
 
+# Planning Board (Netting Timeline)
+from .planning_board import router as planning_board_router
+
 # Export all routers
 __all__ = [
     'auth_router',
@@ -125,4 +128,6 @@ __all__ = [
     'deployment_router',
     # Fulfillment Orders (AWS SC Entity)
     'fulfillment_orders_router',
+    # Planning Board (Netting Timeline)
+    'planning_board_router',
 ]

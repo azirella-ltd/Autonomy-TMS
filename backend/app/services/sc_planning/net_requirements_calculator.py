@@ -34,7 +34,7 @@ from app.models.sc_entities import (
     Reservation
 )
 from app.models.supplier import VendorLeadTime
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 from app.models.sc_entities import Product
 from .planning_types import DemandEstimate, DemandEstimateDict
 
@@ -748,7 +748,7 @@ class NetRequirementsCalculator:
         async with SessionLocal() as db:
             # Get product and site for hierarchy lookup
             product = await db.get(Product, product_id)
-            site = await db.get(Node, site_id)
+            site = await db.get(Site, site_id)
 
             if not product or not site:
                 return []
@@ -929,7 +929,7 @@ class NetRequirementsCalculator:
             # Priority 2: Check vendor_lead_time with hierarchical lookup
             # Get product and site for hierarchy
             product = await db.get(Product, product_id)
-            site = await db.get(Node, site_id)
+            site = await db.get(Site, site_id)
 
             if not product or not site:
                 return 1
@@ -1071,7 +1071,7 @@ class NetRequirementsCalculator:
 
             # Get product and site for hierarchy
             product = await db.get(Product, product_id)
-            site = await db.get(Node, site_id)
+            site = await db.get(Site, site_id)
 
             if not product or not site:
                 return True  # Default to allowing orders if entities not found
