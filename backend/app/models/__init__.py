@@ -325,6 +325,12 @@ from .erp_registry import ERPVendor, ERPVariant, ERP_VENDOR_VARIANTS, ERP_VARIAN
 # 26e. Generalized ERP Connection (supports SAP, Odoo, D365, etc.)
 from .erp_connection import ERPConnection
 
+# 26f. D365 Data Staging (intermediate layer between D365 extraction and AWS SC entities)
+from .d365_staging import D365ExtractionRun, D365StagingRow, D365TableSchema
+
+# 26g. Odoo Data Staging (intermediate layer between Odoo extraction and AWS SC entities)
+from .odoo_staging import OdooExtractionRun, OdooStagingRow, OdooTableSchema
+
 # 27. Autonomy Customer Registry
 from .autonomy_customer import AutonomyCustomer
 

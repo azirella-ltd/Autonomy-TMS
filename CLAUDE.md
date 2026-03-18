@@ -95,7 +95,7 @@ When implementing any entity:
 | **Operational Tenant** | `TenantMode.PRODUCTION` | SAP master data extraction | Real supply chain planning and execution |
 | **Learning Tenant** | `TenantMode.LEARNING` | Default TBG config + variants | Training, simulation, agent validation |
 
-- **Operational Tenant**: Created using master data extracted from customer's SAP system (via SAP Data Management). Contains the customer's real supply chain topology, products, BOMs, forecasts, and inventory. Full navigation, real data integration, real planning workflows.
+- **Operational Tenant**: Created using master data extracted from the customer's ERP system (SAP, D365, or Odoo via ERP Data Management). Data flows through ERP-specific staging schemas (`sap_staging`, `d365_staging`, `odoo_staging`) before mapping to the AWS SC data model. Contains the customer's real supply chain topology, products, BOMs, forecasts, and inventory. Full navigation, real data integration, real planning workflows.
 - **Learning Tenant**: Pre-provisioned with the Default TBG (The Beer Game) config and all variants (Three FG TBG, Variable TBG, etc.). Simplified navigation, game-like clock (turn-based/timed), focused on user education and building confidence with AI agents. The Beer Game is ONLY used within the Learning Tenant — it is NOT referenced elsewhere in the platform.
 
 **Both tenant modes support AI model training** (TRM, GNN, RL) — the tenant mode determines the **user experience**, not whether AI models can be trained.
@@ -1055,43 +1055,62 @@ POST /api/v1/synthetic-data/wizard/sessions/{session_id}/generate
 - `backend/app/services/aggregation_service.py` - Hierarchy-based aggregation (Powell state abstraction)
 - `backend/app/services/disaggregation_service.py` - Policy-based disaggregation (Powell allocation)
 
-### SAP Data Management
+### ERP Data Management (SAP, D365, Odoo)
 
-The platform includes comprehensive SAP integration for deploying to enterprise environments:
+The platform integrates with enterprise ERP systems to extract supply chain data. **All ERP integrations follow the same architecture** — the SAP integration is the template, D365 and Odoo replicate the pattern exactly.
 
-**Capabilities**:
-1. **SAP Connection Management**: Configure connections to S/4HANA, APO, ECC, BW via RFC, CSV, or OData
-2. **Z-Table/Z-Field Handling**: AI-powered fuzzy matching for custom SAP tables and fields
-3. **Field Mapping**: Automatic and manual mapping of SAP fields to AWS SC entities
-4. **Data Ingestion Monitoring**: Real-time job tracking, quality metrics, and anomaly detection
-5. **Insights & Actions**: AI-generated recommendations with remediation workflows
+**CRITICAL — ERP Staging Pattern**: All ERP data flows through a **two-phase pipeline**:
+1. **Phase 1 — ERP Staging**: Raw ERP data is extracted and stored in an ERP-specific PostgreSQL schema (`sap_staging`, `d365_staging`, `odoo_staging`) as JSONB rows. This preserves the original data for audit trail, delta detection, and replay.
+2. **Phase 2 — AWS SC Mapping**: Staged rows are mapped to the canonical AWS SC data model entities in the `public` schema (site, product, product_bom, inv_level, etc.) via the 3-tier field mapping service (exact → pattern → fuzzy/AI).
+
+**PostgreSQL Schemas**:
+- `sap_staging` — 54 SAP tables (T001W, MARA, STKO, EKKO, VBAK, LIKP, etc.)
+- `d365_staging` — 42 D365 entities (ReleasedProductsV2, BillOfMaterialsHeaders, etc.)
+- `odoo_staging` — 27 Odoo models (product.product, mrp.bom, stock.quant, etc.)
+
+Each schema has three tables: `extraction_runs` (header per batch), `rows` (JSONB per record), `table_schemas` (column tracking for drift detection).
+
+**Data Categories** (per ERP table/entity):
+- **Master** (weekly): products, sites, BOMs, vendors, customers, work centers
+- **Transaction** (daily): POs, SOs, production orders, shipments
+- **CDC** (hourly): goods receipts, confirmations, status changes, inventory movements
+
+**Supported ERPs**:
+
+| ERP | Connection Methods | Staging Schema | Entity Count | Demo Data |
+|-----|-------------------|---------------|-------------|-----------|
+| SAP S/4HANA / ECC | RFC, OData, CSV, HANA DB | `sap_staging` | 54 tables | SAP FAA (IDES) |
+| Microsoft D365 F&O | OData v4, DMF, CSV | `d365_staging` | 42 entities | Contoso (USMF) via ISV |
+| Odoo Community/Enterprise | JSON-RPC, XML-RPC, CSV | `odoo_staging` | 27 models | Docker self-hosted |
 
 **API Endpoints**:
 ```bash
-# Connection management
-POST /api/v1/sap-data/connections        # Create connection
-POST /api/v1/sap-data/connections/{id}/test  # Test connection
+# Generalized ERP endpoints
+GET  /api/v1/erp/supported-erps              # List all supported ERPs
+POST /api/v1/erp/field-mapping/{erp_type}    # Get field mapping for ERP model/entity
+GET  /api/v1/erp/odoo/models                 # Odoo model list
+GET  /api/v1/erp/d365/entities               # D365 entity list
 
-# Table and field mapping
-GET  /api/v1/sap-data/connections/{id}/tables  # Discover tables
-POST /api/v1/sap-data/field-mapping/match      # Match single field
-POST /api/v1/sap-data/z-table-analysis         # AI analysis of Z-table
-
-# Ingestion monitoring
-POST /api/v1/sap-data/jobs                # Create ingestion job
-GET  /api/v1/sap-data/dashboard           # Dashboard summary
-GET  /api/v1/sap-data/insights            # Get insights
-GET  /api/v1/sap-data/actions             # Get remediation actions
+# SAP-specific (legacy, still active)
+POST /api/v1/sap-data/connections            # SAP connection management
+POST /api/v1/sap-data/field-mapping/match    # SAP field mapping
 ```
 
 **Implementation Files**:
-- `backend/app/services/sap_deployment_service.py` - Connection and deployment configuration
-- `backend/app/services/sap_field_mapping_service.py` - AI-powered field mapping with fuzzy matching
-- `backend/app/services/sap_ingestion_monitoring_service.py` - Job monitoring and insights
-- `backend/app/api/endpoints/sap_data_management.py` - REST API endpoints
-- `frontend/src/pages/admin/SAPDataManagement.jsx` - Admin UI
+- **Shared**: `erp_connection.py` (model), `erp_integration.py` (API), `ERPDataManagement.jsx` (UI)
+- **SAP**: `sap_staging.py`, `sap_deployment_service.py`, `sap_field_mapping_service.py`, `sap_config_builder.py`
+- **D365**: `d365_staging.py`, `integrations/d365/connector.py`, `d365/field_mapping.py`, `d365/extraction_service.py`
+- **Odoo**: `odoo_staging.py`, `integrations/odoo/connector.py`, `odoo/field_mapping.py`, `odoo/config_builder.py`
 
-**Access**: Navigation > Administration > SAP Data Management (Group Admin required)
+**Scripts**:
+- `scripts/rebuild_sap_config_disaggregated.py` — Build config from SAP CSVs
+- `scripts/rebuild_d365_contoso_config.py` — Build config from D365 CSVs
+- `scripts/extract_d365_contoso.py` — Extract D365 data via OData
+- `scripts/translate_sap_to_d365_csvs.py` — Translate SAP IDES → D365 format for demos
+
+**Adding a New ERP**: Follow the SAP template — create staging schema + model registry, connector, field mapping, extraction service, config builder. See [ERP_INTEGRATION_GUIDE.md](docs/external/ERP_INTEGRATION_GUIDE.md) for the full pattern.
+
+**Access**: Navigation > Administration > ERP Data Management (Tenant Admin required)
 
 ### Talk to Me — Natural Language Directive Capture & Query Routing
 
