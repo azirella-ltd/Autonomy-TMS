@@ -96,7 +96,8 @@ class AlertItem(BaseModel):
 class DecisionDigestResponse(BaseModel):
     """Response for GET /decision-stream/digest."""
     digest_text: str = Field(
-        ..., description="LLM-synthesized natural language digest paragraph"
+        default="No decisions to report.",
+        description="LLM-synthesized natural language digest paragraph"
     )
     decisions: List[PendingDecisionItem] = Field(default_factory=list)
     alerts: List[AlertItem] = Field(default_factory=list)

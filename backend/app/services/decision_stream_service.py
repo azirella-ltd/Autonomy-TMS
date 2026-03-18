@@ -707,7 +707,7 @@ class DecisionStreamService:
                 )
 
         result = {
-            "digest_text": digest_text,
+            "digest_text": digest_text or "No decisions to report.",
             "decisions": decisions,
             "alerts": alerts,
             "total_pending": len(decisions),
