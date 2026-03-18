@@ -290,17 +290,273 @@ This account is free and gives access to SAP Cloud Appliance Library, SAP Commun
 
 **Cost**: You pay only the cloud provider for compute while the instance runs (~$1-3/hr depending on size). **Suspend or terminate when not in use.**
 
-### Step 3: Connect and Extract Data
+### Step 3: Connect to the Appliance
 
-Once deployed, you receive login credentials for SAP GUI and/or Fiori Launchpad.
+Once deployed, go to **Workloads → Appliances** in CAL. Click **Connect** on your appliance to see a dialog with connection options:
+
+<!-- Screenshot: CAL Connect dialog showing RDP and SAP GUI options -->
+<!-- SID: S4H, Instance Number: 00, Client: 100 -->
+
+| Service | Target | Use |
+|---------|--------|-----|
+| **RDP** | Windows Remote Desktop | Access the Windows VM (SAP GUI is pre-installed) |
+| **SAP GUI** | SID: S4H, Instance: 00 | Direct SAP GUI connection (requires SAP GUI installed locally) |
+
+**Recommended: Use the RDP connection** — SAP GUI is already installed on the Windows VM. The SAP GUI `.sap` file download requires SAP GUI for Java on Linux (which can be difficult to configure), whereas the Windows VM inside the appliance has SAP GUI pre-installed and ready to use.
+
+#### Connecting via RDP
+
+1. Click **Connect** on the RDP row → downloads a `.rdp` file (e.g., `Autonomy.rdp`)
+2. The `.rdp` file contains a simple connection definition:
+   ```
+   full address:s:<your-appliance-public-ip>
+   username:s:Administrator
+   ```
+   > **Note**: The `s:` prefix is RDP file format syntax meaning "string type" — it is not part of the IP address or username.
+3. Open with your RDP client:
+   - **Linux**: `remmina -c ~/Downloads/Autonomy.rdp` (use the `-c` flag to connect directly; without it, Remmina may just display the file contents)
+   - **Windows**: Double-click the `.rdp` file
+   - **macOS**: Use Microsoft Remote Desktop
+4. **Username**: `Administrator`
+5. **Password**: The master password you set when creating the appliance in CAL
+
+> **Important**: The CAL master password is for the **Windows VM only**. SAP application users have separate credentials (see below).
+
+#### Logging into SAP GUI
+
+Once on the Windows desktop, open **SAP Logon** (desktop shortcut or Start menu). The S4H system entry should already be configured.
+
+<!-- Screenshot: SAP Logon screen showing SID: S4H, Instance: 00, Client: 100 -->
+
+**SAP system login credentials** (different from the Windows/CAL password):
+
+| User | Client | Default Password | Notes |
+|------|--------|-----------------|-------|
+| `SAP*` | 100 | `Down1oad` | Super admin — use for initial setup only |
+| `BPINST` | 100 | `Welcome1` | Best Practices demo user |
+| `DDIC` | 100 | `Down1oad` | Data dictionary admin |
+
+> **Note**: Passwords are case-sensitive. The `1` in `Down1oad` and `Welcome1` is the **digit one**, not lowercase L. If `Down1oad` doesn't work, try `Initial1`.
+
+**Available clients:**
+- **Client 100**: Sandbox with demo data for US (merged-000) — **use this for Autonomy**
+- **Client 200**: Best Practices ready-to-activate (BP client copy)
+- **Client 400**: Best Practices fully-activated (BP client copy)
+
+<!-- Screenshot: SAP login screen showing Client 100, available clients listed in the information panel -->
+
+### Step 4: Create the Autonomy RFC User
+
+**This step is required before Autonomy can connect to SAP.** You must create a dedicated technical user with the correct authorizations for RFC table reads and BAPI execution.
+
+> **SAP User ID limit**: SAP user IDs are limited to **12 characters**. The examples below use `ZRFC_AUTONO` (truncated from `ZRFC_AUTONOMY`). SAP will silently truncate longer names.
+
+#### 4a. Create the Authorization Role (Transaction PFCG)
+
+1. Log in to SAP GUI as `SAP*` on **Client 100**
+2. Enter **`/nPFCG`** in the command field (top-left input box) and press Enter
+   > **Tip**: The `/n` prefix closes the current transaction before opening the new one. Use this when navigating between transactions.
+3. Enter role name: **`ZRFC_AUTONOMY`** in the Role field and click **Single Role** (create button)
+4. **Description tab**: Enter `Autonomy Platform RFC Integration` and click **Save**
+
+<!-- Screenshot: PFCG role creation screen with description "Autonomy Platform RFC Integration" -->
+
+5. Go to the **Authorizations** tab → click **Change Authorization Data**
+6. If prompted to select a template, click **Do not select templates**
+7. Click **Manually** (pencil icon in the toolbar) — a dialog opens with multiple Authorization Object input fields
+
+**Enter all three authorization objects in the dialog** (you can add them all at once):
+
+| Row | Authorization Object |
+|-----|---------------------|
+| 1 | `S_RFC` |
+| 2 | `S_TABU_DIS` |
+| 3 | `S_TABU_NAM` |
+
+Click the **green checkmark** to confirm. You should see the objects appear in the tree view under their respective object classes:
+- **Object class AAAB** (Cross-application Authorization Objects): `S_RFC`
+- **Object class BC_A** (Basis: Administration): `S_TABU_DIS`, `S_TABU_NAM`
+
+<!-- Screenshot: Authorization objects tree showing S_RFC under AAAB, S_TABU_DIS and S_TABU_NAM under BC_A -->
+
+> **Note**: If you accidentally add the same object multiple times (e.g., S_TABU_DIS appears as Authorizat. 00, 01, 02), that's harmless — just set values on `Authorizat. 00` for each.
+
+8. **Expand each object** by clicking the triangle/arrow icons and set the field values:
+
+**S_RFC** — RFC access (expand → Authorizat. 00 → fields):
+
+| Field | Value | Description |
+|-------|-------|-------------|
+| `RFC_TYPE` | `*` (All values) | Type of RFC object to which access is allowed |
+| `RFC_NAME` | `*` | Name of RFC object (all function groups) |
+| `ACTVT` | `16` (Execute) | Activity |
+
+<!-- Screenshot: S_RFC expanded showing RFC_TYPE=All values, RFC_NAME=*, ACTVT=Execute -->
+
+> **For production**: Restrict `RFC_NAME` to specific function groups: `SDTX`, `SYST`, `RFC1`, `BAPT`, `2012`. Using `*` is appropriate for development/test FAA systems.
+
+**S_TABU_DIS** — Table read/write access (expand → Authorizat. 00 → fields):
+
+| Field | Value | Description |
+|-------|-------|-------------|
+| `DICBERCLS` | `*` | Table Authorization Group (all groups) |
+| `ACTVT` | `02, 03` (Change, Display) | Activity — include Change (`02`) if you need write-back to SAP |
+
+> **For read-only access**: Set `ACTVT` to `03` (Display) only. For full integration with plan write-back (BAPI_PO_CREATE1, BAPI_PR_CREATE), include `02` (Change).
+
+**S_TABU_NAM** — Table access by name (expand → Authorizat. 00 → fields):
+
+| Field | Value | Description |
+|-------|-------|-------------|
+| `TABLE` | `*` | Table Name (all tables) |
+| `ACTVT` | `02, 03` (Change, Display) | Activity — match S_TABU_DIS settings |
+
+> **For production**: Restrict `TABLE` to the specific 47 tables Autonomy reads:
+> ```
+> MARA, MAKT, MARC, MARD, MARM, MBEW, MVKE,
+> ADRC, T001, T001W, T001L,
+> LFA1, KNA1,
+> EINA, EINE, EORD, EBAN, EKKO, EKPO, EKET, EKBE,
+> VBAK, VBAP, VBEP, VBUK, VBUP, LIKP, LIPS,
+> AFKO, AFPO, AFVC, AFRU, AUFK, RESB, CRHD, PLKO, PLPO,
+> STKO, STPO,
+> PBIM, PBED, PLAF,
+> LTAK, LTAP,
+> QMEL, QALS, QASE,
+> EQUI, MKPF, MSEG
+> ```
+
+9. Click **Save** (Ctrl+S or floppy disk icon)
+
+<!-- Screenshot: All authorization objects expanded with values set, Data Status: Saved -->
+
+10. **Generate the authorization profile**: Click the **Edit** dropdown button (near "Status" in the toolbar) → select **Activate Authorizations**
+
+> **Important**: The "Generate" action in S/4HANA 2025 is accessed via the **Edit** dropdown → **Activate Authorizations**, not via a standalone traffic light button as in older SAP versions.
+
+11. When prompted for a profile name, enter a name **without underscores** (SAP profile names have strict naming rules):
+    - Profile name: **`ZRFCAUTONOMY`** (max 12 characters, no underscores)
+    - Profile text: `Profile for role ZRFC_AUTONOMY` (auto-filled)
+    - Click the green checkmark to confirm
+
+> **Note**: Profile names that contain underscores (e.g., `Z_RFC_AUTO`) may be rejected as invalid in some S/4HANA versions. Use only alphanumeric characters.
+
+12. Click **Back** (green arrow) to return to the main PFCG role screen
+13. Verify the **Authorizations** tab now shows a green square (instead of yellow triangle) and the **Information About Authorization Profile** section shows:
+    - Profile Name: `ZRFCAUTONOMY`
+    - Status: `Authorization profile is current`
+
+<!-- Screenshot: PFCG role main screen showing Profile Name: ZRFCAUTO, Status: Authorization profile is current -->
+
+#### 4b. Create the Technical User (Transaction SU01)
+
+1. Enter **`/nSU01`** in the command field and press Enter
+2. Enter username: **`ZRFC_AUTONO`** (12 character limit) and click **Create** (page icon)
+
+> **Important**: SAP truncates user IDs to 12 characters. `ZRFC_AUTONOMY` becomes `ZRFC_AUTONO`. Always use the truncated form.
+
+3. Fill in the tabs:
+
+**Address tab:**
+
+| Field | Value |
+|-------|-------|
+| Last Name | `Autonomy RFC User` (or any descriptive name) |
+
+<!-- Screenshot: SU01 Address tab with Last Name filled in, error messages at bottom prompting for password -->
+
+> **Note**: When you first try to save, SAP will show error messages at the bottom: "Enter an initial password" and "You must specify the last name of a user". Fill in both the Last Name on the Address tab and the password on the Logon Data tab before saving.
+
+**Logon Data tab** (click the tab):
+
+| Field | Value |
+|-------|-------|
+| User Type | **System** (select from dropdown — this is type `B` for background/RFC) |
+| Initial Password | Your chosen password |
+| Repeat Password | Same password |
+
+> **User Type B (System)**: Cannot log in interactively via SAP GUI. Can only be used for RFC/batch connections. This is the correct type for a technical integration user. Choose a strong password — this user will have broad table read access.
+
+**Roles tab** (click the tab):
+
+You can assign the role now or after creating the user. To assign:
+1. Click in the **Role** column
+2. Enter `ZRFC_AUTONOMY`
+3. Press Enter to validate
+
+> **Note**: If you haven't created the role yet (Step 4a), save the user without a role first. You can assign the role later via PFCG (User tab) or by returning to SU01.
+
+4. Click **Save** (Ctrl+S)
+
+#### 4c. Assign Role to User (via PFCG User Tab)
+
+If you didn't assign the role in SU01, or to verify the assignment:
+
+1. Enter **`/nPFCG`** → enter role `ZRFC_AUTONOMY` → click **Change** (pencil icon)
+2. Click the **User** tab
+3. Enter **`ZRFC_AUTONO`** in the User ID column
+4. Click **User Comparison** button
+5. Select **Full Comparison** and confirm
+6. You should see: "Comparison of user master record completed" and "User master record for all roles adjusted"
+
+<!-- Screenshot: PFCG User tab with ZRFC_AUTONO entered, User Comparison result showing successful comparison -->
+
+7. Click **Save** (Ctrl+S)
+
+#### 4d. Verify the User
+
+1. Enter **`/nSU01`** → enter `ZRFC_AUTONO` → click **Display** (glasses icon)
+2. Go to the **Profiles** tab — verify the authorization profile `ZRFCAUTONOMY` is listed
+3. Go to the **Roles** tab — verify `ZRFC_AUTONOMY` is assigned
+
+#### 4e. Test RFC Connectivity
+
+From the Autonomy platform, configure the SAP connection:
+
+```env
+# .env or SAP Data Management UI
+S4HANA_HOST=<your-appliance-public-ip>    # Public IP from CAL appliance details
+S4HANA_SYSNR=00
+S4HANA_CLIENT=100
+S4HANA_USER=ZRFC_AUTONO
+S4HANA_PASSWORD=<your-password>
+```
+
+Or test via the SAP Data Management page in the Autonomy admin UI:
+1. Navigate to **Administration → SAP Data Management**
+2. Click **Add Connection** → select **RFC** connection type
+3. Enter the host (public IP from CAL), system number `00`, client `100`, and credentials
+4. Click **Test Connection** — should return success with system info
+
+> **Finding the public IP**: In CAL, go to **Workloads → Appliances** → click on your appliance name. The **Public IPv4 address** is shown in the appliance details panel (right side). You can also find it in the downloaded `.rdp` file (`full address:s:<ip>`).
+
+### Step 5: Activate OData Services (Optional)
+
+If using OData instead of or in addition to RFC, activate these services in SAP:
+
+1. Enter **`/n/IWFND/MAINT_SERVICE`** in the command field
+2. Click **Add Service** and search for each service:
+
+| OData Service | Description |
+|--------------|-------------|
+| `API_PRODUCT_SRV` | Material master data |
+| `API_MRP_MATERIALS_SRV_01` | MRP planning data |
+| `API_PURCHASEREQ_PROCESS_SRV` | Purchase requisitions |
+| `API_BUSINESS_PARTNER` | Vendors and customers |
+
+3. For each: select it, assign to system alias `LOCAL`, and activate
+4. Test via browser: `http://<host>:<port>/sap/opu/odata/sap/API_PRODUCT_SRV/$metadata`
+
+The `ZRFC_AUTONO` user also needs `S_SERVICE` authorization object for OData access (add via PFCG → Manually):
+- `SRV_NAME`: `*` (or specific service names)
+- `SRV_TYPE`: `HT` (HTTP Service)
+
+### Step 6: Extract Data
 
 **Table extraction methods:**
+- **Autonomy SAP Data Management UI** (recommended): Automated 3-phase pipeline (Master Data → CDC → Transactional)
 - **SE16/SE16N** (SAP GUI): Browse and export individual tables (MARC, MDKP, PLAF, EBAN, PBIM, etc.)
-- **OData APIs** (recommended for automation):
-  - `API_PRODUCT_SRV` — Material master data
-  - `API_MRP_MATERIALS_SRV_01` — MRP planning data
-  - `API_PURCHASEREQ_PROCESS_SRV` — Purchase requisitions
-  - `API_BUSINESS_PARTNER` — Vendors and customers
+- **OData APIs**: REST-based extraction (see Step 5)
 - **CSV export** via SE16N → Download spreadsheet → use as input for CSV connection mode
 
 ### What's Included
@@ -395,7 +651,7 @@ Create `.env` file:
 S4HANA_HOST=sap-s4hana.company.com
 S4HANA_SYSNR=00
 S4HANA_CLIENT=100
-S4HANA_USER=BEERGAME
+S4HANA_USER=ZRFC_AUTONO
 S4HANA_PASSWORD=YourPassword
 
 # APO Connection (CSV Mode Recommended)
@@ -410,12 +666,19 @@ ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key
 
 ### SAP Authorizations Required
 
-**S/4HANA:**
-- `S_RFC` - RFC access
-- `S_TABU_DIS` - Table read access (MARA, MARC, EKKO, etc.)
-- `S_DATASET` - File access (if using CSV export from SAP)
-- `BAPI_PR_CREATE` - Purchase requisition creation
-- `BAPI_PO_CREATE1` - Purchase order/STO creation
+> **Complete step-by-step setup instructions are in [Step 4: Create the Autonomy RFC User](#step-4-create-the-autonomy-rfc-user) above.**
+
+**Summary of authorization objects for the `ZRFC_AUTONO` user (role `ZRFC_AUTONOMY`, profile `ZRFCAUTONOMY`):**
+
+| Authorization Object | Values | Purpose |
+|---------------------|--------|---------|
+| `S_RFC` | `RFC_TYPE=*`, `RFC_NAME=*`, `ACTVT=16` | Execute all RFC function modules (`RFC_READ_TABLE`, BAPIs) |
+| `S_TABU_DIS` | `DICBERCLS=*`, `ACTVT=02,03` | Read/write access to SAP tables by authorization group |
+| `S_TABU_NAM` | `TABLE=*`, `ACTVT=02,03` | Read/write access to SAP tables by name |
+| `S_SERVICE` | `SRV_TYPE=HT` | (Optional) OData service access |
+| `S_DATASET` | File paths | (Optional) CSV export from SAP |
+
+> **Production hardening**: For production deployments, restrict `*` values to specific function groups, table authorization groups, and table names. See Step 4a for the full list of 47 required tables.
 
 **APO:**
 - File system access to CSV export directory
@@ -451,7 +714,7 @@ config = S4HANAConnectionConfig(
     ashost="sap-s4hana.company.com",
     sysnr="00",
     client="100",
-    user="BEERGAME",
+    user="ZRFC_AUTONO",
     passwd="YourPassword"
 )
 
@@ -763,7 +1026,7 @@ plan_metadata = {
     "plan_version": "BG_20260116",
     "planning_horizon_start": date.today(),
     "planning_horizon_end": date.today() + timedelta(days=90),
-    "created_by": "BEERGAME",
+    "created_by": "ZRFC_AUTONO",
     "description": "Beer Game Optimization"
 }
 
@@ -880,7 +1143,7 @@ plan_metadata = {
     "plan_version": "BG_" + date.today().strftime("%Y%m%d"),
     "planning_horizon_start": date.today(),
     "planning_horizon_end": date.today() + timedelta(days=90),
-    "created_by": "BEERGAME",
+    "created_by": "ZRFC_AUTONO",
     "description": "Automated Beer Game Plan"
 }
 
@@ -909,7 +1172,7 @@ python backend/scripts/sap_integration_example.py \
     --s4-host sap-s4hana.company.com \
     --s4-sysnr 00 \
     --s4-client 100 \
-    --s4-user BEERGAME \
+    --s4-user ZRFC_AUTONO \
     --s4-passwd YourPassword \
     --output-dir /data/sap/output
 ```
@@ -939,7 +1202,7 @@ python backend/scripts/intelligent_sap_load.py \
     --mode daily \
     --source rfc \
     --s4-host sap-s4hana.company.com \
-    --s4-user BEERGAME \
+    --s4-user ZRFC_AUTONO \
     --s4-passwd YourPassword \
     --claude \
     --tables MARA MARC MARD EKKO EKPO
