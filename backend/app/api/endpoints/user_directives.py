@@ -41,7 +41,7 @@ class MissingField(BaseModel):
 
 class DirectiveAnalyzeResponse(BaseModel):
     # Common fields
-    intent: Optional[str] = None  # "directive" | "question" | "observation" | "unknown"
+    intent: Optional[str] = None  # directive | question | scenario_event | scenario_question | unknown
     confidence: float = 0.0
     target_layer: str = "operational"
     layer_description: str = ""
@@ -57,17 +57,30 @@ class DirectiveAnalyzeResponse(BaseModel):
     is_complete: bool = False
 
     # Question-specific fields
-    answer: Optional[str] = None  # LLM-generated answer for questions
+    answer: Optional[str] = None  # LLM-generated answer (question or scenario_question)
 
     # Ambiguous intent fields
     clarification_needed: bool = False
     question: Optional[str] = None  # Clarification question for the user
+
+    # Scenario event / scenario question fields
+    scenario_event: Optional[dict] = None
+    question_text: Optional[str] = None  # The question part of a scenario_question
+    event_summary: Optional[str] = None
+    event_id: Optional[int] = None
+    target_config_id: Optional[int] = None
+    target_page: Optional[str] = None
+    target_page_label: Optional[str] = None
+    can_fulfill: Optional[bool] = None
+    confidence_note: Optional[str] = None
 
 
 class DirectiveSubmitRequest(BaseModel):
     config_id: int
     text: str = Field(..., min_length=3, max_length=5000)
     clarifications: Optional[Dict[str, str]] = None
+    scenario_event_id: Optional[int] = None  # Skip re-injection if already injected
+    target_config_id: Optional[int] = None   # Branched config from prior injection
 
 
 class DirectiveResponse(BaseModel):
@@ -121,6 +134,8 @@ async def analyze_directive(
             target_layer=parsed.get("target_layer", "operational"),
             layer_description=parsed.get("layer_description", ""),
             answer=parsed.get("answer"),
+            target_page=parsed.get("target_page"),
+            target_page_label=parsed.get("target_page_label"),
         )
 
     # Ambiguous — ask the user to clarify
@@ -132,6 +147,29 @@ async def analyze_directive(
             layer_description=parsed.get("layer_description", ""),
             clarification_needed=True,
             question=parsed.get("question"),
+        )
+
+    # Scenario event / scenario question flow
+    if intent in ("scenario_event", "scenario_question"):
+        missing = parsed.get("missing_fields", [])
+        return DirectiveAnalyzeResponse(
+            intent=intent,
+            confidence=parsed.get("confidence", 0.5),
+            target_layer=parsed.get("target_layer", "operational"),
+            layer_description=parsed.get("layer_description", ""),
+            scenario_event=parsed.get("scenario_event"),
+            question_text=parsed.get("question_text"),
+            missing_fields=[MissingField(**m) for m in missing],
+            is_complete=len(missing) == 0,
+            # Populated only when event was injected (no missing fields)
+            answer=parsed.get("answer"),
+            event_summary=parsed.get("event_summary"),
+            event_id=parsed.get("event_id"),
+            target_config_id=parsed.get("target_config_id"),
+            target_page=parsed.get("target_page"),
+            target_page_label=parsed.get("target_page_label"),
+            can_fulfill=parsed.get("can_fulfill"),
+            confidence_note=parsed.get("confidence_note"),
         )
 
     # Directive flow — structured parse with gap detection
@@ -170,6 +208,8 @@ async def submit_directive(
         config_id=request.config_id,
         raw_text=request.text,
         clarifications=request.clarifications,
+        scenario_event_id=request.scenario_event_id,
+        target_config_id=request.target_config_id,
     )
     return DirectiveResponse(**directive.to_dict())
 

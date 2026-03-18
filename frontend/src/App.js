@@ -46,6 +46,7 @@ import { ScenarioComparison } from "./components/stochastic";
 import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
 import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
+import ERPDataManagement from "./pages/admin/ERPDataManagement.jsx";
 import EmailSignalsDashboard from "./pages/admin/EmailSignalsDashboard.jsx";
 import BscConfigPage from "./pages/admin/BscConfigPage.jsx";
 import ContextEngine from "./pages/admin/ContextEngine.jsx";
@@ -477,6 +478,10 @@ const AppContent = () => {
             <Route
               path="/admin/sap-data"
               element={<SAPDataManagement />}
+            />
+            <Route
+              path="/admin/erp-data"
+              element={<ERPDataManagement />}
             />
             <Route
               path="/admin/stochastic-params"

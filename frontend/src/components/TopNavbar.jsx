@@ -33,6 +33,7 @@ import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { isSystemAdmin } from '../utils/authUtils';
 import simulationApi, { api } from '../services/api';
 import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
+import Markdown from 'react-markdown';
 import { cn } from '../lib/utils/cn';
 
 // ─── AI Avatar ────────────────────────────────────────────────────────────────
@@ -295,9 +296,24 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         return;
       }
 
-      // Scenario event flow — submit immediately (no clarification needed)
-      if (intent === 'scenario_event') {
-        await submitFinalDirective(prompt, {});
+      // Scenario event / scenario question flow
+      if (intent === 'scenario_event' || intent === 'scenario_question') {
+        const hasMissing = (analysis.missing_fields?.length || 0) > 0;
+        if (hasMissing) {
+          // Need more info — show clarification panel
+          setOriginalText(prompt);
+          setAnalysisResult(analysis);
+          setClarifications({});
+          setTalkInput('');
+        } else if (intent === 'scenario_question' && analysis.answer) {
+          // Event injected + answer synthesized — show result panel
+          setOriginalText(prompt);
+          setAnalysisResult(analysis);
+          setTalkInput('');
+        } else {
+          // scenario_event with no missing fields and no question — submit and navigate
+          await submitFinalDirective(prompt, {});
+        }
         return;
       }
 
@@ -333,6 +349,9 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         config_id: effectiveConfigId,
         text,
         clarifications: Object.keys(clarifs).length > 0 ? clarifs : undefined,
+        // Pass prior injection info to avoid re-injecting
+        scenario_event_id: analysisResult?.event_id || undefined,
+        target_config_id: analysisResult?.target_config_id || undefined,
       });
       const result = response.data;
       setDirectiveResult(result);
@@ -538,6 +557,75 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             </div>
           )}
 
+          {/* Scenario question answer panel — event injected + analysis complete */}
+          {analysisResult && analysisResult.intent === 'scenario_question' && analysisResult.answer && (
+            <div
+              ref={clarificationRef}
+              className={cn(
+                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
+                'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
+                'text-sm max-w-2xl w-full animate-in fade-in slide-in-from-top-2 duration-200',
+              )}
+            >
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <AIAvatar size="sm" />
+                  <span className="font-medium text-foreground">Scenario Analysis</span>
+                  {analysisResult.can_fulfill === true && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600">Can Fulfill</span>
+                  )}
+                  {analysisResult.can_fulfill === false && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-600">Cannot Fulfill</span>
+                  )}
+                </div>
+                <button
+                  onClick={dismissClarification}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {/* Event summary banner */}
+              {analysisResult.event_summary && (
+                <div className="flex items-center gap-2 text-xs bg-violet-500/5 text-violet-700 dark:text-violet-300 rounded-md px-2.5 py-1.5 mb-3">
+                  <Sparkles className="h-3 w-3 flex-shrink-0" />
+                  <span>{analysisResult.event_summary}</span>
+                </div>
+              )}
+
+              {/* Markdown-formatted analysis */}
+              <div className="prose prose-sm dark:prose-invert max-h-80 overflow-y-auto text-foreground leading-relaxed [&_table]:text-xs [&_table]:w-full [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_th]:text-left [&_th]:font-medium [&_th]:border-b [&_th]:border-border [&_td]:border-b [&_td]:border-border/50 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1.5 [&_ul]:text-xs [&_li]:my-0.5">
+                <Markdown>{analysisResult.answer}</Markdown>
+              </div>
+
+              {/* Navigation to scenario workspace */}
+              <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
+                {analysisResult.confidence_note && (
+                  <span className="text-[10px] text-muted-foreground italic">
+                    {analysisResult.confidence_note}
+                  </span>
+                )}
+                <button
+                  onClick={() => {
+                    dismissClarification();
+                    navigate('/scenario-events', {
+                      state: {
+                        configId: analysisResult.target_config_id,
+                        eventId: analysisResult.event_id,
+                        fromTalkToMe: true,
+                      },
+                    });
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors ml-auto"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                  Open in Scenario Events
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Ambiguous intent panel — ask user to clarify */}
           {analysisResult && (analysisResult.intent === 'unknown' || analysisResult.clarification_needed) && (
             <div
@@ -591,8 +679,8 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             </div>
           )}
 
-          {/* Clarification panel — shown when analysis found missing fields */}
-          {analysisResult && analysisResult.intent !== 'question' && !analysisResult.clarification_needed && analysisResult.intent !== 'unknown' && totalMissing > 0 && (
+          {/* Clarification panel — shown when analysis found missing fields (directives or scenario events) */}
+          {analysisResult && analysisResult.intent !== 'question' && !analysisResult.clarification_needed && analysisResult.intent !== 'unknown' && !(analysisResult.intent === 'scenario_question' && analysisResult.answer) && totalMissing > 0 && (
             <div
               ref={clarificationRef}
               className={cn(
@@ -695,7 +783,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
                   ) : (
                     <CheckCircle2 className="h-3 w-3" />
                   )}
-                  Submit directive
+                  {analysisResult?.intent?.startsWith('scenario') ? 'Run scenario' : 'Submit directive'}
                 </button>
               </div>
             </div>

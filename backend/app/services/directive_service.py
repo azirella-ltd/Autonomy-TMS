@@ -67,13 +67,19 @@ _REASON_CODES = [
     "DEMAND_SIGNAL",
 ]
 
-_PARSE_SYSTEM_PROMPT = """You are a supply chain directive parser for the Autonomy platform.
+_PARSE_SYSTEM_PROMPT = """You are a supply chain input classifier and parser for the Autonomy platform.
 
-Your job: extract structured signals from natural language directives given by supply chain professionals.
-A complete, actionable directive requires ALL of: a reason/justification, a desired outcome (metric + direction),
-a magnitude (how much), a time horizon (how long), and a scope (where — geography/sites, and what — products/families).
+FIRST PRIORITY: Determine the intent. If the input describes a hypothetical event, disruption, or "what if" scenario,
+set intent to "scenario_event" or "scenario_question" — NOT "directive". Key trigger words: "what if", "simulate",
+"test", "what happens if", "what would happen", "rush order", "supplier delay", "demand spike", "lose capacity",
+"can we handle", "can we satisfy", "can we fulfill".
 
-The directive comes from a user with role "{role}" at Powell layer "{layer}" ({layer_desc}).
+Only classify as "directive" if the user wants to CHANGE the actual plan (not simulate a hypothetical).
+
+The user has role "{role}" at Powell layer "{layer}" ({layer_desc}).
+
+Available product families in this tenant: {product_families}
+Available site/region names in this tenant: {site_names}
 
 Available product families in this tenant: {product_families}
 Available site/region names in this tenant: {site_names}
@@ -82,7 +88,7 @@ Parse the directive and return JSON with these fields:
 {{
   "directive_type": one of {reason_codes},
   "reason_code": same as directive_type (or more specific if clear),
-  "intent": "directive" | "observation" | "question" | "scenario_event" | "unknown",
+  "intent": "directive" | "observation" | "question" | "scenario_event" | "scenario_question" | "unknown",
   "scope": {{
     "region": string or null (resolved to tenant's site hierarchy),
     "product_family": string or null (resolved to tenant's product hierarchy),
@@ -119,16 +125,37 @@ If the user only states a desire ("increase revenue") without saying WHY, the re
 Good reasons: "customer feedback indicates...", "market intelligence suggests...", "Q3 targets require...", "supplier delays mean..."
 
 SCENARIO EVENT DETECTION:
-If the user describes a supply chain event/disruption they want to simulate or test (NOT a real directive to change the plan), set intent="scenario_event".
-Examples: "what if Bigmart places a rush order for 500 bikes", "simulate a supplier delay of 2 weeks", "what happens if we lose capacity at Plant 1", "test a demand spike of 20% on C900 bikes".
+If the user describes a supply chain event/disruption they want to simulate or test (NOT a real directive to change the plan), set intent to "scenario_event" or "scenario_question".
 
-For scenario_event intent, also return:
+Use "scenario_question" when the user BOTH describes an event AND asks a question about its impact or feasibility.
+Examples of scenario_question: "Bigmart wants to place a rush order for 500 bikes — can we satisfy it?", "What if we get a 20% demand spike on C900 — can we handle it?", "Supplier X is delayed 2 weeks — will we have enough inventory?", "What happens if Plant 1 loses 30% capacity next month?"
+
+Use "scenario_event" when the user ONLY describes an event with no question.
+Examples of scenario_event: "simulate a supplier delay of 2 weeks", "test a demand spike of 20% on C900 bikes", "inject a rush order for 500 C900s".
+
+For both scenario_event and scenario_question, return:
   "scenario_event": {{
-    "event_type": one of [drop_in_order, demand_spike, order_cancellation, forecast_revision, supplier_delay, supplier_loss, quality_hold, component_shortage, capacity_loss, machine_breakdown, shipment_delay, lane_disruption, tariff_change],
-    "parameters": {{extracted parameter values from the text}},
+    "event_type": best matching event type key from the catalog below,
+    "parameters": {{extracted parameter values from the text, using the parameter keys from the catalog}},
     "scenario_name": suggested scenario name (e.g. "What-if: Bigmart rush order")
   }}
+For scenario_question, also return:
+  "question_text": the specific question the user is asking (e.g. "Can we satisfy this order?")
+
 Extract as many parameters as possible from the text. For scenario events, reason/direction/metric/magnitude are NOT required.
+
+SCENARIO EVENT CATALOG (available event types and their required parameters):
+{event_catalog}
+
+SCENARIO EVENT MISSING FIELDS:
+For the selected event_type, check the catalog's required parameters. If ANY required parameter
+cannot be extracted from the user's text, add it to missing_fields with a natural language question.
+Use the parameter's label and type from the catalog to generate an appropriate question.
+If the user's input doesn't clearly match any event type, set confidence low and ask what kind of scenario they want to test.
+
+Do NOT ask for parameters the user already provided. Only ask for ESSENTIAL parameters — optional ones can be defaulted.
+Use the same missing_fields format: {{"field": "<name>", "question": "<question>", "type": "<input_type>", "options": [if applicable]}}
+
 Available customers: {customer_names}
 Available vendors: {vendor_names}
 
@@ -143,11 +170,14 @@ Other rules:
 - INTENT CLASSIFICATION (critical):
   - "directive" = the user wants to CHANGE something (e.g., "increase service levels by 5%", "reduce inventory in SW region")
   - "question" = the user wants to KNOW something (e.g., "where are we most exposed to stockouts?", "what's our forecast accuracy?")
+  - "scenario_event" = the user wants to SIMULATE an event (e.g., "simulate a supplier delay of 2 weeks")
+  - "scenario_question" = the user wants to SIMULATE an event AND asks about its impact (e.g., "Bigmart wants 500 bikes — can we handle it?")
   - "observation" = the user is sharing information (e.g., "I heard competitor X is launching a new product")
   - "unknown" = you genuinely cannot determine intent. Set confidence to 0.0.
-  If it is clearly a question (contains "?", starts with who/what/where/when/why/how, asks for information), set intent to "question".
+  If it describes a hypothetical event + asks a question, prefer "scenario_question" over "question".
+  If it is clearly a question with no hypothetical event, set intent to "question".
   If it is clearly a directive (imperative verb, requests a change, sets a target), set intent to "directive".
-  If it could be either, set intent to "unknown" and confidence to 0.0 — the system will ask the user to clarify.
+  If it could be either directive or question, set intent to "unknown" and confidence to 0.0 — the system will ask the user to clarify.
 - Return ONLY valid JSON, no markdown or explanation
 """
 
@@ -269,6 +299,8 @@ class DirectiveService:
         config_id: int,
         raw_text: str,
         clarifications: Optional[Dict[str, str]] = None,
+        scenario_event_id: Optional[int] = None,
+        target_config_id: Optional[int] = None,
     ) -> UserDirective:
         """Parse a natural language directive and persist it.
 
@@ -276,6 +308,9 @@ class DirectiveService:
             clarifications: Optional dict of field→value answers from the
                 clarification flow. These are appended to the raw text so the
                 LLM can incorporate them into the structured parse.
+            scenario_event_id: If set, the event was already injected during
+                analyze phase — skip re-injection.
+            target_config_id: The branched config ID from a prior injection.
         """
         # Determine Powell layer from user role
         layer = _ROLE_TO_LAYER.get(user.powell_role, "operational")
@@ -344,11 +379,22 @@ class DirectiveService:
         if parsed.get("intent") == "directive" and parsed.get("confidence", 0) >= 0.7:
             await self._apply_directive(directive)
 
-        # Handle scenario event intent — inject event and redirect
-        if parsed.get("intent") == "scenario_event" and parsed.get("scenario_event"):
-            scenario_event_result = await self._apply_scenario_event(
-                directive, parsed["scenario_event"],
-            )
+        # Handle scenario event / scenario question intent
+        if parsed.get("intent") in ("scenario_event", "scenario_question") and parsed.get("scenario_event"):
+            if scenario_event_id and target_config_id:
+                # Event already injected during analyze — just record it
+                scenario_event_result = {
+                    "action": "scenario_event_injected",
+                    "event_type": parsed["scenario_event"].get("event_type", ""),
+                    "event_id": scenario_event_id,
+                    "target_config_id": target_config_id,
+                    "navigate_to": "/scenario-events",
+                    "summary": "Event previously injected during analysis",
+                }
+            else:
+                scenario_event_result = await self._apply_scenario_event(
+                    directive, parsed["scenario_event"],
+                )
             directive.routed_actions = [scenario_event_result]
             directive.status = "APPLIED"
             directive.applied_at = datetime.utcnow()
@@ -472,6 +518,326 @@ class DirectiveService:
             }
         finally:
             sync_db.close()
+
+    async def _inject_scenario_event_standalone(
+        self,
+        config_id: int,
+        tenant_id: int,
+        user_id: int,
+        event_spec: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Inject a scenario event without requiring a persisted UserDirective.
+
+        Used during the analyze phase for scenario_question intent, where we
+        need to inject first, then run feasibility, before persisting anything.
+        """
+        from app.services.scenario_event_service import ScenarioEventService
+        from app.db.session import sync_session_factory
+
+        event_type = event_spec.get("event_type", "")
+        parameters = event_spec.get("parameters", {})
+        scenario_name = event_spec.get("scenario_name", f"What-if: {event_type}")
+
+        sync_db = sync_session_factory()
+        try:
+            service = ScenarioEventService(sync_db)
+            result = service.inject_event(
+                config_id=config_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                event_type=event_type,
+                parameters=parameters,
+            )
+            return {
+                "action": "scenario_event_injected",
+                "event_type": event_type,
+                "scenario_name": scenario_name,
+                "summary": result.get("summary", ""),
+                "event_id": result.get("id"),
+                "target_config_id": result.get("target_config_id"),
+                "cdc_triggered": result.get("cdc_triggered", []),
+                "navigate_to": "/scenario-events",
+            }
+        except Exception as e:
+            logger.warning("Scenario event injection failed: %s", e)
+            return {
+                "action": "scenario_event_failed",
+                "error": str(e),
+                "event_type": event_type,
+            }
+        finally:
+            sync_db.close()
+
+    async def _gather_scenario_context(
+        self,
+        config_id: int,
+        event_spec: Dict[str, Any],
+        event_result: Dict[str, Any],
+    ) -> str:
+        """Gather relevant supply chain data for the LLM to reason about.
+
+        This is intentionally generic — the LLM decides what matters based
+        on the event type and question. We provide a broad context package:
+        inventory, open orders, capacity, lead times, forecasts.
+        """
+        from sqlalchemy import text
+
+        parts: List[str] = []
+        params = event_spec.get("parameters", {})
+        event_type = event_spec.get("event_type", "")
+
+        # --- Event summary ---
+        parts.append(f"INJECTED EVENT: {event_result.get('summary', event_type)}")
+
+        # --- Inventory levels for all products at all internal sites ---
+        try:
+            inv_q = text("""
+                SELECT s.name AS site_name, s.master_type,
+                       p.description, p.id AS product_id,
+                       il.on_hand_qty, il.in_transit_qty,
+                       COALESCE(ip.ss_quantity, 0) AS safety_stock,
+                       (il.on_hand_qty - COALESCE(ip.ss_quantity, 0)) AS available_above_ss
+                FROM inv_level il
+                JOIN site s ON s.id = il.site_id
+                JOIN product p ON p.id = il.product_id
+                LEFT JOIN inv_policy ip ON ip.product_id = il.product_id
+                    AND ip.site_id = il.site_id AND ip.is_active = true
+                WHERE s.config_id = :cid
+                ORDER BY available_above_ss ASC
+                LIMIT 40
+            """)
+            rows = await self.db.execute(inv_q, {"cid": config_id})
+            inv_data = rows.fetchall()
+            if inv_data:
+                lines = ["INVENTORY LEVELS (sorted by available qty, lowest first):"]
+                for r in inv_data:
+                    lines.append(
+                        f"  {r[0]} ({r[1]}): {r[2]} — "
+                        f"on_hand={r[4]}, in_transit={r[5]}, "
+                        f"safety_stock={r[6]}, available_above_SS={r[7]}"
+                    )
+                parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug("Scenario context inv_level query failed: %s", e)
+
+        # --- Open inbound orders (pipeline supply) ---
+        try:
+            inbound_q = text("""
+                SELECT s_to.name AS to_site, p.description,
+                       iol.quantity_submitted, io.status,
+                       io.promised_delivery_date
+                FROM inbound_order io
+                JOIN inbound_order_line iol ON iol.order_id = io.id
+                JOIN product p ON p.id = iol.product_id
+                JOIN site s_to ON s_to.id = io.ship_to_site_id
+                WHERE io.config_id = :cid
+                  AND io.status IN ('DRAFT', 'CONFIRMED', 'IN_TRANSIT')
+                ORDER BY io.promised_delivery_date ASC
+                LIMIT 20
+            """)
+            rows = await self.db.execute(inbound_q, {"cid": config_id})
+            inbound_data = rows.fetchall()
+            if inbound_data:
+                lines = ["OPEN INBOUND ORDERS (pipeline supply):"]
+                for r in inbound_data:
+                    lines.append(
+                        f"  → {r[0]}: {r[1]} qty={r[2]}, "
+                        f"status={r[3]}, ETA={r[4]}"
+                    )
+                parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug("Scenario context inbound query failed: %s", e)
+
+        # --- Open outbound orders (committed demand) ---
+        try:
+            outbound_q = text("""
+                SELECT s_from.name AS from_site, p.description,
+                       ol.ordered_quantity,
+                       COALESCE(ol.shipped_quantity, 0) AS shipped,
+                       o.status, o.requested_delivery_date, o.priority
+                FROM outbound_order o
+                JOIN outbound_order_line ol ON ol.order_id = o.id
+                JOIN product p ON p.id = ol.product_id
+                LEFT JOIN site s_from ON s_from.id = o.ship_from_site_id
+                WHERE o.config_id = :cid
+                  AND o.status IN ('DRAFT', 'CONFIRMED', 'PARTIALLY_FULFILLED')
+                ORDER BY o.requested_delivery_date ASC
+                LIMIT 20
+            """)
+            rows = await self.db.execute(outbound_q, {"cid": config_id})
+            outbound_data = rows.fetchall()
+            if outbound_data:
+                lines = ["OPEN OUTBOUND ORDERS (committed demand):"]
+                for r in outbound_data:
+                    lines.append(
+                        f"  {r[0]} → ship {r[1]}: ordered={r[2]}, "
+                        f"shipped={r[3]}, status={r[4]}, "
+                        f"due={r[5]}, priority={r[6]}"
+                    )
+                parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug("Scenario context outbound query failed: %s", e)
+
+        # --- Transportation lanes (lead times & capacity) ---
+        try:
+            lane_q = text("""
+                SELECT fs.name AS from_site, ts.name AS to_site,
+                       tl.supply_lead_time, tl.capacity
+                FROM transportation_lane tl
+                JOIN site fs ON fs.id = tl.from_site_id
+                JOIN site ts ON ts.id = tl.to_site_id
+                WHERE tl.config_id = :cid
+                LIMIT 30
+            """)
+            rows = await self.db.execute(lane_q, {"cid": config_id})
+            lane_data = rows.fetchall()
+            if lane_data:
+                lines = ["TRANSPORTATION LANES (lead times & capacity):"]
+                for r in lane_data:
+                    lt = r[2] if isinstance(r[2], dict) else {}
+                    days = lt.get("days", lt.get("mean", "?"))
+                    lines.append(
+                        f"  {r[0]} → {r[1]}: lead_time={days} days, "
+                        f"capacity={r[3]}"
+                    )
+                parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug("Scenario context lane query failed: %s", e)
+
+        # --- Forecast for next 4 weeks ---
+        try:
+            fcst_q = text("""
+                SELECT s.name AS site_name, p.description,
+                       f.forecast_p50, f.forecast_p90, f.forecast_date
+                FROM forecast f
+                JOIN site s ON s.id = f.site_id
+                JOIN product p ON p.id = f.product_id
+                WHERE f.config_id = :cid
+                  AND f.forecast_date >= CURRENT_DATE
+                  AND f.forecast_date <= CURRENT_DATE + INTERVAL '28 days'
+                ORDER BY f.forecast_date ASC
+                LIMIT 30
+            """)
+            rows = await self.db.execute(fcst_q, {"cid": config_id})
+            fcst_data = rows.fetchall()
+            if fcst_data:
+                lines = ["DEMAND FORECAST (next 4 weeks):"]
+                for r in fcst_data:
+                    lines.append(
+                        f"  {r[0]}: {r[1]} — P50={r[2]}, P90={r[3]}, "
+                        f"date={r[4]}"
+                    )
+                parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug("Scenario context forecast query failed: %s", e)
+
+        # --- BOM info (if relevant for manufactured products) ---
+        try:
+            bom_q = text("""
+                SELECT p_parent.product_name AS finished_good,
+                       p_comp.description AS component,
+                       pb.component_quantity, pb.scrap_percentage
+                FROM product_bom pb
+                JOIN product p_parent ON p_parent.id = pb.product_id
+                JOIN product p_comp ON p_comp.id = pb.component_product_id
+                WHERE pb.config_id = :cid
+                LIMIT 20
+            """)
+            rows = await self.db.execute(bom_q, {"cid": config_id})
+            bom_data = rows.fetchall()
+            if bom_data:
+                lines = ["BILL OF MATERIALS:"]
+                for r in bom_data:
+                    scrap = f", scrap={r[3]}" if r[3] else ""
+                    lines.append(f"  {r[0]} requires {r[2]}× {r[1]}{scrap}")
+                parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug("Scenario context BOM query failed: %s", e)
+
+        if not parts:
+            return "No supply chain data available for this configuration."
+        return "\n\n".join(parts)
+
+    async def _synthesize_scenario_answer(
+        self,
+        question_text: str,
+        event_spec: Dict[str, Any],
+        event_result: Dict[str, Any],
+        context_data: str,
+    ) -> Dict[str, Any]:
+        """Pass 2: LLM synthesizes a natural language answer from context data.
+
+        The LLM determines what the data means for the specific question —
+        we don't hardcode analysis logic per event type.
+        """
+        event_type = event_spec.get("event_type", "")
+        system_prompt = (
+            "You are a supply chain analyst. A scenario event has been injected "
+            "into a what-if branch and the user asked a question about it.\n\n"
+            "Using the supply chain data below, answer the user's question with a "
+            "structured analysis. Be specific — cite site names, product names, "
+            "quantities, dates, and lead times from the data.\n\n"
+            "Structure your answer as MARKDOWN with these sections:\n"
+            "### Verdict\n"
+            "One-sentence yes/no/partial answer.\n\n"
+            "### Impact Assessment\n"
+            "| Metric | Baseline | With Event | Delta |\n"
+            "Use a comparison table where possible. Include metrics relevant to the "
+            "event type: inventory positions, fill rate, lead time risk, cost impact, "
+            "capacity utilization. Use actual numbers from the data. If a metric "
+            "cannot be computed precisely, show a directional estimate (e.g. '~320 → ~0').\n\n"
+            "### Key Risks\n"
+            "Bullet list of specific risks this event creates.\n\n"
+            "### Recommended Actions\n"
+            "Bullet list of concrete actions (expedite PO, transfer from site X, etc.).\n\n"
+            "### Data Gaps\n"
+            "What additional analysis would improve this assessment "
+            "(e.g. 'run supply plan on this branch for MRP-level detail').\n\n"
+            "If the data is insufficient for a table, still provide the headings "
+            "with qualitative assessment under each.\n\n"
+            f"--- SUPPLY CHAIN DATA ---\n{context_data}\n--- END DATA ---\n\n"
+            'Return JSON: {"answer": "your markdown-formatted answer", '
+            '"can_fulfill": true/false/null, "confidence_note": "brief note on data quality"}\n'
+            "Return ONLY valid JSON."
+        )
+
+        user_message = (
+            f"Event: {event_result.get('summary', event_type)}\n"
+            f"Question: {question_text}"
+        )
+
+        try:
+            from app.services.skills.claude_client import ClaudeClient
+            client = ClaudeClient()
+            result = await client.complete(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                model_tier="sonnet",  # Sonnet for reasoning quality
+                temperature=0.3,
+                max_tokens=1500,
+            )
+            content = result.get("content", "")
+            try:
+                parsed = client.parse_json_response(content)
+                return {
+                    "answer": parsed.get("answer", content),
+                    "can_fulfill": parsed.get("can_fulfill"),
+                    "confidence_note": parsed.get("confidence_note", ""),
+                }
+            except Exception:
+                return {"answer": content, "can_fulfill": None, "confidence_note": ""}
+        except Exception as e:
+            logger.warning("Scenario answer synthesis failed: %s", e)
+            return {
+                "answer": (
+                    f"The event was injected successfully: {event_result.get('summary', '')}. "
+                    "However, I couldn't complete the analysis. You can review the "
+                    "scenario branch in the Scenario Events workspace to run a "
+                    "detailed supply plan."
+                ),
+                "can_fulfill": None,
+                "confidence_note": "LLM synthesis unavailable",
+            }
 
     async def _apply_strategic(self, directive: UserDirective) -> Dict[str, Any]:
         """Create PowellPolicyParameters record from a strategic directive."""
@@ -703,6 +1069,35 @@ class DirectiveService:
             pass
         return {}
 
+    @staticmethod
+    def _build_event_catalog_for_llm() -> str:
+        """Build a compact text representation of the event catalog for the LLM.
+
+        Reads from EVENT_TYPE_REGISTRY so new event types are automatically
+        included without updating the prompt.
+        """
+        from app.models.scenario_event import EVENT_TYPE_REGISTRY
+
+        lines = []
+        for key, defn in EVENT_TYPE_REGISTRY.items():
+            params = defn.get("parameters", [])
+            required = [p for p in params if p.get("required")]
+            optional = [p for p in params if not p.get("required")]
+
+            req_str = ", ".join(
+                f"{p['key']}({p['type']}{'|' + '|'.join(p['options']) if p.get('options') else ''})"
+                for p in required
+            )
+            opt_str = ", ".join(p["key"] for p in optional) if optional else ""
+
+            line = f"- {key}: {defn['description']}"
+            if req_str:
+                line += f" | REQUIRED: {req_str}"
+            if opt_str:
+                line += f" | optional: {opt_str}"
+            lines.append(line)
+        return "\n".join(lines)
+
     async def _parse_with_llm(
         self,
         raw_text: str,
@@ -723,6 +1118,9 @@ class DirectiveService:
         role_name = user.powell_role.value if user.powell_role else "TENANT_ADMIN"
         layer_desc = _LAYER_DESCRIPTIONS.get(layer, "")
 
+        # Build compact event catalog from registry for LLM context
+        event_catalog_text = self._build_event_catalog_for_llm()
+
         system_prompt = _PARSE_SYSTEM_PROMPT.format(
             role=role_name,
             layer=layer,
@@ -730,8 +1128,9 @@ class DirectiveService:
             product_families=json.dumps(tenant_context.get("product_families", [])),
             site_names=json.dumps(tenant_context.get("site_names", [])),
             reason_codes=json.dumps(_REASON_CODES),
-            customer_names=json.dumps(tenant_context.get("customer_names", [])),
-            vendor_names=json.dumps(tenant_context.get("vendor_names", [])),
+            customer_names=json.dumps(tenant_context.get("customer_names", [])[:20]),
+            vendor_names=json.dumps(tenant_context.get("vendor_names", [])[:15]),
+            event_catalog=event_catalog_text,
         )
 
         try:
@@ -742,7 +1141,7 @@ class DirectiveService:
                 user_message=raw_text,
                 model_tier="haiku",
                 temperature=0.1,
-                max_tokens=1024,
+                max_tokens=4096,
             )
             content = result.get("content", "")
             parsed = client.parse_json_response(content)
@@ -869,10 +1268,12 @@ class DirectiveService:
     ) -> Dict[str, Any]:
         """Parse user input and route appropriately.
 
-        Three possible intents:
-        - "directive" → structured parse + missing field detection (submit flow)
-        - "question"  → query relevant data, generate LLM answer (chat flow)
-        - "unknown"   → ask the user to clarify
+        Five possible intents:
+        - "directive"        → structured parse + missing field detection (submit flow)
+        - "question"         → query relevant data, generate LLM answer (chat flow)
+        - "scenario_event"   → inject event, show clarification if params missing
+        - "scenario_question"→ inject event + answer question (two-pass)
+        - "unknown"          → ask the user to clarify
         """
         layer = _ROLE_TO_LAYER.get(user.powell_role, "operational")
         if user.user_type and user.user_type.value == "TENANT_ADMIN":
@@ -895,6 +1296,70 @@ class DirectiveService:
                 "target_page_label": question_result.get("target_page_label"),
                 "filters": question_result.get("filters"),
                 "confidence": parsed.get("confidence", 0.5),
+                "target_layer": layer,
+                "layer_description": _LAYER_DESCRIPTIONS.get(layer, ""),
+            }
+
+        # --- Scenario event / scenario question flow ---
+        if intent in ("scenario_event", "scenario_question"):
+            event_spec = parsed.get("scenario_event", {})
+            missing = parsed.get("missing_fields", [])
+
+            # If LLM identified missing params, show clarification first
+            if missing:
+                return {
+                    "intent": intent,
+                    "scenario_event": event_spec,
+                    "question_text": parsed.get("question_text", ""),
+                    "missing_fields": missing,
+                    "confidence": parsed.get("confidence", 0.5),
+                    "target_layer": layer,
+                    "layer_description": _LAYER_DESCRIPTIONS.get(layer, ""),
+                }
+
+            # No missing fields — inject immediately
+            if event_spec:
+                event_result = await self._inject_scenario_event_standalone(
+                    config_id=config_id,
+                    tenant_id=user.tenant_id,
+                    user_id=user.id,
+                    event_spec=event_spec,
+                )
+
+                result = {
+                    "intent": intent,
+                    "scenario_event": event_spec,
+                    "event_summary": event_result.get("summary", ""),
+                    "event_id": event_result.get("event_id"),
+                    "target_config_id": event_result.get("target_config_id"),
+                    "target_page": "/scenario-events",
+                    "target_page_label": "Scenario Events",
+                    "confidence": parsed.get("confidence", 0.7),
+                    "target_layer": layer,
+                    "layer_description": _LAYER_DESCRIPTIONS.get(layer, ""),
+                    "missing_fields": [],
+                }
+
+                # For scenario_question: also run feasibility analysis (Pass 2)
+                if intent == "scenario_question":
+                    question_text = parsed.get("question_text", raw_text)
+                    context_data = await self._gather_scenario_context(
+                        config_id, event_spec, event_result,
+                    )
+                    answer = await self._synthesize_scenario_answer(
+                        question_text, event_spec, event_result, context_data,
+                    )
+                    result["answer"] = answer.get("answer", "")
+                    result["can_fulfill"] = answer.get("can_fulfill")
+                    result["confidence_note"] = answer.get("confidence_note", "")
+
+                return result
+
+            # Fallback: no event spec extracted
+            return {
+                "intent": intent,
+                "missing_fields": [{"field": "event_description", "question": "Could you describe the scenario you'd like to test?", "type": "text"}],
+                "confidence": 0.3,
                 "target_layer": layer,
                 "layer_description": _LAYER_DESCRIPTIONS.get(layer, ""),
             }
@@ -953,7 +1418,7 @@ class DirectiveService:
         if metric in ("inventory", "service_level", None):
             try:
                 inv_q = text("""
-                    SELECT s.name AS site_name, p.product_name,
+                    SELECT s.name AS site_name, p.description,
                            il.on_hand_qty, il.in_transit_qty,
                            ip.ss_quantity, ip.reorder_point
                     FROM inv_level il
@@ -985,7 +1450,7 @@ class DirectiveService:
         if metric in ("revenue", "service_level", None):
             try:
                 fcst_q = text("""
-                    SELECT s.name, p.product_name,
+                    SELECT s.name, p.description,
                            f.forecast_value_p50, f.forecast_value_p10,
                            f.forecast_value_p90, f.forecast_date
                     FROM forecast f
@@ -1200,30 +1665,40 @@ class DirectiveService:
         )
         sites = [{"name": r[0], "type": r[1], "master_type": r[2]} for r in sites_result.fetchall()]
 
-        products_result = await self.db.execute(
-            text("""
-                SELECT DISTINCT description FROM product_hierarchy_node
-                WHERE config_id = :c AND level_name IN ('family', 'category')
-                ORDER BY description
-            """),
+        # Get tenant_id from config for hierarchy lookup
+        cfg_result = await self.db.execute(
+            text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
             {"c": config_id},
         )
-        families = [r[0] for r in products_result.fetchall()]
+        cfg_row = cfg_result.fetchone()
+        tenant_id = cfg_row[0] if cfg_row else None
+
+        families = []
+        if tenant_id:
+            products_result = await self.db.execute(
+                text("""
+                    SELECT DISTINCT description FROM product_hierarchy_node
+                    WHERE tenant_id = :t AND hierarchy_level IN ('FAMILY', 'CATEGORY')
+                    ORDER BY description
+                """),
+                {"t": tenant_id},
+            )
+            families = [r[0] for r in products_result.fetchall() if r[0]]
 
         # Fallback: get product names if no hierarchy
         if not families:
             prod_result = await self.db.execute(
-                text("SELECT DISTINCT product_name FROM product WHERE config_id = :c LIMIT 50"),
+                text("SELECT DISTINCT description FROM product WHERE config_id = :c AND description IS NOT NULL LIMIT 50"),
                 {"c": config_id},
             )
             families = [r[0] for r in prod_result.fetchall()]
 
         # Customer and vendor names for scenario event detection
         customer_names = [
-            s["name"] for s in sites if s.get("master_type") == "MARKET_DEMAND"
+            s["name"] for s in sites if s.get("master_type") in ("MARKET_DEMAND", "CUSTOMER")
         ]
         vendor_names = [
-            s["name"] for s in sites if s.get("master_type") == "MARKET_SUPPLY"
+            s["name"] for s in sites if s.get("master_type") in ("MARKET_SUPPLY", "VENDOR")
         ]
 
         return {

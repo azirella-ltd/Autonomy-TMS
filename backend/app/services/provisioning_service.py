@@ -118,15 +118,31 @@ class ProvisioningService:
             await self.db.commit()
             return {"status": "failed", "step": step_key, "error": str(e)[:500]}
 
-    async def reprovision(self, config_id: int) -> dict:
-        """Archive the current config version and re-run all provisioning steps.
+    async def reprovision(self, config_id: int, scope: Optional[str] = None) -> dict:
+        """Archive the current config version and re-run provisioning steps.
 
         Creates an archived snapshot of the current config (preserving its
-        creation date and version) before resetting all provisioning step
-        statuses and running the full pipeline again.  The archived config
-        appears in the SC config list as a read-only historical record.
+        creation date and version) before resetting provisioning step statuses
+        and running the pipeline.  The archived config appears in the SC config
+        list as a read-only historical record.
+
+        Args:
+            config_id: Supply chain config to reprovision.
+            scope: "PARAMETER_ONLY" for policy/parameter changes (reuses existing
+                   TRM weights, GNN models, and simulation data — only runs
+                   cfa_optimization, decision_seed, conformal, briefing).
+                   "FULL" or None for structural changes (new sites, lanes,
+                   products, BOMs) — runs all 14 steps.
         """
         from app.models.supply_chain_config import SupplyChainConfig
+
+        effective_scope = scope if scope in ("PARAMETER_ONLY", "FULL") else "FULL"
+        is_parameter_only = effective_scope == "PARAMETER_ONLY"
+        steps_to_run = (
+            ConfigProvisioningStatus.PARAMETER_ONLY_STEPS
+            if is_parameter_only
+            else ConfigProvisioningStatus.STEPS
+        )
 
         # 1. Load the current config
         row = await self.db.execute(
@@ -157,24 +173,31 @@ class ProvisioningService:
         self.db.add(archived)
         await self.db.flush()
         logger.info(
-            "Archived config %d as v%d (new row id=%d) before reprovisioning",
-            config_id, current_version, archived.id,
+            "Archived config %d as v%d (new row id=%d) before reprovisioning (scope=%s)",
+            config_id, current_version, archived.id, effective_scope,
         )
 
         # 3. Bump version on the active config
         config.version = current_version + 1
         config.updated_at = datetime.utcnow()
 
-        # 4. Reset all provisioning step statuses to "pending"
+        # 4. Reset provisioning step statuses based on scope
         status = await self.get_or_create_status(config_id)
+        status.provisioning_scope = effective_scope
         for step_key in ConfigProvisioningStatus.STEPS:
-            setattr(status, f"{step_key}_status", "pending")
-            setattr(status, f"{step_key}_at", None)
-            setattr(status, f"{step_key}_error", None)
+            if step_key in steps_to_run:
+                # Reset steps that will be re-run
+                setattr(status, f"{step_key}_status", "pending")
+                setattr(status, f"{step_key}_at", None)
+                setattr(status, f"{step_key}_error", None)
+            elif is_parameter_only:
+                # For PARAMETER_ONLY: keep existing status for non-parameter steps
+                # (they were completed in the previous full provisioning)
+                pass
         status.overall_status = "not_started"
         await self.db.commit()
 
-        # 5. Run the full pipeline
+        # 5. Run the pipeline
         return await self.run_all(config_id)
 
     async def run_all(self, config_id: int) -> dict:

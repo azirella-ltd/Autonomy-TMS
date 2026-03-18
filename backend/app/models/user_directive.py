@@ -277,6 +277,8 @@ class ConfigProvisioningStatus(Base):
         return {
             "config_id": self.config_id,
             "overall_status": self.overall_status,
+            "provisioning_scope": self.provisioning_scope or "FULL",
+            "parameter_only_steps": self.PARAMETER_ONLY_STEPS,
             "last_updated": self.last_updated.isoformat() if self.last_updated else None,
             "steps": steps,
         }

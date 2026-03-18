@@ -1,6 +1,6 @@
 # SAP S/4HANA FAA — Demo Scenarios & Autonomy Integration Guide
 
-**Version**: 1.1 | **Date**: 2026-03-09 | **SAP Release**: S/4HANA 2025 (SP00)
+**Version**: 2.0 | **Date**: 2026-03-18 | **SAP Release**: S/4HANA 2025 (SP00)
 
 This document maps the pre-configured logistics demo scenarios in the SAP S/4HANA Fully-Activated Appliance (FAA) to Autonomy platform capabilities. It serves as the playbook for building side-by-side demonstrations that highlight Autonomy's AI-driven differentiators.
 
@@ -132,7 +132,8 @@ RDP is required for SAP GUI access (pre-connection steps, demo execution, user m
 
 ### Pre-Connection Checklist
 
-Before connecting Autonomy to the FAA, the following steps must be completed via SAP GUI:
+Before connecting Autonomy to the FAA, the following steps must be completed via SAP GUI.
+For detailed user permissions by connection type (RFC, OData, HANA DB, CSV), see [SAP Integration Guide — User Permissions](../external/SAP_INTEGRATION_GUIDE.md#sap-user-permissions-by-connection-type).
 
 1. **Unlock RFC user** — BPINST is LOCKED by default in the 2025 template. Login as `DDIC` (client 000) or `SAP*` (client 000, Master Password) via SAP GUI. Use tCode `SU01` to unlock the user, or create a dedicated `ZRFC_AUTONOMY` user in client 100 (recommended).
 2. **Open MM inventory period** — tCode `MMPV` in client 100 (required for inventory data extraction).
@@ -536,7 +537,217 @@ This is not the default extraction behavior — enable via the SAP Data Manageme
 
 ---
 
-## 8. SAP Change Simulator — Extract Once, Simulate Ongoing
+## 7. IDES 1710 Entity Reference
+
+> **Active Config**: ID 82 (SAP IDES 1710 — Plant 1 US, v3), Tenant 20
+> **CSV Location**: `imports/SAP/IDES_1710/` (50 CSV files)
+
+### SAP Official Demo Script Values
+
+These are the **exact field values** used in SAP's published demo scripts (BD9, Plan to Produce, etc.). Use these when demoing to SAP people — they will recognize these as the standard FAA demo data.
+
+| Demo | tCode | Customer | Material | Plant | Sales Org |
+|------|-------|----------|----------|-------|-----------|
+| **Sell from Stock (BD9)** | VA01→VL01N→VF01 | `17100001` (Domestic US Customer 1) | `TG11` (Trading Good 11) | `1710` | `1710/10/00` |
+| **Sell from Stock (alt)** | VA01 | `17100003` (Domestic Customer US 3) | `TG12` (Trading Good 12) | `1710` | `1710/10/00` |
+| **Plan to Produce** | MD04→CO01→CO11N | — | `FG126` (Finished Good 126, MTS-DI) | `1710` | — |
+| **Variant Configuration** | VA01→CU41→CS01 | — | `AVC_RBT_ROBOT` (Robot Base Unit) | `1710` | `1710/10/00` |
+| **EWM Warehouse** | /SCWM/* | `EWM17-CU01` | `EWMS4-01`, `EWMS4-02` | `1710` | — |
+| **Intercompany** | VA01 | `17100011` | TG11 | `1710` | `1710/10/00` |
+
+**Demo Users** (Client 100, Password: `Welcome1`): `S4H_SD_DEM` (Sales), `S4H_MM_DEM` (Purchasing), `S4H_PP_DEM` (Production), `S4H_EWM_DEM` (Warehouse), `S4H_PM_DEM` (Maintenance/Quality)
+
+### Extended SC Planning Data (MZ Bikes)
+
+The MZ Motorcycle Zone product line provides richer supply chain data for planning demos — BOMs, multiple customers, purchase orders, production history. Use this data for Autonomy-specific demos (stochastic planning, AI agents, scenario events).
+
+### Plants/Sites
+
+| SAP Code | Name | DB Site ID | master_type |
+|----------|------|-----------|-------------|
+| 1710 | Plant 1 US (Palo Alto, CA) | 1352 | MANUFACTURER |
+| 1711 | Plant 1 US (Storage) | 1353 | INVENTORY |
+| 1712 | Plant 2 US (Storage) | 1354 | INVENTORY |
+| 1720 | Plant 2 US (Sacramento, CA) | 1355 | INVENTORY |
+
+**Storage Locations (Plant 1710)**: 171A (Std. storage 1), 171B (Std. storage 2), 171C (Raw Materials), 171D (EWM Rec. on Dock), 171E (KANBAN)
+
+### Finished Goods — Motorcycle Zone (MZ)
+
+Three product families, 9 finished goods manufactured at Plant 1710:
+
+| Product ID | Description | Family |
+|-----------|-------------|--------|
+| MZ-FG-C900 | C900 BIKE | City |
+| MZ-FG-C950 | C950 BIKE | City |
+| MZ-FG-C990 | C990 Bike | City |
+| MZ-FG-M500 | M500 BIKE | Mountain |
+| MZ-FG-M525 | M525 BIKE | Mountain |
+| MZ-FG-M550 | M550 BIKE | Mountain |
+| MZ-FG-R100 | R100 BIKE | Road |
+| MZ-FG-R200 | R200 Bike | Road |
+| MZ-FG-R300 | R300 Bike | Road |
+
+**Trading Goods**: MZ-TG-Y120 (Y120 Bike), MZ-TG-Y200 (Y200 Bike), MZ-TG-Y240 (Y240 Bike) — purchased, not manufactured.
+
+**Raw Materials**: Each bike has 7-10 components (Frame, Handle Bars, Seat, Wheels, Forks, Brakes, Drive Train, plus Derailleur Gears, Pedal Kit, Shock Kit for M/R series). Pattern: `MZ-RM-{bike}-{seq}` (e.g., MZ-RM-C900-01 = Frame 900). Total: 81 raw materials.
+
+### Other Product Lines
+
+| Product ID | Description | Category |
+|-----------|-------------|----------|
+| AVC_RBT_BUNDLE | Robot Bundle | Robotics |
+| AVC_RBT_ROBOT | Robot Base Unit | Robotics |
+| AVC_RBT_ROBOT2 | Robot Multi-Level | Robotics |
+| CM-FL-V00 | Forklift | Capital Equipment |
+| CEMENT-100 | CEMENT-100 | Process |
+
+### Key Customers — Named Bike Dealers (USCU_*)
+
+**Large Accounts (L-prefix)**:
+
+| DB Name | Company | City, State | DB ID |
+|---------|---------|-------------|-------|
+| CUST-USCU_L01 | Skymart Corp | New York, NY | 1362 |
+| CUST-USCU_L02 | Toys4U | Wilmington, DE | 1361 |
+| CUST-USCU_L03 | Viadox | Baltimore, MD | 1360 |
+| CUST-USCU_L04 | Quotex | Raleigh, NC | 1367 |
+| CUST-USCU_L05 | Bluestar Corp | Charleston, SC | 1374 |
+| CUST-USCU_L06 | Dexon | Nashville, TN | 1370 |
+| CUST-USCU_L07 | Interlude Inc | Miami, FL | 1368 |
+| CUST-USCU_L08 | Veracity | Atlanta, GA | 1373 |
+| CUST-USCU_L09 | **Bigmart** | Detroit, MI | 1357 |
+| CUST-USCU_L10 | CostClub | Cleveland, OH | 1358 |
+
+**Small Accounts (S-prefix)**:
+
+| DB Name | Company | City, State | DB ID |
+|---------|---------|-------------|-------|
+| CUST-USCU_S01 | Performance Bikes | Pittsburgh, PA | 1371 |
+| CUST-USCU_S02 | Custom Sports | Boston, MA | 1369 |
+| CUST-USCU_S03 | Eastside Bikes | Greensburg, PA | 1377 |
+| CUST-USCU_S04 | Fit Cycles | Portland, ME | 1372 |
+| CUST-USCU_S05 | Greater Hartford Area | Hartford, CT | 1379 |
+| CUST-USCU_S06 | Hub & Spokes Inc | Manhattan, NY | 1384 |
+| CUST-USCU_S07 | Westend Cycles | Raleigh, NC | 1380 |
+| CUST-USCU_S08 | Velocity Cycles | Charleston, SC | 1382 |
+| CUST-USCU_S09 | Greenhigh Bikes | Nashville, TN | 1385 |
+| CUST-USCU_S10 | Turbo Bikes | Miami, FL | 1376 |
+| CUST-USCU_S11 | Bike World | Atlanta, GA | 1381 |
+| CUST-USCU_S12 | Century Cycles | Richmond, VA | 1383 |
+| CUST-USCU_S13 | Rolling Bike Shop | Montgomery, AL | 1378 |
+| CUST-USCU_S14 | Cityscape Cycles | Chicago, IL | 1366 |
+| CUST-USCU_S15 | Northside Bikes | Des Moines, IA | 1363 |
+| CUST-USCU_S16 | Gogo Bikes | Milwaukee, WI | 1364 |
+| CUST-USCU_S17 | Bikepros | Minneapolis, MN | 1365 |
+
+**Generic Customers** (for non-bike demos):
+
+| DB Name | Description | DB ID |
+|---------|-------------|-------|
+| CUST-0017100001 | Domestic US Customer 1 | 1356 |
+| CUST-0017100006 | Domestic Customer US 6 (Returns) | 1387 |
+| CUST-0017100051 | Foreign Customer 51 (CA) | 1404 |
+
+### Key Vendors/Suppliers
+
+| DB Name | Description | DB ID |
+|---------|-------------|-------|
+| VEND-USSU-VSF01 | EV Parts Inc. | 1417 |
+| VEND-USSU-VSF02 | WaveCrest Labs | 1421 |
+| VEND-0017300001 | Domestic US Supplier 1 | 1422 |
+| VEND-0017300002 | Domestic US Supplier 2 | 1425 |
+| VEND-0017300003 | Domestic US Supplier 3 (with ERS) | 1428 |
+| VEND-0017300006 | Domestic US Supplier 6 (Returns) | 1424 |
+| VEND-0017300007 | Domestic US Subcontractor A | 1426 |
+
+### Data Population Status
+
+| Entity | DB Count | CSV Available? | Status |
+|--------|----------|---------------|--------|
+| Products | 178 | MARA/MAKT ✅ | Present |
+| Sites | 89 (4 internal, 59 customers, 26 vendors) | T001W/KNA1/LFA1 ✅ | Present |
+| Transportation lanes | 88 | EORD ✅ | Present |
+| Inventory levels | 178 (1 site only) | MARD ✅ (1,035 records) | Partial — only 1 site loaded |
+| **BOMs** | **0** | STPO ✅, STKO ✅, **MAST ❌** | **BLOCKED** — builder bug (parent/component swap) + MAST not extracted |
+| **Forecasts** | **0** | PBIM/PBED ✅ (no MZ data) | **MISSING** — PIR has no MZ bike entries; need VBAP-based demand history |
+| **Outbound orders** | **0** | VBAK ✅ (8,148), VBAP ✅ | **NOT INGESTED** — builder method exists but buggy |
+| **Inbound orders** | **0** | EKKO ✅ (2,223), EKPO ✅ | **NOT INGESTED** — builder uses raw SQL fallback |
+| **Production orders** | **0** | AFKO ✅ (1,123), AFPO ✅ | **NOT INGESTED** — builder method exists, not fully wired |
+
+### History Data for AI Training
+
+| Table | Purpose | `SAP/IDES_1710/` | `sap_faa_extract/` | Records |
+|-------|---------|-------------------|--------------------|---------|
+| **EKBE** | PO history (goods receipts) | ❌ | ✅ | 17,975 (988 match MZ POs) |
+| **AFRU** | Production confirmations | ❌ | ✅ | 1,656 |
+| **KNVV** | Customer sales area data | ❌ | ✅ | 1,313 |
+| **AFVC** | Production operations | ✅ | ✅ | 2,478 |
+| **QALS** | Quality inspection lots | ✅ | ✅ | 250 |
+| **MSEG** | Goods movements | ❌ (header only) | ❌ (header only) | 0 — **re-extract needed** |
+| **KONV** | Pricing conditions | — | ❌ (header only) | 0 — **re-extract needed** |
+
+> **NOTE**: `sap_faa_extract/` and `sap_faa_full_extract/` contain richer data than `SAP/IDES_1710/`. The builder currently reads from `SAP/IDES_1710/` only. Need to consolidate directories or update builder path.
+
+### Truly Missing — Must Extract from FAA
+
+| Table | Purpose | Impact |
+|-------|---------|--------|
+| **MAST** | Material BOM Assignment (MATNR→STLNR) | Cannot populate `product_bom` — BOM explosion blocked |
+| **MSEG** | Goods movement items | Re-extract with corrected query (current extraction returned 0 rows) |
+| **KONV** | Pricing condition values | Re-extract with corrected query |
+
+---
+
+## 8. Scenario Event Catalog (24 Types)
+
+These can be triggered via Talk to Me natural language or the Scenario Events UI.
+
+> **For SAP audiences**: Use the SAP official materials (TG11, FG126, customer 17100001) for standard demo flows.
+> **For SC planning/AI demos**: Use MZ bikes (C900, M500, R200) and named customers (Bigmart, Skymart) for richer scenarios.
+
+### Demand Events
+
+1. **drop_in_order** — SAP: "Customer 17100001 places a rush order for 100 TG11, delivery in 2 weeks" / MZ: "Bigmart places a rush order for 500 C900 bikes, delivery in 2 weeks"
+2. **demand_spike** — "20% demand increase on M-series bikes for 8 weeks (summer season)"
+3. **order_cancellation** — "CostClub cancels their standing order for R200 bikes"
+4. **forecast_revision** — "Reduce R-series forecast by 15% for next quarter"
+5. **customer_return** — "Veracity returns 200 C950 bikes — quality defect in Brakes-950"
+6. **product_phase_out** — "Phase out Y120 bike, replace with Y240 over 8 weeks"
+7. **new_product_introduction** — "Introduce E-Bike (MZ-FG-E100) at Plant 1710, 100/week, launch in 6 weeks"
+
+### Supply Events
+
+8. **supplier_delay** — "EV Parts Inc. delayed by 14 days on all open POs"
+9. **supplier_loss** — "WaveCrest Labs declares bankruptcy — all supply lost"
+10. **quality_hold** — "Quality hold on 500 units of Frame 900 at Plant 1710"
+11. **component_shortage** — "1000 units of Wheels-900 damaged in warehouse — write off"
+12. **supplier_price_change** — "EV Parts Inc. raises prices by 12% on all components"
+13. **product_recall** — "Mandatory recall: 300 C990 bikes — brake defect"
+
+### Capacity Events
+
+14. **capacity_loss** — "Plant 1710 loses 40% production capacity for 3 weeks"
+15. **machine_breakdown** — "Assembly Line A at Plant 1710 breaks down — 5 days repair"
+16. **yield_loss** — "C900 assembly scrap rate increases 15% for 4 weeks"
+17. **labor_shortage** — "Plant 1710 loses 30% labor — flu outbreak on day shift, 2 weeks"
+18. **engineering_change** — "Substitute Brakes-900 with BKC-990 Brakes on C900 bike"
+
+### Logistics Events
+
+19. **shipment_delay** — "Shipment from Plant 1710 to Plant 1720 delayed by 7 days"
+20. **lane_disruption** — "Lane from Supplier 1 to Plant 1710 blocked for 3 weeks"
+21. **warehouse_capacity_constraint** — "Plant 1711 warehouse at 95% utilization, expected 4 weeks"
+
+### Macro Events
+
+22. **tariff_change** — "15% tariff increase on imports from Domestic US Supplier 2"
+23. **currency_fluctuation** — "EUR/USD weakens by 8%"
+24. **regulatory_change** — "CPSC safety regulation: additional brake testing on all bike models, 90-day deadline"
+
+---
+
+## 9. SAP Change Simulator — Extract Once, Simulate Ongoing
 
 **Purpose**: Extract all data from SAP in a single session (~1-2 hours, ~$3-6), then shut down the FAA to save ~$75/day. A lightweight simulator generates realistic change events that trigger Autonomy's existing CDC pipeline — no SAP needed.
 
@@ -644,7 +855,7 @@ The simulator writes to the same DB tables and triggers the same events as a rea
 
 ---
 
-## 9. References
+## 10. References
 
 - [SAP S/4HANA FAA Demo Guides — SAP Community](https://community.sap.com/t5/technology-blog-posts-by-sap/sap-s-4hana-fully-activated-appliance-demo-guides/ba-p/13389412)
 - [SAP S/4HANA FAA Getting Started Guide v21](SAP/Documentation/SAP_Getting_Started_Guide_v21.pdf) (local)

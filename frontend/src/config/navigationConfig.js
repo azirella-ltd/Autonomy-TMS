@@ -960,6 +960,13 @@ export const NAVIGATION_CONFIG = [
         description: 'SAP connections, field mapping, and data ingestion',
       },
       {
+        label: 'ERP Data Management',
+        path: '/admin/erp-data',
+        icon: DatabaseIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Odoo, D365, and other ERP connections and data extraction',
+      },
+      {
         label: 'Stochastic Parameters',
         path: '/admin/stochastic-params',
         icon: TuneIcon,

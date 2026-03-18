@@ -5,12 +5,15 @@ Events are data modifications applied to a scenario branch (Kinaxis pattern).
 Each event type maps to specific DB table modifications and triggers CDC/TRM
 cascade responses. Events are recorded for auditability and undo support.
 
-13 event types across 5 categories:
-  Demand:    drop_in_order, demand_spike, order_cancellation, forecast_revision
-  Supply:    supplier_delay, supplier_loss, quality_hold, component_shortage
-  Capacity:  capacity_loss, machine_breakdown
-  Logistics: shipment_delay, lane_disruption
-  Macro:     tariff_change
+24 event types across 5 categories (SAP S/4HANA IDES compatible):
+  Demand:     drop_in_order, demand_spike, order_cancellation, forecast_revision,
+              customer_return, product_phase_out, new_product_introduction
+  Supply:     supplier_delay, supplier_loss, quality_hold, component_shortage,
+              supplier_price_change, product_recall
+  Capacity:   capacity_loss, machine_breakdown, yield_loss, labor_shortage,
+              engineering_change
+  Logistics:  shipment_delay, lane_disruption, warehouse_capacity_constraint
+  Macro:      tariff_change, currency_fluctuation, regulatory_change
 """
 
 from datetime import datetime
@@ -82,6 +85,45 @@ EVENT_CATEGORIES = {
                 "affects_tables": ["forecast"],
                 "triggers": ["forecast_adjustment", "inventory_buffer"],
             },
+            "customer_return": {
+                "label": "Customer Return",
+                "description": "Customer returns shipped goods (defective, unwanted, recall)",
+                "parameters": [
+                    {"key": "customer_id", "label": "Customer", "type": "select", "required": True, "source": "customers"},
+                    {"key": "product_id", "label": "Product", "type": "select", "required": True, "source": "products"},
+                    {"key": "quantity", "label": "Return Quantity", "type": "number", "required": True},
+                    {"key": "return_to_site_id", "label": "Return-To Site", "type": "select", "required": False, "source": "internal_sites"},
+                    {"key": "reason", "label": "Return Reason", "type": "select", "required": True, "options": ["defective", "damaged", "wrong_item", "unwanted", "recall"]},
+                    {"key": "disposition", "label": "Disposition", "type": "select", "required": False, "options": ["restock", "quarantine", "scrap"], "default": "quarantine"},
+                ],
+                "affects_tables": ["inv_level", "outbound_order"],
+                "triggers": ["quality_disposition", "inventory_rebalancing", "atp_executor"],
+            },
+            "product_phase_out": {
+                "label": "Product Phase-Out",
+                "description": "Product approaching end-of-life — ramp down forecast, manage remaining inventory",
+                "parameters": [
+                    {"key": "product_id", "label": "Product", "type": "select", "required": True, "source": "products"},
+                    {"key": "phase_out_date", "label": "Phase-Out Date", "type": "date", "required": True},
+                    {"key": "ramp_down_weeks", "label": "Ramp-Down Period (weeks)", "type": "number", "required": True},
+                    {"key": "replacement_product_id", "label": "Replacement Product", "type": "select", "required": False, "source": "products"},
+                ],
+                "affects_tables": ["forecast", "inv_policy"],
+                "triggers": ["forecast_adjustment", "inventory_buffer", "po_creation"],
+            },
+            "new_product_introduction": {
+                "label": "New Product Introduction",
+                "description": "Launch a new product — initial forecast, sourcing, inventory targets",
+                "parameters": [
+                    {"key": "product_description", "label": "Product Description", "type": "text", "required": True},
+                    {"key": "site_id", "label": "Manufacturing/Stocking Site", "type": "select", "required": True, "source": "internal_sites"},
+                    {"key": "initial_forecast_weekly", "label": "Initial Weekly Forecast", "type": "number", "required": True},
+                    {"key": "launch_date", "label": "Launch Date", "type": "date", "required": True},
+                    {"key": "similar_product_id", "label": "Similar Product (for forecast basis)", "type": "select", "required": False, "source": "products"},
+                ],
+                "affects_tables": ["product", "forecast", "inv_policy"],
+                "triggers": ["forecast_adjustment", "po_creation", "mo_execution"],
+            },
         },
     },
     "supply": {
@@ -129,6 +171,31 @@ EVENT_CATEGORIES = {
                 "affects_tables": ["inv_level"],
                 "triggers": ["po_creation", "subcontracting", "inventory_rebalancing"],
             },
+            "supplier_price_change": {
+                "label": "Supplier Price Change",
+                "description": "Vendor increases or decreases prices for materials",
+                "parameters": [
+                    {"key": "vendor_site_id", "label": "Supplier", "type": "select", "required": True, "source": "vendor_sites"},
+                    {"key": "product_id", "label": "Product (or leave empty for all)", "type": "select", "required": False, "source": "products"},
+                    {"key": "price_change_pct", "label": "Price Change %", "type": "number", "required": True},
+                    {"key": "effective_date", "label": "Effective Date", "type": "date", "required": False},
+                ],
+                "affects_tables": ["vendor_product"],
+                "triggers": ["po_creation", "subcontracting"],
+            },
+            "product_recall": {
+                "label": "Product Recall",
+                "description": "Batch-level quality failure requiring recall of shipped goods",
+                "parameters": [
+                    {"key": "product_id", "label": "Product", "type": "select", "required": True, "source": "products"},
+                    {"key": "affected_quantity", "label": "Affected Quantity", "type": "number", "required": True},
+                    {"key": "site_id", "label": "Originating Site", "type": "select", "required": True, "source": "internal_sites"},
+                    {"key": "recall_scope", "label": "Recall Scope", "type": "select", "required": True, "options": ["voluntary", "mandatory"]},
+                    {"key": "replacement_required", "label": "Replacement Required", "type": "select", "required": False, "options": ["yes", "no"], "default": "yes"},
+                ],
+                "affects_tables": ["inv_level", "outbound_order"],
+                "triggers": ["quality_disposition", "mo_execution", "po_creation", "order_tracking"],
+            },
         },
     },
     "capacity": {
@@ -157,6 +224,44 @@ EVENT_CATEGORIES = {
                 "affects_tables": ["production_process"],
                 "triggers": ["maintenance_scheduling", "mo_execution"],
             },
+            "yield_loss": {
+                "label": "Yield Loss",
+                "description": "Production scrap rate increases — more raw materials needed per unit output",
+                "parameters": [
+                    {"key": "site_id", "label": "Site", "type": "select", "required": True, "source": "internal_sites"},
+                    {"key": "product_id", "label": "Product", "type": "select", "required": True, "source": "products"},
+                    {"key": "scrap_increase_pct", "label": "Scrap Rate Increase %", "type": "number", "required": True},
+                    {"key": "duration_weeks", "label": "Duration (weeks)", "type": "number", "required": True},
+                ],
+                "affects_tables": ["product_bom", "production_process"],
+                "triggers": ["mo_execution", "po_creation", "quality_disposition"],
+            },
+            "labor_shortage": {
+                "label": "Labor Shortage",
+                "description": "Workforce unavailability reducing effective capacity",
+                "parameters": [
+                    {"key": "site_id", "label": "Site", "type": "select", "required": True, "source": "internal_sites"},
+                    {"key": "reduction_pct", "label": "Capacity Reduction %", "type": "number", "required": True},
+                    {"key": "duration_weeks", "label": "Duration (weeks)", "type": "number", "required": True},
+                    {"key": "affected_shifts", "label": "Affected Shifts", "type": "select", "required": False, "options": ["all", "day", "night", "weekend"], "default": "all"},
+                ],
+                "affects_tables": ["production_process"],
+                "triggers": ["mo_execution", "maintenance_scheduling", "subcontracting"],
+            },
+            "engineering_change": {
+                "label": "Engineering Change",
+                "description": "BOM revision — changes component requirements mid-planning",
+                "parameters": [
+                    {"key": "product_id", "label": "Finished Good", "type": "select", "required": True, "source": "products"},
+                    {"key": "change_type", "label": "Change Type", "type": "select", "required": True, "options": ["add_component", "remove_component", "change_quantity", "substitute"]},
+                    {"key": "component_id", "label": "Component (affected)", "type": "select", "required": True, "source": "products"},
+                    {"key": "new_component_id", "label": "New/Substitute Component", "type": "select", "required": False, "source": "products"},
+                    {"key": "new_quantity", "label": "New Quantity per Unit", "type": "number", "required": False},
+                    {"key": "effective_date", "label": "Effective Date", "type": "date", "required": False},
+                ],
+                "affects_tables": ["product_bom"],
+                "triggers": ["mo_execution", "po_creation"],
+            },
         },
     },
     "logistics": {
@@ -183,6 +288,17 @@ EVENT_CATEGORIES = {
                 "affects_tables": ["transportation_lane"],
                 "triggers": ["to_execution", "inventory_rebalancing"],
             },
+            "warehouse_capacity_constraint": {
+                "label": "Warehouse Capacity Constraint",
+                "description": "Storage location approaching or exceeding capacity — requires overflow management",
+                "parameters": [
+                    {"key": "site_id", "label": "Warehouse/DC", "type": "select", "required": True, "source": "internal_sites"},
+                    {"key": "utilization_pct", "label": "Current Utilization %", "type": "number", "required": True},
+                    {"key": "duration_weeks", "label": "Expected Duration (weeks)", "type": "number", "required": True},
+                ],
+                "affects_tables": ["inv_level"],
+                "triggers": ["inventory_rebalancing", "to_execution"],
+            },
         },
     },
     "macro": {
@@ -198,6 +314,30 @@ EVENT_CATEGORIES = {
                 ],
                 "affects_tables": ["vendor_product"],
                 "triggers": ["po_creation", "subcontracting"],
+            },
+            "currency_fluctuation": {
+                "label": "Currency Fluctuation",
+                "description": "Exchange rate shift affecting multi-currency sourcing and landed costs",
+                "parameters": [
+                    {"key": "currency_pair", "label": "Currency Pair (e.g. EUR/USD)", "type": "text", "required": True},
+                    {"key": "change_pct", "label": "Rate Change %", "type": "number", "required": True},
+                    {"key": "direction", "label": "Direction", "type": "select", "required": True, "options": ["strengthen", "weaken"]},
+                ],
+                "affects_tables": ["vendor_product"],
+                "triggers": ["po_creation", "subcontracting"],
+            },
+            "regulatory_change": {
+                "label": "Regulatory Change",
+                "description": "New compliance requirement affecting sourcing, materials, or processes",
+                "parameters": [
+                    {"key": "regulation_description", "label": "Regulation Description", "type": "text", "required": True},
+                    {"key": "affected_products", "label": "Affected Products", "type": "text", "required": False},
+                    {"key": "affected_sites", "label": "Affected Sites", "type": "text", "required": False},
+                    {"key": "compliance_deadline", "label": "Compliance Deadline", "type": "date", "required": True},
+                    {"key": "impact_type", "label": "Impact Type", "type": "select", "required": True, "options": ["sourcing_restriction", "material_ban", "testing_requirement", "labeling_change", "process_change"]},
+                ],
+                "affects_tables": ["sourcing_rules", "production_process"],
+                "triggers": ["po_creation", "mo_execution", "quality_disposition"],
             },
         },
     },
