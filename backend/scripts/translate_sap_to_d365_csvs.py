@@ -115,6 +115,30 @@ def main():
     plaf = read_csv(sap_dir, "PLAF.csv")   # Planned orders (MRP output)
     equi = read_csv(sap_dir, "EQUI.csv")   # Equipment/assets
     qals = read_csv(sap_dir, "QALS.csv")   # Quality inspection lots
+    # Additional master/transaction tables
+    t001 = read_csv(sap_dir, "T001.csv")   # Company codes
+    t001l = read_csv(sap_dir, "T001L.csv") # Storage locations
+    adrc = read_csv(sap_dir, "ADRC.csv")   # Addresses
+    marm = read_csv(sap_dir, "MARM.csv")   # UOM conversions
+    mvke = read_csv(sap_dir, "MVKE.csv")   # Sales org data
+    knvv = read_csv(sap_dir, "KNVV.csv")   # Customer sales area
+    eina = read_csv(sap_dir, "EINA.csv")   # Purchasing info records
+    eine = read_csv(sap_dir, "EINE.csv")   # Purchasing conditions
+    eord = read_csv(sap_dir, "EORD.csv")   # Source list (approved vendors)
+    eket = read_csv(sap_dir, "EKET.csv")   # PO schedule lines
+    afpo = read_csv(sap_dir, "AFPO.csv")   # Production order items
+    afru = read_csv(sap_dir, "AFRU.csv")   # Production confirmations
+    aufk = read_csv(sap_dir, "AUFK.csv")   # Order master
+    plko = read_csv(sap_dir, "PLKO.csv")   # Routing headers
+    plpo = read_csv(sap_dir, "PLPO.csv")   # Routing operations
+    crhd = read_csv(sap_dir, "CRHD.csv")   # Work centers
+    crco = read_csv(sap_dir, "CRCO.csv")   # Cost center assignments
+    qase = read_csv(sap_dir, "QASE.csv")   # Quality results
+    qmel = read_csv(sap_dir, "QMEL.csv")   # Quality notifications
+    jest = read_csv(sap_dir, "JEST.csv")   # System status
+    kako = read_csv(sap_dir, "KAKO.csv")   # Capacity data
+    mch1 = read_csv(sap_dir, "MCH1.csv")   # Batch master (plant-independent)
+    mcha = read_csv(sap_dir, "MCHA.csv")   # Batch master (plant-level)
 
     # ── Build lookup maps ────────────────────────────────────────────────
     print("\nPhase 2: Building lookup maps...")
@@ -190,6 +214,25 @@ def main():
     pbim_map = {}
     for r in pbim:
         pbim_map[r.get("BDZEI", "")] = r.get("MATNR", "")
+
+    # Address lookup (ADRC)
+    adrc_map = {}
+    for r in adrc:
+        adrc_map[r.get("ADDRNUMBER", "")] = r
+
+    # AUFK order master lookup
+    aufk_map = {r.get("AUFNR", ""): r for r in aufk}
+
+    # EINA+EINE: purchasing info records → vendor purchase prices
+    eina_map = {}  # INFNR → {MATNR, LIFNR}
+    for r in eina:
+        if r.get("LOEKZ") != "X":
+            eina_map[r.get("INFNR", "")] = r
+
+    # Cost center assignments for work centers
+    crco_map = defaultdict(str)  # OBJID → KOSTL
+    for r in crco:
+        crco_map[r.get("OBJID", "")] = r.get("KOSTL", "")
 
     print(f"  Materials: {len(materials)}")
     print(f"  Active vendors: {len(active_vendors)}")
@@ -537,6 +580,238 @@ def main():
                "ForecastDate", "ForecastModel", "dataAreaId"])
 
     # ══════════════════════════════════════════════════════════════════════
+    # ADDITIONAL MASTER DATA (previously missing)
+    # ══════════════════════════════════════════════════════════════════════
+    print("\n  --- Additional Master Data ---")
+
+    # ── LegalEntities.csv (T001) ─────────────────────────────────────────
+    legal_entities = []
+    for r in t001:
+        legal_entities.append({
+            "DataArea": r.get("BUKRS", ""),
+            "Name": r.get("BUTXT", ""),
+            "AddressCountryRegionId": r.get("LAND1", ""),
+            "CurrencyCode": r.get("WAERS", ""),
+            "dataAreaId": r.get("BUKRS", "").lower(),
+        })
+    write_csv(output_dir, "LegalEntities.csv", legal_entities,
+              ["DataArea", "Name", "AddressCountryRegionId", "CurrencyCode", "dataAreaId"])
+
+    # ── StorageLocations.csv (T001L → extends Warehouses) ────────────────
+    storage_locs = []
+    for r in t001l:
+        storage_locs.append({
+            "SiteId": r.get("WERKS", ""),
+            "StorageLocationId": r.get("LGORT", ""),
+            "StorageLocationName": r.get("LGOBE", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "StorageLocations.csv", storage_locs,
+              ["SiteId", "StorageLocationId", "StorageLocationName", "dataAreaId"])
+
+    # ── ProductUnitConversions.csv (MARM) ────────────────────────────────
+    uom_conversions = []
+    for r in marm:
+        if r.get("MATNR", "") not in materials:
+            continue
+        uom_conversions.append({
+            "ItemNumber": r.get("MATNR", ""),
+            "AlternativeUnitSymbol": r.get("MEINH", ""),
+            "Numerator": safe_float(r.get("UMREZ", "1")),
+            "Denominator": safe_float(r.get("UMREN", "1")),
+            "GrossWeight": safe_float(r.get("BRGEW", "0")),
+            "Volume": safe_float(r.get("VOLUM", "0")),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "ProductUnitConversions.csv", uom_conversions,
+              ["ItemNumber", "AlternativeUnitSymbol", "Numerator", "Denominator",
+               "GrossWeight", "Volume", "dataAreaId"])
+
+    # ── VendorPurchasePrices.csv (EINA+EINE joined) ─────────────────────
+    vendor_prices = []
+    for r in eine:
+        infnr = r.get("INFNR", "")
+        eina_r = eina_map.get(infnr, {})
+        mat = eina_r.get("MATNR", "")
+        vendor = eina_r.get("LIFNR", "")
+        if not mat or not vendor:
+            continue
+        vendor_prices.append({
+            "VendorAccountNumber": vendor,
+            "ItemNumber": mat,
+            "PurchasingOrganization": r.get("EKORG", ""),
+            "SiteId": r.get("WERKS", ""),
+            "UnitPrice": safe_float(r.get("NETPR", "0")),
+            "PriceUnit": safe_float(r.get("PEINH", "1")),
+            "Currency": r.get("WAERS", "USD"),
+            "LeadTimeDays": safe_float(r.get("APLFZ", "0")),
+            "MinimumOrderQuantity": safe_float(r.get("NORBM", "0")),
+            "MinimumQuantity": safe_float(r.get("MINBM", "0")),
+            "OverdeliveryTolerance": safe_float(r.get("UEBTO", "0")),
+            "UnderdeliveryTolerance": safe_float(r.get("UNTTO", "0")),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "VendorPurchasePrices.csv", vendor_prices,
+              ["VendorAccountNumber", "ItemNumber", "PurchasingOrganization", "SiteId",
+               "UnitPrice", "PriceUnit", "Currency", "LeadTimeDays",
+               "MinimumOrderQuantity", "MinimumQuantity",
+               "OverdeliveryTolerance", "UnderdeliveryTolerance", "dataAreaId"])
+
+    # ── ApprovedVendorList.csv (EORD — source list) ─────────────────────
+    approved_vendors = []
+    for r in eord:
+        approved_vendors.append({
+            "ItemNumber": r.get("MATNR", ""),
+            "SiteId": r.get("WERKS", ""),
+            "SourceListNumber": r.get("ZEORD", ""),
+            "ValidFromDate": r.get("VDATU", ""),
+            "ValidToDate": r.get("BDATU", ""),
+            "VendorAccountNumber": r.get("LIFNR", ""),
+            "IsFixed": r.get("FLIFN", ""),
+            "IsBlocked": r.get("NOTKZ", ""),
+            "PurchasingOrganization": r.get("EKORG", ""),
+            "SourceType": r.get("EORTP", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "ApprovedVendorList.csv", approved_vendors,
+              ["ItemNumber", "SiteId", "SourceListNumber", "ValidFromDate",
+               "ValidToDate", "VendorAccountNumber", "IsFixed", "IsBlocked",
+               "PurchasingOrganization", "SourceType", "dataAreaId"])
+
+    # ── CustomerSalesAreas.csv (KNVV) ────────────────────────────────────
+    cust_sales = []
+    for r in knvv:
+        cust_sales.append({
+            "CustomerAccount": r.get("KUNNR", ""),
+            "SalesOrganization": r.get("VKORG", ""),
+            "DistributionChannel": r.get("VTWEG", ""),
+            "Division": r.get("SPART", ""),
+            "Currency": r.get("WAERS", ""),
+            "PricingProcedure": r.get("KALKS", ""),
+            "DeliveryPriority": r.get("LPRIO", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "CustomerSalesAreas.csv", cust_sales,
+              ["CustomerAccount", "SalesOrganization", "DistributionChannel",
+               "Division", "Currency", "PricingProcedure", "DeliveryPriority", "dataAreaId"])
+
+    # ── WorkCenters.csv (CRHD + CRCO) ───────────────────────────────────
+    work_centers = []
+    for r in crhd:
+        if r.get("WERKS", "") != plant and r.get("WERKS", ""):
+            continue
+        objid = r.get("OBJID", "")
+        work_centers.append({
+            "WorkCenterId": objid,
+            "WorkCenterName": r.get("ARBPL", ""),
+            "SiteId": r.get("WERKS", ""),
+            "WorkCenterType": r.get("VERWE", ""),
+            "ObjectType": r.get("OBJTY", ""),
+            "CostCenter": crco_map.get(objid, ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "WorkCenters.csv", work_centers,
+              ["WorkCenterId", "WorkCenterName", "SiteId", "WorkCenterType",
+               "ObjectType", "CostCenter", "dataAreaId"])
+
+    # ── RoutingHeaders.csv (PLKO) ────────────────────────────────────────
+    routing_headers = []
+    for r in plko:
+        if r.get("LOEKZ") == "X":  # Skip deleted
+            continue
+        if r.get("WERKS", "") != plant and r.get("WERKS", ""):
+            continue
+        routing_headers.append({
+            "RoutingType": r.get("PLNTY", ""),
+            "RoutingNumber": r.get("PLNNR", ""),
+            "RoutingAlternative": r.get("PLNAL", ""),
+            "SiteId": r.get("WERKS", ""),
+            "RoutingStatus": r.get("STATU", ""),
+            "BaseUnitSymbol": r.get("PLNME", ""),
+            "UsageType": r.get("VERWE", ""),
+            "Description": r.get("KTEXT", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "RoutingHeaders.csv", routing_headers,
+              ["RoutingType", "RoutingNumber", "RoutingAlternative", "SiteId",
+               "RoutingStatus", "BaseUnitSymbol", "UsageType", "Description", "dataAreaId"])
+
+    # ── RoutingOperations.csv (PLPO) ─────────────────────────────────────
+    routing_ops = []
+    for r in plpo:
+        routing_ops.append({
+            "RoutingType": r.get("PLNTY", ""),
+            "RoutingNumber": r.get("PLNNR", ""),
+            "OperationNode": r.get("PLNKN", ""),
+            "OperationNumber": r.get("VORNR", ""),
+            "WorkCenterId": r.get("ARBID", ""),
+            "ControlKey": r.get("STEUS", ""),
+            "SetupTime": safe_float(r.get("VGW01", "0")),
+            "MachineTime": safe_float(r.get("VGW02", "0")),
+            "LaborTime": safe_float(r.get("VGW03", "0")),
+            "SetupTimeUnit": r.get("VGE01", ""),
+            "MachineTimeUnit": r.get("VGE02", ""),
+            "LaborTimeUnit": r.get("VGE03", ""),
+            "BaseQuantity": safe_float(r.get("BMSCH", "0")),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "RoutingOperations.csv", routing_ops,
+              ["RoutingType", "RoutingNumber", "OperationNode", "OperationNumber",
+               "WorkCenterId", "ControlKey", "SetupTime", "MachineTime", "LaborTime",
+               "SetupTimeUnit", "MachineTimeUnit", "LaborTimeUnit", "BaseQuantity", "dataAreaId"])
+
+    # ── CapacityData.csv (KAKO) ──────────────────────────────────────────
+    capacity_rows = []
+    for r in kako:
+        capacity_rows.append({
+            "CapacityId": r.get("KAPID", ""),
+            "MaxCapacity": safe_float(r.get("AZMAX", "0")),
+            "NormalCapacity": safe_float(r.get("AZNOR", "0")),
+            "BaseUnit": r.get("MEINS", ""),
+            "CalendarId": r.get("KALID", ""),
+            "CapacityCategory": r.get("KAPAR", ""),
+            "StartTime": r.get("BEGZT", ""),
+            "EndTime": r.get("ENDZT", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "CapacityData.csv", capacity_rows,
+              ["CapacityId", "MaxCapacity", "NormalCapacity", "BaseUnit",
+               "CalendarId", "CapacityCategory", "StartTime", "EndTime", "dataAreaId"])
+
+    # ── BatchMaster.csv (MCH1 + MCHA) ───────────────────────────────────
+    batches = []
+    for r in mcha:  # Plant-level batches (more specific)
+        if r.get("MATNR", "") not in materials:
+            continue
+        batches.append({
+            "ItemNumber": r.get("MATNR", ""),
+            "BatchNumber": r.get("CHARG", ""),
+            "SiteId": r.get("WERKS", ""),
+            "IsDeleted": r.get("LVORM", ""),
+            "CreationDate": r.get("ERSDA", ""),
+            "ExpirationDate": r.get("VFDAT", ""),
+            "dataAreaId": data_area,
+        })
+    for r in mch1:  # Plant-independent batches (add if not already present)
+        if r.get("MATNR", "") not in materials:
+            continue
+        batch_key = f"{r.get('MATNR', '')}|{r.get('CHARG', '')}"
+        if any(f"{b['ItemNumber']}|{b['BatchNumber']}" == batch_key for b in batches):
+            continue
+        batches.append({
+            "ItemNumber": r.get("MATNR", ""),
+            "BatchNumber": r.get("CHARG", ""),
+            "SiteId": "",
+            "IsDeleted": r.get("LVORM", ""),
+            "CreationDate": r.get("ERSDA", ""),
+            "ExpirationDate": r.get("VFDAT", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "BatchMaster.csv", batches,
+              ["ItemNumber", "BatchNumber", "SiteId", "IsDeleted",
+               "CreationDate", "ExpirationDate", "dataAreaId"])
+
+    # ══════════════════════════════════════════════════════════════════════
     # TRANSACTION HISTORY (Phase 3b)
     # ══════════════════════════════════════════════════════════════════════
     print("\n  --- Transaction History ---")
@@ -779,6 +1054,117 @@ def main():
                "PlannedStartDate", "PlannedEndDate", "LotQuantity", "UnitSymbol",
                "ProductionOrderNumber", "BatchNumber", "StockType", "dataAreaId"])
 
+    # ── PO Schedule Lines (EKET → PurchaseOrderScheduleLines) ────────────
+    po_schedules = []
+    for r in eket:
+        po_schedules.append({
+            "PurchaseOrderNumber": r.get("EBELN", ""),
+            "LineNumber": r.get("EBELP", ""),
+            "ScheduleLineNumber": r.get("ETENR", ""),
+            "DeliveryDate": r.get("EINDT", ""),
+            "ScheduledQuantity": safe_float(r.get("MENGE", "0")),
+            "ReceivedQuantity": safe_float(r.get("WEMNG", "0")),
+            "IssuedQuantity": safe_float(r.get("WAMNG", "0")),
+            "StatisticalDeliveryDate": r.get("SLFDT", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "PurchaseOrderScheduleLines.csv", po_schedules,
+              ["PurchaseOrderNumber", "LineNumber", "ScheduleLineNumber",
+               "DeliveryDate", "ScheduledQuantity", "ReceivedQuantity",
+               "IssuedQuantity", "StatisticalDeliveryDate", "dataAreaId"])
+
+    # ── Production Order Items (AFPO → ProductionOrderItems) ─────────────
+    prod_items = []
+    for r in afpo:
+        if r.get("MATNR", "") not in materials and r.get("MATNR", ""):
+            continue
+        prod_items.append({
+            "ProductionOrderNumber": r.get("AUFNR", ""),
+            "LineNumber": r.get("POSNR", ""),
+            "ItemNumber": r.get("MATNR", ""),
+            "UnitSymbol": r.get("MEINS", ""),
+            "PlannedQuantity": safe_float(r.get("PSMNG", "0")),
+            "DeliveredQuantity": safe_float(r.get("WEMNG", "0")),
+            "LatestFinishDate": r.get("LTRMI", ""),
+            "LatestStartDate": r.get("LTRMP", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "ProductionOrderItems.csv", prod_items,
+              ["ProductionOrderNumber", "LineNumber", "ItemNumber", "UnitSymbol",
+               "PlannedQuantity", "DeliveredQuantity", "LatestFinishDate",
+               "LatestStartDate", "dataAreaId"])
+
+    # ── Production Confirmations (AFRU → ProductionOrderConfirmations) ───
+    prod_confirms = []
+    for r in afru:
+        prod_confirms.append({
+            "ProductionOrderNumber": r.get("AUFNR", ""),
+            "OperationNumber": r.get("VORNR", ""),
+            "YieldQuantity": safe_float(r.get("LMNGA", "0")),
+            "ScrapQuantity": safe_float(r.get("XMNGA", "0")),
+            "ReworkQuantity": safe_float(r.get("RMNGA", "0")),
+            "ActivityQuantity1": safe_float(r.get("ISM01", "0")),
+            "ActivityQuantity2": safe_float(r.get("ISM02", "0")),
+            "ActivityQuantity3": safe_float(r.get("ISM03", "0")),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "ProductionOrderConfirmations.csv", prod_confirms,
+              ["ProductionOrderNumber", "OperationNumber", "YieldQuantity",
+               "ScrapQuantity", "ReworkQuantity", "ActivityQuantity1",
+               "ActivityQuantity2", "ActivityQuantity3", "dataAreaId"])
+
+    # ── Quality Test Results (QASE → QualityTestResults) ─────────────────
+    quality_results = []
+    for r in qase:
+        quality_results.append({
+            "QualityOrderNumber": r.get("PRUEFLOS", ""),
+            "OperationSequence": r.get("VORGLFNR", ""),
+            "CharacteristicNumber": r.get("MERKNR", ""),
+            "MeasuredValue": safe_float(r.get("MESSWERT", "0")),
+            "Valuation": r.get("MBEWERTG", ""),
+            "DefectCount": safe_float(r.get("ANZFEHLER", "0")),
+            "CatalogCode": r.get("CODE1", ""),
+            "Version": r.get("VERSION1", ""),
+            "CreationDate": r.get("ERSTELLDAT", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "QualityTestResults.csv", quality_results,
+              ["QualityOrderNumber", "OperationSequence", "CharacteristicNumber",
+               "MeasuredValue", "Valuation", "DefectCount", "CatalogCode",
+               "Version", "CreationDate", "dataAreaId"])
+
+    # ── Quality Notifications (QMEL → QualityNotifications) ──────────────
+    quality_notifs = []
+    for r in qmel:
+        quality_notifs.append({
+            "NotificationNumber": r.get("QMNUM", ""),
+            "NotificationType": r.get("QMART", ""),
+            "ItemNumber": r.get("MATNR", ""),
+            "CreationDate": r.get("ERDAT", ""),
+            "Priority": r.get("PRIOK", ""),
+            "RequiredStartDate": r.get("STRMN", ""),
+            "RequiredEndDate": r.get("LTRMN", ""),
+            "Description": r.get("QMTXT", ""),
+            "ProductionOrderNumber": r.get("AUFNR", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "QualityNotifications.csv", quality_notifs,
+              ["NotificationNumber", "NotificationType", "ItemNumber",
+               "CreationDate", "Priority", "RequiredStartDate", "RequiredEndDate",
+               "Description", "ProductionOrderNumber", "dataAreaId"])
+
+    # ── Object Status History (JEST → ObjectStatusHistory) ───────────────
+    status_rows = []
+    for r in jest:
+        status_rows.append({
+            "ObjectNumber": r.get("OBJNR", ""),
+            "StatusCode": r.get("STAT", ""),
+            "IsInactive": r.get("INACT", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "ObjectStatusHistory.csv", status_rows,
+              ["ObjectNumber", "StatusCode", "IsInactive", "dataAreaId"])
+
     # ── Summary ──────────────────────────────────────────────────────────
     print(f"\n{'='*70}")
     print(f"  Translation complete!")
@@ -803,17 +1189,36 @@ def main():
     print(f"    SalesOrderLinesV2.csv           {len(so_lines_out)} SO lines")
     print(f"    ProductionOrderHeaders.csv      {len(prod_orders)} production orders")
     print(f"")
+    print(f"  Additional Master Data:")
+    print(f"    LegalEntities.csv               {len(legal_entities)} companies")
+    print(f"    StorageLocations.csv            {len(storage_locs)} locations")
+    print(f"    ProductUnitConversions.csv      {len(uom_conversions)} UOM conversions")
+    print(f"    VendorPurchasePrices.csv        {len(vendor_prices)} vendor prices")
+    print(f"    ApprovedVendorList.csv          {len(approved_vendors)} source list entries")
+    print(f"    CustomerSalesAreas.csv          {len(cust_sales)} customer sales areas")
+    print(f"    WorkCenters.csv                 {len(work_centers)} work centers")
+    print(f"    RoutingHeaders.csv              {len(routing_headers)} routing headers")
+    print(f"    RoutingOperations.csv           {len(routing_ops)} routing operations")
+    print(f"    CapacityData.csv                {len(capacity_rows)} capacity entries")
+    print(f"    BatchMaster.csv                 {len(batches)} batch records")
+    print(f"")
     print(f"  Transaction History:")
     print(f"    ShipmentHeaders.csv             {len(shipment_headers)} deliveries")
     print(f"    ShipmentLines.csv               {len(shipment_lines)} delivery items")
     print(f"    PurchaseOrderReceiptJournal.csv  {len(po_receipts)} GR entries")
-    print(f"    SalesOrderDeliverySchedules.csv {len(so_schedules)} schedule lines")
+    print(f"    PurchaseOrderScheduleLines.csv  {len(po_schedules)} PO schedule lines")
+    print(f"    SalesOrderDeliverySchedules.csv {len(so_schedules)} SO schedule lines")
     print(f"    ProductionOrderBOMLines.csv     {len(prod_components)} components")
+    print(f"    ProductionOrderItems.csv        {len(prod_items)} prod order items")
+    print(f"    ProductionOrderConfirmations.csv {len(prod_confirms)} confirmations")
     print(f"    ProductionRouteOperations.csv   {len(prod_operations)} operations")
     print(f"    PurchaseRequisitionLines.csv    {len(requisitions)} requisitions")
     print(f"    PlannedOrders.csv               {len(planned_orders)} MRP planned orders")
     print(f"    MaintenanceAssets.csv           {len(assets)} equipment")
     print(f"    QualityOrders.csv               {len(quality_orders)} inspection lots")
+    print(f"    QualityTestResults.csv          {len(quality_results)} test results")
+    print(f"    QualityNotifications.csv        {len(quality_notifs)} notifications")
+    print(f"    ObjectStatusHistory.csv         {len(status_rows)} status records")
     print(f"")
     print(f"  Next step:")
     print(f"    python scripts/rebuild_d365_contoso_config.py \\")
