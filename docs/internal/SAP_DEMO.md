@@ -855,7 +855,242 @@ The simulator writes to the same DB tables and triggers the same events as a rea
 
 ---
 
-## 10. References
+## 10. "Talk to Me" Demo Scripts
+
+Pre-written prompts for the Talk to Me bar during live demos. Each prompt is tagged with its behavior:
+
+- **STRAIGHT-THROUGH** — All required fields present; routes immediately to the target Powell layer with no clarification.
+- **CLARIFICATION** — Missing one or more required fields; the clarification panel appears with follow-up questions the presenter answers live.
+
+Use the **SAP official demo values** (TG11, FG126, customer 17100001) for SAP audiences, and **MZ bikes** (C900, M500, Bigmart) for supply chain planning audiences.
+
+### 10.1 Drop-in Order (Kinaxis Standard Demo)
+
+The classic Kinaxis demo scenario: a major customer places an unexpected large order, and you watch the ripple through the supply chain in real time. This is the single most important demo script.
+
+**Setup**: Ensure the SAP IDES 1710 config is provisioned and the Decision Stream is open.
+
+#### Script 1a — Drop-in Order (Straight-Through)
+
+> **Prompt**: Bigmart just called — they need 500 C900 bikes delivered to Detroit in 2 weeks. This is a new fleet deal we can't lose. Increase production and prioritize ATP allocation for this order across all MZ City bike components at Plant 1710 for the next 4 weeks.
+
+- **Behavior**: STRAIGHT-THROUGH
+- **Reason**: "new fleet deal we can't lose" + "Bigmart just called"
+- **Direction**: increase
+- **Metric**: capacity + service_level
+- **Magnitude**: implied (500 units = specific qty, system derives %)
+- **Duration**: 4 weeks
+- **Geography**: Plant 1710
+- **Products**: C900 + all MZ City bike components
+- **Target Layer**: Layer 1.5 (Site tGNN — single-site coordination)
+- **TRMs triggered**: ATP Executor, MO Execution, PO Creation, Inventory Buffer
+
+**What to show**: Decision Stream lights up within seconds — ATP allocation decisions, MO release recommendations for C900 assembly, PO creation for Frame-900 and Wheels-900 components, inventory buffer adjustments. Click Inspect on each to show the reasoning chain.
+
+#### Script 1b — Drop-in Order (Clarification)
+
+> **Prompt**: Bigmart needs 500 bikes in 2 weeks — rush order.
+
+- **Behavior**: CLARIFICATION
+- **Missing fields**: Product (which bikes?), Geography (which plant?), Reason (why prioritize?)
+- **Clarification panel shows**:
+  - "Which product? [Select: C900 / C950 / C990 / M500 / M525 / M550 / R100 / R200 / R300]"
+  - "Which plant? [Select: Plant 1710 / Plant 1720]"
+  - "Why should we prioritize this? [Text input]"
+- **Presenter answers**: C900, Plant 1710, "New fleet deal, strategic account"
+- **Then routes**: Same as 1a
+
+**What to show**: The clarification flow itself — the system doesn't just guess, it asks the right questions. Point out that the reason field is always required because every directive is tracked for effectiveness.
+
+---
+
+### 10.2 Demand Disruption Scenarios
+
+#### Script 2a — Demand Spike (Straight-Through)
+
+> **Prompt**: Market intelligence from our cycling industry analyst: summer season demand for Mountain series bikes will be 25% above forecast for the next 8 weeks across all East Coast customers. Adjust forecasts and increase buffer levels accordingly.
+
+- **Behavior**: STRAIGHT-THROUGH
+- **Direction**: increase
+- **Metric**: inventory (buffer) + service_level
+- **Magnitude**: 25%
+- **Duration**: 8 weeks
+- **Products**: M500, M525, M550
+- **Geography**: East Coast customers
+- **TRMs triggered**: Forecast Adjustment, Inventory Buffer
+
+#### Script 2b — Customer Cancellation (Clarification)
+
+> **Prompt**: CostClub is canceling their R200 order.
+
+- **Behavior**: CLARIFICATION
+- **Missing fields**: Magnitude (how many units?), Duration (one-time or ongoing?), Reason (why?)
+- **Clarification panel shows**:
+  - "How many units? [Number]"
+  - "Is this a one-time cancellation or are they ending the relationship? [Select: one-time / permanent]"
+  - "What's the reason? [Text]"
+- **Presenter answers**: 300 units, one-time, "Budget cuts at CostClub"
+
+#### Script 2c — New Product Introduction (Straight-Through)
+
+> **Prompt**: The board approved the E-Bike launch. Introduce MZ-FG-E100 at Plant 1710, target 100 units per week, launch in 6 weeks. We need to ramp up component sourcing immediately — this is our entry into the electric segment and the CEO is watching.
+
+- **Behavior**: STRAIGHT-THROUGH
+- **Direction**: increase
+- **Metric**: capacity
+- **Duration**: 6 weeks (ramp), then ongoing
+- **Products**: MZ-FG-E100 (new)
+- **Geography**: Plant 1710
+- **TRMs triggered**: PO Creation (new components), MO Execution (new routing), Inventory Buffer (initial stock build)
+
+---
+
+### 10.3 Supply Disruption Scenarios
+
+#### Script 3a — Supplier Delay (Straight-Through)
+
+> **Prompt**: EV Parts Inc. just notified us that all open POs are delayed by 14 days due to a fire at their Texas facility. We need to activate backup suppliers and expedite any critical component orders for the next 3 weeks. Our Q2 delivery commitments to Skymart and Bigmart are at risk.
+
+- **Behavior**: STRAIGHT-THROUGH
+- **Direction**: reallocate
+- **Metric**: lead_time + service_level
+- **Duration**: 3 weeks
+- **Geography**: Plant 1710 (EV Parts' customer)
+- **Products**: All components sourced from EV Parts Inc.
+- **TRMs triggered**: PO Creation (alternate sourcing), Order Tracking (exception detection), Inventory Rebalancing (cross-site transfers)
+
+#### Script 3b — Quality Hold (Clarification)
+
+> **Prompt**: Quality issue on Frame 900 — put it on hold.
+
+- **Behavior**: CLARIFICATION
+- **Missing fields**: Magnitude (how many units?), Geography (which plant/warehouse?), Reason (what defect?), Duration (how long?)
+- **Clarification panel shows**:
+  - "How many units affected? [Number]"
+  - "At which location? [Select: Plant 1710 / 1711 / 1712 / 1720]"
+  - "What is the defect? [Text]"
+  - "Expected hold duration? [Select: 1 week / 2 weeks / 1 month / until resolved]"
+- **Presenter answers**: 500 units, Plant 1710, "Weld cracks found in batch inspection", 2 weeks
+
+#### Script 3c — Supplier Bankruptcy (Straight-Through)
+
+> **Prompt**: WaveCrest Labs has declared bankruptcy effective immediately. All supply from WaveCrest is permanently lost. Activate all alternative sources, expedite transfers from Plant 1720 inventory, and raise safety stock levels on affected components by 30% for the next quarter. This is a critical supply chain risk event.
+
+- **Behavior**: STRAIGHT-THROUGH
+- **Direction**: increase (buffer) + reallocate (sourcing)
+- **Metric**: inventory + service_level
+- **Magnitude**: 30% buffer increase
+- **Duration**: 1 quarter
+- **TRMs triggered**: PO Creation, Inventory Rebalancing, Inventory Buffer, Subcontracting (make-vs-buy assessment)
+
+---
+
+### 10.4 Capacity & Production Scenarios
+
+#### Script 4a — Capacity Loss (Straight-Through)
+
+> **Prompt**: Plant 1710 Assembly Line A is down for emergency repairs — we've lost 40% of production capacity. Estimated 3-week recovery. Prioritize high-margin C900 and M500 models, defer low-priority R-series production, and evaluate subcontracting options for Frame assemblies. Customer impact must be minimized — our OTIF target is 95%.
+
+- **Behavior**: STRAIGHT-THROUGH
+- **Direction**: reallocate
+- **Metric**: capacity + service_level
+- **Duration**: 3 weeks
+- **Geography**: Plant 1710
+- **Products**: Prioritize C900, M500; defer R-series
+- **TRMs triggered**: MO Execution (sequencing, deferral), Subcontracting, ATP Executor (re-allocate), Maintenance Scheduling
+
+#### Script 4b — Yield Problem (Clarification)
+
+> **Prompt**: Scrap rate is up on the C900 line.
+
+- **Behavior**: CLARIFICATION
+- **Missing fields**: Magnitude (by how much?), Duration (since when / how long?), Reason (root cause?), Geography (which plant?)
+- **Clarification panel shows**:
+  - "By how much has the scrap rate increased? [Number: %]"
+  - "At which plant? [Select: Plant 1710 / Plant 1720]"
+  - "What's causing the increase? [Text]"
+  - "How long do you expect this to last? [Select: 1 week / 2 weeks / 1 month / unknown]"
+- **Presenter answers**: 15%, Plant 1710, "New batch of raw material from alternate supplier", 4 weeks
+
+---
+
+### 10.5 Strategic / Executive Scenarios
+
+#### Script 5a — Cost Reduction Mandate (Straight-Through)
+
+> **Prompt**: The CFO wants a 12% reduction in total inventory holding cost across all sites over the next 6 months. We're overinvested in slow-moving R-series stock while C-series is turning too fast. Rebalance network inventory and tighten buffer levels on R-series while maintaining 95% service on C-series. This is a board-level commitment.
+
+- **Behavior**: STRAIGHT-THROUGH
+- **Direction**: decrease (cost) + reallocate (inventory)
+- **Metric**: cost + inventory
+- **Magnitude**: 12%
+- **Duration**: 6 months
+- **Geography**: All sites
+- **Products**: R-series (tighten), C-series (maintain)
+- **Target Layer**: Layer 4 (S&OP GraphSAGE — network-wide policy)
+
+#### Script 5b — Service Level Target (Clarification)
+
+> **Prompt**: We need better fill rates.
+
+- **Behavior**: CLARIFICATION
+- **Missing fields**: Magnitude (how much better?), Products (which ones?), Duration (by when?), Geography (which region?), Reason (why now?)
+- **Clarification panel shows**:
+  - "What fill rate target? [Number: %]"
+  - "Which products? [Select: All / C-series / M-series / R-series]"
+  - "Which region? [Select: All / East Coast / West Coast]"
+  - "By when? [Select: 1 month / 1 quarter / 6 months]"
+  - "What's driving this? [Text]"
+- **Presenter answers**: 98%, C-series, All regions, 1 quarter, "Lost 3 key accounts to competitors with better availability"
+
+---
+
+### 10.6 Questions (Query Routing)
+
+These are informational queries — they don't create directives but navigate to the right page with filters pre-applied.
+
+> **"Show me all pending ATP decisions"**
+> → Navigates to ATP Worklist (status: INFORMED)
+
+> **"What's our inventory position on C900 bikes?"**
+> → Navigates to Inventory Visibility (product: MZ-FG-C900)
+
+> **"Any overdue POs from EV Parts?"**
+> → Navigates to PO Worklist with supplier filter
+
+> **"How's demand trending for Mountain bikes this quarter?"**
+> → Navigates to Demand Plan View (product family: Mountain)
+
+> **"Show me the supply chain network"**
+> → Navigates to Supply Chain Config Sankey
+
+> **"What did the AI decide about the Bigmart order?"**
+> → Navigates to Decision Stream with Bigmart context injected
+
+---
+
+### 10.7 Demo Sequence — Recommended Order
+
+For a 30-minute live demo, run these in order:
+
+| # | Script | Time | Purpose |
+|---|--------|------|---------|
+| 1 | **1a** (Drop-in order, straight-through) | 5 min | Hero moment — show the full agentic response |
+| 2 | **Question**: "Show me the supply chain network" | 2 min | Context — show the MZ Bikes topology |
+| 3 | **3a** (Supplier delay, straight-through) | 5 min | Supply disruption — show cascading agent response |
+| 4 | **4b** (Yield problem, clarification) | 4 min | Show the clarification flow — system asks, human answers |
+| 5 | **Question**: "What's our inventory on C900?" | 1 min | Quick query routing |
+| 6 | **2a** (Demand spike, straight-through) | 4 min | Demand disruption — forecast + buffer adjustment |
+| 7 | **5a** (CFO cost reduction, straight-through) | 5 min | Strategic layer — show S&OP GraphSAGE response |
+| 8 | **1b** (Drop-in order, clarification) | 4 min | Contrast with 1a — show incomplete vs complete |
+
+**Key narrative arc**: Start with the "wow" moment (drop-in order handled in seconds), establish context (network view), then layer on disruptions to show resilience. End with strategic to show the full pyramid from execution to S&OP.
+
+---
+
+## 11. References
+
+*(Renumbered from §10 after adding Talk to Me scripts)*
 
 - [SAP S/4HANA FAA Demo Guides — SAP Community](https://community.sap.com/t5/technology-blog-posts-by-sap/sap-s-4hana-fully-activated-appliance-demo-guides/ba-p/13389412)
 - [SAP S/4HANA FAA Getting Started Guide v21](SAP/Documentation/SAP_Getting_Started_Guide_v21.pdf) (local)
