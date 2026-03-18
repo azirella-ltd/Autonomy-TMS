@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.services.powell.site_capabilities import get_active_trms
 from app.services.powell.simulation_calibration_service import (
     _BscWeights,
     _ConfigLoader,
@@ -1419,17 +1420,21 @@ def seed_decisions_from_simulation(
 
                 order_seq += 1
 
+                # Determine which TRMs are valid for this site's topology
+                active = get_active_trms(master_type=cfg.master_type.lower())
+
                 # --- PO Creation ---
-                c = _gen_po_creation(
-                    node, cfg, config_id, pdesc, ucost,
-                    upstream_names.get(cfg.site_id, default_vendor),
-                    day, episode,
-                )
-                if c:
-                    candidates["po_creation"].append(c)
+                if "po_creation" in active:
+                    c = _gen_po_creation(
+                        node, cfg, config_id, pdesc, ucost,
+                        upstream_names.get(cfg.site_id, default_vendor),
+                        day, episode,
+                    )
+                    if c:
+                        candidates["po_creation"].append(c)
 
                 # --- ATP Executor ---
-                if cfg.is_demand_source and node.period_demand > 0:
+                if "atp_executor" in active and cfg.is_demand_source and node.period_demand > 0:
                     c = _gen_atp_executor(
                         node, cfg, config_id, pdesc, day, episode, order_seq,
                     )
@@ -1437,59 +1442,66 @@ def seed_decisions_from_simulation(
                         candidates["atp_executor"].append(c)
 
                 # --- Order Tracking ---
-                c = _gen_order_tracking(
-                    node, cfg, config_id, pdesc, ucost, day, episode, order_seq,
-                )
-                if c:
-                    candidates["order_tracking"].append(c)
+                if "order_tracking" in active:
+                    c = _gen_order_tracking(
+                        node, cfg, config_id, pdesc, ucost, day, episode, order_seq,
+                    )
+                    if c:
+                        candidates["order_tracking"].append(c)
 
                 # --- Inventory Buffer ---
-                c = _gen_inventory_buffer(
-                    node, cfg, config_id, pdesc, ucost, day,
-                    prev_demand_cv.get(node.site_id, cfg.demand_cv),
-                )
-                if c:
-                    candidates["inventory_buffer"].append(c)
+                if "inventory_buffer" in active:
+                    c = _gen_inventory_buffer(
+                        node, cfg, config_id, pdesc, ucost, day,
+                        prev_demand_cv.get(node.site_id, cfg.demand_cv),
+                    )
+                    if c:
+                        candidates["inventory_buffer"].append(c)
 
                 # --- MO Execution ---
-                c = _gen_mo_execution(
-                    node, cfg, config_id, pdesc, ucost, day, episode, order_seq,
-                )
-                if c:
-                    candidates["mo_execution"].append(c)
+                if "mo_execution" in active:
+                    c = _gen_mo_execution(
+                        node, cfg, config_id, pdesc, ucost, day, episode, order_seq,
+                    )
+                    if c:
+                        candidates["mo_execution"].append(c)
 
                 # --- TO Execution ---
-                c = _gen_to_execution(
-                    node, cfg, config_id, pdesc,
-                    upstream_names.get(cfg.site_id, default_vendor),
-                    day, episode, order_seq,
-                )
-                if c:
-                    candidates["to_execution"].append(c)
+                if "to_execution" in active:
+                    c = _gen_to_execution(
+                        node, cfg, config_id, pdesc,
+                        upstream_names.get(cfg.site_id, default_vendor),
+                        day, episode, order_seq,
+                    )
+                    if c:
+                        candidates["to_execution"].append(c)
 
                 # --- Quality Disposition ---
-                c = _gen_quality_disposition(
-                    node, cfg, config_id, pdesc, ucost, day, episode, order_seq,
-                )
-                if c:
-                    candidates["quality_disposition"].append(c)
+                if "quality_disposition" in active:
+                    c = _gen_quality_disposition(
+                        node, cfg, config_id, pdesc, ucost, day, episode, order_seq,
+                    )
+                    if c:
+                        candidates["quality_disposition"].append(c)
 
                 # --- Maintenance Scheduling ---
-                c = _gen_maintenance_scheduling(
-                    node, cfg, config_id, day, episode, order_seq,
-                )
-                if c:
-                    candidates["maintenance_scheduling"].append(c)
+                if "maintenance_scheduling" in active:
+                    c = _gen_maintenance_scheduling(
+                        node, cfg, config_id, day, episode, order_seq,
+                    )
+                    if c:
+                        candidates["maintenance_scheduling"].append(c)
 
                 # --- Subcontracting ---
-                c = _gen_subcontracting(
-                    node, cfg, config_id, pdesc, ucost, day, episode, order_seq,
-                )
-                if c:
-                    candidates["subcontracting"].append(c)
+                if "subcontracting" in active:
+                    c = _gen_subcontracting(
+                        node, cfg, config_id, pdesc, ucost, day, episode, order_seq,
+                    )
+                    if c:
+                        candidates["subcontracting"].append(c)
 
                 # --- Forecast Adjustment ---
-                if cfg.is_demand_source:
+                if "forecast_adjustment" in active and cfg.is_demand_source:
                     c = _gen_forecast_adjustment(
                         node, cfg, config_id, pdesc, day,
                     )
@@ -1511,15 +1523,23 @@ def seed_decisions_from_simulation(
 
     # Fallback pass: for any TRM type that produced zero condition-triggered
     # decisions, generate synthetic decisions using the first available site
-    # of the appropriate type.  This ensures the Decision Stream always has
-    # all 11 TRM types represented after provisioning.
+    # of the appropriate type.  Only generates fallbacks for TRM types that
+    # are valid given the DAG topology (e.g., no MO/quality/maintenance for
+    # distribution-only networks).
     _ALL_TRM_TYPES = [
         "po_creation", "atp_executor", "order_tracking", "inventory_buffer",
         "mo_execution", "to_execution", "quality_disposition",
         "maintenance_scheduling", "subcontracting", "forecast_adjustment",
         "rebalancing",
     ]
+    # Compute the union of all active TRMs across all sites in this config
+    config_active_trms: set = set()
+    for c in site_configs:
+        config_active_trms |= get_active_trms(master_type=c.master_type.lower())
+
     for trm_type in _ALL_TRM_TYPES:
+        if trm_type not in config_active_trms:
+            continue  # Skip TRM types not valid for any site in this topology
         if trm_type in selected and selected[trm_type]:
             continue
         fallback_records = _generate_fallback_decisions(
