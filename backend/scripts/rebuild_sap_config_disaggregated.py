@@ -118,24 +118,41 @@ def main():
     # -----------------------------------------------------------------------
     print(f"\nPhase 2: Identifying active entities for plant {PRIMARY}...")
 
-    # Materials at this plant
-    marc_plant = [r for r in marc if r.get("WERKS") == PRIMARY]
-    materials = {r["MATNR"] for r in marc_plant}
-    print(f"  Materials at plant {PRIMARY}: {len(materials)}")
-
-    # Material descriptions
+    # Build lookup maps first (needed for filtering)
     makt_map = {}
     for r in makt:
         mat = r.get("MATNR", "")
         if mat and mat not in makt_map:
             makt_map[mat] = r.get("MAKTX", mat)
 
-    # Material master data (for unit cost, UOM, etc.)
     mara_map = {}
     for r in mara:
         mat = r.get("MATNR", "")
         if mat:
             mara_map[mat] = r
+
+    # Materials at this plant — filter to physical products with transactional data
+    marc_plant = [r for r in marc if r.get("WERKS") == PRIMARY]
+    all_materials_at_plant = {r["MATNR"] for r in marc_plant}
+    print(f"  All materials at plant {PRIMARY}: {len(all_materials_at_plant)}")
+
+    # Exclude non-physical material types (services, packaging, vehicles, etc.)
+    EXCLUDE_MTART = {"SERV", "DIEN", "NLAG", "VERP", "LEIH", "PIPE", "VEHI", "SWNV", "UNSF", "UNFR"}
+    physical_materials = set()
+    for mat in all_materials_at_plant:
+        mara_row = mara_map.get(mat, {})
+        mtart = mara_row.get("MTART", "") if isinstance(mara_row, dict) else ""
+        if mtart not in EXCLUDE_MTART:
+            physical_materials.add(mat)
+
+    # Further filter to materials with actual orders (sales or purchase)
+    vbap_mats = {r.get("MATNR") for r in vbap if r.get("WERKS") == PRIMARY}
+    ekpo_mats = {r.get("MATNR") for r in ekpo if r.get("WERKS") == PRIMARY}
+    ordered_materials = vbap_mats | ekpo_mats
+    materials = physical_materials & ordered_materials
+    print(f"  Physical materials: {len(physical_materials)}")
+    print(f"  Materials with orders: {len(ordered_materials & all_materials_at_plant)}")
+    print(f"  Final product set (physical + ordered): {len(materials)}")
 
     # Active customers (from sales orders targeting this plant)
     vbap_plant = [r for r in vbap if r.get("WERKS") == PRIMARY]

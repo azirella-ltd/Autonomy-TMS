@@ -464,7 +464,9 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       if (filtered.length > 0) {
         const isTbgOrLearning = (c) => /tbg|learning/i.test(c.name || '');
         const productionConfigs = filtered.filter((c) => !isTbgOrLearning(c));
-        const defaultConfig = (productionConfigs.length > 0 ? productionConfigs : filtered)[0];
+        const candidates = productionConfigs.length > 0 ? productionConfigs : filtered;
+        // Prefer active configs over archived/inactive versions
+        const defaultConfig = candidates.find((c) => c.is_active) || candidates[0];
         setSelectedConfigId((current) => current ?? defaultConfig?.id ?? null);
       } else {
         setSelectedConfigId(null);
@@ -2440,7 +2442,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
               <SelectContent>
                 {configOptions.map((cfg) => (
                   <SelectItem key={cfg.id} value={String(cfg.id)}>
-                    {cfg.name || `Configuration ${cfg.id}`}
+                    {cfg.name || `Configuration ${cfg.id}`}{cfg.is_active === false ? ' (archived)' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
