@@ -195,11 +195,29 @@ class ConfigProvisioningStatus(Base):
     # not_started | in_progress | completed | partial | failed
     last_updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # Provisioning scope (Mar 2026): controls which steps run on reprovisioning.
+    # FULL: All 14 steps (required for structural changes — new sites, lanes, products).
+    # PARAMETER_ONLY: Subset of steps that only affect policy/parameters, reusing
+    #   existing TRM training, GNN models, and simulation data.
+    #   Parameter-only steps: cfa_optimization, decision_seed, conformal, briefing.
+    # NULL/empty = FULL (backward compatible).
+    provisioning_scope = Column(String(20), nullable=True, default=None)
+
     STEPS = [
         "warm_start", "sop_graphsage", "cfa_optimization",
         "lgbm_forecast", "demand_tgnn", "supply_tgnn", "inventory_tgnn",
         "trm_training", "supply_plan", "rccp_validation", "decision_seed",
         "site_tgnn", "conformal", "briefing",
+    ]
+
+    # Steps that run for PARAMETER_ONLY reprovisioning (policy/parameter changes).
+    # These reuse existing TRM weights, GNN models, and simulation data.
+    # Structural changes (new sites, lanes, products, BOMs) require FULL provisioning.
+    PARAMETER_ONLY_STEPS = [
+        "cfa_optimization",   # Re-optimize policy parameters θ over existing scenarios
+        "decision_seed",      # Re-seed decisions under new policy regime
+        "conformal",          # Re-calibrate CDT from new decision-outcome pairs
+        "briefing",           # Regenerate executive briefing
     ]
 
     STEP_LABELS = {

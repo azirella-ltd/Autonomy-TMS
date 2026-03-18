@@ -666,6 +666,79 @@ class Reservation(Base):
     )
 
 
+# ============================================================================
+# Outbound Order Entities
+# ============================================================================
+
+class OutboundOrder(Base):
+    """
+    Sales orders, returns, and outbound transfers
+    SC Entity: outbound_order
+    Tracks customer/sales orders and outbound transfers.
+    Mirrors the InboundOrder pattern for the outbound (customer) side.
+    """
+    __tablename__ = "outbound_order"
+
+    id = Column(String(100), primary_key=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    order_type = Column(String(50), nullable=False)  # SALES, RETURN, TRANSFER
+    customer_id = Column(String(100))  # FK to trading_partner
+    customer_name = Column(String(200))
+
+    # Sites
+    ship_from_site_id = Column(Integer, ForeignKey("site.id"))
+    ship_to_site_id = Column(Integer, ForeignKey("site.id"))
+
+    # Status
+    status = Column(String(30), nullable=False, server_default=text("'DRAFT'"))
+    # DRAFT, CONFIRMED, PARTIALLY_FULFILLED, FULFILLED, CANCELLED
+
+    # Dates
+    order_date = Column(Date, nullable=False)
+    requested_delivery_date = Column(Date)
+    promised_delivery_date = Column(Date)
+    actual_delivery_date = Column(Date)
+
+    # Totals
+    total_ordered_qty = Column(Double, server_default=text("0.0"))
+    total_fulfilled_qty = Column(Double, server_default=text("0.0"))
+    total_value = Column(Double)
+    currency = Column(String(10), server_default=text("'USD'"))
+
+    # Priority
+    priority = Column(String(20), server_default=text("'STANDARD'"))
+    # VIP, HIGH, STANDARD, LOW
+
+    # References
+    reference_number = Column(String(100))  # Customer PO number
+    contract_id = Column(String(100))
+
+    # Config
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"))
+
+    # Metadata
+    source = Column(String(100))
+    source_event_id = Column(String(100))
+    source_update_dttm = Column(DateTime)
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+
+    # Relationships
+    ship_from_site = relationship("Site", foreign_keys=[ship_from_site_id])
+    ship_to_site = relationship("Site", foreign_keys=[ship_to_site_id])
+    lines = relationship("OutboundOrderLine", back_populates="order", cascade="all, delete-orphan")
+    config = relationship("SupplyChainConfig")
+    scenario = relationship("Scenario")
+
+    __table_args__ = (
+        Index('idx_outbound_order_status', 'status', 'order_type'),
+        Index('idx_outbound_order_customer', 'customer_id'),
+        Index('idx_outbound_order_site', 'ship_from_site_id', 'requested_delivery_date'),
+        Index('idx_outbound_order_config', 'config_id'),
+    )
+
+
 class OutboundOrderLine(Base):
     """
     Customer orders (actual demand)
@@ -680,7 +753,7 @@ class OutboundOrderLine(Base):
     __tablename__ = "outbound_order_line"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(String(100), nullable=False)
+    order_id = Column(String(100), ForeignKey("outbound_order.id", ondelete="SET NULL"))
     line_number = Column(Integer, nullable=False)
     product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
     site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
@@ -702,6 +775,9 @@ class OutboundOrderLine(Base):
     market_demand_site_id = Column(Integer, ForeignKey("site.id"))  # Customer site (for simulation)
 
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    order = relationship("OutboundOrder", back_populates="lines")
 
     __table_args__ = (
         Index('idx_outbound_order_lookup', 'product_id', 'site_id', 'requested_delivery_date'),

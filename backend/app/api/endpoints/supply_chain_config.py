@@ -833,19 +833,34 @@ def read_active_config(
     # Priority 2: tenant's active baseline (existing behaviour)
     user_type = getattr(current_user, "user_type", None)
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
-        # System admin: try their tenant first, fall back to any active baseline
+        # System admin: tenant-agnostic. If tenant_id is set, use it;
+        # otherwise return the first provisioned production config.
+        # The frontend config selector lets sys admins switch tenants.
         tenant_id = getattr(current_user, "tenant_id", None)
         if tenant_id:
             config = deps.get_active_baseline_config(db, tenant_id)
         else:
-            config = (
-                db.query(SupplyChainConfig)
-                .filter(
-                    SupplyChainConfig.is_active == True,
-                    SupplyChainConfig.scenario_type == "BASELINE",
-                )
+            # No tenant assigned — find first PRODUCTION config that has
+            # been provisioned (has decisions seeded), or fall back to any active.
+            from app.models.user_directive import ConfigProvisioningStatus
+            provisioned = (
+                db.query(ConfigProvisioningStatus.config_id)
+                .filter(ConfigProvisioningStatus.overall_status == "completed")
                 .first()
             )
+            if provisioned:
+                config = db.query(SupplyChainConfig).filter(
+                    SupplyChainConfig.id == provisioned.config_id,
+                ).first()
+            else:
+                config = (
+                    db.query(SupplyChainConfig)
+                    .filter(
+                        SupplyChainConfig.is_active == True,
+                        SupplyChainConfig.scenario_type == "BASELINE",
+                    )
+                    .first()
+                )
     else:
         admin_tenant_id = _get_user_admin_tenant_id(db, current_user)
         tenant_id = admin_tenant_id or getattr(current_user, "tenant_id", None)
