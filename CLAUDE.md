@@ -1089,6 +1089,13 @@ A persistent "Talk to me" input in the TopNavbar accepts natural language input 
 14-step Powell Cascade warm-start pipeline with dependency tracking:
 warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → supply_plan → rccp_validation → decision_seed → site_tgnn → conformal → briefing
 
+**"Learn by Watching" — Decision Seed + CDT Calibration**:
+The `decision_seed` step generates realistic decisions from the digital twin simulation AND populates synthetic outcomes (was_committed, actual_cost, etc.) on every record. This implements the Stöckl (2021) "learn by watching" paradigm: deterministic heuristics execute during warm-start and outcomes are observed. The subsequent `conformal` step reads these decision-outcome pairs via `CDTCalibrationService.calibrate_all()` to calibrate all active TRM agents' risk bounds. If fewer than 11 agents are calibrated from DB outcomes, the conformal step also runs a simulation bootstrap (50 episodes × 365 days = 18,250 pairs per agent) as a second pass. After provisioning, **all active TRM agents must show as calibrated** (no "0/11 agents ready" banner).
+
+**Topology-Aware Decision Seeding**: The seeder uses `get_active_trms(master_type)` from `site_capabilities.py` to only generate decisions valid for the config's DAG topology. A distribution network (no manufacturers) gets 7 TRM types; a network with manufacturers gets all 11. Invalid TRM types (e.g., MO/quality/maintenance for distribution-only) are never seeded.
+
+**Config Versioning on Reprovisioning**: When `reprovision(config_id)` is called, the current config is archived as a read-only snapshot (e.g., "SAP IDES 1710 (v2)") with `scenario_type=ARCHIVED`, `is_active=False`, and the original `created_at` preserved. The active config's `version` is incremented. Archived configs appear in the SC config list for audit trail.
+
 **Implementation Files**:
 - `backend/app/services/directive_service.py` — LLM parsing, gap detection, routing
 - `backend/app/api/endpoints/user_directives.py` — Analyze/submit/list API
