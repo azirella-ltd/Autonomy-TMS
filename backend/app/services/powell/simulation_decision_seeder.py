@@ -1314,6 +1314,105 @@ def _generate_fallback_decisions(
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Outcome population — "learn by watching" for CDT calibration
+# ---------------------------------------------------------------------------
+
+def _populate_synthetic_outcomes(
+    selected: Dict[str, list],
+) -> None:
+    """Fill outcome columns on seeded decisions so CDT calibration has data.
+
+    Implements the "learn by watching" paradigm: during warm-start, the
+    deterministic heuristic agent observes outcomes of its own decisions.
+    We generate realistic outcomes with mild noise (±5-15%) to provide
+    the CDT calibration service with (estimated, actual) pairs.
+
+    This ensures `CDTCalibrationService.calibrate_all()` finds populated
+    outcome columns in the powell_*_decisions tables and can calibrate
+    all active TRM agents immediately after provisioning.
+    """
+    import random as _rng
+    rng = _rng.Random(42)
+
+    for trm_type, records in selected.items():
+        for rec in records:
+            _fill_outcome(rec, trm_type, rng)
+
+
+def _fill_outcome(rec, trm_type: str, rng) -> None:
+    """Set outcome columns on a single decision record."""
+    # Small noise: outcomes are close to estimates (heuristic is decent)
+    noise = lambda base: base * rng.uniform(0.85, 1.10) if base else 0
+
+    if trm_type == "atp_executor":
+        rec.was_committed = True
+        promised = getattr(rec, "promised_qty", 0) or 0
+        # Most ATPs are fully fulfilled; ~15% partial
+        if rng.random() < 0.85:
+            rec.actual_fulfilled_qty = promised
+        else:
+            rec.actual_fulfilled_qty = round(promised * rng.uniform(0.7, 0.95))
+
+    elif trm_type == "po_creation":
+        rec.was_executed = True
+        est = getattr(rec, "expected_cost", 0) or 0
+        rec.actual_cost = round(noise(est), 2)
+
+    elif trm_type == "order_tracking":
+        rec.action_taken = getattr(rec, "recommended_action", "monitor") or "monitor"
+        est = getattr(rec, "estimated_impact_cost", 0) or 0
+        rec.actual_impact_cost = round(noise(est), 2)
+
+    elif trm_type == "inventory_buffer":
+        rec.was_applied = True
+        est = getattr(rec, "expected_holding_cost_delta", 0) or 0
+        rec.actual_holding_cost_delta = round(noise(est), 2)
+        rec.actual_stockout_cost_delta = round(
+            abs(est) * rng.uniform(-0.3, 0.1), 2
+        )
+
+    elif trm_type == "mo_execution":
+        rec.was_executed = True
+        planned = getattr(rec, "planned_qty", 0) or 0
+        rec.actual_qty = round(planned * rng.uniform(0.90, 1.02))
+
+    elif trm_type == "to_execution":
+        rec.was_executed = True
+        est_days = getattr(rec, "estimated_transit_days", 2) or 2
+        rec.actual_transit_days = round(est_days * rng.uniform(0.9, 1.3), 1)
+
+    elif trm_type == "quality_disposition":
+        rec.was_executed = True
+        rework_est = getattr(rec, "rework_cost_estimate", 0) or 0
+        scrap_est = getattr(rec, "scrap_cost_estimate", 0) or 0
+        rec.actual_rework_cost = round(noise(rework_est), 2)
+        rec.actual_scrap_cost = round(noise(scrap_est), 2)
+
+    elif trm_type == "maintenance_scheduling":
+        rec.was_executed = True
+        est_hrs = getattr(rec, "estimated_downtime_hours", 4) or 4
+        rec.actual_downtime_hours = round(est_hrs * rng.uniform(0.8, 1.4), 1)
+        rec.breakdown_occurred = rng.random() < 0.05  # 5% breakdown rate
+
+    elif trm_type == "subcontracting":
+        rec.was_executed = True
+        unit_cost = getattr(rec, "subcontractor_cost_per_unit", 0) or 0
+        qty = getattr(rec, "planned_qty", 0) or 0
+        rec.actual_cost = round(unit_cost * qty * rng.uniform(0.95, 1.15), 2)
+
+    elif trm_type == "forecast_adjustment":
+        rec.was_applied = True
+        err_before = getattr(rec, "forecast_error_before", 0.15) or 0.15
+        # Adjustment usually improves forecast (reduces error)
+        rec.forecast_error_after = round(err_before * rng.uniform(0.4, 0.9), 4)
+
+    elif trm_type == "rebalancing":
+        rec.was_executed = True
+        est = getattr(rec, "expected_cost", 0) or 0
+        rec.actual_cost = round(noise(est), 2)
+
+
 # Main seeder
 # ---------------------------------------------------------------------------
 
@@ -1563,6 +1662,13 @@ def seed_decisions_from_simulation(
     random.shuffle(all_records)
     for rec, ts in zip(all_records, timestamps):
         rec.created_at = ts
+
+    # Populate synthetic outcomes on every record so CDT calibration
+    # can extract (estimated, actual) pairs.  This implements the
+    # "learn by watching" paradigm: deterministic heuristics execute
+    # during warm-start and outcomes are observed, giving the TRMs
+    # and CDT calibration their initial training signal.
+    _populate_synthetic_outcomes(selected)
 
     # Persist to DB
     counts: Dict[str, int] = {}
