@@ -816,35 +816,145 @@ Autonomy supports 4 connection types to SAP. Each requires different user setup 
 
 > **Detailed Reference**: For complete authorization object specifications, role templates (PFCG), HANA privilege grants, and step-by-step user creation instructions, see [SAP User Permissions & Authorization Guide](../internal/SAP_USER_AUTHORIZATION_GUIDE.md).
 
-### SAP FAA Setup — Unlocking Users and Initial Configuration
+### SAP FAA Setup — User Creation and Initial Configuration
 
-The SAP S/4HANA Fully-Activated Appliance (FAA) requires initial setup before Autonomy can connect:
+> **Complete reference**: See [SAP_Cloud_Appliance_Library_Authorization.md](../knowledge/SAP_Cloud_Appliance_Library_Authorization.md) for the full list of all pre-existing accounts, passwords, ports, and ABAP clients.
 
-1. **Unlock RFC user** — `BPINST` is LOCKED by default in FAA 2025 template
-   - Login as `DDIC` (client 000, Master Password) via SAP GUI
-   - tCode `SU01` → Enter `BPINST` → Click "Unlock" button
-   - Or create a dedicated `ZRFC_AUTONOMY` user in client 100 (recommended)
+The SAP S/4HANA Fully-Activated Appliance (FAA) requires initial setup before Autonomy can connect. The FAA comes with pre-configured accounts — you need to create **one dedicated extraction user**.
 
-2. **Open MM inventory period** — Required for inventory extraction
-   - tCode `MMPV` in client 100
-   - Set period to current month
+#### Pre-Existing Accounts (Already Available)
 
-3. **Activate OData services** (if using OData connection)
-   - tCode `/n/IWFND/MAINT_SERVICE`
-   - Add services: `API_PRODUCT_SRV`, `API_BUSINESS_PARTNER`, etc.
+| User | Password | Purpose |
+|------|----------|---------|
+| **BPINST** | `Welcome1` | Generic technical user — works in all clients (000/100/200/400) |
+| **SAP*** | `<Master Password>` | Super-admin — unlocked in client 100 only |
+| **DDIC** | `<Master Password>` | Dictionary admin — unlocked in client 100 only |
+| **SYSTEM** | `<Master Password>` | HANA database system user |
+| **SAPHANADB** | `<Master Password>` | Technical HANA user — schema with all S/4HANA data |
 
-4. **Create HANA extraction user** (if using HANA DB connection)
-   - HANA Cockpit → Security → Users → New User
-   - Grant `SELECT ON SCHEMA SAPHANADB`
+The **Master Password** is what you set when creating the appliance in SAP CAL.
 
-**Master Password**: Set during SAP CAL appliance creation. Used for:
-- `DDIC` (client 000) — ABAP dictionary user
-- `SAP*` (client 000) — Emergency user
-- `s4hadm` — OS-level ABAP administrator (Linux)
-- `SYSTEM` — HANA database system user
-- Windows `Administrator` (if Windows frontend VM is used)
+#### Step 1: Create Dedicated Autonomy Extraction User
 
-> **To reset**: SAP CAL → Instances → Select appliance → "Reset Password" (requires appliance restart)
+Login to SAP GUI, **client 100**, as `BPINST` / `Welcome1`:
+
+1. tCode **`SU01`** → User: `ZRFC_AUTONOMY` → **Create** (F8)
+2. **Address tab**: Last name = `Autonomy Extraction`
+3. **Logon Data tab**: User Type = **Communication (C)**, set a strong password
+4. **Profiles tab**: Assign **`SAP_ALL`** (acceptable for trial/demo — gives full read access)
+5. **Save** (Ctrl+S)
+
+> This same ABAP user works for **both RFC and OData** connections.
+
+#### Step 2: Create HANA DB Extraction User (Optional — for HANA Direct SQL)
+
+Connect to HANA Tenant DB (HDB, instance 02) as `SYSTEM` / `<Master Password>`:
+
+```sql
+CREATE USER AUTONOMY_EXTRACT PASSWORD "YourSecurePassword!"
+  NO FORCE_FIRST_PASSWORD_CHANGE;
+GRANT SELECT ON SCHEMA SAPHANADB TO AUTONOMY_EXTRACT;
+GRANT CATALOG READ TO AUTONOMY_EXTRACT;
+```
+
+> **Warning**: HANA Direct bypasses all ABAP authorization checks. Use only with this dedicated read-only user.
+
+#### Step 3: Open MM Inventory Period
+
+tCode **`MMPV`** in client 100 → set period to current month (required for goods movements).
+
+#### Step 4: Activate OData Services (if using OData connection)
+
+> **Why this is needed**: The S/4HANA FAA has OData services registered in the backend (IWBEP) but they are NOT published to the frontend gateway (IWFND) by default. The catalog returns 0 services until you explicitly add them. This is a one-time setup step that requires SAP GUI.
+
+> **If you don't need OData**: Skip this step entirely. Use **HANA DB** connection instead — it's 10x faster, accesses the same data, and requires no service activation. HANA DB is the recommended extraction method for on-premise S/4HANA.
+
+**Step 4a: Activate the OData Gateway ICF Node**
+
+1. Login to SAP GUI → client **100** → user `BPINST` / `Welcome1` (or your admin user)
+2. tCode **`SICF`**
+3. In the selection screen: Service Name = `*`, click Execute (F8)
+4. Navigate the tree: **default_host** → **sap** → **opu** → **odata** → **sap**
+5. Right-click **sap** (the one under odata) → **Activate Service**
+6. Also activate: **default_host** → **sap** → **opu** → **odata** → **IWFND** (if inactive)
+7. Also activate: **default_host** → **sap** → **opu** → **odata** → **IWBEP** (if inactive)
+
+**Step 4b: Register OData Services in the Frontend Gateway**
+
+1. tCode **`/n/IWFND/MAINT_SERVICE`**
+2. Click **Add Service** button (or menu: Service → Add Service)
+3. In the popup:
+   - System Alias: `LOCAL` (or leave blank for embedded gateway)
+   - Technical Service Name: enter the service name (e.g., `API_PRODUCT_SRV`)
+   - Click **Get Services** (magnifying glass)
+4. Select the service from the list → click **Add Selected Services**
+5. In the next dialog:
+   - Package Assignment: `$TMP` (local object — fine for demo)
+   - Click **Continue** (Enter)
+6. Repeat for each service:
+
+| # | Technical Service Name | Description | Used For |
+|---|----------------------|-------------|----------|
+| 1 | `API_PRODUCT_SRV` | Product Master | Materials (MARA/MARC/MAKT) |
+| 2 | `API_BUSINESS_PARTNER` | Business Partner | Customers + Vendors |
+| 3 | `API_PURCHASEORDER_PROCESS_SRV` | Purchase Orders | PO headers + items (EKKO/EKPO) |
+| 4 | `API_SALES_ORDER_SRV` | Sales Orders | SO headers + items (VBAK/VBAP) |
+| 5 | `API_PRODUCTION_ORDER_2_SRV` | Production Orders | Prod orders (AFKO/AFPO) |
+| 6 | `API_BILL_OF_MATERIAL_SRV_01` | Bill of Materials | BOMs (STKO/STPO + parent material) |
+| 7 | `API_PLANT_SRV` | Plants | Sites (T001W) |
+| 8 | `API_MATERIAL_STOCK_SRV` | Material Stock | Inventory (MARD) |
+
+**Step 4c: Verify**
+
+After adding all services, test from a browser or curl:
+```bash
+curl -sk -u 'ZRFC_AUTONOM:<password>' \
+  "https://<SAP_HOST>:44301/sap/opu/odata/sap/API_PRODUCT_SRV/A_Product?\$top=2&\$format=json"
+```
+You should see JSON with product data. If you still get 401, check the user's `S_SERVICE` authorization.
+
+**Troubleshooting OData**:
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| HTTP 401 on all endpoints | User lacks `S_SERVICE` authorization | Assign `SAP_ALL` profile or add `S_SERVICE` to the user's role in PFCG |
+| HTTP 200 but empty results | Service not registered in IWFND gateway | Follow Step 4b above |
+| HTTP 404 | ICF node not active | Follow Step 4a above |
+| HTTP 403 | User locked or expired | Check user status in SU01 (UFLAG should be 0) |
+| Catalog returns 0 services | Backend services exist but not published to frontend | Follow Step 4b — this is the most common FAA issue |
+
+> **S/4HANA 2023+ Note**: Starting with S/4HANA 2023, SAP sets `ICF_NODE_LAYOUT = NONE` for OData V2 by default (simplified model). If you're on 2023+, services may be auto-activated. The FAA 2025 still requires manual activation as described above.
+
+#### Connection Details for Autonomy
+
+| Connection | User | Port | Notes |
+|------------|------|------|-------|
+| **RFC** | `ZRFC_AUTONOMY` | 3300 | SID=S4H, Instance=00, Client=100 |
+| **OData** | `ZRFC_AUTONOMY` | 44301 (HTTPS) | Same ABAP user as RFC |
+| **HANA DB** | `AUTONOMY_EXTRACT` | 30215 | Schema=SAPHANADB |
+| **CSV** | (no user needed) | N/A | Manual export via SE16N |
+
+Configure in Autonomy: **Administration > SAP Data Management > Add Connection** (login as `SAP_admin@autonomy.com`).
+
+#### ABAP Clients in the FAA
+
+| Client | Purpose | Use For |
+|--------|---------|---------|
+| **100** | Trial & exploration with demo data (US, company 1710) | **Use this one** — has Fiori apps, Best Practices, sample data |
+| **200** | Ready-to-activate (empty) | Activating your own Best Practices |
+| **400** | Best Practices reference (43 localizations) | Comparing standard config |
+
+#### Ports Summary
+
+| Port | Service |
+|------|---------|
+| 3300 | SAP RFC (instance 00) |
+| 3389 | Windows RDP |
+| 44301 | Web Dispatcher / Fiori / OData (HTTPS) |
+| 30215 | HANA SQL (tenant DB, instance 02) |
+| 8443 | SAP Cloud Connector |
+
+> **To reset master password**: SAP CAL → Instances → Select appliance → "Reset Password" (requires appliance restart)
 
 ---
 

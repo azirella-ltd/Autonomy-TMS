@@ -1,20 +1,26 @@
 """
-SAP Data Staging Models — Intermediate layer between SAP extraction and AWS SC entities.
+SAP Data Staging Models — Schema: sap_staging
 
-Three tables:
-  sap_extraction_runs  — One row per extraction batch (metadata, counts, delta summary)
-  sap_staging_rows     — Raw SAP data preserved in JSONB for audit, delta detection, re-mapping
-  sap_table_schemas    — Tracks column sets per SAP table per tenant for schema drift detection
+Separate PostgreSQL schema for raw SAP data. The schema name IS the vendor
+(sap_staging for SAP, future: oracle_staging, d365_staging).
 
-Data flows:  SAP (RFC/OData) → sap_staging_rows → SAPConfigBuilder → AWS SC entities
-             CSV upload       → sap_staging_rows → SAPConfigBuilder → AWS SC entities
+Three tables in sap_staging schema:
+  extraction_runs  — Header: one row per extraction batch
+  rows             — Detail: raw SAP data in JSONB (one row per SAP table row)
+  table_schemas    — Column tracking per SAP table per tenant
+
+Data flow:
+  SAP (RFC/OData/HANA/CSV) → sap_staging.rows → SAPConfigBuilder → public.* entity tables
+
+The erp_vendor field is NOT stored — it's implicit from the schema name.
 """
 
 from enum import Enum as PyEnum
+from typing import Dict, List
 
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Text, Boolean, DateTime, Date,
-    ForeignKey, Index, JSON, UniqueConstraint,
+    ForeignKey, Index, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.sql import func
@@ -28,25 +34,24 @@ from .base import Base
 
 class SAPDataCategory(str, PyEnum):
     """Classification of SAP tables by refresh cadence."""
-    MASTER = "master"           # Weekly refresh: materials, plants, BOMs, vendors, customers
-    TRANSACTION = "transaction" # Daily refresh: sales orders, POs, production orders, deliveries
-    CDC = "cdc"                 # Hourly/real-time: goods movements, confirmations, status changes
-    USER_IMPORT = "user_import" # Weekly: user accounts, roles, authorizations
+    MASTER = "master"           # Weekly: materials, plants, BOMs, vendors, customers
+    TRANSACTION = "transaction" # Daily: sales orders, POs, production orders, deliveries
+    CDC = "cdc"                 # Hourly: goods movements, confirmations, status changes
 
 
 class SAPSourceMethod(str, PyEnum):
     """How data was obtained from the SAP system."""
-    CSV = "csv"         # Customer uploaded CSV files
-    RFC = "rfc"         # Remote Function Call (direct SAP connection)
-    ODATA = "odata"     # SAP OData API
-    HANA_DB = "hana_db" # Direct HANA SQL query
+    CSV = "csv"
+    RFC = "rfc"
+    ODATA = "odata"
+    HANA_DB = "hana_db"
 
 
 # ---------------------------------------------------------------------------
 # SAP Table Registry — canonical metadata for all supported SAP tables
 # ---------------------------------------------------------------------------
 
-SAP_TABLE_REGISTRY = {
+SAP_TABLE_REGISTRY: Dict[str, Dict] = {
     # --- MASTER DATA ---
     "T001":  {"category": "master", "keys": ["BUKRS"], "description": "Company Codes"},
     "T001W": {"category": "master", "keys": ["WERKS"], "description": "Plants"},
@@ -65,7 +70,7 @@ SAP_TABLE_REGISTRY = {
     "LFA1":  {"category": "master", "keys": ["LIFNR"], "description": "Vendors"},
     "STKO":  {"category": "master", "keys": ["STLNR", "STLAL"], "description": "BOM Headers"},
     "STPO":  {"category": "master", "keys": ["STLNR", "STLKN", "STPOZ"], "description": "BOM Items"},
-    "EORD":  {"category": "master", "keys": ["MATNR", "WERKS", "ZEESSION"], "description": "Source List"},
+    "EORD":  {"category": "master", "keys": ["MATNR", "WERKS"], "description": "Source List"},
     "EINA":  {"category": "master", "keys": ["INFNR"], "description": "Purchasing Info General"},
     "EINE":  {"category": "master", "keys": ["INFNR", "EKORG"], "description": "Purchasing Info Org"},
     "EBAN":  {"category": "master", "keys": ["BANFN", "BNFPO"], "description": "Purchase Requisitions"},
@@ -78,7 +83,6 @@ SAP_TABLE_REGISTRY = {
     "PLAF":  {"category": "master", "keys": ["PLNUM"], "description": "Planned Orders"},
     "T179":  {"category": "master", "keys": ["PRODH"], "description": "Product Hierarchy"},
     "KAKO":  {"category": "master", "keys": ["KAPID"], "description": "Capacity Headers"},
-
     # --- TRANSACTION DATA ---
     "VBAK":  {"category": "transaction", "keys": ["VBELN"], "description": "Sales Order Headers"},
     "VBAP":  {"category": "transaction", "keys": ["VBELN", "POSNR"], "description": "Sales Order Items"},
@@ -101,7 +105,6 @@ SAP_TABLE_REGISTRY = {
     "QALS":  {"category": "transaction", "keys": ["PRUESSION"], "description": "Inspection Lots"},
     "QASE":  {"category": "transaction", "keys": ["PRUESSION", "VESSION"], "description": "Inspection Results"},
     "KONV":  {"category": "transaction", "keys": ["KNUMV", "KPOSN", "STUNR"], "description": "Pricing Conditions"},
-
     # --- CDC (Change Data Capture) ---
     "MSEG":  {"category": "cdc", "keys": ["MBLNR", "MJAHR", "ZEESSION"], "description": "Goods Movement Items"},
     "MKPF":  {"category": "cdc", "keys": ["MBLNR", "MJAHR"], "description": "Goods Movement Headers"},
@@ -113,138 +116,122 @@ SAP_TABLE_REGISTRY = {
     "MCHA":  {"category": "cdc", "keys": ["MATNR", "CHARG", "WERKS"], "description": "Batch Plant"},
     "CDHDR": {"category": "cdc", "keys": ["CHANGENR"], "description": "Change Document Header"},
     "CDPOS": {"category": "cdc", "keys": ["CHANGENR", "TABNAME", "FNAME"], "description": "Change Document Items"},
-
-    # --- USER IMPORT ---
-    "USR02":      {"category": "user_import", "keys": ["BNAME"], "description": "User Master"},
-    "USR21":      {"category": "user_import", "keys": ["BNAME"], "description": "User Address Keys"},
-    "ADRP":       {"category": "user_import", "keys": ["PERSNUMBER"], "description": "Person Data"},
-    "AGR_USERS":  {"category": "user_import", "keys": ["AGR_NAME", "UNAME"], "description": "Role Assignments"},
-    "AGR_DEFINE": {"category": "user_import", "keys": ["AGR_NAME"], "description": "Role Definitions"},
-    "AGR_1251":   {"category": "user_import", "keys": ["AGR_NAME", "OBJECT", "AUTH", "FIELD"], "description": "Auth Objects"},
-    "AGR_TCODES": {"category": "user_import", "keys": ["AGR_NAME", "TCODE"], "description": "Role T-Codes"},
+    "CRCO":  {"category": "cdc", "keys": ["OBJID", "ARBPL"], "description": "Work Center Cost Center"},
 }
 
 
-def get_tables_by_category(category: str):
+def get_tables_by_category(category: str) -> List[str]:
     """Return list of SAP table names for a given category."""
     return [k for k, v in SAP_TABLE_REGISTRY.items() if v["category"] == category]
 
 
+def get_table_keys(table_name: str) -> List[str]:
+    """Return the business key fields for a SAP table."""
+    reg = SAP_TABLE_REGISTRY.get(table_name, {})
+    return reg.get("keys", [])
+
+
+def get_table_category(table_name: str) -> str:
+    """Return the data category for a SAP table."""
+    reg = SAP_TABLE_REGISTRY.get(table_name, {})
+    return reg.get("category", "master")
+
+
 # ---------------------------------------------------------------------------
-# Models
+# Models — all in sap_staging schema
 # ---------------------------------------------------------------------------
 
 class SAPExtractionRun(Base):
-    """Metadata for one extraction batch from an SAP system.
+    """Header: one row per extraction batch.
 
-    Each run represents a point-in-time snapshot. Multiple runs per tenant
-    enable delta detection and historical audit.
+    Links to tenant, tracks what was extracted, what was built, and any issues.
     """
-    __tablename__ = "sap_extraction_runs"
+    __tablename__ = "extraction_runs"
+    __table_args__ = (
+        Index("ix_sap_ext_tenant", "tenant_id", "extraction_date"),
+        {"schema": "sap_staging"},
+    )
 
     id = Column(PG_UUID, primary_key=True, server_default=func.gen_random_uuid())
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     connection_id = Column(Integer, ForeignKey("sap_connections.id", ondelete="SET NULL"), nullable=True)
 
+    # ERP context (vendor is implicit from schema name)
+    erp_variant = Column(String(30), nullable=False)       # S4HANA, ECC, APO, IBP
     extraction_date = Column(Date, nullable=False)
-    erp_system = Column(String(100), nullable=True)       # e.g. "S4HANA_1710"
     source_method = Column(String(20), nullable=False)     # csv, rfc, odata, hana_db
 
-    # Row counts per category
+    # Counts per category
     master_tables = Column(Integer, default=0)
     master_rows = Column(Integer, default=0)
     transaction_tables = Column(Integer, default=0)
     transaction_rows = Column(Integer, default=0)
     cdc_tables = Column(Integer, default=0)
     cdc_rows = Column(Integer, default=0)
-    user_tables = Column(Integer, default=0)
-    user_rows = Column(Integer, default=0)
 
     # Lifecycle
-    status = Column(String(20), default="pending")  # pending, running, completed, failed
+    status = Column(String(20), default="pending")
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
-    # Storage
-    csv_directory = Column(String(500), nullable=True)  # Filesystem path to CSV dir
-    manifest = Column(JSONB, nullable=True)              # Full MANIFEST.json
+    # What was built from this extraction
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="SET NULL"), nullable=True)
+    build_summary = Column(JSONB, nullable=True)
 
-    # Delta detection (compared to previous extraction)
+    # Delta and diagnostics
     delta_summary = Column(JSONB, nullable=True)
-    # {"MARA": {"new": 12, "changed": 5, "deleted": 0, "unchanged": 919}}
-
-    # Validation
     errors = Column(JSONB, nullable=True)
+    warnings = Column(JSONB, nullable=True)  # empty/sparse tables, schema drift
 
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
-
-    __table_args__ = (
-        Index("ix_extraction_runs_tenant", "tenant_id", "extraction_date"),
-    )
 
 
 class SAPStagingRow(Base):
-    """One raw SAP table row preserved in JSONB.
+    """Detail: one row per SAP table row, stored as JSONB.
 
-    Serves as the audit layer and delta detection substrate. Every row
-    extracted from SAP (via any method) passes through this table before
-    being mapped to AWS SC entities.
+    Every row extracted from SAP passes through here before being
+    mapped to AWS SC entity tables. Provides audit trail and delta detection.
     """
-    __tablename__ = "sap_staging_rows"
+    __tablename__ = "rows"
+    __table_args__ = (
+        Index("ix_sap_rows_ext", "extraction_id"),
+        Index("ix_sap_rows_tbl", "tenant_id", "sap_table", "extraction_id"),
+        Index("ix_sap_rows_bk", "tenant_id", "sap_table", "business_key"),
+        {"schema": "sap_staging"},
+    )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    connection_id = Column(Integer, ForeignKey("sap_connections.id", ondelete="SET NULL"), nullable=True)
+    extraction_id = Column(PG_UUID, ForeignKey("sap_staging.extraction_runs.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, nullable=False)
 
-    extraction_id = Column(PG_UUID, ForeignKey("sap_extraction_runs.id", ondelete="CASCADE"), nullable=False)
-    extraction_date = Column(Date, nullable=False)
+    sap_table = Column(String(40), nullable=False)
+    data_category = Column(String(20), nullable=False)
+    row_data = Column(JSONB, nullable=False)
+    row_hash = Column(String(32), nullable=False)
+    business_key = Column(String(200), nullable=True)
 
-    sap_table = Column(String(40), nullable=False)       # e.g. "MARA", "EKKO"
-    data_category = Column(String(20), nullable=False)    # master, transaction, cdc, user_import
-    source_method = Column(String(20), nullable=False)    # csv, rfc, odata, hana_db
-
-    row_data = Column(JSONB, nullable=False)              # All SAP columns as key-value
-    row_hash = Column(String(32), nullable=False)         # MD5 of row_data for delta detection
-    business_key = Column(String(200), nullable=True)     # Composite key for matching
-
-    # Processing status
-    is_staged = Column(Boolean, default=False)            # True after mapped to AWS SC entity
+    # Processing
+    is_staged = Column(Boolean, default=False)
     staged_at = Column(DateTime, nullable=True)
-    staging_errors = Column(JSONB, nullable=True)
+    staging_error = Column(Text, nullable=True)
 
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
-    __table_args__ = (
-        Index("ix_staging_tenant_table_date", "tenant_id", "sap_table", "extraction_date"),
-        Index("ix_staging_extraction", "extraction_id"),
-        Index("ix_staging_bkey", "tenant_id", "sap_table", "business_key"),
-        Index("ix_staging_unstaged", "tenant_id", "is_staged",
-              postgresql_where="NOT is_staged"),
-        Index("ix_staging_row_data", "row_data", postgresql_using="gin"),
-    )
-
 
 class SAPTableSchema(Base):
-    """Tracks the column set for each SAP table per tenant.
-
-    Enables schema drift detection — if a new extraction has different
-    columns than the previous one, flag for review (common when SAP
-    upgrades or Z-fields are added/removed).
-    """
-    __tablename__ = "sap_table_schemas"
+    """Tracks column sets per SAP table per tenant for schema drift detection."""
+    __tablename__ = "table_schemas"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "sap_table", name="uq_sap_tbl_schema"),
+        {"schema": "sap_staging"},
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     sap_table = Column(String(40), nullable=False)
-
-    columns = Column(JSONB, nullable=False)       # ["MATNR", "MTART", "MEINS", ...]
-    column_types = Column(JSONB, nullable=True)    # {"MATNR": "str", "BRGEW": "float"}
-    key_fields = Column(JSONB, nullable=False)     # ["MATNR"] or ["MATNR", "WERKS"]
+    columns = Column(JSONB, nullable=False)
+    key_fields = Column(JSONB, nullable=False)
     data_category = Column(String(20), nullable=False)
-
+    row_count = Column(Integer, default=0)
     first_seen = Column(DateTime, server_default=func.now())
     last_seen = Column(DateTime, server_default=func.now())
-
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "sap_table", name="uq_sap_table_schema"),
-    )

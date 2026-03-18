@@ -885,6 +885,7 @@ class HANADBExtractor(SAPTableExtractor):
                 port=self.port,
                 user=self.user,
                 password=self.password,
+                encrypt=False,  # SAP FAA default; set True + sslTrustStore for production
             )
             cur = conn.cursor()
             cur.execute(f"SELECT COUNT(*) FROM {self.schema}.T001W")
@@ -909,6 +910,7 @@ class HANADBExtractor(SAPTableExtractor):
             port=self.port,
             user=self.user,
             password=self.password,
+            encrypt=False,
         )
         try:
             cur = conn.cursor()

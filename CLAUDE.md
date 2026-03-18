@@ -793,13 +793,17 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `sap_table_schemas`: Column set tracking per SAP table per tenant — schema drift detection
 - `sap_connections`: SAP system connection configurations (OData, RFC, CSV, IDoc)
 
-**SAP Data Architecture**:
-- **Directory convention**: `imports/{TENANT_NAME}/{ERP_VARIANT}/{YYYY-MM-DD}/ (e.g., imports/SAP_Demo/S4HANA/2026-03-18/)` with `latest` symlink
-- **Data categories**: Master (weekly), Transaction (daily), CDC (hourly), User Import (weekly)
-- **ERP Registry**: `backend/app/models/erp_registry.py` — Vendor (SAP, Oracle, Microsoft, Infor) × Variant (S/4HANA, ECC, Cloud SCM, D365, etc.)
-- **SAP Table Registry**: `SAP_TABLE_REGISTRY` in `backend/app/models/sap_staging.py` — 70+ SAP tables with category, key fields, descriptions
-- **Tenant ERP config**: `erp_vendor`, `erp_variant`, `import_base_dir`, `export_base_dir`, `erp_retention_snapshots` on Tenant model
-- **Flow**: SAP (RFC/CSV) → `sap_staging_rows` (JSONB audit) → `SAPConfigBuilder` → AWS SC entity tables
+**SAP Data Architecture** (PostgreSQL-first, schema per ERP vendor):
+- **Staging schema**: `sap_staging` — separate PostgreSQL schema for raw SAP data. Vendor is implicit from schema name (future: `oracle_staging`, `d365_staging`)
+- **Three staging tables**: `sap_staging.extraction_runs` (header), `sap_staging.rows` (detail — JSONB per row), `sap_staging.table_schemas` (column tracking)
+- **Two-phase loading**: Phase 1 = ERP → staging tables (raw data preservation). Phase 2 = staging → AWS SC entity tables (mapping via SAPConfigBuilder). Phases are independent — staging can succeed even if mapping fails, and mapping can be re-run from staging without re-extracting
+- **CSV folder watching**: CSVs dropped into `imports/{TENANT_NAME}/{ERP_VARIANT}/` auto-ingest into staging schema. Extraction timestamp = max(file modification times). Batch completeness check before loading
+- **CDC via delta detection**: `row_hash` comparison between consecutive staging snapshots gives change tracking even for CSV-only customers without native ERP CDC
+- **Data categories**: Master (weekly), Transaction (daily), CDC (hourly)
+- **SAP Table Registry**: `SAP_TABLE_REGISTRY` in `backend/app/models/sap_staging.py` — 60+ SAP tables with category, key fields, descriptions
+- **Tenant ERP config**: `erp_vendor`, `erp_variant`, `import_base_dir`, `export_base_dir`, `erp_retention_snapshots` on Tenant model. Multi-ERP per tenant supported (different connections → different staging runs)
+- **Staging repository**: `backend/app/services/sap_staging_repository.py` — `start_extraction()`, `stage_table()`, `complete_extraction()`, `get_staged_data()`, `compute_delta()`, `enforce_retention()`
+- **Download failure handling**: Missing expected tables → warning. Previously-populated tables now empty → error alert. Connection failures → retry with backoff, then alert
 
 **Directive & Signal Tables**:
 - `user_directives`: Natural language directive capture, LLM parsing, Powell routing, effectiveness tracking

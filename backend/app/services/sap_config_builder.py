@@ -39,7 +39,7 @@ from app.models.sc_entities import (
     Product, Forecast, InvLevel, InvPolicy,
     TradingPartner, Geography,
     SourcingRules, ProductBom, ProductionProcess,
-    OutboundOrderLine, InboundOrder, InboundOrderLine,
+    OutboundOrder, OutboundOrderLine, InboundOrder, InboundOrderLine,
     Shipment,
 )
 from app.models.production_order import ProductionOrder, ProductionOrderComponent
@@ -810,6 +810,7 @@ class SAPConfigBuilder:
             "(SELECT id FROM production_orders WHERE config_id = :cid)"), {"cid": config_id})
         await self.db.execute(sql_delete(ProductionOrder).where(ProductionOrder.config_id == config_id))
         await self.db.execute(sql_delete(OutboundOrderLine).where(OutboundOrderLine.config_id == config_id))
+        await self.db.execute(sql_delete(OutboundOrder).where(OutboundOrder.config_id == config_id))
 
         for model in [
             Forecast, InvLevel, InvPolicy, SourcingRules,
@@ -2606,13 +2607,24 @@ class SAPConfigBuilder:
         stko = self._data.get("STKO", pd.DataFrame())
         mast = self._data.get("MAST", pd.DataFrame())
 
+        # Normalize STLNR to zero-padded 8-char string across all BOM tables
+        def _norm_stlnr(val) -> str:
+            """Normalize STLNR: '27.0' → '00000027', '00000027' → '00000027'."""
+            s = str(val).strip()
+            # Handle float representation from pandas (e.g., '27.0')
+            try:
+                n = int(float(s))
+                return f"{n:08d}"
+            except (ValueError, OverflowError):
+                return s
+
         if not stpo.empty and "STLNR" in stpo.columns:
             # Build STLNR → parent material lookup
             # Priority: MAST table (explicit assignment) > STKO.MATNR (OData extraction)
             bom_parent_map: dict = {}  # STLNR → MATNR (parent material)
             if not mast.empty and "STLNR" in mast.columns and "MATNR" in mast.columns:
                 for _, row in mast.iterrows():
-                    bom_nr = str(row["STLNR"]).strip()
+                    bom_nr = _norm_stlnr(row["STLNR"])
                     parent = str(row["MATNR"]).strip()
                     if parent:
                         bom_parent_map[bom_nr] = parent
@@ -2620,7 +2632,7 @@ class SAPConfigBuilder:
             elif not stko.empty and "MATNR" in stko.columns:
                 # OData extraction puts Material → MATNR on STKO headers
                 for _, row in stko.iterrows():
-                    bom_nr = str(row["STLNR"]).strip()
+                    bom_nr = _norm_stlnr(row["STLNR"])
                     parent = str(row.get("MATNR", "")).strip()
                     if parent:
                         bom_parent_map[bom_nr] = parent
@@ -2638,14 +2650,14 @@ class SAPConfigBuilder:
             base_qty_map = {}
             if not stko.empty and "STLNR" in stko.columns:
                 for _, row in stko.iterrows():
-                    bom_nr = str(row["STLNR"]).strip()
+                    bom_nr = _norm_stlnr(row["STLNR"])
                     base_qty_map[bom_nr] = float(pd.to_numeric(row.get("BMENG", 1), errors="coerce") or 1)
 
             # Create BOM entries (only when MAST is available)
             if bom_parent_map:
                 seen_bom_pairs: set = set()
                 for _, row in stpo.iterrows():
-                    bom_nr = str(row["STLNR"]).strip()
+                    bom_nr = _norm_stlnr(row["STLNR"])
                     component_mat = str(row.get("IDNRK", "")).strip()
                     parent_mat = bom_parent_map.get(bom_nr)
 
@@ -2944,7 +2956,8 @@ class SAPConfigBuilder:
         return counts
 
     async def _create_outbound_orders(self, max_records: int = 5000) -> int:
-        """Create OutboundOrderLine records from SAP sales orders (VBAK/VBAP)."""
+        """Create OutboundOrder + OutboundOrderLine from SAP sales orders (VBAK/VBAP)."""
+
         vbak = self._data.get("VBAK", pd.DataFrame())
         vbap = self._data.get("VBAP", pd.DataFrame())
         if vbap.empty:
@@ -2957,6 +2970,7 @@ class SAPConfigBuilder:
                 so_map[str(row.get("VBELN", "")).strip()] = row
 
         first_plant_id = self._get_first_plant_site_id()
+        created_headers: set = set()
         count = 0
 
         for _, item in vbap.iterrows():
@@ -2984,9 +2998,35 @@ class SAPConfigBuilder:
             delivery_date = self._parse_sap_date(delivery_date_str) or order_date
 
             qty = float(pd.to_numeric(item.get("KWMENG", 0), errors="coerce") or 0)
+            net_value = float(pd.to_numeric(item.get("NETWR", 0), errors="coerce") or 0)
+            currency = str(so.get("WAERK", "USD")).strip() if not so.empty else "USD"
+            customer_id = str(so.get("KUNNR", "")).strip() if not so.empty else ""
+
+            # Create parent OutboundOrder header (once per SO)
+            order_id = f"SAP-SO-{vbeln}"
+            if order_id not in created_headers:
+                total_value = float(pd.to_numeric(so.get("NETWR", 0), errors="coerce") or 0) if not so.empty else 0
+                ob_header = OutboundOrder(
+                    id=order_id,
+                    order_type="SALES",
+                    customer_id=customer_id,
+                    ship_from_site_id=site_id,
+                    status=status,
+                    order_date=order_date or datetime.utcnow().date(),
+                    requested_delivery_date=delivery_date,
+                    total_value=total_value,
+                    currency=currency,
+                    priority="STANDARD",
+                    config_id=self._config.id,
+                    source="SAP_IMPORT",
+                    source_event_id=f"SO-{vbeln}",
+                    source_update_dttm=datetime.utcnow(),
+                )
+                self.db.add(ob_header)
+                created_headers.add(order_id)
 
             ob = OutboundOrderLine(
-                order_id=f"SAP-SO-{vbeln}",
+                order_id=order_id,
                 line_number=int(pd.to_numeric(item.get("POSNR", 1), errors="coerce") or 1),
                 product_id=product_id,
                 site_id=site_id,
@@ -3465,11 +3505,11 @@ class SAPConfigBuilder:
 
             result = await self.db.execute(sql_text(
                 "UPDATE production_orders SET actual_quantity = :yield, "
-                "extra_data = COALESCE(extra_data, '{}'::jsonb) || :scrap_json "
+                "extra_data = CAST(:scrap_json AS json) "
                 "WHERE order_number = :on AND config_id = :cid"
             ), {
                 "yield": int(yield_qty),
-                "scrap_json": json.dumps({"sap_scrap_qty": scrap_qty}),
+                "scrap_json": json.dumps({"sap_scrap_qty": scrap_qty, "sap_yield_qty": yield_qty}),
                 "on": order_number,
                 "cid": self._config.id,
             })

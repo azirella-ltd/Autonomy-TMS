@@ -1628,7 +1628,26 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                     error_message=f"No data extracted for the requested tables (method={connection.connection_method.value})")
                 return
 
-            # Save extracted data as CSV files if requested
+            # Stage all extracted data into sap_staging schema
+            from app.services.sap_staging_repository import SAPStagingRepository
+            staging = SAPStagingRepository(db, tenant_id)
+            erp_variant = getattr(conn_row, "system_type", "S4HANA") or "S4HANA"
+            extraction_id = await staging.start_extraction(
+                erp_variant=erp_variant.upper(),
+                source_method=connection.connection_method.value,
+                connection_id=job.connection_id,
+            )
+            staging_warnings = []
+            for table_name, df in sap_data.items():
+                count = await staging.stage_table(extraction_id, table_name, df)
+                if count == 0:
+                    staging_warnings.append({"table": table_name, "issue": "empty", "rows": 0})
+                elif count < 5:
+                    staging_warnings.append({"table": table_name, "issue": "sparse", "rows": count})
+            await db.flush()
+            logger.info(f"Job {job_id}: staged {sum(len(df) for df in sap_data.values())} rows into sap_staging")
+
+            # Save extracted data as CSV files if requested (optional backup)
             if job.save_csv:
                 await _save_extracted_csvs(
                     sap_data, conn_row, connection, job_id, tenant_id, service,
@@ -1661,7 +1680,20 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                 final_status = JobStatus.COMPLETED if total_failed == 0 else JobStatus.PARTIAL
                 await service.complete_job(job_id, final_status)
 
-            logger.info(f"Job {job_id} phase={job.phase.value} completed: {total_rows} rows")
+            # Finalize staging extraction with build results
+            try:
+                config_id = getattr(job, "config_id", None)
+                build_summary = getattr(job, "build_summary", None)
+                await staging.complete_extraction(
+                    extraction_id,
+                    config_id=config_id,
+                    build_summary=build_summary,
+                    warnings=staging_warnings,
+                )
+            except Exception as staging_err:
+                logger.warning(f"Job {job_id}: staging completion failed: {staging_err}")
+
+            logger.info(f"Job {job_id} phase={job.phase.value} completed: {total_rows} rows (staged to sap_staging)")
 
         except Exception as e:
             logger.error(f"Job {job_id} failed: {e}", exc_info=True)
@@ -1669,6 +1701,9 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                 service = create_ingestion_monitoring_service(db, tenant_id)
                 await service.complete_job(job_id, JobStatus.FAILED,
                     error_message=str(e)[:2000])
+                # Also mark staging as failed
+                if 'staging' in dir() and 'extraction_id' in dir():
+                    await staging.complete_extraction(extraction_id, error=str(e)[:500])
             except Exception:
                 pass
 
