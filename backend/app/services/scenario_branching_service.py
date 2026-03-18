@@ -24,7 +24,7 @@ from app.models.supply_chain_config import (
     SupplyChainConfig,
     ConfigDelta,
     ConfigLineage,
-    Node,
+    Site as Node,
     TransportationLane,
     Market,
     MarketDemand,

@@ -82,7 +82,7 @@ Parse the directive and return JSON with these fields:
 {{
   "directive_type": one of {reason_codes},
   "reason_code": same as directive_type (or more specific if clear),
-  "intent": "directive" | "observation" | "question" | "unknown",
+  "intent": "directive" | "observation" | "question" | "scenario_event" | "unknown",
   "scope": {{
     "region": string or null (resolved to tenant's site hierarchy),
     "product_family": string or null (resolved to tenant's product hierarchy),
@@ -117,6 +117,20 @@ Strategic-layer directives (VP/Executive) may legitimately target the entire net
 The "reason" field is ALWAYS required — a directive without justification cannot be tracked for effectiveness.
 If the user only states a desire ("increase revenue") without saying WHY, the reason IS missing.
 Good reasons: "customer feedback indicates...", "market intelligence suggests...", "Q3 targets require...", "supplier delays mean..."
+
+SCENARIO EVENT DETECTION:
+If the user describes a supply chain event/disruption they want to simulate or test (NOT a real directive to change the plan), set intent="scenario_event".
+Examples: "what if Bigmart places a rush order for 500 bikes", "simulate a supplier delay of 2 weeks", "what happens if we lose capacity at Plant 1", "test a demand spike of 20% on C900 bikes".
+
+For scenario_event intent, also return:
+  "scenario_event": {{
+    "event_type": one of [drop_in_order, demand_spike, order_cancellation, forecast_revision, supplier_delay, supplier_loss, quality_hold, component_shortage, capacity_loss, machine_breakdown, shipment_delay, lane_disruption, tariff_change],
+    "parameters": {{extracted parameter values from the text}},
+    "scenario_name": suggested scenario name (e.g. "What-if: Bigmart rush order")
+  }}
+Extract as many parameters as possible from the text. For scenario events, reason/direction/metric/magnitude are NOT required.
+Available customers: {customer_names}
+Available vendors: {vendor_names}
 
 Set confidence based on completeness: 0 missing = 0.9+, 1-2 missing = 0.5-0.7, 3+ missing = 0.2-0.4.
 If missing_fields is empty, set it to an empty list [].
@@ -330,6 +344,15 @@ class DirectiveService:
         if parsed.get("intent") == "directive" and parsed.get("confidence", 0) >= 0.7:
             await self._apply_directive(directive)
 
+        # Handle scenario event intent — inject event and redirect
+        if parsed.get("intent") == "scenario_event" and parsed.get("scenario_event"):
+            scenario_event_result = await self._apply_scenario_event(
+                directive, parsed["scenario_event"],
+            )
+            directive.routed_actions = [scenario_event_result]
+            directive.status = "APPLIED"
+            directive.applied_at = datetime.utcnow()
+
         await self.db.commit()
         return directive
 
@@ -404,6 +427,51 @@ class DirectiveService:
             "Directive %d applied: layer=%s, %d actions, confidence=%.2f",
             directive.id, layer, len(actions), directive.parser_confidence,
         )
+
+    async def _apply_scenario_event(
+        self, directive: UserDirective, event_spec: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Inject a scenario event via the ScenarioEventService.
+
+        Called when Talk to Me detects intent='scenario_event'.
+        Auto-creates a scenario branch and injects the event.
+        """
+        from app.services.scenario_event_service import ScenarioEventService
+        from app.db.session import sync_session_factory
+
+        event_type = event_spec.get("event_type", "")
+        parameters = event_spec.get("parameters", {})
+        scenario_name = event_spec.get("scenario_name", f"What-if: {event_type}")
+
+        # Use sync session for the event service (it's not async)
+        sync_db = sync_session_factory()
+        try:
+            service = ScenarioEventService(sync_db)
+            result = service.inject_event(
+                config_id=directive.config_id,
+                tenant_id=directive.tenant_id,
+                user_id=directive.user_id,
+                event_type=event_type,
+                parameters=parameters,
+            )
+            return {
+                "action": "scenario_event_injected",
+                "event_type": event_type,
+                "scenario_name": scenario_name,
+                "summary": result.get("summary", ""),
+                "event_id": result.get("id"),
+                "target_config_id": result.get("target_config_id"),
+                "navigate_to": "/scenario-events",
+            }
+        except Exception as e:
+            logger.warning("Scenario event injection via Talk to Me failed: %s", e)
+            return {
+                "action": "scenario_event_failed",
+                "error": str(e),
+                "event_type": event_type,
+            }
+        finally:
+            sync_db.close()
 
     async def _apply_strategic(self, directive: UserDirective) -> Dict[str, Any]:
         """Create PowellPolicyParameters record from a strategic directive."""
@@ -662,6 +730,8 @@ class DirectiveService:
             product_families=json.dumps(tenant_context.get("product_families", [])),
             site_names=json.dumps(tenant_context.get("site_names", [])),
             reason_codes=json.dumps(_REASON_CODES),
+            customer_names=json.dumps(tenant_context.get("customer_names", [])),
+            vendor_names=json.dumps(tenant_context.get("vendor_names", [])),
         )
 
         try:
@@ -1148,9 +1218,19 @@ class DirectiveService:
             )
             families = [r[0] for r in prod_result.fetchall()]
 
+        # Customer and vendor names for scenario event detection
+        customer_names = [
+            s["name"] for s in sites if s.get("master_type") == "MARKET_DEMAND"
+        ]
+        vendor_names = [
+            s["name"] for s in sites if s.get("master_type") == "MARKET_SUPPLY"
+        ]
+
         return {
             "site_names": [s["name"] for s in sites],
             "product_families": families,
+            "customer_names": customer_names[:30],
+            "vendor_names": vendor_names[:30],
         }
 
     async def collect_directive_outcomes(self) -> Dict[str, Any]:

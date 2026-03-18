@@ -72,6 +72,7 @@ import {
   Trophy as TrophyIcon,
   Mail as MailIcon,
   Dice5 as MonteCarloIcon,
+  Zap as ScenarioEventIcon,
   Scale as GovernanceIcon,
   Monitor as MonitoringIcon,
   Workflow as HierarchyIcon,
@@ -98,6 +99,13 @@ export const NAVIGATION_CONFIG = [
         icon: SparklesIcon,
         requiredCapability: null, // Always visible
         description: 'LLM-first decision inbox with conversational triage',
+      },
+      {
+        label: 'Scenario Events',
+        path: '/scenario-events',
+        icon: ScenarioEventIcon,
+        requiredCapability: null, // Always visible
+        description: 'Inject what-if events and see CDC cascade responses',
       },
       {
         label: 'Dashboard',

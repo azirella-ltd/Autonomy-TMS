@@ -328,6 +328,9 @@ from .executive_briefing import (
 # 28. User Directives — "Talk to Me" context capture & Powell routing
 from .user_directive import UserDirective, ConfigProvisioningStatus
 
+# 29b. Scenario Events — What-if event injection for CDC cascade analysis
+from .scenario_event import ScenarioEvent
+
 # 29. Email Signals — GDPR-safe email ingestion for SC intelligence
 from .email_signal import EmailSignal, EmailConnection
 

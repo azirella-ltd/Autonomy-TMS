@@ -295,6 +295,12 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         return;
       }
 
+      // Scenario event flow — submit immediately (no clarification needed)
+      if (intent === 'scenario_event') {
+        await submitFinalDirective(prompt, {});
+        return;
+      }
+
       // Directive flow — check for missing fields
       if (analysis.is_complete || (analysis.missing_fields?.length || 0) === 0) {
         // No gaps — submit immediately
@@ -333,6 +339,14 @@ const TopNavbar = ({ sidebarOpen = true }) => {
       setTalkInput('');
       dismissClarification();
       setTimeout(() => setDirectiveResult(null), 6000);
+
+      // Auto-navigate for scenario events
+      const scenarioAction = result.routed_actions?.find(a => a.action === 'scenario_event_injected');
+      if (scenarioAction?.navigate_to) {
+        navigate(scenarioAction.navigate_to, {
+          state: { configId: scenarioAction.target_config_id, eventId: scenarioAction.event_id },
+        });
+      }
     } catch (err) {
       console.error('Directive submission failed:', err);
     } finally {

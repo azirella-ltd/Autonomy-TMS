@@ -6492,6 +6492,10 @@ api.include_router(skills_monitoring_router, tags=["skills-monitoring"])
 from app.api.endpoints.data_drift import router as data_drift_router
 api.include_router(data_drift_router, tags=["data-drift"])
 
+# Scenario Events API (what-if event injection)
+from app.api.endpoints.scenario_events import router as scenario_events_router
+api.include_router(scenario_events_router, tags=["scenario-events"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------

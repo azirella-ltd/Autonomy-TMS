@@ -46,6 +46,16 @@ ROUTE_REGISTRY: List[RouteEntry] = [
         category="execution",
     ),
 
+    # ── Scenario Events ──
+    RouteEntry(
+        path="/scenario-events",
+        label="Scenario Events",
+        description="What-if event injection workspace. Inject supply chain disruptions (drop-in orders, supplier delays, capacity loss, demand spikes) into scenario branches and observe the CDC cascade response.",
+        keywords=["what-if", "scenario", "event", "disruption", "drop-in order", "supplier delay", "capacity loss", "demand spike", "simulate", "test", "injection", "rush order"],
+        filters=["event_type", "category"],
+        category="execution",
+    ),
+
     # ── Executive & Strategic ──
     RouteEntry(
         path="/executive-dashboard",
