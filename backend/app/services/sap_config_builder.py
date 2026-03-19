@@ -2387,11 +2387,77 @@ class SAPConfigBuilder:
                             created_lanes.add(lane_key)
                             count += 1
 
-        # ── Fallback: ensure every plant has at least one vendor lane ──────
-        # If no vendor sourcing data was found, create a lane from each vendor
-        # in the source list to the first plant as a placeholder.
+        # ── Fallback: ensure ALL vendors and customers have at least one lane ─
+        # The EORD/EKPO/LIKP/VBAP merge may miss partners if the staging data
+        # is incomplete. Create a lane for every trading partner that doesn't
+        # already have one, connecting to the first plant.
         plant_sites = {k: v for k, v in self._sites.items()
                        if hasattr(v, 'master_type') and v.master_type in ('MANUFACTURER', 'INVENTORY')}
+        # Ensure EVERY trading partner has at least one lane. A vendor without
+        # a lane today may get a PO tomorrow. A customer without a lane today
+        # may place an order tomorrow. The network must be fully connected.
+        if plant_sites and self._partner_ids:
+            first_plant = next(iter(plant_sites.values()))
+            fallback_count = 0
+            # Build set of partners that already have lanes
+            partners_with_vendor_lane = {k[0] for k in created_lanes if k[0] is not None}
+            partners_with_customer_lane = {k[3] for k in created_lanes if k[3] is not None}
+
+            # Batch-query all partner types to avoid N+1
+            from sqlalchemy import select as _s2
+            partner_types: Dict[int, str] = {}
+            all_pids = list(self._partner_ids.values())
+            for i in range(0, len(all_pids), 500):
+                batch = all_pids[i:i+500]
+                try:
+                    rows = await self.db.execute(
+                        _s2(TradingPartner._id, TradingPartner.tpartner_type).where(
+                            TradingPartner._id.in_(batch)
+                        )
+                    )
+                    for _pid, _tp in rows.fetchall():
+                        partner_types[_pid] = _tp
+                except Exception:
+                    pass
+
+            for biz_key, pid in self._partner_ids.items():
+                tp_type = partner_types.get(pid)
+                if tp_type == "vendor" and pid not in partners_with_vendor_lane:
+                    lane_key = (pid, None, first_plant.id, None)
+                    if lane_key not in created_lanes:
+                        lane = TransportationLane(
+                            config_id=self._config.id,
+                            from_partner_id=pid,
+                            to_site_id=first_plant.id,
+                            capacity=10000,
+                            lead_time_days={"min": 3, "max": 10},
+                            supply_lead_time={"type": "deterministic", "value": 7},
+                            demand_lead_time={"type": "deterministic", "value": 1},
+                        )
+                        self.db.add(lane)
+                        created_lanes.add(lane_key)
+                        count += 1
+                        fallback_count += 1
+                elif tp_type == "customer" and pid not in partners_with_customer_lane:
+                    lane_key = (None, first_plant.id, None, pid)
+                    if lane_key not in created_lanes:
+                        lane = TransportationLane(
+                            config_id=self._config.id,
+                            from_site_id=first_plant.id,
+                            to_partner_id=pid,
+                            capacity=10000,
+                            lead_time_days={"min": 1, "max": 5},
+                            supply_lead_time={"type": "deterministic", "value": 2},
+                            demand_lead_time={"type": "deterministic", "value": 1},
+                        )
+                        self.db.add(lane)
+                        created_lanes.add(lane_key)
+                        count += 1
+                        fallback_count += 1
+            if fallback_count:
+                logger.info(f"Connected {fallback_count} additional partners to network (every partner must have a lane)")
+
+        # Legacy fallback for empty configs (kept for backward compatibility)
         if plant_sites and count == 0 and self._partner_ids:
             first_plant = next(iter(plant_sites.values()))
             # Pick first 10 vendors as fallback
