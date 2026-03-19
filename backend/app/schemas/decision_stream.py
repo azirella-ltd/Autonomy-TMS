@@ -36,16 +36,22 @@ class AlertSeverity(str, Enum):
 # ============================================================================
 
 class PendingDecisionItem(BaseModel):
-    """A single pending TRM decision surfaced in the stream."""
+    """A single pending decision surfaced in the stream (TRM, GNN, or governance)."""
     id: int
     decision_type: str = Field(
-        ..., description="TRM type: atp, po_creation, rebalancing, order_tracking, etc."
+        ..., description="Decision type: atp, po_creation, sop_policy, execution_directive, directive, etc."
+    )
+    decision_level: Optional[str] = Field(
+        None,
+        description="Powell hierarchy level: governance, strategic, tactical, execution",
     )
     summary: str = Field(..., description="Human-readable one-line summary")
     product_id: Optional[str] = None
     product_name: Optional[str] = None
     site_id: Optional[str] = None
     site_name: Optional[str] = None
+    customer_name: Optional[str] = Field(None, description="Trading partner name (customer)")
+    vendor_name: Optional[str] = Field(None, description="Trading partner name (vendor/supplier)")
     urgency: Optional[str] = Field(None, description="Urgency label: Critical, High, Medium, Low, Routine")
     urgency_score: Optional[float] = Field(None, description="Raw urgency score 0-1 (for sorting)")
     likelihood: Optional[str] = Field(None, description="Likelihood label: Almost Certain, Likely, Possible, Unlikely, Never")

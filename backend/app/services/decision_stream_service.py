@@ -74,7 +74,7 @@ _FORECAST_CHANGE_ALERT_PCT = 20.0
 _DEFAULT_CONFIDENCE = 0.5
 _FINAL_RESPONSE_MAX_SOURCES = 5
 _DECISION_LOOKBACK_DAYS = 30
-_DECISIONS_PER_TABLE = 10
+_DECISIONS_PER_TABLE = 50  # Per TRM table; total is uncapped — frontend paginates
 _SUGGESTED_FOLLOWUP_MAX = 3
 _DIGEST_SUMMARY_MAX_DECISIONS = 5
 _CURRENCY_SYMBOL = os.environ.get("DECISION_STREAM_CURRENCY", "$")
@@ -1344,7 +1344,19 @@ class DecisionStreamService:
                 if allowed_products is not None and type_key not in _NO_PRODUCT_TABLES:
                     query = query.where(model_class.product_id.in_(allowed_products))
 
-                query = query.order_by(desc(model_class.created_at)).limit(_DECISIONS_PER_TABLE)
+                # Stack-rank by risk/impact: urgency DESC, benefit DESC, then recency
+                # This ensures the per-table limit keeps the highest-risk decisions
+                urgency_col = getattr(model_class, "urgency_at_time", None)
+                benefit_col = getattr(model_class, "expected_benefit", None)
+                if urgency_col is not None and benefit_col is not None:
+                    query = query.order_by(
+                        desc(func.coalesce(urgency_col, 0)),
+                        desc(func.coalesce(benefit_col, 0)),
+                        desc(model_class.created_at),
+                    )
+                else:
+                    query = query.order_by(desc(model_class.created_at))
+                query = query.limit(_DECISIONS_PER_TABLE)
 
                 result = await self.db.execute(query)
                 rows = result.scalars().all()
@@ -1856,7 +1868,7 @@ class DecisionStreamService:
             return (-_urgency_bucket(urgency), -benefit, likelihood)
 
         kept.sort(key=sort_key)
-        return kept[:_DIGEST_MAX_DECISIONS]
+        return kept  # No artificial cap — return all decisions; LLM summary has its own limit
 
     async def _collect_alerts(self, config_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Collect CDC triggers and condition alerts from the last 48 hours."""

@@ -1742,6 +1742,17 @@ def seed_decisions_from_simulation(
 
     db.flush()
 
+    # ── Seed GNN directive reviews (strategic + tactical + operational) ──
+    # These populate the decision stream for SC_VP, SOP_DIRECTOR, MPS_MANAGER
+    # roles who see governance/strategic/tactical levels.
+    # Urgency propagates bottom-up: TRM execution pain → site tGNN conflict →
+    # network tGNN reallocation → S&OP policy adjustment.
+    gnn_count = _seed_gnn_directives(
+        db, config_id, site_configs, cfg_by_id, product_descs, selected,
+    )
+    if gnn_count:
+        counts["gnn_directives"] = gnn_count
+
     # ── Create pegging chains linking demand → supply decisions ──────────
     # Every ATP decision (demand fulfilled) gets pegged to the supply source.
     # PO decisions become supply pegging records. MO decisions link to POs.
@@ -1761,6 +1772,211 @@ def seed_decisions_from_simulation(
     )
 
     return counts
+
+
+def _seed_gnn_directives(
+    db: Session,
+    config_id: int,
+    site_configs: list,
+    cfg_by_id: dict,
+    product_descs: Dict[str, str],
+    trm_selected: Dict[str, list],
+) -> int:
+    """Seed GNN directive reviews for strategic, tactical, and operational levels.
+
+    Urgency propagates bottom-up from TRM decisions:
+    - Operational (site tGNN): detects cross-TRM conflicts within a site
+    - Tactical (execution tGNN): generates allocation directives across sites
+    - Strategic (S&OP GraphSAGE): adjusts network-wide policy parameters
+
+    Returns count of seeded GNN directives.
+    """
+    # Use raw SQL to avoid ORM FK resolution issues with supply_chain_configs
+    import json as _json
+
+    rng = random.Random(config_id * 7919)
+    timestamps = _spread_timestamps(30, days_back=7)
+    count = 0
+
+    # Clean existing GNN directives for this config
+    db.execute(
+        text("DELETE FROM gnn_directive_reviews WHERE config_id = :c"),
+        {"c": config_id},
+    )
+
+    def _insert_directive(**kwargs):
+        """Insert GNN directive via raw SQL to avoid ORM FK issues."""
+        db.execute(text("""
+            INSERT INTO gnn_directive_reviews
+                (config_id, site_key, directive_scope, decision_level, model_type,
+                 model_confidence, status, proposed_values, proposed_reasoning,
+                 propagated_urgency, source_signals, created_at)
+            VALUES
+                (:config_id, :site_key, :directive_scope, :decision_level, :model_type,
+                 :model_confidence, :status, :proposed_values, :proposed_reasoning,
+                 :propagated_urgency, :source_signals, :created_at)
+        """), {
+            "config_id": kwargs["config_id"],
+            "site_key": kwargs["site_key"],
+            "directive_scope": kwargs["directive_scope"],
+            "decision_level": kwargs["decision_level"],
+            "model_type": kwargs["model_type"],
+            "model_confidence": kwargs["model_confidence"],
+            "status": kwargs.get("status", "PROPOSED"),
+            "proposed_values": _json.dumps(kwargs["proposed_values"]),
+            "proposed_reasoning": kwargs.get("proposed_reasoning"),
+            "propagated_urgency": kwargs.get("propagated_urgency"),
+            "source_signals": _json.dumps(kwargs.get("source_signals")) if kwargs.get("source_signals") else None,
+            "created_at": kwargs.get("created_at"),
+        })
+
+    # Collect site names for context
+    site_names = {c.site_id: c.site_name for c in site_configs}
+    internal_sites = [c for c in site_configs if c.master_type in ("MANUFACTURER", "INVENTORY")]
+
+    if not internal_sites:
+        return 0
+
+    # ── Operational: Site tGNN (hourly, per-site cross-TRM coordination) ──
+    for site_cfg in internal_sites:
+        for i in range(2):  # 2 per site
+            # Derive urgency from TRM decisions at this site
+            site_trm_urgency = []
+            for trm_type, records in trm_selected.items():
+                for rec in records:
+                    rec_site = getattr(rec, "site_id", None) or getattr(rec, "location_id", None)
+                    if str(rec_site) == str(site_cfg.site_name):
+                        u = getattr(rec, "urgency_at_time", None) or 0.5
+                        site_trm_urgency.append(float(u))
+
+            avg_trm_urgency = sum(site_trm_urgency) / len(site_trm_urgency) if site_trm_urgency else 0.5
+            # Operational urgency: amplified if multiple TRMs are stressed
+            conflict_rate = min(1.0, len([u for u in site_trm_urgency if u > 0.6]) / max(len(site_trm_urgency), 1))
+
+            _insert_directive(
+                config_id=config_id,
+                site_key=site_cfg.site_name,
+                directive_scope="site_coordination",
+                decision_level="operational",
+                model_type="site_tgnn",
+                model_confidence=round(rng.uniform(0.6, 0.85), 3),
+                status="PROPOSED",
+                proposed_values={
+                    "urgency_adjustments": {
+                        trm: round(rng.uniform(-0.15, 0.25), 3)
+                        for trm in ["atp_executor", "po_creation", "mo_execution"][:rng.randint(1, 3)]
+                    },
+                    "cross_trm_conflict_rate": round(conflict_rate, 3),
+                    "coordination_action": rng.choice([
+                        "boost_po_urgency", "dampen_atp_aggression",
+                        "synchronize_mo_po", "rebalance_priorities",
+                    ]),
+                },
+                proposed_reasoning=(
+                    f"Site tGNN coordination at {site_cfg.site_name}: "
+                    f"{'High' if conflict_rate > 0.4 else 'Moderate'} cross-TRM conflict detected "
+                    f"({len(site_trm_urgency)} active TRMs, avg urgency {avg_trm_urgency:.2f}). "
+                    f"Recommending priority rebalance to resolve competing resource demands."
+                ),
+                propagated_urgency=round(avg_trm_urgency * (1 + conflict_rate), 3),
+                source_signals=[
+                    {"trm_type": "aggregate", "signal_type": "CROSS_TRM_CONFLICT",
+                     "site_key": site_cfg.site_name, "urgency": round(avg_trm_urgency, 3)}
+                ],
+                created_at=timestamps[count % len(timestamps)],
+            )
+            count += 1
+
+    # ── Tactical: Network tGNN (daily, multi-site allocation) ──
+    for i in range(min(5, len(internal_sites))):
+        site_a = rng.choice(internal_sites)
+        site_b = rng.choice([s for s in internal_sites if s.site_id != site_a.site_id] or internal_sites)
+        pid = rng.choice(list(product_descs.keys())[:20]) if product_descs else "UNKNOWN"
+        pdesc = product_descs.get(pid, pid)
+        alloc_qty = round(rng.uniform(50, 500), 0)
+
+        _insert_directive(
+            config_id=config_id,
+            site_key=f"{site_a.site_name}→{site_b.site_name}",
+            directive_scope="execution_directive",
+            decision_level="tactical",
+            model_type="network_tgnn",
+            model_confidence=round(rng.uniform(0.55, 0.80), 3),
+            status="PROPOSED",
+            proposed_values={
+                "allocation_action": rng.choice(["reallocate", "pre_position", "demand_shift"]),
+                "from_site": site_a.site_name,
+                "to_site": site_b.site_name,
+                "product_id": pid,
+                "quantity": alloc_qty,
+                "exception_probability": [round(rng.uniform(0, 0.3), 2) for _ in range(3)],
+            },
+            proposed_reasoning=(
+                f"Execution tGNN: Reallocate {int(alloc_qty)} units of {pdesc} "
+                f"from {site_a.site_name} to {site_b.site_name}. "
+                f"Demand imbalance detected: {site_b.site_name} projected to stockout in "
+                f"{rng.randint(2, 8)} days while {site_a.site_name} has {rng.randint(15, 45)} days of supply."
+            ),
+            propagated_urgency=round(rng.uniform(0.4, 0.85), 3),
+            source_signals=[
+                {"trm_type": "inventory_buffer", "signal_type": "DOS_IMBALANCE",
+                 "site_key": site_b.site_name, "urgency": round(rng.uniform(0.5, 0.9), 3)},
+            ],
+            created_at=timestamps[count % len(timestamps)],
+        )
+        count += 1
+
+    # ── Strategic: S&OP GraphSAGE (weekly, network-wide policy) ──
+    for i in range(3):
+        policy_type = rng.choice([
+            "safety_stock_multiplier", "service_level_target", "sourcing_ratio",
+        ])
+        current_val = round(rng.uniform(0.8, 1.2), 3)
+        proposed_val = round(current_val * rng.uniform(0.85, 1.15), 3)
+
+        _insert_directive(
+            config_id=config_id,
+            site_key="NETWORK",
+            directive_scope="sop_policy",
+            decision_level="strategic",
+            model_type="sop_graphsage",
+            model_confidence=round(rng.uniform(0.65, 0.90), 3),
+            status="PROPOSED",
+            proposed_values={
+                "policy_parameter": policy_type,
+                "current_value": current_val,
+                "proposed_value": proposed_val,
+                "change_pct": round((proposed_val - current_val) / current_val * 100, 1),
+                "bottleneck_risk": round(rng.uniform(0.1, 0.6), 3),
+                "concentration_risk": round(rng.uniform(0.05, 0.4), 3),
+                "resilience_score": round(rng.uniform(0.5, 0.9), 3),
+            },
+            proposed_reasoning=(
+                f"S&OP GraphSAGE policy review: Recommend adjusting {policy_type} "
+                f"from {current_val:.3f} to {proposed_val:.3f} "
+                f"({'+' if proposed_val > current_val else ''}{(proposed_val - current_val) / current_val * 100:.1f}%). "
+                f"Network analysis shows {'elevated' if rng.random() > 0.5 else 'moderate'} "
+                f"bottleneck risk across the supply chain topology."
+            ),
+            propagated_urgency=round(rng.uniform(0.3, 0.7), 3),
+            source_signals=[
+                {"trm_type": "network", "signal_type": "POLICY_DRIFT",
+                 "site_key": "NETWORK", "urgency": round(rng.uniform(0.3, 0.6), 3)},
+            ],
+            created_at=timestamps[count % len(timestamps)],
+        )
+        count += 1
+
+    db.flush()
+    logger.info(
+        "Decision seeder: seeded %d GNN directives for config %d "
+        "(operational=%d, tactical=%d, strategic=%d)",
+        count, config_id,
+        sum(1 for c in range(count) if c < len(internal_sites) * 2),
+        min(5, len(internal_sites)),
+        3,
+    )
+    return count
 
 
 def _seed_pegging_chains(
