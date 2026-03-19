@@ -1741,12 +1741,166 @@ def seed_decisions_from_simulation(
         counts[trm_type] = len(records)
 
     db.flush()
+
+    # ── Create pegging chains linking demand → supply decisions ──────────
+    # Every ATP decision (demand fulfilled) gets pegged to the supply source.
+    # PO decisions become supply pegging records. MO decisions link to POs.
+    # This creates the full-level pegging chain: customer → inventory → PO/MO → vendor.
+    pegging_count = _seed_pegging_chains(
+        db, config_id, tenant_id, selected, cfg_by_id, product_descs,
+    )
+    if pegging_count:
+        counts["pegging_chains"] = pegging_count
+
     db.commit()
 
-    total = sum(counts.values())
+    total = sum(v for k, v in counts.items() if k != "pegging_chains")
     logger.info(
-        "Decision seeder: seeded %d decisions across %d TRM types for config %d: %s",
-        total, len(counts), config_id, counts,
+        "Decision seeder: seeded %d decisions + %d pegging records across %d TRM types for config %d: %s",
+        total, pegging_count, len(counts), config_id, counts,
     )
 
     return counts
+
+
+def _seed_pegging_chains(
+    db: Session,
+    config_id: int,
+    tenant_id: int,
+    selected: Dict[str, list],
+    cfg_by_id: Dict[int, Any],
+    product_descs: Dict[str, str],
+) -> int:
+    """Create supply-demand pegging chains from seeded decisions.
+
+    Links:
+    - ATP decisions (demand side) → on-hand inventory (supply side)
+    - PO decisions → vendor supply (upstream)
+    - MO decisions → manufacturing supply (upstream)
+    - Rebalancing → inter-site transfer
+
+    Each chain has a UUID chain_id and depth tracking.
+    """
+    import uuid
+    from app.models.pegging import SupplyDemandPegging
+
+    # Clean existing pegging for this config
+    db.execute(
+        text("DELETE FROM supply_demand_pegging WHERE config_id = :c"),
+        {"c": config_id},
+    )
+
+    atp_decisions = selected.get("atp_executor", [])
+    po_decisions = selected.get("po_creation", [])
+    mo_decisions = selected.get("mo_execution", [])
+
+    count = 0
+    now = datetime.utcnow()
+
+    for atp in atp_decisions:
+        chain_id = str(uuid.uuid4())[:16]
+        pid = getattr(atp, "product_id", None)
+        site_id = None
+
+        # Resolve site_id from location_id
+        loc = getattr(atp, "location_id", None)
+        if loc:
+            for sid, cfg in cfg_by_id.items():
+                if cfg.site_name == loc or str(cfg.site_id) == str(loc):
+                    site_id = cfg.site_id
+                    break
+
+        if not site_id or not pid:
+            continue
+
+        qty = getattr(atp, "fulfilled_quantity", None) or getattr(atp, "order_quantity", 10)
+
+        # Depth 0: Customer demand → on-hand inventory at site
+        peg = SupplyDemandPegging(
+            tenant_id=tenant_id,
+            config_id=config_id,
+            product_id=pid,
+            site_id=site_id,
+            demand_type="customer_order",
+            demand_id=f"ORD-{getattr(atp, 'id', count):04d}",
+            demand_priority=getattr(atp, "priority", 3) or 3,
+            demand_quantity=float(qty),
+            supply_type="on_hand",
+            supply_id=f"INV-{loc}",
+            supply_site_id=site_id,
+            pegged_quantity=float(qty),
+            pegging_status="firm",
+            chain_id=chain_id,
+            chain_depth=0,
+            created_by="decision_seeder",
+        )
+        db.add(peg)
+        count += 1
+
+        # Depth 1: Find a matching PO for this product → vendor supply
+        matching_po = None
+        for po in po_decisions:
+            if getattr(po, "product_id", None) == pid:
+                matching_po = po
+                break
+
+        if matching_po:
+            po_qty = getattr(matching_po, "order_quantity", qty)
+            peg_upstream = SupplyDemandPegging(
+                tenant_id=tenant_id,
+                config_id=config_id,
+                product_id=pid,
+                site_id=site_id,
+                demand_type="inter_site_order",
+                demand_id=f"REPL-{loc}-{pid[-4:] if pid else '0000'}",
+                demand_priority=5,
+                demand_quantity=float(po_qty),
+                supply_type="purchase_order",
+                supply_id=f"PO-{getattr(matching_po, 'id', count):04d}",
+                pegged_quantity=float(po_qty),
+                pegging_status="planned",
+                chain_id=chain_id,
+                chain_depth=1,
+                created_by="decision_seeder",
+            )
+            db.add(peg_upstream)
+            count += 1
+
+    # MO decisions → manufacturing pegging
+    for mo in mo_decisions:
+        chain_id = str(uuid.uuid4())[:16]
+        pid = getattr(mo, "product_id", None)
+        site_id_raw = getattr(mo, "site_id", None)
+        site_id = None
+        for sid, cfg in cfg_by_id.items():
+            if cfg.site_name == site_id_raw or str(cfg.site_id) == str(site_id_raw):
+                site_id = cfg.site_id
+                break
+        if not site_id or not pid:
+            continue
+
+        qty = getattr(mo, "order_quantity", 10) or 10
+        peg = SupplyDemandPegging(
+            tenant_id=tenant_id,
+            config_id=config_id,
+            product_id=pid,
+            site_id=site_id,
+            demand_type="safety_stock",
+            demand_id=f"SS-{pid[-6:] if pid else '000000'}",
+            demand_priority=5,
+            demand_quantity=float(qty),
+            supply_type="manufacturing_order",
+            supply_id=f"MO-{getattr(mo, 'id', count):04d}",
+            supply_site_id=site_id,
+            pegged_quantity=float(qty),
+            pegging_status="planned",
+            chain_id=chain_id,
+            chain_depth=0,
+            created_by="decision_seeder",
+        )
+        db.add(peg)
+        count += 1
+
+    db.flush()
+    logger.info("Decision seeder: created %d pegging records for config %d", count, config_id)
+    return count

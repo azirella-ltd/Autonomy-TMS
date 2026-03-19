@@ -518,11 +518,14 @@ make proxy-logs
 - `explanation_templates.py`: 39 Jinja2-style templates (13 agent types × 3 verbosity levels) for inline decision explanations
 - `decision_stream_service.py`: Decision Stream inbox — collects decisions from all 11 powell_*_decisions tables **AND** `gnn_directive_reviews` table (GNN decisions). Routes via 3-dimensional framework: **Urgency** (cost_of_inaction × time_pressure), **Likelihood** (agent confidence), **Benefit** (expected $ net gain). Per-tenant thresholds in `tenant_bsc_config` (`urgency_threshold` default 0.65, `likelihood_threshold` default 0.70, `benefit_threshold` default $0). Per-TRM-type overrides in `tenant_decision_thresholds`. Queue sort is Kahneman-aligned: urgency DESC (loss prevention first — Prospect Theory: losses loom ~2× larger than gains), benefit DESC, likelihood ASC. Digest persisted to `decision_stream_digests` table. **Decision levels**: Every decision carries `decision_level` (strategic/tactical/execution) indicating which Powell layer produced it. **Vertical Urgency Propagation**: GNN urgency is NOT computed independently — it aggregates and amplifies execution-level signals that couldn't be resolved locally. When TRM agents detect persistent issues (e.g., 95% OEE for 3 weeks) and local resolution is blocked (e.g., guardrail prevents shift extension < 4 weeks), the urgency escalates upward via `propagated_urgency`, `source_signals`, and `local_resolution_blocked_by` on `gnn_directive_reviews`. See [VERTICAL_URGENCY_PROPAGATION.md](docs/internal/VERTICAL_URGENCY_PROPAGATION.md) for full architecture. **Role visibility**: SC VP/Executive see all GNN + TRM; S&OP Director sees strategic + tactical + operational TRM; MPS Manager sees tactical + execution TRM; TRM analysts see their type only. See [DECISION_ROUTING.md](docs/internal/DECISION_ROUTING.md) for full framework and [POWELL_APPROACH.md](docs/internal/POWELL_APPROACH.md) §5.21 for integration details.
 
+- `pegging_service.py`: Full-Level Pegging — Kinaxis-style supply-demand tracing with multi-stage chain tracking. Every unit of supply is traceable to demand (customer order or forecast), from vendor through factories and DCs to customer. Forward pegging (demand→supply chain), reverse pegging (supply→what orders it serves), product@site summary. Pegging records created by: (1) ATP executor on AATP consumption, (2) supply plan generator on planned orders, (3) decision seeder during provisioning warm-start. Chains are linked via `chain_id` (UUID) and `chain_depth` (0=terminal demand, 1+=upstream).
+- `multi_stage_ctp_service.py`: Multi-Stage Capable-to-Promise — order promising with pegging chain creation. Evaluates feasibility across multiple BOM levels and supply sources, creates pegging preview showing which supply sources would be consumed.
 - `scenario_event_service.py`: Scenario event injection — 24 event types across 5 categories (Demand: 7, Supply: 6, Capacity: 5, Logistics: 3, Macro: 3). Creates scenario branches, modifies DB records, triggers CDC. SAP S/4HANA IDES compatible. Event catalog dynamically injected into Talk to Me LLM prompt via `_build_event_catalog_for_llm()`.
 
 **API Endpoints** (`api/endpoints/`):
 - `mps.py`: Master Production Scheduling endpoints
 - `supply_plan.py`: Supply plan generation and approval
+- `pegging.py`: Full-Level Pegging & Multi-Stage CTP (demand→supply tracing, reverse pegging, order promising)
 - `mixed_scenario.py`: Beer Game API (human + AI scenarios)
 - `agent_scenario.py`: Pure agent scenario API
 - `supply_chain_config.py`: Supply chain network configuration
@@ -803,6 +806,8 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `vendor_product`: Vendor-specific product attributes
 - `vendor_lead_time`: Vendor lead times
 - `supply_planning_parameters`: Global planning parameters
+- `supply_demand_pegging`: Full-level pegging — links every unit of supply to demand with multi-stage chain tracking (customer order → DC inventory → factory MO → vendor PO). Supports forward pegging (demand→supply), reverse pegging (supply→demand), and chain traversal via `chain_id` + `chain_depth`. Created by ATP executor on consumption, supply plan generator on planned orders, and decision seeder during provisioning.
+- `aatp_consumption_record`: Persisted AATP consumption decisions (priority-based allocation consumption sequence)
 
 **Network Configuration Tables**:
 - `supply_chain_configs`: Network topology definitions

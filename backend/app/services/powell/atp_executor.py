@@ -628,6 +628,58 @@ class ATPExecutorTRM:
                 **hive_ctx,
             )
             self.db.add(row)
+
+            # Create pegging record: customer demand → on-hand supply
+            if response.can_fulfill and response.promised_qty > 0:
+                try:
+                    import uuid
+                    from app.models.pegging import SupplyDemandPegging
+                    # Resolve site_id from location_id
+                    site_id = None
+                    try:
+                        from sqlalchemy import text as _t
+                        r = self.db.execute(_t(
+                            "SELECT id FROM site WHERE config_id = :c AND name = :n LIMIT 1"
+                        ), {"c": self.config_id, "n": request.location_id})
+                        sr = r.fetchone()
+                        if sr:
+                            site_id = sr[0]
+                    except Exception:
+                        pass
+                    if site_id:
+                        # Resolve tenant_id from config
+                        tenant_id = 0
+                        try:
+                            r = self.db.execute(_t(
+                                "SELECT tenant_id FROM supply_chain_configs WHERE id = :c"
+                            ), {"c": self.config_id})
+                            tr = r.fetchone()
+                            if tr:
+                                tenant_id = tr[0]
+                        except Exception:
+                            pass
+                        peg = SupplyDemandPegging(
+                            tenant_id=tenant_id,
+                            config_id=self.config_id,
+                            product_id=request.product_id,
+                            site_id=site_id,
+                            demand_type="customer_order",
+                            demand_id=request.order_id,
+                            demand_priority=request.priority,
+                            demand_quantity=float(request.requested_qty),
+                            supply_type="on_hand",
+                            supply_id=f"INV-{request.location_id}",
+                            supply_site_id=site_id,
+                            pegged_quantity=float(response.promised_qty),
+                            pegging_status="firm",
+                            chain_id=str(uuid.uuid4())[:16],
+                            chain_depth=0,
+                            created_by="atp_executor",
+                        )
+                        self.db.add(peg)
+                except Exception as e2:
+                    logger.debug("Pegging record creation failed: %s", e2)
+
         except Exception as e:
             logger.warning(f"Failed to persist ATP decision: {e}")
 

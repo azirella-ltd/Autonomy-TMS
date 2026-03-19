@@ -1402,6 +1402,16 @@ class DecisionStreamService:
                             "triggered_by": getattr(row, "triggered_by", None),
                         },
                     })
+
+                    # Enrich ATP/PO decisions with pegging chain context
+                    if type_key in ("atp", "po_creation") and pid:
+                        try:
+                            pegging_chain = await self._get_pegging_chain(row.config_id, pid, str(site_id) if site_id else None)
+                            if pegging_chain:
+                                all_decisions[-1]["pegging_chain"] = pegging_chain
+                        except Exception:
+                            pass  # Pegging is enrichment, not critical
+
             except Exception as e:
                 import traceback
                 logger.warning(f"Failed to query {type_key} decisions: {e}\n{traceback.format_exc()}")
@@ -1642,6 +1652,46 @@ class DecisionStreamService:
             all_decisions = filtered
 
         return all_decisions, product_names
+
+    async def _get_pegging_chain(
+        self, config_id: int, product_id: str, site_id: Optional[str] = None,
+    ) -> Optional[List[Dict]]:
+        """Look up the pegging chain for a product at a site.
+
+        Returns a list of pegging links ordered by chain_depth, showing
+        the full supply-demand trace from customer order to vendor PO.
+        """
+        try:
+            from app.models.pegging import SupplyDemandPegging
+            query = select(SupplyDemandPegging).where(
+                and_(
+                    SupplyDemandPegging.config_id == config_id,
+                    SupplyDemandPegging.product_id == product_id,
+                    SupplyDemandPegging.is_active == True,
+                )
+            ).order_by(SupplyDemandPegging.chain_depth).limit(10)
+
+            result = await self.db.execute(query)
+            rows = result.scalars().all()
+            if not rows:
+                return None
+
+            return [
+                {
+                    "depth": r.chain_depth,
+                    "demand_type": r.demand_type if isinstance(r.demand_type, str) else r.demand_type.value,
+                    "demand_id": r.demand_id,
+                    "supply_type": r.supply_type if isinstance(r.supply_type, str) else r.supply_type.value,
+                    "supply_id": r.supply_id,
+                    "pegged_qty": r.pegged_quantity,
+                    "status": r.pegging_status if isinstance(r.pegging_status, str) else r.pegging_status.value,
+                    "chain_id": r.chain_id,
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            logger.debug("Pegging chain lookup failed for %s: %s", product_id, e)
+            return None
 
     def _prioritize_decisions(self, decisions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Rank and filter decisions for the Decision Stream.
