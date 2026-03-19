@@ -249,6 +249,7 @@ class SAPConfigBuilder:
         self._sites: Dict[str, Site] = {}
         self._products: Dict[str, Product] = {}
         self._trading_partners: Dict[str, Any] = {}
+        self._partner_ids: Dict[str, int] = {}  # business_key → TradingPartner._id (populated after upsert)
 
     # ------------------------------------------------------------------
     # Public API
@@ -1908,64 +1909,22 @@ class SAPConfigBuilder:
             self._sites[sp.key] = site
             count += 1
 
-        # Create regional VENDOR and CUSTOMER boundary nodes from vendor/customer geography
+        # AWS SC Compliance: Vendors and customers are TradingPartner records,
+        # NOT proxy Site records. They connect to the DAG via TransportationLane
+        # from_partner_id / to_partner_id fields. TradingPartner records are
+        # created in _create_partners_and_sourcing() (Step 5), and lanes with
+        # partner endpoints are created in _create_lanes() (Step 9).
+        #
+        # The geo hierarchy handles aggregation/filtering of partners for display.
+
+        # Cache country → region_key lookups for use by _create_lanes
+        # (still needed for grouping partners into regional lanes)
         build_opts = opts or {}
         supply_regions, demand_regions = self._compute_market_regions(
             max_supply_regions=build_opts.get("max_supply_regions", 8),
             max_demand_regions=build_opts.get("max_demand_regions", 8),
             promotion_threshold=build_opts.get("region_promotion_threshold", 0.25),
         )
-
-        # Create geography records for regional market sites
-        region_geos = await self._create_region_geographies(
-            {**supply_regions, **demand_regions}
-        )
-
-        for region_key, region_info in supply_regions.items():
-            site_key = f"SUPPLY_{region_key}"
-            supply_site = Site(
-                config_id=self._config.id,
-                name=site_key,
-                type=region_info["label"],
-                dag_type="SUPPLIER",
-                master_type=MASTER_VENDOR,
-                is_external=True,
-                tpartner_type="vendor",
-                geo_id=region_geos.get(region_key),
-                attributes={
-                    "region": region_key,
-                    "countries": region_info["countries"],
-                    "vendor_count": region_info["count"],
-                },
-            )
-            self.db.add(supply_site)
-            await self.db.flush()
-            self._sites[site_key] = supply_site
-            count += 1
-
-        for region_key, region_info in demand_regions.items():
-            site_key = f"DEMAND_{region_key}"
-            demand_site = Site(
-                config_id=self._config.id,
-                name=site_key,
-                type=region_info["label"],
-                dag_type="CUSTOMER",
-                master_type=MASTER_CUSTOMER,
-                is_external=True,
-                tpartner_type="customer",
-                geo_id=region_geos.get(region_key),
-                attributes={
-                    "region": region_key,
-                    "countries": region_info["countries"],
-                    "customer_count": region_info["count"],
-                },
-            )
-            self.db.add(demand_site)
-            await self.db.flush()
-            self._sites[site_key] = demand_site
-            count += 1
-
-        # Cache country → region_key lookups for use by _create_lanes
         self._supply_country_region: Dict[str, str] = {}
         for rk, info in supply_regions.items():
             for c in info["countries"]:
@@ -1975,7 +1934,7 @@ class SAPConfigBuilder:
             for c in info["countries"]:
                 self._demand_country_region[c] = rk
 
-        logger.info(f"Created {count} sites ({len(supply_regions)} supply regions, {len(demand_regions)} demand regions)")
+        logger.info(f"Created {count} internal sites (no proxy vendor/customer sites — using TradingPartner endpoints)")
         return count
 
     def _compute_market_regions(
@@ -2289,22 +2248,24 @@ class SAPConfigBuilder:
             avg_region_lt[rk] = max(1, int(sum(lts) / len(lts)))
 
         count = 0
-        created: Set[Tuple[int, int]] = set()
+        # Track created lanes to avoid duplicates.
+        # Keys: (from_partner_id|None, from_site_id|None, to_site_id|None, to_partner_id|None)
+        created_lanes: Set[Tuple] = set()
 
-        # Determine which supply regions actually source to which plants
+        # ── Inbound lanes: TradingPartner (vendor) → Site (plant) ──────────
+        # Determine which individual vendors actually source to which plants.
         eord = self._data.get("EORD", pd.DataFrame())
         ekpo = self._data.get("EKPO", pd.DataFrame())
         ekko = self._data.get("EKKO", pd.DataFrame())
 
-        # plant → set of supply regions
-        plant_supply_regions: Dict[str, Set[str]] = {}
+        # plant_key → set of vendor_id strings
+        plant_vendors: Dict[str, Set[str]] = {}
         if not eord.empty and "LIFNR" in eord.columns and "WERKS" in eord.columns:
             for _, row in eord.iterrows():
                 vid = str(row["LIFNR"]).strip()
                 plant = str(row["WERKS"]).strip()
-                region = vendor_region.get(vid)
-                if region and plant in self._sites:
-                    plant_supply_regions.setdefault(plant, set()).add(region)
+                if vid in self._partner_ids and plant in self._sites:
+                    plant_vendors.setdefault(plant, set()).add(vid)
         if not ekpo.empty and not ekko.empty:
             merged = ekpo.merge(
                 ekko[["EBELN", "LIFNR"]].drop_duplicates(), on="EBELN", how="left",
@@ -2313,22 +2274,25 @@ class SAPConfigBuilder:
                 for _, row in merged.iterrows():
                     vid = str(row["LIFNR"]).strip()
                     plant = str(row["WERKS"]).strip()
-                    region = vendor_region.get(vid)
-                    if region and plant in self._sites:
-                        plant_supply_regions.setdefault(plant, set()).add(region)
+                    if vid in self._partner_ids and plant in self._sites:
+                        plant_vendors.setdefault(plant, set()).add(vid)
 
-        # Create inbound lanes: SUPPLY_{region} → plant
-        for plant_key, regions in plant_supply_regions.items():
+        # Create one inbound lane per active vendor→plant relationship
+        for plant_key, vendors in plant_vendors.items():
             plant_site = self._sites.get(plant_key)
             if not plant_site:
                 continue
-            for region in regions:
-                supply_site = self._sites.get(f"SUPPLY_{region}")
-                if supply_site and (supply_site.id, plant_site.id) not in created:
+            for vid in vendors:
+                partner_id = self._partner_ids.get(vid)
+                if not partner_id:
+                    continue
+                lane_key = (partner_id, None, plant_site.id, None)
+                if lane_key not in created_lanes:
+                    region = vendor_region.get(vid, "OTHER")
                     lt = avg_region_lt.get(region, 7)
                     lane = TransportationLane(
                         config_id=self._config.id,
-                        from_site_id=supply_site.id,
+                        from_partner_id=partner_id,
                         to_site_id=plant_site.id,
                         capacity=10000,
                         lead_time_days={"min": max(1, lt - 2), "max": lt + 2},
@@ -2336,15 +2300,16 @@ class SAPConfigBuilder:
                         demand_lead_time={"type": "deterministic", "value": 1},
                     )
                     self.db.add(lane)
-                    created.add((supply_site.id, plant_site.id))
+                    created_lanes.add(lane_key)
                     count += 1
 
-        # Determine which demand regions each plant ships to
+        # ── Outbound lanes: Site (plant) → TradingPartner (customer) ───────
+        # Determine which customers each plant ships to (from deliveries/orders).
         likp = self._data.get("LIKP", pd.DataFrame())
         lips = self._data.get("LIPS", pd.DataFrame())
         vbap = self._data.get("VBAP", pd.DataFrame())
 
-        plant_demand_regions: Dict[str, Set[str]] = {}
+        plant_customers: Dict[str, Set[str]] = {}
         if not lips.empty and not likp.empty:
             if "KUNNR" in likp.columns and "WERKS" in lips.columns:
                 merged_del = lips.merge(
@@ -2354,9 +2319,8 @@ class SAPConfigBuilder:
                     for _, row in merged_del.iterrows():
                         cid = str(row["KUNNR"]).strip()
                         plant = str(row["WERKS"]).strip()
-                        region = customer_region.get(cid)
-                        if region and plant in self._sites:
-                            plant_demand_regions.setdefault(plant, set()).add(region)
+                        if cid in self._partner_ids and plant in self._sites:
+                            plant_customers.setdefault(plant, set()).add(cid)
         if not vbap.empty and "WERKS" in vbap.columns:
             vbak = self._data.get("VBAK", pd.DataFrame())
             if not vbak.empty and "KUNNR" in vbak.columns:
@@ -2367,32 +2331,37 @@ class SAPConfigBuilder:
                     for _, row in merged_so.iterrows():
                         cid = str(row["KUNNR"]).strip()
                         plant = str(row["WERKS"]).strip()
-                        region = customer_region.get(cid)
-                        if region and plant in self._sites:
-                            plant_demand_regions.setdefault(plant, set()).add(region)
+                        if cid in self._partner_ids and plant in self._sites:
+                            plant_customers.setdefault(plant, set()).add(cid)
 
-        # Create outbound lanes: plant → DEMAND_{region}
-        for plant_key, regions in plant_demand_regions.items():
+        # Create one outbound lane per active plant→customer relationship.
+        # Cap at 50 customers per plant (top by frequency) to keep DAG readable.
+        MAX_CUSTOMERS_PER_PLANT = 50
+        for plant_key, customers in plant_customers.items():
             plant_site = self._sites.get(plant_key)
             if not plant_site:
                 continue
-            for region in regions:
-                demand_site = self._sites.get(f"DEMAND_{region}")
-                if demand_site and (plant_site.id, demand_site.id) not in created:
+            cust_list = list(customers)[:MAX_CUSTOMERS_PER_PLANT]
+            for cid in cust_list:
+                partner_id = self._partner_ids.get(cid)
+                if not partner_id:
+                    continue
+                lane_key = (None, plant_site.id, None, partner_id)
+                if lane_key not in created_lanes:
                     lane = TransportationLane(
                         config_id=self._config.id,
                         from_site_id=plant_site.id,
-                        to_site_id=demand_site.id,
+                        to_partner_id=partner_id,
                         capacity=10000,
                         lead_time_days={"min": 1, "max": 5},
                         supply_lead_time={"type": "deterministic", "value": 2},
                         demand_lead_time={"type": "deterministic", "value": 1},
                     )
                     self.db.add(lane)
-                    created.add((plant_site.id, demand_site.id))
+                    created_lanes.add(lane_key)
                     count += 1
 
-        # Inter-plant transfers
+        # ── Inter-plant transfers: Site → Site ─────────────────────────────
         eord = self._data.get("EORD", pd.DataFrame())
         if not eord.empty and "FLIFN" in eord.columns:
             inter_plant = eord[eord["FLIFN"].astype(str).str.strip() == "X"]
@@ -2403,7 +2372,8 @@ class SAPConfigBuilder:
                     if src in self._sites and dst in self._sites:
                         src_site = self._sites[src]
                         dst_site = self._sites[dst]
-                        if (src_site.id, dst_site.id) not in created:
+                        lane_key = (None, src_site.id, dst_site.id, None)
+                        if lane_key not in created_lanes:
                             lane = TransportationLane(
                                 config_id=self._config.id,
                                 from_site_id=src_site.id,
@@ -2414,58 +2384,44 @@ class SAPConfigBuilder:
                                 demand_lead_time={"type": "deterministic", "value": 1},
                             )
                             self.db.add(lane)
-                            created.add((src_site.id, dst_site.id))
+                            created_lanes.add(lane_key)
                             count += 1
 
-        # Fallback: if SAP sourcing/shipping data was sparse, ensure every
-        # SUPPLY_{region} connects to at least one plant and every plant
-        # connects to at least one DEMAND_{region}.  Without this, the Sankey
-        # diagram shows disconnected nodes.
-        plant_sites = {k: v for k, v in self._sites.items() if hasattr(v, 'master_type') and v.master_type == 'MANUFACTURER'}
-        if not plant_sites:
-            # Infer plants from naming (T001W plants have short numeric keys like "1710")
-            plant_sites = {k: v for k, v in self._sites.items() if not k.startswith("SUPPLY_") and not k.startswith("DEMAND_")}
-        supply_sites = {k: v for k, v in self._sites.items() if k.startswith("SUPPLY_")}
-        demand_sites = {k: v for k, v in self._sites.items() if k.startswith("DEMAND_")}
-
-        if plant_sites and (supply_sites or demand_sites):
-            before = count
-            for plant_key, plant_site in plant_sites.items():
-                for supply_key, supply_site in supply_sites.items():
-                    if (supply_site.id, plant_site.id) not in created:
-                        region = supply_key.replace("SUPPLY_", "")
-                        lt = avg_region_lt.get(region, 7)
+        # ── Fallback: ensure every plant has at least one vendor lane ──────
+        # If no vendor sourcing data was found, create a lane from each vendor
+        # in the source list to the first plant as a placeholder.
+        plant_sites = {k: v for k, v in self._sites.items()
+                       if hasattr(v, 'master_type') and v.master_type in ('MANUFACTURER', 'INVENTORY')}
+        if plant_sites and count == 0 and self._partner_ids:
+            first_plant = next(iter(plant_sites.values()))
+            # Pick first 10 vendors as fallback
+            for vid, pid in list(self._partner_ids.items())[:10]:
+                if vid in self._trading_partners and self._trading_partners[vid] == vid:
+                    # It's a vendor (stored by LIFNR key)
+                    lane_key = (pid, None, first_plant.id, None)
+                    if lane_key not in created_lanes:
                         lane = TransportationLane(
                             config_id=self._config.id,
-                            from_site_id=supply_site.id,
-                            to_site_id=plant_site.id,
+                            from_partner_id=pid,
+                            to_site_id=first_plant.id,
                             capacity=10000,
-                            lead_time_days={"min": max(1, lt - 2), "max": lt + 2},
-                            supply_lead_time={"type": "deterministic", "value": lt},
+                            lead_time_days={"min": 3, "max": 10},
+                            supply_lead_time={"type": "deterministic", "value": 7},
                             demand_lead_time={"type": "deterministic", "value": 1},
                         )
                         self.db.add(lane)
-                        created.add((supply_site.id, plant_site.id))
+                        created_lanes.add(lane_key)
                         count += 1
-                for demand_key, demand_site in demand_sites.items():
-                    if (plant_site.id, demand_site.id) not in created:
-                        lane = TransportationLane(
-                            config_id=self._config.id,
-                            from_site_id=plant_site.id,
-                            to_site_id=demand_site.id,
-                            capacity=10000,
-                            lead_time_days={"min": 1, "max": 5},
-                            supply_lead_time={"type": "deterministic", "value": 2},
-                            demand_lead_time={"type": "deterministic", "value": 1},
-                        )
-                        self.db.add(lane)
-                        created.add((plant_site.id, demand_site.id))
-                        count += 1
-            if count > before:
-                logger.info(f"Fallback: created {count - before} default lanes for unconnected sites")
+            logger.info(f"Fallback: created {count} default vendor lanes")
 
         await self.db.flush()
-        logger.info(f"Created {count} transportation lanes")
+        vendor_lanes = sum(1 for k in created_lanes if k[0] is not None)
+        customer_lanes = sum(1 for k in created_lanes if k[3] is not None)
+        transfer_lanes = sum(1 for k in created_lanes if k[0] is None and k[3] is None)
+        logger.info(
+            f"Created {count} transportation lanes "
+            f"({vendor_lanes} vendor→plant, {customer_lanes} plant→customer, {transfer_lanes} inter-site)"
+        )
         return count
 
     # ------------------------------------------------------------------
@@ -2481,16 +2437,33 @@ class SAPConfigBuilder:
         # Vendors from LFA1 (deduplicate by LIFNR)
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+        # Build country → geo_id lookup from existing Geography records
+        geo_lookup: Dict[str, int] = {}
+        try:
+            from app.models.sc_entities import Geography
+            from sqlalchemy import select as _sel
+            geo_rows = await self.db.execute(_sel(Geography.id, Geography.geo_id))
+            for gid, geo_code in geo_rows.fetchall():
+                if geo_code:
+                    geo_lookup[str(geo_code).strip().upper()] = gid
+        except Exception:
+            pass
+
         lfa1 = self._data.get("LFA1", pd.DataFrame())
         if not lfa1.empty and "LIFNR" in lfa1.columns:
             seen_vendors: Dict[str, dict] = {}
             for _, row in lfa1.iterrows():
                 vendor_id = str(row["LIFNR"]).strip()
                 if vendor_id and vendor_id not in seen_vendors:
+                    country = str(row.get("LAND1", "")).strip().upper()
                     seen_vendors[vendor_id] = {
                         "id": vendor_id,
                         "tpartner_type": "vendor",
                         "description": str(row.get("NAME1", vendor_id)).strip(),
+                        "country": country or None,
+                        "city": str(row.get("ORT01", "")).strip() or None,
+                        "state_prov": str(row.get("REGIO", "")).strip() or None,
+                        "postal_code": str(row.get("PSTLZ", "")).strip() or None,
                         "source": "SAP_LFA1",
                     }
             if seen_vendors:
@@ -2500,7 +2473,14 @@ class SAPConfigBuilder:
                     stmt = pg_insert(TradingPartner).values(batch)
                     stmt = stmt.on_conflict_do_update(
                         index_elements=["id"],
-                        set_={"description": stmt.excluded.description, "source": stmt.excluded.source},
+                        set_={
+                            "description": stmt.excluded.description,
+                            "country": stmt.excluded.country,
+                            "city": stmt.excluded.city,
+                            "state_prov": stmt.excluded.state_prov,
+                            "postal_code": stmt.excluded.postal_code,
+                            "source": stmt.excluded.source,
+                        },
                     )
                     await self.db.execute(stmt)
                 for vid in seen_vendors:
@@ -2514,10 +2494,15 @@ class SAPConfigBuilder:
             for _, row in kna1.iterrows():
                 customer_id = str(row["KUNNR"]).strip()
                 if customer_id and customer_id not in seen_customers:
+                    country = str(row.get("LAND1", "")).strip().upper()
                     seen_customers[customer_id] = {
                         "id": customer_id,
                         "tpartner_type": "customer",
                         "description": str(row.get("NAME1", customer_id)).strip(),
+                        "country": country or None,
+                        "city": str(row.get("ORT01", "")).strip() or None,
+                        "state_prov": str(row.get("REGIO", "")).strip() or None,
+                        "postal_code": str(row.get("PSTLZ", "")).strip() or None,
                         "source": "SAP_KNA1",
                     }
             if seen_customers:
@@ -2527,7 +2512,14 @@ class SAPConfigBuilder:
                     stmt = pg_insert(TradingPartner).values(batch)
                     stmt = stmt.on_conflict_do_update(
                         index_elements=["id"],
-                        set_={"description": stmt.excluded.description, "source": stmt.excluded.source},
+                        set_={
+                            "description": stmt.excluded.description,
+                            "country": stmt.excluded.country,
+                            "city": stmt.excluded.city,
+                            "state_prov": stmt.excluded.state_prov,
+                            "postal_code": stmt.excluded.postal_code,
+                            "source": stmt.excluded.source,
+                        },
                     )
                     await self.db.execute(stmt)
                 for cid in seen_customers:
@@ -2535,6 +2527,22 @@ class SAPConfigBuilder:
                 customer_count = len(seen_customers)
 
         await self.db.flush()
+
+        # Query back _id integers for all upserted TradingPartner records so
+        # that _create_lanes() can populate from_partner_id / to_partner_id FKs.
+        all_partner_keys = list(self._trading_partners.keys())
+        if all_partner_keys:
+            from sqlalchemy import select as sa_select
+            for i in range(0, len(all_partner_keys), 500):
+                batch_keys = all_partner_keys[i : i + 500]
+                result = await self.db.execute(
+                    sa_select(TradingPartner.id, TradingPartner._id).where(
+                        TradingPartner.id.in_(batch_keys)
+                    )
+                )
+                for biz_key, int_id in result.fetchall():
+                    self._partner_ids[biz_key] = int_id
+            logger.info("Resolved %d TradingPartner _id values for lane creation", len(self._partner_ids))
 
         # VendorProduct from EINA/EINE (deduplicate by vendor+product)
         eina = self._data.get("EINA", pd.DataFrame())

@@ -138,6 +138,8 @@ def get_config_or_404(db: Session, config_id: int):
             joinedload(SupplyChainConfig.sites).joinedload(Node.downstream_lanes),
             joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.upstream_site),
             joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.downstream_site),
+            joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.upstream_partner),
+            joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.downstream_partner),
             joinedload(SupplyChainConfig.markets),
             joinedload(SupplyChainConfig.market_demands).joinedload(MarketDemand.market),
             # joinedload(SupplyChainConfig.market_demands).joinedload(MarketDemand.item),  # DEPRECATED - use .product
@@ -286,10 +288,22 @@ def _transportation_lane_to_payload(lane: models.TransportationLane) -> Dict[str
     demand_lead_time = getattr(lane, "demand_lead_time", None) or {"type": "deterministic", "value": 1}
     supply_lead_time = getattr(lane, "supply_lead_time", None) or {"type": "deterministic", "value": lead_time or 1}
 
+    # Resolve partner names if partner-endpoint lane
+    from_partner_name = None
+    to_partner_name = None
+    if lane.from_partner_id and hasattr(lane, "upstream_partner") and lane.upstream_partner:
+        from_partner_name = lane.upstream_partner.description
+    if lane.to_partner_id and hasattr(lane, "downstream_partner") and lane.downstream_partner:
+        to_partner_name = lane.downstream_partner.description
+
     return {
         "id": lane.id,
-        "from_site_id": lane.from_site_id,  # AWS SC DM standard
-        "to_site_id": lane.to_site_id,      # AWS SC DM standard
+        "from_site_id": lane.from_site_id,      # AWS SC DM: internal site endpoint
+        "to_site_id": lane.to_site_id,          # AWS SC DM: internal site endpoint
+        "from_partner_id": lane.from_partner_id,  # AWS SC DM: external vendor endpoint
+        "to_partner_id": lane.to_partner_id,      # AWS SC DM: external customer endpoint
+        "from_partner_name": from_partner_name,
+        "to_partner_name": to_partner_name,
         "capacity": lane.capacity,
         "lead_time_days": lead_time_days,
         "lead_time": lead_time,
@@ -1304,6 +1318,61 @@ def delete_product(
 # The full implementation would include similar CRUD endpoints for all models
 # including proper error handling and permissions
 
+# --- Trading Partner Endpoints (AWS SC DM) ---
+
+
+@router.get("/{config_id}/trading-partners")
+def read_trading_partners(
+    *,
+    db: Session = Depends(deps.get_db),
+    config_id: int,
+    current_user: models.User = Depends(deps.get_current_active_user),
+) -> List[Dict[str, Any]]:
+    """List trading partners referenced by lanes in this config.
+
+    Returns vendors (from_partner_id on inbound lanes) and customers
+    (to_partner_id on outbound lanes) with their names and geo data.
+    """
+    from app.models.sc_entities import TradingPartner
+    from app.models.supply_chain_config import TransportationLane
+
+    config = get_config_or_404(db, config_id)
+    _ensure_user_can_view_config(db, current_user, config)
+
+    # Find all partner _ids referenced by lanes in this config
+    lanes = db.query(TransportationLane).filter(
+        TransportationLane.config_id == config_id,
+    ).all()
+    partner_ids = set()
+    for lane in lanes:
+        if lane.from_partner_id:
+            partner_ids.add(lane.from_partner_id)
+        if lane.to_partner_id:
+            partner_ids.add(lane.to_partner_id)
+
+    if not partner_ids:
+        return []
+
+    partners = db.query(TradingPartner).filter(
+        TradingPartner._id.in_(partner_ids),
+    ).all()
+
+    return [
+        {
+            "_id": p._id,
+            "id": p.id,
+            "tpartner_type": p.tpartner_type,
+            "description": p.description,
+            "country": p.country,
+            "city": p.city,
+            "state_prov": p.state_prov,
+            "geo_id": p.geo_id,
+            "is_active": p.is_active,
+        }
+        for p in partners
+    ]
+
+
 # --- Site Endpoints (AWS SC DM) ---
 
 def _build_geo_region_map(db: Session, sites) -> Dict[str, str]:
@@ -1603,8 +1672,8 @@ def read_transportation_lanes(
     """List all transportation lanes for a supply chain configuration."""
     config = get_config_or_404(db, config_id)
     _ensure_user_can_view_config(db, current_user, config)
-    lanes = crud.transportation_lane.get_by_config(db, config_id=config_id)
-    return [_transportation_lane_to_payload(lane) for lane in lanes]
+    # Use config's eager-loaded lanes (includes partner relationships)
+    return [_transportation_lane_to_payload(lane) for lane in config.transportation_lanes]
 
 
 @router.get("/{config_id}/transportation-lanes/{lane_id}")
