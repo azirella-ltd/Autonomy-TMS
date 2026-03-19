@@ -266,14 +266,29 @@ Narrow TRMs (VFA - Value Function Approximation)
 
 ### Pillar #3: Digital Twin (Stochastic Simulation Engine)
 
-**Purpose**: A complete simulation of the supply chain that generates the training data, calibration sets, and risk-free testing environment that everything else depends on.
+**Purpose**: The digital twin IS the customer's current APS (Advanced Planning System), replicated as a stochastic simulation. It runs their exact planning heuristics (reorder points, safety stocks, lot sizes from SAP MARC / D365 ReqItemTable / Odoo orderpoint) against stochastic reality. All AI agents learn by watching these heuristics run and observing where they fail.
+
+**Core Design Principle**: The simulation replicates what the customer already does (deterministic APS rules), and exposes the gap between heuristic decisions and optimal. This gap is what agents learn to close. See [DIGITAL_TWIN.md](docs/internal/DIGITAL_TWIN.md) for full architecture.
 
 **What it provides**:
-- **Monte Carlo scenario generation**: 1000+ stochastic scenarios sampling from 21 distribution types across demand, lead times, yields, and capacities
-- **Training data pipeline**: Six-phase digital twin pipeline generates 28.6M+ training records for TRM agents, from individual behavioral cloning through coordinated multi-agent simulation
-- **Conformal calibration sets**: Simulation outputs feed conformal prediction calibration — the digital twin powers the uncertainty guarantees
-- **Risk-free agent validation**: Test AI agents in simulation before production deployment
-- **What-if analysis**: Scenario branching at machine speed for planning decisions
+- **APS heuristic replication**: Runs the customer's actual planning rules from their ERP (per product-site parameters)
+- **Stochastic reality**: 9 triangular distributions per entity in the DAG — demand, 3 lead times, yield, throughput, quality, availability, changeover. All fitted from historical ERP data when available (P5/median/P95), industry-calibrated fallbacks when not
+- **Training data pipeline**: Agents observe every heuristic decision and its outcome across N trials (50-100 per industry)
+- **Customer service measurement**: OTIF, fill rate, on-time delivery, cycle time, backorder rate — computed from simulation results and compared against tenant metric targets
+- **Conformal calibration sets**: Decision-outcome pairs feed CDT calibration for uncertainty guarantees
+- **Work week awareness**: Site-specific calendars (ERP factory calendar → historical pattern → country default: Sun-Thu for Middle East, Mon-Sat for India/China, Mon-Fri elsewhere). Lead times count work days only.
+
+**Simulation Parameters** (tenant-configurable, industry defaults):
+- `sim_trials`: 50-100 (Monte Carlo replications per industry complexity)
+- `sim_days`: 2× industry end-to-end SC lead time (14-360 days by industry)
+- `sim_warmup_days`: 10% of sim_days (skip early transients)
+- Time bucket: always daily. Weekly demand spread over work days.
+
+**Static during training**: Guardrails (authority limits, approval thresholds), metric targets (OTIF ≥ 95%), APS parameters (ROP, SS, lot size per product-site)
+**Stochastic during training**: All 9 operating variables, each per entity tuple in the DAG (thousands of distribution instances per config)
+**Measured outcomes**: Customer service metrics compared against targets
+
+**Implementation**: `training_distributions.py` (distributions + calendars + guardrails + OTIF), `simulation_decision_seeder.py` (trial execution), `simulation_calibration_service.py` (DAG chain engine)
 
 **The Beer Game** (Learning Tenant):
 - Classic multi-echelon supply chain simulation (Retailer → Wholesaler → Distributor → Factory)
