@@ -730,3 +730,167 @@ class D:
             has_atp_shortfall=D.atp_shortfall_flag(rng, variance_pct),
             num_open_exceptions=D.open_exceptions_count(rng, variance_pct),
         )
+
+
+# ============================================================================
+# Historical Triangular Distribution Fitting (demand + lead time)
+# ============================================================================
+#
+# When historical data exists (from SAP outbound_order / inbound_order),
+# fit triangular(min, mode, max) from observed values.
+# When no history: use principled fallbacks.
+
+import statistics as _stats
+from collections import defaultdict as _defaultdict
+from typing import Dict as _Dict, List as _List, Optional as _Optional, Tuple as _Tuple
+
+from sqlalchemy import text as _sql_text
+
+_logger = logging.getLogger(__name__)
+
+# Industry CoV benchmarks by product category
+_INDUSTRY_COV = {
+    "staple": 0.15, "seasonal": 0.35, "promotional": 0.50,
+    "intermittent": 0.80, "default": 0.30, "automotive": 0.20,
+    "electronics": 0.40, "industrial": 0.25, "bikes": 0.30,
+}
+
+
+def _classify_product(product_id: str, description: str = "") -> str:
+    desc = (description or "").lower()
+    pid = (product_id or "").lower()
+    if any(w in pid for w in ["mz-fg", "mz-rm", "mz-tg"]) or "bike" in desc:
+        return "bikes"
+    if any(w in desc for w in ["spare", "repair"]):
+        return "intermittent"
+    if any(w in desc for w in ["pump", "valve", "motor"]):
+        return "industrial"
+    return "default"
+
+
+def fit_triangular(values: _List[float]) -> _Tuple[float, float, float]:
+    """Estimate triangular(min, mode, max) from observed values.
+
+    min  = P5  (robust lower bound)
+    mode = median (robust central tendency)
+    max  = P95 (robust upper bound)
+    """
+    if len(values) < 3:
+        m = _stats.mean(values) if values else 1.0
+        return max(0, m * 0.5), m, m * 2.0
+
+    sv = sorted(values)
+    n = len(sv)
+    low = sv[max(0, int(n * 0.05))]
+    high = sv[min(n - 1, int(n * 0.95))]
+    mode = _stats.median(sv)
+
+    if low >= mode:
+        low = mode * 0.8
+    if high <= mode:
+        high = mode * 1.5
+    return max(0, low), max(0.1, mode), max(mode + 0.1, high)
+
+
+class HistoricalTriangularDemand:
+    """Triangular demand sampler — fit from outbound order history or fallback."""
+
+    def __init__(self, low: float, mode: float, high: float, seed: int = 0):
+        self.low = max(0, low)
+        self.mode = max(0.1, mode)
+        self.high = max(self.mode + 0.1, high)
+        self._rng = random.Random(seed)
+        self.mean = (self.low + self.mode + self.high) / 3
+        self.cv = (((self.low**2 + self.mode**2 + self.high**2 - self.low*self.mode - self.low*self.high - self.mode*self.high) / 18) ** 0.5) / self.mean if self.mean > 0 else 0.3
+
+    def next(self) -> float:
+        return max(0.0, self._rng.triangular(self.low, self.high, self.mode))
+
+    @classmethod
+    def from_db(cls, db, config_id: int, product_id: str, site_id: int,
+                fallback_mean: float = 10.0, description: str = "", seed: int = 0):
+        """Load history from outbound_order_line → fit triangular, or fallback."""
+        try:
+            rows = db.execute(_sql_text("""
+                SELECT ol.ordered_quantity, o.order_date
+                FROM outbound_order_line ol
+                JOIN outbound_order o ON o.id = ol.order_id
+                WHERE ol.product_id = :pid AND ol.site_id = :sid
+                  AND o.config_id = :cid AND o.order_date IS NOT NULL
+                  AND ol.ordered_quantity > 0
+                ORDER BY o.order_date
+            """), {"pid": product_id, "sid": site_id, "cid": config_id}).fetchall()
+
+            if len(rows) >= 5:
+                daily = _defaultdict(float)
+                for r in rows:
+                    daily[str(r[1])] += float(r[0])
+                values = list(daily.values())
+                if len(values) >= 5:
+                    low, mode, high = fit_triangular(values)
+                    _logger.info("Demand for %s@%s: triangular(%.1f, %.1f, %.1f) from %d observations",
+                                 product_id, site_id, low, mode, high, len(values))
+                    return cls(low=low, mode=mode, high=high, seed=seed)
+        except Exception as e:
+            _logger.debug("Demand history load failed: %s", e)
+
+        # Fallback: industry-calibrated triangular
+        category = _classify_product(product_id, description)
+        cv = _INDUSTRY_COV.get(category, 0.30)
+        std = fallback_mean * cv
+        mode = max(0.1, fallback_mean * 0.9)
+        low = max(0, mode - std * 0.7)    # Min closer to mode
+        high = mode + std * 2.0            # Max further (right tail)
+        _logger.info("Demand for %s@%s: fallback triangular(%.1f, %.1f, %.1f) category=%s",
+                     product_id, site_id, low, mode, high, category)
+        return cls(low=low, mode=mode, high=high, seed=seed)
+
+
+class HistoricalTriangularLeadTime:
+    """Triangular lead time sampler — fit from inbound order GR history or fallback."""
+
+    def __init__(self, low: float, mode: float, high: float, seed: int = 0):
+        self.low = max(1.0, low)
+        self.mode = max(self.low, mode)
+        self.high = max(self.mode + 0.5, high)
+        self._rng = random.Random(seed)
+        self.mean = (self.low + self.mode + self.high) / 3
+
+    def sample(self) -> int:
+        return max(1, round(self._rng.triangular(self.low, self.high, self.mode)))
+
+    @classmethod
+    def from_db(cls, db, config_id: int, lane_mode_days: float = 7.0, seed: int = 0):
+        """Load history from inbound_order GR dates → fit triangular, or fallback."""
+        try:
+            rows = db.execute(_sql_text("""
+                SELECT io.order_date, il.order_receive_date
+                FROM inbound_order io
+                JOIN inbound_order_line il ON il.order_id = io.id
+                WHERE io.config_id = :cid
+                  AND io.order_date IS NOT NULL
+                  AND il.order_receive_date IS NOT NULL
+            """), {"cid": config_id}).fetchall()
+
+            lead_times = []
+            for r in rows:
+                if r[0] and r[1]:
+                    delta = (r[1] - r[0]).days
+                    if 0 < delta < 365:
+                        lead_times.append(float(delta))
+
+            if len(lead_times) >= 5:
+                low, mode, high = fit_triangular(lead_times)
+                _logger.info("Lead time for config %d: triangular(%.1f, %.1f, %.1f) from %d observations",
+                             config_id, low, mode, high, len(lead_times))
+                return cls(low=max(1, low), mode=max(1, mode), high=max(mode + 1, high), seed=seed)
+        except Exception as e:
+            _logger.debug("Lead time history load failed: %s", e)
+
+        # Fallback: skewed to min with long upper tail
+        mode = max(1.0, lane_mode_days)
+        low = max(1.0, mode * 0.8)
+        high = mode * 2.5
+        _logger.info("Lead time for config %d: fallback triangular(%.1f, %.1f, %.1f)",
+                     config_id, low, mode, high)
+        return cls(low=low, mode=mode, high=high, seed=seed)
