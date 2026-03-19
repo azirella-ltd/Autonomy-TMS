@@ -1850,3 +1850,9 @@ class WorkWeekCalendar:
         if not self.is_work_day(sim_day):
             return 0.0
         return spread_monthly_demand(monthly_qty, sim_day)
+
+    @classmethod
+    def from_today(cls) -> "WorkWeekCalendar":
+        """Create a calendar starting from today's weekday."""
+        from datetime import date
+        return cls(start_weekday=date.today().weekday())

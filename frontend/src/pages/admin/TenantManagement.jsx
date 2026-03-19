@@ -25,6 +25,10 @@ const DEFAULT_FORM = {
   description: '',
   logo: '/autonomy_logo.svg',
   industry: '',
+  sim_days: 90,
+  sim_episodes: 5,
+  sim_warmup_days: 10,
+  sim_decisions_per_type: 20,
   admin: {
     username: 'tenantadmin',
     email: 'tenantadmin@autonomy.ai',
@@ -655,6 +659,45 @@ const TenantManagement = () => {
                 <p className="mt-1 text-xs text-gray-500">
                   Determines default stochastic parameters (lead times, yields, reliability) for planning. Can be refined later with SAP operational data.
                 </p>
+              </div>
+
+              {/* Digital Twin Simulation Parameters */}
+              <div className="border-t border-gray-200 pt-4 mt-2">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Digital Twin Simulation</h4>
+                <p className="text-xs text-gray-500 mb-3">
+                  The simulation replicates the customer's APS heuristics against stochastic reality.
+                  Defaults are set by industry end-to-end supply chain lead time.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Simulation Days</label>
+                    <input type="number" name="sim_days" value={form.sim_days || 90}
+                      onChange={handleChange} min={14} max={730}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500" />
+                    <p className="text-[10px] text-gray-400 mt-0.5">2× end-to-end SC lead time</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Episodes</label>
+                    <input type="number" name="sim_episodes" value={form.sim_episodes || 5}
+                      onChange={handleChange} min={1} max={50}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500" />
+                    <p className="text-[10px] text-gray-400 mt-0.5">Monte Carlo iterations</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Warmup Days</label>
+                    <input type="number" name="sim_warmup_days" value={form.sim_warmup_days || 10}
+                      onChange={handleChange} min={0} max={60}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500" />
+                    <p className="text-[10px] text-gray-400 mt-0.5">Skip early transients</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Decisions/Type</label>
+                    <input type="number" name="sim_decisions_per_type" value={form.sim_decisions_per_type || 20}
+                      onChange={handleChange} min={5} max={100}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500" />
+                    <p className="text-[10px] text-gray-400 mt-0.5">Max per TRM type</p>
+                  </div>
+                </div>
               </div>
 
               <div>
