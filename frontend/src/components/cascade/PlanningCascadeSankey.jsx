@@ -160,7 +160,7 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
   const groupKey = (masterType, geoLabel) => `${masterType}::${geoLabel}`;
   const groups = {};
 
-  sites.forEach(s => {
+  (sites || []).forEach(s => {
     const meta = siteMap[s.id];
     if (!meta) return;
     const key = groupKey(meta.masterType, meta.geoLabel);
@@ -171,12 +171,30 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
         type: meta.masterType,
         siteCount: 0,
         totalCapacity: 0,
+        totalInventory: 0,
+        avgDaysOfSupply: null,
       };
     }
     groups[key].siteCount += 1;
-    groups[key].totalCapacity += (
-      s.max_inventory ?? s.capacity ?? s.attributes?.max_inventory ?? 0
-    );
+    // Use on_hand inventory as primary sizing metric, fall back to static capacity
+    const metrics = s.metrics || {};
+    groups[key].totalCapacity += (metrics.on_hand_qty ?? s.max_inventory ?? s.capacity ?? 0);
+    groups[key].totalInventory += (metrics.on_hand_qty ?? 0);
+    if (metrics.days_of_supply != null) {
+      groups[key].avgDaysOfSupply = metrics.days_of_supply;
+    }
+  });
+
+  // Add virtual partner groups (they exist in siteMap but not in sites array)
+  Object.entries(siteMap).forEach(([id, meta]) => {
+    if (!id.startsWith('partner_')) return;
+    const key = groupKey(meta.masterType, meta.geoLabel);
+    if (!groups[key]) {
+      groups[key] = {
+        id: key, name: meta.geoLabel, type: meta.masterType,
+        siteCount: 1, totalCapacity: 1, totalInventory: 0, avgDaysOfSupply: null,
+      };
+    }
   });
 
   // ── 3. Build aggregated links ────────────────────────────────────
@@ -233,14 +251,27 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
     return `rgb(${r},${g},${b})`;
   };
 
-  const nodes = Object.values(groups).map(g => ({
-    id: g.id,
-    name: g.name,
-    type: g.type,
-    color: TYPE_COLORS[g.type] || '#6b7280',
-    siteCount: g.siteCount,
-    totalCapacity: g.totalCapacity,
-  }));
+  const nodes = Object.values(groups).map(g => {
+    // Color intensity by days-of-supply: low DOS = more saturated/warm
+    let nodeColor = TYPE_COLORS[g.type] || '#6b7280';
+    if (g.avgDaysOfSupply != null && g.avgDaysOfSupply < 14) {
+      // Low DOS — shift toward amber/red warning
+      const urgency = Math.max(0, 1 - g.avgDaysOfSupply / 14);
+      const r = Math.round(parseInt(nodeColor.slice(1, 3), 16) * (1 - urgency) + 0xdc * urgency);
+      const gb = Math.round(parseInt(nodeColor.slice(3, 5), 16) * (1 - urgency) + 0x26 * urgency);
+      nodeColor = `rgb(${r},${gb},${Math.round(gb * 0.6)})`;
+    }
+    return {
+      id: g.id,
+      name: g.name,
+      type: g.type,
+      color: nodeColor,
+      siteCount: g.siteCount,
+      totalCapacity: g.totalCapacity,
+      totalInventory: g.totalInventory,
+      daysOfSupply: g.avgDaysOfSupply,
+    };
+  });
 
   const links = Object.values(linkMap).map(l => {
     const avgLT = l.laneCount > 0 ? l.totalLeadTime / l.laneCount : 0;
