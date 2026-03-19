@@ -1317,29 +1317,39 @@ class DecisionStreamService:
 
                 for row in gnn_rows:
                     scope = row.directive_scope
-                    type_key = scope  # "sop_policy", "execution_directive", "allocation_refresh"
-                    level = DECISION_LEVEL.get(type_key, "tactical")
-
-                    # Map GNN confidence to urgency/likelihood
+                    type_key = scope
+                    level = getattr(row, "decision_level", None) or DECISION_LEVEL.get(type_key, "tactical")
                     confidence = row.model_confidence or 0.5
 
-                    # GNN urgency: derived from proposed_values content
-                    proposed = row.proposed_values or {}
-                    if scope == "sop_policy":
-                        # Strategic: urgency = how much policy parameters drifted
-                        bottleneck = proposed.get("bottleneck_risk", 0)
-                        concentration = proposed.get("concentration_risk", 0)
-                        gnn_urgency = max(bottleneck, concentration, 0.3)
-                    elif scope == "execution_directive":
-                        # Tactical: urgency = exception probability
-                        exc_prob = proposed.get("exception_probability", [0, 0, 1])
-                        stockout_prob = exc_prob[0] if isinstance(exc_prob, list) and len(exc_prob) > 0 else 0
-                        gnn_urgency = max(stockout_prob, 0.3)
+                    # ── Vertical Urgency Propagation ─────────────────────
+                    # Priority 1: propagated_urgency — computed from lower-level
+                    # signals that couldn't be resolved locally and escalated up.
+                    # This is the CORRECT urgency for GNN decisions because it
+                    # reflects WHY this decision is needed (execution-level pain).
+                    propagated = _safe_float(getattr(row, "propagated_urgency", None))
+                    if propagated and propagated > 0:
+                        gnn_urgency = propagated
                     else:
-                        # Allocation refresh: moderate urgency
-                        gnn_urgency = 0.5
+                        # Priority 2: derive from model outputs
+                        proposed = row.proposed_values or {}
+                        if scope == "sop_policy":
+                            bottleneck = proposed.get("bottleneck_risk", 0)
+                            concentration = proposed.get("concentration_risk", 0)
+                            gnn_urgency = max(bottleneck, concentration, 0.3)
+                        elif scope == "execution_directive":
+                            exc_prob = proposed.get("exception_probability", [0, 0, 1])
+                            stockout_prob = exc_prob[0] if isinstance(exc_prob, list) and len(exc_prob) > 0 else 0
+                            gnn_urgency = max(stockout_prob, 0.3)
+                        else:
+                            gnn_urgency = 0.5
 
-                    # Build human-readable summary
+                    # ── Build summary with escalation context ────────────
+                    proposed = row.proposed_values or {}
+                    source_signals = getattr(row, "source_signals", None) or []
+                    blocked_by = getattr(row, "local_resolution_blocked_by", None)
+                    revenue = _safe_float(getattr(row, "revenue_at_risk", None))
+                    cost_delay = _safe_float(getattr(row, "cost_of_delay_per_day", None))
+
                     if scope == "sop_policy":
                         ss_mult = proposed.get("safety_stock_multiplier", 1.0)
                         summary = f"S&OP Policy Update: SS multiplier {ss_mult:.2f}x at {row.site_key}"
@@ -1352,6 +1362,24 @@ class DecisionStreamService:
                         summary = f"Allocation Refresh at {row.site_key}"
                         action = "Review and approve allocation changes"
 
+                    # Enrich reasoning with vertical escalation context
+                    reasoning_parts = []
+                    if row.proposed_reasoning:
+                        reasoning_parts.append(row.proposed_reasoning)
+                    if source_signals:
+                        sig_descs = []
+                        for sig in source_signals[:3]:
+                            sig_descs.append(
+                                f"{sig.get('trm_type', '?')}: {sig.get('observation', sig.get('signal_type', '?'))}"
+                                f" (urgency {sig.get('urgency', 0):.0%})"
+                            )
+                        reasoning_parts.append("Escalated from: " + "; ".join(sig_descs))
+                    if blocked_by:
+                        reasoning_parts.append(f"Local resolution blocked: {blocked_by}")
+                    if revenue and revenue > 0:
+                        reasoning_parts.append(f"Revenue at risk: ${revenue:,.0f}")
+
+                    enriched_reasoning = " | ".join(reasoning_parts) if reasoning_parts else None
                     site_display = site_names.get(str(row.site_key), row.site_key)
 
                     all_decisions.append({
@@ -1367,12 +1395,12 @@ class DecisionStreamService:
                         "urgency_score": gnn_urgency,
                         "likelihood": _likelihood_label(confidence),
                         "likelihood_score": confidence,
-                        "cost_of_inaction": None,
+                        "cost_of_inaction": cost_delay if cost_delay and cost_delay > 0 else None,
                         "time_pressure": None,
                         "expected_benefit": None,
-                        "economic_impact": None,
-                        "reason": row.proposed_reasoning,
-                        "decision_reasoning": row.proposed_reasoning,
+                        "economic_impact": revenue if revenue and revenue > 0 else None,
+                        "reason": enriched_reasoning,
+                        "decision_reasoning": enriched_reasoning,
                         "suggested_action": action,
                         "deep_link": "/admin/powell" if scope == "sop_policy" else "/insights/actions",
                         "created_at": row.created_at.isoformat() if row.created_at else None,
@@ -1382,6 +1410,9 @@ class DecisionStreamService:
                             "model_type": row.model_type,
                             "directive_scope": scope,
                             "gnn_status": row.status,
+                            "source_signals": source_signals if source_signals else None,
+                            "local_resolution_blocked_by": blocked_by,
+                            "escalation_id": getattr(row, "escalation_id", None),
                         },
                     })
             except Exception as e:

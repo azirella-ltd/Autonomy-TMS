@@ -87,6 +87,54 @@ class GNNDirectiveReview(Base):
     override_classification = Column(String(20), nullable=True)
     # BENEFICIAL | NEUTRAL | DETRIMENTAL
 
+    # ── Vertical Urgency Propagation ────────────────────────────────────
+    # GNN urgency is NOT computed independently — it aggregates and amplifies
+    # execution-level signals that couldn't be resolved locally.
+    #
+    # Example flow:
+    #   Layer 1 TRM: MO agent sees 95% OEE for 3 weeks → CAPACITY_STRESS signal
+    #   Layer 1.5 Site tGNN: Evaluates shift extension → guardrail blocks (min 4 weeks)
+    #     → emits CAPACITY_CONSTRAINED_ESCALATION upward
+    #   Layer 2 Network tGNN: Sees escalation + demand risk → urgency HIGH
+    #     → proposes inventory rebalance from another site
+    #
+    # The propagated_urgency captures WHY this GNN decision is urgent,
+    # tracing back to the execution-level observations that triggered it.
+
+    # Decision level within the Powell hierarchy
+    decision_level = Column(String(20), nullable=True)
+    # "strategic" (S&OP GraphSAGE) | "tactical" (Execution tGNN) | "operational" (Site tGNN)
+
+    # Propagated urgency: computed from lower-level signals, not just model output
+    propagated_urgency = Column(Float, nullable=True)
+    # 0-1 score: weighted combination of escalation severity + local resolution failure + revenue at risk
+
+    # Source escalation that triggered this GNN action (if any)
+    escalation_id = Column(Integer, ForeignKey("powell_escalation_log.id", ondelete="SET NULL"), nullable=True)
+
+    # Lower-level signals that fed into this decision (JSON array)
+    # Each entry: {trm_type, signal_type, site_key, urgency, observation, duration_hours}
+    source_signals = Column(JSON, nullable=True)
+    # Example: [
+    #   {"trm_type": "mo_execution", "signal_type": "CAPACITY_STRESS",
+    #    "site_key": "1710", "urgency": 0.85, "observation": "OEE 95% for 21 days",
+    #    "duration_hours": 504},
+    #   {"trm_type": "atp_executor", "signal_type": "FILL_RATE_DEGRADATION",
+    #    "site_key": "1710", "urgency": 0.72, "observation": "Fill rate dropped 98% → 91%",
+    #    "duration_hours": 168}
+    # ]
+
+    # Whether local resolution was attempted and failed (escalation reason)
+    local_resolution_attempted = Column(Boolean, default=False)
+    local_resolution_blocked_by = Column(String(200), nullable=True)
+    # e.g. "Guardrail: minimum shift extension period is 4 weeks"
+    #      "Capacity: no available capacity at site for next 2 weeks"
+    #      "Authority: cross-site transfer requires MPS_MANAGER approval"
+
+    # Revenue/cost impact that elevated this from routine to urgent
+    revenue_at_risk = Column(Float, nullable=True)  # $ at risk if not acted on
+    cost_of_delay_per_day = Column(Float, nullable=True)  # $/day incremental cost
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     expires_at = Column(DateTime, nullable=True)
@@ -115,10 +163,20 @@ class GNNDirectiveReview(Base):
             "config_id": self.config_id,
             "site_key": self.site_key,
             "directive_scope": self.directive_scope,
+            "decision_level": self.decision_level,
             "proposed_values": self.proposed_values,
             "proposed_reasoning": self.proposed_reasoning,
             "model_type": self.model_type,
             "model_confidence": self.model_confidence,
+            # Vertical urgency propagation
+            "propagated_urgency": self.propagated_urgency,
+            "source_signals": self.source_signals,
+            "local_resolution_attempted": self.local_resolution_attempted,
+            "local_resolution_blocked_by": self.local_resolution_blocked_by,
+            "revenue_at_risk": self.revenue_at_risk,
+            "cost_of_delay_per_day": self.cost_of_delay_per_day,
+            "escalation_id": self.escalation_id,
+            # AIIO status
             "status": self._DB_TO_AIIO.get(self.status, self.status),
             "reviewed_by": self.reviewed_by,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
