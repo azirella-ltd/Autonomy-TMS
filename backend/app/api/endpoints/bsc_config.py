@@ -1,19 +1,16 @@
 """
-BSC Configuration API
+Tenant Configuration API
 
-Tenant-admin endpoints for reading and updating the per-tenant Balanced
-Scorecard weights used by the CDT simulation calibration service.
-
-Both cost weights represent costs to MINIMISE — higher values are worse
-outcomes. The relative weights control how much each cost component
-contributes to the aggregate CDT loss across all 11 TRM agents.
+Tenant-admin endpoints for reading and updating per-tenant settings:
+  - Agent autonomy thresholds (3D routing: urgency, likelihood, benefit)
+  - Display preferences (names vs IDs)
 """
 
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_tenant_admin
@@ -23,79 +20,28 @@ from app.models.user import User
 
 router = APIRouter(prefix="/bsc-config", tags=["bsc-config"])
 
-_WEIGHT_TOLERANCE = 1e-4  # Allow tiny float rounding errors in sum-to-1 check
-
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class BscWeightsResponse(BaseModel):
-    """Current BSC weights for the tenant."""
+    """Current tenant configuration."""
 
     tenant_id: int
-    holding_cost_weight: float
-    backlog_cost_weight: float
-    # Reserved Phase 2+ pillars (always 0.0 until wired up)
-    customer_weight: float
-    operational_weight: float
-    strategic_weight: float
-    autonomy_threshold: float = 0.5
     urgency_threshold: float = 0.65
     likelihood_threshold: float = 0.70
     benefit_threshold: float = 0.0
-    notes: Optional[str]
+    display_identifiers: str = "name"
+    notes: Optional[str] = None
     updated_at: datetime
-    updated_by_name: Optional[str]
+    updated_by_name: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 
 class BscWeightsUpdate(BaseModel):
-    """
-    Update BSC weights.
+    """Update tenant configuration."""
 
-    Phase 1 active components: holding_cost_weight + backlog_cost_weight.
-    Both represent costs to MINIMISE; weights determine relative importance.
-    They must sum to 1.0 (within floating-point tolerance).
-
-    customer_weight, operational_weight, strategic_weight are accepted but
-    must be 0.0 until the corresponding metrics are implemented.
-    """
-
-    holding_cost_weight: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Weight for inventory holding cost (to minimise). Default 0.5.",
-    )
-    backlog_cost_weight: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Weight for backlog / stockout cost (to minimise). Default 0.5.",
-    )
-    customer_weight: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=0.0,
-        description="Reserved — Phase 2 customer service pillar. Must be 0.0.",
-    )
-    operational_weight: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=0.0,
-        description="Reserved — Phase 2 operational pillar. Must be 0.0.",
-    )
-    strategic_weight: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=0.0,
-        description="Reserved — Phase 2 strategic pillar. Must be 0.0.",
-    )
-    autonomy_threshold: float = Field(
-        default=0.5, ge=0.0, le=1.0,
-        description="Legacy combined threshold (deprecated, kept for backward compat).",
-    )
     urgency_threshold: float = Field(
         default=0.65, ge=0.0, le=1.0,
         description=(
@@ -115,31 +61,18 @@ class BscWeightsUpdate(BaseModel):
         default=0.0, ge=0.0,
         description=(
             "Minimum expected benefit ($) for a decision to be auto-actioned. "
-            "Set to 0 to disable (benefit does not gate auto-action). "
-            "Grounded in Kahneman's Prospect Theory: losses loom ~2x larger than gains."
+            "Set to 0 to disable (benefit does not gate auto-action)."
         ),
+    )
+    display_identifiers: str = Field(
+        default="name",
+        description="Display mode for entity identifiers: 'name' (human-readable) or 'id' (raw IDs).",
     )
     notes: Optional[str] = Field(
         default=None,
         max_length=500,
         description="Optional note for this configuration.",
     )
-
-    @model_validator(mode="after")
-    def weights_sum_to_one(self) -> "BscWeightsUpdate":
-        total = (
-            self.holding_cost_weight
-            + self.backlog_cost_weight
-            + self.customer_weight
-            + self.operational_weight
-            + self.strategic_weight
-        )
-        if abs(total - 1.0) > _WEIGHT_TOLERANCE:
-            raise ValueError(
-                f"BSC weights must sum to 1.0 (got {total:.4f}). "
-                "Adjust holding_cost_weight and backlog_cost_weight so they sum to 1."
-            )
-        return self
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -150,9 +83,10 @@ def get_bsc_config(
     current_user: User = Depends(get_current_user),
 ) -> BscWeightsResponse:
     """
-    Return the BSC weights for the current user's tenant.
+    Return the tenant configuration for the current user's tenant.
 
-    Returns defaults (holding=0.5, backlog=0.5) if no config has been saved yet.
+    Returns defaults if no config has been saved yet (should not happen —
+    config is populated at tenant creation).
     """
     cfg = (
         db.query(TenantBscConfig)
@@ -163,15 +97,10 @@ def get_bsc_config(
     if cfg is None:
         return BscWeightsResponse(
             tenant_id=current_user.tenant_id,
-            holding_cost_weight=0.5,
-            backlog_cost_weight=0.5,
-            customer_weight=0.0,
-            operational_weight=0.0,
-            strategic_weight=0.0,
-            autonomy_threshold=0.5,
             urgency_threshold=0.65,
             likelihood_threshold=0.70,
             benefit_threshold=0.0,
+            display_identifiers="name",
             notes=None,
             updated_at=datetime.utcnow(),
             updated_by_name=None,
@@ -185,15 +114,10 @@ def get_bsc_config(
 
     return BscWeightsResponse(
         tenant_id=cfg.tenant_id,
-        holding_cost_weight=cfg.holding_cost_weight,
-        backlog_cost_weight=cfg.backlog_cost_weight,
-        customer_weight=cfg.customer_weight,
-        operational_weight=cfg.operational_weight,
-        strategic_weight=cfg.strategic_weight,
-        autonomy_threshold=cfg.autonomy_threshold,
         urgency_threshold=cfg.urgency_threshold,
         likelihood_threshold=cfg.likelihood_threshold,
         benefit_threshold=getattr(cfg, "benefit_threshold", 0.0) or 0.0,
+        display_identifiers=getattr(cfg, "display_identifiers", "name") or "name",
         notes=cfg.notes,
         updated_at=cfg.updated_at,
         updated_by_name=updated_by_name,
@@ -207,10 +131,9 @@ def update_bsc_config(
     current_user: User = Depends(require_tenant_admin),
 ) -> BscWeightsResponse:
     """
-    Create or replace the BSC weights for the current user's tenant.
+    Update the tenant configuration.
 
     Tenant admin role required.
-    Both cost weights represent costs to MINIMISE — higher values are worse.
     """
     cfg = (
         db.query(TenantBscConfig)
@@ -222,15 +145,10 @@ def update_bsc_config(
         cfg = TenantBscConfig(tenant_id=current_user.tenant_id)
         db.add(cfg)
 
-    cfg.holding_cost_weight = payload.holding_cost_weight
-    cfg.backlog_cost_weight = payload.backlog_cost_weight
-    cfg.customer_weight = payload.customer_weight
-    cfg.operational_weight = payload.operational_weight
-    cfg.strategic_weight = payload.strategic_weight
-    cfg.autonomy_threshold = payload.autonomy_threshold
     cfg.urgency_threshold = payload.urgency_threshold
     cfg.likelihood_threshold = payload.likelihood_threshold
     cfg.benefit_threshold = payload.benefit_threshold
+    cfg.display_identifiers = payload.display_identifiers
     cfg.notes = payload.notes
     cfg.updated_by_id = current_user.id
     cfg.updated_at = datetime.utcnow()
@@ -242,15 +160,10 @@ def update_bsc_config(
 
     return BscWeightsResponse(
         tenant_id=cfg.tenant_id,
-        holding_cost_weight=cfg.holding_cost_weight,
-        backlog_cost_weight=cfg.backlog_cost_weight,
-        customer_weight=cfg.customer_weight,
-        operational_weight=cfg.operational_weight,
-        strategic_weight=cfg.strategic_weight,
-        autonomy_threshold=cfg.autonomy_threshold,
         urgency_threshold=cfg.urgency_threshold,
         likelihood_threshold=cfg.likelihood_threshold,
         benefit_threshold=getattr(cfg, "benefit_threshold", 0.0) or 0.0,
+        display_identifiers=getattr(cfg, "display_identifiers", "name") or "name",
         notes=cfg.notes,
         updated_at=cfg.updated_at,
         updated_by_name=updated_by_name,

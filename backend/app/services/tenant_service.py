@@ -27,6 +27,7 @@ from ..models.supply_chain_config import (
 from ..models.sc_entities import Product, ProductBom
 from ..models.autonomy_customer import AutonomyCustomer
 from ..models.tenant import TenantIndustry
+from ..models.bsc_config import TenantBscConfig
 from ..schemas.tenant import TenantCreate, TenantUpdate
 from ..core.security import get_password_hash
 from app.core.time_buckets import TimeBucket
@@ -227,6 +228,18 @@ class TenantService:
                 site_type_definitions=DEFAULT_SITE_TYPE_DEFINITIONS,
             )
             self.db.add(learn_sc_config)
+            self.db.flush()
+
+            # ── Populate tenant config defaults ─────────────────────
+            for tnt in [prod_tenant, learn_tenant]:
+                bsc_cfg = TenantBscConfig(
+                    tenant_id=tnt.id,
+                    urgency_threshold=0.65,
+                    likelihood_threshold=0.70,
+                    benefit_threshold=0.0,
+                    display_identifiers="name",
+                )
+                self.db.add(bsc_cfg)
             self.db.flush()
 
             # Register in autonomy_customers registry

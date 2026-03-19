@@ -1,15 +1,18 @@
 """
-Tenant BSC (Balanced Scorecard) Configuration
+Tenant Configuration
 
-Stores per-tenant weights for the simulation calibration balanced scorecard.
-The CDT calibration loss function is a weighted combination of cost components.
+Stores per-tenant settings for display preferences and agent autonomy thresholds.
 
-Phase 1 (current): holding cost + backlog cost at equal weight.
-Future phases will add customer service, operational, and strategic pillars.
+Agent Autonomy Thresholds (3D routing):
+  - urgency_threshold: Minimum urgency to always surface for human review
+  - likelihood_threshold: Minimum agent confidence to auto-action
+  - benefit_threshold: Minimum expected $ benefit to auto-action
 
-Both holding_cost_weight and backlog_cost_weight represent costs to MINIMISE.
-Higher values of either cost = worse outcome. Weights determine the relative
-importance of each cost type in the CDT loss function.
+Display Preferences:
+  - display_identifiers: "name" (human-readable) or "id" (raw IDs)
+
+Defaults are populated at tenant creation time. Only the tenant admin
+can modify these settings.
 """
 
 from datetime import datetime
@@ -34,26 +37,13 @@ TRM_TYPE_KEYS = [
 
 class TenantBscConfig(Base):
     """
-    Per-tenant BSC weights for CDT simulation calibration.
+    Per-tenant configuration for display preferences and agent autonomy.
 
-    Weights define how much each cost component contributes to the aggregate
-    loss used to calibrate Conformal Decision Theory bounds across all 11
-    TRM agents.
+    Populated at tenant creation time with defaults. Only tenant admins
+    can modify these settings.
 
-    Constraint: all active weights must sum to 1.0 (enforced at API layer).
     FK constraints are enforced at the DB level (tenant_id → tenants.id CASCADE,
     updated_by_id → users.id SET NULL).
-
-    Current active components (Phase 1):
-      holding_cost_weight  — inventory holding cost per unit per day
-      backlog_cost_weight  — backlog / stockout cost per unit per day
-
-    Reserved for future BSC pillars (Phase 2+, kept at 0.0):
-      customer_weight      — fill rate / OTIF
-      operational_weight   — inventory turns, days-of-supply
-      strategic_weight     — resilience, bullwhip ratio
-
-    Default: holding=0.5, backlog=0.5 (equal cost weighting, both minimised).
     """
 
     __tablename__ = "tenant_bsc_config"
@@ -63,21 +53,7 @@ class TenantBscConfig(Base):
     # FK to tenants.id enforced at DB level
     tenant_id = Column(Integer, nullable=False, index=True)
 
-    # ── Phase 1: cost weights ────────────────────────────────────────────────
-    # Both costs are to be MINIMISED. Weights are relative importance.
-    holding_cost_weight = Column(Float, nullable=False, default=0.5)
-    backlog_cost_weight = Column(Float, nullable=False, default=0.5)
-
-    # ── Phase 2+ (reserved, always 0.0 until metrics are wired up) ──────────
-    customer_weight = Column(Float, nullable=False, default=0.0)
-    operational_weight = Column(Float, nullable=False, default=0.0)
-    strategic_weight = Column(Float, nullable=False, default=0.0)
-
-    # ── Agent Autonomy ─────────────────────────────────────────────────────
-    # Legacy combined threshold (kept for backward compatibility)
-    autonomy_threshold = Column(Float, nullable=False, default=0.5)
-
-    # Split thresholds (preferred — clearer semantics):
+    # ── Agent Autonomy Thresholds (3D routing) ───────────────────────────
     # urgency_threshold: Minimum urgency to surface for human review.
     #   Decisions ABOVE this are always surfaced regardless of confidence.
     #   Default 0.65 maps to "High" urgency tier.

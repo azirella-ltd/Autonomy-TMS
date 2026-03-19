@@ -1240,24 +1240,11 @@ class SimulationCalibrationService:
         self._cdt_service = CDTCalibrationService(db=db, tenant_id=tenant_id)
 
     def _load_bsc_weights(self) -> _BscWeights:
-        """Load BSC weights from TenantBscConfig; fall back to equal defaults."""
-        try:
-            from app.models.bsc_config import TenantBscConfig
-            cfg = (
-                self.db.query(TenantBscConfig)
-                .filter(TenantBscConfig.tenant_id == self.tenant_id)
-                .first()
-            )
-            if cfg:
-                return _BscWeights(
-                    holding_cost_weight=cfg.holding_cost_weight,
-                    backlog_cost_weight=cfg.backlog_cost_weight,
-                    customer_weight=cfg.customer_weight,
-                    operational_weight=cfg.operational_weight,
-                    strategic_weight=cfg.strategic_weight,
-                )
-        except Exception as exc:
-            logger.debug("BSC weights load failed (%s) — using defaults", exc)
+        """Return default BSC weights (0.5/0.5 holding/backlog).
+
+        These weights are internal to the simulation calibration service.
+        TenantBscConfig no longer carries cost weight columns.
+        """
         return _BscWeights.default()
 
     def bootstrap_calibration(

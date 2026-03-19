@@ -36,13 +36,12 @@ SAP_IMPORTS_BASE = os.getenv("SAP_IMPORTS_DIR", "/app/imports")
 def get_tenant_import_base(tenant) -> str:
     """Get the import base directory for a tenant.
 
-    Priority: tenant.import_base_dir > default ({IMPORTS_BASE}/{tenant_name}/{erp_variant})
+    Priority: tenant.import_base_dir > default ({IMPORTS_BASE}/{tenant_name}/CSV_Generic)
     """
     if tenant and getattr(tenant, 'import_base_dir', None):
         return tenant.import_base_dir
     tenant_name = getattr(tenant, 'name', 'default') if tenant else 'default'
-    erp_variant = getattr(tenant, 'erp_variant', 'CSV_Generic') if tenant else 'CSV_Generic'
-    return str(Path(SAP_IMPORTS_BASE) / _sanitize_name(tenant_name) / _sanitize_name(erp_variant or 'CSV_Generic'))
+    return str(Path(SAP_IMPORTS_BASE) / _sanitize_name(tenant_name) / 'CSV_Generic')
 
 
 def _sanitize_name(name: str) -> str:

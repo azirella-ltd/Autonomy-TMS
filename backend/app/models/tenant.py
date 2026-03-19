@@ -119,21 +119,13 @@ class Tenant(Base):
     )
 
     # ERP Configuration (set at tenant creation by systemadmin)
-    erp_vendor: Mapped[Optional[str]] = mapped_column(
-        String(30), nullable=True, default=None,
-        comment="ERP vendor: SAP, Oracle, Microsoft, Infor, Other"
-    )
-    erp_variant: Mapped[Optional[str]] = mapped_column(
-        String(30), nullable=True, default=None,
-        comment="ERP variant: S4HANA, ECC, Oracle_Cloud_SCM, D365_SCM, etc."
-    )
     import_base_dir: Mapped[Optional[str]] = mapped_column(
         String(500), nullable=True, default=None,
-        comment="Base directory for data imports. Default: imports/{tenant_name}/{erp_variant}"
+        comment="Base directory for data imports. Default: imports/{tenant_name}/CSV_Generic"
     )
     export_base_dir: Mapped[Optional[str]] = mapped_column(
         String(500), nullable=True, default=None,
-        comment="Base directory for data exports. Default: exports/{tenant_name}/{erp_variant}"
+        comment="Base directory for data exports. Default: exports/{tenant_name}/CSV_Generic"
     )
     erp_retention_snapshots: Mapped[int] = mapped_column(
         Integer, nullable=False, default=5,

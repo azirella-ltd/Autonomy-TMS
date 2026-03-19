@@ -830,10 +830,8 @@ class ProvisioningService:
             sync_db.execute(
                 sa_text("""
                     INSERT INTO tenant_bsc_config
-                        (tenant_id, urgency_threshold, likelihood_threshold,
-                         autonomy_threshold, holding_cost_weight, backlog_cost_weight,
-                         customer_weight, operational_weight, strategic_weight)
-                    VALUES (:tid, 0.65, 0.70, 0.5, 0.6, 0.4, 0, 0, 0)
+                        (tenant_id, urgency_threshold, likelihood_threshold)
+                    VALUES (:tid, 0.65, 0.70)
                 """),
                 {"tid": tenant_id},
             )
