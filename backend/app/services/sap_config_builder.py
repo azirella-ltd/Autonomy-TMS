@@ -2093,14 +2093,32 @@ class SAPConfigBuilder:
     # ------------------------------------------------------------------
 
     async def _create_products(self) -> int:
-        """Create Product entities from MARA/MARC."""
+        """Create Product entities from MARA/MARC/MAKT."""
         mara = self._data.get("MARA", pd.DataFrame())
         marc = self._data.get("MARC", pd.DataFrame())
         mvke = self._data.get("MVKE", pd.DataFrame())
+        makt = self._data.get("MAKT", pd.DataFrame())
 
         if mara.empty and marc.empty:
             logger.warning("No material data found")
             return 0
+
+        # Merge MAKT descriptions into MARA (MAKT has MATNR + SPRAS + MAKTX)
+        if not mara.empty and not makt.empty and "MATNR" in makt.columns and "MAKTX" in makt.columns:
+            # Filter to English descriptions only (SPRAS = 'E'), fall back to first available
+            if "SPRAS" in makt.columns:
+                makt_en = makt[makt["SPRAS"] == "E"].drop_duplicates(subset=["MATNR"])
+                if makt_en.empty:
+                    makt_en = makt.drop_duplicates(subset=["MATNR"])
+            else:
+                makt_en = makt.drop_duplicates(subset=["MATNR"])
+            mara = mara.merge(
+                makt_en[["MATNR", "MAKTX"]],
+                on="MATNR",
+                how="left",
+                suffixes=("", "_makt"),
+            )
+            logger.info("Merged %d MAKT descriptions into MARA", makt_en.shape[0])
 
         # Get unique materials
         materials: Dict[str, Dict[str, Any]] = {}
