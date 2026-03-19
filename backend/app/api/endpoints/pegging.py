@@ -327,3 +327,41 @@ def get_unpegged_demand(
         "config_id": config_id,
         "unpegged": result,
     }
+
+
+# ---------------------------------------------------------------------------
+# Pegging Gantt chart
+# ---------------------------------------------------------------------------
+
+@router.get("/gantt/{config_id}/{product_id}/{site_id}")
+def get_pegging_gantt(
+    config_id: int,
+    product_id: str,
+    site_id: int,
+    demand_date: str = Query(..., description="ISO date of the demand bucket"),
+    demand_type: Optional[str] = Query(None),
+    demand_id: Optional[str] = Query(None),
+    include_conformal: bool = Query(True),
+    db: Session = Depends(get_db),
+):
+    """
+    Build Gantt chart data showing how demand at a specific time bucket
+    is satisfied through the full pegging tree (multi-level BOM).
+
+    Returns hierarchical rows (by BOM level) with supply bars showing
+    order dates, receipt dates, quantities, and conformal prediction
+    intervals for lead time uncertainty.
+    """
+    from app.services.pegging_gantt_service import PeggingGanttService
+
+    svc = PeggingGanttService(db)
+    result = svc.build_gantt_data(
+        config_id=config_id,
+        product_id=product_id,
+        site_id=site_id,
+        demand_date=date.fromisoformat(demand_date),
+        demand_type=demand_type,
+        demand_id=demand_id,
+        include_conformal=include_conformal,
+    )
+    return result

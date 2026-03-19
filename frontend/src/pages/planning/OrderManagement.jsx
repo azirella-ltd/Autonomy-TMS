@@ -68,9 +68,13 @@ import {
 import { cn } from '../../lib/utils/cn';
 import { api } from '../../services/api';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
 
 const OrderManagement = () => {
   const { formatSupplier, formatProduct, formatSite } = useDisplayPreferences();
+  const { effectiveConfigId } = useActiveConfig();
+  const [peggingTarget, setPeggingTarget] = useState(null);
   const [activeTab, setActiveTab] = useState('split');
   const [orderType, setOrderType] = useState('PO');
   const [orders, setOrders] = useState([]);
@@ -586,6 +590,26 @@ const OrderManagement = () => {
                             <TooltipContent>View Details</TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setPeggingTarget({
+                                  productId: order.items?.[0]?.product_id || order.product_id,
+                                  siteId: order.destination_site_id || order.site_id,
+                                  demandDate: order.order_date || order.delivery_date,
+                                  demandType: 'CUSTOMER_ORDER',
+                                  demandId: String(order.id),
+                                })}
+                              >
+                                <Search className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>View Pegging</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -852,6 +876,19 @@ const OrderManagement = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Level Pegging Gantt */}
+      {peggingTarget && effectiveConfigId && peggingTarget.productId && peggingTarget.siteId && (
+        <LevelPeggingGantt
+          configId={effectiveConfigId}
+          productId={peggingTarget.productId}
+          siteId={peggingTarget.siteId}
+          demandDate={peggingTarget.demandDate}
+          demandType={peggingTarget.demandType}
+          demandId={peggingTarget.demandId}
+          onClose={() => setPeggingTarget(null)}
+        />
+      )}
 
       {/* Split Dialog */}
       <Modal

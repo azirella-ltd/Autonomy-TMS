@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   Card,
   CardContent,
@@ -38,13 +39,18 @@ import {
   X,
   Undo,
   ShieldCheck,
+  GitBranch,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 import { api } from '../../services/api';
+import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
 
 const DemandPlanView = () => {
   const location = useLocation();
   const { formatProduct, formatSite } = useDisplayPreferences();
+  // Pegging Gantt state
+  const [peggingTarget, setPeggingTarget] = useState(null);
+  const { effectiveConfigId } = useActiveConfig();
   const filtersApplied = useRef(false);
   const [forecasts, setForecasts] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -486,12 +492,13 @@ const DemandPlanView = () => {
                 <TableHead className="text-center">Confidence</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Source</TableHead>
+                <TableHead className="text-center">Pegging</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {forecasts.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
+                  <TableCell colSpan={10} className="text-center py-8">
                     <p className="text-muted-foreground">
                       No forecasts found. Adjust filters and try again.
                     </p>
@@ -593,6 +600,30 @@ const DemandPlanView = () => {
                       )}
                     </div>
                   </TableCell>
+                  <TableCell className="text-center">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPeggingTarget({
+                                productId: forecast.product_id,
+                                siteId: forecast.site_id,
+                                demandDate: forecast.forecast_date,
+                                demandType: 'FORECAST',
+                              });
+                            }}
+                          >
+                            <GitBranch className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>View Pegging</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -604,6 +635,18 @@ const DemandPlanView = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Level Pegging Gantt */}
+      {peggingTarget && effectiveConfigId && (
+        <LevelPeggingGantt
+          configId={effectiveConfigId}
+          productId={peggingTarget.productId}
+          siteId={peggingTarget.siteId}
+          demandDate={peggingTarget.demandDate}
+          demandType={peggingTarget.demandType}
+          onClose={() => setPeggingTarget(null)}
+        />
+      )}
 
       {/* Delta Comparison Dialog */}
       <Modal
