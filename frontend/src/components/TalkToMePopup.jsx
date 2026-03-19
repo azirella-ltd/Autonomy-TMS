@@ -675,23 +675,24 @@ function buildMessages({
                       </span>
                     </div>
 
-                    {/* Accept buttons */}
-                    <div className="mt-2 flex gap-2">
-                      {scenarios.filter((_, si) => si > 0).map((s, fi) => (
-                        <button
-                          key={fi}
-                          onClick={() => onPromoteStrategy?.(s.scenario_id)}
-                          className={cn(
-                            'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                            (fi + 1) === recommendation_index
-                              ? 'bg-emerald-500 text-white hover:bg-emerald-600'
-                              : 'bg-accent border border-border hover:bg-accent/80',
-                          )}
-                        >
-                          Accept {s.name}
-                        </button>
-                      ))}
+                    {/* AIIO: Auto-selected notice — user overrides via Decision Stream */}
+                    <div className="mt-2 px-2.5 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700">
+                      <span className="font-semibold">Auto-selected:</span>{' '}
+                      {scenarios[recommendation_index]?.name} (best trade-off).
+                      Review in the Decision Stream to inspect reasoning or override.
                     </div>
+                  </div>
+                );
+              }
+
+              // ── auto_promoted: AIIO decision applied ──
+              if (msg.type === 'auto_promoted') {
+                return (
+                  <div key={i} className="p-2.5 rounded-lg bg-violet-50 border border-violet-200 text-xs mt-1">
+                    <div className="font-semibold text-violet-700">
+                      {'\u2714'} {msg.selected_strategy} applied
+                    </div>
+                    <div className="text-violet-600 mt-1">{msg.message}</div>
                   </div>
                 );
               }
