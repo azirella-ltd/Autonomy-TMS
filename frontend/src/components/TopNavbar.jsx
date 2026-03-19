@@ -99,6 +99,17 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     setCurrentPath(location.pathname);
   }, [location]);
 
+  // Sync uiMode when URL changes directly (e.g. browser back/forward, manual URL entry)
+  useEffect(() => {
+    if (location.pathname === '/decision-stream' && uiMode !== 'stream') {
+      setUiMode('stream');
+      localStorage.setItem('ui:mode', 'stream');
+    } else if (location.pathname === '/dashboard' && uiMode !== 'console') {
+      setUiMode('console');
+      localStorage.setItem('ui:mode', 'console');
+    }
+  }, [location.pathname, uiMode]);
+
   // Load system config name
   useEffect(() => {
     let isMounted = true;
