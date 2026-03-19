@@ -200,6 +200,105 @@ class ProvisioningService:
         # 5. Run the pipeline
         return await self.run_all(config_id)
 
+    async def delete_config(self, config_id: int) -> dict:
+        """Delete a supply chain config and all its dependent data + checkpoints.
+
+        This is the proper way to remove a config — handles:
+        1. All DB records with config_id FK (sites, products, BOMs, lanes, etc.)
+        2. Checkpoint files on disk (TRM weights, Site tGNN, GNN embeddings)
+        3. The config row itself
+
+        Only archived/inactive configs can be deleted. Active configs must be
+        archived first (via reprovision) or deactivated.
+        """
+        from app.models.supply_chain_config import SupplyChainConfig
+
+        row = await self.db.execute(
+            select(SupplyChainConfig).where(SupplyChainConfig.id == config_id)
+        )
+        config = row.scalar_one_or_none()
+        if not config:
+            return {"error": f"Config {config_id} not found"}
+        if config.is_active:
+            return {"error": f"Config {config_id} is active — archive or deactivate before deleting"}
+
+        # 1. Delete all DB records with config_id FK
+        try:
+            # Get tables with config_id column (excluding the config table itself)
+            result = await self.db.execute(text("""
+                SELECT DISTINCT table_name FROM information_schema.columns
+                WHERE column_name = 'config_id' AND table_schema = 'public'
+                  AND table_name != 'supply_chain_configs'
+            """))
+            config_tables = [r[0] for r in result.fetchall()]
+
+            # Delete product_bom first (has product FK)
+            await self.db.execute(text("DELETE FROM product_bom WHERE config_id = :cid"), {"cid": config_id})
+
+            # Delete all other config-scoped tables
+            for table in config_tables:
+                if table not in ("site", "product", "product_bom"):
+                    await self.db.execute(text(f"DELETE FROM {table} WHERE config_id = :cid"), {"cid": config_id})
+
+            # Delete product, then site
+            await self.db.execute(text("DELETE FROM product WHERE config_id = :cid"), {"cid": config_id})
+            await self.db.execute(text("DELETE FROM site WHERE config_id = :cid"), {"cid": config_id})
+
+            # Delete the config row
+            await self.db.execute(text("DELETE FROM supply_chain_configs WHERE id = :cid"), {"cid": config_id})
+            await self.db.commit()
+        except Exception as e:
+            await self.db.rollback()
+            logger.error("Failed to delete config %d DB records: %s", config_id, e)
+            return {"error": f"DB deletion failed: {e}"}
+
+        # 2. Clean up checkpoint files on disk
+        import shutil
+        import os
+        checkpoint_base = os.environ.get("CHECKPOINT_DIR", "/app/checkpoints")
+        config_checkpoint_dir = os.path.join(checkpoint_base, f"config_{config_id}")
+        if os.path.isdir(config_checkpoint_dir):
+            try:
+                shutil.rmtree(config_checkpoint_dir)
+                logger.info("Deleted checkpoint dir: %s", config_checkpoint_dir)
+            except Exception as e:
+                logger.warning("Failed to delete checkpoint dir %s: %s", config_checkpoint_dir, e)
+
+        logger.info("Config %d fully deleted (DB records + checkpoints)", config_id)
+        return {"status": "deleted", "config_id": config_id}
+
+    async def cleanup_orphaned_checkpoints(self) -> dict:
+        """Find and remove checkpoint directories for configs that no longer exist.
+
+        Call this periodically or after bulk config deletion.
+        """
+        import os
+        import shutil
+        from app.models.supply_chain_config import SupplyChainConfig
+
+        checkpoint_base = os.environ.get("CHECKPOINT_DIR", "/app/checkpoints")
+        if not os.path.isdir(checkpoint_base):
+            return {"cleaned": 0, "message": "No checkpoint directory found"}
+
+        # Get all existing config IDs
+        result = await self.db.execute(select(SupplyChainConfig.id))
+        existing_ids = {r[0] for r in result.fetchall()}
+
+        cleaned = []
+        for entry in os.listdir(checkpoint_base):
+            if entry.startswith("config_"):
+                try:
+                    cfg_id = int(entry.split("_")[1])
+                    if cfg_id not in existing_ids:
+                        path = os.path.join(checkpoint_base, entry)
+                        shutil.rmtree(path)
+                        cleaned.append(cfg_id)
+                        logger.info("Cleaned orphaned checkpoint dir: %s", path)
+                except (ValueError, OSError) as e:
+                    logger.warning("Failed to clean %s: %s", entry, e)
+
+        return {"cleaned": len(cleaned), "config_ids": cleaned}
+
     async def run_all(self, config_id: int) -> dict:
         """Run all provisioning steps in dependency order.
 

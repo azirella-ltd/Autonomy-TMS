@@ -168,6 +168,39 @@ async def reprovision_config(
     }
 
 
+@router.delete("/config/{config_id}")
+async def delete_config(
+    config_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.require_tenant_admin),
+):
+    """Delete an archived/inactive config and all its dependent data + checkpoints.
+
+    Active configs cannot be deleted — archive or deactivate first.
+    Removes: all DB records (sites, products, BOMs, lanes, decisions, etc.)
+    and checkpoint files on disk (TRM weights, GNN models).
+    """
+    service = ProvisioningService(db)
+    result = await service.delete_config(config_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/cleanup-checkpoints")
+async def cleanup_orphaned_checkpoints(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.require_tenant_admin),
+):
+    """Find and remove checkpoint directories for configs that no longer exist.
+
+    Safe to run anytime — only removes directories whose config_id
+    has no matching row in supply_chain_configs.
+    """
+    service = ProvisioningService(db)
+    return await service.cleanup_orphaned_checkpoints()
+
+
 @router.post("/reset/{config_id}/{step_key}")
 async def reset_provisioning_step(
     config_id: int,
