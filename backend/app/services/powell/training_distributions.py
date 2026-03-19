@@ -894,3 +894,298 @@ class HistoricalTriangularLeadTime:
         _logger.info("Lead time for config %d: fallback triangular(%.1f, %.1f, %.1f)",
                      config_id, low, mode, high)
         return cls(low=low, mode=mode, high=high, seed=seed)
+
+
+class HistoricalTriangularDeliveryLeadTime:
+    """Triangular delivery lead time sampler (plant/DC → customer).
+
+    Distinct from supplier inbound lead time — this measures the time
+    from shipment at the fulfillment site to delivery at the customer.
+
+    History source: outbound_order.order_date → LIKP.WADAT_IST (actual goods issue)
+    or outbound_order ship_date → delivery confirmation.
+
+    If no customer confirmation exists: assumed delivery = ship_date + lane_lead_time_mode.
+    """
+
+    def __init__(self, low: float, mode: float, high: float, seed: int = 0):
+        self.low = max(0.5, low)
+        self.mode = max(self.low, mode)
+        self.high = max(self.mode + 0.5, high)
+        self._rng = random.Random(seed)
+        self.mean = (self.low + self.mode + self.high) / 3
+
+    def sample(self) -> int:
+        return max(1, round(self._rng.triangular(self.low, self.high, self.mode)))
+
+    @classmethod
+    def from_db(cls, db, config_id: int, lane_mode_days: float = 3.0, seed: int = 0):
+        """Load delivery history from outbound_order → delivery dates.
+
+        Tries three sources in priority order:
+        1. Actual delivery date (outbound_order.actual_delivery_date)
+        2. Goods issue date from deliveries (LIKP.WADAT_IST via outbound_shipment)
+        3. Promised delivery - order date (as proxy)
+
+        If no history: fallback uses lane_mode_days with moderate right skew.
+        """
+        delivery_times = []
+
+        try:
+            # Source 1: actual_delivery_date vs order_date
+            rows = db.execute(_sql_text("""
+                SELECT o.order_date, o.actual_delivery_date
+                FROM outbound_order o
+                WHERE o.config_id = :cid
+                  AND o.order_date IS NOT NULL
+                  AND o.actual_delivery_date IS NOT NULL
+            """), {"cid": config_id}).fetchall()
+
+            for r in rows:
+                if r[0] and r[1]:
+                    delta = (r[1] - r[0]).days
+                    if 0 < delta < 180:
+                        delivery_times.append(float(delta))
+
+            # Source 2: promised_delivery_date vs order_date (if few actual dates)
+            if len(delivery_times) < 10:
+                rows2 = db.execute(_sql_text("""
+                    SELECT o.order_date, o.promised_delivery_date
+                    FROM outbound_order o
+                    WHERE o.config_id = :cid
+                      AND o.order_date IS NOT NULL
+                      AND o.promised_delivery_date IS NOT NULL
+                      AND o.actual_delivery_date IS NULL
+                """), {"cid": config_id}).fetchall()
+
+                for r in rows2:
+                    if r[0] and r[1]:
+                        delta = (r[1] - r[0]).days
+                        if 0 < delta < 180:
+                            delivery_times.append(float(delta))
+
+            # Source 3: requested_delivery_date vs order_date (last resort)
+            if len(delivery_times) < 10:
+                rows3 = db.execute(_sql_text("""
+                    SELECT o.order_date, o.requested_delivery_date
+                    FROM outbound_order o
+                    WHERE o.config_id = :cid
+                      AND o.order_date IS NOT NULL
+                      AND o.requested_delivery_date IS NOT NULL
+                      AND o.actual_delivery_date IS NULL
+                      AND o.promised_delivery_date IS NULL
+                """), {"cid": config_id}).fetchall()
+
+                for r in rows3:
+                    if r[0] and r[1]:
+                        delta = (r[1] - r[0]).days
+                        if 0 < delta < 180:
+                            delivery_times.append(float(delta))
+
+        except Exception as e:
+            _logger.debug("Delivery lead time history load failed: %s", e)
+
+        if len(delivery_times) >= 5:
+            low, mode, high = fit_triangular(delivery_times)
+            _logger.info(
+                "Delivery LT for config %d: triangular(%.1f, %.1f, %.1f) from %d observations",
+                config_id, low, mode, high, len(delivery_times),
+            )
+            return cls(low=max(0.5, low), mode=max(1, mode), high=max(mode + 1, high), seed=seed)
+
+        # Fallback: use lane lead time mode with moderate right skew
+        # Delivery is typically shorter than supplier inbound but has its own variability
+        mode = max(1.0, lane_mode_days)
+        low = max(0.5, mode * 0.7)     # Can sometimes deliver faster than expected
+        high = mode * 2.0               # Moderate upper tail (last-mile delays)
+        _logger.info(
+            "Delivery LT for config %d: fallback triangular(%.1f, %.1f, %.1f)",
+            config_id, low, mode, high,
+        )
+        return cls(low=low, mode=mode, high=high, seed=seed)
+
+
+# ---------------------------------------------------------------------------
+# OTIF (On Time In Full) computation
+# ---------------------------------------------------------------------------
+
+def compute_otif(db, config_id: int) -> _Dict:
+    """Compute OTIF and customer service metrics from outbound order history.
+
+    OTIF = orders delivered (on time AND in full) / total orders.
+
+    On Time: actual_delivery_date <= requested_delivery_date
+      - If no actual_delivery_date: assume delivered = order_date + lane_lead_time_mode
+    In Full: total_fulfilled_qty >= total_ordered_qty
+
+    Returns: {otif_pct, on_time_pct, in_full_pct, total_orders, late_orders,
+              short_orders, avg_days_late, fill_rate_pct}
+    """
+    try:
+        rows = db.execute(_sql_text("""
+            SELECT o.id, o.order_date, o.requested_delivery_date,
+                   o.actual_delivery_date, o.promised_delivery_date,
+                   o.total_ordered_qty, o.total_fulfilled_qty
+            FROM outbound_order o
+            WHERE o.config_id = :cid
+              AND o.order_date IS NOT NULL
+              AND o.total_ordered_qty > 0
+        """), {"cid": config_id}).fetchall()
+
+        if not rows:
+            return {"otif_pct": None, "total_orders": 0}
+
+        # Get average lane lead time for assumed delivery fallback
+        lt_row = db.execute(_sql_text("""
+            SELECT AVG(
+                CASE WHEN supply_lead_time IS NOT NULL
+                     THEN CAST(supply_lead_time->>'value' AS FLOAT)
+                     ELSE 7 END
+            ) FROM transportation_lane WHERE config_id = :cid
+        """), {"cid": config_id}).fetchone()
+        avg_lane_lt = float(lt_row[0]) if lt_row and lt_row[0] else 7.0
+
+        total = 0
+        on_time = 0
+        in_full = 0
+        on_time_and_full = 0
+        total_ordered = 0.0
+        total_fulfilled = 0.0
+        days_late_sum = 0.0
+        late_count = 0
+
+        for r in rows:
+            order_date = r[1]
+            requested = r[2]
+            actual = r[3]
+            promised = r[4]
+            ordered_qty = float(r[5] or 0)
+            fulfilled_qty = float(r[6] or 0)
+
+            if not requested:
+                continue
+
+            total += 1
+            total_ordered += ordered_qty
+            total_fulfilled += fulfilled_qty
+
+            # Determine delivery date: actual > promised > assumed
+            delivery_date = actual or promised
+            if not delivery_date and order_date:
+                from datetime import timedelta
+                delivery_date = order_date + timedelta(days=int(avg_lane_lt))
+
+            # On Time check
+            is_on_time = delivery_date <= requested if delivery_date and requested else False
+            if is_on_time:
+                on_time += 1
+            elif delivery_date and requested:
+                days_late = (delivery_date - requested).days
+                if days_late > 0:
+                    days_late_sum += days_late
+                    late_count += 1
+
+            # In Full check
+            is_in_full = fulfilled_qty >= ordered_qty if ordered_qty > 0 else True
+            if is_in_full:
+                in_full += 1
+
+            if is_on_time and is_in_full:
+                on_time_and_full += 1
+
+        otif_pct = round((on_time_and_full / total) * 100, 1) if total > 0 else None
+        on_time_pct = round((on_time / total) * 100, 1) if total > 0 else None
+        in_full_pct = round((in_full / total) * 100, 1) if total > 0 else None
+        fill_rate = round((total_fulfilled / total_ordered) * 100, 1) if total_ordered > 0 else None
+        avg_late = round(days_late_sum / late_count, 1) if late_count > 0 else 0
+
+        return {
+            "otif_pct": otif_pct,
+            "on_time_pct": on_time_pct,
+            "in_full_pct": in_full_pct,
+            "fill_rate_pct": fill_rate,
+            "total_orders": total,
+            "late_orders": late_count,
+            "short_orders": total - in_full,
+            "avg_days_late": avg_late,
+        }
+
+    except Exception as e:
+        _logger.warning("OTIF computation failed: %s", e)
+        return {"otif_pct": None, "total_orders": 0, "error": str(e)}
+
+
+class HistoricalTriangularTransferLeadTime:
+    """Triangular inter-plant/inter-DC transfer lead time sampler.
+
+    Distinct from supplier inbound and customer delivery — measures
+    internal transfer time between company-owned sites (Plant→DC, DC→DC, Plant→Plant).
+
+    Typically shorter and tighter than supplier LT, but variable due to
+    internal logistics, consolidation, and cross-docking delays.
+
+    History source: transfer_order completion dates, or inbound_order
+    where both from_site_id and to_site_id are internal.
+    """
+
+    def __init__(self, low: float, mode: float, high: float, seed: int = 0):
+        self.low = max(0.5, low)
+        self.mode = max(self.low, mode)
+        self.high = max(self.mode + 0.5, high)
+        self._rng = random.Random(seed)
+        self.mean = (self.low + self.mode + self.high) / 3
+
+    def sample(self) -> int:
+        return max(1, round(self._rng.triangular(self.low, self.high, self.mode)))
+
+    @classmethod
+    def from_db(cls, db, config_id: int, lane_mode_days: float = 3.0,
+                from_site_id: int = None, to_site_id: int = None, seed: int = 0):
+        """Load inter-plant transfer history from site-to-site lanes.
+
+        Uses transportation_lane where both from_site_id and to_site_id are set
+        (internal transfer, not partner-endpoint). Falls back to lane config.
+        """
+        transfer_times = []
+
+        try:
+            # Try transfer orders first (LTAK/LTAP)
+            rows = db.execute(_sql_text("""
+                SELECT tl.supply_lead_time
+                FROM transportation_lane tl
+                WHERE tl.config_id = :cid
+                  AND tl.from_site_id IS NOT NULL
+                  AND tl.to_site_id IS NOT NULL
+                  AND tl.from_partner_id IS NULL
+                  AND tl.to_partner_id IS NULL
+            """), {"cid": config_id}).fetchall()
+
+            for r in rows:
+                lt = r[0]
+                if isinstance(lt, dict):
+                    val = lt.get("value", lt.get("mean", lt.get("avg")))
+                    if val and 0 < float(val) < 180:
+                        transfer_times.append(float(val))
+                elif lt and 0 < float(lt) < 180:
+                    transfer_times.append(float(lt))
+
+        except Exception as e:
+            _logger.debug("Transfer LT history load failed: %s", e)
+
+        if len(transfer_times) >= 3:
+            low, mode, high = fit_triangular(transfer_times)
+            _logger.info(
+                "Transfer LT for config %d: triangular(%.1f, %.1f, %.1f) from %d lanes",
+                config_id, low, mode, high, len(transfer_times),
+            )
+            return cls(low=max(0.5, low), mode=max(1, mode), high=max(mode + 0.5, high), seed=seed)
+
+        # Fallback: internal transfers are typically faster and tighter
+        mode = max(1.0, lane_mode_days)
+        low = max(0.5, mode * 0.6)      # Often faster than expected
+        high = mode * 1.8                # Smaller upper tail than supplier
+        _logger.info(
+            "Transfer LT for config %d: fallback triangular(%.1f, %.1f, %.1f)",
+            config_id, low, mode, high,
+        )
+        return cls(low=low, mode=mode, high=high, seed=seed)
