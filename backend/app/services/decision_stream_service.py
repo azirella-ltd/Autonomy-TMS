@@ -39,6 +39,7 @@ from app.models.powell_decisions import (
     PowellForecastAdjustmentDecision,
     PowellBufferDecision,
 )
+from app.models.gnn_directive_review import GNNDirectiveReview
 from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.sc_entities import Product, Forecast, InvLevel, InvPolicy
 from app.models.planning_hierarchy import (
@@ -169,17 +170,61 @@ DECISION_TYPE_TABLE_MAP = {
     "inventory_adjustment": "powell_inventory_adjustment_decisions",
     "supply_adjustment":    "powell_supply_adjustment_decisions",
     "rccp_adjustment":      "powell_rccp_adjustment_decisions",
+    # GNN decision types (from gnn_directive_reviews table)
+    "sop_policy":           "gnn_directive_reviews",
+    "execution_directive":  "gnn_directive_reviews",
+    "allocation_refresh":   "gnn_directive_reviews",
+}
+
+# ── Decision Level: Powell layer for each decision type ──────────────────
+DECISION_LEVEL = {
+    # Strategic — S&OP GraphSAGE (weekly, network-wide policy parameters)
+    "sop_policy": "strategic",
+    # Tactical — Execution tGNN (daily, multi-site allocation directives)
+    "execution_directive": "tactical",
+    "allocation_refresh": "tactical",
+    # Operational — Site tGNN (hourly, single-site cross-TRM coordination)
+    # (Site tGNN outputs enrich TRM decisions via urgency_at_time, not standalone)
+    # Execution — TRM agents (per-decision, per-role at site)
+    "atp": "execution",
+    "rebalancing": "execution",
+    "po_creation": "execution",
+    "order_tracking": "execution",
+    "mo_execution": "execution",
+    "to_execution": "execution",
+    "quality": "execution",
+    "maintenance": "execution",
+    "subcontracting": "execution",
+    "forecast_adjustment": "execution",
+    "inventory_buffer": "execution",
+    "demand_adjustment": "execution",
+    "inventory_adjustment": "execution",
+    "supply_adjustment": "execution",
+    "rccp_adjustment": "execution",
 }
 
 # Role relevance filter: which decision types each powell_role cares about
 ROLE_RELEVANCE = {
-    "SC_VP": {"atp", "rebalancing", "po_creation", "order_tracking", "forecast_adjustment", "inventory_buffer", "email_signal"},
-    "EXECUTIVE": {"atp", "rebalancing", "po_creation", "order_tracking", "forecast_adjustment", "inventory_buffer", "email_signal"},
-    "SOP_DIRECTOR": {"po_creation", "rebalancing", "forecast_adjustment", "inventory_buffer", "mo_execution", "to_execution", "email_signal"},
-    "MPS_MANAGER": {"atp", "po_creation", "rebalancing", "order_tracking", "mo_execution", "to_execution", "quality", "maintenance", "subcontracting", "email_signal"},
-    "ALLOCATION_MANAGER": {"atp", "rebalancing", "order_tracking"},
+    # Strategic/executive roles see GNN + all TRM decisions
+    "SC_VP": {"sop_policy", "execution_directive", "allocation_refresh",
+              "atp", "rebalancing", "po_creation", "order_tracking",
+              "forecast_adjustment", "inventory_buffer", "email_signal"},
+    "EXECUTIVE": {"sop_policy", "execution_directive", "allocation_refresh",
+                  "atp", "rebalancing", "po_creation", "order_tracking",
+                  "forecast_adjustment", "inventory_buffer", "email_signal"},
+    # S&OP Director sees strategic + tactical GNN decisions
+    "SOP_DIRECTOR": {"sop_policy", "execution_directive", "allocation_refresh",
+                     "po_creation", "rebalancing", "forecast_adjustment",
+                     "inventory_buffer", "mo_execution", "to_execution", "email_signal"},
+    # MPS Manager sees tactical GNN + operational TRM decisions
+    "MPS_MANAGER": {"execution_directive", "allocation_refresh",
+                    "atp", "po_creation", "rebalancing", "order_tracking",
+                    "mo_execution", "to_execution", "quality", "maintenance",
+                    "subcontracting", "email_signal"},
+    "ALLOCATION_MANAGER": {"execution_directive", "allocation_refresh",
+                           "atp", "rebalancing", "order_tracking"},
     "ORDER_PROMISE_MANAGER": {"atp", "order_tracking"},
-    # TRM specialist roles — narrow scope
+    # TRM specialist roles — narrow scope (no GNN visibility)
     "ATP_ANALYST": {"atp"},
     "REBALANCING_ANALYST": {"rebalancing"},
     "PO_ANALYST": {"po_creation"},
@@ -1130,16 +1175,18 @@ class DecisionStreamService:
             pass
         try:
             result = await self.db.execute(
-                select(Site.id, Site.name).where(
+                select(Site.id, Site.name, Site.type).where(
                     Site.config_id.in_(config_filter)
                 )
             )
-            for sid, sname in result.fetchall():
+            for sid, sname, stype in result.fetchall():
+                # Prefer descriptive type ("Plant 1 US") over short code ("1710")
+                display_name = stype if stype else sname
                 if sname:
-                    site_names[str(sname)] = sname
-                    # Also map numeric ID → name for decisions that stored IDs
+                    site_names[str(sname)] = display_name or sname
+                    # Also map numeric ID → display name for decisions that stored IDs
                     if sid is not None:
-                        site_names[str(sid)] = sname
+                        site_names[str(sid)] = display_name or sname
         except Exception as e:
             logger.warning(f"Failed to load site names: {e}")
 
@@ -1205,6 +1252,7 @@ class DecisionStreamService:
                     all_decisions.append({
                         "id": row.id,
                         "decision_type": type_key,
+                        "decision_level": DECISION_LEVEL.get(type_key, "execution"),
                         "summary": _humanize_ids(_build_decision_summary(row, type_key), product_names),
                         "product_id": pid,
                         "product_name": product_names.get(str(pid)) if pid else None,
@@ -1234,6 +1282,110 @@ class DecisionStreamService:
             except Exception as e:
                 import traceback
                 logger.warning(f"Failed to query {type_key} decisions: {e}\n{traceback.format_exc()}")
+                try:
+                    await self.db.rollback()
+                except Exception:
+                    pass
+
+        # ── Query GNN Directive Reviews (strategic + tactical decisions) ────
+        gnn_types = {"sop_policy", "execution_directive", "allocation_refresh"}
+        if relevant_types is None or gnn_types & relevant_types:
+            try:
+                gnn_query = select(GNNDirectiveReview).where(
+                    and_(
+                        GNNDirectiveReview.config_id.in_(config_filter),
+                        GNNDirectiveReview.created_at >= cutoff,
+                    )
+                )
+                # Filter by scope if role-restricted
+                if relevant_types is not None:
+                    active_gnn = gnn_types & relevant_types
+                    if active_gnn:
+                        scope_map = {
+                            "sop_policy": "sop_policy",
+                            "execution_directive": "execution_directive",
+                            "allocation_refresh": "allocation_refresh",
+                        }
+                        scopes = [scope_map[t] for t in active_gnn if t in scope_map]
+                        gnn_query = gnn_query.where(
+                            GNNDirectiveReview.directive_scope.in_(scopes)
+                        )
+
+                gnn_query = gnn_query.order_by(desc(GNNDirectiveReview.created_at)).limit(20)
+                gnn_result = await self.db.execute(gnn_query)
+                gnn_rows = gnn_result.scalars().all()
+
+                for row in gnn_rows:
+                    scope = row.directive_scope
+                    type_key = scope  # "sop_policy", "execution_directive", "allocation_refresh"
+                    level = DECISION_LEVEL.get(type_key, "tactical")
+
+                    # Map GNN confidence to urgency/likelihood
+                    confidence = row.model_confidence or 0.5
+
+                    # GNN urgency: derived from proposed_values content
+                    proposed = row.proposed_values or {}
+                    if scope == "sop_policy":
+                        # Strategic: urgency = how much policy parameters drifted
+                        bottleneck = proposed.get("bottleneck_risk", 0)
+                        concentration = proposed.get("concentration_risk", 0)
+                        gnn_urgency = max(bottleneck, concentration, 0.3)
+                    elif scope == "execution_directive":
+                        # Tactical: urgency = exception probability
+                        exc_prob = proposed.get("exception_probability", [0, 0, 1])
+                        stockout_prob = exc_prob[0] if isinstance(exc_prob, list) and len(exc_prob) > 0 else 0
+                        gnn_urgency = max(stockout_prob, 0.3)
+                    else:
+                        # Allocation refresh: moderate urgency
+                        gnn_urgency = 0.5
+
+                    # Build human-readable summary
+                    if scope == "sop_policy":
+                        ss_mult = proposed.get("safety_stock_multiplier", 1.0)
+                        summary = f"S&OP Policy Update: SS multiplier {ss_mult:.2f}x at {row.site_key}"
+                        action = f"Update safety stock multiplier to {ss_mult:.2f}x"
+                    elif scope == "execution_directive":
+                        order_rec = proposed.get("order_recommendation", 0)
+                        summary = f"tGNN Directive: recommend {order_rec:.0f} units at {row.site_key}"
+                        action = f"Order {order_rec:.0f} units"
+                    else:
+                        summary = f"Allocation Refresh at {row.site_key}"
+                        action = "Review and approve allocation changes"
+
+                    site_display = site_names.get(str(row.site_key), row.site_key)
+
+                    all_decisions.append({
+                        "id": row.id,
+                        "decision_type": type_key,
+                        "decision_level": level,
+                        "summary": summary,
+                        "product_id": None,
+                        "product_name": None,
+                        "site_id": row.site_key,
+                        "site_name": site_display,
+                        "urgency": _urgency_label(gnn_urgency),
+                        "urgency_score": gnn_urgency,
+                        "likelihood": _likelihood_label(confidence),
+                        "likelihood_score": confidence,
+                        "cost_of_inaction": None,
+                        "time_pressure": None,
+                        "expected_benefit": None,
+                        "economic_impact": None,
+                        "reason": row.proposed_reasoning,
+                        "decision_reasoning": row.proposed_reasoning,
+                        "suggested_action": action,
+                        "deep_link": "/admin/powell" if scope == "sop_policy" else "/insights/actions",
+                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                        "editable_values": row.proposed_values,
+                        "context": {
+                            "config_id": row.config_id,
+                            "model_type": row.model_type,
+                            "directive_scope": scope,
+                            "gnn_status": row.status,
+                        },
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to query GNN directives: {e}")
                 try:
                     await self.db.rollback()
                 except Exception:
