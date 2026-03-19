@@ -342,71 +342,79 @@ def main():
                 {"cid": config_id, "name": site_id_str[:50]},
             ).scalar()
 
-        # Vendor sites (top 50)
-        for v_id, count in Counter({v.get("VendorAccountNumber", ""): vendor_po_counts.get(v.get("VendorAccountNumber", ""), 0) for v in vendors}).most_common(50):
+        print(f"    Created {len(site_ids)} internal sites (no vendor/customer proxy sites)")
+
+        # ── Create Trading Partners (vendors + customers) ────────────────
+        # AWS SC Compliance: Vendors and customers are TradingPartner records,
+        # NOT proxy Site records. They connect to the DAG via TransportationLane
+        # from_partner_id / to_partner_id fields.
+        print("\n  Creating trading partners...")
+        partner_ids: Dict[str, int] = {}  # "V_vendorId" or "C_custId" → _id (serial PK)
+
+        for v in vendors:
+            v_id = v.get("VendorAccountNumber", "")
             if not v_id:
                 continue
-            v_info = next((v for v in vendors if v.get("VendorAccountNumber") == v_id), {})
-            v_name = v_info.get("VendorName", v_id)
-            site_key = f"VEND-{v_id}"
+            v_name = v.get("VendorName", v_id)
+            tp_id = f"D365V_{v_id}"
 
             session.execute(
                 text("""
-                    INSERT INTO site (config_id, name, type, dag_type, master_type, priority,
-                                     order_aging, is_external, tpartner_type, attributes)
-                    VALUES (:cid, :name, :type, 'SUPPLIER', 'VENDOR', 10, 0, true, 'vendor', :attrs)
+                    INSERT INTO trading_partners (id, tpartner_type, description,
+                        city, country, company_id, source)
+                    VALUES (:tid, 'vendor', :desc, :city, :country, :company, 'D365_CONTOSO')
+                    ON CONFLICT (id) DO UPDATE SET description = :desc
                 """),
                 {
-                    "cid": config_id,
-                    "name": site_key[:50],
-                    "type": f"Supplier - {v_name}"[:100],
-                    "attrs": json.dumps({
-                        "d365_vendor": v_id,
-                        "country": v_info.get("AddressCountryRegionId", ""),
-                        "city": v_info.get("AddressCity", ""),
-                        "po_lines": count,
-                    }),
+                    "tid": tp_id,
+                    "desc": v_name[:200],
+                    "city": v.get("AddressCity", "")[:100],
+                    "country": v.get("AddressCountryRegionId", "")[:10],
+                    "company": f"D365_{data_area.upper()}",
                 },
             )
             session.flush()
-            site_ids[site_key] = session.execute(
-                text("SELECT id FROM site WHERE config_id = :cid AND name = :name"),
-                {"cid": config_id, "name": site_key[:50]},
-            ).scalar()
+            # Get the serial _id
+            row = session.execute(
+                text("SELECT _id FROM trading_partners WHERE id = :tid"),
+                {"tid": tp_id},
+            ).first()
+            if row:
+                partner_ids[f"V_{v_id}"] = row[0]
 
-        # Customer sites (top 50)
-        for c_id, count in Counter({c.get("CustomerAccount", ""): customer_so_counts.get(c.get("CustomerAccount", ""), 0) for c in customers}).most_common(50):
+        for c in customers:
+            c_id = c.get("CustomerAccount", "")
             if not c_id:
                 continue
-            c_info = next((c for c in customers if c.get("CustomerAccount") == c_id), {})
-            c_name = c_info.get("CustomerName", c_id)
-            site_key = f"CUST-{c_id}"
+            c_name = c.get("CustomerName", c_id)
+            tp_id = f"D365C_{c_id}"
 
             session.execute(
                 text("""
-                    INSERT INTO site (config_id, name, type, dag_type, master_type, priority,
-                                     order_aging, is_external, tpartner_type, attributes)
-                    VALUES (:cid, :name, :type, 'CUSTOMER', 'CUSTOMER', 10, 0, true, 'customer', :attrs)
+                    INSERT INTO trading_partners (id, tpartner_type, description,
+                        city, country, company_id, source)
+                    VALUES (:tid, 'customer', :desc, :city, :country, :company, 'D365_CONTOSO')
+                    ON CONFLICT (id) DO UPDATE SET description = :desc
                 """),
                 {
-                    "cid": config_id,
-                    "name": site_key[:50],
-                    "type": f"Customer - {c_name}"[:100],
-                    "attrs": json.dumps({
-                        "d365_customer": c_id,
-                        "country": c_info.get("AddressCountryRegionId", ""),
-                        "city": c_info.get("AddressCity", ""),
-                        "so_lines": count,
-                    }),
+                    "tid": tp_id,
+                    "desc": c_name[:200],
+                    "city": c.get("AddressCity", "")[:100],
+                    "country": c.get("AddressCountryRegionId", "")[:10],
+                    "company": f"D365_{data_area.upper()}",
                 },
             )
             session.flush()
-            site_ids[site_key] = session.execute(
-                text("SELECT id FROM site WHERE config_id = :cid AND name = :name"),
-                {"cid": config_id, "name": site_key[:50]},
-            ).scalar()
+            row = session.execute(
+                text("SELECT _id FROM trading_partners WHERE id = :tid"),
+                {"tid": tp_id},
+            ).first()
+            if row:
+                partner_ids[f"C_{c_id}"] = row[0]
 
-        print(f"    Created {len(site_ids)} sites")
+        vendor_count = sum(1 for k in partner_ids if k.startswith("V_"))
+        customer_count = sum(1 for k in partner_ids if k.startswith("C_"))
+        print(f"    Created {vendor_count} vendors + {customer_count} customers as trading partners")
 
         # ── Create Products ──────────────────────────────────────────────
         print("\n  Creating products...")
@@ -446,20 +454,24 @@ def main():
         print(f"    Created {len(prod_ids)} products")
 
         # ── Create Transportation Lanes ──────────────────────────────────
+        # AWS SC Compliance: Vendors/customers connect via from_partner_id/to_partner_id
+        # on lanes, NOT as source_id/destination_id (those are for internal sites).
         print("\n  Creating transportation lanes...")
         lane_count = 0
 
         # Pick the first operational site as primary hub
-        primary_site = next(iter(site_ids.keys() - {k for k in site_ids if k.startswith(("VEND-", "CUST-"))}), None)
+        op_site_keys = list(site_ids.keys())
+        primary_site = op_site_keys[0] if op_site_keys else None
 
-        # Vendor → primary site
-        for v in vendors[:50]:
+        # Vendor partner → internal site (from_partner_id → to_site_id)
+        for v in vendors:
             v_id = v.get("VendorAccountNumber", "")
-            site_key = f"VEND-{v_id}"
-            from_id = site_ids.get(site_key)
-            to_id = site_ids.get(primary_site) if primary_site else None
-            if from_id and to_id:
-                # Use vendor-specific lead time if available
+            partner_pk = partner_ids.get(f"V_{v_id}")
+            if not partner_pk:
+                continue
+
+            # Create lane to each internal site
+            for site_key, site_db_id in site_ids.items():
                 lt_days = 7
                 for item in vendor_materials.get(v_id, set()):
                     lt = vlt_map.get(f"{v_id}|{item}")
@@ -469,53 +481,57 @@ def main():
 
                 session.execute(
                     text("""
-                        INSERT INTO transportation_lane (config_id, source_id, destination_id,
+                        INSERT INTO transportation_lane (config_id, from_partner_id, to_site_id,
                                                         supply_lead_time, capacity)
-                        VALUES (:cid, :from_id, :to_id,
+                        VALUES (:cid, :partner_id, :site_id,
                                 :lt::jsonb, 10000)
                     """),
                     {
                         "cid": config_id,
-                        "from_id": from_id,
-                        "to_id": to_id,
-                        "lt": json.dumps({"mean": lt_days, "std": max(1, lt_days // 3), "distribution": "lognormal"}),
+                        "partner_id": partner_pk,
+                        "site_id": site_db_id,
+                        "lt": json.dumps({"type": "deterministic", "value": lt_days}),
                     },
                 )
                 lane_count += 1
 
-        # Inter-site lanes (between operational sites)
-        op_sites = [k for k in site_ids if not k.startswith(("VEND-", "CUST-"))]
-        for i, src in enumerate(op_sites):
-            for dst in op_sites[i+1:]:
-                from_id = site_ids.get(src)
-                to_id = site_ids.get(dst)
-                if from_id and to_id:
-                    session.execute(
-                        text("""
-                            INSERT INTO transportation_lane (config_id, source_id, destination_id,
-                                                            supply_lead_time, capacity)
-                            VALUES (:cid, :from_id, :to_id,
-                                    '{"mean": 2, "std": 0.5, "distribution": "normal"}'::jsonb, 10000)
-                        """),
-                        {"cid": config_id, "from_id": from_id, "to_id": to_id},
-                    )
-                    lane_count += 1
-
-        # Primary site → customer
-        for c in customers[:50]:
-            c_id = c.get("CustomerAccount", "")
-            site_key = f"CUST-{c_id}"
-            from_id = site_ids.get(primary_site) if primary_site else None
-            to_id = site_ids.get(site_key)
-            if from_id and to_id:
+        # Inter-site lanes (between internal operational sites)
+        for i, src in enumerate(op_site_keys):
+            for dst in op_site_keys[i+1:]:
+                from_id = site_ids[src]
+                to_id = site_ids[dst]
                 session.execute(
                     text("""
-                        INSERT INTO transportation_lane (config_id, source_id, destination_id,
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_site_id,
                                                         supply_lead_time, capacity)
                         VALUES (:cid, :from_id, :to_id,
-                                '{"mean": 3, "std": 1, "distribution": "lognormal"}'::jsonb, 10000)
+                                '{"type": "deterministic", "value": 2}'::jsonb, 10000)
                     """),
                     {"cid": config_id, "from_id": from_id, "to_id": to_id},
+                )
+                lane_count += 1
+
+        # Internal site → customer partner (from_site_id → to_partner_id)
+        for c in customers:
+            c_id = c.get("CustomerAccount", "")
+            partner_pk = partner_ids.get(f"C_{c_id}")
+            if not partner_pk:
+                continue
+
+            # Create lane from primary site to customer
+            if primary_site and site_ids.get(primary_site):
+                session.execute(
+                    text("""
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_partner_id,
+                                                        supply_lead_time, capacity)
+                        VALUES (:cid, :site_id, :partner_id,
+                                '{"type": "deterministic", "value": 3}'::jsonb, 10000)
+                    """),
+                    {
+                        "cid": config_id,
+                        "site_id": site_ids[primary_site],
+                        "partner_id": partner_pk,
+                    },
                 )
                 lane_count += 1
 
@@ -529,7 +545,7 @@ def main():
                 lt = safe_int(r.get("TransitTimeDays", "3"), 3)
                 session.execute(
                     text("""
-                        INSERT INTO transportation_lane (config_id, source_id, destination_id,
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_site_id,
                                                         supply_lead_time, capacity)
                         VALUES (:cid, :from_id, :to_id, :lt::jsonb, 10000)
                     """),
@@ -537,7 +553,7 @@ def main():
                         "cid": config_id,
                         "from_id": from_id,
                         "to_id": to_id,
-                        "lt": json.dumps({"mean": lt, "std": max(1, lt // 3), "distribution": "lognormal"}),
+                        "lt": json.dumps({"type": "deterministic", "value": lt}),
                     },
                 )
                 lane_count += 1
@@ -665,12 +681,13 @@ def main():
         session.commit()
         print(f"\n{'='*70}")
         print(f"  SUCCESS — Config {config_id} rebuilt from D365 Contoso ({data_area.upper()})")
-        print(f"    Sites:     {len(site_ids)}")
-        print(f"    Products:  {len(prod_ids)}")
-        print(f"    Lanes:     {lane_count}")
-        print(f"    BOMs:      {bom_count}")
-        print(f"    Inv Lvls:  {inv_count}")
-        print(f"    Policies:  {pol_count}")
+        print(f"    Internal Sites:     {len(site_ids)}")
+        print(f"    Trading Partners:   {len(partner_ids)} ({vendor_count} vendors, {customer_count} customers)")
+        print(f"    Products:           {len(prod_ids)}")
+        print(f"    Lanes:              {lane_count}")
+        print(f"    BOMs:               {bom_count}")
+        print(f"    Inv Levels:         {inv_count}")
+        print(f"    Inv Policies:       {pol_count}")
         print(f"{'='*70}")
 
     except Exception as e:
