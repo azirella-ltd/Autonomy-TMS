@@ -35,6 +35,7 @@ import { Network } from 'lucide-react';
 import SankeyDiagram from '../charts/SankeyDiagram';
 import SankeyMetricLegend from '../charts/SankeyMetricLegend';
 import GeospatialSupplyChain from '../visualization/GeospatialSupplyChain';
+import SupplyChainVSM from '../visualization/SupplyChainVSM';
 import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../metrics/HierarchyAggregationBar';
 import {
   getSupplyChainConfigs,
@@ -528,6 +529,14 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
       );
     }
 
+    if (viewMode === 'vsm') {
+      return (
+        <div style={{ height }} className="w-full overflow-x-auto">
+          <SupplyChainVSM sites={rawSites} lanes={rawLanes} height={height} />
+        </div>
+      );
+    }
+
     if (viewMode === 'map') {
       return (
         <div style={{ height }} className="w-full">
@@ -576,6 +585,7 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
                 onValueChange={(val) => val && setViewMode(val)}
               >
                 <ToggleGroupItem value="sankey">Sankey</ToggleGroupItem>
+                <ToggleGroupItem value="vsm">VSM</ToggleGroupItem>
                 <ToggleGroupItem value="map">Map</ToggleGroupItem>
               </ToggleGroup>
             </div>
