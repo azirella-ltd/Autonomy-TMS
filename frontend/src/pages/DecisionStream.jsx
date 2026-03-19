@@ -57,6 +57,26 @@ const DecisionStream = () => {
   // Show All toggle: false = only decisions needing human attention (Critical/High urgency)
   const [showAll, setShowAll] = useState(false);
 
+  // Level filter: set of active level toggles (null = all levels shown)
+  const [activeLevels, setActiveLevels] = useState(null);
+
+  const toggleLevel = (level) => {
+    setActiveLevels(prev => {
+      if (!prev) {
+        // First click: show only this level
+        return new Set([level]);
+      }
+      const next = new Set(prev);
+      if (next.has(level)) {
+        next.delete(level);
+        // If all removed, reset to null (show all)
+        return next.size === 0 ? null : next;
+      }
+      next.add(level);
+      return next;
+    });
+  };
+
   const { loadLookupsForConfig } = useDisplayPreferences();
 
   const chatEndRef = useRef(null);
@@ -315,13 +335,16 @@ const DecisionStream = () => {
                 totalAgentDecisions={digest.total_pending || 0}
                 showAll={showAll}
                 onToggleShowAll={() => setShowAll(!showAll)}
+                activeLevels={activeLevels}
+                onToggleLevel={toggleLevel}
               />
 
               <DigestMessage
                 digestText={digest.digest_text}
-                decisions={showAll
+                decisions={(showAll
                   ? (digest.decisions || [])
                   : (digest.decisions || []).filter(d => d.needs_attention !== false)
+                ).filter(d => !activeLevels || activeLevels.has(d.decision_level || 'execution'))
                 }
                 onAccept={handleAccept}
                 onOverride={handleOverride}

@@ -39,6 +39,8 @@ const DecisionSummaryHeader = ({
   totalAgentDecisions = 0,
   showAll,
   onToggleShowAll,
+  activeLevels,
+  onToggleLevel,
   userScope,
 }) => {
   // Build urgency × likelihood combo list (only combos that exist)
@@ -231,14 +233,29 @@ const DecisionSummaryHeader = ({
               });
               return LEVEL_ORDER
                 .filter(lvl => levelCounts[lvl])
-                .map(lvl => (
-                  <div key={lvl} className="flex items-center justify-between text-xs">
-                    <span className={LEVEL_COLORS[lvl] || 'text-muted-foreground'}>
-                      {LEVEL_LABELS[lvl] || lvl}
-                    </span>
-                    <span className="tabular-nums font-semibold">{levelCounts[lvl]}</span>
-                  </div>
-                ));
+                .map(lvl => {
+                  const isActive = !activeLevels || activeLevels.has(lvl);
+                  const isFiltering = !!activeLevels;
+                  return (
+                    <button
+                      key={lvl}
+                      onClick={() => onToggleLevel && onToggleLevel(lvl)}
+                      className={cn(
+                        'flex items-center justify-between text-xs w-full px-1.5 py-0.5 rounded transition-colors',
+                        isFiltering && isActive
+                          ? 'bg-accent font-semibold'
+                          : isFiltering && !isActive
+                          ? 'opacity-40'
+                          : 'hover:bg-muted/50'
+                      )}
+                    >
+                      <span className={LEVEL_COLORS[lvl] || 'text-muted-foreground'}>
+                        {LEVEL_LABELS[lvl] || lvl}
+                      </span>
+                      <span className="tabular-nums font-semibold">{levelCounts[lvl]}</span>
+                    </button>
+                  );
+                });
             })()}
           </div>
           <div className="mt-2 pt-2 border-t text-xs space-y-0.5">

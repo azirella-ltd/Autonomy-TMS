@@ -300,13 +300,13 @@ const DecisionCard = ({
             <Badge variant="outline" className="text-xs flex-shrink-0">
               {typeLabel}
             </Badge>
-            {decision.decision_level && decision.decision_level !== 'execution' && (
-              <Badge variant="outline" className={cn('text-[10px] flex-shrink-0',
+            {decision.decision_level && (
+              <Badge variant="outline" className={cn('text-[10px] flex-shrink-0 uppercase',
                 decision.decision_level === 'strategic' ? 'border-purple-300 text-purple-600 bg-purple-50' :
                 decision.decision_level === 'tactical' ? 'border-blue-300 text-blue-600 bg-blue-50' :
                 decision.decision_level === 'operational' ? 'border-amber-300 text-amber-600 bg-amber-50' :
                 decision.decision_level === 'governance' ? 'border-red-300 text-red-600 bg-red-50' :
-                ''
+                'border-gray-200 text-gray-500 bg-gray-50'
               )}>
                 {decision.decision_level}
               </Badge>
