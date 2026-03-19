@@ -132,6 +132,30 @@ class Tenant(Base):
         comment="Number of extraction snapshots to retain per connection"
     )
 
+    # Digital Twin Simulation Parameters
+    # The simulation replicates the customer's APS heuristics against stochastic reality.
+    # Agents learn by watching the heuristic decisions and their outcomes.
+    sim_episodes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5,
+        comment="Number of Monte Carlo episodes for digital twin simulation"
+    )
+    sim_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=90,
+        comment="Days per episode — should match customer planning horizon"
+    )
+    sim_warmup_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10,
+        comment="Warmup period (days) — skip early transients before collecting data"
+    )
+    sim_time_bucket: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="daily",
+        comment="Time bucket: daily, weekly, monthly — match customer MPS review cycle"
+    )
+    sim_decisions_per_type: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=20,
+        comment="Max decisions to seed per TRM type from simulation"
+    )
+
     @property
     def is_learning(self) -> bool:
         """Check if tenant is in learning mode (user education)."""

@@ -52,12 +52,12 @@ from app.models.powell_decisions import (
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants
+# Defaults (overridden by tenant config when available)
 # ---------------------------------------------------------------------------
 
-_N_EPISODES = 5
-_N_DAYS = 90
-_WARMUP_DAYS = 10  # skip early transients
+_DEFAULT_EPISODES = 5
+_DEFAULT_DAYS = 90
+_DEFAULT_WARMUP_DAYS = 10
 
 # Asset IDs for maintenance decisions
 _ASSET_IDS = ["COOL-01", "CONV-02", "FORK-03", "RACK-04", "DOCK-05"]
@@ -1456,17 +1456,44 @@ def seed_decisions_from_simulation(
     db: Session,
     config_id: int,
     tenant_id: int,
-    max_per_type: int = 6,
+    max_per_type: int = 20,
+    n_episodes: Optional[int] = None,
+    n_days: Optional[int] = None,
+    warmup_days: Optional[int] = None,
 ) -> Dict[str, int]:
     """
-    Run digital twin simulation and seed powell_*_decisions tables with
-    diverse, realistic decision records.
+    Run digital twin simulation and seed powell_*_decisions tables.
+
+    The simulation replicates the customer's APS heuristics (deterministic
+    rules from MARC/inv_policy) against stochastic reality (demand, lead
+    times, yield, quality). Agents learn by watching these decisions.
+
+    Parameters are read from tenant config if not explicitly passed.
 
     Returns {trm_type: count_seeded}.
     """
+    # Load simulation params from tenant config if not passed
+    if any(p is None for p in [n_episodes, n_days, warmup_days]):
+        try:
+            tenant_row = db.execute(
+                text("SELECT sim_episodes, sim_days, sim_warmup_days, sim_decisions_per_type FROM tenants WHERE id = :tid"),
+                {"tid": tenant_id},
+            ).fetchone()
+            if tenant_row:
+                n_episodes = n_episodes or tenant_row[0] or _DEFAULT_EPISODES
+                n_days = n_days or tenant_row[1] or _DEFAULT_DAYS
+                warmup_days = warmup_days or tenant_row[2] or _DEFAULT_WARMUP_DAYS
+                max_per_type = max_per_type or tenant_row[3] or 20
+        except Exception:
+            pass
+
+    n_episodes = n_episodes or _DEFAULT_EPISODES
+    n_days = n_days or _DEFAULT_DAYS
+    warmup_days = warmup_days or _DEFAULT_WARMUP_DAYS
+
     logger.info(
-        "Decision seeder: starting %d episodes x %d days for config %d",
-        _N_EPISODES, _N_DAYS, config_id,
+        "Decision seeder: starting %d episodes x %d days (warmup=%d) for config %d (tenant %d)",
+        n_episodes, n_days, warmup_days, config_id, tenant_id,
     )
 
     # Clean up any existing seeded decisions for this config to avoid
@@ -1528,7 +1555,7 @@ def seed_decisions_from_simulation(
 
     order_seq = 0
 
-    for episode in range(_N_EPISODES):
+    for episode in range(n_episodes):
         chain = _DagChain(site_configs, topo_order, seed=episode * 1000)
 
         # Track previous demand CV per site for buffer detection
@@ -1536,13 +1563,13 @@ def seed_decisions_from_simulation(
             c.site_id: c.demand_cv for c in site_configs
         }
 
-        for day in range(_N_DAYS):
+        for day in range(n_days):
             tick_result = chain.tick()
             sites: List[_SimSite] = tick_result["sites"]
             network_avg_dos = tick_result["network_avg_days_cover"]
 
             # Skip warmup period
-            if day < _WARMUP_DAYS:
+            if day < warmup_days:
                 for node in sites:
                     prev_demand_cv[node.site_id] = node.demand_cv
                 continue
