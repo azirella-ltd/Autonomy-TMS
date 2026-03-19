@@ -70,6 +70,7 @@ function buildMessages({
   onActivateDirective,
   onSkipDirective,
   onNavigate,
+  onPromoteStrategy,
   submitting,
   clarifications,
   onClarificationAnswer,
@@ -316,21 +317,30 @@ function buildMessages({
               <p className="text-sm text-foreground mb-3">
                 Should I also activate the directive?
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2">
                 <button
-                  onClick={onActivateDirective}
+                  onClick={onSubmitCompound}
                   disabled={submitting}
-                  className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium bg-violet-500 text-white hover:bg-violet-600 transition-colors disabled:opacity-50"
+                  className="w-full px-3 py-1.5 rounded-full text-xs font-medium bg-violet-500 text-white hover:bg-violet-600 transition-colors disabled:opacity-50"
                 >
-                  Yes, activate
+                  Compare strategies
                 </button>
-                <button
-                  onClick={onSkipDirective}
-                  disabled={submitting}
-                  className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                >
-                  No, just create order
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={onActivateDirective}
+                    disabled={submitting}
+                    className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  >
+                    Yes, activate directly
+                  </button>
+                  <button
+                    onClick={onSkipDirective}
+                    disabled={submitting}
+                    className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  >
+                    No, just create order
+                  </button>
+                </div>
               </div>
             </div>
           ),
@@ -531,33 +541,189 @@ function buildMessages({
       content: (
         <div>
           <div className="font-medium text-foreground mb-2">Processing...</div>
-          <div className="space-y-1 font-mono text-xs">
-            {streamMessages.map((msg, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <span className="text-muted-foreground flex-shrink-0">
-                  {msg.type === 'complete'
-                    ? '\u2514\u2500\u2500'
-                    : msg.type === 'error'
-                      ? '\u2514\u2500\u2500 !'
-                      : '\u251C\u2500\u2500'}
-                </span>
-                <span
-                  className={cn(
-                    msg.type === 'error'
-                      ? 'text-destructive'
-                      : msg.type === 'complete'
-                        ? 'text-emerald-600 font-semibold'
-                        : msg.type === 'action_complete'
-                          ? 'text-blue-600'
-                          : 'text-foreground',
-                  )}
-                >
-                  {msg.message}
-                </span>
-              </div>
-            ))}
+          <div className="space-y-1 text-xs">
+            {streamMessages.map((msg, i) => {
+              // ── baseline_result: fulfillment summary box ──
+              if (msg.type === 'baseline_result') {
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      'p-2.5 rounded-lg text-xs mt-1',
+                      msg.can_fulfill
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+                        : 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+                    )}
+                  >
+                    <div className="font-semibold">
+                      {msg.can_fulfill ? 'Can fulfill' : `Shortfall: ${msg.shortage} units`}
+                    </div>
+                    <div>
+                      Promised: {msg.promised} of {msg.requested} ({msg.fill_rate_pct}%)
+                    </div>
+                  </div>
+                );
+              }
+
+              // ── strategies_ready: strategy option cards ──
+              if (msg.type === 'strategies_ready') {
+                return (
+                  <div key={i} className="grid gap-2 mt-2">
+                    {msg.strategies?.map((s, si) => (
+                      <div key={si} className="border border-border rounded-lg p-2.5 text-xs">
+                        <div className="font-semibold text-foreground">{s.name}</div>
+                        <div className="text-muted-foreground mt-0.5">{s.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
+
+              // ── strategy_eval: per-strategy evaluation progress ──
+              if (msg.type === 'strategy_eval') {
+                return (
+                  <div key={i} className="flex items-center gap-2 py-0.5">
+                    {msg.status === 'evaluating' ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-violet-500 flex-shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="h-3 w-3 text-emerald-500 flex-shrink-0" />
+                    )}
+                    <span className={cn(
+                      'text-foreground',
+                      msg.status === 'complete' && 'font-medium',
+                    )}>
+                      {msg.strategy_name || msg.message}
+                    </span>
+                    {msg.status === 'complete' && msg.scorecard?.fill_rate_pct != null && (
+                      <span className="text-muted-foreground ml-auto">
+                        {msg.scorecard.fill_rate_pct}% fill
+                      </span>
+                    )}
+                  </div>
+                );
+              }
+
+              // ── comparison_ready: full comparison table ──
+              if (msg.type === 'comparison_ready') {
+                const { scenarios = [], recommendation_index = 0 } = msg;
+                return (
+                  <div key={i} className="overflow-x-auto mt-2">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-1.5 px-2 font-medium">Metric</th>
+                          {scenarios.map((s, si) => (
+                            <th key={si} className="text-center py-1.5 px-2 font-medium">
+                              {s.name} {si === recommendation_index && '\u2605'}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {/* Fill Rate */}
+                        <tr className="border-b border-border/50">
+                          <td className="py-1.5 px-2 text-muted-foreground">Fill Rate</td>
+                          {scenarios.map((s, si) => {
+                            const val = s.scorecard?.fill_rate_pct ?? '\u2014';
+                            const isBest = si === recommendation_index;
+                            return (
+                              <td key={si} className={cn('text-center py-1.5 px-2', isBest && 'text-emerald-600 font-semibold')}>
+                                {val}%
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        {/* Additional Cost */}
+                        <tr className="border-b border-border/50">
+                          <td className="py-1.5 px-2 text-muted-foreground">Additional Cost</td>
+                          {scenarios.map((s, si) => (
+                            <td key={si} className="text-center py-1.5 px-2">
+                              {s.estimated_additional_cost ? `$${s.estimated_additional_cost.toLocaleString()}` : '$0'}
+                            </td>
+                          ))}
+                        </tr>
+                        {/* Customers Affected */}
+                        <tr className="border-b border-border/50">
+                          <td className="py-1.5 px-2 text-muted-foreground">Customers Affected</td>
+                          {scenarios.map((s, si) => (
+                            <td key={si} className="text-center py-1.5 px-2">
+                              {s.affected_customers?.length ?? 0}
+                            </td>
+                          ))}
+                        </tr>
+                        {/* Net Benefit */}
+                        <tr>
+                          <td className="py-1.5 px-2 font-medium">Net Benefit</td>
+                          {scenarios.map((s, si) => {
+                            const val = s.scorecard?.net_benefit ?? 0;
+                            const isBest = si === recommendation_index;
+                            return (
+                              <td key={si} className={cn('text-center py-1.5 px-2 font-semibold', isBest && 'text-emerald-600')}>
+                                {val.toFixed(2)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    {/* Recommendation */}
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Recommended:</span>
+                      <span className="text-xs font-semibold text-emerald-600">
+                        {scenarios[recommendation_index]?.name} {'\u2605'}
+                      </span>
+                    </div>
+
+                    {/* Accept buttons */}
+                    <div className="mt-2 flex gap-2">
+                      {scenarios.filter((_, si) => si > 0).map((s, fi) => (
+                        <button
+                          key={fi}
+                          onClick={() => onPromoteStrategy?.(s.scenario_id)}
+                          className={cn(
+                            'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                            (fi + 1) === recommendation_index
+                              ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                              : 'bg-accent border border-border hover:bg-accent/80',
+                          )}
+                        >
+                          Accept {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              // ── Default: tree-prefix rendering ──
+              return (
+                <div key={i} className="flex items-start gap-2 font-mono">
+                  <span className="text-muted-foreground flex-shrink-0">
+                    {msg.type === 'complete'
+                      ? '\u2514\u2500\u2500'
+                      : msg.type === 'error'
+                        ? '\u2514\u2500\u2500 !'
+                        : '\u251C\u2500\u2500'}
+                  </span>
+                  <span
+                    className={cn(
+                      msg.type === 'error'
+                        ? 'text-destructive'
+                        : msg.type === 'complete'
+                          ? 'text-emerald-600 font-semibold'
+                          : msg.type === 'action_complete'
+                            ? 'text-blue-600'
+                            : 'text-foreground',
+                    )}
+                  >
+                    {msg.message}
+                  </span>
+                </div>
+              );
+            })}
             {!isDone && (
-              <div className="flex items-center gap-2 text-muted-foreground">
+              <div className="flex items-center gap-2 text-muted-foreground font-mono">
                 <span>{'\u2502'}  </span>
                 <Loader2 className="h-3 w-3 animate-spin" />
               </div>
@@ -643,6 +809,7 @@ const TalkToMePopup = ({
   onActivateDirective,
   onSkipDirective,
   onNavigate,
+  onPromoteStrategy,
   submitting,
   clarifications,
   onClarificationAnswer,
@@ -676,6 +843,7 @@ const TalkToMePopup = ({
         onActivateDirective,
         onSkipDirective,
         onNavigate,
+        onPromoteStrategy,
         submitting,
         clarifications,
         onClarificationAnswer,

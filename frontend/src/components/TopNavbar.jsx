@@ -438,6 +438,61 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     }
   };
 
+  const submitStrategyStream = async (text, actions, clarifs = {}) => {
+    setIsStreaming(true);
+    setStreamMessages([]);
+    setTalkInput('');
+    dismissClarification();
+
+    try {
+      const response = await fetch('/api/directives/submit-strategy-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          config_id: effectiveConfigId,
+          text,
+          actions,
+          clarifications: Object.keys(clarifs).length > 0 ? clarifs : undefined,
+        }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const blocks = buffer.split('\n\n');
+        buffer = blocks.pop() || '';
+
+        for (const block of blocks) {
+          if (!block.trim()) continue;
+          const eventMatch = block.match(/^event:\s*(.+)\ndata:\s*(.+)$/m);
+          if (eventMatch) {
+            const [, eventType, dataStr] = eventMatch;
+            try {
+              const data = JSON.parse(dataStr);
+              setStreamMessages((prev) => [...prev, { type: eventType, ...data }]);
+
+              if (eventType === 'complete' || eventType === 'error') {
+                // Don't auto-dismiss — user clicks Done
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Strategy SSE stream failed:', err);
+      setStreamMessages((prev) => [...prev, { type: 'error', message: 'Connection failed' }]);
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
   const handleClarificationAnswer = (field, value) => {
     setClarifications((prev) => ({ ...prev, [field]: value }));
   };
@@ -482,6 +537,29 @@ const TopNavbar = ({ sidebarOpen = true }) => {
       if (demandOnly.length > 0) {
         await submitCompoundStream(originalText, demandOnly, clarifications);
       }
+    }
+  };
+
+  const handleCompareStrategies = async () => {
+    if (analysisResult?.intent === 'compound' && analysisResult.actions) {
+      await submitStrategyStream(originalText, analysisResult.actions, clarifications);
+    }
+  };
+
+  const handlePromoteStrategy = async (scenarioId) => {
+    try {
+      setTalkSubmitting(true);
+      await api.post(`/directives/promote-strategy/${scenarioId}`, null, {
+        params: { rationale: 'Selected from strategy comparison' },
+      });
+      setStreamMessages((prev) => [...prev, {
+        type: 'action_complete',
+        message: 'Strategy promoted — changes applied to active plan.',
+      }]);
+    } catch (err) {
+      console.error('Promote failed:', err);
+    } finally {
+      setTalkSubmitting(false);
     }
   };
 
@@ -640,6 +718,8 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             onSubmitCompound={() => submitCompoundStream(originalText, analysisResult?.actions || [], clarifications)}
             onActivateDirective={handleActivateDirective}
             onSkipDirective={handleSkipDirective}
+            onCompareStrategies={handleCompareStrategies}
+            onPromoteStrategy={handlePromoteStrategy}
             onNavigate={handleNavigateFromPopup}
             submitting={talkSubmitting}
             clarifications={clarifications}

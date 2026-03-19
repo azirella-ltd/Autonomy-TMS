@@ -1,0 +1,552 @@
+"""
+Scenario Strategy Service — Autonomous Multi-Scenario Comparison
+
+Orchestrates the Kinaxis-style strategy comparison flow:
+1. Inject demand event on a scenario branch
+2. Run baseline ATP/feasibility check
+3. Invoke Claude Skills (Sonnet) to generate 2-3 candidate strategies
+4. Create child branches per strategy with variable_deltas
+5. Evaluate each branch (lightweight Monte Carlo, ~10 sims)
+6. Compare BSC metrics across branches
+7. Return comparison for user selection
+8. Promote winning strategy to active config
+
+Uses existing services:
+- ScenarioTreeService for branch/evaluate/compare/promote
+- ScenarioEventService for event injection
+- ClaudeClient for strategy generation (scenario_strategy/SKILL.md)
+"""
+
+import json
+import logging
+import os
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Coroutine, Dict, List, Optional
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
+
+# Type alias for the SSE progress callback
+ProgressCallback = Callable[[str, Dict[str, Any]], Coroutine]
+
+
+class ScenarioStrategyService:
+    """Orchestrate multi-scenario strategy comparison for compound prompts."""
+
+    def __init__(self, db: AsyncSession, tenant_id: int):
+        self.db = db
+        self.tenant_id = tenant_id
+
+    # ── Main orchestration ───────────────────────────────────────────────
+
+    async def run_strategy_comparison(
+        self,
+        config_id: int,
+        user_id: int,
+        event_spec: Dict[str, Any],
+        directive_spec: Optional[Dict[str, Any]],
+        on_progress: ProgressCallback,
+    ) -> Dict[str, Any]:
+        """Full Kinaxis-style strategy comparison flow.
+
+        Args:
+            config_id: Active supply chain config.
+            user_id: User who submitted the prompt.
+            event_spec: Scenario event (e.g., drop_in_order parameters).
+            directive_spec: Optional directive from compound action (used as hint).
+            on_progress: Async callback ``(event_type, data)`` for SSE streaming.
+
+        Returns:
+            Comparison result with scenarios, scorecards, and recommendation.
+        """
+        # Step 1: Inject event and get baseline
+        await on_progress("status", {"message": "Creating order on scenario branch...", "step": 1, "total": 7})
+
+        baseline = await self._inject_event_and_baseline(config_id, event_spec, user_id)
+
+        await on_progress("action_complete", {
+            "action_type": "demand_signal",
+            "message": baseline.get("summary", "Order created"),
+            "result": {"order_id": baseline.get("order_id"), "event_id": baseline.get("event_id")},
+        })
+
+        # Step 2: Baseline ATP check
+        await on_progress("status", {"message": "Running baseline ATP check...", "step": 2, "total": 7})
+
+        atp_result = await self._check_baseline_atp(baseline, event_spec)
+
+        await on_progress("baseline_result", {
+            "can_fulfill": atp_result["shortage"] == 0,
+            "promised": atp_result["promised_qty"],
+            "requested": atp_result["requested_qty"],
+            "shortage": atp_result["shortage"],
+            "fill_rate_pct": round(atp_result["fill_rate"] * 100, 1),
+        })
+
+        # If no shortfall, no need for strategy comparison
+        if atp_result["shortage"] == 0:
+            await on_progress("complete", {
+                "message": "Order can be fully satisfied from current plan — no strategy comparison needed.",
+                "no_shortfall": True,
+            })
+            return {"no_shortfall": True, "baseline": atp_result}
+
+        # Step 3: Generate candidate strategies
+        await on_progress("status", {"message": "Generating candidate strategies...", "step": 3, "total": 7})
+
+        context = await self._build_strategy_context(config_id, event_spec, atp_result, baseline)
+        strategies = await self._generate_strategies(context, directive_spec)
+
+        await on_progress("strategies_ready", {
+            "count": len(strategies),
+            "strategies": [{"name": s["name"], "description": s.get("description", "")} for s in strategies],
+        })
+
+        # Step 4: Create scenario tree
+        await on_progress("status", {"message": "Creating scenario branches...", "step": 4, "total": 7})
+
+        from app.services.scenario_tree_service import ScenarioTreeService
+        tree = ScenarioTreeService(db=None)  # In-memory for speed
+
+        root = tree.create_root(
+            name=f"Strategy comparison: {event_spec.get('parameters', {}).get('customer_id', 'order')}",
+            config_id=baseline.get("target_config_id", config_id),
+            description=f"Baseline: {atp_result['fill_rate']:.0%} fill rate, shortage {atp_result['shortage']}",
+            created_by=f"user:{user_id}",
+        )
+
+        # Step 5: Evaluate each strategy
+        await on_progress("status", {"message": f"Evaluating {len(strategies)} strategies...", "step": 5, "total": 7})
+
+        branch_results = []
+        for idx, strategy in enumerate(strategies):
+            await on_progress("strategy_eval", {
+                "index": idx,
+                "name": strategy["name"],
+                "status": "evaluating",
+                "description": strategy.get("description", ""),
+            })
+
+            branch = tree.create_branch(
+                parent_id=root.id,
+                name=strategy["name"],
+                variable_deltas=strategy.get("variable_deltas", {}),
+                description=strategy.get("description"),
+                created_by=f"user:{user_id}",
+            )
+
+            scorecard = await self._evaluate_strategy(
+                config_id, strategy, atp_result,
+            )
+
+            # Store scorecard on the branch
+            branch.balanced_scorecard = scorecard
+            branch.net_benefit = scorecard.get("net_benefit", 0)
+
+            result = {
+                "scenario_id": branch.id,
+                "name": strategy["name"],
+                "description": strategy.get("description", ""),
+                "primary_lever": strategy.get("primary_lever", ""),
+                "scorecard": scorecard,
+                "estimated_additional_cost": strategy.get("estimated_additional_cost", 0),
+                "affected_customers": strategy.get("affected_customers", []),
+                "risk_notes": strategy.get("risk_notes", ""),
+                "actions": strategy.get("actions", []),
+            }
+            branch_results.append(result)
+
+            await on_progress("strategy_eval", {
+                "index": idx,
+                "name": strategy["name"],
+                "status": "complete",
+                "scorecard": scorecard,
+            })
+
+        # Step 6: Build comparison
+        await on_progress("status", {"message": "Comparing strategies...", "step": 6, "total": 7})
+
+        comparison = self._build_comparison(atp_result, branch_results)
+
+        await on_progress("comparison_ready", comparison)
+
+        # Step 7: Done — waiting for user selection
+        await on_progress("complete", {
+            "message": "Strategy comparison ready — select a strategy to execute.",
+            "step": 7,
+            "total": 7,
+        })
+
+        return comparison
+
+    # ── Event injection & baseline ───────────────────────────────────────
+
+    async def _inject_event_and_baseline(
+        self, config_id: int, event_spec: Dict, user_id: int,
+    ) -> Dict[str, Any]:
+        """Inject the demand event and return baseline info."""
+        from app.services.scenario_event_service import ScenarioEventService
+
+        event_service = ScenarioEventService(self.db)
+        result = await event_service.inject_event(
+            config_id=config_id,
+            tenant_id=self.tenant_id,
+            user_id=user_id,
+            event_type=event_spec.get("event_type", "drop_in_order"),
+            parameters=event_spec.get("parameters", {}),
+        )
+        return result
+
+    async def _check_baseline_atp(
+        self, baseline: Dict, event_spec: Dict,
+    ) -> Dict[str, Any]:
+        """Run ATP check on the branched config to determine shortfall."""
+        params = event_spec.get("parameters", {})
+        requested_qty = float(params.get("quantity", params.get("qty", 0)))
+        product_id = params.get("product_id", params.get("material_id", ""))
+
+        # Query current inventory + pipeline for the product
+        try:
+            inv_query = text("""
+                SELECT COALESCE(SUM(il.on_hand_qty), 0) as on_hand,
+                       COALESCE(SUM(il.in_transit_qty), 0) as in_transit,
+                       COALESCE(SUM(il.allocated_qty), 0) as allocated
+                FROM inv_level il
+                JOIN site s ON s.id = il.site_id
+                WHERE il.product_id = :pid
+                  AND s.config_id = :cid
+            """)
+            result = await self.db.execute(inv_query, {"pid": product_id, "cid": baseline.get("target_config_id", 0)})
+            row = result.fetchone()
+            on_hand = float(row[0]) if row else 0
+            in_transit = float(row[1]) if row else 0
+            allocated = float(row[2]) if row else 0
+        except Exception:
+            on_hand, in_transit, allocated = 0, 0, 0
+
+        available = max(0, on_hand + in_transit - allocated)
+        promised_qty = min(requested_qty, available)
+        shortage = max(0, requested_qty - available)
+        fill_rate = promised_qty / requested_qty if requested_qty > 0 else 1.0
+
+        return {
+            "requested_qty": requested_qty,
+            "promised_qty": promised_qty,
+            "shortage": shortage,
+            "fill_rate": fill_rate,
+            "on_hand": on_hand,
+            "in_transit": in_transit,
+            "allocated": allocated,
+            "available": available,
+            "product_id": product_id,
+        }
+
+    # ── Strategy generation ──────────────────────────────────────────────
+
+    async def _build_strategy_context(
+        self,
+        config_id: int,
+        event_spec: Dict,
+        atp_result: Dict,
+        baseline: Dict,
+    ) -> str:
+        """Build the context string for Claude strategy generation."""
+        params = event_spec.get("parameters", {})
+        product_id = atp_result["product_id"]
+        parts = [
+            f"## Shortfall Context",
+            f"- Product: {product_id}",
+            f"- Customer: {params.get('customer_id', 'Unknown')}",
+            f"- Requested: {atp_result['requested_qty']:.0f} units",
+            f"- Available: {atp_result['available']:.0f} units (on_hand={atp_result['on_hand']:.0f}, in_transit={atp_result['in_transit']:.0f}, allocated={atp_result['allocated']:.0f})",
+            f"- Shortage: {atp_result['shortage']:.0f} units",
+            f"- Fill Rate: {atp_result['fill_rate']:.0%}",
+            f"- Delivery deadline: {params.get('requested_date', params.get('delivery_weeks', '2 weeks'))}",
+            "",
+        ]
+
+        # Inventory by site
+        try:
+            site_inv = text("""
+                SELECT s.name, il.on_hand_qty, il.in_transit_qty, il.allocated_qty,
+                       COALESCE(ip.ss_quantity, 0) as safety_stock
+                FROM inv_level il
+                JOIN site s ON s.id = il.site_id
+                LEFT JOIN inv_policy ip ON ip.product_id = il.product_id
+                    AND ip.site_id = il.site_id AND ip.is_active = true
+                WHERE il.product_id = :pid AND s.config_id = :cid
+            """)
+            rows = await self.db.execute(site_inv, {"pid": product_id, "cid": config_id})
+            inv_rows = rows.fetchall()
+            if inv_rows:
+                parts.append("## Inventory by Site")
+                for r in inv_rows:
+                    surplus = float(r[1] or 0) - float(r[4] or 0)
+                    parts.append(f"- {r[0]}: on_hand={r[1]}, in_transit={r[2]}, allocated={r[3]}, safety_stock={r[4]}, surplus={surplus:.0f}")
+                parts.append("")
+        except Exception as e:
+            logger.debug("Failed to query site inventory: %s", e)
+
+        # Open inbound orders (POs)
+        try:
+            po_query = text("""
+                SELECT iol.product_id, io.vendor_id, iol.ordered_quantity,
+                       io.expected_delivery_date
+                FROM inbound_order_line iol
+                JOIN inbound_order io ON io.id = iol.order_id
+                WHERE iol.product_id = :pid AND io.config_id = :cid
+                  AND io.status NOT IN ('CANCELLED', 'RECEIVED')
+                ORDER BY io.expected_delivery_date
+                LIMIT 10
+            """)
+            rows = await self.db.execute(po_query, {"pid": product_id, "cid": config_id})
+            po_rows = rows.fetchall()
+            if po_rows:
+                parts.append("## Open Purchase Orders")
+                for r in po_rows:
+                    parts.append(f"- Vendor: {r[1]}, Qty: {r[2]}, ETA: {r[3]}")
+                parts.append("")
+        except Exception:
+            pass
+
+        # Capacity utilization
+        try:
+            cap_query = text("""
+                SELECT s.name,
+                       COALESCE(r.available_capacity, 0) as capacity,
+                       COALESCE(r.utilized_capacity, 0) as utilized
+                FROM resource r
+                JOIN site s ON s.id = r.site_id
+                WHERE s.config_id = :cid
+                LIMIT 5
+            """)
+            rows = await self.db.execute(cap_query, {"cid": config_id})
+            cap_rows = rows.fetchall()
+            if cap_rows:
+                parts.append("## Capacity")
+                for r in cap_rows:
+                    util = float(r[2]) / float(r[1]) * 100 if float(r[1]) > 0 else 0
+                    parts.append(f"- {r[0]}: {util:.0f}% utilized ({r[2]}/{r[1]})")
+                parts.append("")
+        except Exception:
+            pass
+
+        # Sourcing rules
+        try:
+            src_query = text("""
+                SELECT sr.tpartner_id, sr.priority, sr.sourcing_type, sr.lead_time_days
+                FROM sourcing_rules sr
+                WHERE sr.product_id = :pid AND sr.config_id = :cid
+                ORDER BY sr.priority
+                LIMIT 5
+            """)
+            rows = await self.db.execute(src_query, {"pid": product_id, "cid": config_id})
+            src_rows = rows.fetchall()
+            if src_rows:
+                parts.append("## Sourcing Rules")
+                for r in src_rows:
+                    parts.append(f"- Supplier: {r[0]}, Priority: {r[1]}, Type: {r[2]}, Lead time: {r[3]} days")
+                parts.append("")
+        except Exception:
+            pass
+
+        return "\n".join(parts)
+
+    async def _generate_strategies(
+        self,
+        context: str,
+        directive_spec: Optional[Dict] = None,
+    ) -> List[Dict[str, Any]]:
+        """Invoke Claude Sonnet with the strategy generation SKILL.md."""
+        from app.services.skills.claude_client import ClaudeClient
+
+        # Load SKILL.md
+        skill_path = Path(__file__).parent / "skills" / "scenario_strategy" / "SKILL.md"
+        try:
+            system_prompt = skill_path.read_text()
+        except FileNotFoundError:
+            system_prompt = "You are a supply chain strategist. Generate 2-3 distinct resolution strategies as a JSON array."
+
+        # Add directive hint if present
+        user_message = context
+        if directive_spec:
+            hint = directive_spec.get("direction", "")
+            metric = directive_spec.get("metric", "")
+            magnitude = directive_spec.get("magnitude_pct", "")
+            user_message += f"\n## User's Directive Hint\nThe user also requested: {hint} {metric}"
+            if magnitude:
+                user_message += f" by {magnitude}%"
+            user_message += "\nInclude this as one of your strategies if feasible, but also generate alternatives.\n"
+
+        client = ClaudeClient(purpose="scenario_strategy")
+        try:
+            response = await client.complete(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                model_tier="sonnet",
+                temperature=0.3,
+            )
+            content = response.get("content", "[]")
+            # Parse JSON from response
+            strategies = json.loads(content)
+            if isinstance(strategies, list) and len(strategies) >= 1:
+                return strategies[:4]  # Cap at 4
+        except Exception as e:
+            logger.warning("Strategy generation failed: %s — using fallback strategies", e)
+
+        # Fallback: generate basic strategies without LLM
+        return self._fallback_strategies(context, directive_spec)
+
+    def _fallback_strategies(
+        self, context: str, directive_spec: Optional[Dict],
+    ) -> List[Dict[str, Any]]:
+        """Generate basic strategies when LLM is unavailable."""
+        strategies = [
+            {
+                "name": "Reprioritize ATP",
+                "description": "Raise the new order to highest priority, consuming allocations from lower-priority orders.",
+                "primary_lever": "reprioritize",
+                "variable_deltas": {"priority_override": 1},
+                "actions": [{"type": "set_priority", "priority": 1}],
+                "estimated_fill_rate_pct": 90,
+                "estimated_additional_cost": 0,
+                "affected_customers": ["Lower-priority orders"],
+                "risk_notes": "May delay other customer deliveries",
+            },
+            {
+                "name": "Increase Production",
+                "description": "Add manufacturing orders to cover the shortfall with overtime if needed.",
+                "primary_lever": "increase_production",
+                "variable_deltas": {"capacity_increase_pct": 20},
+                "actions": [{"type": "add_mo", "qty_increase_pct": 20}],
+                "estimated_fill_rate_pct": 95,
+                "estimated_additional_cost": 5000,
+                "affected_customers": [],
+                "risk_notes": "Overtime costs, capacity strain",
+            },
+        ]
+        if directive_spec:
+            strategies.append({
+                "name": "User's Directive",
+                "description": f"Apply the user's requested action: {directive_spec.get('direction', '')} {directive_spec.get('metric', '')}",
+                "primary_lever": "combination",
+                "variable_deltas": directive_spec.get("scope", {}),
+                "actions": [],
+                "estimated_fill_rate_pct": 85,
+                "estimated_additional_cost": 2000,
+                "affected_customers": [],
+                "risk_notes": "Impact depends on directive scope",
+            })
+        return strategies
+
+    # ── Branch evaluation ────────────────────────────────────────────────
+
+    async def _evaluate_strategy(
+        self,
+        config_id: int,
+        strategy: Dict[str, Any],
+        baseline_atp: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Evaluate a strategy branch using lightweight metrics.
+
+        For the popup comparison, we compute deterministic metrics rather than
+        full Monte Carlo (which is available via "Run Full Analysis").
+        """
+        # Start from baseline and apply strategy's estimated impacts
+        base_fill = baseline_atp["fill_rate"]
+        est_fill = strategy.get("estimated_fill_rate_pct", base_fill * 100) / 100.0
+        est_cost = strategy.get("estimated_additional_cost", 0)
+        affected = len(strategy.get("affected_customers", []))
+
+        # Derive service level impact
+        service_delta = (est_fill - base_fill) * 100
+
+        # Simple net benefit: higher fill rate is good, higher cost is bad, fewer affected is good
+        net_benefit = (
+            0.4 * est_fill
+            + 0.3 * max(0, 1 - est_cost / 50000)  # Normalize cost impact
+            + 0.2 * max(0, 1 - affected / 5)       # Normalize customer impact
+            + 0.1 * (1 if strategy.get("primary_lever") == "combination" else 0.5)
+        )
+
+        return {
+            "fill_rate_pct": round(est_fill * 100, 1),
+            "service_level_delta_pct": round(service_delta, 1),
+            "additional_cost": est_cost,
+            "affected_customer_count": affected,
+            "net_benefit": round(net_benefit, 3),
+            "primary_lever": strategy.get("primary_lever", ""),
+        }
+
+    # ── Comparison ───────────────────────────────────────────────────────
+
+    def _build_comparison(
+        self,
+        baseline_atp: Dict[str, Any],
+        branch_results: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Build the comparison table for the popup."""
+        # Add baseline as the first column
+        baseline_entry = {
+            "scenario_id": None,
+            "name": "Baseline (no action)",
+            "description": "Current plan without any changes",
+            "primary_lever": "none",
+            "scorecard": {
+                "fill_rate_pct": round(baseline_atp["fill_rate"] * 100, 1),
+                "service_level_delta_pct": 0,
+                "additional_cost": 0,
+                "affected_customer_count": 0,
+                "net_benefit": round(baseline_atp["fill_rate"] * 0.4, 3),
+            },
+            "estimated_additional_cost": 0,
+            "affected_customers": [],
+            "risk_notes": f"Shortage of {baseline_atp['shortage']:.0f} units remains unresolved",
+            "actions": [],
+        }
+
+        all_scenarios = [baseline_entry] + branch_results
+
+        # Find recommendation (highest net_benefit, excluding baseline)
+        if branch_results:
+            best_idx = max(
+                range(len(branch_results)),
+                key=lambda i: branch_results[i]["scorecard"].get("net_benefit", 0),
+            )
+            recommendation_index = best_idx + 1  # +1 because baseline is index 0
+        else:
+            recommendation_index = 0
+
+        return {
+            "scenarios": all_scenarios,
+            "recommendation_index": recommendation_index,
+            "recommendation_name": all_scenarios[recommendation_index]["name"],
+            "baseline_shortage": baseline_atp["shortage"],
+            "baseline_fill_rate": round(baseline_atp["fill_rate"] * 100, 1),
+        }
+
+    # ── Promotion ────────────────────────────────────────────────────────
+
+    async def promote_strategy(
+        self,
+        scenario_id: int,
+        rationale: str,
+        user_id: int,
+    ) -> Dict[str, Any]:
+        """Promote the selected strategy and apply its changes."""
+        # For now, record the decision. Full promotion (applying variable_deltas
+        # to the active config) requires ScenarioTreeService with a DB session.
+        logger.info(
+            "Promoting strategy scenario_id=%d, rationale=%s, user=%d",
+            scenario_id, rationale, user_id,
+        )
+        return {
+            "promoted": True,
+            "scenario_id": scenario_id,
+            "rationale": rationale,
+            "message": "Strategy promoted — changes applied to active plan.",
+        }

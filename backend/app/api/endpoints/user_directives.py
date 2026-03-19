@@ -394,6 +394,154 @@ async def submit_directive_stream(
     )
 
 
+class StrategyCompareRequest(BaseModel):
+    """Request body for strategy comparison with SSE streaming."""
+    config_id: int
+    text: str = Field(..., min_length=3, max_length=5000)
+    actions: List[dict]  # Pre-parsed compound actions from analyze
+    clarifications: Optional[Dict[str, str]] = None
+
+
+@router.post("/submit-strategy-stream")
+async def submit_strategy_stream(
+    request: StrategyCompareRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Submit a compound action with Kinaxis-style multi-scenario strategy comparison.
+
+    Creates the demand event, runs baseline ATP, generates 2-3 candidate strategies
+    via Claude Skills, evaluates each on a scenario branch, and streams the comparison
+    results via Server-Sent Events.
+    """
+    from app.services.scenario_strategy_service import ScenarioStrategyService
+
+    strategy_service = ScenarioStrategyService(db=db, tenant_id=current_user.tenant_id)
+
+    # Extract demand signal and directive specs from the compound actions
+    demand_action = next((a for a in request.actions if a.get("action_type") == "demand_signal"), None)
+    directive_action = next((a for a in request.actions if a.get("action_type") == "directive"), None)
+
+    if not demand_action:
+        async def error_gen():
+            yield _sse_event("error", {"message": "No demand signal found in compound actions"})
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    event_spec = demand_action.get("scenario_event", {})
+    if not event_spec.get("event_type"):
+        event_spec["event_type"] = "drop_in_order"
+
+    async def event_generator():
+        async def on_progress(event_type: str, data: Dict[str, Any]):
+            """Non-yielding progress tracker — we collect events and yield them."""
+            pass  # We use direct yield in the loop below instead
+
+        try:
+            # We drive the orchestration step-by-step, yielding SSE events
+            # between each major step for progressive feedback.
+
+            yield _sse_event("status", {"message": "Starting strategy comparison...", "step": 0, "total": 7})
+
+            comparison = await strategy_service.run_strategy_comparison(
+                config_id=request.config_id,
+                user_id=current_user.id,
+                event_spec=event_spec,
+                directive_spec=directive_action,
+                on_progress=_make_sse_yielder(),
+            )
+
+            # The service emits events via on_progress which we can't yield from.
+            # So we run it and yield the final comparison.
+            yield _sse_event("comparison_ready", comparison)
+            yield _sse_event("complete", {
+                "message": "Strategy comparison ready — select a strategy to execute.",
+            })
+
+        except Exception as e:
+            logger.exception("Strategy stream error")
+            yield _sse_event("error", {"message": str(e)})
+
+    # Since we can't yield from within the on_progress callback (it's not a generator),
+    # we use a simpler approach: collect all events, then yield them.
+    # For true progressive streaming, we need a queue-based approach.
+    import asyncio
+
+    event_queue: asyncio.Queue = asyncio.Queue()
+
+    async def queued_progress(event_type: str, data: Dict[str, Any]):
+        await event_queue.put((event_type, data))
+
+    async def stream_generator():
+        # Start the comparison in a background task
+        task = asyncio.create_task(
+            strategy_service.run_strategy_comparison(
+                config_id=request.config_id,
+                user_id=current_user.id,
+                event_spec=event_spec,
+                directive_spec=directive_action,
+                on_progress=queued_progress,
+            )
+        )
+
+        # Yield events from the queue as they arrive
+        try:
+            while not task.done() or not event_queue.empty():
+                try:
+                    event_type, data = await asyncio.wait_for(event_queue.get(), timeout=0.5)
+                    yield _sse_event(event_type, data)
+                except asyncio.TimeoutError:
+                    continue
+
+            # Drain any remaining events
+            while not event_queue.empty():
+                event_type, data = event_queue.get_nowait()
+                yield _sse_event(event_type, data)
+
+            # Check for exceptions
+            if task.exception():
+                yield _sse_event("error", {"message": str(task.exception())})
+
+        except Exception as e:
+            logger.exception("Strategy stream generator error")
+            yield _sse_event("error", {"message": str(e)})
+
+    return StreamingResponse(
+        stream_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/promote-strategy/{scenario_id}")
+async def promote_strategy(
+    scenario_id: int,
+    rationale: str = "",
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Promote the selected strategy — apply its changes to the active config."""
+    from app.services.scenario_strategy_service import ScenarioStrategyService
+
+    service = ScenarioStrategyService(db=db, tenant_id=current_user.tenant_id)
+    result = await service.promote_strategy(
+        scenario_id=scenario_id,
+        rationale=rationale,
+        user_id=current_user.id,
+    )
+    return result
+
+
+def _make_sse_yielder():
+    """Placeholder — not used in queue-based approach."""
+    async def noop(event_type, data):
+        pass
+    return noop
+
+
 @router.get("/")
 async def list_directives(
     config_id: Optional[int] = None,
