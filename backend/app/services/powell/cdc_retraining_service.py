@@ -44,6 +44,8 @@ from app.services.powell.trm_trainer import (
 from app.services.powell.integration.decision_integration import SiteAgentDecisionTracker
 from app.services.powell.cdc_monitor import TriggerEvent
 
+from app.services.checkpoint_storage_service import checkpoint_dir as _ckpt_dir
+
 logger = logging.getLogger(__name__)
 
 # Minimum decisions with outcomes before retraining is considered
@@ -55,9 +57,6 @@ RETRAIN_COOLDOWN_HOURS = 6
 # Maximum regression in loss before rejecting a new model
 MAX_REGRESSION_PCT = 0.10
 
-# Default checkpoint directory
-CHECKPOINT_DIR = "checkpoints"
-
 
 class CDCRetrainingService:
     """
@@ -68,10 +67,11 @@ class CDCRetrainingService:
     checkpoint deployment.
     """
 
-    def __init__(self, db: Session, site_key: str, tenant_id: int):
+    def __init__(self, db: Session, site_key: str, tenant_id: int, config_id: int = 0):
         self.db = db
         self.site_key = site_key
         self.tenant_id = tenant_id
+        self.config_id = config_id
         self.decision_tracker = SiteAgentDecisionTracker(db)
         self.reward_calculator = RewardCalculator()
 
@@ -391,10 +391,10 @@ class CDCRetrainingService:
         num_samples: int,
     ) -> str:
         """Save model checkpoint to filesystem."""
-        os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+        ckpt = _ckpt_dir(self.tenant_id, self.config_id)
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         filename = f"trm_cdc_{self.site_key}_{timestamp}.pt"
-        checkpoint_path = os.path.join(CHECKPOINT_DIR, filename)
+        checkpoint_path = os.path.join(str(ckpt), filename)
 
         try:
             import torch

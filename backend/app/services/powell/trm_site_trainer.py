@@ -51,8 +51,7 @@ class StigmergicPhase(enum.IntEnum):
         """Number of extra dimensions added to the state vector."""
         return {0: 0, 1: 11, 2: 33}[self.value]
 
-CHECKPOINT_DIR = Path(__file__).parent.parent.parent.parent / "checkpoints"
-CHECKPOINT_DIR.mkdir(exist_ok=True)
+from app.services.checkpoint_storage_service import checkpoint_dir as _checkpoint_dir
 
 
 class TRMSiteTrainer:
@@ -89,7 +88,7 @@ class TRMSiteTrainer:
         self.tenant_id = tenant_id
         self.config_id = config_id
         self.device = device
-        self.checkpoint_dir = checkpoint_dir or CHECKPOINT_DIR
+        self.checkpoint_dir = checkpoint_dir or _checkpoint_dir(tenant_id, config_id)
         self.stigmergic_phase = stigmergic_phase
         self.cross_head_reward_weight = cross_head_reward_weight
         self.het_gat_enabled = het_gat_enabled
@@ -1162,52 +1161,30 @@ def find_best_checkpoint(
     site_id: int,
     master_type: str = "",
     config_id: int = 0,
+    tenant_id: int = 0,
     checkpoint_dir: Optional[Path] = None,
 ) -> Optional[str]:
+    """Find the best checkpoint for a TRM agent.
+
+    Path: checkpoints/{tenant_id}/{config_id}/trm/trm_{type}_site{site_id}_v*.pt
+
+    No legacy paths — all checkpoints must be in tenant-scoped directories.
     """
-    Checkpoint fallback resolution (searches config-namespaced first):
-    1. Config-namespaced site-specific: config_{id}/trm/trm_{type}_site{site_id}_v*.pt
-    2. Flat site-specific: trm_{type}_site{site_id}_v*.pt (legacy)
-    3. Base model: trm_{type}_base_{master_type}.pt
-    4. Legacy: trm_{type}_{config_id}.pt (backward compat)
-    5. Legacy subdir: trm_*/trm_{type}.pt (e.g. trm_food_dist/)
-    """
-    cdir = checkpoint_dir or CHECKPOINT_DIR
+    if checkpoint_dir:
+        cdir = checkpoint_dir
+    elif tenant_id and config_id:
+        cdir = _checkpoint_dir(tenant_id, config_id)
+    else:
+        return None
 
-    # 1. Config-namespaced site-specific (latest version)
-    if config_id:
-        config_trm_dir = cdir / f"config_{config_id}" / "trm"
-        if config_trm_dir.exists():
-            site_checkpoints = sorted(
-                config_trm_dir.glob(f"trm_{trm_type}_site{site_id}_v*.pt"),
-                reverse=True,
-            )
-            if site_checkpoints:
-                return str(site_checkpoints[0])
-
-    # 2. Flat site-specific (legacy)
-    site_checkpoints = sorted(
-        cdir.glob(f"trm_{trm_type}_site{site_id}_v*.pt"),
-        reverse=True,
-    )
-    if site_checkpoints:
-        return str(site_checkpoints[0])
-
-    # 3. Base model for master type
-    base_path = cdir / f"trm_{trm_type}_base_{master_type.lower()}.pt"
-    if base_path.exists():
-        return str(base_path)
-
-    # 4. Legacy config-level checkpoint
-    if config_id:
-        legacy_path = cdir / f"trm_{trm_type}_{config_id}.pt"
-        if legacy_path.exists():
-            return str(legacy_path)
-
-    # 5. Legacy subdir (e.g. trm_food_dist/trm_atp_executor.pt)
-    for subdir in sorted(cdir.glob("trm_*/")):
-        legacy = subdir / f"trm_{trm_type}.pt"
-        if legacy.exists():
-            return str(legacy)
+    # Site-specific checkpoint (latest version)
+    trm_dir = cdir / "trm"
+    if trm_dir.exists():
+        site_checkpoints = sorted(
+            trm_dir.glob(f"trm_{trm_type}_site{site_id}_v*.pt"),
+            reverse=True,
+        )
+        if site_checkpoints:
+            return str(site_checkpoints[0])
 
     return None

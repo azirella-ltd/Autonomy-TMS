@@ -10,10 +10,10 @@ master types) and trains all model tiers:
   4. Execution tGNN — daily operational inference model
 
 Checkpoint paths are namespaced by config_id:
-  checkpoints/config_{id}/trm/{site_key}/trm_{type}_v{N}.pt
-  checkpoints/config_{id}/site_tgnn/{site_key}/site_tgnn_latest.pt
-  checkpoints/config_{id}/sop_graphsage_best.pt
-  checkpoints/config_{id}/execution_tgnn_best.pt
+  checkpoints/{tenant_id}/{config_id}/trm/trm_{type}_site{site_id}_v{N}.pt
+  checkpoints/{tenant_id}/{config_id}/site_tgnn/{site_key}/site_tgnn_latest.pt
+  checkpoints/{tenant_id}/{config_id}/sop_graphsage_v{N}.pt
+  checkpoints/{tenant_id}/{config_id}/execution_tgnn_v{N}.pt
 
 Usage:
     orchestrator = GenericTrainingOrchestrator(config_id=60)
@@ -36,19 +36,7 @@ from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-BACKEND_ROOT = Path(__file__).parent.parent.parent.parent
-CHECKPOINTS_ROOT = BACKEND_ROOT / "checkpoints"
-
-
-def config_checkpoint_dir(config_id: int) -> Path:
-    """Return the checkpoint directory for a specific SC config.
-
-    All models trained for a config live under:
-        checkpoints/config_{id}/
-    """
-    d = CHECKPOINTS_ROOT / f"config_{config_id}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+from app.services.checkpoint_storage_service import checkpoint_dir
 
 
 def config_slug(config_name: str) -> str:
@@ -94,9 +82,17 @@ class GenericTrainingOrchestrator:
     ):
         self.config_id = config_id
         self.device = device
-        self.checkpoint_dir = config_checkpoint_dir(config_id)
         self._sites: Optional[List[SiteInfo]] = None
         self._tenant_id: Optional[int] = None
+        # checkpoint_dir is resolved lazily after tenant_id is known
+        self._checkpoint_dir: Optional[Path] = None
+
+    @property
+    def checkpoint_dir(self) -> Path:
+        """Tenant-scoped checkpoint directory: checkpoints/{tenant_id}/{config_id}/"""
+        if self._checkpoint_dir is None:
+            self._checkpoint_dir = checkpoint_dir(self.tenant_id, self.config_id)
+        return self._checkpoint_dir
 
     # =========================================================================
     # Topology Discovery

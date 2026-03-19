@@ -389,6 +389,15 @@ class ProvisioningService:
         logger.warning("Timed out waiting for background step %s", step_key)
         return "running"
 
+    async def _resolve_tenant_id(self, config_id: int) -> int:
+        """Resolve tenant_id from supply chain config."""
+        from app.models.supply_chain_config import SupplyChainConfig
+        result = await self.db.execute(
+            select(SupplyChainConfig.tenant_id).where(SupplyChainConfig.id == config_id)
+        )
+        tid = result.scalar_one_or_none()
+        return tid or 0
+
     async def _execute_step(self, config_id: int, step_key: str) -> dict:
         """Execute a specific provisioning step."""
         handler = getattr(self, f"_step_{step_key}", None)
@@ -663,8 +672,9 @@ class ProvisioningService:
         from app.db.session import async_session_factory
         try:
             from app.services.powell.demand_planning_tgnn_service import DemandPlanningTGNNService
+            tenant_id = await self._resolve_tenant_id(config_id)
             async with async_session_factory() as fresh_db:
-                svc = DemandPlanningTGNNService(db=fresh_db, config_id=config_id)
+                svc = DemandPlanningTGNNService(db=fresh_db, config_id=config_id, tenant_id=tenant_id)
                 result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:
@@ -681,8 +691,9 @@ class ProvisioningService:
         from app.db.session import async_session_factory
         try:
             from app.services.powell.supply_planning_tgnn_service import SupplyPlanningTGNNService
+            tenant_id = await self._resolve_tenant_id(config_id)
             async with async_session_factory() as fresh_db:
-                svc = SupplyPlanningTGNNService(db=fresh_db, config_id=config_id)
+                svc = SupplyPlanningTGNNService(db=fresh_db, config_id=config_id, tenant_id=tenant_id)
                 result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:
@@ -699,8 +710,9 @@ class ProvisioningService:
         from app.db.session import async_session_factory
         try:
             from app.services.powell.inventory_optimization_tgnn_service import InventoryOptimizationTGNNService
+            tenant_id = await self._resolve_tenant_id(config_id)
             async with async_session_factory() as fresh_db:
-                svc = InventoryOptimizationTGNNService(db=fresh_db, config_id=config_id)
+                svc = InventoryOptimizationTGNNService(db=fresh_db, config_id=config_id, tenant_id=tenant_id)
                 result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:

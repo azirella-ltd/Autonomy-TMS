@@ -295,61 +295,44 @@ class CheckpointStorageService:
         return (current or 0) + 1
 
 
-# ── Legacy Compatibility ─────────────────────────────────────────────────────
-# These functions provide backward compatibility with the existing code that
-# uses config_checkpoint_dir(config_id). They route through the new tenant-scoped
-# path structure.
+# ── Public API for checkpoint directory resolution ───────────────────────────
+# All code that needs checkpoint paths MUST use this function.
+# No legacy config_{id} paths — tenant isolation is mandatory (SOC II).
 
-def config_checkpoint_dir(config_id: int, tenant_id: Optional[int] = None) -> Path:
-    """Return the checkpoint directory for a config.
+def checkpoint_dir(tenant_id: int, config_id: int) -> Path:
+    """Return the tenant-scoped checkpoint directory.
 
-    If tenant_id is provided, uses new path: checkpoints/{tenant_id}/{config_id}/
-    If not, falls back to legacy path: checkpoints/config_{config_id}/
+    Path: checkpoints/{tenant_id}/{config_id}/
 
-    This allows gradual migration — new code passes tenant_id, old code doesn't.
+    ALL checkpoint code must use this function. No exceptions.
+    SOC II: tenant_id in path ensures physical file isolation.
     """
-    if tenant_id:
-        d = _CHECKPOINTS_ROOT / str(tenant_id) / str(config_id)
-    else:
-        # Legacy path for backward compatibility
-        d = _CHECKPOINTS_ROOT / f"config_{config_id}"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return _tenant_config_dir(tenant_id, config_id)
 
 
 def cleanup_orphaned_checkpoint_dirs(existing_config_ids: set, existing_tenant_ids: set) -> List[str]:
-    """Remove checkpoint directories for deleted configs/tenants.
-
-    Handles both legacy (config_{id}) and new ({tenant_id}/{config_id}) paths.
-    """
+    """Remove checkpoint directories for deleted configs/tenants."""
     cleaned = []
     if not _CHECKPOINTS_ROOT.exists():
         return cleaned
 
     for entry in _CHECKPOINTS_ROOT.iterdir():
         if entry.is_dir():
-            # Legacy: config_{id}
-            if entry.name.startswith("config_"):
-                try:
-                    cfg_id = int(entry.name.split("_")[1])
-                    if cfg_id not in existing_config_ids:
-                        shutil.rmtree(entry, ignore_errors=True)
-                        cleaned.append(str(entry))
-                except (ValueError, IndexError):
-                    pass
-            # New: {tenant_id}/
-            elif entry.name.isdigit():
+            if entry.name.isdigit():
                 tid = int(entry.name)
                 if tid not in existing_tenant_ids:
                     shutil.rmtree(entry, ignore_errors=True)
                     cleaned.append(str(entry))
                 else:
-                    # Check sub-dirs for orphaned config dirs
                     for sub in entry.iterdir():
                         if sub.is_dir() and sub.name.isdigit():
                             cfg_id = int(sub.name)
                             if cfg_id not in existing_config_ids:
                                 shutil.rmtree(sub, ignore_errors=True)
                                 cleaned.append(str(sub))
+            # Nuke any legacy config_{id} dirs
+            elif entry.name.startswith("config_"):
+                shutil.rmtree(entry, ignore_errors=True)
+                cleaned.append(str(entry))
 
     return cleaned

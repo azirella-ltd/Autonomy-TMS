@@ -218,7 +218,7 @@ class TestCDCRetrainingFeatures:
         from unittest.mock import MagicMock
         from app.services.powell.cdc_retraining_service import CDCRetrainingService
         db = MagicMock()
-        return CDCRetrainingService(db=db, site_key="TEST", customer_id=1)
+        return CDCRetrainingService(db=db, site_key="TEST", tenant_id=1, config_id=0)
 
     def test_extract_features_no_signal_context(self):
         svc = self._service()

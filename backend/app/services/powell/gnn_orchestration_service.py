@@ -43,9 +43,10 @@ class GNNOrchestrationService:
         Layer 4:   S&OP Consensus Board — weekly, policy parameters
     """
 
-    def __init__(self, db: AsyncSession, config_id: int):
+    def __init__(self, db: AsyncSession, config_id: int, tenant_id: int = 0):
         self.db = db
         self.config_id = config_id
+        self.tenant_id = tenant_id
 
     async def run_full_cycle(
         self,
@@ -84,7 +85,7 @@ class GNNOrchestrationService:
         try:
             from app.services.powell.sop_inference_service import SOPInferenceService
 
-            sop_svc = SOPInferenceService(self.db, self.config_id)
+            sop_svc = SOPInferenceService(self.db, self.config_id, tenant_id=self.tenant_id)
             sop_analysis = await sop_svc.analyze_network(
                 force_recompute=force_recompute,
             )
@@ -112,7 +113,7 @@ class GNNOrchestrationService:
         try:
             from app.services.powell.tactical_hive_coordinator import TacticalHiveCoordinator
 
-            coordinator = TacticalHiveCoordinator(self.db, self.config_id)
+            coordinator = TacticalHiveCoordinator(self.db, self.config_id, tenant_id=self.tenant_id)
             tactical_output = await coordinator.run_lateral_cycle(
                 sop_embeddings=sop_embeddings,
                 force_recompute=force_recompute,

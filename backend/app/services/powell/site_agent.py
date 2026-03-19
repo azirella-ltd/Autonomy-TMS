@@ -1243,7 +1243,8 @@ class SiteAgent:
                     retraining_svc = CDCRetrainingService(
                         db=self.db,
                         site_key=self.site_key,
-                        tenant_id=0,  # Will be resolved from config
+                        tenant_id=getattr(self.config, "tenant_id", 0) or 0,
+                        config_id=getattr(self.config, "config_id", 0) or 0,
                     )
                     if retraining_svc.evaluate_retraining_need():
                         result = retraining_svc.execute_retraining(trigger_event=trigger)

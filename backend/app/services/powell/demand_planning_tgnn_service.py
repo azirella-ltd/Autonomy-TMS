@@ -15,7 +15,7 @@ Follows the EXACT same patterns as ExecutionGNNInferenceService:
 - _synthetic_inference() -> DemandPlanningTGNNOutput
 
 Usage:
-    svc = DemandPlanningTGNNService(db, config_id)
+    svc = DemandPlanningTGNNService(db, config_id, tenant_id=tenant_id)
     out = await svc.infer(sop_embeddings=sop_embeddings)
     # out.demand_forecast[site_key] -> List[float]
     # out.demand_volatility[site_key] -> float
@@ -34,9 +34,9 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+from app.services.checkpoint_storage_service import checkpoint_dir as _ckpt_dir
 
-CHECKPOINT_DIR = Path(__file__).parent.parent.parent / "checkpoints"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -115,9 +115,10 @@ class DemandPlanningTGNNService:
     6. Return per-site results for TacticalHiveCoordinator
     """
 
-    def __init__(self, db: AsyncSession, config_id: int):
+    def __init__(self, db: AsyncSession, config_id: int, tenant_id: int = 0):
         self.db = db
         self.config_id = config_id
+        self.tenant_id = tenant_id
         self._model = None
         self._device = "cpu"
 
@@ -273,7 +274,7 @@ class DemandPlanningTGNNService:
         """Load cached S&OP embeddings from SOPInferenceService."""
         try:
             from app.services.powell.sop_inference_service import SOPInferenceService
-            sop_svc = SOPInferenceService(self.db, self.config_id)
+            sop_svc = SOPInferenceService(self.db, self.config_id, tenant_id=self.tenant_id)
             return await sop_svc.get_embeddings_tensor()
         except Exception as e:
             logger.warning(f"Could not load S&OP embeddings: {e}")
@@ -286,7 +287,7 @@ class DemandPlanningTGNNService:
             "demand_planning_tgnn_*.pt",
         ]
         for pattern in ckpt_patterns:
-            matches = sorted(CHECKPOINT_DIR.glob(pattern))
+            matches = sorted(_ckpt_dir(self.tenant_id, self.config_id).glob(pattern))
             if matches:
                 return matches[-1]
         return Path("synthetic")

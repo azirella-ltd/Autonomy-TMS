@@ -193,9 +193,10 @@ class TacticalHiveCoordinator:
     # Any |signal| above this in the first-pass outputs triggers iteration 2.
     LATERAL_CONVERGENCE_THRESHOLD: float = 0.05
 
-    def __init__(self, db: AsyncSession, config_id: int):
+    def __init__(self, db: AsyncSession, config_id: int, tenant_id: int = 0):
         self.db = db
         self.config_id = config_id
+        self.tenant_id = tenant_id
 
     async def run_lateral_cycle(
         self,
@@ -212,9 +213,9 @@ class TacticalHiveCoordinator:
         Returns:
             TacticalHiveOutput with merged_per_site dict ready for broadcast.
         """
-        demand_svc = DemandPlanningTGNNService(self.db, self.config_id)
-        supply_svc = SupplyPlanningTGNNService(self.db, self.config_id)
-        inventory_svc = InventoryOptimizationTGNNService(self.db, self.config_id)
+        demand_svc = DemandPlanningTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
+        supply_svc = SupplyPlanningTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
+        inventory_svc = InventoryOptimizationTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
 
         # --- Iteration 1: parallel inference with no lateral context ---
         logger.info(

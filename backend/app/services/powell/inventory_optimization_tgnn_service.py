@@ -11,7 +11,7 @@ Loads trained InventoryOptimizationTGNN checkpoints and provides runtime inferen
 Follows the EXACT same patterns as ExecutionGNNInferenceService.
 
 Usage:
-    svc = InventoryOptimizationTGNNService(db, config_id)
+    svc = InventoryOptimizationTGNNService(db, config_id, tenant_id=tenant_id)
     out = await svc.infer(sop_embeddings=sop_embeddings)
     # out.buffer_adjustment_signal[site_key] -> float  # [-1, +1]
     # out.stockout_probability[site_key] -> float
@@ -30,9 +30,9 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+from app.services.checkpoint_storage_service import checkpoint_dir as _ckpt_dir
 
-CHECKPOINT_DIR = Path(__file__).parent.parent.parent / "checkpoints"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -108,9 +108,10 @@ class InventoryOptimizationTGNNService:
     6. Return per-site results for TacticalHiveCoordinator
     """
 
-    def __init__(self, db: AsyncSession, config_id: int):
+    def __init__(self, db: AsyncSession, config_id: int, tenant_id: int = 0):
         self.db = db
         self.config_id = config_id
+        self.tenant_id = tenant_id
         self._model = None
         self._device = "cpu"
 
@@ -262,7 +263,7 @@ class InventoryOptimizationTGNNService:
     async def _load_sop_embeddings(self) -> Optional[np.ndarray]:
         try:
             from app.services.powell.sop_inference_service import SOPInferenceService
-            sop_svc = SOPInferenceService(self.db, self.config_id)
+            sop_svc = SOPInferenceService(self.db, self.config_id, tenant_id=self.tenant_id)
             return await sop_svc.get_embeddings_tensor()
         except Exception as e:
             logger.warning(f"Could not load S&OP embeddings: {e}")
@@ -275,7 +276,7 @@ class InventoryOptimizationTGNNService:
             "inventory_optim_tgnn_*.pt",
         ]
         for pattern in ckpt_patterns:
-            matches = sorted(CHECKPOINT_DIR.glob(pattern))
+            matches = sorted(_ckpt_dir(self.tenant_id, self.config_id).glob(pattern))
             if matches:
                 return matches[-1]
         return Path("synthetic")

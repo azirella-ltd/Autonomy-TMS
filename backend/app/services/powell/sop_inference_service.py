@@ -11,7 +11,7 @@ runtime consumption. The S&OP model trains weekly/monthly but its outputs
 are consumed daily by the Execution tGNN and TRM agents.
 
 Usage:
-    svc = SOPInferenceService(db, config_id)
+    svc = SOPInferenceService(db, config_id, tenant_id=tenant_id)
     analysis = await svc.analyze_network()
     # analysis.criticality[site_key] -> float
     # analysis.embeddings[site_key] -> List[float] (64-dim)
@@ -30,9 +30,9 @@ import numpy as np
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+from app.services.checkpoint_storage_service import checkpoint_dir as _ckpt_dir
 
-CHECKPOINT_DIR = Path(__file__).parent.parent.parent / "checkpoints"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -119,9 +119,10 @@ class SOPInferenceService:
     5. Provide fast lookup for downstream consumers
     """
 
-    def __init__(self, db: AsyncSession, config_id: int):
+    def __init__(self, db: AsyncSession, config_id: int, tenant_id: int = 0):
         self.db = db
         self.config_id = config_id
+        self.tenant_id = tenant_id
         self._model = None
         self._device = "cpu"
 
@@ -383,12 +384,13 @@ class SOPInferenceService:
     def _find_checkpoint(self) -> Path:
         """Find the S&OP GraphSAGE checkpoint for this config."""
         # Check standard location
-        checkpoint_path = CHECKPOINT_DIR / f"sop_graphsage_{self.config_id}.pt"
+        _ckpt = _ckpt_dir(self.tenant_id, self.config_id)
+        checkpoint_path = _ckpt / f"sop_graphsage_{self.config_id}.pt"
         if checkpoint_path.exists():
             return checkpoint_path
 
         # Check config-specific subdirectory
-        for subdir in CHECKPOINT_DIR.glob("supply_chain_configs/*/"):
+        for subdir in _ckpt.glob("supply_chain_configs/*/"):
             candidate = subdir / f"sop_graphsage_{self.config_id}.pt"
             if candidate.exists():
                 return candidate

@@ -49,10 +49,9 @@ from app.models.planning_hierarchy import (
 from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 Node = Site  # backward compat alias for existing code in this file
 
-logger = logging.getLogger(__name__)
+from app.services.checkpoint_storage_service import checkpoint_dir as _ckpt_dir
 
-CHECKPOINT_DIR = Path(__file__).parent.parent.parent.parent / "checkpoints"
-CHECKPOINT_DIR.mkdir(exist_ok=True)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -117,6 +116,13 @@ class PowellTrainingService:
                 self.device = "cuda"
         except ImportError:
             pass
+
+    @property
+    def _checkpoint_dir(self) -> Path:
+        """Tenant-scoped checkpoint directory (available after load_config)."""
+        tenant_id = self.sc_config.tenant_id if self.sc_config else 0
+        config_id = self.config.config_id if self.config else 0
+        return _ckpt_dir(tenant_id, config_id)
 
     async def load_config(self):
         """Load all configuration from database."""
@@ -709,7 +715,7 @@ class PowellTrainingService:
                 logger.info(f"S&OP Epoch {epoch + 1}/{self.config.sop_epochs}: loss={loss_val:.4f}")
 
         # Save checkpoint
-        checkpoint_path = CHECKPOINT_DIR / f"sop_graphsage_{self.config.config_id}.pt"
+        checkpoint_path = self._checkpoint_dir / f"sop_graphsage_{self.config.config_id}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
             "config": {
@@ -820,7 +826,7 @@ class PowellTrainingService:
                 logger.info(f"tGNN Epoch {epoch + 1}/{self.config.tgnn_epochs}: loss={avg_loss:.4f}")
 
         # Save checkpoint
-        checkpoint_path = CHECKPOINT_DIR / f"execution_tgnn_{self.config.config_id}.pt"
+        checkpoint_path = self._checkpoint_dir / f"execution_tgnn_{self.config.config_id}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
             "config": {
@@ -1173,7 +1179,7 @@ class PowellTrainingService:
                     best_loss = loss.item()
 
         # Save checkpoint
-        checkpoint_path = CHECKPOINT_DIR / f"trm_{trm_type_key}_{self.config.config_id}.pt"
+        checkpoint_path = self._checkpoint_dir / f"trm_{trm_type_key}_{self.config.config_id}.pt"
         torch.save({
             "model_state_dict": model.state_dict(),
             "trm_type": trm_type_key,
