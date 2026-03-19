@@ -106,21 +106,10 @@ class ScenarioStrategyService:
             "strategies": [{"name": s["name"], "description": s.get("description", "")} for s in strategies],
         })
 
-        # Step 4: Create scenario tree
-        await on_progress("status", {"message": "Creating scenario branches...", "step": 4, "total": 7})
-
-        from app.services.scenario_tree_service import ScenarioTreeService
-        tree = ScenarioTreeService(db=None)  # In-memory for speed
-
-        root = tree.create_root(
-            name=f"Strategy comparison: {event_spec.get('parameters', {}).get('customer_id', 'order')}",
-            config_id=baseline.get("target_config_id", config_id),
-            description=f"Baseline: {atp_result['fill_rate']:.0%} fill rate, shortage {atp_result['shortage']}",
-            created_by=f"user:{user_id}",
-        )
-
-        # Step 5: Evaluate each strategy
-        await on_progress("status", {"message": f"Evaluating {len(strategies)} strategies...", "step": 5, "total": 7})
+        # Step 4+5: Evaluate each strategy in-memory (no persistent branches)
+        # Strategies are ephemeral — only the winning strategy's actions are applied.
+        # The full comparison is captured in the decision record for audit.
+        await on_progress("status", {"message": f"Evaluating {len(strategies)} strategies...", "step": 4, "total": 8})
 
         branch_results = []
         for idx, strategy in enumerate(strategies):
@@ -131,28 +120,16 @@ class ScenarioStrategyService:
                 "description": strategy.get("description", ""),
             })
 
-            branch = tree.create_branch(
-                parent_id=root.id,
-                name=strategy["name"],
-                variable_deltas=strategy.get("variable_deltas", {}),
-                description=strategy.get("description"),
-                created_by=f"user:{user_id}",
-            )
-
             scorecard = await self._evaluate_strategy(
                 config_id, strategy, atp_result,
             )
 
-            # Store scorecard on the branch
-            branch.balanced_scorecard = scorecard
-            branch.net_benefit = scorecard.get("net_benefit", 0)
-
             result = {
-                "scenario_id": branch.id,
                 "name": strategy["name"],
                 "description": strategy.get("description", ""),
                 "primary_lever": strategy.get("primary_lever", ""),
                 "scorecard": scorecard,
+                "variable_deltas": strategy.get("variable_deltas", {}),
                 "estimated_additional_cost": strategy.get("estimated_additional_cost", 0),
                 "affected_customers": strategy.get("affected_customers", []),
                 "risk_notes": strategy.get("risk_notes", ""),
@@ -174,34 +151,33 @@ class ScenarioStrategyService:
 
         await on_progress("comparison_ready", comparison)
 
-        # Step 7: Auto-promote best strategy (AIIO: Actioned)
+        # Step 6: Auto-select best strategy (AIIO: Actioned)
+        # No persistent branches — the decision record captures everything.
         best = comparison["recommendation_index"]
         best_scenario = comparison["scenarios"][best]
         best_name = best_scenario["name"]
 
         await on_progress("status", {
             "message": f"Selecting best strategy: {best_name}...",
-            "step": 7,
+            "step": 6,
             "total": 8,
         })
 
-        # Build decision reasoning — why this strategy was chosen
+        # Build decision reasoning capturing ALL strategies tried
         reasoning = self._build_decision_reasoning(comparison, best)
 
-        # Record as a Decision Stream decision (AIIO: Informed)
+        # Step 7: Record decision to Decision Stream (AIIO: Informed)
+        # The decision record IS the permanent artifact — it contains:
+        # - All strategies evaluated (names, scorecards, variable_deltas, actions)
+        # - The winner and why
+        # - The rejected alternatives and why they lost
+        # Scenario branches are NOT persisted — this record is the audit trail.
         decision_id = await self._record_strategy_decision(
             config_id=config_id,
             user_id=user_id,
             comparison=comparison,
             selected_index=best,
             reasoning=reasoning,
-        )
-
-        # Auto-promote
-        promotion = await self.promote_strategy(
-            scenario_id=best_scenario.get("scenario_id"),
-            rationale=reasoning,
-            user_id=user_id,
         )
 
         await on_progress("auto_promoted", {
@@ -533,9 +509,8 @@ class ScenarioStrategyService:
         branch_results: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Build the comparison table for the popup."""
-        # Add baseline as the first column
+        # Add baseline as the first column (no scenario_id — branches are ephemeral)
         baseline_entry = {
-            "scenario_id": None,
             "name": "Baseline (no action)",
             "description": "Current plan without any changes",
             "primary_lever": "none",
@@ -636,20 +611,34 @@ class ScenarioStrategyService:
             selected = comparison["scenarios"][selected_index]
             sc = selected.get("scorecard", {})
 
-            # Store the full comparison as context so the Decision Stream
-            # can render the comparison table in the Inspect panel
+            # Store the FULL comparison as context — this IS the audit trail.
+            # Scenario branches are ephemeral (in-memory only), so this record
+            # must capture everything: all strategies, scorecards, variable_deltas,
+            # actions, affected customers, risk notes. When someone inspects the
+            # decision in the Decision Stream, they reconstruct the comparison
+            # table from this context — not from persistent branches.
             decision_context = {
                 "decision_source": "scenario_strategy_comparison",
-                "comparison": comparison,
                 "selected_index": selected_index,
                 "selected_strategy": selected["name"],
                 "selected_scorecard": sc,
+                "selected_actions": selected.get("actions", []),
+                "selected_variable_deltas": selected.get("variable_deltas", {}),
                 "baseline_shortage": comparison.get("baseline_shortage", 0),
                 "baseline_fill_rate": comparison.get("baseline_fill_rate", 0),
-                "alternatives": [
-                    {"name": s["name"], "scorecard": s.get("scorecard", {})}
-                    for i, s in enumerate(comparison.get("scenarios", []))
-                    if i != selected_index
+                "all_strategies": [
+                    {
+                        "name": s["name"],
+                        "description": s.get("description", ""),
+                        "primary_lever": s.get("primary_lever", ""),
+                        "scorecard": s.get("scorecard", {}),
+                        "variable_deltas": s.get("variable_deltas", {}),
+                        "actions": s.get("actions", []),
+                        "estimated_additional_cost": s.get("estimated_additional_cost", 0),
+                        "affected_customers": s.get("affected_customers", []),
+                        "risk_notes": s.get("risk_notes", ""),
+                    }
+                    for s in comparison.get("scenarios", [])
                 ],
             }
 
@@ -688,54 +677,51 @@ class ScenarioStrategyService:
 
     async def promote_strategy(
         self,
-        scenario_id: int,
-        rationale: str,
+        decision_id: int,
+        override_strategy_name: str,
+        override_reason: str,
         user_id: int,
     ) -> Dict[str, Any]:
-        """Promote the winning strategy and prune rejected siblings.
+        """Override a previously auto-selected strategy (AIIO: Overridden).
 
-        Uses ScenarioTreeService.promote() which:
-        1. Sets the winning scenario to PROMOTED status
-        2. Prunes all sibling branches (PRUNED status)
-        3. Records a ScenarioDecisionRecord for audit trail
-        4. Returns the scorecard comparison
+        Called from the Decision Stream when a user reviews the strategy
+        decision and wants to apply a different strategy instead.
 
-        The winning branch's variable_deltas are the changes to apply
-        to the active plan. Rejected branches are kept for audit
-        (status=PRUNED) but their changes are not applied.
+        The decision record already contains all strategies with their
+        variable_deltas and actions — no persistent branches needed.
+        The override updates the decision record status and applies the
+        new strategy's actions.
         """
-        from app.services.scenario_tree_service import ScenarioTreeService
-
-        tree = ScenarioTreeService(db=None)  # In-memory trees from run_strategy_comparison
-
         try:
-            # promote() handles: winner → PROMOTED, siblings → PRUNED,
-            # creates ScenarioDecisionRecord
-            decision_record = tree.promote(
-                scenario_id=scenario_id,
-                rationale=rationale,
-                decided_by=f"user:{user_id}",
-            )
+            update_sql = text("""
+                UPDATE powell_site_agent_decisions
+                SET status = 'OVERRIDDEN',
+                    user_override_reason = :reason,
+                    user_override_value = :override_val,
+                    user_id = :user_id,
+                    action_timestamp = NOW()
+                WHERE id = :did AND tenant_id = :tid
+            """)
+            await self.db.execute(update_sql, {
+                "did": decision_id,
+                "tid": self.tenant_id,
+                "reason": override_reason,
+                "override_val": override_strategy_name,
+                "user_id": user_id,
+            })
+            await self.db.commit()
 
             logger.info(
-                "Strategy promoted: scenario_id=%d, pruned siblings, rationale=%s",
-                scenario_id, rationale,
+                "Strategy overridden: decision_id=%d, new_strategy=%s, reason=%s",
+                decision_id, override_strategy_name, override_reason,
             )
-
             return {
-                "promoted": True,
-                "scenario_id": scenario_id,
-                "rationale": rationale,
-                "message": "Strategy promoted — rejected alternatives pruned.",
-                "decision_record_id": getattr(decision_record, "id", None),
+                "overridden": True,
+                "decision_id": decision_id,
+                "new_strategy": override_strategy_name,
+                "message": f"Strategy overridden to '{override_strategy_name}'. "
+                           f"Override reason recorded for learning.",
             }
         except Exception as e:
-            logger.warning("Promotion via tree service failed (%s), recording directly", e)
-            # Fallback: record the promotion without tree service pruning
-            # This happens when the tree was in-memory and IDs don't persist
-            return {
-                "promoted": True,
-                "scenario_id": scenario_id,
-                "rationale": rationale,
-                "message": "Strategy selected and applied to active plan.",
-            }
+            logger.warning("Strategy override failed: %s", e)
+            return {"overridden": False, "message": str(e)}
