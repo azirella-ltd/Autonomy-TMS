@@ -1,3 +1,14 @@
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║ WARNING: The @router routes in this file are NOT served by the app.      ║
+# ║ All supply-chain-config routes are defined in main.py (lines 900-3300)   ║
+# ║ using @api.get/@api.post decorators directly on the FastAPI app.         ║
+# ║                                                                          ║
+# ║ The router object here is DEAD CODE — it was never mounted via           ║
+# ║ app.include_router(). Helper functions (get_config_or_404,               ║
+# ║ _transportation_lane_to_payload, etc.) ARE used by main.py imports.      ║
+# ║                                                                          ║
+# ║ When adding new endpoints: add them in main.py, not here.               ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
 import hashlib
 import json
 import subprocess

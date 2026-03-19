@@ -1326,6 +1326,63 @@ def read_supply_chain_transportation_lanes(
         db.close()
 
 
+@api.get("/supply-chain-config/{config_id}/trading-partners")
+def read_supply_chain_trading_partners(
+    config_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """List trading partners referenced by lanes in this config.
+
+    Returns vendors (from_partner_id on inbound lanes) and customers
+    (to_partner_id on outbound lanes) with their names and geo data.
+    """
+    from app.models.sc_entities import TradingPartner
+
+    db = SyncSessionLocal()
+    try:
+        config = _get_supply_chain_config_or_404(db, config_id)
+        _ensure_can_view_supply_chain_config(current_user, config)
+
+        # Find all partner _ids referenced by lanes in this config
+        lanes = (
+            db.query(SupplyLaneModel)
+            .filter(SupplyLaneModel.config_id == config_id)
+            .all()
+        )
+        partner_ids = set()
+        for lane in lanes:
+            if lane.from_partner_id:
+                partner_ids.add(lane.from_partner_id)
+            if lane.to_partner_id:
+                partner_ids.add(lane.to_partner_id)
+
+        if not partner_ids:
+            return []
+
+        partners = (
+            db.query(TradingPartner)
+            .filter(TradingPartner._id.in_(partner_ids))
+            .all()
+        )
+
+        return [
+            {
+                "_id": p._id,
+                "id": p.id,
+                "tpartner_type": p.tpartner_type,
+                "description": p.description,
+                "country": p.country,
+                "city": p.city,
+                "state_prov": p.state_prov,
+                "geo_id": p.geo_id,
+                "is_active": p.is_active,
+            }
+            for p in partners
+        ]
+    finally:
+        db.close()
+
+
 @api.get("/supply-chain-config/{config_id}/product-site-configs")
 def read_supply_chain_product_site_configs(
     config_id: int,
@@ -1843,11 +1900,29 @@ def _serialize_transportation_lane(lane: SupplyLaneModel) -> Dict[str, Any]:
     lead_time = lane.lead_time_days or {}
     lead_time_range = _extract_range(lead_time)
     capacity_value = _as_float(lane.capacity)
+    # Resolve partner names for partner-endpoint lanes (vendor→plant or plant→customer)
+    from_partner_name = None
+    to_partner_name = None
+    if lane.from_partner_id:
+        try:
+            from_partner_name = lane.upstream_partner.description if lane.upstream_partner else None
+        except Exception:
+            pass
+    if lane.to_partner_id:
+        try:
+            to_partner_name = lane.downstream_partner.description if lane.downstream_partner else None
+        except Exception:
+            pass
+
     return {
         "id": lane.id,
         "config_id": lane.config_id,
-        "from_site_id": lane.from_site_id,  # AWS SC DM standard
-        "to_site_id": lane.to_site_id,      # AWS SC DM standard
+        "from_site_id": lane.from_site_id,        # AWS SC DM: internal site endpoint
+        "to_site_id": lane.to_site_id,            # AWS SC DM: internal site endpoint
+        "from_partner_id": lane.from_partner_id,    # AWS SC DM: external vendor endpoint
+        "to_partner_id": lane.to_partner_id,        # AWS SC DM: external customer endpoint
+        "from_partner_name": from_partner_name,
+        "to_partner_name": to_partner_name,
         "capacity": capacity_value,
         "capacity_int": int(capacity_value) if capacity_value is not None else None,
         "lead_time_days": lead_time,

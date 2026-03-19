@@ -115,8 +115,35 @@ def _load_product_costs(db: Session) -> Dict[str, float]:
 
 
 def _load_vendor_names(db: Session, config_id: int) -> Dict[int, str]:
-    """site_id -> vendor name for external vendor sites."""
-    from app.models.supply_chain_config import Site
+    """partner_id -> vendor name.
+
+    First tries TradingPartner records referenced by inbound lanes (AWS SC
+    compliant). Falls back to external vendor Sites for legacy configs (Food
+    Dist, Beer Game) that still use the proxy-site pattern.
+    """
+    from app.models.supply_chain_config import Site, TransportationLane
+    from app.models.sc_entities import TradingPartner
+
+    # Primary: TradingPartner via inbound lanes (from_partner_id set)
+    lanes = (
+        db.query(TransportationLane.from_partner_id)
+        .filter(
+            TransportationLane.config_id == config_id,
+            TransportationLane.from_partner_id.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    partner_ids = {l[0] for l in lanes}
+    if partner_ids:
+        partners = (
+            db.query(TradingPartner._id, TradingPartner.description)
+            .filter(TradingPartner._id.in_(partner_ids))
+            .all()
+        )
+        return {p._id: p.description for p in partners}
+
+    # Fallback: external vendor Sites (legacy proxy pattern)
     rows = (
         db.query(Site.id, Site.name)
         .filter(

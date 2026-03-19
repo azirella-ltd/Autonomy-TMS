@@ -1292,6 +1292,19 @@ class DecisionStreamService:
         except Exception as e:
             logger.warning(f"Failed to load site names: {e}")
 
+        # Build TradingPartner name lookup (for customer_id / tpartner_id on decisions)
+        partner_names: Dict[str, str] = {}
+        try:
+            from app.models.sc_entities import TradingPartner as _TP
+            tp_result = await self.db.execute(
+                select(_TP.id, _TP.description, _TP.tpartner_type)
+            )
+            for tp_id, tp_desc, tp_type in tp_result.fetchall():
+                if tp_id and tp_desc:
+                    partner_names[str(tp_id)] = tp_desc
+        except Exception as e:
+            logger.warning(f"Failed to load trading partner names: {e}")
+
         # Query all 11 tables sequentially (async session cannot be shared across gather)
         for model_class, type_key in DECISION_TABLES:
             if relevant_types is not None and type_key not in relevant_types:
@@ -1351,6 +1364,12 @@ class DecisionStreamService:
                             or getattr(row, "urgency", None)
                         )
 
+                    # Resolve trading partner names (customer/vendor) if present
+                    raw_customer = getattr(row, "customer_id", None)
+                    raw_vendor = getattr(row, "tpartner_id", None) or getattr(row, "vendor_id", None)
+                    customer_name = partner_names.get(str(raw_customer)) if raw_customer else None
+                    vendor_name = partner_names.get(str(raw_vendor)) if raw_vendor else None
+
                     all_decisions.append({
                         "id": row.id,
                         "decision_type": type_key,
@@ -1360,6 +1379,8 @@ class DecisionStreamService:
                         "product_name": product_names.get(str(pid)) if pid else None,
                         "site_id": site_id,
                         "site_name": site_names.get(str(site_id)) if site_id else None,
+                        "customer_name": customer_name,
+                        "vendor_name": vendor_name,
                         "urgency": _urgency_label(computed_urgency),
                         "urgency_score": computed_urgency,
                         "likelihood": _likelihood_label(_safe_float(getattr(row, "confidence", None))),
