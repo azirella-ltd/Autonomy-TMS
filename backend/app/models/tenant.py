@@ -135,9 +135,9 @@ class Tenant(Base):
     # Digital Twin Simulation Parameters
     # The simulation replicates the customer's APS heuristics against stochastic reality.
     # Agents learn by watching the heuristic decisions and their outcomes.
-    sim_episodes: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=5,
-        comment="Number of Monte Carlo episodes for digital twin simulation"
+    sim_scenarios: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=50,
+        comment="Number of stress-test scenarios for digital twin simulation"
     )
     sim_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=90,
@@ -168,8 +168,8 @@ class Tenant(Base):
         defaults = get_industry_sim_defaults(self.industry.value)
         if self.sim_days == 90:  # still at default
             self.sim_days = defaults["sim_days"]
-        if self.sim_episodes == 5:
-            self.sim_episodes = defaults["sim_episodes"]
+        if self.sim_scenarios == 50:  # still at default
+            self.sim_scenarios = defaults["sim_scenarios"]
         if self.sim_warmup_days == 10:
             self.sim_warmup_days = defaults["sim_warmup_days"]
         self.sim_time_bucket = "daily"  # Always daily

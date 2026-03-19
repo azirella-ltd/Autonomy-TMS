@@ -1715,14 +1715,17 @@ INDUSTRY_SC_LEAD_TIME_DAYS = {
     "third_party_logistics": 7,       # Shortest — cross-dock + last mile
 }
 
-# Default episodes by industry (more complex = more episodes for convergence)
-INDUSTRY_DEFAULT_EPISODES = {
-    "pharmaceutical": 10,
-    "aerospace_defense": 10,
-    "automotive": 8,
-    "industrial_equipment": 8,
-    "textile_apparel": 8,
-    "metals_mining": 7,
+# Default scenarios by industry (more complex = more scenarios for convergence)
+# Base = 50; complex industries need more to capture tail risks
+INDUSTRY_DEFAULT_SCENARIOS = {
+    "pharmaceutical": 100,        # Regulatory variance, cold chain failures
+    "aerospace_defense": 100,     # Long tails, certification delays
+    "automotive": 75,             # Tiered supply, JIT sensitivity
+    "industrial_equipment": 75,   # Complex BOMs, long component LTs
+    "textile_apparel": 75,        # Seasonal, fashion risk, global sourcing
+    "metals_mining": 60,          # Commodity price swings, extraction variance
+    "electronics": 60,            # Component shortage risk, fast cycles
+    "chemical": 60,               # Batch variability, yield uncertainty
 }
 
 
@@ -1731,7 +1734,7 @@ def get_industry_sim_defaults(industry: str) -> _Dict:
 
     sim_days = 2 × end-to-end SC lead time (see full cycle + replenishment)
     sim_time_bucket = always 'daily'
-    sim_episodes = industry-specific or 5
+    sim_scenarios = industry-specific or 5
     sim_warmup_days = 10% of sim_days, min 5
 
     Returns dict ready to set on tenant model.
@@ -1739,11 +1742,11 @@ def get_industry_sim_defaults(industry: str) -> _Dict:
     sc_lt = INDUSTRY_SC_LEAD_TIME_DAYS.get(industry, 45)
     sim_days = sc_lt * 2  # 2× lead time to see full cycle
     warmup = max(5, sim_days // 10)
-    episodes = INDUSTRY_DEFAULT_EPISODES.get(industry, 5)
+    episodes = INDUSTRY_DEFAULT_SCENARIOS.get(industry, 50)
 
     return {
         "sim_days": sim_days,
-        "sim_episodes": episodes,
+        "sim_scenarios": episodes,  # 50 base, up to 100 for complex industries
         "sim_warmup_days": warmup,
         "sim_time_bucket": "daily",  # Always daily — never lose granularity
         "sim_decisions_per_type": 20,

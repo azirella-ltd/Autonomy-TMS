@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # Defaults (overridden by tenant config when available)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_EPISODES = 5
+_DEFAULT_SCENARIOS = 50
 _DEFAULT_DAYS = 90
 _DEFAULT_WARMUP_DAYS = 10
 
@@ -1457,7 +1457,7 @@ def seed_decisions_from_simulation(
     config_id: int,
     tenant_id: int,
     max_per_type: int = 20,
-    n_episodes: Optional[int] = None,
+    n_scenarios: Optional[int] = None,
     n_days: Optional[int] = None,
     warmup_days: Optional[int] = None,
 ) -> Dict[str, int]:
@@ -1473,27 +1473,27 @@ def seed_decisions_from_simulation(
     Returns {trm_type: count_seeded}.
     """
     # Load simulation params from tenant config if not passed
-    if any(p is None for p in [n_episodes, n_days, warmup_days]):
+    if any(p is None for p in [n_scenarios, n_days, warmup_days]):
         try:
             tenant_row = db.execute(
-                text("SELECT sim_episodes, sim_days, sim_warmup_days, sim_decisions_per_type FROM tenants WHERE id = :tid"),
+                text("SELECT sim_scenarios, sim_days, sim_warmup_days, sim_decisions_per_type FROM tenants WHERE id = :tid"),
                 {"tid": tenant_id},
             ).fetchone()
             if tenant_row:
-                n_episodes = n_episodes or tenant_row[0] or _DEFAULT_EPISODES
+                n_scenarios = n_scenarios or tenant_row[0] or _DEFAULT_SCENARIOS
                 n_days = n_days or tenant_row[1] or _DEFAULT_DAYS
                 warmup_days = warmup_days or tenant_row[2] or _DEFAULT_WARMUP_DAYS
                 max_per_type = max_per_type or tenant_row[3] or 20
         except Exception:
             pass
 
-    n_episodes = n_episodes or _DEFAULT_EPISODES
+    n_scenarios = n_scenarios or _DEFAULT_SCENARIOS
     n_days = n_days or _DEFAULT_DAYS
     warmup_days = warmup_days or _DEFAULT_WARMUP_DAYS
 
     logger.info(
         "Decision seeder: starting %d episodes x %d days (warmup=%d) for config %d (tenant %d)",
-        n_episodes, n_days, warmup_days, config_id, tenant_id,
+        n_scenarios, n_days, warmup_days, config_id, tenant_id,
     )
 
     # Clean up any existing seeded decisions for this config to avoid
@@ -1555,7 +1555,7 @@ def seed_decisions_from_simulation(
 
     order_seq = 0
 
-    for episode in range(n_episodes):
+    for episode in range(n_scenarios):
         chain = _DagChain(site_configs, topo_order, seed=episode * 1000)
 
         # Track previous demand CV per site for buffer detection
