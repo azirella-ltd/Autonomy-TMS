@@ -1428,3 +1428,126 @@ class HistoricalTriangularChangeoverTime:
 
         # Fallback: moderate setup (30 min mode, 15-90 range)
         return cls(low=15, mode=30, high=90, seed=seed)
+
+
+# ============================================================================
+# Customer Service Outcome Metrics (measured, not input)
+# ============================================================================
+#
+# These are OUTCOMES measured from simulation or actual execution results.
+# They are NOT inputs to training — they are the scorecard metrics that
+# evaluate how well the supply chain performed.
+#
+# Targets for these metrics (e.g., OTIF target ≥ 95%) are static inputs
+# set by the tenant admin. The actual values are computed from data.
+
+
+def compute_customer_service_metrics(db, config_id: int) -> _Dict:
+    """Compute customer service outcome metrics from outbound order history.
+
+    Returns a scorecard with:
+    - OTIF % (On Time In Full)
+    - Fill Rate % (qty fulfilled / qty ordered)
+    - On-Time Delivery % (delivered by requested date)
+    - Perfect Order Rate % (on time + in full + no quality issues + correct docs)
+    - Backorder Rate % (orders with unfulfilled quantity)
+    - Average Order Cycle Time (days from order to delivery)
+    """
+    try:
+        rows = db.execute(_sql_text("""
+            SELECT o.id, o.order_date, o.requested_delivery_date,
+                   o.actual_delivery_date, o.promised_delivery_date,
+                   o.total_ordered_qty, o.total_fulfilled_qty,
+                   o.status
+            FROM outbound_order o
+            WHERE o.config_id = :cid
+              AND o.order_date IS NOT NULL
+              AND o.total_ordered_qty > 0
+        """), {"cid": config_id}).fetchall()
+
+        if not rows:
+            return {
+                "otif_pct": None, "fill_rate_pct": None, "on_time_pct": None,
+                "perfect_order_pct": None, "backorder_rate_pct": None,
+                "avg_cycle_time_days": None, "total_orders": 0,
+            }
+
+        # Average lane LT for assumed delivery fallback
+        lt_row = db.execute(_sql_text("""
+            SELECT AVG(
+                CASE WHEN supply_lead_time IS NOT NULL
+                     THEN CAST(supply_lead_time->>'value' AS FLOAT)
+                     ELSE 7 END
+            ) FROM transportation_lane WHERE config_id = :cid
+        """), {"cid": config_id}).fetchone()
+        avg_lane_lt = float(lt_row[0]) if lt_row and lt_row[0] else 7.0
+
+        total = 0
+        on_time = 0
+        in_full = 0
+        on_time_and_full = 0
+        total_ordered = 0.0
+        total_fulfilled = 0.0
+        backorder_count = 0
+        cycle_times = []
+
+        from datetime import timedelta
+
+        for r in rows:
+            order_date, requested, actual, promised = r[1], r[2], r[3], r[4]
+            ordered_qty = float(r[5] or 0)
+            fulfilled_qty = float(r[6] or 0)
+            status = r[7] or ""
+
+            if not requested:
+                continue
+
+            total += 1
+            total_ordered += ordered_qty
+            total_fulfilled += fulfilled_qty
+
+            # Delivery date: actual > promised > assumed
+            delivery_date = actual or promised
+            if not delivery_date and order_date:
+                delivery_date = order_date + timedelta(days=int(avg_lane_lt))
+
+            # On Time
+            is_on_time = (delivery_date <= requested) if delivery_date and requested else False
+            if is_on_time:
+                on_time += 1
+
+            # In Full
+            is_in_full = fulfilled_qty >= ordered_qty if ordered_qty > 0 else True
+            if is_in_full:
+                in_full += 1
+
+            # OTIF
+            if is_on_time and is_in_full:
+                on_time_and_full += 1
+
+            # Backorder
+            if fulfilled_qty < ordered_qty and status not in ("CANCELLED", "REJECTED"):
+                backorder_count += 1
+
+            # Cycle time (order to delivery)
+            if delivery_date and order_date:
+                ct = (delivery_date - order_date).days
+                if 0 <= ct < 365:
+                    cycle_times.append(ct)
+
+        return {
+            "otif_pct": round((on_time_and_full / total) * 100, 1) if total > 0 else None,
+            "fill_rate_pct": round((total_fulfilled / total_ordered) * 100, 1) if total_ordered > 0 else None,
+            "on_time_pct": round((on_time / total) * 100, 1) if total > 0 else None,
+            "perfect_order_pct": round((on_time_and_full / total) * 100, 1) if total > 0 else None,  # Simplified — full perfect order needs quality + docs check
+            "backorder_rate_pct": round((backorder_count / total) * 100, 1) if total > 0 else None,
+            "avg_cycle_time_days": round(_stats.mean(cycle_times), 1) if cycle_times else None,
+            "total_orders": total,
+            "on_time_orders": on_time,
+            "in_full_orders": in_full,
+            "backorder_orders": backorder_count,
+        }
+
+    except Exception as e:
+        _logger.warning("Customer service metrics computation failed: %s", e)
+        return {"otif_pct": None, "total_orders": 0, "error": str(e)}
