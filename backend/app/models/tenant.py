@@ -156,6 +156,24 @@ class Tenant(Base):
         comment="Max decisions to seed per TRM type from simulation"
     )
 
+    def apply_industry_sim_defaults(self) -> None:
+        """Set simulation parameters from industry benchmarks.
+
+        Called at tenant creation or when industry is changed.
+        Only sets values that haven't been explicitly overridden.
+        """
+        from app.services.powell.training_distributions import get_industry_sim_defaults
+        if not self.industry:
+            return
+        defaults = get_industry_sim_defaults(self.industry.value)
+        if self.sim_days == 90:  # still at default
+            self.sim_days = defaults["sim_days"]
+        if self.sim_episodes == 5:
+            self.sim_episodes = defaults["sim_episodes"]
+        if self.sim_warmup_days == 10:
+            self.sim_warmup_days = defaults["sim_warmup_days"]
+        self.sim_time_bucket = "daily"  # Always daily
+
     @property
     def is_learning(self) -> bool:
         """Check if tenant is in learning mode (user education)."""

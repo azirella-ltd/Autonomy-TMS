@@ -1686,3 +1686,167 @@ def load_site_guardrails(
         pass
 
     return g
+
+
+# ============================================================================
+# Industry Simulation Defaults — based on end-to-end SC lead times
+# ============================================================================
+#
+# Simulation time = 2× industry end-to-end supply chain lead time
+# (enough to see one full replenishment cycle complete + variability)
+# Time bucket = always daily. Work week = Mon-Fri (5 days).
+# Weekly demand is spread uniformly over 5 work days.
+
+# End-to-end SC lead times by industry (days) — sourced from APICS/SCOR benchmarks
+# This is the total VSM lead time: supplier → manufacture → distribute → deliver
+INDUSTRY_SC_LEAD_TIME_DAYS = {
+    "food_beverage": 21,              # Short shelf life, fast turns
+    "pharmaceutical": 120,            # Long validation, cold chain, regulatory
+    "automotive": 60,                 # Tiered supply, JIT assembly
+    "electronics": 45,                # Global sourcing, fast product cycles
+    "chemical": 42,                   # Process manufacturing, batch cycles
+    "industrial_equipment": 90,       # Complex BOM, long component LTs
+    "consumer_goods": 30,             # Fast moving, retail distribution
+    "metals_mining": 75,              # Raw material extraction + processing
+    "aerospace_defense": 180,         # Long LTs, certification, complex BOMs
+    "building_materials": 35,         # Regional, heavy freight
+    "textile_apparel": 90,            # Global sourcing, seasonal, fashion risk
+    "wholesale_distribution": 14,     # Short — receiving + put-away + ship
+    "third_party_logistics": 7,       # Shortest — cross-dock + last mile
+}
+
+# Default episodes by industry (more complex = more episodes for convergence)
+INDUSTRY_DEFAULT_EPISODES = {
+    "pharmaceutical": 10,
+    "aerospace_defense": 10,
+    "automotive": 8,
+    "industrial_equipment": 8,
+    "textile_apparel": 8,
+    "metals_mining": 7,
+}
+
+
+def get_industry_sim_defaults(industry: str) -> _Dict:
+    """Get simulation defaults for an industry.
+
+    sim_days = 2 × end-to-end SC lead time (see full cycle + replenishment)
+    sim_time_bucket = always 'daily'
+    sim_episodes = industry-specific or 5
+    sim_warmup_days = 10% of sim_days, min 5
+
+    Returns dict ready to set on tenant model.
+    """
+    sc_lt = INDUSTRY_SC_LEAD_TIME_DAYS.get(industry, 45)
+    sim_days = sc_lt * 2  # 2× lead time to see full cycle
+    warmup = max(5, sim_days // 10)
+    episodes = INDUSTRY_DEFAULT_EPISODES.get(industry, 5)
+
+    return {
+        "sim_days": sim_days,
+        "sim_episodes": episodes,
+        "sim_warmup_days": warmup,
+        "sim_time_bucket": "daily",  # Always daily — never lose granularity
+        "sim_decisions_per_type": 20,
+        "industry_sc_lead_time_days": sc_lt,
+    }
+
+
+# ============================================================================
+# Work Week and Demand Spreading
+# ============================================================================
+
+def is_work_day(day_index: int, start_weekday: int = 0) -> bool:
+    """Check if a simulation day is a work day (Mon-Fri).
+
+    Args:
+        day_index: 0-based day in the simulation
+        start_weekday: weekday of simulation day 0 (0=Mon, 6=Sun)
+
+    Returns True for Mon-Fri (weekday 0-4), False for Sat-Sun (5-6).
+    """
+    weekday = (start_weekday + day_index) % 7
+    return weekday < 5  # Mon=0 through Fri=4
+
+
+def spread_weekly_demand(weekly_qty: float, day_in_week: int) -> float:
+    """Spread weekly demand uniformly over 5 work days.
+
+    Args:
+        weekly_qty: total weekly demand quantity
+        day_in_week: 0=Mon, 1=Tue, ..., 4=Fri, 5=Sat, 6=Sun
+
+    Returns daily demand: weekly_qty/5 on work days, 0 on weekends.
+    """
+    if day_in_week >= 5:  # Saturday or Sunday
+        return 0.0
+    return weekly_qty / 5.0
+
+
+def spread_monthly_demand(monthly_qty: float, day_in_month: int, work_days_in_month: int = 22) -> float:
+    """Spread monthly demand over work days in the month.
+
+    Args:
+        monthly_qty: total monthly demand
+        day_in_month: 0-based day (only called on work days)
+        work_days_in_month: typically 22 (5 days × 4.4 weeks)
+
+    Returns daily demand on work days.
+    """
+    return monthly_qty / work_days_in_month
+
+
+class WorkWeekCalendar:
+    """Simple work week calendar for simulation.
+
+    Mon-Fri = work days (operations run, orders process, shipments move)
+    Sat-Sun = non-work (no demand, no production, no shipping)
+
+    All simulation operations should check is_work_day() before executing.
+    Lead times count only work days (5 per week, not 7).
+    """
+
+    def __init__(self, start_weekday: int = 0):
+        """
+        Args:
+            start_weekday: weekday of simulation day 0 (0=Mon, default)
+        """
+        self.start_weekday = start_weekday
+
+    def is_work_day(self, sim_day: int) -> bool:
+        return is_work_day(sim_day, self.start_weekday)
+
+    def weekday(self, sim_day: int) -> int:
+        """Return weekday (0=Mon, 6=Sun) for a simulation day."""
+        return (self.start_weekday + sim_day) % 7
+
+    def work_days_in_range(self, start_day: int, end_day: int) -> int:
+        """Count work days between two simulation days (inclusive)."""
+        return sum(1 for d in range(start_day, end_day + 1) if self.is_work_day(d))
+
+    def calendar_days_for_work_days(self, work_days: int, from_day: int = 0) -> int:
+        """Convert work days to calendar days from a starting point.
+
+        Used for lead time conversion: a 5 work-day lead time = 7 calendar days.
+        """
+        if work_days <= 0:
+            return 0
+        cal_days = 0
+        remaining = work_days
+        d = from_day
+        while remaining > 0:
+            if self.is_work_day(d):
+                remaining -= 1
+            d += 1
+            cal_days += 1
+        return cal_days
+
+    def daily_demand_from_weekly(self, weekly_qty: float, sim_day: int) -> float:
+        """Get daily demand for a simulation day from a weekly total."""
+        weekday = self.weekday(sim_day)
+        return spread_weekly_demand(weekly_qty, weekday)
+
+    def daily_demand_from_monthly(self, monthly_qty: float, sim_day: int) -> float:
+        """Get daily demand for a simulation day from a monthly total."""
+        if not self.is_work_day(sim_day):
+            return 0.0
+        return spread_monthly_demand(monthly_qty, sim_day)
