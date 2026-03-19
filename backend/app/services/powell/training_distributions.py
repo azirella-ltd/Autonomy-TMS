@@ -309,7 +309,7 @@ class D:
         Capacity already consumed by locked or in-progress MOs. [hours/period]
         Mode ≈ 68 % of capacity (OEE benchmark for discrete manufacturing).
         Distribution: Triangular(0.40c, 0.68c, 0.95c).
-        At Phase 3, extend to simulate near-overload scenarios.
+        At Phase 3, extend to simulate near-overload trials.
         """
         lo   = capacity * max(0.20, 0.40 - 0.15 * variance_pct)
         hi   = capacity * min(0.99, 0.95 + 0.04 * variance_pct)
@@ -328,7 +328,7 @@ class D:
     def procurement_budget(rng: Generator, nominal: float, variance_pct: float) -> float:
         """
         Available procurement budget for the period. [$]
-        Mode = nominal (planned budget). Right tail allows over-budget scenarios.
+        Mode = nominal (planned budget). Right tail allows over-budget trials.
         """
         return _tri_jitter(rng, nominal, left_factor=0.8, right_factor=1.2, variance_pct=variance_pct)
 
@@ -379,7 +379,7 @@ class D:
         Demand coefficient of variation (std / mean). [dimensionless]
         Mode = 0.25 (moderate variability, typical for FMCG and mid-market).
         The mode is fixed; variance_pct extends the right tail into high-CV
-        disruption scenarios (Phase 3 explores CVs up to ~1.15).
+        disruption trials (Phase 3 explores CVs up to ~1.15).
 
         APICS benchmarks:
           Staple FMCG: CV 0.10–0.25
@@ -417,7 +417,7 @@ class D:
         """
         Average supplier or inter-site lead time. [weeks]
         Mode = 2.0 weeks (typical for domestic mid-market supply chains).
-        Right tail extends into disrupted/long-distance scenarios.
+        Right tail extends into disrupted/long-distance trials.
 
         Benchmarks:
           Domestic: 1–3 weeks   (mode=2)
@@ -464,7 +464,7 @@ class D:
         Stockout penalty per unit short. [$/unit]
         Mode = 15 (typically 2–3× the holding cost; often combined with
                    lost margin + expediting premium).
-        At Phase 3, explores high-penalty scenarios up to $80/unit.
+        At Phase 3, explores high-penalty trials up to $80/unit.
 
         Distribution: Triangular(5, 15, 15 + 65·pct).
         """
@@ -1715,9 +1715,9 @@ INDUSTRY_SC_LEAD_TIME_DAYS = {
     "third_party_logistics": 7,       # Shortest — cross-dock + last mile
 }
 
-# Default scenarios by industry (more complex = more scenarios for convergence)
+# Default trials by industry (more complex = more trials for convergence)
 # Base = 50; complex industries need more to capture tail risks
-INDUSTRY_DEFAULT_SCENARIOS = {
+INDUSTRY_DEFAULT_TRIALS = {
     "pharmaceutical": 100,        # Regulatory variance, cold chain failures
     "aerospace_defense": 100,     # Long tails, certification delays
     "automotive": 75,             # Tiered supply, JIT sensitivity
@@ -1734,7 +1734,7 @@ def get_industry_sim_defaults(industry: str) -> _Dict:
 
     sim_days = 2 × end-to-end SC lead time (see full cycle + replenishment)
     sim_time_bucket = always 'daily'
-    sim_scenarios = industry-specific or 5
+    sim_trials = industry-specific or 5
     sim_warmup_days = 10% of sim_days, min 5
 
     Returns dict ready to set on tenant model.
@@ -1742,11 +1742,11 @@ def get_industry_sim_defaults(industry: str) -> _Dict:
     sc_lt = INDUSTRY_SC_LEAD_TIME_DAYS.get(industry, 45)
     sim_days = sc_lt * 2  # 2× lead time to see full cycle
     warmup = max(5, sim_days // 10)
-    episodes = INDUSTRY_DEFAULT_SCENARIOS.get(industry, 50)
+    episodes = INDUSTRY_DEFAULT_TRIALS.get(industry, 50)
 
     return {
         "sim_days": sim_days,
-        "sim_scenarios": episodes,  # 50 base, up to 100 for complex industries
+        "sim_trials": episodes,  # 50 base, up to 100 for complex industries
         "sim_warmup_days": warmup,
         "sim_time_bucket": "daily",  # Always daily — never lose granularity
         "sim_decisions_per_type": 20,
@@ -1755,34 +1755,68 @@ def get_industry_sim_defaults(industry: str) -> _Dict:
 
 
 # ============================================================================
-# Work Week and Demand Spreading
+# Work Week Calendars — multi-pattern, sourced from ERP or country defaults
 # ============================================================================
+#
+# Work week sources (in priority order):
+# 1. ERP site calendar (SAP FABKL, D365 WorkCalendar, Odoo resource.calendar)
+# 2. Historical deduction: days with zero transactions = non-work days
+# 3. Country defaults (see COUNTRY_WORK_WEEK below)
 
-def is_work_day(day_index: int, start_weekday: int = 0) -> bool:
-    """Check if a simulation day is a work day (Mon-Fri).
+# Country → work days (0=Mon, 6=Sun)
+# Sources: ILO, World Bank, local labor law
+COUNTRY_WORK_WEEK = {
+    # Sun-Thu (Middle East)
+    "AE": (6, 0, 1, 2, 3),  # UAE
+    "SA": (6, 0, 1, 2, 3),  # Saudi Arabia
+    "QA": (6, 0, 1, 2, 3),  # Qatar
+    "KW": (6, 0, 1, 2, 3),  # Kuwait
+    "BH": (6, 0, 1, 2, 3),  # Bahrain
+    "OM": (6, 0, 1, 2, 3),  # Oman
+    "IR": (5, 6, 0, 1, 2),  # Iran (Sat-Wed)
+    "IL": (6, 0, 1, 2, 3),  # Israel
+    # Mon-Sat (parts of Asia)
+    "IN": (0, 1, 2, 3, 4, 5),  # India (many factories 6 days)
+    "CN": (0, 1, 2, 3, 4, 5),  # China (manufacturing often 6 days)
+    "BD": (6, 0, 1, 2, 3, 4),  # Bangladesh (Sun-Thu + some Sat)
+    # Mon-Fri (Americas, Europe, Japan, Australia, etc.) — default
+}
+
+_DEFAULT_WORK_DAYS = (0, 1, 2, 3, 4)  # Mon-Fri
+
+
+def get_work_days_for_country(country_code: str) -> tuple:
+    """Return work day indices (0=Mon) for a country. Default Mon-Fri."""
+    return COUNTRY_WORK_WEEK.get(country_code.upper(), _DEFAULT_WORK_DAYS)
+
+
+def is_work_day(day_index: int, start_weekday: int = 0, work_days: tuple = _DEFAULT_WORK_DAYS) -> bool:
+    """Check if a simulation day is a work day.
 
     Args:
         day_index: 0-based day in the simulation
         start_weekday: weekday of simulation day 0 (0=Mon, 6=Sun)
+        work_days: tuple of weekday indices that are work days
 
-    Returns True for Mon-Fri (weekday 0-4), False for Sat-Sun (5-6).
+    Returns True if the day falls on a work day.
     """
     weekday = (start_weekday + day_index) % 7
-    return weekday < 5  # Mon=0 through Fri=4
+    return weekday in work_days
 
 
-def spread_weekly_demand(weekly_qty: float, day_in_week: int) -> float:
-    """Spread weekly demand uniformly over 5 work days.
+def spread_weekly_demand(weekly_qty: float, day_in_week: int, n_work_days: int = 5) -> float:
+    """Spread weekly demand uniformly over work days.
 
     Args:
         weekly_qty: total weekly demand quantity
-        day_in_week: 0=Mon, 1=Tue, ..., 4=Fri, 5=Sat, 6=Sun
+        day_in_week: 0=Mon, ..., 6=Sun
+        n_work_days: number of work days per week (5 or 6)
 
-    Returns daily demand: weekly_qty/5 on work days, 0 on weekends.
+    Returns daily demand on work days, 0 on non-work days.
     """
-    if day_in_week >= 5:  # Saturday or Sunday
+    if n_work_days <= 0:
         return 0.0
-    return weekly_qty / 5.0
+    return weekly_qty / n_work_days
 
 
 def spread_monthly_demand(monthly_qty: float, day_in_month: int, work_days_in_month: int = 22) -> float:
@@ -1799,24 +1833,29 @@ def spread_monthly_demand(monthly_qty: float, day_in_month: int, work_days_in_mo
 
 
 class WorkWeekCalendar:
-    """Simple work week calendar for simulation.
+    """Site-specific work week calendar for simulation.
 
-    Mon-Fri = work days (operations run, orders process, shipments move)
-    Sat-Sun = non-work (no demand, no production, no shipping)
+    Work days are determined by (in priority order):
+    1. ERP site calendar (SAP FABKL, D365 WorkCalendar, Odoo resource.calendar)
+    2. Historical transaction pattern (days with activity = work days)
+    3. Country defaults (Sun-Thu for ME, Mon-Sat for India/China, Mon-Fri elsewhere)
 
-    All simulation operations should check is_work_day() before executing.
-    Lead times count only work days (5 per week, not 7).
+    All simulation operations must check is_work_day() before executing.
+    Lead times count only work days.
     """
 
-    def __init__(self, start_weekday: int = 0):
+    def __init__(self, start_weekday: int = 0, work_days: tuple = _DEFAULT_WORK_DAYS):
         """
         Args:
             start_weekday: weekday of simulation day 0 (0=Mon, default)
+            work_days: tuple of weekday indices that are work days (0=Mon, 6=Sun)
         """
         self.start_weekday = start_weekday
+        self.work_days = work_days
+        self.n_work_days_per_week = len(work_days)
 
     def is_work_day(self, sim_day: int) -> bool:
-        return is_work_day(sim_day, self.start_weekday)
+        return is_work_day(sim_day, self.start_weekday, self.work_days)
 
     def weekday(self, sim_day: int) -> int:
         """Return weekday (0=Mon, 6=Sun) for a simulation day."""
@@ -1845,17 +1884,63 @@ class WorkWeekCalendar:
 
     def daily_demand_from_weekly(self, weekly_qty: float, sim_day: int) -> float:
         """Get daily demand for a simulation day from a weekly total."""
-        weekday = self.weekday(sim_day)
-        return spread_weekly_demand(weekly_qty, weekday)
+        if not self.is_work_day(sim_day):
+            return 0.0
+        return weekly_qty / self.n_work_days_per_week
 
     def daily_demand_from_monthly(self, monthly_qty: float, sim_day: int) -> float:
         """Get daily demand for a simulation day from a monthly total."""
         if not self.is_work_day(sim_day):
             return 0.0
-        return spread_monthly_demand(monthly_qty, sim_day)
+        # Approx work days per month = n_work_days_per_week × 4.35
+        work_days_per_month = self.n_work_days_per_week * 4.35
+        return monthly_qty / work_days_per_month
 
     @classmethod
-    def from_today(cls) -> "WorkWeekCalendar":
-        """Create a calendar starting from today's weekday."""
+    def from_today(cls, country_code: str = None) -> "WorkWeekCalendar":
+        """Create a calendar starting from today's weekday, with country work pattern."""
         from datetime import date
-        return cls(start_weekday=date.today().weekday())
+        work_days = get_work_days_for_country(country_code) if country_code else _DEFAULT_WORK_DAYS
+        return cls(start_weekday=date.today().weekday(), work_days=work_days)
+
+    @classmethod
+    def from_erp_site(cls, db, site_id: int, config_id: int, country_code: str = None) -> "WorkWeekCalendar":
+        """Create a calendar from ERP site data.
+
+        Priority:
+        1. SAP factory calendar (MARC.FABKL → TFACS)
+        2. Historical transaction pattern (days with activity)
+        3. Country default from site geography
+        """
+        from datetime import date
+
+        # Try to get country from site geography
+        if not country_code:
+            try:
+                row = db.execute(_sql_text("""
+                    SELECT g.country FROM site s
+                    LEFT JOIN geography g ON g.id = s.geo_id
+                    WHERE s.id = :sid AND s.config_id = :cid
+                """), {"sid": site_id, "cid": config_id}).fetchone()
+                if row and row[0]:
+                    country_code = row[0]
+            except Exception:
+                pass
+
+        # Try SAP factory calendar code
+        try:
+            row = db.execute(_sql_text("""
+                SELECT attributes->>'sap_factory_calendar' FROM site
+                WHERE id = :sid AND config_id = :cid
+            """), {"sid": site_id, "cid": config_id}).fetchone()
+            if row and row[0]:
+                # SAP factory calendar codes: US, DE, JP, etc.
+                # Map to country code for work week lookup
+                cal_code = row[0].upper()
+                if len(cal_code) == 2:
+                    country_code = cal_code
+        except Exception:
+            pass
+
+        work_days = get_work_days_for_country(country_code) if country_code else _DEFAULT_WORK_DAYS
+        return cls(start_weekday=date.today().weekday(), work_days=work_days)

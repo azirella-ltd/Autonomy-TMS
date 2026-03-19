@@ -26,7 +26,7 @@ const DEFAULT_FORM = {
   logo: '/autonomy_logo.svg',
   industry: '',
   sim_days: 90,
-  sim_scenarios: 50,
+  sim_trials: 50,
   sim_warmup_days: 10,
   sim_decisions_per_type: 20,
   admin: {
@@ -677,11 +677,11 @@ const TenantManagement = () => {
                     <p className="text-[10px] text-gray-400 mt-0.5">2× end-to-end SC lead time</p>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Scenarios</label>
-                    <input type="number" name="sim_scenarios" value={form.sim_scenarios || 50}
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Trials</label>
+                    <input type="number" name="sim_trials" value={form.sim_trials || 50}
                       onChange={handleChange} min={10} max={500}
                       className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500" />
-                    <p className="text-[10px] text-gray-400 mt-0.5">Stress-test scenarios</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">Stress-test trials</p>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Warmup Days</label>
@@ -795,7 +795,7 @@ const TenantManagement = () => {
             <div className="px-6 py-6">
               <p className="text-sm text-gray-700">
                 Are you sure you want to delete <span className="font-semibold">{deleteTarget.name || 'this tenant'}</span>?
-                This action cannot be undone and will remove all associated supply chain configurations, scenarios, and users.
+                This action cannot be undone and will remove all associated supply chain configurations, trials, and users.
               </p>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
