@@ -356,18 +356,24 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         target_config_id: analysisResult?.target_config_id || undefined,
       });
       const result = response.data;
+      // Merge analysis-phase data into result for scenario questions
+      // (the answer and event summary were computed during analyze, not submit)
+      if (analysisResult?.intent === 'scenario_question' && analysisResult.answer) {
+        result._scenario_answer = analysisResult.answer;
+        result._event_summary = analysisResult.event_summary;
+        result._can_fulfill = analysisResult.can_fulfill;
+        result._target_config_id = analysisResult.target_config_id;
+      }
+      if (analysisResult?.intent === 'scenario_event' && analysisResult.event_summary) {
+        result._event_summary = analysisResult.event_summary;
+        result._target_config_id = analysisResult.target_config_id;
+      }
       setDirectiveResult(result);
       setTalkInput('');
-      dismissClarification();
-      setTimeout(() => setDirectiveResult(null), 6000);
-
-      // Auto-navigate for scenario events
-      const scenarioAction = result.routed_actions?.find(a => a.action === 'scenario_event_injected');
-      if (scenarioAction?.navigate_to) {
-        navigate(scenarioAction.navigate_to, {
-          state: { configId: scenarioAction.target_config_id, eventId: scenarioAction.event_id },
-        });
-      }
+      // Keep popup open to show results — don't auto-dismiss
+      setAnalysisResult(null);
+      setClarifications({});
+      setRephrasedPrompt('');
     } catch (err) {
       console.error('Directive submission failed:', err);
     } finally {

@@ -752,55 +752,107 @@ function buildMessages({
 
   // ─── DIRECTIVE RESULT (final feedback) ────────────────────────────────────
   if (directiveResult) {
+    // Build a human-readable summary
+    const intent = directiveResult.parsed_intent || 'directive';
+    const isApplied = directiveResult.status === 'APPLIED';
+    const actions = directiveResult.routed_actions || [];
+    const scenarioAction = actions.find(a => a.action === 'scenario_event_injected');
+    const trmActions = actions.filter(a => a.layer || a.trm_type);
+
+    let summaryText = '';
+    const scenarioAnswer = directiveResult._scenario_answer;
+    const eventSummary = directiveResult._event_summary || scenarioAction?.summary;
+
+    if (eventSummary) {
+      summaryText = eventSummary;
+    } else if (scenarioAction) {
+      summaryText = scenarioAction.summary || `Scenario event injected: ${scenarioAction.event_type}`;
+    } else if (trmActions.length > 0) {
+      const trms = trmActions.map(a => (a.trm_type || a.layer || '').replace(/_/g, ' ')).join(', ');
+      summaryText = `Routed to ${trmActions.length} agent${trmActions.length > 1 ? 's' : ''}: ${trms}`;
+    } else if (isApplied) {
+      summaryText = `${(directiveResult.directive_type || 'directive').replace(/_/g, ' ')} applied to ${directiveResult.target_layer || 'operational'} layer`;
+    } else {
+      summaryText = 'Directive recorded';
+    }
+
     messages.push({
       role: 'system',
       key: 'directive-result',
       content: (
         <div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <div
-                className={cn(
-                  'h-2 w-2 rounded-full flex-shrink-0',
-                  directiveResult.parser_confidence >= 0.7
-                    ? 'bg-emerald-500'
-                    : directiveResult.parser_confidence >= 0.4
-                      ? 'bg-amber-500'
-                      : 'bg-red-500',
-                )}
-              />
-              <span className="font-medium truncate">
-                {directiveResult.directive_type?.replace(/_/g, ' ')}
-              </span>
-              <span className="text-muted-foreground">
-                {'\u2192'} {directiveResult.target_layer}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0 text-xs text-muted-foreground">
-              <span>
-                {Math.round(directiveResult.parser_confidence * 100)}% confidence
-              </span>
-              <span
-                className={cn(
-                  'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
-                  directiveResult.status === 'APPLIED'
-                    ? 'bg-emerald-500/10 text-emerald-600'
-                    : 'bg-blue-500/10 text-blue-600',
-                )}
-              >
-                {directiveResult.status}
-              </span>
-            </div>
+          {/* Status badge */}
+          <div className="flex items-center gap-2 mb-2">
+            <span className={cn(
+              'px-2 py-0.5 rounded-full text-xs font-medium',
+              isApplied ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600',
+            )}>
+              {isApplied ? 'Applied' : directiveResult.status}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {Math.round(directiveResult.parser_confidence * 100)}% confidence
+            </span>
           </div>
-          {directiveResult.routed_actions?.length > 0 && (
-            <div className="mt-1.5 text-xs text-muted-foreground">
-              Routed to {directiveResult.routed_actions.length} action
-              {directiveResult.routed_actions.length > 1 ? 's' : ''}:{' '}
-              {directiveResult.routed_actions
-                .map((a) => a.layer || a.trm_type)
-                .join(', ')}
+
+          {/* Human-readable summary */}
+          <p className="text-sm font-medium">{summaryText}</p>
+
+          {/* Scenario question answer */}
+          {scenarioAnswer && (
+            <div className="mt-2 text-xs text-foreground bg-muted/50 rounded-md px-3 py-2 max-h-40 overflow-y-auto whitespace-pre-wrap">
+              {typeof scenarioAnswer === 'string' && scenarioAnswer.length > 300
+                ? scenarioAnswer.slice(0, 300) + '…'
+                : scenarioAnswer}
             </div>
           )}
+
+          {/* Fulfillment indicator for scenario questions */}
+          {directiveResult._can_fulfill != null && (
+            <div className={cn(
+              'mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium',
+              directiveResult._can_fulfill
+                ? 'bg-emerald-500/10 text-emerald-600'
+                : 'bg-red-500/10 text-red-600',
+            )}>
+              {directiveResult._can_fulfill ? '✓ Can fulfill' : '✗ Cannot fulfill'}
+            </div>
+          )}
+
+          {/* Action details (for non-scenario directives) */}
+          {trmActions.length > 0 && !scenarioAction && !eventSummary && (
+            <div className="mt-2 space-y-1">
+              {trmActions.slice(0, 5).map((a, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" />
+                  <span>{(a.trm_type || a.layer || '').replace(/_/g, ' ')}</span>
+                  {a.action && <span className="text-[10px]">— {a.action}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Navigation links */}
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={() => onNavigate('/decision-stream', { fromTalkToMe: true })}
+              className="flex items-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 transition-colors"
+            >
+              <span>→</span>
+              Decision Stream
+            </button>
+            {(scenarioAction || directiveResult._target_config_id) && (
+              <button
+                onClick={() => onNavigate('/scenario-events', {
+                  configId: directiveResult._target_config_id || scenarioAction?.target_config_id,
+                  fromTalkToMe: true,
+                })}
+                className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                <span>→</span>
+                Scenario Events
+              </button>
+            )}
+          </div>
         </div>
       ),
     });
