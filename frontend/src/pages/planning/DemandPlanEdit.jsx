@@ -704,8 +704,8 @@ const VersionComparisonTab = ({ configId }) => {
                     const isUp = change > 0;
                     return (
                       <TableRow key={idx}>
-                        <TableCell className="font-medium">{formatProduct(delta.product_id, delta.product_name)}</TableCell>
-                        <TableCell>{formatSite(delta.site_id, delta.site_name)}</TableCell>
+                        <TableCell className="font-medium">{delta.product_name || delta.product_id}</TableCell>
+                        <TableCell>{delta.site_name || delta.site_id}</TableCell>
                         <TableCell className="font-mono text-sm">{delta.period}</TableCell>
                         <TableCell className="text-right font-mono">{delta.value_a?.toLocaleString()}</TableCell>
                         <TableCell className="text-right font-mono">{delta.value_b?.toLocaleString()}</TableCell>
