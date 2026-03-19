@@ -24,36 +24,28 @@ import {
   SendHorizontal,
   Sparkles,
   LayoutGrid,
-  CheckCircle2,
-  ChevronRight,
-  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { isSystemAdmin } from '../utils/authUtils';
 import simulationApi, { api } from '../services/api';
 import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
-import Markdown from 'react-markdown';
 import { cn } from '../lib/utils/cn';
+import TalkToMePopup from './TalkToMePopup';
 
 // ─── AI Avatar ────────────────────────────────────────────────────────────────
 // A small circular avatar used alongside the "Talk to me" prompt.
-// Uses a violet-to-indigo gradient with a Sparkles icon to evoke AI/intelligence.
-const AIAvatar = ({ size = 'sm' }) => {
+// Stylized microphone with speech waves — the Talk to Me brand mark.
+// Talk to Me avatar — stylized microphone with speech waves
+const TalkToMeAvatar = ({ size = 'sm' }) => {
   const dim = size === 'sm' ? 'h-7 w-7' : 'h-9 w-9';
-  const icon = size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4';
   return (
-    <div
-      className={cn(
-        dim,
-        'rounded-full flex items-center justify-center flex-shrink-0',
-        'bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-600',
-        'shadow-[0_0_10px_rgba(139,92,246,0.4)]',
-      )}
+    <img
+      src="/talk_to_me_avatar.svg"
+      alt=""
+      className={cn(dim, 'flex-shrink-0')}
       aria-hidden="true"
-    >
-      <Sparkles className={cn(icon, 'text-white')} />
-    </div>
+    />
   );
 };
 
@@ -78,8 +70,8 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   const [streamMessages, setStreamMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [rephrasedPrompt, setRephrasedPrompt] = useState('');
+  const [popupOpen, setPopupOpen] = useState(false);
   const talkInputRef = useRef(null);
-  const clarificationRef = useRef(null);
 
   // UI mode state (stream = Decision Stream, console = Planning Console)
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('ui:mode') || 'stream');
@@ -101,22 +93,6 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  // Dismiss clarification panel when clicking outside
-  useEffect(() => {
-    if (!analysisResult) return;
-    const handleClickOutside = (event) => {
-      if (
-        clarificationRef.current &&
-        !clarificationRef.current.contains(event.target) &&
-        !talkInputRef.current?.contains(event.target)
-      ) {
-        dismissClarification();
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [analysisResult]); // dismissClarification is stable (empty deps) — omit to avoid TDZ in production
 
   // Update current path when location changes
   useEffect(() => {
@@ -256,6 +232,10 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     setOriginalText('');
     setClarifications({});
     setRephrasedPrompt('');
+    setPopupOpen(false);
+    setStreamMessages([]);
+    setIsStreaming(false);
+    setDirectiveResult(null);
   }, []);
 
   // Phase 1: Analyze the directive, check for missing fields
@@ -274,6 +254,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     }
 
     setTalkSubmitting(true);
+    setPopupOpen(true);
     try {
       const response = await api.post('/directives/analyze', {
         config_id: effectiveConfigId,
@@ -487,6 +468,37 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     }
   };
 
+  const handleActivateDirective = async () => {
+    // User confirmed "Yes, activate the directive"
+    if (analysisResult?.intent === 'compound' && analysisResult.actions) {
+      await submitCompoundStream(originalText, analysisResult.actions, clarifications);
+    }
+  };
+
+  const handleSkipDirective = async () => {
+    // User said "No, just create the order" — execute only demand signal actions
+    if (analysisResult?.intent === 'compound' && analysisResult.actions) {
+      const demandOnly = analysisResult.actions.filter(a => a.action_type === 'demand_signal');
+      if (demandOnly.length > 0) {
+        await submitCompoundStream(originalText, demandOnly, clarifications);
+      }
+    }
+  };
+
+  const handleNavigateFromPopup = (page, state) => {
+    dismissClarification();
+    navigate(page, { state });
+  };
+
+  const handleSubmitRephrased = () => {
+    if (rephrasedPrompt) {
+      setTalkInput(rephrasedPrompt);
+      setPopupOpen(false);
+      dismissClarification();
+      setTimeout(() => handleTalkSubmit(), 50);
+    }
+  };
+
   // Count how many clarifications are answered
   const answeredCount = analysisResult
     ? (analysisResult.missing_fields || []).filter((m) => clarifications[m.field]?.trim()).length
@@ -577,7 +589,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             )}
           >
             {/* AI avatar */}
-            <AIAvatar size="sm" />
+            <TalkToMeAvatar size="sm" />
 
             {/* Prompt input */}
             <input
@@ -614,426 +626,26 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             </button>
           </div>
 
-          {/* Question answer panel — shown when intent is "question" */}
-          {analysisResult && analysisResult.intent === 'question' && (
-            <div
-              ref={clarificationRef}
-              className={cn(
-                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
-                'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
-                'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
-              )}
-            >
-              <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-2">
-                  <AIAvatar size="sm" />
-                  <span className="font-medium text-foreground">Answer</span>
-                </div>
-                <button
-                  onClick={dismissClarification}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                <span className="truncate italic">"{originalText}"</span>
-              </div>
-              <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
-                {analysisResult.answer || 'No answer available.'}
-              </div>
-              {analysisResult.target_page && (
-                <button
-                  onClick={() => {
-                    const targetPage = analysisResult.target_page;
-                    const filters = analysisResult.filters || {};
-                    dismissClarification();
-                    navigate(targetPage, { state: { filters, fromTalkToMe: true } });
-                  }}
-                  className="mt-3 flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                  Go to {analysisResult.target_page_label || 'relevant page'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Scenario question answer panel — event injected + analysis complete */}
-          {analysisResult && analysisResult.intent === 'scenario_question' && analysisResult.answer && (
-            <div
-              ref={clarificationRef}
-              className={cn(
-                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
-                'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
-                'text-sm max-w-2xl w-full animate-in fade-in slide-in-from-top-2 duration-200',
-              )}
-            >
-              <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-2">
-                  <AIAvatar size="sm" />
-                  <span className="font-medium text-foreground">Scenario Analysis</span>
-                  {analysisResult.can_fulfill === true && (
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600">Can Fulfill</span>
-                  )}
-                  {analysisResult.can_fulfill === false && (
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-600">Cannot Fulfill</span>
-                  )}
-                </div>
-                <button
-                  onClick={dismissClarification}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {/* Event summary banner */}
-              {analysisResult.event_summary && (
-                <div className="flex items-center gap-2 text-xs bg-violet-500/5 text-violet-700 dark:text-violet-300 rounded-md px-2.5 py-1.5 mb-3">
-                  <Sparkles className="h-3 w-3 flex-shrink-0" />
-                  <span>{analysisResult.event_summary}</span>
-                </div>
-              )}
-
-              {/* Markdown-formatted analysis */}
-              <div className="prose prose-sm dark:prose-invert max-h-80 overflow-y-auto text-foreground leading-relaxed [&_table]:text-xs [&_table]:w-full [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_th]:text-left [&_th]:font-medium [&_th]:border-b [&_th]:border-border [&_td]:border-b [&_td]:border-border/50 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1.5 [&_ul]:text-xs [&_li]:my-0.5">
-                <Markdown>{analysisResult.answer}</Markdown>
-              </div>
-
-              {/* Navigation to scenario workspace */}
-              <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
-                {analysisResult.confidence_note && (
-                  <span className="text-[10px] text-muted-foreground italic">
-                    {analysisResult.confidence_note}
-                  </span>
-                )}
-                <button
-                  onClick={() => {
-                    dismissClarification();
-                    navigate('/scenario-events', {
-                      state: {
-                        configId: analysisResult.target_config_id,
-                        eventId: analysisResult.event_id,
-                        fromTalkToMe: true,
-                      },
-                    });
-                  }}
-                  className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors ml-auto"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                  Open in Scenario Events
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Ambiguous intent panel — ask user to clarify */}
-          {analysisResult && (analysisResult.intent === 'unknown' || analysisResult.clarification_needed) && (
-            <div
-              ref={clarificationRef}
-              className={cn(
-                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
-                'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
-                'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
-              )}
-            >
-              <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-2">
-                  <AIAvatar size="sm" />
-                  <span className="font-medium text-foreground">Clarification needed</span>
-                </div>
-                <button
-                  onClick={dismissClarification}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                <span className="truncate italic">"{originalText}"</span>
-              </div>
-              <p className="text-sm text-foreground mb-3">
-                {analysisResult.question || "I'm not sure if this is a directive or a question. Could you clarify?"}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    // Re-submit as explicit directive
-                    dismissClarification();
-                    setTalkInput(`[Directive] ${originalText}`);
-                  }}
-                  className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium bg-violet-500 text-white hover:bg-violet-600 transition-colors"
-                >
-                  It's a directive
-                </button>
-                <button
-                  onClick={() => {
-                    // Re-submit as explicit question
-                    dismissClarification();
-                    setTalkInput(`[Question] ${originalText}`);
-                  }}
-                  className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-                >
-                  It's a question
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Clarification panel — rephrased prompt (preferred) or field-by-field (fallback) */}
-          {analysisResult && analysisResult.intent !== 'question' && !analysisResult.clarification_needed && analysisResult.intent !== 'unknown' && !(analysisResult.intent === 'scenario_question' && analysisResult.answer) && (totalMissing > 0 || rephrasedPrompt) && (
-            <div
-              ref={clarificationRef}
-              className={cn(
-                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
-                'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
-                'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
-              )}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-2">
-                  <AIAvatar size="sm" />
-                  <span className="font-medium text-foreground">
-                    {rephrasedPrompt ? 'Please confirm or edit' : 'A few clarifying questions'}
-                  </span>
-                </div>
-                <button
-                  onClick={dismissClarification}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {/* Compound action badges */}
-              {analysisResult?.intent === 'compound' && analysisResult.actions && (
-                <div className="flex items-center gap-2 mb-2">
-                  {analysisResult.actions.map((action, i) => (
-                    <span key={i} className={cn(
-                      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
-                      action.action_type === 'demand_signal'
-                        ? 'bg-blue-100 text-blue-700'
-                        : 'bg-violet-100 text-violet-700'
-                    )}>
-                      <span className={cn(
-                        'w-1.5 h-1.5 rounded-full',
-                        action.action_type === 'demand_signal' ? 'bg-blue-500' : 'bg-violet-500'
-                      )} />
-                      {action.action_type === 'demand_signal'
-                        ? (action.demand_signal_type === 'order' ? 'New Order' : 'Forecast Change')
-                        : 'Directive'}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Rephrased prompt editable box (preferred UX) */}
-              {rephrasedPrompt ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">
-                    I've rephrased your input with resolved names. Edit the <span className="text-red-500 font-bold">?</span> markers and press Submit.
-                  </p>
-                  <textarea
-                    value={rephrasedPrompt}
-                    onChange={(e) => setRephrasedPrompt(e.target.value)}
-                    rows={3}
-                    className={cn(
-                      'w-full rounded-md border border-border bg-background px-3 py-2 text-sm',
-                      'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
-                      'font-medium leading-relaxed',
-                    )}
-                    style={{
-                      /* Highlight ? markers via CSS — not possible in textarea, but the red bold instruction guides the user */
-                    }}
-                  />
-                </div>
-              ) : (
-                /* Fallback: field-by-field clarification (original behavior) */
-                <>
-                  {/* Parsed context */}
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                    <span className="truncate italic">"{originalText}"</span>
-                    <ChevronRight className="h-3 w-3 flex-shrink-0" />
-                    <span className="capitalize">{analysisResult.target_layer} layer</span>
-                    {analysisResult.confidence > 0 && (
-                      <span className="ml-1">({Math.round(analysisResult.confidence * 100)}%)</span>
-                    )}
-                  </div>
-
-                  {/* Missing fields */}
-                  <div className="space-y-2.5">
-                    {(analysisResult.missing_fields || []).map((mf) => (
-                      <div key={mf.field}>
-                        <label className="block text-xs font-medium text-foreground mb-1">
-                          {mf.question}
-                        </label>
-                        {mf.type === 'select' && mf.options?.length > 0 ? (
-                          <select
-                            value={clarifications[mf.field] || ''}
-                            onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
-                            className={cn(
-                              'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
-                              'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
-                            )}
-                          >
-                            <option value="">Select...</option>
-                            {mf.options.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        ) : mf.type === 'number' ? (
-                          <input
-                            type="number"
-                            value={clarifications[mf.field] || ''}
-                            onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
-                            placeholder="e.g. 10"
-                            className={cn(
-                              'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
-                              'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
-                            )}
-                          />
-                        ) : (
-                          <input
-                            type="text"
-                            value={clarifications[mf.field] || ''}
-                            onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
-                            placeholder="Type your answer..."
-                            className={cn(
-                              'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
-                              'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
-                            )}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {/* Submit button */}
-              <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
-                {rephrasedPrompt ? (
-                  <span className="text-xs text-muted-foreground">
-                    Edit the prompt above, then submit
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    {answeredCount} of {totalMissing} answered
-                  </span>
-                )}
-                <button
-                  onClick={handleClarificationSubmit}
-                  disabled={!rephrasedPrompt && !allAnswered || talkSubmitting}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                    (rephrasedPrompt || allAnswered) && !talkSubmitting
-                      ? 'bg-violet-500 text-white hover:bg-violet-600'
-                      : 'bg-muted text-muted-foreground cursor-not-allowed',
-                  )}
-                >
-                  {talkSubmitting ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-3 w-3" />
-                  )}
-                  {rephrasedPrompt ? 'Submit' : (analysisResult?.intent?.startsWith('scenario') ? 'Run scenario' : 'Submit directive')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Streaming progress panel — shown during compound SSE submission */}
-          {isStreaming && streamMessages.length > 0 && (
-            <div className={cn(
-              'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
-              'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
-              'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
-            )}>
-              <div className="flex items-center gap-2 mb-2.5">
-                <AIAvatar size="sm" />
-                <span className="font-medium text-foreground">Processing...</span>
-              </div>
-              <div className="space-y-1 font-mono text-xs">
-                {streamMessages.map((msg, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className="text-muted-foreground flex-shrink-0">
-                      {msg.type === 'complete' ? '\u2514\u2500\u2500' :
-                       msg.type === 'error' ? '\u2514\u2500\u2500 !' :
-                       '\u251C\u2500\u2500'}
-                    </span>
-                    <span className={cn(
-                      msg.type === 'error' ? 'text-destructive' :
-                      msg.type === 'complete' ? 'text-emerald-600 font-semibold' :
-                      msg.type === 'action_complete' ? 'text-blue-600' :
-                      'text-foreground'
-                    )}>
-                      {msg.message}
-                    </span>
-                  </div>
-                ))}
-                {streamMessages[streamMessages.length - 1]?.type !== 'complete' &&
-                 streamMessages[streamMessages.length - 1]?.type !== 'error' && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <span>{'\u2502'}  </span>
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Directive result feedback */}
-          {directiveResult && (
-            <div
-              className={cn(
-                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
-                'bg-popover border border-border rounded-lg shadow-lg px-4 py-2.5',
-                'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
-              )}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div
-                    className={cn(
-                      'h-2 w-2 rounded-full flex-shrink-0',
-                      directiveResult.parser_confidence >= 0.7 ? 'bg-emerald-500' :
-                      directiveResult.parser_confidence >= 0.4 ? 'bg-amber-500' : 'bg-red-500',
-                    )}
-                  />
-                  <span className="font-medium truncate">
-                    {directiveResult.directive_type?.replace(/_/g, ' ')}
-                  </span>
-                  <span className="text-muted-foreground">
-                    → {directiveResult.target_layer}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0 text-xs text-muted-foreground">
-                  <span>{Math.round(directiveResult.parser_confidence * 100)}% confidence</span>
-                  <span className={cn(
-                    'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
-                    directiveResult.status === 'APPLIED' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600',
-                  )}>
-                    {directiveResult.status}
-                  </span>
-                  <button
-                    onClick={() => setDirectiveResult(null)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-              {directiveResult.routed_actions?.length > 0 && (
-                <div className="mt-1.5 text-xs text-muted-foreground">
-                  Routed to {directiveResult.routed_actions.length} action{directiveResult.routed_actions.length > 1 ? 's' : ''}: {
-                    directiveResult.routed_actions.map(a => a.layer || a.trm_type).join(', ')
-                  }
-                </div>
-              )}
-            </div>
-          )}
+          <TalkToMePopup
+            open={popupOpen}
+            onClose={dismissClarification}
+            userPrompt={originalText}
+            analysisResult={analysisResult}
+            streamMessages={streamMessages}
+            isStreaming={isStreaming}
+            directiveResult={directiveResult}
+            rephrasedPrompt={rephrasedPrompt}
+            onRephrasedChange={setRephrasedPrompt}
+            onSubmitRephrased={handleSubmitRephrased}
+            onSubmitCompound={() => submitCompoundStream(originalText, analysisResult?.actions || [], clarifications)}
+            onActivateDirective={handleActivateDirective}
+            onSkipDirective={handleSkipDirective}
+            onNavigate={handleNavigateFromPopup}
+            submitting={talkSubmitting}
+            clarifications={clarifications}
+            onClarificationAnswer={handleClarificationAnswer}
+            onClarificationSubmit={handleClarificationSubmit}
+          />
         </div>
 
         {/* ── RIGHT: Actions & User Menu ───────────────────────────────────── */}

@@ -1,0 +1,783 @@
+/**
+ * TalkToMePopup — Scrollable, persistent conversation popup for the "Talk to Me" feature.
+ *
+ * Replaces all 6 inline response panels from TopNavbar.jsx with a unified
+ * conversation-thread UI anchored below the navbar input bar.
+ *
+ * Purely presentational — all logic/state management stays in TopNavbar.
+ */
+
+import React, { useRef, useEffect, useMemo } from 'react';
+import {
+  X,
+  Sparkles,
+  Loader2,
+  ChevronRight,
+  CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react';
+import Markdown from 'react-markdown';
+import { cn } from '../lib/utils/cn';
+
+// ─── Talk to Me Avatar ──────────────────────────────────────────────────────────
+// Stylized microphone with speech waves — the Talk to Me brand mark.
+const TalkToMeAvatar = ({ size = 'sm' }) => {
+  const dim = size === 'sm' ? 'h-7 w-7' : 'h-9 w-9';
+  return (
+    <img
+      src="/talk_to_me_avatar.svg"
+      alt=""
+      className={cn(dim, 'flex-shrink-0')}
+      aria-hidden="true"
+    />
+  );
+};
+
+// ─── Message Bubble ─────────────────────────────────────────────────────────────
+const MessageBubble = ({ role, children }) => {
+  if (role === 'user') {
+    return (
+      <div className="flex justify-end mb-3">
+        <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-violet-500 text-white px-4 py-2.5 text-sm leading-relaxed">
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2.5 mb-3">
+      <TalkToMeAvatar size="sm" />
+      <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-accent/60 border border-border px-4 py-2.5 text-sm leading-relaxed text-foreground">
+        {children}
+      </div>
+    </div>
+  );
+};
+
+// ─── Build Messages ─────────────────────────────────────────────────────────────
+// Constructs the conversation thread array from the current props state.
+function buildMessages({
+  userPrompt,
+  analysisResult,
+  streamMessages,
+  isStreaming,
+  directiveResult,
+  rephrasedPrompt,
+  onRephrasedChange,
+  onSubmitRephrased,
+  onSubmitCompound,
+  onActivateDirective,
+  onSkipDirective,
+  onNavigate,
+  submitting,
+  clarifications,
+  onClarificationAnswer,
+  onClarificationSubmit,
+}) {
+  const messages = [];
+
+  // ── 1. User prompt ──────────────────────────────────────────────────────────
+  if (userPrompt) {
+    messages.push({ role: 'user', key: 'user-prompt', content: userPrompt });
+  }
+
+  if (!analysisResult && !directiveResult && !isStreaming) {
+    // Still waiting for analysis
+    if (userPrompt) {
+      messages.push({
+        role: 'system',
+        key: 'loading',
+        content: (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>Analyzing...</span>
+          </div>
+        ),
+      });
+    }
+    return messages;
+  }
+
+  const intent = analysisResult?.intent;
+
+  // ─── QUESTION FLOW ────────────────────────────────────────────────────────
+  if (intent === 'question') {
+    messages.push({
+      role: 'system',
+      key: 'question-answer',
+      content: (
+        <div>
+          <div className="font-medium text-foreground mb-1.5">Answer</div>
+          <div className="whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+            {analysisResult.answer || 'No answer available.'}
+          </div>
+          {analysisResult.target_page && (
+            <button
+              onClick={() =>
+                onNavigate?.(analysisResult.target_page, {
+                  filters: analysisResult.filters || {},
+                  fromTalkToMe: true,
+                })
+              }
+              className="mt-3 flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+              Go to {analysisResult.target_page_label || 'relevant page'}
+            </button>
+          )}
+        </div>
+      ),
+    });
+    return messages;
+  }
+
+  // ─── AMBIGUOUS / UNKNOWN FLOW ─────────────────────────────────────────────
+  if (intent === 'unknown' || analysisResult?.clarification_needed) {
+    messages.push({
+      role: 'system',
+      key: 'ambiguous',
+      content: (
+        <div>
+          <div className="font-medium text-foreground mb-1.5">
+            Clarification needed
+          </div>
+          <p className="text-sm text-foreground mb-3">
+            {analysisResult.question ||
+              "I'm not sure if this is a directive or a question. Could you clarify?"}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onSkipDirective?.()}
+              className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium bg-violet-500 text-white hover:bg-violet-600 transition-colors"
+            >
+              It's a directive
+            </button>
+            <button
+              onClick={() => onActivateDirective?.()}
+              className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+            >
+              It's a question
+            </button>
+          </div>
+        </div>
+      ),
+    });
+    return messages;
+  }
+
+  // ─── SCENARIO QUESTION FLOW ───────────────────────────────────────────────
+  if (intent === 'scenario_question' && analysisResult?.answer) {
+    // Event injection banner
+    if (analysisResult.event_summary) {
+      messages.push({
+        role: 'system',
+        key: 'scenario-event-banner',
+        content: (
+          <div className="flex items-center gap-2 text-xs bg-violet-500/10 text-violet-700 dark:text-violet-300 rounded-md px-2.5 py-1.5">
+            <Sparkles className="h-3 w-3 flex-shrink-0" />
+            <span>{analysisResult.event_summary}</span>
+          </div>
+        ),
+      });
+    }
+
+    // Fulfillment badge
+    const canFulfill = analysisResult.can_fulfill;
+    messages.push({
+      role: 'system',
+      key: 'scenario-analysis',
+      content: (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="font-medium text-foreground">Scenario Analysis</span>
+            {canFulfill === true && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600">
+                Can Fulfill
+              </span>
+            )}
+            {canFulfill === false && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-600">
+                Cannot Fulfill
+              </span>
+            )}
+          </div>
+          <div className="prose prose-sm dark:prose-invert max-h-80 overflow-y-auto text-foreground leading-relaxed [&_table]:text-xs [&_table]:w-full [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1 [&_th]:text-left [&_th]:font-medium [&_th]:border-b [&_th]:border-border [&_td]:border-b [&_td]:border-border/50 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1.5 [&_ul]:text-xs [&_li]:my-0.5">
+            <Markdown>{analysisResult.answer}</Markdown>
+          </div>
+          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
+            {analysisResult.confidence_note && (
+              <span className="text-[10px] text-muted-foreground italic">
+                {analysisResult.confidence_note}
+              </span>
+            )}
+            <button
+              onClick={() =>
+                onNavigate?.('/scenario-events', {
+                  configId: analysisResult.target_config_id,
+                  eventId: analysisResult.event_id,
+                  fromTalkToMe: true,
+                })
+              }
+              className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors ml-auto"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+              Open in Scenario Events
+            </button>
+          </div>
+        </div>
+      ),
+    });
+    return messages;
+  }
+
+  // ─── COMPOUND FLOW ────────────────────────────────────────────────────────
+  if (intent === 'compound') {
+    // Understanding message with action badges
+    if (analysisResult.actions) {
+      messages.push({
+        role: 'system',
+        key: 'compound-understanding',
+        content: (
+          <div>
+            <div className="font-medium text-foreground mb-2">
+              I see both a new order and a directive:
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {analysisResult.actions.map((action, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
+                    action.action_type === 'demand_signal'
+                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+                      : 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full',
+                      action.action_type === 'demand_signal'
+                        ? 'bg-blue-500'
+                        : 'bg-violet-500',
+                    )}
+                  />
+                  {action.action_type === 'demand_signal'
+                    ? action.demand_signal_type === 'order'
+                      ? 'New Order'
+                      : 'Forecast Change'
+                    : 'Directive'}
+                </span>
+              ))}
+            </div>
+          </div>
+        ),
+      });
+    }
+
+    // Feasibility / what-if or rephrased prompt
+    if (analysisResult.is_complete) {
+      // Show feasibility check
+      if (analysisResult.feasibility) {
+        const feas = analysisResult.feasibility;
+        const canFulfill = feas.can_fulfill;
+        messages.push({
+          role: 'system',
+          key: 'compound-feasibility',
+          content: (
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                {canFulfill ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                )}
+                <span className="font-medium text-foreground">
+                  {canFulfill
+                    ? `Can fulfill ${feas.fill_pct || '100'}%`
+                    : `Short ${feas.shortage || 'some'} units`}
+                </span>
+              </div>
+              {feas.details && (
+                <p className="text-xs text-muted-foreground">{feas.details}</p>
+              )}
+            </div>
+          ),
+        });
+      }
+
+      // Directive activation question
+      if (analysisResult.has_directive) {
+        messages.push({
+          role: 'system',
+          key: 'compound-directive-ask',
+          content: (
+            <div>
+              <p className="text-sm text-foreground mb-3">
+                Should I also activate the directive?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={onActivateDirective}
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium bg-violet-500 text-white hover:bg-violet-600 transition-colors disabled:opacity-50"
+                >
+                  Yes, activate
+                </button>
+                <button
+                  onClick={onSkipDirective}
+                  disabled={submitting}
+                  className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium border border-border text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  No, just create order
+                </button>
+              </div>
+            </div>
+          ),
+        });
+      }
+    }
+  }
+
+  // ─── REPHRASED PROMPT (for directive or compound with gaps) ────────────────
+  if (
+    rephrasedPrompt &&
+    intent !== 'question' &&
+    intent !== 'unknown' &&
+    !analysisResult?.clarification_needed &&
+    !(intent === 'scenario_question' && analysisResult?.answer)
+  ) {
+    messages.push({
+      role: 'system',
+      key: 'rephrased',
+      content: (
+        <div>
+          <div className="font-medium text-foreground mb-1.5">
+            Please confirm or edit
+          </div>
+          <p className="text-xs text-muted-foreground mb-2">
+            I've rephrased your input with resolved names. Edit the{' '}
+            <span className="text-red-500 font-bold">?</span> markers and press
+            Submit.
+          </p>
+          <textarea
+            value={rephrasedPrompt}
+            onChange={(e) => onRephrasedChange?.(e.target.value)}
+            rows={3}
+            className={cn(
+              'w-full rounded-md border border-border bg-background px-3 py-2 text-sm',
+              'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+              'font-medium leading-relaxed',
+            )}
+          />
+          <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-border">
+            <span className="text-xs text-muted-foreground">
+              Edit the prompt above, then submit
+            </span>
+            <button
+              onClick={onSubmitRephrased}
+              disabled={submitting}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                !submitting
+                  ? 'bg-violet-500 text-white hover:bg-violet-600'
+                  : 'bg-muted text-muted-foreground cursor-not-allowed',
+              )}
+            >
+              {submitting ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3 w-3" />
+              )}
+              Submit
+            </button>
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  // ─── FIELD-BY-FIELD CLARIFICATION (fallback when no rephrased prompt) ─────
+  const missingFields = analysisResult?.missing_fields || [];
+  if (
+    !rephrasedPrompt &&
+    missingFields.length > 0 &&
+    intent !== 'question' &&
+    intent !== 'unknown' &&
+    !analysisResult?.clarification_needed &&
+    !(intent === 'scenario_question' && analysisResult?.answer)
+  ) {
+    const answeredCount = missingFields.filter(
+      (m) => clarifications?.[m.field]?.trim?.(),
+    ).length;
+    const totalMissing = missingFields.length;
+    const allAnswered = answeredCount === totalMissing && totalMissing > 0;
+
+    messages.push({
+      role: 'system',
+      key: 'clarification-fields',
+      content: (
+        <div>
+          <div className="font-medium text-foreground mb-1.5">
+            A few clarifying questions
+          </div>
+
+          {/* Parsed context */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+            <span className="truncate italic">"{userPrompt}"</span>
+            <ChevronRight className="h-3 w-3 flex-shrink-0" />
+            <span className="capitalize">
+              {analysisResult.target_layer} layer
+            </span>
+            {analysisResult.confidence > 0 && (
+              <span className="ml-1">
+                ({Math.round(analysisResult.confidence * 100)}%)
+              </span>
+            )}
+          </div>
+
+          {/* Missing fields */}
+          <div className="space-y-2.5">
+            {missingFields.map((mf) => (
+              <div key={mf.field}>
+                <label className="block text-xs font-medium text-foreground mb-1">
+                  {mf.question}
+                </label>
+                {mf.type === 'select' && mf.options?.length > 0 ? (
+                  <select
+                    value={clarifications?.[mf.field] || ''}
+                    onChange={(e) =>
+                      onClarificationAnswer?.(mf.field, e.target.value)
+                    }
+                    className={cn(
+                      'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                      'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                    )}
+                  >
+                    <option value="">Select...</option>
+                    {mf.options.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                ) : mf.type === 'number' ? (
+                  <input
+                    type="number"
+                    value={clarifications?.[mf.field] || ''}
+                    onChange={(e) =>
+                      onClarificationAnswer?.(mf.field, e.target.value)
+                    }
+                    placeholder="e.g. 10"
+                    className={cn(
+                      'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                      'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                    )}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={clarifications?.[mf.field] || ''}
+                    onChange={(e) =>
+                      onClarificationAnswer?.(mf.field, e.target.value)
+                    }
+                    placeholder="Type your answer..."
+                    className={cn(
+                      'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                      'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                    )}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Submit button */}
+          <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
+            <span className="text-xs text-muted-foreground">
+              {answeredCount} of {totalMissing} answered
+            </span>
+            <button
+              onClick={onClarificationSubmit}
+              disabled={!allAnswered || submitting}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                allAnswered && !submitting
+                  ? 'bg-violet-500 text-white hover:bg-violet-600'
+                  : 'bg-muted text-muted-foreground cursor-not-allowed',
+              )}
+            >
+              {submitting ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3 w-3" />
+              )}
+              {intent?.startsWith('scenario') ? 'Run scenario' : 'Submit directive'}
+            </button>
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  // ─── STREAMING PROGRESS (compound SSE) ────────────────────────────────────
+  if (isStreaming && streamMessages && streamMessages.length > 0) {
+    const lastMsg = streamMessages[streamMessages.length - 1];
+    const isDone = lastMsg?.type === 'complete' || lastMsg?.type === 'error';
+
+    messages.push({
+      role: 'system',
+      key: 'streaming',
+      content: (
+        <div>
+          <div className="font-medium text-foreground mb-2">Processing...</div>
+          <div className="space-y-1 font-mono text-xs">
+            {streamMessages.map((msg, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-muted-foreground flex-shrink-0">
+                  {msg.type === 'complete'
+                    ? '\u2514\u2500\u2500'
+                    : msg.type === 'error'
+                      ? '\u2514\u2500\u2500 !'
+                      : '\u251C\u2500\u2500'}
+                </span>
+                <span
+                  className={cn(
+                    msg.type === 'error'
+                      ? 'text-destructive'
+                      : msg.type === 'complete'
+                        ? 'text-emerald-600 font-semibold'
+                        : msg.type === 'action_complete'
+                          ? 'text-blue-600'
+                          : 'text-foreground',
+                  )}
+                >
+                  {msg.message}
+                </span>
+              </div>
+            ))}
+            {!isDone && (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span>{'\u2502'}  </span>
+                <Loader2 className="h-3 w-3 animate-spin" />
+              </div>
+            )}
+          </div>
+        </div>
+      ),
+    });
+  }
+
+  // ─── DIRECTIVE RESULT (final feedback) ────────────────────────────────────
+  if (directiveResult) {
+    messages.push({
+      role: 'system',
+      key: 'directive-result',
+      content: (
+        <div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div
+                className={cn(
+                  'h-2 w-2 rounded-full flex-shrink-0',
+                  directiveResult.parser_confidence >= 0.7
+                    ? 'bg-emerald-500'
+                    : directiveResult.parser_confidence >= 0.4
+                      ? 'bg-amber-500'
+                      : 'bg-red-500',
+                )}
+              />
+              <span className="font-medium truncate">
+                {directiveResult.directive_type?.replace(/_/g, ' ')}
+              </span>
+              <span className="text-muted-foreground">
+                {'\u2192'} {directiveResult.target_layer}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0 text-xs text-muted-foreground">
+              <span>
+                {Math.round(directiveResult.parser_confidence * 100)}% confidence
+              </span>
+              <span
+                className={cn(
+                  'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                  directiveResult.status === 'APPLIED'
+                    ? 'bg-emerald-500/10 text-emerald-600'
+                    : 'bg-blue-500/10 text-blue-600',
+                )}
+              >
+                {directiveResult.status}
+              </span>
+            </div>
+          </div>
+          {directiveResult.routed_actions?.length > 0 && (
+            <div className="mt-1.5 text-xs text-muted-foreground">
+              Routed to {directiveResult.routed_actions.length} action
+              {directiveResult.routed_actions.length > 1 ? 's' : ''}:{' '}
+              {directiveResult.routed_actions
+                .map((a) => a.layer || a.trm_type)
+                .join(', ')}
+            </div>
+          )}
+        </div>
+      ),
+    });
+  }
+
+  return messages;
+}
+
+// ─── TalkToMePopup Component ────────────────────────────────────────────────────
+const TalkToMePopup = ({
+  open,
+  onClose,
+  userPrompt,
+  analysisResult,
+  streamMessages,
+  isStreaming,
+  directiveResult,
+  rephrasedPrompt,
+  onRephrasedChange,
+  onSubmitRephrased,
+  onSubmitCompound,
+  onActivateDirective,
+  onSkipDirective,
+  onNavigate,
+  submitting,
+  clarifications,
+  onClarificationAnswer,
+  onClarificationSubmit,
+}) => {
+  const scrollRef = useRef(null);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
+  }, [analysisResult, streamMessages, directiveResult, rephrasedPrompt, isStreaming]);
+
+  // Build the conversation thread
+  const messages = useMemo(
+    () =>
+      buildMessages({
+        userPrompt,
+        analysisResult,
+        streamMessages,
+        isStreaming,
+        directiveResult,
+        rephrasedPrompt,
+        onRephrasedChange,
+        onSubmitRephrased,
+        onSubmitCompound,
+        onActivateDirective,
+        onSkipDirective,
+        onNavigate,
+        submitting,
+        clarifications,
+        onClarificationAnswer,
+        onClarificationSubmit,
+      }),
+    // Intentionally include callbacks so interactive content re-renders correctly
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      userPrompt,
+      analysisResult,
+      streamMessages,
+      isStreaming,
+      directiveResult,
+      rephrasedPrompt,
+      submitting,
+      clarifications,
+    ],
+  );
+
+  if (!open) return null;
+
+  // Determine whether Done should be shown (only when interaction is "complete")
+  const isComplete =
+    // Question answered
+    analysisResult?.intent === 'question' ||
+    // Scenario question answered
+    (analysisResult?.intent === 'scenario_question' && analysisResult?.answer) ||
+    // Directive submitted
+    !!directiveResult ||
+    // Streaming finished
+    (streamMessages?.length > 0 &&
+      (streamMessages[streamMessages.length - 1]?.type === 'complete' ||
+        streamMessages[streamMessages.length - 1]?.type === 'error'));
+
+  return (
+    <>
+      {/* Backdrop — semi-transparent, does NOT dismiss on click */}
+      <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]" />
+
+      {/* Popup container */}
+      <div
+        className={cn(
+          'fixed top-20 left-1/2 -translate-x-1/2 z-50',
+          'w-full max-w-xl mx-4',
+          'bg-popover border border-border rounded-xl shadow-2xl',
+          'flex flex-col',
+          'max-h-[70vh]',
+          'animate-in fade-in slide-in-from-top-2 duration-200',
+        )}
+      >
+        {/* ── Header (sticky) ─────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <TalkToMeAvatar size="sm" />
+            <span className="font-semibold text-sm text-foreground">
+              Talk to Me
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* ── Message thread (scrollable) ─────────────────────────────────── */}
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto px-4 py-4 min-h-0"
+        >
+          {messages.map((msg) => (
+            <MessageBubble key={msg.key} role={msg.role}>
+              {typeof msg.content === 'string' ? msg.content : msg.content}
+            </MessageBubble>
+          ))}
+        </div>
+
+        {/* ── Footer (sticky) ─────────────────────────────────────────────── */}
+        <div className="flex items-center justify-end px-4 py-3 border-t border-border flex-shrink-0">
+          {submitting && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mr-auto">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Processing...</span>
+            </div>
+          )}
+          <button
+            onClick={onClose}
+            className={cn(
+              'px-4 py-1.5 rounded-full text-xs font-medium transition-all',
+              isComplete
+                ? 'bg-violet-500 text-white hover:bg-violet-600'
+                : 'border border-border text-muted-foreground hover:text-foreground hover:bg-accent',
+            )}
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default TalkToMePopup;
