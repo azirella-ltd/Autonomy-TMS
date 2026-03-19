@@ -1446,8 +1446,98 @@ def _build_geo_region_map(db: Session, sites) -> Dict[str, str]:
     return region_map
 
 
-def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
-    """Convert site ORM objects to dicts with region added to geography."""
+def _compute_site_metrics(db: Session, config_id: int) -> Dict[int, Dict]:
+    """Precompute inventory/risk metrics for all sites in a config.
+
+    Returns: {site_id: {on_hand, safety_stock, days_of_supply, risk_score, ...}}
+    Drives node sizing and coloring in Sankey and Map visualizations.
+    """
+    from sqlalchemy import text as sql_text
+
+    metrics: Dict[int, Dict] = {}
+
+    try:
+        # Inventory: aggregate on_hand and safety stock per site
+        inv_rows = db.execute(sql_text("""
+            SELECT il.site_id,
+                   SUM(il.on_hand_qty) AS total_on_hand,
+                   SUM(COALESCE(ip.ss_quantity, 0)) AS total_safety_stock,
+                   COUNT(DISTINCT il.product_id) AS product_count
+            FROM inv_level il
+            JOIN site s ON s.id = il.site_id
+            LEFT JOIN inv_policy ip ON ip.product_id = il.product_id
+                AND ip.site_id = il.site_id AND ip.is_active = 'true'
+            WHERE s.config_id = :cid
+            GROUP BY il.site_id
+        """), {"cid": config_id}).fetchall()
+
+        for row in inv_rows:
+            site_id = row[0]
+            on_hand = float(row[1] or 0)
+            safety_stock = float(row[2] or 0)
+            metrics[site_id] = {
+                "on_hand_qty": on_hand,
+                "safety_stock": safety_stock,
+                "inventory_ratio": on_hand / safety_stock if safety_stock > 0 else None,
+                "product_count": row[3],
+            }
+
+        # Demand: average weekly forecast per site for days-of-supply calc
+        fcst_rows = db.execute(sql_text("""
+            SELECT f.site_id, AVG(f.forecast_p50) AS avg_weekly_demand
+            FROM forecast f
+            JOIN site s ON s.id = f.site_id
+            WHERE s.config_id = :cid
+              AND f.forecast_date >= CURRENT_DATE
+              AND f.forecast_date <= CURRENT_DATE + INTERVAL '28 days'
+            GROUP BY f.site_id
+        """), {"cid": config_id}).fetchall()
+
+        for row in fcst_rows:
+            site_id = row[0]
+            avg_demand = float(row[1] or 0)
+            if site_id in metrics and avg_demand > 0:
+                on_hand = metrics[site_id]["on_hand_qty"]
+                metrics[site_id]["avg_weekly_demand"] = avg_demand
+                metrics[site_id]["days_of_supply"] = round((on_hand / avg_demand) * 7, 1)
+
+        # Order volume: open inbound + outbound orders per site
+        ib_rows = db.execute(sql_text("""
+            SELECT ship_to_site_id AS site_id, COUNT(*) AS open_orders,
+                   SUM(total_ordered_qty) AS total_qty
+            FROM inbound_order
+            WHERE config_id = :cid AND status IN ('DRAFT', 'CONFIRMED', 'IN_TRANSIT')
+            GROUP BY ship_to_site_id
+        """), {"cid": config_id}).fetchall()
+
+        for row in ib_rows:
+            site_id = row[0]
+            if site_id not in metrics:
+                metrics[site_id] = {}
+            metrics[site_id]["open_inbound_orders"] = row[1]
+            metrics[site_id]["inbound_qty"] = float(row[2] or 0)
+
+        ob_rows = db.execute(sql_text("""
+            SELECT ship_from_site_id AS site_id, COUNT(*) AS open_orders
+            FROM outbound_order
+            WHERE config_id = :cid AND status IN ('DRAFT', 'CONFIRMED', 'PARTIALLY_FULFILLED')
+            GROUP BY ship_from_site_id
+        """), {"cid": config_id}).fetchall()
+
+        for row in ob_rows:
+            site_id = row[0]
+            if site_id not in metrics:
+                metrics[site_id] = {}
+            metrics[site_id]["open_outbound_orders"] = row[1]
+
+    except Exception as e:
+        logger.warning("Site metrics computation failed: %s", e)
+
+    return metrics
+
+
+def _enrich_sites_with_region(sites, region_map: Dict[str, str], site_metrics: Optional[Dict] = None) -> List[dict]:
+    """Convert site ORM objects to dicts with region and metrics."""
     result = []
     for site in sites:
         site_dict = {
@@ -1490,6 +1580,21 @@ def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
             }
         else:
             site_dict["geography"] = None
+
+        # Add computed metrics (inventory, risk, flow volume)
+        sm = (site_metrics or {}).get(site.id, {})
+        site_dict["metrics"] = {
+            "on_hand_qty": sm.get("on_hand_qty"),
+            "safety_stock": sm.get("safety_stock"),
+            "inventory_ratio": sm.get("inventory_ratio"),  # on_hand / safety_stock
+            "days_of_supply": sm.get("days_of_supply"),
+            "avg_weekly_demand": sm.get("avg_weekly_demand"),
+            "product_count": sm.get("product_count"),
+            "open_inbound_orders": sm.get("open_inbound_orders"),
+            "open_outbound_orders": sm.get("open_outbound_orders"),
+            "inbound_qty": sm.get("inbound_qty"),
+        } if sm else None
+
         result.append(site_dict)
     return result
 
@@ -1517,7 +1622,9 @@ def read_sites(
         sites = crud.site.get_multi_by_config(db, config_id=config_id, limit=1000)
 
     region_map = _build_geo_region_map(db, sites)
-    return _enrich_sites_with_region(sites, region_map)
+    # Precompute inventory/risk metrics for all sites in this config
+    site_metrics = _compute_site_metrics(db, config_id)
+    return _enrich_sites_with_region(sites, region_map, site_metrics=site_metrics)
 
 @router.post("/{config_id}/sites", response_model=schemas.Site, status_code=status.HTTP_201_CREATED)
 def create_site(
