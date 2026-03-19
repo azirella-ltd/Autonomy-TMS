@@ -525,24 +525,47 @@ class ScenarioStrategyService:
         strategy: Dict[str, Any],
         on_progress: ProgressCallback,
     ) -> List[Dict[str, Any]]:
-        """Execute the winning strategy's actions against the active config.
+        """Execute the winning strategy's actions with authority boundary checks.
 
-        Translates abstract strategy actions from Claude into concrete DB
-        operations using existing infrastructure:
-        - set_priority → update OutboundOrder.priority
-        - add_mo → create ProductionOrder
-        - expedite_po → update InboundOrder.expected_delivery_date
-        - transfer → create TransferOrder (or inject rebalancing event)
-        - adjust_forecast → inject forecast_revision event
+        Actions within the user's authority are executed immediately.
+        Actions crossing authority boundaries trigger the AAP protocol:
+        persist scenario → fire authorization requests → A2A evaluation →
+        execute approved/tweaked actions → promote and clean up.
 
         Returns a list of execution results for the SSE stream.
         """
+        from app.services.strategy_authority_mapping import (
+            map_powell_role_to_agent_role,
+            partition_actions,
+        )
+        from app.services.strategy_a2a_responder import A2AAuthorizationResponder
+
         actions = strategy.get("actions", [])
         if not actions:
             return [{"type": "no_actions", "message": "Strategy has no concrete actions to execute"}]
 
+        # 1. Resolve user's agent role
+        user_role = await self._get_user_powell_role(user_id)
+        user_agent_role = map_powell_role_to_agent_role(user_role)
+
+        # 2. Partition actions by authority boundary
+        unilateral, cross_boundary = partition_actions(user_agent_role, actions)
+
+        await on_progress("authority_check", {
+            "user_role": user_agent_role.value,
+            "unilateral_count": len(unilateral),
+            "cross_boundary_count": len(cross_boundary),
+            "message": (
+                f"All {len(actions)} actions within your authority"
+                if not cross_boundary
+                else f"{len(unilateral)} within authority, {len(cross_boundary)} require agent authorization"
+            ),
+        })
+
         results = []
-        for action in actions:
+
+        # 3. Execute unilateral actions immediately
+        for action in unilateral:
             action_type = action.get("type", "unknown")
             try:
                 result = await self._execute_single_action(config_id, user_id, action)
@@ -551,17 +574,204 @@ class ScenarioStrategyService:
                     "action_type": action_type,
                     "message": result.get("message", f"{action_type} executed"),
                     "success": True,
+                    "authority": "unilateral",
                 })
             except Exception as e:
-                logger.warning("Strategy action %s failed: %s", action_type, e)
+                logger.warning("Unilateral action %s failed: %s", action_type, e)
                 results.append({"type": action_type, "success": False, "error": str(e)})
-                await on_progress("action_executed", {
+
+        # 4. Handle cross-boundary actions via AAP
+        if cross_boundary:
+            # Persist the scenario (needed while A2A negotiation happens)
+            scenario_id = await self._persist_strategy_scenario(
+                config_id, user_id, strategy,
+            )
+            await on_progress("scenario_persisted", {
+                "scenario_id": scenario_id,
+                "status": "SHARED",
+                "message": f"Strategy persisted for agent authorization ({len(cross_boundary)} actions)",
+            })
+
+            # Fire AAP requests and get A2A responses
+            responder = A2AAuthorizationResponder(self.db, self.tenant_id)
+
+            # Build justification with full scenario context for each agent
+            strategy_justification = (
+                f"Strategy: {strategy.get('name', 'unnamed')}\n"
+                f"Description: {strategy.get('description', '')}\n"
+                f"Triggered by: demand shortfall — customer order cannot be fully satisfied\n"
+                f"All actions in this strategy: {json.dumps([a.get('type') for a in actions])}\n"
+                f"Unilateral actions already executed: {len(unilateral)}\n"
+                f"Cross-boundary actions pending: {len(cross_boundary)}"
+            )
+
+            for action in cross_boundary:
+                action_type = action.get("type", "unknown")
+                target_role = action.get("_target_agent_role", "unknown")
+                target_label = target_role.value if hasattr(target_role, "value") else str(target_role)
+
+                await on_progress("authorization_requested", {
                     "action_type": action_type,
-                    "message": f"{action_type} failed: {e}",
-                    "success": False,
+                    "target_agent": target_label,
+                    "message": f"Requesting authorization from {target_label} agent for: {action_type}",
                 })
 
+                # A2A evaluation — target TRM agent evaluates with full scenario context
+                decision, reason, counter_proposal = await responder.evaluate_request(
+                    action=action,
+                    target_role=target_role,
+                    config_id=config_id,
+                    justification=strategy_justification,
+                )
+
+                await on_progress("authorization_resolved", {
+                    "action_type": action_type,
+                    "target_agent": target_label,
+                    "decision": decision,
+                    "reason": reason,
+                    "counter_proposal": counter_proposal is not None,
+                    "message": f"{target_label}: {decision} — {reason}",
+                })
+
+                # Execute based on decision
+                if decision == "AUTHORIZE":
+                    try:
+                        result = await self._execute_single_action(config_id, user_id, action)
+                        result["authority"] = "authorized"
+                        result["authorized_by"] = target_label
+                        results.append(result)
+                        await on_progress("action_executed", {
+                            "action_type": action_type,
+                            "message": f"{result.get('message', action_type)} (authorized by {target_label})",
+                            "success": True,
+                            "authority": "authorized",
+                        })
+                    except Exception as e:
+                        results.append({"type": action_type, "success": False, "error": str(e)})
+
+                elif decision == "COUNTER_OFFER" and counter_proposal:
+                    # Execute the tweaked version
+                    try:
+                        tweak_note = counter_proposal.get("note", "modified by agent")
+                        result = await self._execute_single_action(config_id, user_id, counter_proposal)
+                        result["authority"] = "counter_offer"
+                        result["authorized_by"] = target_label
+                        result["tweak"] = tweak_note
+                        results.append(result)
+                        await on_progress("action_executed", {
+                            "action_type": action_type,
+                            "message": f"{result.get('message', action_type)} (tweaked: {tweak_note})",
+                            "success": True,
+                            "authority": "counter_offer",
+                        })
+                    except Exception as e:
+                        results.append({"type": action_type, "success": False, "error": str(e)})
+
+                elif decision == "DENY":
+                    results.append({
+                        "type": action_type,
+                        "success": False,
+                        "authority": "denied",
+                        "denied_by": target_label,
+                        "reason": reason,
+                        "message": f"{action_type} denied by {target_label}: {reason}",
+                    })
+                    await on_progress("action_executed", {
+                        "action_type": action_type,
+                        "message": f"{action_type} denied by {target_label}: {reason}",
+                        "success": False,
+                        "authority": "denied",
+                    })
+
+                else:  # ESCALATE or unknown
+                    results.append({
+                        "type": action_type,
+                        "success": False,
+                        "authority": "escalated",
+                        "message": f"{action_type} escalated to Decision Stream for human review",
+                    })
+                    await on_progress("action_executed", {
+                        "action_type": action_type,
+                        "message": f"{action_type} escalated — requires human review in Decision Stream",
+                        "success": False,
+                        "authority": "escalated",
+                    })
+
+            # Clean up: delete the persisted scenario (audit trail is in decision record + auth threads)
+            await self._cleanup_strategy_scenario(scenario_id)
+            await on_progress("scenario_promoted", {
+                "scenario_id": scenario_id,
+                "executed_count": sum(1 for r in results if r.get("success")),
+                "denied_count": sum(1 for r in results if r.get("authority") == "denied"),
+                "message": "Strategy scenario promoted and cleaned up",
+            })
+
         return results
+
+    async def _get_user_powell_role(self, user_id: int):
+        """Fetch the user's powell_role from the DB."""
+        try:
+            result = await self.db.execute(
+                text("SELECT powell_role FROM users WHERE id = :uid"),
+                {"uid": user_id},
+            )
+            row = result.fetchone()
+            return row[0] if row else None
+        except Exception:
+            return None
+
+    async def _persist_strategy_scenario(
+        self, config_id: int, user_id: int, strategy: Dict,
+    ) -> Optional[int]:
+        """Persist the winning strategy as a PlanningScenario (SHARED status).
+
+        Created only when cross-boundary actions require A2A negotiation.
+        Deleted after all authorization threads resolve.
+        """
+        try:
+            result = await self.db.execute(
+                text("""
+                    INSERT INTO planning_scenario
+                        (name, description, config_id, status, variable_deltas,
+                         balanced_scorecard, net_benefit, created_by, created_at, depth)
+                    VALUES
+                        (:name, :desc, :cid, 'SHARED', :deltas,
+                         :scorecard, :benefit, :created_by, NOW(), 0)
+                    RETURNING id
+                """),
+                {
+                    "name": f"Strategy: {strategy.get('name', 'unnamed')}",
+                    "desc": strategy.get("description", ""),
+                    "cid": config_id,
+                    "deltas": json.dumps(strategy.get("variable_deltas", {})),
+                    "scorecard": json.dumps(strategy.get("scorecard", {})),
+                    "benefit": strategy.get("scorecard", {}).get("net_benefit", 0),
+                    "created_by": str(user_id),
+                },
+            )
+            await self.db.commit()
+            row = result.fetchone()
+            return row[0] if row else None
+        except Exception as e:
+            logger.warning("Failed to persist strategy scenario: %s", e)
+            return None
+
+    async def _cleanup_strategy_scenario(self, scenario_id: Optional[int]):
+        """Delete the ephemeral strategy scenario after promotion.
+
+        The audit trail lives in the decision record and authorization
+        thread records — the scenario row is just a working artifact.
+        """
+        if not scenario_id:
+            return
+        try:
+            await self.db.execute(
+                text("DELETE FROM planning_scenario WHERE id = :sid"),
+                {"sid": scenario_id},
+            )
+            await self.db.commit()
+        except Exception as e:
+            logger.debug("Scenario cleanup failed (may not exist): %s", e)
 
     async def _execute_single_action(
         self,
