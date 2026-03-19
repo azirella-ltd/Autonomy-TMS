@@ -58,16 +58,24 @@ async def _get_service(db: AsyncSession, user) -> DecisionStreamService:
 @router.get("/digest", response_model=DecisionDigestResponse)
 async def get_decision_digest(
     config_id: Optional[int] = Query(None, description="Supply chain config ID to scope"),
+    level: Optional[str] = Query(None, description="Filter by decision level: governance, strategic, tactical, execution"),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Get the decision digest: pending decisions, alerts, and LLM synthesis."""
+    """Get the decision digest: pending decisions, alerts, and LLM synthesis.
+
+    Level filtering:
+    - Each role has a default level view (e.g., S&OP Director → strategic)
+    - Pass ?level=execution to drill down to a specific level
+    - Escalated decisions from the level below always pass through
+    """
     service = await _get_service(db, current_user)
     powell_role = getattr(current_user, "powell_role", None)
 
     result = await service.get_decision_digest(
         powell_role=powell_role,
         config_id=config_id,
+        level_override=level,
     )
     return result
 

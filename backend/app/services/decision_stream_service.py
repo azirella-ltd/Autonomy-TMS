@@ -178,13 +178,15 @@ DECISION_TYPE_TABLE_MAP = {
 
 # ── Decision Level: Powell layer for each decision type ──────────────────
 DECISION_LEVEL = {
+    # Governance — Human directives, guardrail/target changes
+    "directive": "governance",
+    "guardrail_change": "governance",
+    "policy_envelope_change": "governance",
     # Strategic — S&OP GraphSAGE (weekly, network-wide policy parameters)
     "sop_policy": "strategic",
     # Tactical — Execution tGNN (daily, multi-site allocation directives)
     "execution_directive": "tactical",
     "allocation_refresh": "tactical",
-    # Operational — Site tGNN (hourly, single-site cross-TRM coordination)
-    # (Site tGNN outputs enrich TRM decisions via urgency_at_time, not standalone)
     # Execution — TRM agents (per-decision, per-role at site)
     "atp": "execution",
     "rebalancing": "execution",
@@ -203,34 +205,99 @@ DECISION_LEVEL = {
     "rccp_adjustment": "execution",
 }
 
-# Role relevance filter: which decision types each powell_role cares about
-ROLE_RELEVANCE = {
-    # Strategic/executive roles see GNN + all TRM decisions
-    "SC_VP": {"sop_policy", "execution_directive", "allocation_refresh",
-              "atp", "rebalancing", "po_creation", "order_tracking",
-              "forecast_adjustment", "inventory_buffer", "email_signal"},
-    "EXECUTIVE": {"sop_policy", "execution_directive", "allocation_refresh",
-                  "atp", "rebalancing", "po_creation", "order_tracking",
-                  "forecast_adjustment", "inventory_buffer", "email_signal"},
-    # S&OP Director sees strategic + tactical GNN decisions
-    "SOP_DIRECTOR": {"sop_policy", "execution_directive", "allocation_refresh",
-                     "po_creation", "rebalancing", "forecast_adjustment",
-                     "inventory_buffer", "mo_execution", "to_execution", "email_signal"},
-    # MPS Manager sees tactical GNN + operational TRM decisions
-    "MPS_MANAGER": {"execution_directive", "allocation_refresh",
-                    "atp", "po_creation", "rebalancing", "order_tracking",
-                    "mo_execution", "to_execution", "quality", "maintenance",
-                    "subcontracting", "email_signal"},
-    "ALLOCATION_MANAGER": {"execution_directive", "allocation_refresh",
-                           "atp", "rebalancing", "order_tracking"},
+# ── Level-Based Role Filtering ───────────────────────────────────────────
+# Each role has:
+#   default_levels: what they see in the default stream view
+#   escalation_from: they ALSO see decisions from this level IF escalated
+#   allowed_types: fine-grained type filter within their levels (None = all at level)
+#
+# Principle: You see decisions at YOUR level + escalations FROM the level below.
+# You don't see routine noise two levels down.
+
+ROLE_DEFAULT_LEVELS = {
+    # VP/Exec: governance + strategic. Tactical only if escalated to strategic.
+    "SC_VP":                {"default_levels": {"governance", "strategic"},
+                             "escalation_from": "tactical"},
+    "EXECUTIVE":            {"default_levels": {"governance", "strategic"},
+                             "escalation_from": "tactical"},
+    # S&OP Director: strategic. Tactical only if escalated.
+    "SOP_DIRECTOR":         {"default_levels": {"strategic"},
+                             "escalation_from": "tactical"},
+    # MPS Manager: tactical. Execution only if escalated.
+    "MPS_MANAGER":          {"default_levels": {"tactical"},
+                             "escalation_from": "execution"},
+    # Allocation Manager: tactical (allocations + rebalancing)
+    "ALLOCATION_MANAGER":   {"default_levels": {"tactical"},
+                             "escalation_from": "execution"},
+    # Order Promise: execution (ATP only)
+    "ORDER_PROMISE_MANAGER": {"default_levels": {"execution"},
+                              "escalation_from": None},
+    # TRM specialists: execution only
+    "ATP_ANALYST":           {"default_levels": {"execution"}, "escalation_from": None},
+    "REBALANCING_ANALYST":   {"default_levels": {"execution"}, "escalation_from": None},
+    "PO_ANALYST":            {"default_levels": {"execution"}, "escalation_from": None},
+    "ORDER_TRACKING_ANALYST": {"default_levels": {"execution"}, "escalation_from": None},
+    # Tenant admin / demo: all levels
+    "DEMO_ALL":              {"default_levels": {"governance", "strategic", "tactical", "execution"},
+                              "escalation_from": None},
+}
+
+# Fine-grained type filter per role (within their allowed levels)
+# None = see all types at their level. Set = only those types.
+ROLE_TYPE_FILTER = {
+    "ALLOCATION_MANAGER": {"execution_directive", "allocation_refresh", "atp", "rebalancing", "order_tracking"},
     "ORDER_PROMISE_MANAGER": {"atp", "order_tracking"},
-    # TRM specialist roles — narrow scope (no GNN visibility)
     "ATP_ANALYST": {"atp"},
     "REBALANCING_ANALYST": {"rebalancing"},
     "PO_ANALYST": {"po_creation"},
     "ORDER_TRACKING_ANALYST": {"order_tracking"},
-    "DEMO_ALL": None,  # None = all types
 }
+
+# Legacy ROLE_RELEVANCE kept for backward compatibility — used as fallback
+# if ROLE_DEFAULT_LEVELS doesn't have the role.
+ROLE_RELEVANCE = {
+    "SC_VP": None,  # None = all types (filtered by level instead)
+    "EXECUTIVE": None,
+    "SOP_DIRECTOR": None,
+    "MPS_MANAGER": None,
+    "ALLOCATION_MANAGER": {"execution_directive", "allocation_refresh",
+                           "atp", "rebalancing", "order_tracking"},
+    "ORDER_PROMISE_MANAGER": {"atp", "order_tracking"},
+    "ATP_ANALYST": {"atp"},
+    "REBALANCING_ANALYST": {"rebalancing"},
+    "PO_ANALYST": {"po_creation"},
+    "ORDER_TRACKING_ANALYST": {"order_tracking"},
+    "DEMO_ALL": None,
+}
+
+
+def _get_role_filter(powell_role: Optional[str], level_override: Optional[str] = None):
+    """Compute which decision types and levels a role should see.
+
+    Returns (allowed_levels, allowed_types, escalation_from_level).
+    - allowed_levels: set of level strings this role sees by default
+    - allowed_types: set of type_keys (or None for all at level)
+    - escalation_from_level: decisions from this level are ALSO shown
+      if they have source_signals (i.e., they were escalated)
+    """
+    if not powell_role:
+        return None, None, None  # No filtering
+
+    role_config = ROLE_DEFAULT_LEVELS.get(powell_role)
+    if not role_config:
+        # Fallback to legacy ROLE_RELEVANCE
+        return None, ROLE_RELEVANCE.get(powell_role), None
+
+    levels = role_config["default_levels"].copy()
+    escalation_from = role_config.get("escalation_from")
+
+    # Level override from API query parameter (e.g., ?level=execution)
+    if level_override:
+        levels = {level_override}
+        escalation_from = None  # explicit level = no escalation passthrough
+
+    type_filter = ROLE_TYPE_FILTER.get(powell_role)
+    return levels, type_filter, escalation_from
 
 # Per-table site column filter builder: type_key -> (model, allowed_site_names) -> filter clause or None
 def _site_filter(type_key, model_class, sites):
@@ -694,10 +761,15 @@ class DecisionStreamService:
         powell_role: Optional[str] = None,
         config_id: Optional[int] = None,
         force_refresh: bool = False,
+        level_override: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Collect pending decisions, alerts, and return digest.
 
         Returns dict matching DecisionDigestResponse schema.
+
+        Level-based filtering:
+        - Each role sees their default levels + escalations from below
+        - level_override: if provided, explicitly filter to one level (drill-down)
 
         Three-tier lookup:
         1. In-memory cache (fastest, volatile)
@@ -705,7 +777,7 @@ class DecisionStreamService:
         3. LLM synthesis (fallback, writes result to DB for future loads)
         """
         # --- Tier 1: Check in-memory cache ---
-        cache_key = f"digest:{self.tenant_id}:{config_id}:{powell_role}"
+        cache_key = f"digest:{self.tenant_id}:{config_id}:{powell_role}:{level_override}"
         if not force_refresh:
             cached = _DIGEST_CACHE.get(cache_key)
             if cached:
@@ -716,8 +788,10 @@ class DecisionStreamService:
                 else:
                     _DIGEST_CACHE.pop(cache_key, None)
 
-        # 1. Collect pending decisions from all 11 tables
-        decisions, product_names = await self._collect_pending_decisions(config_id, powell_role)
+        # 1. Collect pending decisions from all tables (TRM + GNN + governance)
+        decisions, product_names = await self._collect_pending_decisions(
+            config_id, powell_role, level_override=level_override,
+        )
 
         # 2. Prioritize
         decisions = self._prioritize_decisions(decisions)
@@ -766,6 +840,13 @@ class DecisionStreamService:
         except Exception:
             pass  # default to "name"
 
+        # Compute level counts for frontend tabs
+        level_counts = {"governance": 0, "strategic": 0, "tactical": 0, "execution": 0}
+        for d in decisions:
+            lvl = d.get("decision_level", "execution")
+            if lvl in level_counts:
+                level_counts[lvl] += 1
+
         result = {
             "digest_text": digest_text or "No decisions to report.",
             "decisions": decisions,
@@ -773,6 +854,8 @@ class DecisionStreamService:
             "total_pending": len(decisions),
             "config_id": config_id,
             "display_identifiers": display_identifiers,
+            "level_counts": level_counts,
+            "active_level": level_override,
         }
 
         # --- Store in memory cache ---
@@ -1095,19 +1178,38 @@ class DecisionStreamService:
         self,
         config_id: Optional[int] = None,
         powell_role: Optional[str] = None,
+        level_override: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
-        """Query all 11 powell_*_decisions tables for recent decisions.
+        """Query powell_*_decisions tables + gnn_directive_reviews + governance sources.
 
-        Applies three layers of filtering:
+        Applies level-based filtering:
         1. Tenant scope (via config_id)
-        2. Role relevance (which decision types this role sees)
-        3. User scope (site + product hierarchy-based filtering)
+        2. Level filtering: each role sees their default levels + escalations from below
+        3. Type filtering: fine-grained filter within allowed levels
+        4. User scope (site + product hierarchy-based filtering)
+        5. level_override: if provided, restricts to a single level (drill-down)
 
         Returns:
             (decisions, product_names) — product_names maps product_id → short name.
         """
-        # Filter decision types by role relevance
-        relevant_types = ROLE_RELEVANCE.get(powell_role) if powell_role else None
+        # Level-based role filtering (replaces flat ROLE_RELEVANCE)
+        allowed_levels, type_filter, escalation_from = _get_role_filter(powell_role, level_override)
+
+        # For backward compatibility, compute relevant_types from levels + type_filter
+        if allowed_levels is not None:
+            relevant_types = set()
+            for type_key, level in DECISION_LEVEL.items():
+                if level in allowed_levels:
+                    if type_filter is None or type_key in type_filter:
+                        relevant_types.add(type_key)
+            # If escalation_from is set, we'll also include escalated decisions
+            # from that level in the post-filter step (not here — need to check source_signals)
+            if escalation_from:
+                for type_key, level in DECISION_LEVEL.items():
+                    if level == escalation_from:
+                        relevant_types.add(type_key)
+        else:
+            relevant_types = type_filter  # None = all types
 
         all_decisions = []
         cutoff = datetime.utcnow() - timedelta(days=_DECISION_LOOKBACK_DAYS)
@@ -1421,6 +1523,102 @@ class DecisionStreamService:
                     await self.db.rollback()
                 except Exception:
                     pass
+
+        # ── Query Governance Decisions (directives, policy changes) ────────
+        governance_types = {"directive", "guardrail_change", "policy_envelope_change"}
+        if relevant_types is None or governance_types & relevant_types:
+            try:
+                from app.models.user_directive import UserDirective
+                dir_query = select(UserDirective).where(
+                    and_(
+                        UserDirective.config_id.in_(config_filter),
+                        UserDirective.created_at >= cutoff,
+                        UserDirective.parsed_intent == "directive",
+                    )
+                ).order_by(desc(UserDirective.created_at)).limit(10)
+                dir_result = await self.db.execute(dir_query)
+                dir_rows = dir_result.scalars().all()
+
+                for row in dir_rows:
+                    layer = getattr(row, "target_layer", "strategic")
+                    metric = getattr(row, "parsed_metric", "")
+                    direction = getattr(row, "parsed_direction", "")
+                    magnitude = getattr(row, "parsed_magnitude_pct", None)
+
+                    summary_parts = []
+                    if direction:
+                        summary_parts.append(direction.capitalize())
+                    if metric:
+                        summary_parts.append(metric.replace("_", " "))
+                    if magnitude:
+                        summary_parts.append(f"{magnitude:.0f}%")
+                    summary = f"Directive: {' '.join(summary_parts)}" if summary_parts else f"Directive: {row.raw_text[:60]}"
+
+                    all_decisions.append({
+                        "id": row.id,
+                        "decision_type": "directive",
+                        "decision_level": "governance",
+                        "summary": summary,
+                        "product_id": None,
+                        "product_name": None,
+                        "site_id": None,
+                        "site_name": "Network-wide" if layer == "strategic" else (
+                            ", ".join(row.target_site_keys) if row.target_site_keys else None
+                        ),
+                        "urgency": "Medium",
+                        "urgency_score": 0.5,
+                        "likelihood": "Certain",
+                        "likelihood_score": 1.0,
+                        "cost_of_inaction": None,
+                        "time_pressure": None,
+                        "expected_benefit": None,
+                        "economic_impact": None,
+                        "reason": row.raw_text,
+                        "decision_reasoning": f"User directive routed to {layer} layer. {row.reason_code or ''}",
+                        "suggested_action": f"Routed to {layer}: {', '.join(row.target_trm_types) if row.target_trm_types else 'all agents'}",
+                        "deep_link": "/directives",
+                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                        "editable_values": row.parsed_scope,
+                        "context": {
+                            "config_id": row.config_id,
+                            "directive_type": row.directive_type,
+                            "target_layer": layer,
+                            "status": row.status,
+                            "user_id": row.user_id,
+                        },
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to query governance decisions: {e}")
+                try:
+                    await self.db.rollback()
+                except Exception:
+                    pass
+
+        # ── Post-filter: escalation passthrough ──────────────────────────
+        # If a role only sees "tactical" by default but has escalation_from="execution",
+        # keep execution decisions ONLY if they have source_signals (i.e., were escalated).
+        if allowed_levels and escalation_from:
+            filtered = []
+            for d in all_decisions:
+                d_level = d.get("decision_level", "execution")
+                if d_level in allowed_levels:
+                    # Decision is at a level this role sees by default — keep
+                    filtered.append(d)
+                elif d_level == escalation_from:
+                    # Decision is from the escalation level — only keep if escalated
+                    ctx = d.get("context", {})
+                    has_escalation = (
+                        ctx.get("source_signals")
+                        or ctx.get("escalation_id")
+                        or (d.get("urgency_score") or 0) >= 0.75  # high urgency = escalation-worthy
+                    )
+                    if has_escalation:
+                        filtered.append(d)
+                    # else: routine decision at lower level — drop
+                else:
+                    # Decision is at a level this role doesn't see at all — drop
+                    pass
+            all_decisions = filtered
 
         return all_decisions, product_names
 

@@ -185,15 +185,67 @@ The escalation context box only appears when `source_signals` is non-empty. For 
 
 ---
 
-## Role Visibility Matrix
+## Level-Based Role Filtering
 
-| Role | Strategic (S&OP) | Tactical (tGNN) | Execution (TRM) |
-|------|:---:|:---:|:---:|
-| SC VP / Executive | ✅ | ✅ | ✅ |
-| S&OP Director | ✅ | ✅ | ✅ (subset) |
-| MPS Manager | ❌ | ✅ | ✅ |
-| Allocation Manager | ❌ | ✅ | ✅ (subset) |
-| TRM Analyst | ❌ | ❌ | ✅ (own type only) |
+**Principle**: You see decisions at YOUR level + escalations FROM the level below. You don't see routine noise two levels down.
+
+### Default Views
+
+| Role | Default Levels | Escalation From | What They See |
+|------|:---:|:---:|------|
+| **SC VP / Executive** | Governance + Strategic | Tactical escalations | Directives they issued. S&OP policy changes. Tactical issues that escalated to strategic. |
+| **S&OP Director** | Strategic | Tactical escalations | S&OP policy decisions. tGNN issues that couldn't be resolved at tactical level. |
+| **MPS Manager** | Tactical | Execution escalations | tGNN allocations. TRM issues that escalated (e.g., capacity stress). |
+| **Allocation Manager** | Tactical | Execution escalations | Allocations, ATP, rebalancing. Execution issues affecting allocations. |
+| **TRM Analyst** | Execution | None | Their TRM type only at their site. |
+| **Tenant Admin** | All levels | N/A | Everything, filterable by level tabs. |
+
+### Escalation Passthrough
+
+When a role has `escalation_from`, decisions at that lower level appear ONLY if they have:
+- `source_signals` populated (TRM observations that escalated)
+- `escalation_id` linking to a `powell_escalation_log` entry
+- `urgency_score >= 0.75` (high urgency implies escalation-worthy)
+
+Example: S&OP Director's default view = strategic decisions. But if a tactical tGNN directive has `source_signals` (meaning TRM agents observed a problem that escalated through Site tGNN → Network tGNN), it passes through to the S&OP Director's stream.
+
+### Level Drill-Down
+
+The API supports `?level=execution` to override the default and show a specific level. This is for when a VP wants to investigate what's happening at execution level — they explicitly drill down.
+
+### Frontend: Level Tabs
+
+The digest response includes `level_counts`:
+```json
+{
+  "level_counts": {"governance": 3, "strategic": 5, "tactical": 12, "execution": 47},
+  "active_level": null
+}
+```
+
+The frontend renders tabs:
+```
+[Governance 3]  [Strategic 5]  [Tactical 12]  [Execution 47]
+```
+
+Default tab depends on role. Clicking a tab passes `?level=<tab>` to the API.
+
+## Governance Decisions
+
+A fourth level for human-initiated policy decisions:
+
+| Source | Decision Type | Example |
+|--------|--------------|---------|
+| `user_directives` (status=APPLIED) | `directive` | "Increase service level for frozen to 98%" |
+| `site_agent_configs` changes | `guardrail_change` | "Min shift extension changed 2→4 weeks" |
+| `policy_envelope_overrides` | `policy_envelope_change` | "OTIF floor raised to 95% for Q2" |
+
+Governance decisions have:
+- **Urgency**: Medium (informational — already enacted)
+- **Likelihood**: 1.0 (human instruction, not a prediction)
+- **Visibility**: SC VP, Executive, S&OP Director only
+
+They appear in the stream to provide context: "this is WHY the agents are behaving differently now."
 
 ---
 
