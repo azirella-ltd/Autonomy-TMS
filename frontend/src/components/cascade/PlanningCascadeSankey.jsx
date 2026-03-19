@@ -112,7 +112,7 @@ const getGeoLabel = (site, geoLevel) => {
  * @param {number} timeMultiplier - Multiplier for flow values (e.g. 30 for monthly)
  */
 const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultiplier = 30) => {
-  if (!sites?.length || !lanes?.length) return { nodes: [], links: [] };
+  if (!sites?.length && !lanes?.length) return { nodes: [], links: [] };
 
   // ── 1. Build site ID → metadata map ──────────────────────────────
   const siteMap = {};
@@ -124,10 +124,36 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
     return t;
   };
 
-  sites.forEach(s => {
+  (sites || []).forEach(s => {
     const masterType = normalizeMasterType(s.master_type || s.type);
     const geoLabel = getGeoLabel(s, geoLevel);
     siteMap[s.id] = { masterType, geoLabel, name: s.name };
+  });
+
+  // ── 1b. Create virtual nodes for partner-endpoint lanes ──────────
+  // Lanes with from_partner_id or to_partner_id reference external
+  // trading partners (vendors/customers) that aren't in the sites array.
+  // Create virtual site entries so the Sankey can render them.
+  (lanes || []).forEach(lane => {
+    if (lane.from_partner_id && !lane.from_site_id && !siteMap[`partner_${lane.from_partner_id}`]) {
+      const partnerId = `partner_${lane.from_partner_id}`;
+      siteMap[partnerId] = {
+        masterType: 'VENDOR',
+        geoLabel: lane.from_partner_name || `Vendor ${lane.from_partner_id}`,
+        name: lane.from_partner_name || `Vendor ${lane.from_partner_id}`,
+      };
+      // Patch lane to use virtual site ID for downstream processing
+      lane._virtual_from_id = partnerId;
+    }
+    if (lane.to_partner_id && !lane.to_site_id && !siteMap[`partner_${lane.to_partner_id}`]) {
+      const partnerId = `partner_${lane.to_partner_id}`;
+      siteMap[partnerId] = {
+        masterType: 'CUSTOMER',
+        geoLabel: lane.to_partner_name || `Customer ${lane.to_partner_id}`,
+        name: lane.to_partner_name || `Customer ${lane.to_partner_id}`,
+      };
+      lane._virtual_to_id = partnerId;
+    }
   });
 
   // ── 2. Build aggregation groups (geoLabel × masterType) ──────────
@@ -156,9 +182,10 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
   // ── 3. Build aggregated links ────────────────────────────────────
   const linkMap = {};
 
-  lanes.forEach(lane => {
-    const fromId = lane.from_site_id ?? lane.source;
-    const toId = lane.to_site_id ?? lane.target;
+  (lanes || []).forEach(lane => {
+    // Resolve endpoint IDs — use virtual partner IDs when site ID is missing
+    const fromId = lane.from_site_id ?? lane._virtual_from_id ?? lane.source;
+    const toId = lane.to_site_id ?? lane._virtual_to_id ?? lane.target;
     const fromMeta = siteMap[fromId];
     const toMeta = siteMap[toId];
     if (!fromMeta || !toMeta) return;
@@ -177,11 +204,35 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
         sourceType: fromMeta.masterType,
       };
     }
+    // Accumulate lead time for averaging
+    const lt = lane.lead_time_days?.value ?? lane.lead_time_days?.avg ?? lane.lead_time_min ?? 0;
+    linkMap[lk].totalLeadTime = (linkMap[lk].totalLeadTime || 0) + lt;
     linkMap[lk].value += lane.capacity ?? lane.volume ?? lane.flow ?? 1;
     linkMap[lk].laneCount += 1;
   });
 
   // ── 4. Convert to arrays with time scaling ─────────────────────
+
+  // Lead time → color interpolation (green=short, orange=medium, red=long)
+  const allLeadTimes = Object.values(linkMap).map(l =>
+    l.laneCount > 0 ? l.totalLeadTime / l.laneCount : 0
+  ).filter(v => v > 0);
+  const maxLT = Math.max(...allLeadTimes, 1);
+
+  const lerpColor = (t) => {
+    // t=0 → green (#16a34a), t=0.5 → orange (#f97316), t=1 → red (#dc2626)
+    if (t <= 0.5) {
+      const r = Math.round(0x16 + (0xf9 - 0x16) * (t * 2));
+      const g = Math.round(0xa3 + (0x73 - 0xa3) * (t * 2));
+      const b = Math.round(0x4a + (0x16 - 0x4a) * (t * 2));
+      return `rgb(${r},${g},${b})`;
+    }
+    const r = Math.round(0xf9 + (0xdc - 0xf9) * ((t - 0.5) * 2));
+    const g = Math.round(0x73 + (0x26 - 0x73) * ((t - 0.5) * 2));
+    const b = Math.round(0x16 + (0x26 - 0x16) * ((t - 0.5) * 2));
+    return `rgb(${r},${g},${b})`;
+  };
+
   const nodes = Object.values(groups).map(g => ({
     id: g.id,
     name: g.name,
@@ -191,13 +242,19 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
     totalCapacity: g.totalCapacity,
   }));
 
-  const links = Object.values(linkMap).map(l => ({
-    source: l.source,
-    target: l.target,
-    value: Math.max(l.value * timeMultiplier, 0.01),
-    laneCount: l.laneCount,
-    color: TYPE_COLORS[l.sourceType] || '#6b7280',
-  }));
+  const links = Object.values(linkMap).map(l => {
+    const avgLT = l.laneCount > 0 ? l.totalLeadTime / l.laneCount : 0;
+    const ltRatio = maxLT > 0 ? avgLT / maxLT : 0;
+    return {
+      source: l.source,
+      target: l.target,
+      value: Math.max(l.value * timeMultiplier, 0.01),
+      laneCount: l.laneCount,
+      avgLeadTime: avgLT,
+      // Color by lead time: green (fast) → red (slow)
+      color: avgLT > 0 ? lerpColor(ltRatio) : (TYPE_COLORS[l.sourceType] || '#6b7280'),
+    };
+  });
 
   // Build columnOrder from types actually present in the data
   const presentTypes = new Set(nodes.map(n => n.type));

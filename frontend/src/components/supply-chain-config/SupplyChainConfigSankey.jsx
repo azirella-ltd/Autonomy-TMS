@@ -323,9 +323,31 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
     const edges = [];
     const tokenSet = new Set();
+    // Inject virtual partner nodes into siteLookup for typeOrder calculation
     (Array.isArray(lanes) ? lanes : []).forEach((lane) => {
-      const upstreamId = lane.from_site_id;
-      const downstreamId = lane.to_site_id;
+      if (lane.from_partner_id && !lane.from_site_id) {
+        const pid = `partner_${lane.from_partner_id}`;
+        if (!siteLookup.has(pid)) {
+          siteLookup.set(pid, {
+            id: pid, name: lane.from_partner_name || `Vendor ${lane.from_partner_id}`,
+            type: 'Vendor', master_type: 'VENDOR', dag_type: 'SUPPLIER',
+          });
+        }
+      }
+      if (lane.to_partner_id && !lane.to_site_id) {
+        const pid = `partner_${lane.to_partner_id}`;
+        if (!siteLookup.has(pid)) {
+          siteLookup.set(pid, {
+            id: pid, name: lane.to_partner_name || `Customer ${lane.to_partner_id}`,
+            type: 'Customer', master_type: 'CUSTOMER', dag_type: 'CUSTOMER',
+          });
+        }
+      }
+    });
+
+    (Array.isArray(lanes) ? lanes : []).forEach((lane) => {
+      const upstreamId = lane.from_site_id ?? (lane.from_partner_id ? `partner_${lane.from_partner_id}` : null);
+      const downstreamId = lane.to_site_id ?? (lane.to_partner_id ? `partner_${lane.to_partner_id}` : null);
       const upstreamSite = siteLookup.get(String(upstreamId));
       const downstreamSite = siteLookup.get(String(downstreamId));
       const upstreamType = resolveSiteTypeToken(upstreamSite);
@@ -1898,8 +1920,33 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
   }, []);
 
   const siteTypeLookup = useMemo(() => {
-    return new Map((sites || []).map((site) => [String(site.id ?? site.site_id ?? site.node_id), site]));
-  }, [sites]);
+    const lookup = new Map((sites || []).map((site) => [String(site.id ?? site.site_id ?? site.node_id), site]));
+    // Inject virtual nodes for partner-endpoint lanes (vendors/customers
+    // that exist as trading partners, not sites)
+    (lanes || []).forEach((lane) => {
+      if (lane.from_partner_id && !lane.from_site_id) {
+        const pid = `partner_${lane.from_partner_id}`;
+        if (!lookup.has(pid)) {
+          lookup.set(pid, {
+            id: pid, name: lane.from_partner_name || `Vendor ${lane.from_partner_id}`,
+            type: 'Vendor', master_type: 'VENDOR', dag_type: 'SUPPLIER',
+            _virtual: true,
+          });
+        }
+      }
+      if (lane.to_partner_id && !lane.to_site_id) {
+        const pid = `partner_${lane.to_partner_id}`;
+        if (!lookup.has(pid)) {
+          lookup.set(pid, {
+            id: pid, name: lane.to_partner_name || `Customer ${lane.to_partner_id}`,
+            type: 'Customer', master_type: 'CUSTOMER', dag_type: 'CUSTOMER',
+            _virtual: true,
+          });
+        }
+      }
+    });
+    return lookup;
+  }, [sites, lanes]);
 
   const productLookup = useMemo(() => {
     // AWS SC DM: Product terminology
@@ -1922,8 +1969,9 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     };
 
     const rows = lanes.map((lane) => {
-      const displayFromId = lane.from_site_id;
-      const displayToId = lane.to_site_id;
+      // Resolve endpoints — use virtual partner IDs when site ID is missing
+      const displayFromId = lane.from_site_id ?? (lane.from_partner_id ? `partner_${lane.from_partner_id}` : null);
+      const displayToId = lane.to_site_id ?? (lane.to_partner_id ? `partner_${lane.to_partner_id}` : null);
       const fromNode = siteTypeLookup.get(String(displayFromId));
       const toNode = siteTypeLookup.get(String(displayToId));
       const {
