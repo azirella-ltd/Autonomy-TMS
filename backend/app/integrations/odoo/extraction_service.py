@@ -38,6 +38,9 @@ MASTER_DATA_MODELS = {
         "id", "name", "default_code", "type", "categ_id", "uom_id",
         "list_price", "standard_price", "weight", "volume", "barcode",
         "active", "create_date", "write_date",
+        # APS heuristic parameters for digital twin
+        "produce_delay", "sale_delay", "route_ids",
+        "sale_ok", "purchase_ok",
     ],
     "product.category": ["id", "name", "complete_name", "parent_id"],
     # Tier 3: Trading partners (vendors & customers)
@@ -70,8 +73,10 @@ MASTER_DATA_MODELS = {
         "company_id", "write_date",
     ],
     "stock.warehouse.orderpoint": [
-        "id", "product_id", "warehouse_id", "product_min_qty", "product_max_qty",
-        "qty_multiple", "company_id", "active",
+        "id", "product_id", "warehouse_id", "location_id",
+        "product_min_qty", "product_max_qty", "qty_multiple",
+        "trigger", "route_id", "group_id",
+        "company_id", "active",
     ],
 }
 

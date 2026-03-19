@@ -134,7 +134,9 @@ D365_ENTITY_FIELD_MAPPINGS: Dict[str, Dict[str, Tuple[str, str]]] = {
         "MinimumOrderQuantity": ("inv_policy", "min_order_quantity"),
         "MaximumOrderQuantity": ("inv_policy", "max_order_quantity"),
         "StandardOrderQuantity": ("inv_policy", "fixed_order_quantity"),
+        "MultipleQuantity": ("inv_policy", "rounding_quantity"),
         "LeadTimePurchasing": ("inv_policy", "planned_delivery_time"),
+        "Stopped": ("inv_policy", "procurement_stopped"),
     },
     "ItemCoverageSettings": {
         "ItemNumber": ("inv_policy", "product_id"),
@@ -144,6 +146,18 @@ D365_ENTITY_FIELD_MAPPINGS: Dict[str, Dict[str, Tuple[str, str]]] = {
         "MaximumInventoryLevel": ("inv_policy", "order_up_to_level"),
         "SafetyStockQuantity": ("inv_policy", "ss_quantity"),
         "CoveragePlanGroupId": ("inv_policy", "planning_group"),
+        # APS heuristic parameters (critical for digital twin)
+        "CoverageCode": ("inv_policy", "coverage_code"),           # MRP type: 0=Manual,1=Period,2=Lot-for-lot,3=Min/Max
+        "PlannedOrderType": ("inv_policy", "procurement_type"),     # 0=Purchase,1=Production,2=Transfer,3=Kanban
+        "CoverageTimeFence": ("inv_policy", "planning_time_fence"),
+        "LeadTimePurchase": ("inv_policy", "purchase_lead_time_override"),
+        "LeadTimeProduction": ("inv_policy", "production_lead_time_override"),
+        "LeadTimeTransfer": ("inv_policy", "transfer_lead_time_override"),
+        "MaxNegativeDays": ("inv_policy", "max_negative_days"),
+        "MaxPositiveDays": ("inv_policy", "max_positive_days"),
+        "PreferredVendor": ("inv_policy", "preferred_vendor"),
+        "LockingTimeFence": ("inv_policy", "firming_time_fence"),
+        "FulfillMinimum": ("inv_policy", "fulfill_minimum"),       # 0=Total qty, 1=Safety stock
     },
     # ── Purchase Orders (Inbound) ────────────────────────────────────────
     "PurchaseOrderHeadersV2": {

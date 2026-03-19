@@ -86,6 +86,10 @@ ODOO_MODEL_FIELD_MAPPINGS: Dict[str, Dict[str, Tuple[str, str]]] = {
         "volume": ("product", "volume"),
         "sale_ok": ("product", "is_sellable"),
         "purchase_ok": ("product", "is_purchasable"),
+        # APS heuristic parameters (critical for digital twin)
+        "produce_delay": ("product", "manufacturing_lead_time"),   # Production lead time (days)
+        "sale_delay": ("product", "customer_lead_time"),           # Customer delivery promise (days)
+        "route_ids": ("product", "procurement_routes"),            # Buy/Manufacture/Resupply routes
     },
     "product.category": {
         "id": ("product_hierarchy", "hierarchy_id"),
@@ -165,11 +169,17 @@ ODOO_MODEL_FIELD_MAPPINGS: Dict[str, Dict[str, Tuple[str, str]]] = {
         "id": ("inv_policy", "orderpoint_id"),
         "product_id": ("inv_policy", "product_id"),
         "warehouse_id": ("inv_policy", "site_id"),
+        "location_id": ("inv_policy", "location_id"),
         "product_min_qty": ("inv_policy", "reorder_point"),
         "product_max_qty": ("inv_policy", "order_up_to_level"),
         "qty_multiple": ("inv_policy", "fixed_order_quantity"),
         "lead_days_date": ("inv_policy", "lead_time_date"),
         "company_id": ("inv_policy", "company_id"),
+        # APS heuristic parameters (critical for digital twin)
+        "trigger": ("inv_policy", "planning_trigger"),             # auto=scheduler, manual=on-demand
+        "route_id": ("inv_policy", "procurement_route"),           # Buy/Manufacture/Resupply route
+        "group_id": ("inv_policy", "procurement_group"),           # Order consolidation group
+        "active": ("inv_policy", "is_active"),
     },
     # ── Purchase Orders (Inbound) ────────────────────────────────────────
     "purchase.order": {
