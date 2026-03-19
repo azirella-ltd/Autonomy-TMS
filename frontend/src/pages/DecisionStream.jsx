@@ -34,9 +34,11 @@ import { decisionStreamApi } from '../services/decisionStreamApi';
 import { simulationApi } from '../services/api';
 import { cn } from '../lib/utils/cn';
 import { useDisplayPreferences } from '../contexts/DisplayPreferencesContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const DecisionStream = () => {
   const location = useLocation();
+  const { isTenantAdmin } = useAuth();
 
   // Digest state
   const [digest, setDigest] = useState(null);
@@ -336,7 +338,8 @@ const DecisionStream = () => {
                 showAll={showAll}
                 onToggleShowAll={() => setShowAll(!showAll)}
                 activeLevels={activeLevels}
-                onToggleLevel={toggleLevel}
+                onToggleLevel={isTenantAdmin ? toggleLevel : undefined}
+                canFilterLevels={isTenantAdmin}
               />
 
               <DigestMessage

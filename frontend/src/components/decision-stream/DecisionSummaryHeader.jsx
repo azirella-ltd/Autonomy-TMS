@@ -41,6 +41,7 @@ const DecisionSummaryHeader = ({
   onToggleShowAll,
   activeLevels,
   onToggleLevel,
+  canFilterLevels = false,
   userScope,
 }) => {
   // Build urgency × likelihood combo list (only combos that exist)
@@ -236,24 +237,27 @@ const DecisionSummaryHeader = ({
                 .map(lvl => {
                   const isActive = !activeLevels || activeLevels.has(lvl);
                   const isFiltering = !!activeLevels;
+                  const Tag = canFilterLevels ? 'button' : 'div';
                   return (
-                    <button
+                    <Tag
                       key={lvl}
-                      onClick={() => onToggleLevel && onToggleLevel(lvl)}
+                      onClick={canFilterLevels ? () => onToggleLevel && onToggleLevel(lvl) : undefined}
                       className={cn(
                         'flex items-center justify-between text-xs w-full px-1.5 py-0.5 rounded transition-colors',
-                        isFiltering && isActive
+                        canFilterLevels && isFiltering && isActive
                           ? 'bg-accent font-semibold'
-                          : isFiltering && !isActive
+                          : canFilterLevels && isFiltering && !isActive
                           ? 'opacity-40'
-                          : 'hover:bg-muted/50'
+                          : canFilterLevels
+                          ? 'hover:bg-muted/50 cursor-pointer'
+                          : ''
                       )}
                     >
                       <span className={LEVEL_COLORS[lvl] || 'text-muted-foreground'}>
                         {LEVEL_LABELS[lvl] || lvl}
                       </span>
                       <span className="tabular-nums font-semibold">{levelCounts[lvl]}</span>
-                    </button>
+                    </Tag>
                   );
                 });
             })()}
