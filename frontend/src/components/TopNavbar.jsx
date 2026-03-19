@@ -498,28 +498,20 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   };
 
   const handleClarificationSubmit = () => {
+    // Use the edited prompt if changed, otherwise the original
+    const finalText = (rephrasedPrompt && rephrasedPrompt !== originalText)
+      ? rephrasedPrompt
+      : originalText;
+
     if (analysisResult?.intent === 'compound') {
-      // For compound: if user edited the rephrased prompt, re-analyze with the edited text
-      if (rephrasedPrompt && rephrasedPrompt !== originalText) {
-        // Re-submit the edited prompt through the normal analyze flow
-        setTalkInput(rephrasedPrompt);
-        dismissClarification();
-        // Auto-submit after a tick
-        setTimeout(() => handleTalkSubmit(), 50);
-        return;
-      }
-      submitCompoundStream(originalText, analysisResult.actions, clarifications);
-    } else if (rephrasedPrompt && rephrasedPrompt !== originalText) {
-      // For standard directives: re-analyze with the edited prompt
-      setTalkInput(rephrasedPrompt);
-      dismissClarification();
-      setTimeout(() => handleTalkSubmit(), 50);
+      // Submit compound actions directly with the (possibly edited) text
+      submitCompoundStream(finalText, analysisResult.actions, clarifications);
     } else {
-      // Standard flow: submit with clarifications
+      // Standard flow: submit directly — no re-analyze round trip
       const missing = (analysisResult?.missing_fields || []);
       const unanswered = missing.filter((m) => !clarifications[m.field]?.trim());
-      if (unanswered.length > 0) return;
-      submitFinalDirective(originalText, clarifications);
+      if (unanswered.length > 0 && finalText === originalText) return; // still missing answers
+      submitFinalDirective(finalText, clarifications);
     }
   };
 
@@ -570,10 +562,8 @@ const TopNavbar = ({ sidebarOpen = true }) => {
 
   const handleSubmitRephrased = () => {
     if (rephrasedPrompt) {
-      setTalkInput(rephrasedPrompt);
-      setPopupOpen(false);
-      dismissClarification();
-      setTimeout(() => handleTalkSubmit(), 50);
+      // Submit directly — no re-analyze round trip
+      submitFinalDirective(rephrasedPrompt, clarifications);
     }
   };
 
