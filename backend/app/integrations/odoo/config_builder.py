@@ -116,12 +116,12 @@ class OdooConfigBuilder:
             categories = data.get("product.category", [])
             product_map = await self._build_products(config, products, categories, result)
 
-            # Step 5: Transportation lanes (from supplier info + stock.picking patterns)
-            pickings = data.get("stock.picking", [])
-            await self._build_lanes(config, supplier_info, pickings, site_map, result)
+            # Step 5: Trading partners (vendors + customers as TradingPartner, NOT sites)
+            partner_map = await self._build_trading_partners(config, partners, supplier_info, result)
 
-            # Step 6: Trading partners & sourcing
-            await self._build_trading_partners(config, partners, supplier_info, result)
+            # Step 6: Transportation lanes (partner→site, site→partner, site→site)
+            pickings = data.get("stock.picking", [])
+            await self._build_lanes(config, supplier_info, pickings, site_map, partner_map, result)
 
             # Step 7: BOMs & work centres
             boms = data.get("mrp.bom", [])
@@ -187,13 +187,13 @@ class OdooConfigBuilder:
             # For simplicity, if ANY production orders exist, the first warehouse is MANUFACTURER.
             pass
 
-        # Build vendor sites from partners with supplier_rank > 0
-        vendor_partners = [p for p in partners if p.get("supplier_rank", 0) > 0]
-        customer_partners = [p for p in partners if p.get("customer_rank", 0) > 0]
+        # AWS SC Compliance: Vendors and customers are TradingPartner records,
+        # NOT proxy Site records. Sites = internal warehouses/plants only.
+        # Partners connect to the DAG via from_partner_id/to_partner_id on lanes.
 
-        site_map: Dict[int, Any] = {}  # odoo_id → Site
+        site_map: Dict[int, Any] = {}  # odoo_wh_id → Site
 
-        # Warehouses → INVENTORY or MANUFACTURER
+        # Warehouses → INVENTORY or MANUFACTURER (internal sites only)
         for wh in warehouses:
             master_type = "INVENTORY"
             if wh.get("id") in manufacturing_warehouse_ids or production_orders:
@@ -208,34 +208,6 @@ class OdooConfigBuilder:
             self.db.add(site)
             await self.db.flush()
             site_map[wh["id"]] = site
-            result.sites_created += 1
-
-        # Vendor partners → VENDOR sites
-        for vp in vendor_partners[:50]:  # cap at 50 vendors
-            site = Site(
-                config_id=config.id,
-                name=str(vp.get("name", f"VENDOR-{vp['id']}"))[:50],
-                type=f"Supplier - {vp.get('name', '')}",
-                master_type="VENDOR",
-                tpartner_type="vendor",
-            )
-            self.db.add(site)
-            await self.db.flush()
-            site_map[f"vendor_{vp['id']}"] = site
-            result.sites_created += 1
-
-        # Customer partners → CUSTOMER sites
-        for cp in customer_partners[:50]:  # cap at 50 customers
-            site = Site(
-                config_id=config.id,
-                name=str(cp.get("name", f"CUST-{cp['id']}"))[:50],
-                type=f"Customer - {cp.get('name', '')}",
-                master_type="CUSTOMER",
-                tpartner_type="customer",
-            )
-            self.db.add(site)
-            await self.db.flush()
-            site_map[f"customer_{cp['id']}"] = site
             result.sites_created += 1
 
         return site_map
@@ -263,28 +235,91 @@ class OdooConfigBuilder:
 
         return product_map
 
-    async def _build_lanes(self, config, supplier_info, pickings, site_map, result):
-        """Step 5: Build transportation lanes from supplier sourcing + transfer patterns."""
+    async def _build_trading_partners(self, config, partners, supplier_info, result):
+        """Step 5: Build TradingPartner records (NOT sites) for vendors and customers.
+
+        AWS SC Compliance: Vendors and customers are TradingPartner records.
+        They connect to the DAG via from_partner_id / to_partner_id on lanes.
+        """
+        from app.models.sc_entities import TradingPartner
+        from sqlalchemy import select as sa_select
+
+        partner_map: Dict[str, int] = {}  # "V_odoo_id" or "C_odoo_id" → _id (serial PK)
+
+        vendor_partners = [p for p in partners if p.get("supplier_rank", 0) > 0]
+        customer_partners = [p for p in partners if p.get("customer_rank", 0) > 0]
+
+        for vp in vendor_partners:
+            odoo_id = vp.get("id")
+            name = str(vp.get("name", f"Vendor-{odoo_id}"))[:200]
+            tp_id = f"ODOO_V_{odoo_id}"
+
+            # Check if exists
+            existing = (await self.db.execute(
+                sa_select(TradingPartner).where(TradingPartner.id == tp_id)
+            )).scalar_one_or_none()
+            if existing:
+                partner_map[f"V_{odoo_id}"] = existing._id
+            else:
+                tp = TradingPartner(
+                    id=tp_id,
+                    tpartner_type="vendor",
+                    description=name,
+                    city=str(vp.get("city", ""))[:100],
+                    country=str(vp.get("country_id", ""))[:10] if not isinstance(vp.get("country_id"), (list, tuple)) else "",
+                    company_id=f"ODOO_{self.tenant_id}",
+                    source="ODOO",
+                )
+                self.db.add(tp)
+                await self.db.flush()
+                partner_map[f"V_{odoo_id}"] = tp._id
+                result.trading_partners_created += 1
+
+        for cp in customer_partners:
+            odoo_id = cp.get("id")
+            name = str(cp.get("name", f"Customer-{odoo_id}"))[:200]
+            tp_id = f"ODOO_C_{odoo_id}"
+
+            existing = (await self.db.execute(
+                sa_select(TradingPartner).where(TradingPartner.id == tp_id)
+            )).scalar_one_or_none()
+            if existing:
+                partner_map[f"C_{odoo_id}"] = existing._id
+            else:
+                tp = TradingPartner(
+                    id=tp_id,
+                    tpartner_type="customer",
+                    description=name,
+                    city=str(cp.get("city", ""))[:100],
+                    country=str(cp.get("country_id", ""))[:10] if not isinstance(cp.get("country_id"), (list, tuple)) else "",
+                    company_id=f"ODOO_{self.tenant_id}",
+                    source="ODOO",
+                )
+                self.db.add(tp)
+                await self.db.flush()
+                partner_map[f"C_{odoo_id}"] = tp._id
+                result.trading_partners_created += 1
+
+        return partner_map
+
+    async def _build_lanes(self, config, supplier_info, pickings, site_map, partner_map, result):
+        """Step 6: Build transportation lanes (partner→site, site→site, site→partner)."""
         from app.models.sc_entities import TransportationLane
 
-        # From supplier info: vendor → warehouse
         seen_lanes = set()
+        wh_sites = [s for k, s in site_map.items() if isinstance(k, int)]
+
+        # Vendor partner → warehouse (from_partner_id → to_site_id)
         for si in supplier_info:
             vendor_id = si.get("partner_id")
             if isinstance(vendor_id, (list, tuple)):
                 vendor_id = vendor_id[0]
-            vendor_key = f"vendor_{vendor_id}"
-
-            if vendor_key not in site_map:
+            partner_pk = partner_map.get(f"V_{vendor_id}")
+            if not partner_pk or not wh_sites:
                 continue
 
-            # Find first inventory/manufacturer site as destination
-            dest_sites = [s for k, s in site_map.items() if isinstance(k, int)]
-            if not dest_sites:
-                continue
-            dest = dest_sites[0]
-
-            lane_key = (site_map[vendor_key].id, dest.id)
+            dest = wh_sites[0]
+            lane_key = (f"V_{vendor_id}", dest.id)
             if lane_key in seen_lanes:
                 continue
             seen_lanes.add(lane_key)
@@ -292,18 +327,15 @@ class OdooConfigBuilder:
             lead_time_days = si.get("delay", 7)
             lane = TransportationLane(
                 config_id=config.id,
-                source_id=site_map[vendor_key].id,
-                destination_id=dest.id,
-                supply_lead_time={"mean": lead_time_days, "unit": "days"},
+                from_partner_id=partner_pk,
+                to_site_id=dest.id,
+                supply_lead_time={"type": "deterministic", "value": lead_time_days},
                 capacity=9999,
             )
             self.db.add(lane)
             result.lanes_created += 1
 
-        # From internal transfers: warehouse → warehouse
-        # (inferred from stock.picking with internal type)
-        # For now, create lanes between all warehouse pairs
-        wh_sites = [s for k, s in site_map.items() if isinstance(k, int)]
+        # Internal: warehouse → warehouse (from_site_id → to_site_id)
         for i, src in enumerate(wh_sites):
             for dest in wh_sites[i + 1:]:
                 lane_key = (src.id, dest.id)
@@ -313,41 +345,29 @@ class OdooConfigBuilder:
 
                 lane = TransportationLane(
                     config_id=config.id,
-                    source_id=src.id,
-                    destination_id=dest.id,
-                    supply_lead_time={"mean": 2, "unit": "days"},
+                    from_site_id=src.id,
+                    to_site_id=dest.id,
+                    supply_lead_time={"type": "deterministic", "value": 2},
                     capacity=9999,
                 )
                 self.db.add(lane)
                 result.lanes_created += 1
 
-        # Warehouse → customer lanes
-        for cust_key, cust_site in site_map.items():
-            if not str(cust_key).startswith("customer_"):
-                continue
-            for wh_key, wh_site in site_map.items():
-                if not isinstance(wh_key, int):
+        # Warehouse → customer partner (from_site_id → to_partner_id)
+        if wh_sites:
+            primary_site = wh_sites[0]
+            for key, partner_pk in partner_map.items():
+                if not key.startswith("C_"):
                     continue
                 lane = TransportationLane(
                     config_id=config.id,
-                    source_id=wh_site.id,
-                    destination_id=cust_site.id,
-                    supply_lead_time={"mean": 1, "unit": "days"},
+                    from_site_id=primary_site.id,
+                    to_partner_id=partner_pk,
+                    supply_lead_time={"type": "deterministic", "value": 1},
                     capacity=9999,
                 )
                 self.db.add(lane)
                 result.lanes_created += 1
-
-    async def _build_trading_partners(self, config, partners, supplier_info, result):
-        """Step 6: Build trading partner records."""
-        # Trading partners are already created as sites in Step 3.
-        # This step would populate additional trading partner metadata
-        # (contracts, payment terms, etc.) if the AWS SC TradingPartner
-        # entity is used. For now, the site-level representation is sufficient.
-        result.trading_partners_created = sum(
-            1 for p in partners
-            if p.get("supplier_rank", 0) > 0 or p.get("customer_rank", 0) > 0
-        )
 
     async def _build_manufacturing(self, config, boms, bom_lines, workcenters, product_map, result):
         """Step 7: Build BOM structures."""
