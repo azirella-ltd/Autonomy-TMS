@@ -882,7 +882,7 @@ class ProvisioningService:
                 db=sync_db,
                 config_id=config_id,
                 tenant_id=tenant_id or 0,
-                max_per_type=6,
+                max_per_type=20,
             )
             total = sum(counts.values())
             logger.info(

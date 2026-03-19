@@ -1123,14 +1123,23 @@ def _generate_fallback_decisions(
         return []
 
     records = []
-    n = min(max_count, 6)
+    n = max_count
+
+    # Build a pool of products from the config for diversity
+    # Prefer finished goods (MZ-FG) and key components
+    all_pids = sorted(product_descs.keys())
+    fg_pids = [p for p in all_pids if '-FG-' in p or 'FG' in (product_descs.get(p, ''))]
+    rm_pids = [p for p in all_pids if '-RM-' in p or 'RAW' in (product_descs.get(p, ''))]
+    # Use FGs first, then components, then any product
+    diverse_products = (fg_pids + rm_pids + all_pids)[:50]
 
     for i in range(n):
         rng = _rng.Random(hash(f"{trm_type}_{config_id}_{i}"))
 
         if trm_type == "po_creation":
             cfg = rng.choice(inv_sites)
-            pid = cfg.product_id
+            # Use diverse products instead of single site product
+            pid = rng.choice(diverse_products) if diverse_products else cfg.product_id
             pdesc = product_descs.get(pid, pid)
             ucost = product_costs.get(pid, 5.0)
             qty = round(rng.uniform(20, 200), 0)
@@ -1177,7 +1186,7 @@ def _generate_fallback_decisions(
                 cfg = rng.choice(inv_sites)
             else:
                 cfg = rng.choice(mfg_sites)
-            pid = cfg.product_id
+            pid = rng.choice(diverse_products) if diverse_products else cfg.product_id
             pdesc = product_descs.get(pid, pid)
             ucost = product_costs.get(pid, 5.0)
             qty = round(rng.uniform(30, 150), 0)
@@ -1232,7 +1241,7 @@ def _generate_fallback_decisions(
 
         elif trm_type == "order_tracking":
             cfg = rng.choice(inv_sites)
-            pid = cfg.product_id
+            pid = rng.choice(diverse_products) if diverse_products else cfg.product_id
             pdesc = product_descs.get(pid, pid)
             exc_type = rng.choice(["late_shipment", "quantity_discrepancy", "damaged_goods", "wrong_item"])
             action = rng.choice(["find_alternate", "expedite", "accept_delay", "split"])
@@ -1280,7 +1289,7 @@ def _generate_fallback_decisions(
 
         elif trm_type == "subcontracting":
             cfg = rng.choice(mfg_sites if mfg_sites else inv_sites)
-            pid = cfg.product_id
+            pid = rng.choice(diverse_products) if diverse_products else cfg.product_id
             pdesc = product_descs.get(pid, pid)
             ucost = product_costs.get(pid, 5.0)
             qty = round(rng.uniform(50, 200), 0)
