@@ -1551,3 +1551,138 @@ def compute_customer_service_metrics(db, config_id: int) -> _Dict:
     except Exception as e:
         _logger.warning("Customer service metrics computation failed: %s", e)
         return {"otif_pct": None, "total_orders": 0, "error": str(e)}
+
+
+# ============================================================================
+# Guardrails and Metric Targets — from tenant context + GNN heuristics
+# ============================================================================
+#
+# Only guardrails and metric targets are static during training.
+# They come from TWO sources:
+#   1. Tenant context — business rules, policy limits, approval thresholds
+#   2. GNN heuristic equivalents — what GraphSAGE/tGNN WOULD produce
+#      if trained, used as warm-start defaults
+#
+# When trained GNN models are available, their output replaces the heuristics.
+
+
+@dataclass
+class SiteGuardrails:
+    """Guardrails for TRM decisions at a specific site.
+
+    Combines tenant-level policy with GNN-derived (or heuristic) constraints.
+    TRMs check these before executing any decision.
+    """
+    # From GNN (S&OP GraphSAGE → PolicyParams) or heuristic equivalent
+    safety_stock_multiplier: float = 1.0    # [0.5, 3.0]
+    service_level_target: float = 0.95      # [0.80, 0.99]
+    reorder_point_days: float = 7.0         # [3, 21]
+    order_up_to_days: float = 21.0          # [7, 60]
+    sourcing_split_primary: float = 0.7     # [0, 1]
+
+    # From GNN (network risk scores) or heuristic equivalent
+    criticality_score: float = 0.5          # [0, 1] how critical this site is
+    bottleneck_risk: float = 0.3            # [0, 1]
+    concentration_risk: float = 0.2         # [0, 1] single-source vulnerability
+    resilience_score: float = 0.7           # [0, 1]
+
+    # From tenant context (authority_definitions, tenant_bsc_config)
+    max_autonomous_order_value: float = 50000.0   # $ — above this, escalate
+    max_autonomous_qty: float = 1000.0             # units
+    requires_approval_above: float = 100000.0      # $ threshold
+    autonomy_threshold: float = 0.65               # confidence needed for auto-action
+
+    # Metric targets (from tenant — these are GOALS, not predictions)
+    otif_target: float = 0.95
+    fill_rate_target: float = 0.98
+    on_time_target: float = 0.95
+    max_backorder_rate: float = 0.05
+    max_cycle_time_days: float = 14.0
+    cost_budget_daily: float = 0.0          # 0 = no budget constraint
+
+    source: str = "heuristic"  # "heuristic", "graphsage", "tenant_override"
+
+
+def load_site_guardrails(
+    db, config_id: int, site_id: int, tenant_id: int,
+) -> SiteGuardrails:
+    """Load guardrails for a site from tenant context + GNN/heuristic.
+
+    Priority:
+    1. Trained GNN output (powell_policy_parameters) → if available
+    2. GNN heuristic equivalent → computed from network topology
+    3. Tenant defaults (tenant_bsc_config, authority_definitions)
+    """
+    g = SiteGuardrails()
+
+    # --- Source 1: Trained GNN policy parameters ---
+    try:
+        row = db.execute(_sql_text("""
+            SELECT parameters FROM powell_policy_parameters
+            WHERE config_id = :cid AND entity_id = :sid
+              AND valid_to IS NULL OR valid_to > NOW()
+            ORDER BY valid_from DESC LIMIT 1
+        """), {"cid": config_id, "sid": str(site_id)}).fetchone()
+
+        if row and row[0]:
+            params = row[0] if isinstance(row[0], dict) else {}
+            g.safety_stock_multiplier = params.get("safety_stock_multiplier", g.safety_stock_multiplier)
+            g.service_level_target = params.get("service_level_target", g.service_level_target)
+            g.reorder_point_days = params.get("reorder_point_days", g.reorder_point_days)
+            g.order_up_to_days = params.get("order_up_to_days", g.order_up_to_days)
+            g.sourcing_split_primary = params.get("sourcing_split", g.sourcing_split_primary)
+            g.source = "graphsage"
+    except Exception:
+        pass
+
+    # --- Source 2: GNN heuristic equivalent (if no trained params) ---
+    if g.source == "heuristic":
+        try:
+            # Compute simple heuristic risk scores from topology
+            # Concentration risk: count distinct suppliers for this site
+            supplier_count = db.execute(_sql_text("""
+                SELECT COUNT(DISTINCT from_partner_id) FROM transportation_lane
+                WHERE config_id = :cid AND to_site_id = :sid AND from_partner_id IS NOT NULL
+            """), {"cid": config_id, "sid": site_id}).scalar() or 0
+
+            g.concentration_risk = max(0.1, 1.0 / max(supplier_count, 1))  # Single source = 1.0
+
+            # Bottleneck: if many downstream lanes depend on this site
+            downstream_count = db.execute(_sql_text("""
+                SELECT COUNT(*) FROM transportation_lane
+                WHERE config_id = :cid AND from_site_id = :sid
+            """), {"cid": config_id, "sid": site_id}).scalar() or 0
+
+            g.bottleneck_risk = min(1.0, downstream_count / 10.0)  # Normalize
+
+            # Adjust SS multiplier based on risk
+            g.safety_stock_multiplier = 1.0 + (g.concentration_risk * 0.5) + (g.bottleneck_risk * 0.3)
+        except Exception:
+            pass
+
+    # --- Source 3: Tenant context ---
+    try:
+        bsc = db.execute(_sql_text("""
+            SELECT autonomy_threshold, urgency_threshold, likelihood_threshold
+            FROM tenant_bsc_config WHERE tenant_id = :tid LIMIT 1
+        """), {"tid": tenant_id}).fetchone()
+
+        if bsc:
+            g.autonomy_threshold = float(bsc[0] or 0.65)
+    except Exception:
+        pass
+
+    try:
+        auth = db.execute(_sql_text("""
+            SELECT max_value FROM authority_definitions
+            WHERE tenant_id = :tid AND action_type = 'purchase_order'
+              AND requires_approval = false
+            LIMIT 1
+        """), {"tid": tenant_id}).fetchone()
+
+        if auth and auth[0]:
+            g.max_autonomous_order_value = float(auth[0])
+    except Exception:
+        pass
+
+    return g
