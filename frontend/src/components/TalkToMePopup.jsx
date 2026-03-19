@@ -685,6 +685,21 @@ function buildMessages({
                 );
               }
 
+              // ── action_executed: individual strategy action applied ──
+              if (msg.type === 'action_executed') {
+                return (
+                  <div key={i} className="flex items-start gap-2 font-mono">
+                    <span className="text-muted-foreground flex-shrink-0">{'\u251C\u2500\u2500'}</span>
+                    <span className={cn(
+                      'text-xs',
+                      msg.success ? 'text-emerald-600' : 'text-red-500',
+                    )}>
+                      {msg.success ? '\u2714' : '\u2718'} {msg.message}
+                    </span>
+                  </div>
+                );
+              }
+
               // ── auto_promoted: AIIO decision applied ──
               if (msg.type === 'auto_promoted') {
                 return (
