@@ -26,6 +26,30 @@ When implementing any entity:
 5. **Architecture changes** → Update CLAUDE.md Architecture section and `docs/internal/TECHNICAL_OVERVIEW.md`
 6. **New event types/capabilities** → Update catalogs and scenario docs
 
+## CRITICAL: SOC II Compliance
+
+**MANDATORY REQUIREMENT**: The platform must be SOC II Type 2 compliant. All code changes must maintain compliance with SOC II Trust Service Criteria.
+
+**Database Security**:
+1. **Tenant isolation via RLS**: All tenant-scoped tables MUST have Row-Level Security (RLS) policies enforcing `tenant_id` filtering at the database level. Application code bugs must NOT be able to leak data across tenants.
+2. **Audit logging**: `pgaudit` MUST be enabled for DDL, ROLE, and WRITE operations. Logs shipped to immutable storage.
+3. **Encryption in transit**: SSL/TLS enforced on all PostgreSQL connections (`hostssl` in pg_hba.conf, SCRAM-SHA-256 authentication).
+4. **Encryption at rest**: AWS RDS/Aurora encryption via KMS for cloud; dm-crypt/LUKS for self-hosted. Column-level encryption via `pgcrypto` for high-sensitivity fields (API keys, credentials).
+
+**Model & Training Data Security**:
+5. **Tenant-scoped checkpoints**: Model checkpoints (TRM weights, GNN models) MUST be stored with `tenant_id` isolation. Path pattern: `/{tenant_id}/{config_id}/`. When a config is deleted, its checkpoints MUST be deleted. When a tenant is deleted, ALL its checkpoints and training data MUST be deleted.
+6. **No cross-tenant model training**: Training data from Tenant A must NEVER train models that serve Tenant B. TRM weights are per-tenant intellectual property.
+7. **Training data = customer confidential**: Behavioral cloning datasets, decision-outcome pairs, simulation outputs derived from customer data carry the same security classification as the source data. Same retention, encryption, and deletion policies apply.
+8. **Right to deletion**: When a customer churns, ALL their data (operational, training, checkpoints, embeddings, audit logs beyond retention period) must be deletable via a single tenant deletion operation.
+
+**Access Control**:
+9. **Least privilege**: PostgreSQL roles with minimal GRANT privileges. No shared superuser access from application code.
+10. **Connection pooling safety**: When using PgBouncer in transaction pooling mode, always use `SET LOCAL` for tenant context (scoped to transaction, not connection).
+
+**Change Management**:
+11. **Schema migrations**: All database schema changes via Alembic migrations — auditable, versioned, reviewable in PR.
+12. **No direct production SQL**: All data modifications through application code or migration scripts, never ad-hoc SQL.
+
 ## CRITICAL: No Fallbacks, No Hardcoded Values
 
 **MANDATORY REQUIREMENT**: Code must NEVER use fallback values, hardcoded defaults, or `getattr(obj, "field", <default>)` patterns that silently mask missing data. All data must come from the database schema as defined.
