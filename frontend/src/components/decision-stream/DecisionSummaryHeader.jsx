@@ -188,7 +188,7 @@ const DecisionSummaryHeader = ({
         </div>
 
         {/* Type breakdown */}
-        <div className="min-w-[180px]">
+        <div className="min-w-[160px]">
           <div className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide">
             By Type
           </div>
@@ -199,6 +199,47 @@ const DecisionSummaryHeader = ({
                 <span className="tabular-nums font-semibold">{count}</span>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Level breakdown */}
+        <div className="min-w-[140px]">
+          <div className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide">
+            By Level
+          </div>
+          <div className="space-y-1">
+            {(() => {
+              const levelCounts = {};
+              const LEVEL_ORDER = ['strategic', 'tactical', 'operational', 'execution', 'governance'];
+              const LEVEL_COLORS = {
+                strategic: 'text-purple-600',
+                tactical: 'text-blue-600',
+                operational: 'text-amber-600',
+                execution: 'text-muted-foreground',
+                governance: 'text-red-600',
+              };
+              const LEVEL_LABELS = {
+                strategic: 'Strategic',
+                tactical: 'Tactical',
+                operational: 'Operational',
+                execution: 'Execution',
+                governance: 'Governance',
+              };
+              (decisions || []).forEach(d => {
+                const lvl = d.decision_level || 'execution';
+                levelCounts[lvl] = (levelCounts[lvl] || 0) + 1;
+              });
+              return LEVEL_ORDER
+                .filter(lvl => levelCounts[lvl])
+                .map(lvl => (
+                  <div key={lvl} className="flex items-center justify-between text-xs">
+                    <span className={LEVEL_COLORS[lvl] || 'text-muted-foreground'}>
+                      {LEVEL_LABELS[lvl] || lvl}
+                    </span>
+                    <span className="tabular-nums font-semibold">{levelCounts[lvl]}</span>
+                  </div>
+                ));
+            })()}
           </div>
           <div className="mt-2 pt-2 border-t text-xs space-y-0.5">
             {needsAttention > 0 && (

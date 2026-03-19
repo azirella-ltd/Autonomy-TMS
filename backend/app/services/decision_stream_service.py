@@ -184,8 +184,11 @@ DECISION_LEVEL = {
     "policy_envelope_change": "governance",
     # Strategic — S&OP GraphSAGE (weekly, network-wide policy parameters)
     "sop_policy": "strategic",
-    # Tactical — Execution tGNN (daily, multi-site allocation directives)
-    "execution_directive": "tactical",
+    # Operational — Site tGNN (hourly, intra-site cross-TRM coordination)
+    "site_coordination": "operational",
+    # Tactical — Network tGNN (daily, multi-site allocation directives)
+    "execution_directive": "tactical",  # legacy
+    "network_directive": "tactical",
     "allocation_refresh": "tactical",
     # Execution — TRM agents (per-decision, per-role at site)
     "atp": "execution",
@@ -395,18 +398,31 @@ def _fmt_qty(val) -> str:
         return str(val)
 
 
-def _build_decision_summary(decision, decision_type: str) -> str:
+def _build_decision_summary(decision, decision_type: str, name_cache: dict = None) -> str:
     """Build a human-readable one-line summary for any decision type.
 
     Column names must match the actual DB schema in powell_*_decisions tables.
+    Uses name_cache to resolve product_id → description and site code → site name.
     """
-    product = getattr(decision, "product_id", None) or ""
-    location = (
+    raw_product = getattr(decision, "product_id", None) or ""
+    raw_location = (
         getattr(decision, "location_id", None)
         or getattr(decision, "site_id", None)
         or getattr(decision, "from_site", None)
         or ""
     )
+
+    # Resolve display names from cache
+    cache = name_cache or {}
+    product = cache.get("products", {}).get(raw_product, raw_product)
+    location = cache.get("sites", {}).get(str(raw_location), str(raw_location))
+
+    # Strip config prefix from product ID for cleaner display
+    if product == raw_product and "_" in product:
+        # CFG94_MZ-FG-C900 → MZ-FG-C900
+        parts = product.split("_", 1)
+        if parts[0].startswith("CFG"):
+            product = parts[1]
 
     if decision_type == "atp":
         qty = _fmt_qty(getattr(decision, "requested_qty", None))
@@ -1420,8 +1436,8 @@ class DecisionStreamService:
                 except Exception:
                     pass
 
-        # ── Query GNN Directive Reviews (strategic + tactical decisions) ────
-        gnn_types = {"sop_policy", "execution_directive", "allocation_refresh"}
+        # ── Query GNN Directive Reviews (strategic + tactical + operational) ──
+        gnn_types = {"sop_policy", "execution_directive", "network_directive", "allocation_refresh", "site_coordination"}
         if relevant_types is None or gnn_types & relevant_types:
             try:
                 gnn_query = select(GNNDirectiveReview).where(
@@ -1437,7 +1453,9 @@ class DecisionStreamService:
                         scope_map = {
                             "sop_policy": "sop_policy",
                             "execution_directive": "execution_directive",
+                            "network_directive": "network_directive",
                             "allocation_refresh": "allocation_refresh",
+                            "site_coordination": "site_coordination",
                         }
                         scopes = [scope_map[t] for t in active_gnn if t in scope_map]
                         gnn_query = gnn_query.where(
