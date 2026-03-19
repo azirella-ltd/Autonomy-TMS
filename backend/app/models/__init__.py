@@ -331,6 +331,9 @@ from .d365_staging import D365ExtractionRun, D365StagingRow, D365TableSchema
 # 26g. Odoo Data Staging (intermediate layer between Odoo extraction and AWS SC entities)
 from .odoo_staging import OdooExtractionRun, OdooStagingRow, OdooTableSchema
 
+# 26h. Model Checkpoints & Training Datasets (SOC II compliant, tenant-scoped)
+from .model_checkpoint import ModelCheckpoint, TrainingDataset
+
 # 27. Autonomy Customer Registry
 from .autonomy_customer import AutonomyCustomer
 
