@@ -76,19 +76,32 @@ set intent to "scenario_event" or "scenario_question" — NOT "directive". Key t
 
 Only classify as "directive" if the user wants to CHANGE the actual plan (not simulate a hypothetical).
 
+COMPOUND INTENT: If the input contains BOTH a demand signal (a customer order, new demand, or forecast change)
+AND an action directive (prioritize, increase, reduce, reallocate), set intent to "compound" with an actions array.
+This happens when someone reports new demand AND instructs the system to respond to it in the same sentence.
+
+Example: "Bigmart needs 500 C900 bikes in 2 weeks — increase production and prioritize ATP for 4 weeks"
+→ intent: "compound", actions: [demand_signal (order), directive (prioritize production)]
+
+DEMAND SIGNAL CLASSIFICATION (within compound or standalone):
+- "order" = specific customer + specific quantity + delivery date/timeframe
+  → will create an outbound_order via drop_in_order scenario event
+- "forecast_change" = general market trend, no specific customer, uses words like "expect", "trend", "market", "forecast"
+  → will route to forecast_adjustment TRM
+
 The user has role "{role}" at Powell layer "{layer}" ({layer_desc}).
 
 Available product families in this tenant: {product_families}
 Available site/region names in this tenant: {site_names}
 
-Available product families in this tenant: {product_families}
-Available site/region names in this tenant: {site_names}
+Parse the input and return JSON. For standard intents use the fields below.
+For "compound" intent, return the special compound format (see COMPOUND FORMAT below).
 
-Parse the directive and return JSON with these fields:
+Standard format:
 {{
   "directive_type": one of {reason_codes},
   "reason_code": same as directive_type (or more specific if clear),
-  "intent": "directive" | "observation" | "question" | "scenario_event" | "scenario_question" | "unknown",
+  "intent": "directive" | "observation" | "question" | "scenario_event" | "scenario_question" | "compound" | "unknown",
   "scope": {{
     "region": string or null (resolved to tenant's site hierarchy),
     "product_family": string or null (resolved to tenant's product hierarchy),
@@ -123,6 +136,38 @@ Strategic-layer directives (VP/Executive) may legitimately target the entire net
 The "reason" field is ALWAYS required — a directive without justification cannot be tracked for effectiveness.
 If the user only states a desire ("increase revenue") without saying WHY, the reason IS missing.
 Good reasons: "customer feedback indicates...", "market intelligence suggests...", "Q3 targets require...", "supplier delays mean..."
+
+COMPOUND FORMAT (when intent is "compound"):
+{{
+  "intent": "compound",
+  "confidence": float 0-1,
+  "actions": [
+    {{
+      "action_type": "demand_signal",
+      "demand_signal_type": "order" | "forecast_change",
+      "scenario_event": {{
+        "event_type": "drop_in_order" (for order) or "forecast_revision" (for forecast_change),
+        "parameters": {{extracted parameter values — customer_id, product_id, quantity, requested_date, etc.}},
+        "scenario_name": "Rush order: [customer] [qty] [product]"
+      }},
+      "missing_fields": [list of missing demand signal parameters, same format as standard missing_fields]
+    }},
+    {{
+      "action_type": "directive",
+      "directive_type": one of {reason_codes},
+      "reason_code": same as directive_type,
+      "direction": "increase" | "decrease" | "maintain" | "reallocate",
+      "metric": "capacity" | "service_level" | "inventory" | etc.,
+      "magnitude_pct": float or null,
+      "scope": {{same as standard scope}},
+      "target_trm_types": [list of TRM types affected],
+      "missing_fields": [list of missing directive fields]
+    }}
+  ]
+}}
+The compound missing_fields at the action level follow the same format as standard missing_fields.
+The demand signal action should have its own gap detection for order parameters (customer, product, quantity, date).
+The directive action should have standard gap detection (reason, direction, metric, etc.).
 
 SCENARIO EVENT DETECTION:
 If the user describes a supply chain event/disruption they want to simulate or test (NOT a real directive to change the plan), set intent to "scenario_event" or "scenario_question".
@@ -162,21 +207,45 @@ Available vendors: {vendor_names}
 Set confidence based on completeness: 0 missing = 0.9+, 1-2 missing = 0.5-0.7, 3+ missing = 0.2-0.4.
 If missing_fields is empty, set it to an empty list [].
 
+REPHRASED PROMPT (always include when there are missing fields):
+When any field is missing, also return a "rephrased_prompt" string — the user's original input rewritten
+with all KNOWN values resolved to their canonical names and all MISSING values replaced with "?".
+Fuzzy-match entity names to the available product/site/customer/vendor lists (tolerate misspellings,
+abbreviations, partial matches). Use the canonical name from the tenant data, not the raw input.
+
+Examples:
+  Input: "bigmart needs 500 c900 bikes in 2 weeks"
+  → rephrased_prompt: "Bigmart just called — they need 500 C900 Bikes delivered to ? in 2 weeks. Reason: ?"
+
+  Input: "we need better fill rates"
+  → rephrased_prompt: "Increase fill rate to ?% on ? products across ? regions for ?. Reason: ?"
+
+  Input: "ev parts is delayed"
+  → rephrased_prompt: "EV Parts Inc. is delayed by ? days on all open POs at ?. Reason: ?"
+
+Rules for rephrased_prompt:
+- Replace fuzzy entity names with the CANONICAL name from tenant data (e.g., "bigmart" → "Bigmart", "plant 1710" → "Plant 1 US", "c900" → "C900 BIKE")
+- Insert "?" where information is missing — one ? per missing field
+- Keep the natural language tone — rephrase as a complete, clear sentence
+- This is shown in an editable text box so the user can fill in the ?s and resubmit
+
 Other rules:
 - Resolve vague references ("SW", "frozen") against the provided tenant data
 - If the user mentions a time period ("next quarter"), convert to weeks
 - If multiple TRMs are affected, list all of them
 - For strategic directives, target_trm_types can be null (affects policy parameters)
 - INTENT CLASSIFICATION (critical):
-  - "directive" = the user wants to CHANGE something (e.g., "increase service levels by 5%", "reduce inventory in SW region")
+  - "compound" = the input contains BOTH a demand signal (new order, new demand) AND a directive (action to take in response). This is the most common pattern for real-world supply chain communication. Examples: "Bigmart needs 500 C900 bikes in 2 weeks — increase production and prioritize ATP", "We're getting 20% more demand for bikes — adjust forecasts and raise buffer levels". Prefer "compound" when BOTH a demand event AND an action instruction are present.
+  - "directive" = the user wants to CHANGE something but does NOT describe new demand (e.g., "increase service levels by 5%", "reduce inventory in SW region")
   - "question" = the user wants to KNOW something (e.g., "where are we most exposed to stockouts?", "what's our forecast accuracy?")
   - "scenario_event" = the user wants to SIMULATE an event (e.g., "simulate a supplier delay of 2 weeks")
-  - "scenario_question" = the user wants to SIMULATE an event AND asks about its impact (e.g., "Bigmart wants 500 bikes — can we handle it?")
+  - "scenario_question" = the user wants to SIMULATE an event AND asks about its impact (e.g., "What if we get a 20% demand spike — can we handle it?")
   - "observation" = the user is sharing information (e.g., "I heard competitor X is launching a new product")
   - "unknown" = you genuinely cannot determine intent. Set confidence to 0.0.
+  If it describes new demand/order + includes an action directive, prefer "compound".
   If it describes a hypothetical event + asks a question, prefer "scenario_question" over "question".
   If it is clearly a question with no hypothetical event, set intent to "question".
-  If it is clearly a directive (imperative verb, requests a change, sets a target), set intent to "directive".
+  If it is clearly a directive (imperative verb, requests a change, sets a target) with no demand signal, set intent to "directive".
   If it could be either directive or question, set intent to "unknown" and confidence to 0.0 — the system will ask the user to clarify.
 - Return ONLY valid JSON, no markdown or explanation
 """
@@ -1364,6 +1433,29 @@ class DirectiveService:
                 "layer_description": _LAYER_DESCRIPTIONS.get(layer, ""),
             }
 
+        # --- Compound flow: demand signal + directive in one prompt ---
+        if intent == "compound":
+            actions = parsed.get("actions", [])
+            all_missing: List[Dict[str, Any]] = []
+            for idx, action in enumerate(actions):
+                action_missing = action.get("missing_fields", [])
+                for mf in action_missing:
+                    # Prefix field names with action index to avoid collisions
+                    mf["field"] = f"action_{idx}_{mf['field']}"
+                    mf["action_index"] = idx
+                    mf["action_type"] = action.get("action_type", "unknown")
+                all_missing.extend(action_missing)
+
+            return {
+                "intent": "compound",
+                "actions": actions,
+                "missing_fields": all_missing,
+                "is_complete": len(all_missing) == 0,
+                "confidence": parsed.get("confidence", 0.7),
+                "target_layer": layer,
+                "layer_description": _LAYER_DESCRIPTIONS.get(layer, ""),
+            }
+
         # --- Ambiguous: LLM couldn't tell if directive or question ---
         if intent == "unknown" or parsed.get("confidence", 0) < 0.2:
             return {
@@ -1387,6 +1479,183 @@ class DirectiveService:
         parsed["target_layer"] = layer
         parsed["layer_description"] = _LAYER_DESCRIPTIONS.get(layer, "")
         return parsed
+
+    # ── Compound action execution ──────────────────────────────────────
+
+    async def execute_demand_signal_action(
+        self,
+        user: User,
+        config_id: int,
+        action: Dict[str, Any],
+        clarifications: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a demand signal action — create outbound order or adjust forecast.
+
+        Reuses the existing scenario event injection for orders and the
+        directive routing for forecast changes.
+        """
+        signal_type = action.get("demand_signal_type", "order")
+
+        if signal_type == "order":
+            event_spec = action.get("scenario_event", {})
+            if not event_spec.get("event_type"):
+                event_spec["event_type"] = "drop_in_order"
+            # Merge any clarification answers into event parameters
+            if clarifications:
+                params = event_spec.setdefault("parameters", {})
+                for key, val in clarifications.items():
+                    # Strip action_N_ prefix if present
+                    clean_key = key.split("_", 2)[-1] if key.startswith("action_") else key
+                    if clean_key not in params or not params[clean_key]:
+                        params[clean_key] = val
+
+            result = await self._inject_scenario_event_standalone(
+                config_id=config_id,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                event_spec=event_spec,
+            )
+            affected = result.get("affected_entities", {})
+            order_ids = affected.get("outbound_order", [])
+            return {
+                "type": "order_created",
+                "summary": result.get("summary", "Order created"),
+                "event_id": result.get("event_id"),
+                "order_id": order_ids[0] if order_ids else None,
+                "target_config_id": result.get("target_config_id"),
+            }
+
+        # Forecast change — route through directive machinery
+        return {
+            "type": "forecast_change_routed",
+            "summary": "Forecast adjustment signal routed to Forecast Adjustment TRM",
+            "target_trm_types": ["forecast_adjustment"],
+        }
+
+    async def execute_directive_action(
+        self,
+        user: User,
+        config_id: int,
+        action: Dict[str, Any],
+        raw_text: str,
+        clarifications: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a directive action — persist UserDirective and route to Powell layer."""
+        from datetime import timedelta
+
+        layer = _ROLE_TO_LAYER.get(user.powell_role, "operational")
+        if user.user_type and user.user_type.value == "TENANT_ADMIN":
+            layer = "strategic"
+
+        scope = action.get("scope", {})
+        time_horizon = scope.get("time_horizon_weeks")
+        expires_at = None
+        if time_horizon:
+            expires_at = datetime.utcnow() + timedelta(weeks=time_horizon)
+
+        eff_scope = {
+            "strategic": "network", "tactical": "region",
+            "operational": "site", "execution": "site",
+        }.get(layer, "site")
+
+        directive = UserDirective(
+            user_id=user.id,
+            config_id=config_id,
+            tenant_id=user.tenant_id,
+            raw_text=raw_text,
+            directive_type=action.get("directive_type", "DEMAND_SIGNAL"),
+            reason_code=action.get("reason_code", "DEMAND_SIGNAL"),
+            parsed_intent="directive",
+            parsed_scope=scope,
+            parsed_direction=action.get("direction"),
+            parsed_metric=action.get("metric"),
+            parsed_magnitude_pct=action.get("magnitude_pct"),
+            parser_confidence=action.get("confidence", 0.7),
+            target_layer=layer,
+            target_trm_types=action.get("target_trm_types"),
+            target_site_keys=scope.get("site_keys"),
+            status="PARSED",
+            expires_at=expires_at,
+            effectiveness_scope=eff_scope,
+        )
+        self.db.add(directive)
+        await self.db.flush()
+
+        # Apply the directive if confidence is high enough
+        if directive.parser_confidence >= 0.7:
+            await self._apply_directive(directive)
+
+        await self.db.commit()
+
+        return {
+            "type": "directive_routed",
+            "directive_id": directive.id,
+            "summary": f"Routed to {layer} layer",
+            "target_layer": layer,
+            "routed_actions": directive.routed_actions,
+            "target_trm_types": action.get("target_trm_types", []),
+        }
+
+    # ── Display name resolution ─────────────────────────────────────────
+
+    async def resolve_display_names(self, text: str, config_id: int) -> str:
+        """Substitute raw IDs with display names in response text.
+
+        Uses the tenant's display_identifiers preference. If 'name',
+        replaces known product/site IDs with their canonical names.
+        """
+        from sqlalchemy import text as sa_text
+
+        try:
+            # Check tenant preference
+            pref_row = await self.db.execute(
+                sa_text(
+                    "SELECT display_identifiers FROM tenant_bsc_config "
+                    "WHERE tenant_id = :t"
+                ),
+                {"t": self.tenant_id},
+            )
+            row = pref_row.fetchone()
+            pref = row[0] if row else "name"
+            if pref == "id":
+                return text  # No substitution
+
+            # Load product map
+            prod_rows = await self.db.execute(
+                sa_text(
+                    "SELECT id, COALESCE(description, product_name, id) "
+                    "FROM product WHERE config_id = :c"
+                ),
+                {"c": config_id},
+            )
+            product_map = {}
+            for r in prod_rows.fetchall():
+                pid = str(r[0])
+                desc = r[1] or pid
+                short = desc.split("[")[0].strip() if "[" in desc else desc
+                product_map[pid] = short
+
+            # Load site map
+            site_rows = await self.db.execute(
+                sa_text("SELECT id, name FROM site WHERE config_id = :c"),
+                {"c": config_id},
+            )
+            site_map = {str(r[0]): r[1] for r in site_rows.fetchall()}
+
+            # Apply substitutions
+            import re
+            for pid, name in product_map.items():
+                text = re.sub(rf"\b{re.escape(pid)}\b", name, text)
+            for sid, name in site_map.items():
+                text = re.sub(
+                    rf"\b(?:site[_ ]?)?{re.escape(sid)}\b",
+                    name, text, flags=re.IGNORECASE,
+                )
+
+            return text
+        except Exception:
+            logger.debug("Display name resolution failed, returning raw text")
+            return text
 
     async def _answer_question(
         self,

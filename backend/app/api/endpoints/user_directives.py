@@ -4,15 +4,18 @@ Accepts natural language directives from authenticated users, parses them
 with LLM, routes to the appropriate Powell layer based on role, and tracks
 effectiveness via Bayesian posteriors.
 
-Two-phase flow:
-  1. POST /directives/analyze — LLM parse, return structured result + missing fields
-  2. POST /directives/submit  — persist and route (with optional clarifications)
+Three endpoints:
+  1. POST /directives/analyze       — LLM parse, return structured result + missing fields
+  2. POST /directives/submit        — persist and route (standard directives)
+  3. POST /directives/submit-stream — persist and route compound actions with SSE progress
 """
 
+import json
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +26,11 @@ from app.services.directive_service import DirectiveService
 
 router = APIRouter(prefix="/directives", tags=["Directives"])
 logger = logging.getLogger(__name__)
+
+
+def _sse_event(event_type: str, data: Dict[str, Any]) -> str:
+    """Format a Server-Sent Event line pair."""
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 
 # ── Request / Response models ────────────────────────────────────────────────
@@ -39,9 +47,25 @@ class MissingField(BaseModel):
     options: Optional[List[str]] = None
 
 
+class CompoundAction(BaseModel):
+    """A single action within a compound intent (demand signal or directive)."""
+    action_type: str  # "demand_signal" | "directive"
+    demand_signal_type: Optional[str] = None  # "order" | "forecast_change"
+    scenario_event: Optional[dict] = None
+    directive_type: Optional[str] = None
+    reason_code: Optional[str] = None
+    direction: Optional[str] = None
+    metric: Optional[str] = None
+    magnitude_pct: Optional[float] = None
+    scope: Optional[dict] = None
+    target_trm_types: Optional[list] = None
+    confidence: Optional[float] = None
+    missing_fields: List[MissingField] = []
+
+
 class DirectiveAnalyzeResponse(BaseModel):
     # Common fields
-    intent: Optional[str] = None  # directive | question | scenario_event | scenario_question | unknown
+    intent: Optional[str] = None  # directive | question | scenario_event | scenario_question | compound | unknown
     confidence: float = 0.0
     target_layer: str = "operational"
     layer_description: str = ""
@@ -55,6 +79,13 @@ class DirectiveAnalyzeResponse(BaseModel):
     magnitude_pct: Optional[float] = None
     missing_fields: List[MissingField] = []
     is_complete: bool = False
+
+    # Rephrased prompt — shown as editable text when fields are missing
+    # Contains the user's input rewritten with canonical names and "?" for gaps
+    rephrased_prompt: Optional[str] = None
+
+    # Compound action fields
+    actions: Optional[List[CompoundAction]] = None
 
     # Question-specific fields
     answer: Optional[str] = None  # LLM-generated answer (question or scenario_question)
@@ -149,6 +180,38 @@ async def analyze_directive(
             question=parsed.get("question"),
         )
 
+    # Compound flow — demand signal + directive
+    if intent == "compound":
+        actions_raw = parsed.get("actions", [])
+        all_missing = parsed.get("missing_fields", [])
+        compound_actions = []
+        for a in actions_raw:
+            action_missing = a.get("missing_fields", [])
+            compound_actions.append(CompoundAction(
+                action_type=a.get("action_type", "unknown"),
+                demand_signal_type=a.get("demand_signal_type"),
+                scenario_event=a.get("scenario_event"),
+                directive_type=a.get("directive_type"),
+                reason_code=a.get("reason_code"),
+                direction=a.get("direction"),
+                metric=a.get("metric"),
+                magnitude_pct=a.get("magnitude_pct"),
+                scope=a.get("scope"),
+                target_trm_types=a.get("target_trm_types"),
+                confidence=a.get("confidence"),
+                missing_fields=[MissingField(**m) for m in action_missing],
+            ))
+        return DirectiveAnalyzeResponse(
+            intent="compound",
+            confidence=parsed.get("confidence", 0.7),
+            target_layer=parsed.get("target_layer", "operational"),
+            layer_description=parsed.get("layer_description", ""),
+            actions=compound_actions,
+            missing_fields=[MissingField(**m) for m in all_missing],
+            is_complete=parsed.get("is_complete", len(all_missing) == 0),
+            rephrased_prompt=parsed.get("rephrased_prompt"),
+        )
+
     # Scenario event / scenario question flow
     if intent in ("scenario_event", "scenario_question"):
         missing = parsed.get("missing_fields", [])
@@ -187,6 +250,7 @@ async def analyze_directive(
         layer_description=parsed.get("layer_description", ""),
         missing_fields=[MissingField(**m) for m in missing],
         is_complete=len(missing) == 0,
+        rephrased_prompt=parsed.get("rephrased_prompt"),
     )
 
 
@@ -212,6 +276,122 @@ async def submit_directive(
         target_config_id=request.target_config_id,
     )
     return DirectiveResponse(**directive.to_dict())
+
+
+class CompoundSubmitRequest(BaseModel):
+    """Request body for compound submit with SSE streaming."""
+    config_id: int
+    text: str = Field(..., min_length=3, max_length=5000)
+    actions: List[dict]  # Pre-parsed action specs from analyze
+    clarifications: Optional[Dict[str, str]] = None
+
+
+@router.post("/submit-stream")
+async def submit_directive_stream(
+    request: CompoundSubmitRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Submit a compound directive with SSE progress streaming.
+
+    Executes each action sequentially (demand signal first, then directive)
+    and streams status events to the frontend for progressive display.
+    Returns text/event-stream with events: status, action_complete, complete, error.
+    """
+    service = DirectiveService(db)
+
+    async def event_generator():
+        try:
+            actions = request.actions
+            total_steps = len(actions) + 1  # N actions + summary
+
+            yield _sse_event("status", {
+                "message": f"Processing {len(actions)} actions...",
+                "step": 0,
+                "total": total_steps,
+            })
+
+            results = []
+            for idx, action in enumerate(actions):
+                action_type = action.get("action_type", "unknown")
+
+                if action_type == "demand_signal":
+                    signal_type = action.get("demand_signal_type", "order")
+                    label = "new order" if signal_type == "order" else "forecast change"
+                    yield _sse_event("status", {
+                        "message": f"Creating {label}...",
+                        "step": idx + 1,
+                        "total": total_steps,
+                    })
+
+                    result = await service.execute_demand_signal_action(
+                        user=current_user,
+                        config_id=request.config_id,
+                        action=action,
+                        clarifications=request.clarifications,
+                    )
+                    results.append(result)
+
+                    # Apply display name resolution to summary
+                    summary = result.get("summary", "")
+                    summary = await service.resolve_display_names(
+                        summary, request.config_id,
+                    )
+                    yield _sse_event("action_complete", {
+                        "action_index": idx,
+                        "action_type": action_type,
+                        "message": summary,
+                        "result": result,
+                    })
+
+                elif action_type == "directive":
+                    yield _sse_event("status", {
+                        "message": f"Routing directive: {action.get('direction', '')} {action.get('metric', '')}...",
+                        "step": idx + 1,
+                        "total": total_steps,
+                    })
+
+                    result = await service.execute_directive_action(
+                        user=current_user,
+                        config_id=request.config_id,
+                        action=action,
+                        raw_text=request.text,
+                        clarifications=request.clarifications,
+                    )
+                    results.append(result)
+
+                    trm_types = result.get("target_trm_types", [])
+                    trm_list = ", ".join(
+                        t.replace("_", " ").title() for t in (trm_types or [])
+                    )
+                    yield _sse_event("action_complete", {
+                        "action_index": idx,
+                        "action_type": action_type,
+                        "message": f"Routed to {result.get('target_layer', 'operational')} layer"
+                                   + (f" — TRMs: {trm_list}" if trm_list else ""),
+                        "result": result,
+                    })
+
+            yield _sse_event("complete", {
+                "message": f"{len(actions)} actions completed — see Decision Stream",
+                "step": total_steps,
+                "total": total_steps,
+                "results": results,
+            })
+
+        except Exception as e:
+            logger.exception("Compound submit-stream error")
+            yield _sse_event("error", {"message": str(e)})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/")

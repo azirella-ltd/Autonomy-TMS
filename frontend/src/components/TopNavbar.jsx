@@ -75,6 +75,9 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   const [analysisResult, setAnalysisResult] = useState(null); // from /analyze
   const [originalText, setOriginalText] = useState('');
   const [clarifications, setClarifications] = useState({}); // field → value
+  const [streamMessages, setStreamMessages] = useState([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [rephrasedPrompt, setRephrasedPrompt] = useState('');
   const talkInputRef = useRef(null);
   const clarificationRef = useRef(null);
 
@@ -252,6 +255,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     setAnalysisResult(null);
     setOriginalText('');
     setClarifications({});
+    setRephrasedPrompt('');
   }, []);
 
   // Phase 1: Analyze the directive, check for missing fields
@@ -317,6 +321,22 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         return;
       }
 
+      // Compound flow — demand signal + directive
+      if (intent === 'compound') {
+        if (analysis.is_complete) {
+          // No gaps — submit via SSE stream
+          await submitCompoundStream(prompt, analysis.actions);
+        } else {
+          // Show rephrased prompt for editing, or clarification panel
+          setOriginalText(prompt);
+          setAnalysisResult(analysis);
+          setRephrasedPrompt(analysis.rephrased_prompt || prompt);
+          setClarifications({});
+          setTalkInput('');
+        }
+        return;
+      }
+
       // Directive flow — check for missing fields
       if (analysis.is_complete || (analysis.missing_fields?.length || 0) === 0) {
         // No gaps — submit immediately
@@ -325,6 +345,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         // Gaps found — show clarification panel
         setOriginalText(prompt);
         setAnalysisResult(analysis);
+        setRephrasedPrompt(analysis.rephrased_prompt || prompt);
         setClarifications({});
         setTalkInput('');
       }
@@ -373,16 +394,97 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     }
   };
 
+  const submitCompoundStream = async (text, actions, clarifs = {}) => {
+    setIsStreaming(true);
+    setStreamMessages([]);
+    setTalkInput('');
+    dismissClarification();
+
+    try {
+      const response = await fetch('/api/directives/submit-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          config_id: effectiveConfigId,
+          text,
+          actions,
+          clarifications: Object.keys(clarifs).length > 0 ? clarifs : undefined,
+        }),
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const blocks = buffer.split('\n\n');
+        buffer = blocks.pop() || '';
+
+        for (const block of blocks) {
+          if (!block.trim()) continue;
+          const eventMatch = block.match(/^event:\s*(.+)\ndata:\s*(.+)$/m);
+          if (eventMatch) {
+            const [, eventType, dataStr] = eventMatch;
+            try {
+              const data = JSON.parse(dataStr);
+              setStreamMessages((prev) => [...prev, { type: eventType, ...data }]);
+
+              if (eventType === 'complete') {
+                setTimeout(() => {
+                  setIsStreaming(false);
+                  setStreamMessages([]);
+                }, 5000);
+              }
+              if (eventType === 'error') {
+                setTimeout(() => {
+                  setIsStreaming(false);
+                  setStreamMessages([]);
+                }, 4000);
+              }
+            } catch { /* ignore malformed JSON */ }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('SSE stream failed:', err);
+      setStreamMessages((prev) => [...prev, { type: 'error', message: 'Connection failed' }]);
+      setTimeout(() => { setIsStreaming(false); setStreamMessages([]); }, 4000);
+    }
+  };
+
   const handleClarificationAnswer = (field, value) => {
     setClarifications((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleClarificationSubmit = () => {
-    // Check all required fields are answered
-    const missing = (analysisResult?.missing_fields || []);
-    const unanswered = missing.filter((m) => !clarifications[m.field]?.trim());
-    if (unanswered.length > 0) return; // Still have unanswered questions
-    submitFinalDirective(originalText, clarifications);
+    if (analysisResult?.intent === 'compound') {
+      // For compound: if user edited the rephrased prompt, re-analyze with the edited text
+      if (rephrasedPrompt && rephrasedPrompt !== originalText) {
+        // Re-submit the edited prompt through the normal analyze flow
+        setTalkInput(rephrasedPrompt);
+        dismissClarification();
+        // Auto-submit after a tick
+        setTimeout(() => handleTalkSubmit(), 50);
+        return;
+      }
+      submitCompoundStream(originalText, analysisResult.actions, clarifications);
+    } else if (rephrasedPrompt && rephrasedPrompt !== originalText) {
+      // For standard directives: re-analyze with the edited prompt
+      setTalkInput(rephrasedPrompt);
+      dismissClarification();
+      setTimeout(() => handleTalkSubmit(), 50);
+    } else {
+      // Standard flow: submit with clarifications
+      const missing = (analysisResult?.missing_fields || []);
+      const unanswered = missing.filter((m) => !clarifications[m.field]?.trim());
+      if (unanswered.length > 0) return;
+      submitFinalDirective(originalText, clarifications);
+    }
   };
 
   // Count how many clarifications are answered
@@ -679,8 +781,8 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             </div>
           )}
 
-          {/* Clarification panel — shown when analysis found missing fields (directives or scenario events) */}
-          {analysisResult && analysisResult.intent !== 'question' && !analysisResult.clarification_needed && analysisResult.intent !== 'unknown' && !(analysisResult.intent === 'scenario_question' && analysisResult.answer) && totalMissing > 0 && (
+          {/* Clarification panel — rephrased prompt (preferred) or field-by-field (fallback) */}
+          {analysisResult && analysisResult.intent !== 'question' && !analysisResult.clarification_needed && analysisResult.intent !== 'unknown' && !(analysisResult.intent === 'scenario_question' && analysisResult.answer) && (totalMissing > 0 || rephrasedPrompt) && (
             <div
               ref={clarificationRef}
               className={cn(
@@ -694,7 +796,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
                 <div className="flex items-center gap-2">
                   <AIAvatar size="sm" />
                   <span className="font-medium text-foreground">
-                    A few clarifying questions
+                    {rephrasedPrompt ? 'Please confirm or edit' : 'A few clarifying questions'}
                   </span>
                 </div>
                 <button
@@ -705,75 +807,128 @@ const TopNavbar = ({ sidebarOpen = true }) => {
                 </button>
               </div>
 
-              {/* Parsed context */}
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                <span className="truncate italic">"{originalText}"</span>
-                <ChevronRight className="h-3 w-3 flex-shrink-0" />
-                <span className="capitalize">{analysisResult.target_layer} layer</span>
-                {analysisResult.confidence > 0 && (
-                  <span className="ml-1">({Math.round(analysisResult.confidence * 100)}%)</span>
-                )}
-              </div>
+              {/* Compound action badges */}
+              {analysisResult?.intent === 'compound' && analysisResult.actions && (
+                <div className="flex items-center gap-2 mb-2">
+                  {analysisResult.actions.map((action, i) => (
+                    <span key={i} className={cn(
+                      'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
+                      action.action_type === 'demand_signal'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-violet-100 text-violet-700'
+                    )}>
+                      <span className={cn(
+                        'w-1.5 h-1.5 rounded-full',
+                        action.action_type === 'demand_signal' ? 'bg-blue-500' : 'bg-violet-500'
+                      )} />
+                      {action.action_type === 'demand_signal'
+                        ? (action.demand_signal_type === 'order' ? 'New Order' : 'Forecast Change')
+                        : 'Directive'}
+                    </span>
+                  ))}
+                </div>
+              )}
 
-              {/* Missing fields */}
-              <div className="space-y-2.5">
-                {(analysisResult.missing_fields || []).map((mf) => (
-                  <div key={mf.field}>
-                    <label className="block text-xs font-medium text-foreground mb-1">
-                      {mf.question}
-                    </label>
-                    {mf.type === 'select' && mf.options?.length > 0 ? (
-                      <select
-                        value={clarifications[mf.field] || ''}
-                        onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
-                        className={cn(
-                          'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
-                          'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
-                        )}
-                      >
-                        <option value="">Select…</option>
-                        {mf.options.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    ) : mf.type === 'number' ? (
-                      <input
-                        type="number"
-                        value={clarifications[mf.field] || ''}
-                        onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
-                        placeholder="e.g. 10"
-                        className={cn(
-                          'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
-                          'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
-                        )}
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={clarifications[mf.field] || ''}
-                        onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
-                        placeholder="Type your answer…"
-                        className={cn(
-                          'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
-                          'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
-                        )}
-                      />
+              {/* Rephrased prompt editable box (preferred UX) */}
+              {rephrasedPrompt ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    I've rephrased your input with resolved names. Edit the <span className="text-red-500 font-bold">?</span> markers and press Submit.
+                  </p>
+                  <textarea
+                    value={rephrasedPrompt}
+                    onChange={(e) => setRephrasedPrompt(e.target.value)}
+                    rows={3}
+                    className={cn(
+                      'w-full rounded-md border border-border bg-background px-3 py-2 text-sm',
+                      'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                      'font-medium leading-relaxed',
+                    )}
+                    style={{
+                      /* Highlight ? markers via CSS — not possible in textarea, but the red bold instruction guides the user */
+                    }}
+                  />
+                </div>
+              ) : (
+                /* Fallback: field-by-field clarification (original behavior) */
+                <>
+                  {/* Parsed context */}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+                    <span className="truncate italic">"{originalText}"</span>
+                    <ChevronRight className="h-3 w-3 flex-shrink-0" />
+                    <span className="capitalize">{analysisResult.target_layer} layer</span>
+                    {analysisResult.confidence > 0 && (
+                      <span className="ml-1">({Math.round(analysisResult.confidence * 100)}%)</span>
                     )}
                   </div>
-                ))}
-              </div>
 
-              {/* Progress + Submit */}
+                  {/* Missing fields */}
+                  <div className="space-y-2.5">
+                    {(analysisResult.missing_fields || []).map((mf) => (
+                      <div key={mf.field}>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          {mf.question}
+                        </label>
+                        {mf.type === 'select' && mf.options?.length > 0 ? (
+                          <select
+                            value={clarifications[mf.field] || ''}
+                            onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
+                            className={cn(
+                              'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                              'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                            )}
+                          >
+                            <option value="">Select...</option>
+                            {mf.options.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : mf.type === 'number' ? (
+                          <input
+                            type="number"
+                            value={clarifications[mf.field] || ''}
+                            onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
+                            placeholder="e.g. 10"
+                            className={cn(
+                              'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                              'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                            )}
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            value={clarifications[mf.field] || ''}
+                            onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
+                            placeholder="Type your answer..."
+                            className={cn(
+                              'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                              'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                            )}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Submit button */}
               <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
-                <span className="text-xs text-muted-foreground">
-                  {answeredCount} of {totalMissing} answered
-                </span>
+                {rephrasedPrompt ? (
+                  <span className="text-xs text-muted-foreground">
+                    Edit the prompt above, then submit
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {answeredCount} of {totalMissing} answered
+                  </span>
+                )}
                 <button
                   onClick={handleClarificationSubmit}
-                  disabled={!allAnswered || talkSubmitting}
+                  disabled={!rephrasedPrompt && !allAnswered || talkSubmitting}
                   className={cn(
                     'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                    allAnswered && !talkSubmitting
+                    (rephrasedPrompt || allAnswered) && !talkSubmitting
                       ? 'bg-violet-500 text-white hover:bg-violet-600'
                       : 'bg-muted text-muted-foreground cursor-not-allowed',
                   )}
@@ -783,8 +938,48 @@ const TopNavbar = ({ sidebarOpen = true }) => {
                   ) : (
                     <CheckCircle2 className="h-3 w-3" />
                   )}
-                  {analysisResult?.intent?.startsWith('scenario') ? 'Run scenario' : 'Submit directive'}
+                  {rephrasedPrompt ? 'Submit' : (analysisResult?.intent?.startsWith('scenario') ? 'Run scenario' : 'Submit directive')}
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Streaming progress panel — shown during compound SSE submission */}
+          {isStreaming && streamMessages.length > 0 && (
+            <div className={cn(
+              'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
+              'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
+              'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
+            )}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <AIAvatar size="sm" />
+                <span className="font-medium text-foreground">Processing...</span>
+              </div>
+              <div className="space-y-1 font-mono text-xs">
+                {streamMessages.map((msg, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="text-muted-foreground flex-shrink-0">
+                      {msg.type === 'complete' ? '\u2514\u2500\u2500' :
+                       msg.type === 'error' ? '\u2514\u2500\u2500 !' :
+                       '\u251C\u2500\u2500'}
+                    </span>
+                    <span className={cn(
+                      msg.type === 'error' ? 'text-destructive' :
+                      msg.type === 'complete' ? 'text-emerald-600 font-semibold' :
+                      msg.type === 'action_complete' ? 'text-blue-600' :
+                      'text-foreground'
+                    )}>
+                      {msg.message}
+                    </span>
+                  </div>
+                ))}
+                {streamMessages[streamMessages.length - 1]?.type !== 'complete' &&
+                 streamMessages[streamMessages.length - 1]?.type !== 'error' && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <span>{'\u2502'}  </span>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  </div>
+                )}
               </div>
             </div>
           )}
