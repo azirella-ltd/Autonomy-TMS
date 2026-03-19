@@ -2079,17 +2079,29 @@ class SAPConfigBuilder:
             )
             logger.info("Merged %d MAKT descriptions into MARA", makt_en.shape[0])
 
-        # Get unique materials
+        # Exclude non-physical material types — services, packaging, pipeline,
+        # returnable materials, etc. These don't belong in the SC planning network.
+        _EXCLUDE_MTART = {"SERV", "DIEN", "NLAG", "VERP", "LEIH", "PIPE", "VEHI", "SWNV", "UNSF", "UNFR"}
+
+        # Get unique physical materials
         materials: Dict[str, Dict[str, Any]] = {}
+        skipped_types: Dict[str, int] = {}
         if not mara.empty and "MATNR" in mara.columns:
             for _, row in mara.iterrows():
                 key = str(row["MATNR"]).strip()
+                mtart = str(row.get("MTART", "")).strip().upper()
+                if mtart in _EXCLUDE_MTART:
+                    skipped_types[mtart] = skipped_types.get(mtart, 0) + 1
+                    continue
                 materials[key] = {
                     "name": str(row.get("MAKTX", key)).strip(),
                     "group": str(row.get("MATKL", "")).strip(),
                     "uom": str(row.get("MEINS", "EA")).strip(),
-                    "type": str(row.get("MTART", "")).strip(),
+                    "type": mtart,
                 }
+        if skipped_types:
+            logger.info("Excluded %d non-physical materials: %s",
+                        sum(skipped_types.values()), skipped_types)
 
         # Enrich with MVKE product hierarchy
         if not mvke.empty and "MATNR" in mvke.columns and "PRODH" in mvke.columns:
