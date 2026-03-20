@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2e1065"/>
+      <stop offset="50%" stop-color="#4c1d95"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="ln" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c4b5fd" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#818cf8" stop-opacity="0.3"/>
+    </linearGradient>
+    <radialGradient id="sg">
+      <stop offset="0%" stop-color="#f5f3ff" stop-opacity="1"/>
+      <stop offset="50%" stop-color="#c4b5fd" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="gl">
+      <feGaussianBlur stdDeviation="1" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="60" cy="60" r="58" fill="url(#bg)"/>
+
+  <!-- Background stars -->
+  <circle cx="15" cy="25" r="0.6" fill="white" opacity="0.15"/>
+  <circle cx="98" cy="20" r="0.5" fill="white" opacity="0.12"/>
+  <circle cx="10" cy="85" r="0.5" fill="white" opacity="0.15"/>
+  <circle cx="95" cy="95" r="0.4" fill="white" opacity="0.1"/>
+  <circle cx="80" cy="10" r="0.5" fill="white" opacity="0.12"/>
+
+  <!-- ======== HUMAN CONSTELLATION (matching Azirella logo pose) ======== -->
+  <!-- Profile view: facing right, slight curve to body, arm reaching out -->
+  <!-- Head top-left with halo ring, body flowing down-right, hand extended -->
+
+  <g filter="url(#gl)">
+
+    <!-- ── BODY + LEGS (static) ── -->
+    <!-- Neck to chest -->
+    <line x1="38" y1="30" x2="42" y2="45" stroke="url(#ln)" stroke-width="1"/>
+    <!-- Chest to waist -->
+    <line x1="42" y1="45" x2="45" y2="58" stroke="url(#ln)" stroke-width="1"/>
+    <!-- Waist to hip -->
+    <line x1="45" y1="58" x2="48" y2="68" stroke="url(#ln)" stroke-width="1"/>
+    <!-- Chest to back shoulder -->
+    <line x1="42" y1="45" x2="35" y2="48" stroke="url(#ln)" stroke-width="0.8" opacity="0.5"/>
+    <!-- Chest ribs (internal constellation) -->
+    <line x1="42" y1="45" x2="48" y2="50" stroke="url(#ln)" stroke-width="0.6" opacity="0.4"/>
+    <line x1="42" y1="45" x2="38" y2="52" stroke="url(#ln)" stroke-width="0.6" opacity="0.4"/>
+    <line x1="48" y1="50" x2="38" y2="52" stroke="url(#ln)" stroke-width="0.5" opacity="0.3"/>
+    <!-- Hip to legs -->
+    <line x1="48" y1="68" x2="42" y2="85" stroke="url(#ln)" stroke-width="0.9"/>
+    <line x1="48" y1="68" x2="55" y2="82" stroke="url(#ln)" stroke-width="0.9"/>
+    <!-- Knees to feet -->
+    <line x1="42" y1="85" x2="38" y2="105" stroke="url(#ln)" stroke-width="0.7"/>
+    <line x1="55" y1="82" x2="58" y2="105" stroke="url(#ln)" stroke-width="0.7"/>
+
+    <!-- Body/leg nodes -->
+    <circle cx="42" cy="45" r="2.8" fill="url(#sg)" opacity="0.8"/>  <!-- Chest (bright) -->
+    <circle cx="42" cy="45" r="1.4" fill="white" opacity="0.9"/>
+    <circle cx="45" cy="58" r="2" fill="url(#sg)" opacity="0.65"/>   <!-- Waist -->
+    <circle cx="45" cy="58" r="1" fill="white" opacity="0.8"/>
+    <circle cx="48" cy="68" r="2.2" fill="url(#sg)" opacity="0.7"/>  <!-- Hip -->
+    <circle cx="48" cy="68" r="1.1" fill="white" opacity="0.85"/>
+    <circle cx="35" cy="48" r="1.5" fill="url(#sg)" opacity="0.5"/>  <!-- Back shoulder -->
+    <circle cx="35" cy="48" r="0.7" fill="white" opacity="0.65"/>
+    <!-- Internal chest constellation -->
+    <circle cx="48" cy="50" r="1.3" fill="url(#sg)" opacity="0.45"/>
+    <circle cx="48" cy="50" r="0.6" fill="white" opacity="0.6"/>
+    <circle cx="38" cy="52" r="1.3" fill="url(#sg)" opacity="0.45"/>
+    <circle cx="38" cy="52" r="0.6" fill="white" opacity="0.6"/>
+    <!-- Leg nodes -->
+    <circle cx="42" cy="85" r="1.8" fill="url(#sg)" opacity="0.55"/>
+    <circle cx="42" cy="85" r="0.9" fill="white" opacity="0.7"/>
+    <circle cx="55" cy="82" r="1.8" fill="url(#sg)" opacity="0.55"/>
+    <circle cx="55" cy="82" r="0.9" fill="white" opacity="0.7"/>
+    <circle cx="38" cy="105" r="1.3" fill="url(#sg)" opacity="0.4"/>
+    <circle cx="38" cy="105" r="0.7" fill="white" opacity="0.55"/>
+    <circle cx="58" cy="105" r="1.3" fill="url(#sg)" opacity="0.4"/>
+    <circle cx="58" cy="105" r="0.7" fill="white" opacity="0.55"/>
+
+    <!-- ── ARM + HAND (animatable — forearm lifts) ── -->
+    <g id="forearm" style="transform-origin: 55px 40px">
+      <!-- Upper arm: shoulder to elbow -->
+      <line x1="42" y1="45" x2="55" y2="40" stroke="url(#ln)" stroke-width="1"/>
+      <!-- Elbow node -->
+      <circle cx="55" cy="40" r="2" fill="url(#sg)" opacity="0.7"/>
+      <circle cx="55" cy="40" r="1" fill="white" opacity="0.85"/>
+      <!-- Forearm: elbow to wrist -->
+      <line x1="55" y1="40" x2="72" y2="32" stroke="url(#ln)" stroke-width="0.9"/>
+      <!-- Wrist to fingertips (reaching out) -->
+      <line x1="72" y1="32" x2="82" y2="28" stroke="url(#ln)" stroke-width="0.7"/>
+      <line x1="82" y1="28" x2="88" y2="25" stroke="url(#ln)" stroke-width="0.5" opacity="0.7"/>
+      <line x1="82" y1="28" x2="87" y2="30" stroke="url(#ln)" stroke-width="0.5" opacity="0.5"/>
+      <!-- Hand constellation nodes -->
+      <circle cx="72" cy="32" r="1.8" fill="url(#sg)" opacity="0.65"/>  <!-- Wrist -->
+      <circle cx="72" cy="32" r="0.9" fill="white" opacity="0.8"/>
+      <circle cx="82" cy="28" r="1.5" fill="url(#sg)" opacity="0.55"/>  <!-- Palm -->
+      <circle cx="82" cy="28" r="0.8" fill="white" opacity="0.7"/>
+      <circle cx="88" cy="25" r="1.2" fill="url(#sg)" opacity="0.45"/>  <!-- Fingertip -->
+      <circle cx="88" cy="25" r="0.6" fill="white" opacity="0.6"/>
+      <circle cx="87" cy="30" r="1" fill="url(#sg)" opacity="0.35"/>    <!-- Thumb -->
+      <circle cx="87" cy="30" r="0.5" fill="white" opacity="0.5"/>
+    </g>
+
+    <!-- ── HEAD (animatable — turns toward user) ── -->
+    <g id="head" style="transform-origin: 38px 30px">
+      <!-- Neck to head center -->
+      <line x1="38" y1="30" x2="35" y2="18" stroke="url(#ln)" stroke-width="1.1"/>
+      <!-- Halo ring (like the logo) -->
+      <circle cx="35" cy="16" r="10" stroke="url(#ln)" stroke-width="0.8" fill="none" opacity="0.35"/>
+      <circle cx="35" cy="16" r="8" stroke="#c4b5fd" stroke-width="0.4" fill="none" opacity="0.2"/>
+      <!-- Head node (face) -->
+      <circle cx="35" cy="18" r="3.5" fill="url(#sg)" opacity="0.9"/>
+      <circle cx="35" cy="18" r="1.8" fill="white" opacity="0.95"/>
+      <!-- Eyes -->
+      <circle cx="37" cy="17" r="0.7" fill="white" opacity="0.8"/>
+      <circle cx="33" cy="17" r="0.6" fill="white" opacity="0.6"/>
+      <!-- Neck node -->
+      <circle cx="38" cy="30" r="2.2" fill="url(#sg)" opacity="0.75"/>
+      <circle cx="38" cy="30" r="1.1" fill="white" opacity="0.9"/>
+      <!-- Hair/crown star -->
+      <circle cx="35" cy="10" r="1.5" fill="url(#sg)" opacity="0.5"/>
+      <circle cx="35" cy="10" r="0.7" fill="white" opacity="0.65"/>
+      <line x1="35" y1="18" x2="35" y2="10" stroke="url(#ln)" stroke-width="0.6" opacity="0.4"/>
+    </g>
+  </g>
+
+  <circle cx="60" cy="60" r="57" stroke="#a78bfa" stroke-width="0.5" fill="none" opacity="0.1"/>
+</svg>

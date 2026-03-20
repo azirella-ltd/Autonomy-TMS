@@ -228,17 +228,132 @@ const AzirellaAvatar = ({
             boxShadow: cfg.glow,
           }}
         >
-          {/* Human constellation figure — SVG with linked star nodes */}
-          <img
-            src="/azirella_human.svg"
-            alt=""
+          {/* Azirella human constellation — inline SVG with animated head + arm */}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 120 120"
+            fill="none"
             className="absolute inset-0 w-full h-full pointer-events-none select-none"
             style={{
               filter: `brightness(${cfg.imgBrightness}) contrast(1.1)`,
               transition: 'filter 0.5s ease',
             }}
-            draggable={false}
-          />
+          >
+            <defs>
+              <linearGradient id="av-bg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#2e1065"/>
+                <stop offset="50%" stopColor="#4c1d95"/>
+                <stop offset="100%" stopColor="#312e81"/>
+              </linearGradient>
+              <linearGradient id="av-ln" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.7"/>
+                <stop offset="100%" stopColor="#818cf8" stopOpacity="0.35"/>
+              </linearGradient>
+              <radialGradient id="av-sg">
+                <stop offset="0%" stopColor="#f5f3ff" stopOpacity="1"/>
+                <stop offset="50%" stopColor="#c4b5fd" stopOpacity="0.6"/>
+                <stop offset="100%" stopColor="#7c3aed" stopOpacity="0"/>
+              </radialGradient>
+              <filter id="av-gl">
+                <feGaussianBlur stdDeviation="1.2" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+
+            {/* Background stars */}
+            <circle cx="18" cy="22" r="0.7" fill="white" opacity="0.2"/>
+            <circle cx="95" cy="18" r="0.5" fill="white" opacity="0.15"/>
+            <circle cx="12" cy="70" r="0.6" fill="white" opacity="0.18"/>
+            <circle cx="100" cy="80" r="0.5" fill="white" opacity="0.12"/>
+            <circle cx="30" cy="100" r="0.6" fill="white" opacity="0.15"/>
+            <circle cx="50" cy="12" r="0.5" fill="white" opacity="0.12"/>
+
+            <g filter="url(#av-gl)">
+              {/* ── BODY (static) ── */}
+              <line x1="50" y1="55" x2="65" y2="42" stroke="url(#av-ln)" strokeWidth="1"/>
+              <line x1="50" y1="55" x2="42" y2="65" stroke="url(#av-ln)" strokeWidth="1"/>
+              <line x1="42" y1="65" x2="32" y2="58" stroke="url(#av-ln)" strokeWidth="0.8"/>
+              <line x1="50" y1="55" x2="55" y2="62" stroke="url(#av-ln)" strokeWidth="0.7" opacity="0.5"/>
+              <line x1="42" y1="65" x2="38" y2="80" stroke="url(#av-ln)" strokeWidth="0.9"/>
+              <line x1="42" y1="65" x2="48" y2="80" stroke="url(#av-ln)" strokeWidth="0.9"/>
+              <line x1="38" y1="80" x2="35" y2="98" stroke="url(#av-ln)" strokeWidth="0.7"/>
+              <line x1="48" y1="80" x2="52" y2="98" stroke="url(#av-ln)" strokeWidth="0.7"/>
+              <line x1="55" y1="62" x2="60" y2="80" stroke="url(#av-ln)" strokeWidth="0.9"/>
+              <line x1="60" y1="80" x2="62" y2="98" stroke="url(#av-ln)" strokeWidth="0.7"/>
+
+              {/* Body nodes */}
+              <circle cx="50" cy="55" r="2.5" fill="url(#av-sg)" opacity="0.8"/>
+              <circle cx="50" cy="55" r="1.2" fill="white" opacity="0.9"/>
+              <circle cx="42" cy="65" r="2.5" fill="url(#av-sg)" opacity="0.75"/>
+              <circle cx="42" cy="65" r="1.2" fill="white" opacity="0.85"/>
+              <circle cx="32" cy="58" r="1.8" fill="url(#av-sg)" opacity="0.55"/>
+              <circle cx="32" cy="58" r="0.9" fill="white" opacity="0.7"/>
+              <circle cx="55" cy="62" r="2" fill="url(#av-sg)" opacity="0.65"/>
+              <circle cx="55" cy="62" r="1" fill="white" opacity="0.8"/>
+              <circle cx="38" cy="80" r="1.8" fill="url(#av-sg)" opacity="0.6"/>
+              <circle cx="38" cy="80" r="0.9" fill="white" opacity="0.75"/>
+              <circle cx="48" cy="80" r="1.8" fill="url(#av-sg)" opacity="0.6"/>
+              <circle cx="48" cy="80" r="0.9" fill="white" opacity="0.75"/>
+              <circle cx="35" cy="98" r="1.3" fill="url(#av-sg)" opacity="0.45"/>
+              <circle cx="35" cy="98" r="0.7" fill="white" opacity="0.6"/>
+              <circle cx="52" cy="98" r="1.3" fill="url(#av-sg)" opacity="0.45"/>
+              <circle cx="52" cy="98" r="0.7" fill="white" opacity="0.6"/>
+              <circle cx="60" cy="80" r="1.8" fill="url(#av-sg)" opacity="0.6"/>
+              <circle cx="60" cy="80" r="0.9" fill="white" opacity="0.75"/>
+              <circle cx="62" cy="98" r="1.3" fill="url(#av-sg)" opacity="0.45"/>
+              <circle cx="62" cy="98" r="0.7" fill="white" opacity="0.6"/>
+
+              {/* ── FORELEG (animated — lifts) ── */}
+              <g style={{
+                transformOrigin: '55px 40px',
+                transform: `rotate(${isActive ? -25 : isLookingUp ? -15 : 0}deg)`,
+                transition: 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}>
+                <line x1="65" y1="42" x2="72" y2="55" stroke="url(#av-ln)" strokeWidth="0.9"/>
+                <line x1="72" y1="55" x2="75" y2="72" stroke="url(#av-ln)" strokeWidth="0.7"/>
+                <circle cx="72" cy="55" r="1.8" fill="url(#av-sg)" opacity="0.65"/>
+                <circle cx="72" cy="55" r="0.9" fill="white" opacity="0.8"/>
+                <circle cx="75" cy="72" r="1.5" fill="url(#av-sg)" opacity="0.5"/>
+                <circle cx="75" cy="72" r="0.8" fill="white" opacity="0.65"/>
+              </g>
+
+              {/* ── HEAD + NECK (animated — turns toward user) ── */}
+              <g style={{
+                transformOrigin: '38px 30px',
+                transform: `rotate(${isActive ? -15 : isLookingUp ? -10 : 0}deg) translateY(${isActive ? -3 : isLookingUp ? -2 : 0}px)`,
+                transition: 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}>
+                <line x1="65" y1="42" x2="72" y2="28" stroke="url(#av-ln)" strokeWidth="1.1"/>
+                <line x1="72" y1="28" x2="82" y2="22" stroke="url(#av-ln)" strokeWidth="1"/>
+                <line x1="72" y1="28" x2="68" y2="18" stroke="url(#av-ln)" strokeWidth="0.7"/>
+                <line x1="72" y1="28" x2="76" y2="16" stroke="url(#av-ln)" strokeWidth="0.7"/>
+                <line x1="76" y1="16" x2="80" y2="10" stroke="url(#av-ln)" strokeWidth="0.6" opacity="0.6"/>
+                <line x1="80" y1="10" x2="85" y2="12" stroke="url(#av-ln)" strokeWidth="0.5" opacity="0.4"/>
+
+                {/* Shoulder (bright) */}
+                <circle cx="65" cy="42" r="2.8" fill="url(#av-sg)" opacity="0.85"/>
+                <circle cx="65" cy="42" r="1.4" fill="white" opacity="0.95"/>
+                {/* Head base */}
+                <circle cx="72" cy="28" r="2.5" fill="url(#av-sg)" opacity="0.8"/>
+                <circle cx="72" cy="28" r="1.2" fill="white" opacity="0.9"/>
+                {/* Snout */}
+                <circle cx="82" cy="22" r="2.2" fill="url(#av-sg)" opacity="0.75"/>
+                <circle cx="82" cy="22" r="1.1" fill="white" opacity="0.85"/>
+                {/* Eye */}
+                <circle cx="76" cy="25" r="1" fill="white" opacity="0.8"/>
+                {/* Ears */}
+                <circle cx="68" cy="18" r="1.5" fill="url(#av-sg)" opacity="0.6"/>
+                <circle cx="68" cy="18" r="0.7" fill="white" opacity="0.7"/>
+                <circle cx="76" cy="16" r="1.5" fill="url(#av-sg)" opacity="0.6"/>
+                <circle cx="76" cy="16" r="0.7" fill="white" opacity="0.7"/>
+                {/* Horn */}
+                <circle cx="80" cy="10" r="1.2" fill="url(#av-sg)" opacity="0.5"/>
+                <circle cx="80" cy="10" r="0.6" fill="white" opacity="0.6"/>
+                <circle cx="85" cy="12" r="1" fill="url(#av-sg)" opacity="0.35"/>
+                <circle cx="85" cy="12" r="0.5" fill="white" opacity="0.45"/>
+              </g>
+            </g>
+          </svg>
 
           {/* Constellation twinkle sparkle */}
           <div
