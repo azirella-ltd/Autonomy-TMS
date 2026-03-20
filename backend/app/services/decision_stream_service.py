@@ -1167,8 +1167,8 @@ class DecisionStreamService:
         if enrichment_text:
             decision_context += "\n\n" + enrichment_text
 
-        # Build prompt
-        prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context)
+        # Build prompt with role-scoped instructions
+        prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context, powell_role)
 
         # Call LLM
         response_text = await self._call_llm(prompt)
@@ -2501,19 +2501,62 @@ class DecisionStreamService:
                 pass
             return []
 
+    # Role descriptions for Talk to Me system prompt
+    _ROLE_DESCRIPTIONS = {
+        "SC_VP": {
+            "title": "VP of Supply Chain",
+            "scope": "strategic network-wide performance, risk assessment, and executive KPIs",
+            "can_do": "review strategic decisions, assess network risk, ask about KPIs and trends, inspect any decision",
+            "cannot_do": "create orders, modify forecasts, change safety stock, approve plans, override agent decisions",
+        },
+        "EXECUTIVE": {
+            "title": "Supply Chain Executive",
+            "scope": "strategic insights, decision review, and risk assessment across the network",
+            "can_do": "review all decisions, inspect agent reasoning, ask about performance and trends",
+            "cannot_do": "create orders, modify forecasts, change safety stock, approve plans, override agent decisions",
+        },
+        "SOP_DIRECTOR": {
+            "title": "S&OP Director",
+            "scope": "S&OP policy parameters, tactical allocation directives, and demand/supply balancing",
+            "can_do": "review S&OP decisions, adjust policy parameters, issue strategic directives, inspect decisions",
+            "cannot_do": "create purchase orders, modify site-level inventory, manage users",
+        },
+        "MPS_MANAGER": {
+            "title": "MPS/Execution Manager",
+            "scope": "master production scheduling, capacity planning, and execution-level decisions",
+            "can_do": "review tactical decisions, approve/override execution decisions, manage worklists, create orders",
+            "cannot_do": "change S&OP policy parameters, modify network topology, manage users",
+        },
+        "DEMO_ALL": {
+            "title": "Demo User (All Access)",
+            "scope": "full platform visibility for demonstration purposes",
+            "can_do": "view all decisions at all levels, inspect reasoning, explore the platform",
+            "cannot_do": "nothing restricted in demo mode",
+        },
+    }
+
     def _build_chat_prompt(
         self,
         message: str,
         history: List[Dict[str, str]],
         rag_results: list,
         decision_context: str,
+        powell_role: Optional[str] = None,
     ) -> str:
-        """Build the LLM prompt with decision context, RAG, and conversation history."""
+        """Build the LLM prompt with decision context, RAG, role scope, and conversation history."""
         parts = []
 
-        # System prompt
-        parts.append(
+        # System prompt with role-scoped instructions
+        role_info = self._ROLE_DESCRIPTIONS.get(powell_role, {})
+        role_title = role_info.get("title", "Supply Chain Planner")
+        role_scope = role_info.get("scope", "supply chain planning and decision review")
+        role_can = role_info.get("can_do", "view and inspect decisions")
+        role_cannot = role_info.get("cannot_do", "")
+
+        system_prompt = (
             f"You are an AI supply chain planning assistant for {self.tenant_name}. "
+            f"The user is logged in as a **{role_title}**. "
+            f"Their scope is: {role_scope}. "
             "You help planners inspect and understand decisions made by Autonomy agents. "
             "IMPORTANT: You have access to live supply chain data (inventory, forecasts, policies, "
             "decision details) injected below. Use this actual data to answer questions with "
@@ -2521,6 +2564,19 @@ class DecisionStreamService:
             "the data is already here. Reference specific values from the data context. "
             "Keep answers concise and actionable."
         )
+
+        if role_cannot and powell_role not in ("DEMO_ALL", "MPS_MANAGER"):
+            system_prompt += (
+                f"\n\nROLE BOUNDARIES: The user CAN: {role_can}. "
+                f"The user CANNOT: {role_cannot}. "
+                "If the user asks you to perform an action outside their role, "
+                "politely explain what they CAN do and suggest who to contact for the action they requested. "
+                "For example: 'As a Supply Chain Executive, I can help you understand the inventory position "
+                "and agent decisions. To create a purchase order, your MPS Manager or Procurement team would need to action that.' "
+                "Never refuse to answer questions — only refuse to execute actions outside their scope."
+            )
+
+        parts.append(system_prompt)
 
         # Decision context
         if decision_context:
