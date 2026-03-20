@@ -1,83 +1,72 @@
 /**
- * AzirellaAvatar — Floating AI assistant avatar with voice support.
+ * AzirellaAvatar — Floating AI assistant with XPeng-style liveliness.
  *
- * Visual states driven by VoiceState:
- *   IDLE/PASSIVE — subtle periodic head-raise, gentle pulse ring
- *   WAKE         — bright glow, quick head-raise, chime plays
- *   LISTENING    — ears up, pulsing ring synced to voice, border glows
- *   PROCESSING   — thinking animation, rotating ring
- *   SPEAKING     — mouth moves (scale pulse), blue glow
+ * The gazelle constellation feels ALIVE:
+ *   - Always subtly moving (breathing sway, gentle float)
+ *   - Constellation nodes twinkle randomly
+ *   - Periodically looks up and toward the user
+ *   - Reacts expressively to voice states
  *
- * Click: opens Talk to Me popup
- * "Hey Autonomy": activates voice flow
+ * Built from the Azirella logo PNG with CSS transforms for animation.
+ * No "Azirella" text shown — just the constellation figure.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '../lib/utils/cn';
 import { VoiceState } from '../hooks/useVoiceAssistant';
 
-const STATE_STYLES = {
+// ── Per-state visual config ───────────────────────────────────────────────
+
+const STATES = {
   [VoiceState.IDLE]: {
-    borderColor: 'border-violet-500/30',
-    ringColor: 'ring-violet-400/10',
-    glowShadow: 'none',
-    rotate: 0,
-    scale: 1,
+    border: 'border-violet-500/30',
+    glow: 'none',
+    imgBrightness: 1.2,
   },
   [VoiceState.PASSIVE]: {
-    borderColor: 'border-violet-500/40',
-    ringColor: 'ring-violet-400/20',
-    glowShadow: 'none',
-    rotate: 0,
-    scale: 1,
+    border: 'border-violet-500/40',
+    glow: '0 0 8px rgba(139,92,246,0.2)',
+    imgBrightness: 1.3,
   },
   [VoiceState.WAKE]: {
-    borderColor: 'border-violet-400',
-    ringColor: 'ring-violet-400/40',
-    glowShadow: '0 0 20px rgba(139,92,246,0.5)',
-    rotate: -12,
-    scale: 1.15,
+    border: 'border-violet-400',
+    glow: '0 0 28px rgba(139,92,246,0.6)',
+    imgBrightness: 1.6,
   },
   [VoiceState.LISTENING]: {
-    borderColor: 'border-green-400',
-    ringColor: 'ring-green-400/30',
-    glowShadow: '0 0 24px rgba(74,222,128,0.4)',
-    rotate: -8,
-    scale: 1.08,
+    border: 'border-green-400',
+    glow: '0 0 28px rgba(74,222,128,0.5)',
+    imgBrightness: 1.5,
   },
   [VoiceState.PROCESSING]: {
-    borderColor: 'border-amber-400',
-    ringColor: 'ring-amber-400/30',
-    glowShadow: '0 0 16px rgba(251,191,36,0.4)',
-    rotate: -5,
-    scale: 1.05,
+    border: 'border-amber-400',
+    glow: '0 0 20px rgba(251,191,36,0.5)',
+    imgBrightness: 1.4,
   },
   [VoiceState.SPEAKING]: {
-    borderColor: 'border-blue-400',
-    ringColor: 'ring-blue-400/30',
-    glowShadow: '0 0 20px rgba(96,165,250,0.4)',
-    rotate: -6,
-    scale: 1.05,
+    border: 'border-blue-400',
+    glow: '0 0 24px rgba(96,165,250,0.5)',
+    imgBrightness: 1.5,
   },
 };
 
-const STATUS_COLORS = {
+const STATUS_DOT = {
   [VoiceState.IDLE]: 'bg-gray-400',
   [VoiceState.PASSIVE]: 'bg-emerald-400',
-  [VoiceState.WAKE]: 'bg-violet-400 animate-pulse',
-  [VoiceState.LISTENING]: 'bg-green-400 animate-pulse',
-  [VoiceState.PROCESSING]: 'bg-amber-400 animate-spin',
-  [VoiceState.SPEAKING]: 'bg-blue-400 animate-pulse',
+  [VoiceState.WAKE]: 'bg-violet-400',
+  [VoiceState.LISTENING]: 'bg-green-400',
+  [VoiceState.PROCESSING]: 'bg-amber-400',
+  [VoiceState.SPEAKING]: 'bg-blue-400',
 };
 
-const STATUS_LABELS = {
-  [VoiceState.IDLE]: '',
-  [VoiceState.PASSIVE]: '',
+const STATUS_LABEL = {
   [VoiceState.WAKE]: 'Heard you!',
-  [VoiceState.LISTENING]: 'Listening...',
-  [VoiceState.PROCESSING]: 'Thinking...',
-  [VoiceState.SPEAKING]: 'Speaking...',
+  [VoiceState.LISTENING]: 'Listening…',
+  [VoiceState.PROCESSING]: 'Thinking…',
+  [VoiceState.SPEAKING]: 'Speaking…',
 };
+
+// ── Component ─────────────────────────────────────────────────────────────
 
 const AzirellaAvatar = ({
   onClick,
@@ -87,172 +76,234 @@ const AzirellaAvatar = ({
   size = 80,
   className,
 }) => {
-  const [isIdleLooking, setIsIdleLooking] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-  const [speakPulse, setSpeakPulse] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [breathPhase, setBreathPhase] = useState(0);    // 0-360 continuous
+  const [isLookingUp, setIsLookingUp] = useState(false);
+  const [twinkle, setTwinkle] = useState(0);             // random sparkle seed
+  const [speakBeat, setSpeakBeat] = useState(false);
+  const frameRef = useRef(0);
 
-  // Periodic head-raise in passive/idle state
+  const isActive = ![VoiceState.IDLE, VoiceState.PASSIVE].includes(voiceState);
+  const cfg = STATES[voiceState] || STATES[VoiceState.IDLE];
+  const label = STATUS_LABEL[voiceState];
+  const showTranscript = voiceState === VoiceState.LISTENING && (transcript || interimTranscript);
+
+  // ── Breathing animation (continuous gentle sway) ────────────────────
   useEffect(() => {
-    if (voiceState !== VoiceState.PASSIVE && voiceState !== VoiceState.IDLE) {
-      setIsIdleLooking(false);
-      return;
-    }
-    const scheduleNext = () => {
+    let raf;
+    const tick = () => {
+      frameRef.current += 1;
+      // Slow sine wave — completes one cycle every ~6 seconds
+      setBreathPhase(frameRef.current * 0.5);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  // ── Periodic look-up (every 12-20s in passive/idle) ─────────────────
+  useEffect(() => {
+    if (isActive) { setIsLookingUp(false); return; }
+    const schedule = () => {
       const delay = 12000 + Math.random() * 8000;
       return setTimeout(() => {
-        setIsIdleLooking(true);
-        setTimeout(() => setIsIdleLooking(false), 2000 + Math.random() * 1000);
-        timerId = scheduleNext();
+        setIsLookingUp(true);
+        setTimeout(() => setIsLookingUp(false), 2500 + Math.random() * 1500);
+        tid = schedule();
       }, delay);
     };
-    let timerId = scheduleNext();
-    return () => clearTimeout(timerId);
-  }, [voiceState]);
+    let tid = schedule();
+    return () => clearTimeout(tid);
+  }, [isActive]);
 
-  // Speaking pulse (mouth movement simulation)
+  // ── Constellation twinkle (random sparkle every 2-4s) ───────────────
   useEffect(() => {
-    if (voiceState !== VoiceState.SPEAKING) {
-      setSpeakPulse(false);
-      return;
-    }
     const interval = setInterval(() => {
-      setSpeakPulse(p => !p);
-    }, 300);
+      setTwinkle(Math.random());
+    }, 2000 + Math.random() * 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Speaking beat pulse ─────────────────────────────────────────────
+  useEffect(() => {
+    if (voiceState !== VoiceState.SPEAKING) { setSpeakBeat(false); return; }
+    const interval = setInterval(() => setSpeakBeat(b => !b), 280);
     return () => clearInterval(interval);
   }, [voiceState]);
 
-  const styles = STATE_STYLES[voiceState] || STATE_STYLES[VoiceState.IDLE];
-  const isActive = voiceState !== VoiceState.IDLE && voiceState !== VoiceState.PASSIVE;
-  const showLabel = STATUS_LABELS[voiceState];
-  const showTranscript = voiceState === VoiceState.LISTENING && (transcript || interimTranscript);
+  // ── Compute transforms ──────────────────────────────────────────────
 
-  // Determine rotation — active states override idle animation
-  const rotation = isActive
-    ? styles.rotate
-    : isIdleLooking
-      ? -8
-      : isHovered
-        ? -3
-        : 0;
+  // Breathing: gentle vertical float + slight rotation
+  const breathY = Math.sin(breathPhase * Math.PI / 180) * 2;    // ±2px float
+  const breathR = Math.sin(breathPhase * 0.7 * Math.PI / 180) * 1.5; // ±1.5° sway
 
-  const scale = isActive
-    ? styles.scale * (speakPulse ? 1.03 : 1)
-    : isHovered
-      ? 1.1
-      : 1;
+  // Look-up: head raises, rotates toward user
+  const lookY = isLookingUp ? -5 : 0;
+  const lookR = isLookingUp ? -10 : 0;
+
+  // Active state transforms
+  const activeY = voiceState === VoiceState.WAKE ? -6
+    : voiceState === VoiceState.LISTENING ? -4
+    : voiceState === VoiceState.SPEAKING ? (speakBeat ? -2 : 0)
+    : 0;
+  const activeR = voiceState === VoiceState.WAKE ? -14
+    : voiceState === VoiceState.LISTENING ? -8
+    : voiceState === VoiceState.PROCESSING ? -5 + Math.sin(breathPhase * 2 * Math.PI / 180) * 3
+    : voiceState === VoiceState.SPEAKING ? -6
+    : 0;
+  const activeS = voiceState === VoiceState.WAKE ? 1.12
+    : voiceState === VoiceState.SPEAKING ? (speakBeat ? 1.06 : 1.02)
+    : isActive ? 1.05
+    : 1;
+
+  // Final composite
+  const finalY = isActive ? activeY : breathY + lookY;
+  const finalR = isActive ? activeR : breathR + lookR;
+  const finalS = isActive ? activeS : (hovered ? 1.08 : 1) + (isLookingUp ? 0.03 : 0);
+
+  // Twinkle overlay position (random sparkle point)
+  const twinkleX = 30 + twinkle * 40; // 30-70% from left
+  const twinkleY = 20 + (1 - twinkle) * 40; // 20-60% from top
 
   return (
     <div className={cn('fixed bottom-6 right-6 z-50', className)}>
-      {/* Transcript bubble (visible during listening) */}
+
+      {/* Transcript bubble */}
       {showTranscript && (
-        <div className="absolute bottom-full right-0 mb-2 max-w-64 bg-popover border border-border rounded-lg shadow-lg px-3 py-2 text-xs text-foreground animate-in fade-in slide-in-from-bottom-2">
+        <div className="absolute bottom-full right-0 mb-3 max-w-72 bg-popover border border-border rounded-xl shadow-xl px-3.5 py-2.5 text-xs text-foreground animate-in fade-in slide-in-from-bottom-2">
           {transcript && <span className="font-medium">{transcript}</span>}
-          {interimTranscript && (
-            <span className="text-muted-foreground italic"> {interimTranscript}</span>
-          )}
+          {interimTranscript && <span className="text-muted-foreground italic"> {interimTranscript}</span>}
         </div>
       )}
 
-      {/* Status label (wake/listening/processing/speaking) */}
-      {showLabel && (
-        <div className="absolute bottom-full right-0 mb-2 px-2.5 py-1 rounded-full text-[10px] font-medium bg-popover border border-border shadow-sm whitespace-nowrap animate-in fade-in">
-          {showLabel}
+      {/* Status label */}
+      {label && !showTranscript && (
+        <div className="absolute bottom-full right-0 mb-3 px-3 py-1.5 rounded-full text-[11px] font-medium bg-popover border border-border shadow-md whitespace-nowrap animate-in fade-in slide-in-from-bottom-1">
+          <span className={cn(
+            'inline-block w-1.5 h-1.5 rounded-full mr-1.5',
+            STATUS_DOT[voiceState],
+            isActive ? 'animate-pulse' : '',
+          )} />
+          {label}
         </div>
       )}
 
       {/* Avatar button */}
       <button
         onClick={onClick}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        className={cn(
-          'rounded-full shadow-lg hover:shadow-xl',
-          'transition-all duration-300 ease-out',
-          'focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2',
-        )}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        className="relative rounded-full focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2"
         style={{ width: size, height: size }}
         aria-label="Talk to Azirella"
-        title={isActive ? STATUS_LABELS[voiceState] : 'Talk to me'}
+        title={label || 'Talk to me'}
       >
-        {/* Outer ring — pulsing in active states */}
-        {(isActive || voiceState === VoiceState.PASSIVE) && (
-          <span
-            className={cn(
-              'absolute inset-0 rounded-full',
-              isActive ? 'animate-ping' : 'animate-ping',
-            )}
-            style={{
-              animationDuration: isActive ? '1.5s' : '3s',
-              backgroundColor: voiceState === VoiceState.LISTENING
-                ? 'rgba(74,222,128,0.15)'
-                : voiceState === VoiceState.WAKE
-                  ? 'rgba(139,92,246,0.2)'
-                  : voiceState === VoiceState.SPEAKING
-                    ? 'rgba(96,165,250,0.15)'
-                    : voiceState === VoiceState.PROCESSING
-                      ? 'rgba(251,191,36,0.15)'
-                      : 'rgba(139,92,246,0.1)',
-            }}
-          />
-        )}
+        {/* Outer pulse ring */}
+        <span
+          className="absolute inset-0 rounded-full animate-ping pointer-events-none"
+          style={{
+            animationDuration: isActive ? '1.2s' : '4s',
+            opacity: isActive ? 0.6 : 0.3,
+            backgroundColor: voiceState === VoiceState.LISTENING ? 'rgba(74,222,128,0.15)'
+              : voiceState === VoiceState.WAKE ? 'rgba(139,92,246,0.25)'
+              : voiceState === VoiceState.SPEAKING ? 'rgba(96,165,250,0.15)'
+              : voiceState === VoiceState.PROCESSING ? 'rgba(251,191,36,0.15)'
+              : 'rgba(139,92,246,0.08)',
+          }}
+        />
 
-        {/* Avatar container */}
+        {/* Main circle */}
         <div
           className={cn(
             'relative w-full h-full rounded-full overflow-hidden',
-            'bg-gradient-to-br from-purple-900 via-violet-800 to-indigo-900',
-            'border-2 transition-all duration-500',
-            styles.borderColor,
+            'bg-gradient-to-br from-purple-950 via-violet-900 to-indigo-950',
+            'border-2 shadow-lg',
+            cfg.border,
           )}
           style={{
-            transform: `rotate(${rotation}deg) scale(${scale})`,
-            transition: 'transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            boxShadow: styles.glowShadow,
+            transform: `translateY(${finalY}px) rotate(${finalR}deg) scale(${finalS})`,
+            transition: isActive
+              ? 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.4s ease'
+              : 'transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.6s ease',
+            boxShadow: cfg.glow,
           }}
         >
-          {/* Gazelle constellation — full body, "Azirella" text clipped out */}
+          {/* Gazelle constellation — full body, text clipped */}
           <img
             src="/Azirella_logo.png"
             alt=""
-            className="absolute pointer-events-none"
+            className="absolute pointer-events-none select-none"
             style={{
-              // Show full gazelle body — crop off right side (text "Azirella")
               width: '250%',
               height: '250%',
               top: '-40%',
               left: '-20%',
               objectFit: 'cover',
-              // Clip the right half where "Azirella" text is
               clipPath: 'inset(0 40% 0 0)',
-              filter: isActive ? 'brightness(1.5) contrast(1.2)' : 'brightness(1.3) contrast(1.1)',
-              transform: isActive
-                ? 'scale(1.05) translateY(-4px)'
-                : isIdleLooking
-                  ? 'scale(1.05) translateY(-4px)'
-                  : 'scale(1)',
-              transition: 'transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.5s ease',
+              filter: `brightness(${cfg.imgBrightness}) contrast(1.15)`,
+              transition: 'filter 0.5s ease',
             }}
             draggable={false}
           />
 
-          {/* Constellation sparkle overlay */}
+          {/* Constellation twinkle sparkle */}
+          <div
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              width: 4,
+              height: 4,
+              top: `${twinkleY}%`,
+              left: `${twinkleX}%`,
+              background: 'white',
+              boxShadow: '0 0 6px 2px rgba(255,255,255,0.8)',
+              opacity: 0.7 + twinkle * 0.3,
+              transition: 'opacity 0.3s ease, top 0.5s ease, left 0.5s ease',
+            }}
+          />
+          {/* Second sparkle at offset position */}
+          <div
+            className="absolute rounded-full pointer-events-none"
+            style={{
+              width: 3,
+              height: 3,
+              top: `${70 - twinkleY}%`,
+              left: `${60 - twinkleX + 20}%`,
+              background: 'rgba(167,139,250,0.9)',
+              boxShadow: '0 0 4px 1px rgba(167,139,250,0.6)',
+              opacity: 0.5 + (1 - twinkle) * 0.5,
+              transition: 'opacity 0.4s ease, top 0.6s ease, left 0.6s ease',
+            }}
+          />
+
+          {/* Gradient overlay — shifts with state */}
           <div
             className="absolute inset-0 rounded-full pointer-events-none"
             style={{
               background: isActive
-                ? 'radial-gradient(circle at 60% 30%, rgba(167,139,250,0.4) 0%, transparent 60%)'
-                : isIdleLooking
-                  ? 'radial-gradient(circle at 60% 30%, rgba(167,139,250,0.3) 0%, transparent 60%)'
-                  : 'radial-gradient(circle at 50% 50%, rgba(167,139,250,0.1) 0%, transparent 60%)',
-              transition: 'background 0.7s ease',
+                ? `radial-gradient(circle at 55% 30%, rgba(167,139,250,0.35) 0%, transparent 65%)`
+                : isLookingUp
+                  ? 'radial-gradient(circle at 55% 25%, rgba(167,139,250,0.25) 0%, transparent 60%)'
+                  : 'radial-gradient(circle at 50% 50%, rgba(167,139,250,0.08) 0%, transparent 60%)',
+              transition: 'background 0.8s ease',
             }}
           />
+
+          {/* Processing spinner ring */}
+          {voiceState === VoiceState.PROCESSING && (
+            <div
+              className="absolute inset-1 rounded-full border-2 border-transparent border-t-amber-400/60 pointer-events-none"
+              style={{
+                animation: 'spin 1.2s linear infinite',
+              }}
+            />
+          )}
         </div>
 
         {/* Status dot */}
         <span className={cn(
-          'absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white transition-colors',
-          STATUS_COLORS[voiceState] || 'bg-gray-400',
+          'absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white transition-colors duration-300',
+          STATUS_DOT[voiceState] || 'bg-gray-400',
+          isActive ? 'animate-pulse' : '',
         )} />
       </button>
     </div>
