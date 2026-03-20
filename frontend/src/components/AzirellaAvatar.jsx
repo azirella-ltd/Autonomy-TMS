@@ -84,7 +84,7 @@ const AzirellaAvatar = ({
   voiceState = VoiceState.IDLE,
   transcript = '',
   interimTranscript = '',
-  size = 56,
+  size = 80,
   className,
 }) => {
   const [isIdleLooking, setIsIdleLooking] = useState(false);
@@ -210,22 +210,25 @@ const AzirellaAvatar = ({
             boxShadow: styles.glowShadow,
           }}
         >
-          {/* Gazelle constellation image */}
+          {/* Gazelle constellation — full body, "Azirella" text clipped out */}
           <img
             src="/Azirella_logo.png"
-            alt="Azirella"
+            alt=""
             className="absolute pointer-events-none"
             style={{
-              width: '180%',
-              height: '180%',
-              top: '-15%',
-              left: '-45%',
+              // Show full gazelle body — crop off right side (text "Azirella")
+              width: '250%',
+              height: '250%',
+              top: '-40%',
+              left: '-20%',
               objectFit: 'cover',
+              // Clip the right half where "Azirella" text is
+              clipPath: 'inset(0 40% 0 0)',
               filter: isActive ? 'brightness(1.5) contrast(1.2)' : 'brightness(1.3) contrast(1.1)',
               transform: isActive
-                ? `scale(1.05) translateY(-3px)`
+                ? 'scale(1.05) translateY(-4px)'
                 : isIdleLooking
-                  ? 'scale(1.05) translateY(-3px)'
+                  ? 'scale(1.05) translateY(-4px)'
                   : 'scale(1)',
               transition: 'transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.5s ease',
             }}
