@@ -49,6 +49,65 @@ function CompositeScoreBadge({ score }) {
   );
 }
 
+/**
+ * Formats LLM-generated narrative text into readable HTML.
+ * Splits numbered items (1. 2. 3.) into a proper list and handles
+ * bullet points, markdown bold, and key-value patterns.
+ */
+function FormattedNarrative({ content }) {
+  if (!content) return null;
+  const text = String(content);
+
+  // Split on numbered patterns like "1. " "2. " etc. (with lookbehind for sentence boundary)
+  const numberedPattern = /(?:^|\s)(\d{1,2})\.\s+/g;
+  const hasNumbers = numberedPattern.test(text);
+
+  if (hasNumbers) {
+    // Split into numbered items
+    const items = text.split(/(?:^|\s)\d{1,2}\.\s+/).filter(s => s.trim());
+    return (
+      <ol className="space-y-2 list-decimal list-outside ml-5">
+        {items.map((item, i) => (
+          <li key={i} className="pl-1">
+            <span dangerouslySetInnerHTML={{
+              __html: item.trim()
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/→/g, ' → ')
+                .replace(/(DANGER|CRITICAL|WARNING)/g, '<span class="text-red-600 font-semibold">$1</span>')
+                .replace(/(unchanged)/gi, '<span class="text-muted-foreground">$1</span>')
+            }} />
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
+  // No numbered list — render as paragraphs, split on double newline or period-space-capital
+  const paragraphs = text.split(/\n\n+/).filter(s => s.trim());
+  if (paragraphs.length > 1) {
+    return (
+      <div className="space-y-2">
+        {paragraphs.map((p, i) => (
+          <p key={i} dangerouslySetInnerHTML={{
+            __html: p.trim()
+              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+              .replace(/(DANGER|CRITICAL|WARNING)/g, '<span class="text-red-600 font-semibold">$1</span>')
+          }} />
+        ))}
+      </div>
+    );
+  }
+
+  // Single block — just render with basic formatting
+  return (
+    <p dangerouslySetInnerHTML={{
+      __html: text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/(DANGER|CRITICAL|WARNING)/g, '<span class="text-red-600 font-semibold">$1</span>')
+    }} />
+  );
+}
+
 function NarrativeSection({ sectionKey, content }) {
   const [expanded, setExpanded] = useState(true);
   const meta = SECTION_META[sectionKey] || { label: sectionKey, icon: BarChart3, color: 'text-gray-600' };
@@ -67,8 +126,8 @@ function NarrativeSection({ sectionKey, content }) {
         <span className="font-medium">{meta.label}</span>
       </button>
       {expanded && (
-        <div className="px-4 pb-4 text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-          {content}
+        <div className="px-4 pb-4 text-sm text-muted-foreground leading-relaxed">
+          <FormattedNarrative content={content} />
         </div>
       )}
     </div>

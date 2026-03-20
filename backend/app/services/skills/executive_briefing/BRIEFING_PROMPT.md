@@ -85,7 +85,7 @@ Respond with JSON only. No markdown wrapping. No explanation outside the JSON.
   "title": "Weekly Strategy Briefing — [date or key theme]",
   "executive_summary": "2-3 sentence headline capturing the most important development and its implication.",
   "narrative": {
-    "whats_changed": "REQUIRED. Delta summary vs the previous briefing. List 3-7 specific metric movements with direction and magnitude (e.g., 'OTIF: 94.2% → 95.8% (+1.6pp)', 'ATP shortfall alerts: 3 → 0 (resolved)', 'Touchless rate: 71% → 74% (+3pp)'). If this is the first briefing, state 'First briefing — no prior period for comparison.' Lead with the highest-impact change.",
+    "whats_changed": "REQUIRED. Delta summary vs the previous briefing. FORMATTING: Use numbered items separated by newlines (1. ... \\n2. ... \\n3. ...). List 3-7 specific metric movements sorted by impact, each on its own line with direction and magnitude. Format: 'N. MetricName: oldValue → newValue (delta, STATUS)'. Example:\\n1. OTIF: 94.2% → 95.8% (+1.6pp, on track)\\n2. ATP shortfall alerts: 3 → 0 (resolved)\\n3. Touchless rate: 71% → 74% (+3pp)\\nIf this is the first briefing, state 'First briefing — no prior period for comparison.' Lead with the highest-impact change. Keep each item to ONE line — do not combine multiple metrics in one item.",
     "situation_overview": "What changed this period? Key developments in 3-5 sentences.",
     "scorecard_narrative": "BSC tier 1/2 trends with specific metric values. What's improving, what's declining, and why?",
     "agent_performance_digest": "AI trust trajectory: touchless rate trend, override quality, agent vs planner scores. Are we gaining or losing confidence in AI?",
