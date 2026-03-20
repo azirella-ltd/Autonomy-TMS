@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Sparkles,
   Inbox,
+  ChevronDown,
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Input } from '../components/common';
 import AlertBanner from '../components/decision-stream/AlertBanner';
@@ -280,23 +281,26 @@ const DecisionStream = () => {
         </div>
         <div className="flex items-center gap-3">
           {configs.length > 0 && (
-            <select
-              className="border rounded-md px-3 py-2 text-sm bg-background max-w-[240px] truncate"
-              value={selectedConfigId || ''}
-              onChange={(e) =>
-                setSelectedConfigId(
-                  e.target.value ? parseInt(e.target.value, 10) : null
-                )
-              }
-              title={configs.find(c => c.id === selectedConfigId)?.name || 'All Configs'}
-            >
-              <option value="">All Configs</option>
-              {configs.map((cfg) => (
-                <option key={cfg.id} value={cfg.id}>
-                  {cfg.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative max-w-[280px]">
+              <select
+                className="appearance-none border rounded-md pl-3 pr-8 py-2 text-sm bg-background w-full truncate cursor-pointer"
+                value={selectedConfigId || ''}
+                onChange={(e) =>
+                  setSelectedConfigId(
+                    e.target.value ? parseInt(e.target.value, 10) : null
+                  )
+                }
+                title={configs.find(c => c.id === selectedConfigId)?.name || 'All Configs'}
+              >
+                <option value="">All Configs</option>
+                {configs.map((cfg) => (
+                  <option key={cfg.id} value={cfg.id}>
+                    {cfg.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            </div>
           )}
           <Button
             variant="outline"

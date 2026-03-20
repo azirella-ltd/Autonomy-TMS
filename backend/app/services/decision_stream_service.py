@@ -373,18 +373,24 @@ def _likelihood_label(score: Optional[float]) -> Optional[str]:
     return "Never"
 
 
-def _humanize_ids(text: str, product_names: Dict[str, str]) -> str:
-    """Replace raw product IDs (e.g. CFG22_RD005) with human names in text.
+def _humanize_ids(text: str, product_names: Dict[str, str], site_names: Dict[str, str] = None) -> str:
+    """Replace raw product IDs and site IDs with human names in text.
 
-    Scans for every product ID key and replaces with the short name.
+    Scans for every product/site ID key and replaces with the short name.
     Longer IDs are replaced first to avoid partial-match issues.
     """
-    if not text or not product_names:
+    if not text:
         return text
-    # Sort by key length descending to avoid partial replacements
-    for pid, name in sorted(product_names.items(), key=lambda x: -len(x[0])):
-        if pid in text:
-            text = text.replace(pid, name)
+    # Replace product IDs
+    if product_names:
+        for pid, name in sorted(product_names.items(), key=lambda x: -len(x[0])):
+            if pid in text:
+                text = text.replace(pid, name)
+    # Replace site IDs (e.g. "1710" → "Plant 1 US")
+    if site_names:
+        for sid, name in sorted(site_names.items(), key=lambda x: -len(x[0])):
+            if sid in text:
+                text = text.replace(sid, name)
     return text
 
 
@@ -424,13 +430,17 @@ def _build_decision_summary(decision, decision_type: str, name_cache: dict = Non
         if parts[0].startswith("CFG"):
             product = parts[1]
 
+    sites = cache.get("sites", {})
+
     if decision_type == "atp":
         qty = _fmt_qty(getattr(decision, "requested_qty", None))
         return f"ATP: Fulfill {qty} units of {product} at {location}"
     elif decision_type == "rebalancing":
         qty = _fmt_qty(getattr(decision, "recommended_qty", None))
-        src = getattr(decision, "from_site", "?")
-        dest = getattr(decision, "to_site", "?")
+        raw_src = str(getattr(decision, "from_site", "?"))
+        raw_dest = str(getattr(decision, "to_site", "?"))
+        src = sites.get(raw_src, raw_src)
+        dest = sites.get(raw_dest, raw_dest)
         return f"Rebalance: Transfer {qty} of {product} from {src} to {dest}"
     elif decision_type == "po_creation":
         qty = _fmt_qty(getattr(decision, "recommended_qty", None))
@@ -445,8 +455,10 @@ def _build_decision_summary(decision, decision_type: str, name_cache: dict = Non
         return f"MO {dt}: {product} at {location}"
     elif decision_type == "to_execution":
         dt = getattr(decision, "decision_type", "release")
-        src = getattr(decision, "source_site_id", None) or location
-        dest = getattr(decision, "dest_site_id", None) or ""
+        raw_src = str(getattr(decision, "source_site_id", None) or raw_location)
+        raw_dest = str(getattr(decision, "dest_site_id", None) or "")
+        src = sites.get(raw_src, raw_src)
+        dest = sites.get(raw_dest, raw_dest)
         if src and dest:
             return f"TO {dt}: {product} from {src} to {dest}"
         return f"TO {dt}: {product} at {src or dest or location}"
@@ -805,7 +817,7 @@ class DecisionStreamService:
                     _DIGEST_CACHE.pop(cache_key, None)
 
         # 1. Collect pending decisions from all tables (TRM + GNN + governance)
-        decisions, product_names = await self._collect_pending_decisions(
+        decisions, product_names, site_names = await self._collect_pending_decisions(
             config_id, powell_role, level_override=level_override,
         )
 
@@ -827,7 +839,7 @@ class DecisionStreamService:
             if force_refresh:
                 # Explicit refresh: user is willing to wait
                 digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
-                digest_text = _humanize_ids(digest_text, product_names)
+                digest_text = _humanize_ids(digest_text, product_names, site_names)
                 if digest_text and config_id:
                     await self._persist_digest(
                         config_id, powell_role, digest_text, decisions, alerts,
@@ -837,7 +849,7 @@ class DecisionStreamService:
                 digest_text = self._build_quick_digest(decisions)
                 asyncio.create_task(
                     self._background_synthesize(
-                        config_id, powell_role, decisions, alerts, product_names, cache_key,
+                        config_id, powell_role, decisions, alerts, product_names, site_names, cache_key,
                     )
                 )
 
@@ -906,12 +918,13 @@ class DecisionStreamService:
         decisions: List[Dict[str, Any]],
         alerts: List[Dict[str, Any]],
         product_names: Dict[str, str],
+        site_names: Dict[str, str],
         cache_key: str,
     ):
         """Run LLM digest synthesis in the background and update caches."""
         try:
             digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
-            digest_text = _humanize_ids(digest_text, product_names)
+            digest_text = _humanize_ids(digest_text, product_names, site_names)
             if digest_text and config_id:
                 try:
                     from app.db.session import async_session_factory
@@ -1195,7 +1208,7 @@ class DecisionStreamService:
         config_id: Optional[int] = None,
         powell_role: Optional[str] = None,
         level_override: Optional[str] = None,
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, str], Dict[str, str]]:
         """Query powell_*_decisions tables + gnn_directive_reviews + governance sources.
 
         Applies level-based filtering:
@@ -1206,7 +1219,7 @@ class DecisionStreamService:
         5. level_override: if provided, restricts to a single level (drill-down)
 
         Returns:
-            (decisions, product_names) — product_names maps product_id → short name.
+            (decisions, product_names, site_names) — maps IDs → display names.
         """
         # Level-based role filtering (replaces flat ROLE_RELEVANCE)
         allowed_levels, type_filter, escalation_from = _get_role_filter(powell_role, level_override)
@@ -1402,7 +1415,14 @@ class DecisionStreamService:
                         "id": row.id,
                         "decision_type": type_key,
                         "decision_level": DECISION_LEVEL.get(type_key, "execution"),
-                        "summary": _humanize_ids(_build_decision_summary(row, type_key), product_names),
+                        "summary": _humanize_ids(
+                            _build_decision_summary(
+                                row, type_key,
+                                name_cache={"products": product_names, "sites": site_names},
+                            ),
+                            product_names,
+                            site_names,
+                        ),
                         "product_id": pid,
                         "product_name": product_names.get(str(pid)) if pid else None,
                         "site_id": site_id,
@@ -1419,8 +1439,8 @@ class DecisionStreamService:
                         "expected_benefit": raw_benefit if raw_benefit > 0 else None,
                         "economic_impact": raw_benefit if raw_benefit > 0 else None,
                         "reason": _get_reason(row, type_key),
-                        "decision_reasoning": _humanize_ids(raw_reasoning, product_names) if raw_reasoning else None,
-                        "suggested_action": _humanize_ids(_get_suggested_action(row, type_key), product_names),
+                        "decision_reasoning": _humanize_ids(raw_reasoning, product_names, site_names) if raw_reasoning else None,
+                        "suggested_action": _humanize_ids(_get_suggested_action(row, type_key), product_names, site_names),
                         "deep_link": DEEP_LINK_MAP.get(type_key, "/insights/actions"),
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                         "editable_values": _get_editable_values(row, type_key),
@@ -1681,7 +1701,7 @@ class DecisionStreamService:
                     pass
             all_decisions = filtered
 
-        return all_decisions, product_names
+        return all_decisions, product_names, site_names
 
     async def _get_pegging_chain(
         self, config_id: int, product_id: str, site_id: Optional[str] = None,
@@ -2460,7 +2480,7 @@ class DecisionStreamService:
     ) -> str:
         """Get a brief text summary of pending decisions for chat context injection."""
         try:
-            decisions, _pnames = await self._collect_pending_decisions(config_id, powell_role)
+            decisions, _pnames, _snames = await self._collect_pending_decisions(config_id, powell_role)
             if not decisions:
                 return "No recent agent decisions."
             summaries = [d["summary"] for d in decisions[:_DIGEST_SUMMARY_MAX_DECISIONS]]
