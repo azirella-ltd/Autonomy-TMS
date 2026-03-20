@@ -94,10 +94,27 @@ const WorkspaceShell = () => {
       useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
     }
 
-    // DEMO_ALL gets Strategy Briefing too
-    if (powellRole === 'DEMO_ALL' &&
-        !tabs.find((t) => t.path === '/strategy-briefing')) {
-      useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
+    // DEMO_ALL gets Strategy Briefing + a "Full Functionality" tab with full sidebar
+    if (powellRole === 'DEMO_ALL') {
+      if (!tabs.find((t) => t.path === '/strategy-briefing')) {
+        useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
+      }
+      const FULL_TAB_ID = 'tab-full-functionality';
+      if (!tabs.find((t) => t.id === FULL_TAB_ID)) {
+        useTabStore.setState((s) => ({
+          tabs: [
+            ...s.tabs,
+            {
+              id: FULL_TAB_ID,
+              path: '/executive-dashboard',
+              label: 'Full Functionality',
+              pinned: false,
+              closeable: true,
+              scrollY: 0,
+            },
+          ],
+        }));
+      }
     }
   }, [user]);
 
@@ -174,9 +191,11 @@ const WorkspaceShell = () => {
     return () => window.removeEventListener('keydown', handler);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Is the active tab an admin page? Show sidebar inside that tab.
+  // Is the active tab one that shows a sidebar?
   const activeTab = getActiveTab();
-  const isAdminTab = activeTab?.path?.startsWith('/admin') ||
+  const isFullFunctionalityTab = activeTab?.id === 'tab-full-functionality';
+  const isAdminTab = isFullFunctionalityTab ||
+                     activeTab?.path?.startsWith('/admin') ||
                      activeTab?.path?.startsWith('/system') ||
                      activeTab?.path?.startsWith('/deployment') ||
                      activeTab?.id === ADMIN_TAB_ID;
@@ -213,7 +232,7 @@ const WorkspaceShell = () => {
         <CapabilityAwareSidebar
           open={sidebarOpen}
           onToggle={handleSidebarToggle}
-          adminOnly={user?.powell_role !== 'DEMO_ALL'}
+          adminOnly={!isFullFunctionalityTab && user?.powell_role !== 'DEMO_ALL'}
         />
       )}
 

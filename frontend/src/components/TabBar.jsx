@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, X, Sparkles, Settings } from 'lucide-react';
+import { Plus, X, Sparkles, Settings, LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useTabStore from '../stores/useTabStore';
 import NewTabPalette from './NewTabPalette';
@@ -79,6 +79,7 @@ const TabBar = () => {
               {/* Tab icon */}
               {tab.pinned && <Sparkles className="h-3 w-3 text-violet-500 flex-shrink-0" />}
               {tab.id === 'tab-administration' && <Settings className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+              {tab.id === 'tab-full-functionality' && <LayoutGrid className="h-3 w-3 text-blue-500 flex-shrink-0" />}
 
               {/* Label */}
               <span className="truncate capitalize">{tab.label}</span>
