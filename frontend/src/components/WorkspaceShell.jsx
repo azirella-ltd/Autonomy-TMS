@@ -57,16 +57,43 @@ const WorkspaceShell = () => {
     sessionStorage.setItem('autonomy-tabs-user', String(user.id));
   }, [user]);
 
-  // ── Auto-open Administration tab for tenant admins / system admins ────
+  // ── Auto-open role-based tabs ───────────────────────────────────────
   useEffect(() => {
     if (adminTabOpened.current || !user) return;
+    adminTabOpened.current = true;
+
     const isTenantAdm = checkIsTenantAdmin(user);
     const isSysAdm = isSystemAdmin(user);
+    const powellRole = user.powell_role;
+    const currentTabs = useTabStore.getState().tabs;
+
+    // DEMO_ALL → Decision Stream + Full Functionality (NO admin tab)
+    if (powellRole === 'DEMO_ALL') {
+      if (!currentTabs.find((t) => t.path === '/strategy-briefing')) {
+        useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
+      }
+      if (!currentTabs.find((t) => t.id === 'tab-full-functionality')) {
+        useTabStore.setState((s) => ({
+          tabs: [
+            ...s.tabs,
+            {
+              id: 'tab-full-functionality',
+              path: '/executive-dashboard',
+              label: 'Full Functionality',
+              pinned: false,
+              closeable: true,
+              scrollY: 0,
+            },
+          ],
+        }));
+      }
+      return; // Skip admin tab for DEMO_ALL
+    }
+
+    // Tenant admin / System admin → Decision Stream + Administration
     if (isTenantAdm || isSysAdm) {
       const adminPath = isSysAdm ? '/admin/tenants' : '/admin';
-      // Only open if not already present
-      const existing = useTabStore.getState().tabs.find((t) => t.id === ADMIN_TAB_ID);
-      if (!existing) {
+      if (!currentTabs.find((t) => t.id === ADMIN_TAB_ID)) {
         useTabStore.setState((s) => ({
           tabs: [
             ...s.tabs,
@@ -81,39 +108,13 @@ const WorkspaceShell = () => {
           ],
         }));
       }
-      adminTabOpened.current = true;
+      return;
     }
 
-    // ── Auto-open role-specific tabs ──────────────────────────────────
-    const powellRole = user.powell_role;
-    const tabs = useTabStore.getState().tabs;
-
-    // Executives get Strategy Briefing
-    if ((powellRole === 'SC_VP' || powellRole === 'EXECUTIVE') &&
-        !tabs.find((t) => t.path === '/strategy-briefing')) {
-      useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
-    }
-
-    // DEMO_ALL gets Strategy Briefing + a "Full Functionality" tab with full sidebar
-    if (powellRole === 'DEMO_ALL') {
-      if (!tabs.find((t) => t.path === '/strategy-briefing')) {
+    // Executives → Decision Stream + Strategy Briefing
+    if (powellRole === 'SC_VP' || powellRole === 'EXECUTIVE') {
+      if (!currentTabs.find((t) => t.path === '/strategy-briefing')) {
         useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
-      }
-      const FULL_TAB_ID = 'tab-full-functionality';
-      if (!tabs.find((t) => t.id === FULL_TAB_ID)) {
-        useTabStore.setState((s) => ({
-          tabs: [
-            ...s.tabs,
-            {
-              id: FULL_TAB_ID,
-              path: '/executive-dashboard',
-              label: 'Full Functionality',
-              pinned: false,
-              closeable: true,
-              scrollY: 0,
-            },
-          ],
-        }));
       }
     }
   }, [user]);
