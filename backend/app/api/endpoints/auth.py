@@ -684,6 +684,127 @@ async def read_user(
 import os
 _DEMO_EMAIL = os.environ.get("DEMO_USER_EMAIL", "exec@distdemo.com")
 _DEMO_TOKEN_EXPIRY_MINUTES = int(os.environ.get("DEMO_TOKEN_EXPIRY_MINUTES", "5"))
+_DEMO_MAX_CONCURRENT = int(os.environ.get("DEMO_MAX_CONCURRENT", "10"))
+_DEMO_SESSION_TIMEOUT_MINUTES = int(os.environ.get("DEMO_SESSION_TIMEOUT_MINUTES", "30"))
+_DEMO_ASSUMED_DURATION_MINUTES = int(os.environ.get("DEMO_ASSUMED_DURATION_MINUTES", "20"))
+_DEMO_MAX_SESSION_MINUTES = int(os.environ.get("DEMO_MAX_SESSION_MINUTES", "30"))
+_DEMO_COOLDOWN_MINUTES = int(os.environ.get("DEMO_COOLDOWN_MINUTES", "60"))
+
+
+async def _get_active_demo_sessions(db: AsyncSession) -> list:
+    """Return active demo sessions (activity within the timeout window)."""
+    from sqlalchemy import select, and_
+    from app.models.session import UserSession
+    from app.models.user import User
+
+    cutoff = datetime.utcnow() - timedelta(minutes=_DEMO_SESSION_TIMEOUT_MINUTES)
+    stmt = (
+        select(UserSession)
+        .join(User, UserSession.user_id == User.id)
+        .where(
+            and_(
+                User.email == _DEMO_EMAIL,
+                UserSession.last_activity >= cutoff,
+                UserSession.revoked == False,  # noqa: E712
+            )
+        )
+        .order_by(UserSession.last_activity.asc())
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+@router.get("/demo-capacity")
+async def demo_capacity(db: AsyncSession = Depends(get_db)):
+    """Check demo session availability.
+
+    Returns current active session count, max allowed, queue position,
+    and estimated wait time. Used by demo-welcome.html to show queue UI.
+    """
+    sessions = await _get_active_demo_sessions(db)
+    active_count = len(sessions)
+    available = active_count < _DEMO_MAX_CONCURRENT
+
+    # Estimate wait: oldest session's remaining time
+    estimated_wait_minutes = 0
+    queue_position = 0
+    if not available:
+        queue_position = 1  # They'd be next in line
+        if sessions:
+            oldest = sessions[0]
+            elapsed = (datetime.utcnow() - oldest.last_activity).total_seconds() / 60
+            remaining = max(0, _DEMO_ASSUMED_DURATION_MINUTES - elapsed)
+            estimated_wait_minutes = round(remaining)
+
+    return {
+        "active": active_count,
+        "max": _DEMO_MAX_CONCURRENT,
+        "available": available,
+        "queue_position": queue_position,
+        "estimated_wait_minutes": estimated_wait_minutes,
+        "session_timeout_minutes": _DEMO_SESSION_TIMEOUT_MINUTES,
+    }
+
+
+@router.get("/demo-session-check")
+async def demo_session_check(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Check if the current demo session should be expired.
+
+    Called periodically by the frontend. Returns time remaining and
+    whether the session should be terminated (30-min max, 60-min cooldown).
+    """
+    if current_user.email != _DEMO_EMAIL:
+        return {"demo_user": False}
+
+    from sqlalchemy import select, and_
+    from app.models.session import UserSession
+
+    # Find the newest active session for this demo user
+    stmt = (
+        select(UserSession)
+        .where(
+            and_(
+                UserSession.user_id == current_user.id,
+                UserSession.revoked == False,  # noqa: E712
+            )
+        )
+        .order_by(UserSession.created_at.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    session = result.scalar_one_or_none()
+
+    if not session:
+        return {"demo_user": True, "expired": True, "reason": "no_session"}
+
+    elapsed_minutes = (datetime.utcnow() - session.created_at).total_seconds() / 60
+    remaining_minutes = max(0, _DEMO_MAX_SESSION_MINUTES - elapsed_minutes)
+
+    if elapsed_minutes >= _DEMO_MAX_SESSION_MINUTES:
+        # Revoke the session
+        session.revoked = True
+        await db.commit()
+        return {
+            "demo_user": True,
+            "expired": True,
+            "reason": "time_limit",
+            "max_minutes": _DEMO_MAX_SESSION_MINUTES,
+            "cooldown_minutes": _DEMO_COOLDOWN_MINUTES,
+            "can_rejoin_at": (
+                session.created_at + timedelta(minutes=_DEMO_MAX_SESSION_MINUTES + _DEMO_COOLDOWN_MINUTES)
+            ).isoformat(),
+        }
+
+    return {
+        "demo_user": True,
+        "expired": False,
+        "elapsed_minutes": round(elapsed_minutes),
+        "remaining_minutes": round(remaining_minutes),
+        "max_minutes": _DEMO_MAX_SESSION_MINUTES,
+    }
 
 
 @router.get("/demo-token")
@@ -712,17 +833,37 @@ async def generate_demo_token():
 
 
 @router.get("/demo-token-redirect")
-async def demo_token_redirect():
+async def demo_token_redirect(db: AsyncSession = Depends(get_db)):
     """One-click demo access — generates token and redirects to auto-login.
 
     The website links directly to this URL:
       <a href="https://demo.azirella.com/api/v1/auth/demo-token-redirect">Try Demo</a>
 
     Generates a 5-minute demo token and redirects to /auto-login?token=<jwt>.
+    Checks capacity before issuing token. Returns 429 if demo is full.
     No password ever appears in the URL.
     """
     import jwt as pyjwt
-    from fastapi.responses import RedirectResponse
+    from fastapi.responses import RedirectResponse, JSONResponse
+
+    # Check capacity
+    sessions = await _get_active_demo_sessions(db)
+    if len(sessions) >= _DEMO_MAX_CONCURRENT:
+        oldest = sessions[0] if sessions else None
+        elapsed = 0
+        if oldest:
+            elapsed = (datetime.utcnow() - oldest.last_activity).total_seconds() / 60
+        remaining = max(1, round(_DEMO_ASSUMED_DURATION_MINUTES - elapsed))
+        return JSONResponse(
+            status_code=429,
+            content={
+                "detail": "Demo is at capacity",
+                "active": len(sessions),
+                "max": _DEMO_MAX_CONCURRENT,
+                "estimated_wait_minutes": remaining,
+            },
+        )
+
     payload = {
         "sub": _DEMO_EMAIL,
         "purpose": "demo_auto_login",

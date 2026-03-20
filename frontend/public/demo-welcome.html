@@ -262,6 +262,22 @@
     </p>
   </div>
 
+  <!-- Queue Banner (hidden by default, shown when demo is at capacity) -->
+  <div class="card" id="queueBanner" style="display: none; border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.06);">
+    <h2 style="color: #fbbf24;"><span class="icon">⏳</span> Demo at Capacity</h2>
+    <p>
+      The live demo currently has <strong id="queueActive">10</strong> of <strong id="queueMax">10</strong>
+      concurrent users. Each session is limited to 30 minutes.
+    </p>
+    <p style="margin-top: 8px;">
+      <strong>Estimated wait:</strong> <span id="queueWait" style="color: #fbbf24;">~5 minutes</span>
+    </p>
+    <p style="margin-top: 8px; font-size: 13px; color: #94a3b8;">
+      This page will automatically refresh when a slot opens. You can also fill in your
+      details below and we'll start the demo as soon as capacity is available.
+    </p>
+  </div>
+
   <!-- Lead Capture Form -->
   <div class="card" id="leadForm" style="border-color: rgba(124, 58, 237, 0.3);">
     <h2><span class="icon">✉️</span> Get Started</h2>
@@ -320,12 +336,54 @@
   var GOOGLE_SHEET_WEBHOOK = '';  // e.g., 'https://script.google.com/macros/s/AKfycb.../exec'
   // ──────────────────────────────────────────────────────────────
 
+  var _demoAvailable = true;
+  var _capacityPollInterval = null;
+
   // Cookie-based skip: if they checked "Don't show again" AND already submitted, redirect immediately
   (function() {
     if (document.cookie.includes('autonomy_demo_skip=1') && document.cookie.includes('autonomy_demo_lead=1')) {
       window.location.href = '/api/v1/auth/demo-token-redirect';
     }
   })();
+
+  // Check demo capacity on load and poll every 30s if full
+  function checkCapacity() {
+    fetch('/api/v1/auth/demo-capacity')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var banner = document.getElementById('queueBanner');
+        if (!data.available) {
+          _demoAvailable = false;
+          document.getElementById('queueActive').textContent = data.active;
+          document.getElementById('queueMax').textContent = data.max;
+          document.getElementById('queueWait').textContent = '~' + data.estimated_wait_minutes + ' minutes';
+          banner.style.display = 'block';
+          var btn = document.getElementById('submitBtn');
+          if (btn) {
+            btn.textContent = 'Join Queue →';
+            btn.style.background = 'linear-gradient(135deg, #b45309, #92400e)';
+          }
+          // Poll every 30s while full
+          if (!_capacityPollInterval) {
+            _capacityPollInterval = setInterval(checkCapacity, 30000);
+          }
+        } else {
+          _demoAvailable = true;
+          banner.style.display = 'none';
+          var btn = document.getElementById('submitBtn');
+          if (btn && btn.textContent === 'Join Queue →') {
+            btn.textContent = 'Start Demo →';
+            btn.style.background = 'linear-gradient(135deg, #7c3aed, #6d28d9)';
+          }
+          if (_capacityPollInterval) {
+            clearInterval(_capacityPollInterval);
+            _capacityPollInterval = null;
+          }
+        }
+      })
+      .catch(function() { /* If capacity check fails, allow through */ });
+  }
+  checkCapacity();
 
   function handleSkip(checked) {
     if (checked) {
@@ -348,11 +406,6 @@
     if (tld.length < 2) return 'Email domain appears incomplete.';
     // No spaces
     if (email.indexOf(' ') !== -1) return 'Email address cannot contain spaces.';
-    // Block obvious personal domains for lead quality
-    var freeProviders = ['gmail.com','yahoo.com','hotmail.com','outlook.com','aol.com','icloud.com','mail.com','protonmail.com','zoho.com','yandex.com','gmx.com','live.com'];
-    if (freeProviders.indexOf(domain.toLowerCase()) !== -1) {
-      return 'Please use your work email address.';
-    }
     return null;
   }
 
