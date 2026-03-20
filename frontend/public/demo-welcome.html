@@ -252,9 +252,9 @@
     <h2><span class="icon">📊</span> The Decision Stream</h2>
     <p>Your landing page shows all decisions made by Autonomy's AI agents:</p>
     <ul>
-      <li><strong>Strategic</strong> <span class="badge badge-info">S&OP</span> — network-wide policy parameters from the S&OP GraphSAGE model</li>
-      <li><strong>Tactical</strong> <span class="badge badge-info">tGNN</span> — multi-site allocation directives from the execution graph neural network</li>
-      <li><strong>Execution</strong> <span class="badge badge-info">TRM</span> — individual decisions by 11 narrow AI agents (ATP, PO, MO, Rebalancing, etc.)</li>
+      <li><strong>Strategic</strong> <span class="badge badge-info">S&OP</span> — network-wide policy parameters and guardrails</li>
+      <li><strong>Tactical</strong> <span class="badge badge-info">Planning</span> — multi-site allocation and demand/supply directives</li>
+      <li><strong>Execution</strong> <span class="badge badge-info">Agents</span> — individual decisions by 11 role-specific AI agents (ATP, PO, MO, Rebalancing, etc.)</li>
     </ul>
     <p style="margin-top: 8px;">
       Click <strong>Inspect</strong> on any decision card to see the agent's reasoning,
@@ -262,11 +262,47 @@
     </p>
   </div>
 
-  <!-- Start Button -->
-  <div class="start-btn-wrapper">
-    <a href="/api/v1/auth/demo-token-redirect" class="start-btn" id="startBtn">
-      Start Demo →
-    </a>
+  <!-- Lead Capture Form -->
+  <div class="card" id="leadForm" style="border-color: rgba(124, 58, 237, 0.3);">
+    <h2><span class="icon">✉️</span> Get Started</h2>
+    <p style="margin-bottom: 16px;">Tell us a bit about yourself so we can tailor your demo experience.</p>
+    <form id="demoLeadForm" onsubmit="return submitLead(event)">
+      <div style="display: grid; gap: 12px;">
+        <div>
+          <label for="leadName" style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Name *</label>
+          <input type="text" id="leadName" name="name" required
+            style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #e2e8f0; font-size: 14px; outline: none;"
+            placeholder="Your full name">
+        </div>
+        <div>
+          <label for="leadEmail" style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Work Email *</label>
+          <input type="email" id="leadEmail" name="email" required
+            style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #e2e8f0; font-size: 14px; outline: none;"
+            placeholder="you@company.com">
+        </div>
+        <div>
+          <label for="leadCompany" style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Company *</label>
+          <input type="text" id="leadCompany" name="company" required
+            style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #e2e8f0; font-size: 14px; outline: none;"
+            placeholder="Your company name">
+        </div>
+        <div>
+          <label for="leadRole" style="display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px;">Role (optional)</label>
+          <input type="text" id="leadRole" name="role"
+            style="width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: #e2e8f0; font-size: 14px; outline: none;"
+            placeholder="e.g., VP Supply Chain, Demand Planner">
+        </div>
+      </div>
+      <div style="text-align: center; margin-top: 20px;">
+        <button type="submit" class="start-btn" id="submitBtn">
+          Start Demo →
+        </button>
+      </div>
+      <div id="formError" style="text-align: center; margin-top: 12px; font-size: 13px; color: #f87171; display: none;"></div>
+      <div id="formSuccess" style="text-align: center; margin-top: 12px; font-size: 13px; color: #4ade80; display: none;">
+        ✓ Registered — launching demo...
+      </div>
+    </form>
   </div>
 
   <div class="skip-note">
@@ -278,20 +314,79 @@
 </div>
 
 <script>
-  // Cookie-based skip: if they checked "Don't show again", redirect immediately
+  // ─── CONFIGURATION ────────────────────────────────────────────
+  // Replace this URL with your deployed Google Apps Script web app URL.
+  // See setup instructions at: https://github.com/MilesAheadToo/azirella.com#demo-lead-capture
+  var GOOGLE_SHEET_WEBHOOK = '';  // e.g., 'https://script.google.com/macros/s/AKfycb.../exec'
+  // ──────────────────────────────────────────────────────────────
+
+  // Cookie-based skip: if they checked "Don't show again" AND already submitted, redirect immediately
   (function() {
-    if (document.cookie.includes('autonomy_demo_skip=1')) {
+    if (document.cookie.includes('autonomy_demo_skip=1') && document.cookie.includes('autonomy_demo_lead=1')) {
       window.location.href = '/api/v1/auth/demo-token-redirect';
     }
   })();
 
   function handleSkip(checked) {
     if (checked) {
-      // Set cookie for 30 days
       document.cookie = 'autonomy_demo_skip=1; path=/; max-age=' + (30 * 86400) + '; SameSite=Lax';
     } else {
       document.cookie = 'autonomy_demo_skip=; path=/; max-age=0';
     }
+  }
+
+  function submitLead(e) {
+    e.preventDefault();
+    var btn = document.getElementById('submitBtn');
+    var errEl = document.getElementById('formError');
+    var successEl = document.getElementById('formSuccess');
+    errEl.style.display = 'none';
+    btn.textContent = 'Registering...';
+    btn.disabled = true;
+
+    var data = {
+      name: document.getElementById('leadName').value.trim(),
+      email: document.getElementById('leadEmail').value.trim(),
+      company: document.getElementById('leadCompany').value.trim(),
+      role: document.getElementById('leadRole').value.trim(),
+      timestamp: new Date().toISOString(),
+      source: 'demo-welcome'
+    };
+
+    // Set cookie so we don't ask again
+    document.cookie = 'autonomy_demo_lead=1; path=/; max-age=' + (90 * 86400) + '; SameSite=Lax';
+
+    // If no webhook configured, skip sheet submission and go straight to demo
+    if (!GOOGLE_SHEET_WEBHOOK) {
+      console.warn('GOOGLE_SHEET_WEBHOOK not configured — skipping sheet submission');
+      successEl.style.display = 'block';
+      setTimeout(function() {
+        window.location.href = '/api/v1/auth/demo-token-redirect';
+      }, 800);
+      return false;
+    }
+
+    // Submit to Google Sheets via Apps Script web app
+    fetch(GOOGLE_SHEET_WEBHOOK, {
+      method: 'POST',
+      mode: 'no-cors',  // Apps Script doesn't support CORS preflight
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(function() {
+      successEl.style.display = 'block';
+      setTimeout(function() {
+        window.location.href = '/api/v1/auth/demo-token-redirect';
+      }, 800);
+    }).catch(function(err) {
+      // Still proceed to demo even if sheet write fails
+      console.error('Lead capture error:', err);
+      successEl.style.display = 'block';
+      setTimeout(function() {
+        window.location.href = '/api/v1/auth/demo-token-redirect';
+      }, 800);
+    });
+
+    return false;
   }
 </script>
 
