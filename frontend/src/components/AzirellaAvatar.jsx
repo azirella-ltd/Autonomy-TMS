@@ -73,7 +73,7 @@ const AzirellaAvatar = ({
   voiceState = VoiceState.IDLE,
   transcript = '',
   interimTranscript = '',
-  size = 80,
+  size = 96,
   className,
 }) => {
   const [hovered, setHovered] = useState(false);
@@ -228,19 +228,13 @@ const AzirellaAvatar = ({
             boxShadow: cfg.glow,
           }}
         >
-          {/* Gazelle constellation — full body, text clipped */}
+          {/* Human constellation figure — SVG with linked star nodes */}
           <img
-            src="/Azirella_logo.png"
+            src="/azirella_human.svg"
             alt=""
-            className="absolute pointer-events-none select-none"
+            className="absolute inset-0 w-full h-full pointer-events-none select-none"
             style={{
-              width: '250%',
-              height: '250%',
-              top: '-40%',
-              left: '-20%',
-              objectFit: 'cover',
-              clipPath: 'inset(0 40% 0 0)',
-              filter: `brightness(${cfg.imgBrightness}) contrast(1.15)`,
+              filter: `brightness(${cfg.imgBrightness}) contrast(1.1)`,
               transition: 'filter 0.5s ease',
             }}
             draggable={false}

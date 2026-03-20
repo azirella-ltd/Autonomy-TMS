@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2e1065"/>
+      <stop offset="50%" stop-color="#4c1d95"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="line-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#818cf8" stop-opacity="0.3"/>
+    </linearGradient>
+    <radialGradient id="star-glow">
+      <stop offset="0%" stop-color="#e0d5ff" stop-opacity="1"/>
+      <stop offset="60%" stop-color="#a78bfa" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="60" cy="60" r="58" fill="url(#bg)"/>
+  <circle cx="60" cy="60" r="58" stroke="#7c3aed" stroke-width="0.5" fill="none" opacity="0.3"/>
+
+  <!-- Faint background stars -->
+  <circle cx="25" cy="20" r="0.8" fill="white" opacity="0.2"/>
+  <circle cx="95" cy="15" r="0.6" fill="white" opacity="0.15"/>
+  <circle cx="15" cy="75" r="0.7" fill="white" opacity="0.2"/>
+  <circle cx="100" cy="85" r="0.5" fill="white" opacity="0.15"/>
+  <circle cx="40" cy="10" r="0.5" fill="white" opacity="0.1"/>
+  <circle cx="85" cy="45" r="0.6" fill="white" opacity="0.12"/>
+  <circle cx="20" cy="95" r="0.7" fill="white" opacity="0.15"/>
+  <circle cx="90" cy="100" r="0.5" fill="white" opacity="0.1"/>
+
+  <!-- === HUMAN CONSTELLATION === -->
+  <!-- Skeleton: head, neck, shoulders, torso, arms, hips, legs -->
+  <!-- All coordinates centered in the 120x120 viewBox -->
+
+  <g id="constellation" filter="url(#glow)">
+    <!-- Constellation lines (connections between star nodes) -->
+    <!-- Head to neck -->
+    <line x1="60" y1="22" x2="60" y2="32" stroke="url(#line-grad)" stroke-width="1"/>
+    <!-- Neck to shoulders -->
+    <line x1="60" y1="32" x2="42" y2="38" stroke="url(#line-grad)" stroke-width="1"/>
+    <line x1="60" y1="32" x2="78" y2="38" stroke="url(#line-grad)" stroke-width="1"/>
+    <!-- Shoulders to elbows -->
+    <line x1="42" y1="38" x2="30" y2="52" stroke="url(#line-grad)" stroke-width="0.8"/>
+    <line x1="78" y1="38" x2="90" y2="52" stroke="url(#line-grad)" stroke-width="0.8"/>
+    <!-- Elbows to hands -->
+    <line x1="30" y1="52" x2="25" y2="66" stroke="url(#line-grad)" stroke-width="0.7"/>
+    <line x1="90" y1="52" x2="95" y2="66" stroke="url(#line-grad)" stroke-width="0.7"/>
+    <!-- Neck to chest -->
+    <line x1="60" y1="32" x2="60" y2="48" stroke="url(#line-grad)" stroke-width="1"/>
+    <!-- Chest to shoulders (cross brace) -->
+    <line x1="42" y1="38" x2="60" y2="48" stroke="url(#line-grad)" stroke-width="0.6" opacity="0.4"/>
+    <line x1="78" y1="38" x2="60" y2="48" stroke="url(#line-grad)" stroke-width="0.6" opacity="0.4"/>
+    <!-- Chest to hips -->
+    <line x1="60" y1="48" x2="52" y2="68" stroke="url(#line-grad)" stroke-width="0.9"/>
+    <line x1="60" y1="48" x2="68" y2="68" stroke="url(#line-grad)" stroke-width="0.9"/>
+    <!-- Hip cross brace -->
+    <line x1="52" y1="68" x2="68" y2="68" stroke="url(#line-grad)" stroke-width="0.7" opacity="0.5"/>
+    <!-- Hips to knees -->
+    <line x1="52" y1="68" x2="45" y2="85" stroke="url(#line-grad)" stroke-width="0.8"/>
+    <line x1="68" y1="68" x2="75" y2="85" stroke="url(#line-grad)" stroke-width="0.8"/>
+    <!-- Knees to feet -->
+    <line x1="45" y1="85" x2="40" y2="102" stroke="url(#line-grad)" stroke-width="0.7"/>
+    <line x1="75" y1="85" x2="80" y2="102" stroke="url(#line-grad)" stroke-width="0.7"/>
+    <!-- Spine line (subtle) -->
+    <line x1="60" y1="48" x2="60" y2="68" stroke="url(#line-grad)" stroke-width="0.5" opacity="0.3"/>
+
+    <!-- Star nodes (joints) -->
+    <!-- Head (brightest — the "face") -->
+    <circle cx="60" cy="22" r="5" fill="url(#star-glow)" opacity="0.9"/>
+    <circle cx="60" cy="22" r="2.5" fill="white" opacity="0.95"/>
+    <!-- Eyes (tiny dots on the head) -->
+    <circle cx="57" cy="21" r="0.8" fill="white" opacity="0.7"/>
+    <circle cx="63" cy="21" r="0.8" fill="white" opacity="0.7"/>
+
+    <!-- Neck -->
+    <circle cx="60" cy="32" r="2" fill="url(#star-glow)" opacity="0.7"/>
+    <circle cx="60" cy="32" r="1" fill="white" opacity="0.8"/>
+    <!-- Left shoulder -->
+    <circle cx="42" cy="38" r="2.5" fill="url(#star-glow)" opacity="0.75"/>
+    <circle cx="42" cy="38" r="1.2" fill="white" opacity="0.85"/>
+    <!-- Right shoulder -->
+    <circle cx="78" cy="38" r="2.5" fill="url(#star-glow)" opacity="0.75"/>
+    <circle cx="78" cy="38" r="1.2" fill="white" opacity="0.85"/>
+    <!-- Left elbow -->
+    <circle cx="30" cy="52" r="2" fill="url(#star-glow)" opacity="0.6"/>
+    <circle cx="30" cy="52" r="1" fill="white" opacity="0.75"/>
+    <!-- Right elbow -->
+    <circle cx="90" cy="52" r="2" fill="url(#star-glow)" opacity="0.6"/>
+    <circle cx="90" cy="52" r="1" fill="white" opacity="0.75"/>
+    <!-- Left hand -->
+    <circle cx="25" cy="66" r="1.8" fill="url(#star-glow)" opacity="0.55"/>
+    <circle cx="25" cy="66" r="0.9" fill="white" opacity="0.7"/>
+    <!-- Right hand -->
+    <circle cx="95" cy="66" r="1.8" fill="url(#star-glow)" opacity="0.55"/>
+    <circle cx="95" cy="66" r="0.9" fill="white" opacity="0.7"/>
+    <!-- Chest -->
+    <circle cx="60" cy="48" r="2.5" fill="url(#star-glow)" opacity="0.7"/>
+    <circle cx="60" cy="48" r="1.2" fill="white" opacity="0.8"/>
+    <!-- Left hip -->
+    <circle cx="52" cy="68" r="2.2" fill="url(#star-glow)" opacity="0.65"/>
+    <circle cx="52" cy="68" r="1.1" fill="white" opacity="0.8"/>
+    <!-- Right hip -->
+    <circle cx="68" cy="68" r="2.2" fill="url(#star-glow)" opacity="0.65"/>
+    <circle cx="68" cy="68" r="1.1" fill="white" opacity="0.8"/>
+    <!-- Left knee -->
+    <circle cx="45" cy="85" r="2" fill="url(#star-glow)" opacity="0.6"/>
+    <circle cx="45" cy="85" r="1" fill="white" opacity="0.75"/>
+    <!-- Right knee -->
+    <circle cx="75" cy="85" r="2" fill="url(#star-glow)" opacity="0.6"/>
+    <circle cx="75" cy="85" r="1" fill="white" opacity="0.75"/>
+    <!-- Left foot -->
+    <circle cx="40" cy="102" r="1.5" fill="url(#star-glow)" opacity="0.5"/>
+    <circle cx="40" cy="102" r="0.8" fill="white" opacity="0.65"/>
+    <!-- Right foot -->
+    <circle cx="80" cy="102" r="1.5" fill="url(#star-glow)" opacity="0.5"/>
+    <circle cx="80" cy="102" r="0.8" fill="white" opacity="0.65"/>
+  </g>
+
+  <!-- Outer glow ring -->
+  <circle cx="60" cy="60" r="57" stroke="#a78bfa" stroke-width="0.8" fill="none" opacity="0.15"/>
+</svg>
