@@ -53,6 +53,15 @@ export const decisionStreamApi = {
         params: { decision_id: decisionId, decision_type: decisionType },
       })
       .then((r) => r.data),
+
+  /**
+   * Get time series context for a decision (forecast, inventory, or lead time).
+   * @param {Object} params - { decision_type, product_id, site_id, config_id }
+   */
+  getDecisionTimeSeries: (params) =>
+    api
+      .get('/decision-stream/time-series', { params })
+      .then((r) => r.data),
 };
 
 export default decisionStreamApi;

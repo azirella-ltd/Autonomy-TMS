@@ -153,6 +153,131 @@ async def ask_why(
     return {"decision_id": decision_id, "decision_type": decision_type, "reasoning": reasoning}
 
 
+@router.get("/time-series")
+async def get_decision_time_series(
+    decision_type: str = Query(..., description="Decision type"),
+    product_id: Optional[str] = Query(None, description="Product ID"),
+    site_id: Optional[str] = Query(None, description="Site ID"),
+    config_id: Optional[int] = Query(None, description="Config ID"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return time series data for a decision's product/site context.
+
+    Returns forecast, inventory, or lead time data depending on decision type,
+    formatted for Recharts rendering.
+    """
+    from sqlalchemy import text
+    from datetime import datetime, timedelta
+
+    # Resolve config
+    cfg_id = config_id or getattr(current_user, 'default_config_id', None)
+    if not cfg_id:
+        return {"series": [], "lines": [], "error": True}
+
+    # Determine which data to fetch based on decision type
+    DEMAND_TYPES = {"forecast_adjustment", "atp", "po_creation"}
+    INVENTORY_TYPES = {"inventory_buffer", "rebalancing"}
+
+    series = []
+    lines = []
+    bands = []
+    title = ""
+    chart_type = "line"
+    annotation = None
+
+    try:
+        if decision_type in DEMAND_TYPES and product_id:
+            # Fetch forecast time series (P10/P50/P90)
+            result = await db.execute(
+                text("""
+                    SELECT forecast_date, p10_quantity, p50_quantity, p90_quantity
+                    FROM forecast
+                    WHERE product_id = :pid AND config_id = :cfg
+                    ORDER BY forecast_date
+                    LIMIT 52
+                """),
+                {"pid": product_id, "cfg": cfg_id},
+            )
+            rows = result.fetchall()
+            for row in rows:
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
+                    "p10": float(row[1] or 0),
+                    "p50": float(row[2] or 0),
+                    "p90": float(row[3] or 0),
+                })
+            chart_type = "area"
+            bands = [
+                {"key": "p90", "color": "#ffc658", "label": "P90 (High)"},
+                {"key": "p10", "color": "#82ca9d", "label": "P10 (Low)"},
+            ]
+            lines = [{"key": "p50", "color": "#8884d8", "label": "P50 (Most Likely)", "bold": True}]
+            title = f"Demand Forecast — {product_id}"
+            annotation = f"Decision type: {decision_type.replace('_', ' ')}"
+
+        elif decision_type in INVENTORY_TYPES and product_id:
+            # Fetch inventory levels over time
+            result = await db.execute(
+                text("""
+                    SELECT inventory_date, on_hand_qty, in_transit_qty
+                    FROM inv_level
+                    WHERE product_id = :pid AND config_id = :cfg
+                    ORDER BY inventory_date
+                    LIMIT 52
+                """),
+                {"pid": product_id, "cfg": cfg_id},
+            )
+            rows = result.fetchall()
+            for row in rows:
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
+                    "on_hand": float(row[1] or 0),
+                    "in_transit": float(row[2] or 0),
+                })
+            lines = [
+                {"key": "on_hand", "color": "#8884d8", "label": "On Hand", "bold": True},
+                {"key": "in_transit", "color": "#82ca9d", "label": "In Transit", "bold": False},
+            ]
+            title = f"Inventory Levels — {product_id}"
+
+        else:
+            # Generic: try forecast as fallback
+            if product_id:
+                result = await db.execute(
+                    text("""
+                        SELECT forecast_date, p50_quantity
+                        FROM forecast
+                        WHERE product_id = :pid AND config_id = :cfg
+                        ORDER BY forecast_date
+                        LIMIT 52
+                    """),
+                    {"pid": product_id, "cfg": cfg_id},
+                )
+                rows = result.fetchall()
+                for row in rows:
+                    series.append({
+                        "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
+                        "forecast": float(row[1] or 0),
+                    })
+                lines = [{"key": "forecast", "color": "#8884d8", "label": "Forecast (P50)", "bold": True}]
+                title = f"Forecast — {product_id}"
+
+    except Exception as e:
+        logger.warning(f"Time series query failed: {e}")
+        return {"series": [], "lines": [], "error": True}
+
+    return {
+        "series": series,
+        "lines": lines,
+        "bands": bands if bands else None,
+        "chart_type": chart_type,
+        "title": title,
+        "annotation": annotation,
+        "error": len(series) == 0,
+    }
+
+
 @router.post("/chat", response_model=DecisionStreamChatResponse)
 async def chat(
     request: DecisionStreamChatRequest,

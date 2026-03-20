@@ -9,9 +9,13 @@
  *   - Cancel: User rejects the action entirely (no execution) + reason
  *   Both require a reason code and explanation for the learning flywheel.
  */
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import Markdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Area, AreaChart,
+} from 'recharts';
 import {
   CheckCircle,
   Edit3,
@@ -230,6 +234,29 @@ const DecisionCard = ({
   const [inspected, setInspected] = useState(false);
   const [reasoning, setReasoning] = useState(null);
   const [reasoningLoading, setReasoningLoading] = useState(false);
+  const [showChart, setShowChart] = useState(false);
+  const [chartData, setChartData] = useState(null);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  const loadChart = useCallback(async () => {
+    if (chartData) { setShowChart((v) => !v); return; }
+    setChartLoading(true);
+    setShowChart(true);
+    try {
+      const { decisionStreamApi } = await import('../../services/decisionStreamApi');
+      const data = await decisionStreamApi.getDecisionTimeSeries({
+        decision_type: decision.decision_type,
+        product_id: decision.product_id,
+        site_id: decision.site_id,
+        config_id: decision.config_id,
+      });
+      setChartData(data);
+    } catch {
+      setChartData({ error: true, series: [] });
+    } finally {
+      setChartLoading(false);
+    }
+  }, [decision, chartData]);
 
   const Icon = TYPE_ICONS[decision.decision_type] || Package;
   const typeLabel = TYPE_LABELS[decision.decision_type] || decision.decision_type;
@@ -432,6 +459,68 @@ const DecisionCard = ({
                 </div>
               </div>
             )}
+
+            {/* Show Me — time series visualization */}
+            <div className="mt-3 pt-2 border-t border-blue-200">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100"
+                onClick={loadChart}
+                disabled={chartLoading}
+              >
+                {chartLoading ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <BarChart3 className="h-3 w-3 mr-1" />
+                )}
+                {showChart ? 'Hide Chart' : 'Show Me'}
+              </Button>
+
+              {showChart && chartData && !chartData.error && (
+                <div className="mt-3 bg-white rounded-md p-3 border border-blue-100">
+                  <div className="text-xs font-medium text-blue-800 mb-2">
+                    {chartData.title || `${(decision.decision_type || '').replace(/_/g, ' ')} — ${decision.product_name || decision.product_id || ''} @ ${decision.site_name || decision.site_id || ''}`}
+                  </div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    {chartData.chart_type === 'area' ? (
+                      <AreaChart data={chartData.series}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ff" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <RechartsTooltip contentStyle={{ fontSize: 11 }} />
+                        <Legend wrapperStyle={{ fontSize: 10 }} />
+                        {chartData.bands?.map((band, i) => (
+                          <Area key={band.key} type="monotone" dataKey={band.key} stroke={band.color} fill={band.color} fillOpacity={0.15} name={band.label} />
+                        ))}
+                        {chartData.lines?.map((line, i) => (
+                          <Line key={line.key} type="monotone" dataKey={line.key} stroke={line.color} strokeWidth={line.bold ? 2 : 1} name={line.label} dot={false} />
+                        ))}
+                      </AreaChart>
+                    ) : (
+                      <LineChart data={chartData.series}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e0e7ff" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <RechartsTooltip contentStyle={{ fontSize: 11 }} />
+                        <Legend wrapperStyle={{ fontSize: 10 }} />
+                        {chartData.lines?.map((line, i) => (
+                          <Line key={line.key} type="monotone" dataKey={line.key} stroke={line.color} strokeWidth={line.bold ? 2 : 1} name={line.label} dot={false} />
+                        ))}
+                      </LineChart>
+                    )}
+                  </ResponsiveContainer>
+                  {chartData.annotation && (
+                    <div className="mt-1.5 text-[10px] text-blue-600 italic">{chartData.annotation}</div>
+                  )}
+                </div>
+              )}
+              {showChart && chartData?.error && (
+                <div className="mt-2 text-xs text-muted-foreground italic">
+                  No time series data available for this decision.
+                </div>
+              )}
+            </div>
           </div>
         )}
 
