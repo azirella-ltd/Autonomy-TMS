@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Autonomy Platform — Live Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #0f0a1e 0%, #1a1035 40%, #0d1f3c 100%);
+    color: #e2e8f0;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+  .container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 24px 60px;
+  }
+  .logo-bar {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .logo-bar img {
+    height: 56px;
+    opacity: 0.9;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #a78bfa, #7c3aed);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 15px;
+    margin-bottom: 36px;
+  }
+  .card {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #c4b5fd;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card h2 .icon { font-size: 18px; }
+  .card p, .card li {
+    font-size: 14px;
+    color: #cbd5e1;
+  }
+  .card ul, .card ol {
+    padding-left: 20px;
+    margin-top: 8px;
+  }
+  .card li { margin-bottom: 6px; }
+  .card li strong { color: #e2e8f0; }
+  code {
+    background: rgba(124, 58, 237, 0.2);
+    color: #c4b5fd;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  .command-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .command-item {
+    background: rgba(124, 58, 237, 0.1);
+    border: 1px solid rgba(124, 58, 237, 0.2);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .command-item .cmd {
+    color: #a78bfa;
+    font-weight: 500;
+    display: block;
+    margin-bottom: 2px;
+  }
+  .command-item .desc {
+    color: #94a3b8;
+    font-size: 12px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .badge-view { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+  .badge-info { background: rgba(124, 58, 237, 0.2); color: #c4b5fd; }
+  .voice-requirements {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 12px;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .voice-requirements dt { color: #94a3b8; }
+  .voice-requirements dd { color: #cbd5e1; }
+  .divider {
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 24px 0;
+  }
+  .start-btn-wrapper {
+    text-align: center;
+    margin-top: 32px;
+  }
+  .start-btn {
+    display: inline-block;
+    padding: 14px 48px;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 17px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+  }
+  .start-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 28px rgba(124, 58, 237, 0.5);
+  }
+  .skip-note {
+    text-align: center;
+    margin-top: 12px;
+    font-size: 12px;
+    color: #64748b;
+  }
+  .skip-note label { cursor: pointer; }
+  .skip-note input { margin-right: 6px; }
+  @media (max-width: 600px) {
+    .command-grid { grid-template-columns: 1fr; }
+    .container { padding: 24px 16px 40px; }
+    h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="logo-bar">
+    <img src="/Azirella_logo.png" alt="Azirella" onerror="this.style.display='none'">
+  </div>
+
+  <h1>Autonomy Platform — Live Demo</h1>
+  <p class="subtitle">AI-driven supply chain planning and execution</p>
+
+  <!-- Access Level -->
+  <div class="card">
+    <h2><span class="icon">👤</span> Your Demo Access</h2>
+    <p>
+      You are logged in as a <strong>Supply Chain Executive</strong>
+      <span class="badge badge-view">View Only</span>
+    </p>
+    <ul>
+      <li><strong>Inspect</strong> any agent decision — see the full reasoning, confidence scores, and supply chain context</li>
+      <li><strong>Browse</strong> the Decision Stream across all levels: Strategic, Tactical, and Execution</li>
+      <li><strong>Ask questions</strong> via "Talk to Me" — the AI assistant has access to live supply chain data</li>
+      <li>You <strong>cannot</strong> override decisions, create orders, or modify configurations — those require planner-level access</li>
+    </ul>
+  </div>
+
+  <!-- Text Interaction -->
+  <div class="card">
+    <h2><span class="icon">💬</span> Talk to Me — Text Commands</h2>
+    <p>
+      Click the <code>Talk to me...</code> input in the top navigation bar and type natural language questions or commands.
+      The AI assistant understands your supply chain context and responds with real data.
+    </p>
+    <div class="command-grid">
+      <div class="command-item">
+        <span class="cmd">"What's the current OTIF?"</span>
+        <span class="desc">KPI and metric queries</span>
+      </div>
+      <div class="command-item">
+        <span class="cmd">"Why was this ATP decision made?"</span>
+        <span class="desc">Decision inspection</span>
+      </div>
+      <div class="command-item">
+        <span class="cmd">"Show me the top risks"</span>
+        <span class="desc">Risk assessment</span>
+      </div>
+      <div class="command-item">
+        <span class="cmd">"What's the inventory position for Chicken Breast?"</span>
+        <span class="desc">Product-level queries</span>
+      </div>
+      <div class="command-item">
+        <span class="cmd">"Compare last week's service level"</span>
+        <span class="desc">Trend analysis</span>
+      </div>
+      <div class="command-item">
+        <span class="cmd">"Summarise the S&OP worklist"</span>
+        <span class="desc">Planning summaries</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Voice Interaction -->
+  <div class="card">
+    <h2><span class="icon">🎙️</span> Talk to Me — Voice</h2>
+    <p>
+      Click the <strong>microphone icon</strong> next to the text input to use voice.
+      This demo uses the browser's built-in Web Speech API for voice-to-text — it's functional but basic.
+    </p>
+    <p style="margin-top: 8px;">
+      In a full deployment, Autonomy integrates with enterprise voice services for
+      higher accuracy, multi-language support, and natural conversation flow.
+    </p>
+
+    <div class="divider"></div>
+
+    <p style="font-size: 13px; color: #94a3b8; margin-bottom: 6px;"><strong>To enable voice in this demo:</strong></p>
+    <dl class="voice-requirements">
+      <dt>Browser:</dt>
+      <dd>Chrome, Edge, or Safari (Firefox has limited support)</dd>
+      <dt>Permission:</dt>
+      <dd>Allow microphone access when prompted by the browser</dd>
+      <dt>Settings:</dt>
+      <dd>Chrome → Settings → Privacy → Site Settings → Microphone → Allow for this site</dd>
+      <dt>HTTPS:</dt>
+      <dd>Required — voice only works over HTTPS (this demo site uses it automatically)</dd>
+    </dl>
+  </div>
+
+  <!-- Decision Stream Guide -->
+  <div class="card">
+    <h2><span class="icon">📊</span> The Decision Stream</h2>
+    <p>Your landing page shows all decisions made by Autonomy's AI agents:</p>
+    <ul>
+      <li><strong>Strategic</strong> <span class="badge badge-info">S&OP</span> — network-wide policy parameters from the S&OP GraphSAGE model</li>
+      <li><strong>Tactical</strong> <span class="badge badge-info">tGNN</span> — multi-site allocation directives from the execution graph neural network</li>
+      <li><strong>Execution</strong> <span class="badge badge-info">TRM</span> — individual decisions by 11 narrow AI agents (ATP, PO, MO, Rebalancing, etc.)</li>
+    </ul>
+    <p style="margin-top: 8px;">
+      Click <strong>Inspect</strong> on any decision card to see the agent's reasoning,
+      the data it considered, and the alternatives it evaluated.
+    </p>
+  </div>
+
+  <!-- Start Button -->
+  <div class="start-btn-wrapper">
+    <a href="/api/v1/auth/demo-token-redirect" class="start-btn" id="startBtn">
+      Start Demo →
+    </a>
+  </div>
+
+  <div class="skip-note">
+    <label>
+      <input type="checkbox" id="skipCheckbox" onchange="handleSkip(this.checked)">
+      Don't show this page again
+    </label>
+  </div>
+</div>
+
+<script>
+  // Cookie-based skip: if they checked "Don't show again", redirect immediately
+  (function() {
+    if (document.cookie.includes('autonomy_demo_skip=1')) {
+      window.location.href = '/api/v1/auth/demo-token-redirect';
+    }
+  })();
+
+  function handleSkip(checked) {
+    if (checked) {
+      // Set cookie for 30 days
+      document.cookie = 'autonomy_demo_skip=1; path=/; max-age=' + (30 * 86400) + '; SameSite=Lax';
+    } else {
+      document.cookie = 'autonomy_demo_skip=; path=/; max-age=0';
+    }
+  }
+</script>
+
+</body>
+</html>
