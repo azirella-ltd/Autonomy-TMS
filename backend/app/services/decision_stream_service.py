@@ -1167,6 +1167,11 @@ class DecisionStreamService:
         if enrichment_text:
             decision_context += "\n\n" + enrichment_text
 
+        # Load DAG topology so LLM can offer valid options for clarification
+        dag_topology = await self._get_dag_topology(config_id)
+        if dag_topology:
+            decision_context += "\n\n" + dag_topology
+
         # Build prompt with role-scoped instructions
         prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context, powell_role)
 
@@ -2488,6 +2493,80 @@ class DecisionStreamService:
         except Exception:
             return "Unable to load decision context."
 
+    async def _get_dag_topology(self, config_id: Optional[int] = None) -> str:
+        """Load the SC config DAG topology for LLM clarification.
+
+        Returns a compact text representation of valid sites, products,
+        regions, vendors, and customers so the LLM can offer closed-list
+        options when the user's query is ambiguous.
+        """
+        if not config_id:
+            return ""
+        try:
+            from app.models.supply_chain_config import Site
+            from app.models.sc_entities import Product, TradingPartner
+
+            parts = []
+
+            # Sites (internal)
+            result = await self.db.execute(
+                select(Site.name, Site.type, Site.master_type).where(
+                    Site.config_id == config_id
+                )
+            )
+            sites = result.fetchall()
+            if sites:
+                site_list = [f"{s[0]} ({s[1]})" for s in sites]
+                parts.append(f"Internal sites: {', '.join(site_list)}")
+
+            # Product groups (distinct)
+            result = await self.db.execute(
+                select(Product.product_group_name).where(
+                    Product.config_id == config_id,
+                    Product.product_group_name.isnot(None),
+                ).distinct().limit(30)
+            )
+            groups = [r[0] for r in result.fetchall() if r[0]]
+            if groups:
+                parts.append(f"Product groups: {', '.join(sorted(groups))}")
+
+            # Sample products (top 20 by name)
+            result = await self.db.execute(
+                select(Product.description).where(
+                    Product.config_id == config_id,
+                ).limit(20)
+            )
+            products = [r[0] for r in result.fetchall() if r[0]]
+            if products:
+                parts.append(f"Sample products ({len(products)} of total): {', '.join(products[:15])}")
+
+            # Vendors
+            result = await self.db.execute(
+                select(TradingPartner.description).where(
+                    TradingPartner.tpartner_type == "vendor",
+                ).limit(20)
+            )
+            vendors = [r[0] for r in result.fetchall() if r[0]]
+            if vendors:
+                parts.append(f"Vendors: {', '.join(vendors[:15])}")
+
+            # Customers
+            result = await self.db.execute(
+                select(TradingPartner.description).where(
+                    TradingPartner.tpartner_type == "customer",
+                ).limit(20)
+            )
+            customers = [r[0] for r in result.fetchall() if r[0]]
+            if customers:
+                parts.append(f"Customers: {', '.join(customers[:15])}")
+
+            if parts:
+                return "=== SUPPLY CHAIN TOPOLOGY ===\n" + "\n".join(parts) + "\n=== END TOPOLOGY ==="
+            return ""
+        except Exception as e:
+            logger.debug("DAG topology load failed: %s", e)
+            return ""
+
     async def _retrieve_context(self, query: str):
         """Retrieve RAG context from knowledge base."""
         try:
@@ -2562,7 +2641,19 @@ class DecisionStreamService:
             "decision details) injected below. Use this actual data to answer questions with "
             "specific numbers and facts. Do NOT tell the user to navigate to another page — "
             "the data is already here. Reference specific values from the data context. "
-            "Keep answers concise and actionable."
+            "Keep answers concise and actionable.\n\n"
+            "CLARIFICATION PROTOCOL: When the user's question is ambiguous or could apply to "
+            "multiple entities (sites, products, regions, vendors, customers), you MUST:\n"
+            "1. Ask for clarification by offering the VALID OPTIONS from the SUPPLY CHAIN TOPOLOGY "
+            "section in the data context below. Never guess or hallucinate options.\n"
+            "2. Present options as a concise list: 'Do you mean globally, or for a specific region? "
+            "The regions in your network are: US, Americas, Europe, Asia.'\n"
+            "3. If the user gives an invalid value (e.g., 'Moon' as a region), respond: "
+            "'I don\\'t recognise \"Moon\" as a region. The valid regions are: [list from topology].'\n"
+            "4. If the topology section is missing or empty, say: 'I don\\'t have the network topology "
+            "loaded. Could you specify which site or product you mean?'\n"
+            "5. For product queries, offer product groups first, then specific products if the group is known.\n"
+            "6. Keep clarification questions short — one question at a time."
         )
 
         if role_cannot and powell_role not in ("DEMO_ALL", "MPS_MANAGER"):
