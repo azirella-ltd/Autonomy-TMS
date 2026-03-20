@@ -35,6 +35,7 @@ import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
 import { cn } from '../lib/utils/cn';
 import TalkToMePopup from './TalkToMePopup';
 import AzirellaAvatar from './AzirellaAvatar';
+import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
 
 // ─── AI Avatar ────────────────────────────────────────────────────────────────
 // A small circular avatar used alongside the "Talk to me" prompt.
@@ -140,6 +141,59 @@ const TopNavbar = ({ sidebarOpen = true }) => {
       recognition.start();
     }
   }, [isListening]);
+
+  // ── "Hey Autonomy" voice assistant ──────────────────────────────────────
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const voiceAssistant = useVoiceAssistant({
+    enabled: voiceEnabled,
+    onUtterance: (text) => {
+      // Voice utterance → submit as Talk to Me input
+      setTalkInput(text);
+      setPopupOpen(true);
+      // Use the analyze flow so clarification works
+      setTimeout(() => {
+        // Trigger submit by setting input and calling handleTalkSubmit
+        setTalkInput(text);
+      }, 100);
+    },
+  });
+
+  // Enable voice after first click on avatar (browser requires gesture for mic)
+  const handleAvatarClick = useCallback(() => {
+    if (!voiceEnabled && voiceAssistant.isAvailable) {
+      setVoiceEnabled(true);
+    }
+    setPopupOpen(true);
+    setTimeout(() => talkInputRef.current?.focus(), 100);
+  }, [voiceEnabled, voiceAssistant.isAvailable]);
+
+  // When voice finishes processing and we have a directiveResult, speak it
+  useEffect(() => {
+    if (
+      voiceAssistant.state === VoiceState.PROCESSING &&
+      directiveResult &&
+      voiceEnabled
+    ) {
+      // Build a speakable summary
+      const actions = directiveResult.routed_actions || [];
+      const scenarioAction = actions.find(a => a.action === 'scenario_event_injected');
+      let speechText = '';
+      if (directiveResult._scenario_answer) {
+        // Truncate for speech
+        speechText = directiveResult._scenario_answer.slice(0, 500);
+      } else if (directiveResult._event_summary) {
+        speechText = directiveResult._event_summary;
+      } else if (scenarioAction?.summary) {
+        speechText = scenarioAction.summary;
+      } else if (actions.length > 0) {
+        const trms = actions.map(a => (a.trm_type || a.layer || '').replace(/_/g, ' ')).join(', ');
+        speechText = `Routed to ${actions.length} agents: ${trms}. Check the Decision Stream for details.`;
+      } else {
+        speechText = `${directiveResult.status === 'APPLIED' ? 'Done.' : 'Recorded.'} Check the Decision Stream.`;
+      }
+      voiceAssistant.speakResponse(speechText);
+    }
+  }, [directiveResult, voiceAssistant.state, voiceEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // UI mode state (stream = Decision Stream, console = Planning Console)
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('ui:mode') || 'stream');
@@ -941,13 +995,12 @@ const TopNavbar = ({ sidebarOpen = true }) => {
       </div>
     </header>
 
-    {/* Floating Azirella avatar — opens Talk to Me from anywhere */}
+    {/* Floating Azirella avatar — voice assistant + Talk to Me */}
     <AzirellaAvatar
-      onClick={() => {
-        setPopupOpen(true);
-        // Focus the input after popup opens
-        setTimeout(() => talkInputRef.current?.focus(), 100);
-      }}
+      onClick={handleAvatarClick}
+      voiceState={voiceAssistant.state}
+      transcript={voiceAssistant.transcript}
+      interimTranscript={voiceAssistant.interimTranscript}
     />
 
     </>
