@@ -24,6 +24,8 @@ import {
   SendHorizontal,
   Sparkles,
   LayoutGrid,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
@@ -32,6 +34,7 @@ import simulationApi, { api } from '../services/api';
 import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
 import { cn } from '../lib/utils/cn';
 import TalkToMePopup from './TalkToMePopup';
+import AzirellaAvatar from './AzirellaAvatar';
 
 // ─── AI Avatar ────────────────────────────────────────────────────────────────
 // A small circular avatar used alongside the "Talk to me" prompt.
@@ -72,6 +75,71 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   const [rephrasedPrompt, setRephrasedPrompt] = useState('');
   const [popupOpen, setPopupOpen] = useState(false);
   const talkInputRef = useRef(null);
+
+  // ── Voice input (Web Speech API) ──────────────────────────────────────────
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;            // browser doesn't support it
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;             // single utterance per tap
+    recognition.interimResults = true;          // stream partial words into input
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((r) => r[0].transcript)
+        .join('');
+      setTalkInput(transcript);
+
+      // Auto-submit on final result
+      if (event.results[0].isFinal) {
+        setIsListening(false);
+        // Small delay so user sees the final text before submission
+        setTimeout(() => {
+          talkInputRef.current?.focus();
+          // Trigger submit programmatically via the ref'd input's form or handleTalkSubmit
+          handleTalkSubmitRef.current?.();
+        }, 300);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      // 'no-speech' and 'aborted' are normal — user just didn't say anything
+      if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        console.warn('Speech recognition error:', event.error);
+      }
+      setIsListening(false);
+    };
+
+    recognition.onend = () => setIsListening(false);
+
+    recognitionRef.current = recognition;
+    return () => {
+      recognition.abort();
+      recognitionRef.current = null;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stable ref to handleTalkSubmit so the recognition callback can call it
+  const handleTalkSubmitRef = useRef(null);
+
+  const toggleVoice = useCallback(() => {
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+
+    if (isListening) {
+      recognition.abort();
+      setIsListening(false);
+    } else {
+      setTalkInput('');               // clear previous text
+      setIsListening(true);
+      recognition.start();
+    }
+  }, [isListening]);
 
   // UI mode state (stream = Decision Stream, console = Planning Console)
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('ui:mode') || 'stream');
@@ -607,6 +675,9 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     }
   };
 
+  // Keep ref in sync so voice recognition callback can call latest handleTalkSubmit
+  handleTalkSubmitRef.current = handleTalkSubmit;
+
   const groupName = user?.group?.name || gameInfo?.group?.name;
   const gameConfigName = gameInfo?.config?.name;
   const scDisplayName = supplyChainConfigName || gameConfigName || systemConfigName;
@@ -633,6 +704,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   ] : [];
 
   return (
+    <>
     <header
       className={cn(
         "fixed top-0 right-0 z-30 h-16 bg-background/80 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200 ease-in-out",
@@ -668,9 +740,11 @@ const TopNavbar = ({ sidebarOpen = true }) => {
               'hidden md:flex items-center w-full max-w-lg gap-2.5',
               'bg-accent/40 border rounded-full px-3 py-1.5',
               'transition-all duration-200',
-              talkFocused
-                ? 'border-violet-400/60 bg-background ring-2 ring-violet-400/20 shadow-sm'
-                : 'border-border hover:border-muted-foreground/40 hover:bg-accent/60',
+              isListening
+                ? 'border-red-400/60 bg-background ring-2 ring-red-400/30 shadow-sm'
+                : talkFocused
+                  ? 'border-violet-400/60 bg-background ring-2 ring-violet-400/20 shadow-sm'
+                  : 'border-border hover:border-muted-foreground/40 hover:bg-accent/60',
             )}
           >
             {/* AI avatar */}
@@ -685,13 +759,29 @@ const TopNavbar = ({ sidebarOpen = true }) => {
               onKeyDown={handleTalkKeyDown}
               onFocus={() => setTalkFocused(true)}
               onBlur={() => setTalkFocused(false)}
-              placeholder="Talk to me…"
+              placeholder={isListening ? 'Listening…' : 'Talk to me…'}
               className={cn(
                 'flex-1 bg-transparent text-sm outline-none min-w-0',
                 'text-foreground placeholder:text-muted-foreground/70',
               )}
               aria-label="Talk to the AI assistant"
             />
+
+            {/* Voice input button */}
+            {recognitionRef.current && (
+              <button
+                onClick={toggleVoice}
+                aria-label={isListening ? 'Stop listening' : 'Voice input'}
+                className={cn(
+                  'flex items-center justify-center h-6 w-6 rounded-full flex-shrink-0 transition-all duration-150',
+                  isListening
+                    ? 'bg-red-500 text-white animate-pulse ring-2 ring-red-400/40'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+                )}
+              >
+                {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+              </button>
+            )}
 
             {/* Send button — visible when there's content */}
             <button
@@ -850,6 +940,17 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         </div>
       </div>
     </header>
+
+    {/* Floating Azirella avatar — opens Talk to Me from anywhere */}
+    <AzirellaAvatar
+      onClick={() => {
+        setPopupOpen(true);
+        // Focus the input after popup opens
+        setTimeout(() => talkInputRef.current?.focus(), 100);
+      }}
+    />
+
+    </>
   );
 };
 
