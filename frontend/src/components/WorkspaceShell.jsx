@@ -13,14 +13,12 @@
  * The previous tab's content is preserved in a cached TabPane.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
-import CapabilityAwareSidebar from './CapabilityAwareSidebar';
 import TopNavbar from './TopNavbar';
 import TabBar from './TabBar';
 import TabPane from './TabPane';
 import useTabStore from '../stores/useTabStore';
-import { cn } from '../lib/utils/cn';
 
 const WorkspaceShell = () => {
   const location = useLocation();
@@ -30,8 +28,6 @@ const WorkspaceShell = () => {
   const openTab = useTabStore((s) => s.openTab);
   const focusTab = useTabStore((s) => s.focusTab);
   const getActiveTab = useTabStore((s) => s.getActiveTab);
-
-  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Map of tabId → rendered React element (cached for background tabs)
   const cachedPanesRef = useRef(new Map());
@@ -71,25 +67,6 @@ const WorkspaceShell = () => {
     }
   }, [activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sidebar state ─────────────────────────────────────────────────────
-  const activeTab = getActiveTab();
-  const isDecisionStream = activeTab?.path === '/decision-stream';
-
-  useEffect(() => {
-    if (!isDecisionStream) {
-      const saved = localStorage.getItem('sidebar:state');
-      if (saved !== null) {
-        setSidebarOpen(saved === 'true');
-      }
-    }
-  }, [isDecisionStream]);
-
-  const handleSidebarToggle = () => {
-    const newState = !sidebarOpen;
-    setSidebarOpen(newState);
-    localStorage.setItem('sidebar:state', String(newState));
-  };
-
   // ── Cache the current Outlet content for each tab ─────────────────────
   // When the active tab renders, we capture its Outlet content and cache it.
   // When a tab goes to the background, the cached content stays in a hidden TabPane.
@@ -123,34 +100,16 @@ const WorkspaceShell = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Top Navbar — always visible */}
-      <TopNavbar sidebarOpen={isDecisionStream ? false : sidebarOpen} />
+      {/* Top Navbar — always visible, no sidebar */}
+      <TopNavbar sidebarOpen={false} />
 
-      {/* Tab Bar */}
-      <div
-        className={cn(
-          'transition-all duration-200 ease-in-out pt-16',
-          isDecisionStream ? 'ml-0' : sidebarOpen ? 'ml-[280px]' : 'ml-[65px]',
-        )}
-      >
+      {/* Tab Bar — full width, no sidebar offset */}
+      <div className="pt-16">
         <TabBar />
       </div>
 
-      {/* Sidebar — hidden on Decision Stream */}
-      {!isDecisionStream && (
-        <CapabilityAwareSidebar
-          open={sidebarOpen}
-          onToggle={handleSidebarToggle}
-        />
-      )}
-
-      {/* Tab content area */}
-      <div
-        className={cn(
-          'flex-1 flex flex-col transition-all duration-200 ease-in-out',
-          isDecisionStream ? 'ml-0' : sidebarOpen ? 'ml-[280px]' : 'ml-[65px]',
-        )}
-      >
+      {/* Tab content area — full width */}
+      <div className="flex-1 flex flex-col">
         {/* Render ALL open tabs — active one visible, others hidden */}
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
@@ -169,13 +128,10 @@ const WorkspaceShell = () => {
         })}
       </div>
 
-      {/* Azirella input bar — portal target, fixed at bottom */}
+      {/* Azirella input bar — portal target, fixed at bottom, full width */}
       <div
         id="azirella-input-root"
-        className={cn(
-          'fixed bottom-0 left-0 right-0 z-30 transition-all duration-200 ease-in-out',
-          isDecisionStream ? 'ml-0' : sidebarOpen ? 'ml-[280px]' : 'ml-[65px]',
-        )}
+        className="fixed bottom-0 left-0 right-0 z-30"
       />
     </div>
   );
