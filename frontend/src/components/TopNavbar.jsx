@@ -762,7 +762,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     <header
       className={cn(
         "fixed top-0 right-0 z-30 h-16 bg-background/80 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200 ease-in-out",
-        sidebarOpen ? "left-[280px]" : "left-16"
+        sidebarOpen ? "left-[280px]" : "left-0"
       )}
     >
       <div className="flex items-center h-full px-4 md:px-6 gap-4">

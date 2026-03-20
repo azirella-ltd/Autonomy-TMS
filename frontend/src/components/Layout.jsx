@@ -36,21 +36,23 @@ const Layout = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Left Sidebar - Auto-collapsed on Decision Stream for immersive view */}
-      <CapabilityAwareSidebar
-        open={isDecisionStream ? false : sidebarOpen}
-        onToggle={handleSidebarToggle}
-      />
+      {/* Left Sidebar — completely hidden on Decision Stream for immersive view */}
+      {!isDecisionStream && (
+        <CapabilityAwareSidebar
+          open={sidebarOpen}
+          onToggle={handleSidebarToggle}
+        />
+      )}
 
       {/* Main Content Area */}
       <div
         className={cn(
           'min-h-screen transition-all duration-200 ease-in-out',
-          (isDecisionStream ? false : sidebarOpen) ? 'ml-[280px]' : 'ml-[65px]'
+          isDecisionStream ? 'ml-0' : sidebarOpen ? 'ml-[280px]' : 'ml-[65px]'
         )}
       >
         {/* Top Navbar */}
-        <TopNavbar sidebarOpen={sidebarOpen} />
+        <TopNavbar sidebarOpen={isDecisionStream ? false : sidebarOpen} />
 
         {/* Page Content */}
         <main className="pt-20 pb-6 px-6">
