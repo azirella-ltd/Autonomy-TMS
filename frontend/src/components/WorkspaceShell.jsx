@@ -13,24 +13,62 @@
  * The previous tab's content is preserved in a cached TabPane.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import TopNavbar from './TopNavbar';
 import TabBar from './TabBar';
 import TabPane from './TabPane';
+import CapabilityAwareSidebar from './CapabilityAwareSidebar';
 import useTabStore from '../stores/useTabStore';
+import { useAuth } from '../contexts/AuthContext';
+import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
+import { cn } from '../lib/utils/cn';
+
+const ADMIN_TAB_ID = 'tab-administration';
 
 const WorkspaceShell = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const tabs = useTabStore((s) => s.tabs);
   const activeTabId = useTabStore((s) => s.activeTabId);
   const openTab = useTabStore((s) => s.openTab);
   const focusTab = useTabStore((s) => s.focusTab);
   const getActiveTab = useTabStore((s) => s.getActiveTab);
 
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
   // Map of tabId → rendered React element (cached for background tabs)
   const cachedPanesRef = useRef(new Map());
+  const adminTabOpened = useRef(false);
+
+  // ── Auto-open Administration tab for tenant admins / system admins ────
+  useEffect(() => {
+    if (adminTabOpened.current || !user) return;
+    const isTenantAdm = checkIsTenantAdmin(user);
+    const isSysAdm = isSystemAdmin(user);
+    if (isTenantAdm || isSysAdm) {
+      const adminPath = isSysAdm ? '/admin/tenants' : '/admin';
+      // Only open if not already present
+      const existing = useTabStore.getState().tabs.find((t) => t.id === ADMIN_TAB_ID);
+      if (!existing) {
+        useTabStore.setState((s) => ({
+          tabs: [
+            ...s.tabs,
+            {
+              id: ADMIN_TAB_ID,
+              path: adminPath,
+              label: 'Administration',
+              pinned: false,
+              closeable: true,
+              scrollY: 0,
+            },
+          ],
+        }));
+      }
+      adminTabOpened.current = true;
+    }
+  }, [user]);
 
   // ── Sync URL changes → tab store ──────────────────────────────────────
   // When the URL changes (browser back/forward, deep link), open/focus a tab
@@ -98,18 +136,50 @@ const WorkspaceShell = () => {
     return () => window.removeEventListener('keydown', handler);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Is the active tab an admin page? Show sidebar inside that tab.
+  const activeTab = getActiveTab();
+  const isAdminTab = activeTab?.path?.startsWith('/admin') ||
+                     activeTab?.path?.startsWith('/system') ||
+                     activeTab?.path?.startsWith('/deployment') ||
+                     activeTab?.id === ADMIN_TAB_ID;
+
+  const handleSidebarToggle = () => {
+    const next = !sidebarOpen;
+    setSidebarOpen(next);
+    localStorage.setItem('sidebar:admin-state', String(next));
+  };
+
+  // Restore admin sidebar state
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebar:admin-state');
+    if (saved !== null) setSidebarOpen(saved === 'true');
+  }, []);
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Top Navbar — always visible, no sidebar */}
+      {/* Top Navbar — always visible */}
       <TopNavbar sidebarOpen={false} />
 
-      {/* Tab Bar — full width, no sidebar offset */}
+      {/* Tab Bar — full width */}
       <div className="pt-16">
         <TabBar />
       </div>
 
-      {/* Tab content area — full width */}
-      <div className="flex-1 flex flex-col">
+      {/* Sidebar — only visible when an admin tab is active */}
+      {isAdminTab && (
+        <CapabilityAwareSidebar
+          open={sidebarOpen}
+          onToggle={handleSidebarToggle}
+        />
+      )}
+
+      {/* Tab content area */}
+      <div
+        className={cn(
+          'flex-1 flex flex-col transition-all duration-200 ease-in-out',
+          isAdminTab ? (sidebarOpen ? 'ml-[280px]' : 'ml-[65px]') : 'ml-0',
+        )}
+      >
         {/* Render ALL open tabs — active one visible, others hidden */}
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
@@ -117,7 +187,6 @@ const WorkspaceShell = () => {
             ? outletElement
             : cachedPanesRef.current.get(tab.id);
 
-          // Only render tabs that have been visited (have cached content)
           if (!content) return null;
 
           return (
@@ -128,10 +197,13 @@ const WorkspaceShell = () => {
         })}
       </div>
 
-      {/* Azirella input bar — portal target, fixed at bottom, full width */}
+      {/* Azirella input bar — portal target, fixed at bottom */}
       <div
         id="azirella-input-root"
-        className="fixed bottom-0 left-0 right-0 z-30"
+        className={cn(
+          'fixed bottom-0 left-0 right-0 z-30 transition-all duration-200',
+          isAdminTab ? (sidebarOpen ? 'ml-[280px]' : 'ml-[65px]') : 'ml-0',
+        )}
       />
     </div>
   );

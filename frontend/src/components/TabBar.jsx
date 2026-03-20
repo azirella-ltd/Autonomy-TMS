@@ -6,7 +6,7 @@
  */
 
 import React, { useRef, useEffect } from 'react';
-import { Plus, X, Sparkles } from 'lucide-react';
+import { Plus, X, Sparkles, Settings } from 'lucide-react';
 import useTabStore from '../stores/useTabStore';
 import { cn } from '../lib/utils/cn';
 
@@ -63,8 +63,9 @@ const TabBar = () => {
               )}
               title={tab.label}
             >
-              {/* Icon for Decision Stream */}
+              {/* Tab icon */}
               {tab.pinned && <Sparkles className="h-3 w-3 text-violet-500 flex-shrink-0" />}
+              {tab.id === 'tab-administration' && <Settings className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
 
               {/* Label */}
               <span className="truncate capitalize">{tab.label}</span>
