@@ -7,7 +7,7 @@
  * Purely presentational — all logic/state management stays in TopNavbar.
  */
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import {
   X,
   Sparkles,
@@ -15,23 +15,11 @@ import {
   ChevronRight,
   CheckCircle2,
   AlertTriangle,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { cn } from '../lib/utils/cn';
-
-// ─── Talk to Me Avatar ──────────────────────────────────────────────────────────
-// Stylized microphone with speech waves — the Talk to Me brand mark.
-const TalkToMeAvatar = ({ size = 'sm' }) => {
-  const dim = size === 'sm' ? 'h-7 w-7' : 'h-9 w-9';
-  return (
-    <img
-      src="/talk_to_me_avatar.svg"
-      alt=""
-      className={cn(dim, 'flex-shrink-0')}
-      aria-hidden="true"
-    />
-  );
-};
 
 // ─── Message Bubble ─────────────────────────────────────────────────────────────
 const MessageBubble = ({ role, children }) => {
@@ -47,7 +35,7 @@ const MessageBubble = ({ role, children }) => {
 
   return (
     <div className="flex items-start gap-2.5 mb-3">
-      <TalkToMeAvatar size="sm" />
+      <img src="/Azirella_logo.png" alt="" className="h-7 w-7 rounded-full object-cover object-[center_40%] flex-shrink-0" aria-hidden="true" />
       <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-accent/60 border border-border px-4 py-2.5 text-sm leading-relaxed text-foreground">
         {children}
       </div>
@@ -882,8 +870,11 @@ const TalkToMePopup = ({
   clarifications,
   onClarificationAnswer,
   onClarificationSubmit,
+  onRequestClarificationVoice,
 }) => {
   const scrollRef = useRef(null);
+  const [held, setHeld] = useState(false);
+  const autoDismissTimer = useRef(null);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -931,8 +922,6 @@ const TalkToMePopup = ({
     ],
   );
 
-  if (!open) return null;
-
   // Determine whether Done should be shown (only when interaction is "complete")
   const isComplete =
     // Question answered
@@ -945,6 +934,40 @@ const TalkToMePopup = ({
     (streamMessages?.length > 0 &&
       (streamMessages[streamMessages.length - 1]?.type === 'complete' ||
         streamMessages[streamMessages.length - 1]?.type === 'error'));
+
+  // Does the LLM need more info? (clarification fields present, or ambiguous/unknown)
+  const needsClarification =
+    (analysisResult?.missing_fields?.length > 0 && !directiveResult) ||
+    analysisResult?.intent === 'unknown' ||
+    analysisResult?.clarification_needed ||
+    (!!rephrasedPrompt && !directiveResult);
+
+  // ── Auto-dismiss after 10s when complete (unless held or needs clarification) ──
+  useEffect(() => {
+    clearTimeout(autoDismissTimer.current);
+    if (open && isComplete && !held && !needsClarification) {
+      autoDismissTimer.current = setTimeout(() => {
+        onClose?.();
+      }, 10000);
+    }
+    return () => clearTimeout(autoDismissTimer.current);
+  }, [open, isComplete, held, needsClarification, onClose]);
+
+  // Reset hold state when popup reopens with new content
+  useEffect(() => {
+    if (open) setHeld(false);
+  }, [userPrompt, open]);
+
+  // ── Voice prompt when clarification is needed ──
+  const hasFiredVoiceRef = useRef(null);
+  useEffect(() => {
+    if (needsClarification && open && hasFiredVoiceRef.current !== userPrompt) {
+      hasFiredVoiceRef.current = userPrompt;
+      onRequestClarificationVoice?.();
+    }
+  }, [needsClarification, open, userPrompt, onRequestClarificationVoice]);
+
+  if (!open) return null;
 
   return (
     <>
@@ -965,9 +988,9 @@ const TalkToMePopup = ({
         {/* ── Header (sticky) ─────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
-            <TalkToMeAvatar size="sm" />
+            <img src="/Azirella_logo.png" alt="" className="h-7 w-7 rounded-full object-cover object-[center_40%] flex-shrink-0" aria-hidden="true" />
             <span className="font-semibold text-sm text-foreground">
-              Talk to Me
+              Azirella
             </span>
           </div>
           <button
@@ -992,13 +1015,31 @@ const TalkToMePopup = ({
         </div>
 
         {/* ── Footer (sticky) ─────────────────────────────────────────────── */}
-        <div className="flex items-center justify-end px-4 py-3 border-t border-border flex-shrink-0">
-          {submitting && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mr-auto">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <span>Processing...</span>
-            </div>
-          )}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border flex-shrink-0">
+          <div className="flex items-center gap-2">
+            {submitting && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>Processing...</span>
+              </div>
+            )}
+            {/* Auto-dismiss indicator + Hold toggle */}
+            {isComplete && !needsClarification && (
+              <button
+                onClick={() => setHeld(h => !h)}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all',
+                  held
+                    ? 'bg-amber-500/10 text-amber-600 border border-amber-300/50'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent',
+                )}
+                title={held ? 'Pinned — click to unpin and auto-dismiss' : 'Pin to keep visible'}
+              >
+                {held ? <Pin className="h-3 w-3" /> : <PinOff className="h-3 w-3" />}
+                {held ? 'Pinned' : 'Closes in 10s'}
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className={cn(

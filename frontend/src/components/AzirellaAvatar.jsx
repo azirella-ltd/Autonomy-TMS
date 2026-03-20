@@ -74,6 +74,7 @@ const AzirellaAvatar = ({
   transcript = '',
   interimTranscript = '',
   size = 96,
+  inline = false,
   className,
 }) => {
   const [hovered, setHovered] = useState(false);
@@ -166,18 +167,18 @@ const AzirellaAvatar = ({
   const twinkleY = 20 + (1 - twinkle) * 40; // 20-60% from top
 
   return (
-    <div className={cn('fixed bottom-6 right-6 z-50', className)}>
+    <div className={cn(inline ? 'relative' : 'fixed bottom-6 right-6 z-50', className)}>
 
-      {/* Transcript bubble */}
-      {showTranscript && (
+      {/* Transcript bubble — hidden in inline mode (navbar shows state in placeholder) */}
+      {!inline && showTranscript && (
         <div className="absolute bottom-full right-0 mb-3 max-w-72 bg-popover border border-border rounded-xl shadow-xl px-3.5 py-2.5 text-xs text-foreground animate-in fade-in slide-in-from-bottom-2">
           {transcript && <span className="font-medium">{transcript}</span>}
           {interimTranscript && <span className="text-muted-foreground italic"> {interimTranscript}</span>}
         </div>
       )}
 
-      {/* Status label */}
-      {label && !showTranscript && (
+      {/* Status label — hidden in inline mode */}
+      {!inline && label && !showTranscript && (
         <div className="absolute bottom-full right-0 mb-3 px-3 py-1.5 rounded-full text-[11px] font-medium bg-popover border border-border shadow-md whitespace-nowrap animate-in fade-in slide-in-from-bottom-1">
           <span className={cn(
             'inline-block w-1.5 h-1.5 rounded-full mr-1.5',
@@ -198,9 +199,9 @@ const AzirellaAvatar = ({
         aria-label="Talk to Azirella"
         title={label || 'Talk to me'}
       >
-        {/* Outer pulse ring */}
+        {/* Outer pulse ring — subtle in inline mode */}
         <span
-          className="absolute inset-0 rounded-full animate-ping pointer-events-none"
+          className={cn('absolute inset-0 rounded-full animate-ping pointer-events-none', inline && 'hidden')}
           style={{
             animationDuration: isActive ? '1.2s' : '4s',
             opacity: isActive ? 0.6 : 0.3,
@@ -228,19 +229,18 @@ const AzirellaAvatar = ({
             boxShadow: cfg.glow,
           }}
         >
-          {/* Exact Azirella logo — cropped to show figure only, no text */}
+          {/* Full Azirella logo — constellation figure + name */}
           <img
             src="/Azirella_logo.png"
-            alt=""
+            alt="Azirella"
             className="absolute pointer-events-none select-none"
             style={{
-              // Crop: show the constellation figure, hide "Azirella" text on right
-              width: '220%',
-              height: '320%',
-              top: '-55%',
-              left: '-15%',
+              width: '100%',
+              height: '100%',
+              top: 0,
+              left: 0,
               objectFit: 'cover',
-              clipPath: 'inset(0 42% 15% 0)',
+              objectPosition: 'center 40%',
               filter: `brightness(${cfg.imgBrightness}) contrast(1.1)`,
               transition: 'filter 0.5s ease, transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
             }}

@@ -16,7 +16,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-const WAKE_WORDS = ['hey autonomy', 'hey azirella', 'hey azerella', 'autonomy'];
+const WAKE_WORDS = ['hey autonomy', 'hi autonomy', 'hey azirella', 'hi azirella', 'hey azerella', 'hi azerella', 'autonomy', 'azirella'];
 const WAKE_CHIME_FREQ = 880; // A5 note
 const SILENCE_TIMEOUT_MS = 3000; // Stop listening after 3s silence
 const MAX_LISTEN_MS = 15000; // Max listening time per utterance

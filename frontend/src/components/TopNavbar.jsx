@@ -24,8 +24,6 @@ import {
   SendHorizontal,
   Sparkles,
   LayoutGrid,
-  Mic,
-  MicOff,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
@@ -36,22 +34,6 @@ import { cn } from '../lib/utils/cn';
 import TalkToMePopup from './TalkToMePopup';
 import AzirellaAvatar from './AzirellaAvatar';
 import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
-
-// ─── AI Avatar ────────────────────────────────────────────────────────────────
-// A small circular avatar used alongside the "Talk to me" prompt.
-// Stylized microphone with speech waves — the Talk to Me brand mark.
-// Talk to Me avatar — stylized microphone with speech waves
-const TalkToMeAvatar = ({ size = 'sm' }) => {
-  const dim = size === 'sm' ? 'h-7 w-7' : 'h-9 w-9';
-  return (
-    <img
-      src="/talk_to_me_avatar.svg"
-      alt=""
-      className={cn(dim, 'flex-shrink-0')}
-      aria-hidden="true"
-    />
-  );
-};
 
 const TopNavbar = ({ sidebarOpen = true }) => {
   const { user, isAuthenticated, logout } = useAuth();
@@ -77,84 +59,16 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   const [popupOpen, setPopupOpen] = useState(false);
   const talkInputRef = useRef(null);
 
-  // ── Voice input (Web Speech API) ──────────────────────────────────────────
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef(null);
-
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;            // browser doesn't support it
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;             // single utterance per tap
-    recognition.interimResults = true;          // stream partial words into input
-    recognition.lang = 'en-US';
-
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((r) => r[0].transcript)
-        .join('');
-      setTalkInput(transcript);
-
-      // Auto-submit on final result
-      if (event.results[0].isFinal) {
-        setIsListening(false);
-        // Small delay so user sees the final text before submission
-        setTimeout(() => {
-          talkInputRef.current?.focus();
-          // Trigger submit programmatically via the ref'd input's form or handleTalkSubmit
-          handleTalkSubmitRef.current?.();
-        }, 300);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      // 'no-speech' and 'aborted' are normal — user just didn't say anything
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        console.warn('Speech recognition error:', event.error);
-      }
-      setIsListening(false);
-    };
-
-    recognition.onend = () => setIsListening(false);
-
-    recognitionRef.current = recognition;
-    return () => {
-      recognition.abort();
-      recognitionRef.current = null;
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Stable ref to handleTalkSubmit so the recognition callback can call it
-  const handleTalkSubmitRef = useRef(null);
-
-  const toggleVoice = useCallback(() => {
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
-
-    if (isListening) {
-      recognition.abort();
-      setIsListening(false);
-    } else {
-      setTalkInput('');               // clear previous text
-      setIsListening(true);
-      recognition.start();
-    }
-  }, [isListening]);
-
-  // ── "Hey Autonomy" voice assistant ──────────────────────────────────────
+  // ── "Hey Azirella" voice assistant ──────────────────────────────────────
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const voiceSubmitRef = useRef(null);        // stable ref to submit fn
   const voiceAssistant = useVoiceAssistant({
     enabled: voiceEnabled,
     onUtterance: (text) => {
-      // Voice utterance → submit as Talk to Me input
+      // Voice utterance → populate input and trigger Talk to Me submit
       setTalkInput(text);
       setPopupOpen(true);
-      // Use the analyze flow so clarification works
-      setTimeout(() => {
-        // Trigger submit by setting input and calling handleTalkSubmit
-        setTalkInput(text);
-      }, 100);
+      setTimeout(() => voiceSubmitRef.current?.(), 200);
     },
   });
 
@@ -729,8 +643,8 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     }
   };
 
-  // Keep ref in sync so voice recognition callback can call latest handleTalkSubmit
-  handleTalkSubmitRef.current = handleTalkSubmit;
+  // Keep voice submit ref in sync with latest handleTalkSubmit
+  voiceSubmitRef.current = handleTalkSubmit;
 
   const groupName = user?.group?.name || gameInfo?.group?.name;
   const gameConfigName = gameInfo?.config?.name;
@@ -787,22 +701,33 @@ const TopNavbar = ({ sidebarOpen = true }) => {
           )}
         </div>
 
-        {/* ── CENTER: Talk to me ────────────────────────────────────────────── */}
+        {/* ── CENTER: Azirella avatar + Talk to me ──────────────────────────── */}
         <div className="flex-1 flex justify-center px-2 relative">
           <div
             className={cn(
-              'hidden md:flex items-center w-full max-w-lg gap-2.5',
-              'bg-accent/40 border rounded-full px-3 py-1.5',
+              'hidden md:flex items-center w-full max-w-lg gap-2',
+              'bg-accent/40 border rounded-full pl-1 pr-3 py-1',
               'transition-all duration-200',
-              isListening
-                ? 'border-red-400/60 bg-background ring-2 ring-red-400/30 shadow-sm'
-                : talkFocused
-                  ? 'border-violet-400/60 bg-background ring-2 ring-violet-400/20 shadow-sm'
-                  : 'border-border hover:border-muted-foreground/40 hover:bg-accent/60',
+              voiceAssistant.state === VoiceState.LISTENING
+                ? 'border-green-400/60 bg-background ring-2 ring-green-400/25 shadow-sm'
+                : voiceAssistant.state === VoiceState.PROCESSING
+                  ? 'border-amber-400/60 bg-background ring-2 ring-amber-400/20 shadow-sm'
+                  : voiceAssistant.state === VoiceState.SPEAKING
+                    ? 'border-blue-400/60 bg-background ring-2 ring-blue-400/20 shadow-sm'
+                    : talkFocused
+                      ? 'border-violet-400/60 bg-background ring-2 ring-violet-400/20 shadow-sm'
+                      : 'border-border hover:border-muted-foreground/40 hover:bg-accent/60',
             )}
           >
-            {/* AI avatar */}
-            <TalkToMeAvatar size="sm" />
+            {/* Inline Azirella avatar — click to enable voice */}
+            <AzirellaAvatar
+              onClick={handleAvatarClick}
+              voiceState={voiceAssistant.state}
+              transcript={voiceAssistant.transcript}
+              interimTranscript={voiceAssistant.interimTranscript}
+              size={36}
+              inline
+            />
 
             {/* Prompt input */}
             <input
@@ -813,29 +738,19 @@ const TopNavbar = ({ sidebarOpen = true }) => {
               onKeyDown={handleTalkKeyDown}
               onFocus={() => setTalkFocused(true)}
               onBlur={() => setTalkFocused(false)}
-              placeholder={isListening ? 'Listening…' : 'Talk to me…'}
+              placeholder={
+                voiceAssistant.state === VoiceState.LISTENING ? 'Listening…'
+                  : voiceAssistant.state === VoiceState.PROCESSING ? 'Thinking…'
+                    : voiceAssistant.state === VoiceState.SPEAKING ? 'Speaking…'
+                      : voiceEnabled ? 'Say "Hi Azirella" or type…'
+                        : 'Talk to me…'
+              }
               className={cn(
                 'flex-1 bg-transparent text-sm outline-none min-w-0',
                 'text-foreground placeholder:text-muted-foreground/70',
               )}
               aria-label="Talk to the AI assistant"
             />
-
-            {/* Voice input button */}
-            {recognitionRef.current && (
-              <button
-                onClick={toggleVoice}
-                aria-label={isListening ? 'Stop listening' : 'Voice input'}
-                className={cn(
-                  'flex items-center justify-center h-6 w-6 rounded-full flex-shrink-0 transition-all duration-150',
-                  isListening
-                    ? 'bg-red-500 text-white animate-pulse ring-2 ring-red-400/40'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent',
-                )}
-              >
-                {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-              </button>
-            )}
 
             {/* Send button — visible when there's content */}
             <button
@@ -876,6 +791,13 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             clarifications={clarifications}
             onClarificationAnswer={handleClarificationAnswer}
             onClarificationSubmit={handleClarificationSubmit}
+            onRequestClarificationVoice={() => {
+              if (voiceEnabled) {
+                voiceAssistant.speakResponse(
+                  'Please edit your prompt to include the information I need to fully understand and execute your request.'
+                );
+              }
+            }}
           />
         </div>
 
@@ -994,15 +916,6 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         </div>
       </div>
     </header>
-
-    {/* Floating Azirella avatar — voice assistant + Talk to Me */}
-    <AzirellaAvatar
-      onClick={handleAvatarClick}
-      voiceState={voiceAssistant.state}
-      transcript={voiceAssistant.transcript}
-      interimTranscript={voiceAssistant.interimTranscript}
-    />
-
     </>
   );
 };
