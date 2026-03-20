@@ -168,6 +168,15 @@ const WorkspaceShell = () => {
           );
         })}
       </div>
+
+      {/* Azirella input bar — portal target, fixed at bottom */}
+      <div
+        id="azirella-input-root"
+        className={cn(
+          'fixed bottom-0 left-0 right-0 z-30 transition-all duration-200 ease-in-out',
+          isDecisionStream ? 'ml-0' : sidebarOpen ? 'ml-[280px]' : 'ml-[65px]',
+        )}
+      />
     </div>
   );
 };

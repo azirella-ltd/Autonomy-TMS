@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useLocation, useParams } from 'react-router-dom';
 import {
   Menu,
@@ -34,6 +35,7 @@ import { cn } from '../lib/utils/cn';
 import TalkToMePopup from './TalkToMePopup';
 import AzirellaAvatar from './AzirellaAvatar';
 import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
+import useTabStore from '../stores/useTabStore';
 
 const TopNavbar = ({ sidebarOpen = true }) => {
   const { user, isAuthenticated, logout } = useAuth();
@@ -65,7 +67,35 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   const voiceAssistant = useVoiceAssistant({
     enabled: voiceEnabled,
     onUtterance: (text) => {
-      // Voice utterance → populate input and trigger Talk to Me submit
+      const lower = text.toLowerCase().trim();
+
+      // ── Voice tab commands ──────────────────────────────────────────
+      if (/^(close|close this|close tab|close this tab)$/i.test(lower)) {
+        const tab = useTabStore.getState().getActiveTab();
+        if (tab?.closeable) useTabStore.getState().closeTab(tab.id);
+        return;
+      }
+      if (/^(new tab|open new tab|open a new tab)$/i.test(lower)) {
+        useTabStore.getState().openTab('/dashboard', 'Dashboard');
+        navigate('/dashboard');
+        return;
+      }
+      if (/^(show.*dashboard|open.*dashboard|switch.*console|show.*console)$/i.test(lower)) {
+        useTabStore.getState().openTab('/dashboard', 'Dashboard');
+        navigate('/dashboard');
+        return;
+      }
+      if (/^(show.*decision|open.*decision|go.*decision|decision stream)$/i.test(lower)) {
+        useTabStore.getState().focusTab('tab-decision-stream');
+        navigate('/decision-stream');
+        return;
+      }
+      if (/^(close|dismiss|done|that'?s all|go away|never mind)$/i.test(lower)) {
+        dismissClarification();
+        return;
+      }
+
+      // ── Normal directive/query → Talk to Me submit ──────────────────
       setTalkInput(text);
       setPopupOpen(true);
       setTimeout(() => voiceSubmitRef.current?.(), 200);
@@ -701,12 +731,16 @@ const TopNavbar = ({ sidebarOpen = true }) => {
           )}
         </div>
 
-        {/* ── CENTER: Azirella avatar + Talk to me ──────────────────────────── */}
-        <div className="flex-1 flex justify-center px-2 relative">
+        {/* ── CENTER: spacer (Azirella input is portalled to bottom) ────────── */}
+        <div className="flex-1" />
+
+        {/* ── AZIRELLA INPUT BAR — portalled to #azirella-input-root at bottom of workspace ── */}
+        {typeof document !== 'undefined' && document.getElementById('azirella-input-root') && createPortal(
+          <div className="flex justify-center px-4 py-3 border-t border-border bg-background/95 backdrop-blur-sm">
           <div
             className={cn(
-              'hidden md:flex items-center w-full max-w-lg gap-2',
-              'bg-accent/40 border rounded-full pl-1 pr-3 py-1',
+              'flex items-center w-full max-w-2xl gap-2',
+              'bg-accent/40 border rounded-full pl-1 pr-3 py-1.5',
               'transition-all duration-200',
               voiceAssistant.state === VoiceState.LISTENING
                 ? 'border-green-400/60 bg-background ring-2 ring-green-400/25 shadow-sm'
@@ -799,7 +833,9 @@ const TopNavbar = ({ sidebarOpen = true }) => {
               }
             }}
           />
-        </div>
+          </div>,
+          document.getElementById('azirella-input-root'),
+        )}
 
         {/* ── RIGHT: Actions & User Menu ───────────────────────────────────── */}
         <div className="flex items-center gap-2 flex-shrink-0">

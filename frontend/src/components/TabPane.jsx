@@ -41,7 +41,7 @@ const TabPane = ({ tabId, active, children }) => {
       style={{ display: active ? 'block' : 'none' }}
       data-tab-id={tabId}
     >
-      <main className="pb-6 px-6 pt-4">
+      <main className="pb-20 px-6 pt-4">
         {children}
       </main>
     </div>
