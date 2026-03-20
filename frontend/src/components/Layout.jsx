@@ -6,20 +6,27 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import CapabilityAwareSidebar from './CapabilityAwareSidebar';
 import TopNavbar from './TopNavbar';
 import { cn } from '../lib/utils/cn';
 
 const Layout = ({ children }) => {
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Persist sidebar state
+  // Auto-collapse sidebar on Decision Stream (immersive view)
+  const isDecisionStream = location.pathname === '/' || location.pathname === '/decision-stream';
+
+  // Persist sidebar state (only for non-Decision Stream pages)
   useEffect(() => {
-    const saved = localStorage.getItem('sidebar:state');
-    if (saved !== null) {
-      setSidebarOpen(saved === 'true');
+    if (!isDecisionStream) {
+      const saved = localStorage.getItem('sidebar:state');
+      if (saved !== null) {
+        setSidebarOpen(saved === 'true');
+      }
     }
-  }, []);
+  }, [isDecisionStream]);
 
   const handleSidebarToggle = () => {
     const newState = !sidebarOpen;
@@ -29,14 +36,17 @@ const Layout = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Left Sidebar - Uses navigationConfig.js as single source of truth */}
-      <CapabilityAwareSidebar open={sidebarOpen} onToggle={handleSidebarToggle} />
+      {/* Left Sidebar - Auto-collapsed on Decision Stream for immersive view */}
+      <CapabilityAwareSidebar
+        open={isDecisionStream ? false : sidebarOpen}
+        onToggle={handleSidebarToggle}
+      />
 
       {/* Main Content Area */}
       <div
         className={cn(
           'min-h-screen transition-all duration-200 ease-in-out',
-          sidebarOpen ? 'ml-[280px]' : 'ml-[65px]'
+          (isDecisionStream ? false : sidebarOpen) ? 'ml-[280px]' : 'ml-[65px]'
         )}
       >
         {/* Top Navbar */}
