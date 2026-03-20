@@ -335,18 +335,48 @@
     }
   }
 
+  function validateEmail(email) {
+    // Must have exactly one @, something before and after it
+    var parts = email.split('@');
+    if (parts.length !== 2) return 'Please enter a valid email address.';
+    var local = parts[0], domain = parts[1];
+    if (!local || !domain) return 'Please enter a valid email address.';
+    // Domain must have at least one dot
+    if (domain.indexOf('.') === -1) return 'Email domain must include a dot (e.g., company.com).';
+    // TLD must be at least 2 chars
+    var tld = domain.split('.').pop();
+    if (tld.length < 2) return 'Email domain appears incomplete.';
+    // No spaces
+    if (email.indexOf(' ') !== -1) return 'Email address cannot contain spaces.';
+    // Block obvious personal domains for lead quality
+    var freeProviders = ['gmail.com','yahoo.com','hotmail.com','outlook.com','aol.com','icloud.com','mail.com','protonmail.com','zoho.com','yandex.com','gmx.com','live.com'];
+    if (freeProviders.indexOf(domain.toLowerCase()) !== -1) {
+      return 'Please use your work email address.';
+    }
+    return null;
+  }
+
   function submitLead(e) {
     e.preventDefault();
     var btn = document.getElementById('submitBtn');
     var errEl = document.getElementById('formError');
     var successEl = document.getElementById('formSuccess');
     errEl.style.display = 'none';
+
+    var email = document.getElementById('leadEmail').value.trim();
+    var emailErr = validateEmail(email);
+    if (emailErr) {
+      errEl.textContent = emailErr;
+      errEl.style.display = 'block';
+      return false;
+    }
+
     btn.textContent = 'Registering...';
     btn.disabled = true;
 
     var data = {
       name: document.getElementById('leadName').value.trim(),
-      email: document.getElementById('leadEmail').value.trim(),
+      email: email,
       company: document.getElementById('leadCompany').value.trim(),
       role: document.getElementById('leadRole').value.trim(),
       timestamp: new Date().toISOString(),
