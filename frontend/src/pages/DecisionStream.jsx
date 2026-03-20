@@ -36,10 +36,13 @@ import { simulationApi } from '../services/api';
 import { cn } from '../lib/utils/cn';
 import { useDisplayPreferences } from '../contexts/DisplayPreferencesContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useCapabilities } from '../hooks/useCapabilities';
 
 const DecisionStream = () => {
   const location = useLocation();
   const { isTenantAdmin } = useAuth();
+  const { hasCapability } = useCapabilities();
+  const canOverride = hasCapability('action_decision_stream') || isTenantAdmin;
 
   // Digest state
   const [digest, setDigest] = useState(null);
@@ -353,8 +356,8 @@ const DecisionStream = () => {
                   : (digest.decisions || []).filter(d => d.needs_attention !== false)
                 ).filter(d => !activeLevels || activeLevels.has(d.decision_level || 'execution'))
                 }
-                onAccept={handleAccept}
-                onOverride={handleOverride}
+                onAccept={canOverride ? handleAccept : undefined}
+                onOverride={canOverride ? handleOverride : undefined}
                 onAskWhy={handleAskWhy}
               />
             </>

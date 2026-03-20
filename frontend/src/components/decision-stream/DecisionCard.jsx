@@ -381,22 +381,28 @@ const DecisionCard = ({
                 <ChevronDown className="h-3 w-3 ml-0.5" />
               )}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className={cn(
-                "h-7 text-xs",
-                inspected
-                  ? "border-orange-500 text-orange-600 hover:bg-orange-50"
-                  : "border-muted text-muted-foreground cursor-not-allowed opacity-50"
-              )}
-              onClick={() => inspected && setOverrideMode('choose')}
-              disabled={acting || !inspected}
-              title={!inspected ? "Inspect agent reasoning first" : "Override this decision"}
-            >
-              <Edit3 className="h-3 w-3 mr-1" />
-              Override
-            </Button>
+            {onOverride ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className={cn(
+                  "h-7 text-xs",
+                  inspected
+                    ? "border-orange-500 text-orange-600 hover:bg-orange-50"
+                    : "border-muted text-muted-foreground cursor-not-allowed opacity-50"
+                )}
+                onClick={() => inspected && setOverrideMode('choose')}
+                disabled={acting || !inspected}
+                title={!inspected ? "Inspect agent reasoning first" : "Override this decision"}
+              >
+                <Edit3 className="h-3 w-3 mr-1" />
+                Override
+              </Button>
+            ) : (
+              <span className="text-[10px] text-muted-foreground/60 italic ml-1">
+                View only
+              </span>
+            )}
             <div className="flex-1" />
             <Button
               size="sm"
