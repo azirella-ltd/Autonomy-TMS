@@ -5,13 +5,15 @@
  * Other tabs have close buttons. '+' button at the end for new tabs.
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Plus, X, Sparkles, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useTabStore from '../stores/useTabStore';
+import NewTabPalette from './NewTabPalette';
 import { cn } from '../lib/utils/cn';
 
 const TabBar = () => {
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const tabs = useTabStore((s) => s.tabs);
   const activeTabId = useTabStore((s) => s.activeTabId);
   const focusTab = useTabStore((s) => s.focusTab);
@@ -35,10 +37,19 @@ const TabBar = () => {
     }
   };
 
-  const handleNewTab = () => {
-    openTab('/executive-dashboard', 'Executive Dashboard');
-    navigate('/executive-dashboard');
-  };
+  const handleNewTab = () => setPaletteOpen(true);
+
+  // Ctrl+T opens palette
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   return (
     <div className="flex items-center bg-background border-b border-border h-10 px-1 flex-shrink-0 overflow-hidden">
@@ -98,10 +109,13 @@ const TabBar = () => {
       <button
         onClick={handleNewTab}
         className="flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex-shrink-0 ml-1"
-        title="New tab (Dashboard)"
+        title="Open page in new tab (Ctrl+T)"
       >
         <Plus className="h-3.5 w-3.5" />
       </button>
+
+      {/* Command palette for new tab */}
+      <NewTabPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 };

@@ -83,6 +83,22 @@ const WorkspaceShell = () => {
       }
       adminTabOpened.current = true;
     }
+
+    // ── Auto-open role-specific tabs ──────────────────────────────────
+    const powellRole = user.powell_role;
+    const tabs = useTabStore.getState().tabs;
+
+    // Executives get Strategy Briefing
+    if ((powellRole === 'SC_VP' || powellRole === 'EXECUTIVE') &&
+        !tabs.find((t) => t.path === '/strategy-briefing')) {
+      useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
+    }
+
+    // DEMO_ALL gets Strategy Briefing too
+    if (powellRole === 'DEMO_ALL' &&
+        !tabs.find((t) => t.path === '/strategy-briefing')) {
+      useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
+    }
   }, [user]);
 
   // ── Sync URL changes → tab store ──────────────────────────────────────
