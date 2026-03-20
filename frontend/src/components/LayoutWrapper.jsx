@@ -1,20 +1,15 @@
 /**
  * Layout Wrapper Component
  *
- * Wraps the page content with Layout for authenticated routes.
- * Extracted for use with React Router.
+ * Wraps the page content with the tabbed WorkspaceShell.
+ * React Router's Outlet is rendered inside the active tab pane.
  */
 
 import React from 'react';
-import Layout from './Layout';
-import { Outlet } from 'react-router-dom';
+import WorkspaceShell from './WorkspaceShell';
 
 const LayoutWrapper = () => {
-  return (
-    <Layout>
-      <Outlet />
-    </Layout>
-  );
+  return <WorkspaceShell />;
 };
 
 export default LayoutWrapper;

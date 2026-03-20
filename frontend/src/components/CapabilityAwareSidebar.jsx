@@ -17,6 +17,7 @@ import { useCapabilities } from '../hooks/useCapabilities';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { getFilteredNavigation } from '../config/navigationConfig';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
+import useTabStore from '../stores/useTabStore';
 
 const DRAWER_WIDTH = 280;
 const DRAWER_WIDTH_COLLAPSED = 65;
@@ -80,8 +81,9 @@ const CapabilityAwareSidebar = ({ open, onToggle }) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
 
-  const handleNavigation = (path, disabled) => {
+  const handleNavigation = (path, disabled, label) => {
     if (disabled) return;
+    useTabStore.getState().openTab(path, label);
     navigate(path);
   };
 
@@ -190,7 +192,7 @@ const CapabilityAwareSidebar = ({ open, onToggle }) => {
                     <Tooltip key={item.path || `item-${itemIndex}`} title={tooltipTitle} placement="right">
                       <div className="pl-4">
                         <button
-                          onClick={() => handleNavigation(item.path, disabled)}
+                          onClick={() => handleNavigation(item.path, disabled, item.label)}
                           disabled={disabled}
                           className={cn(
                             'w-full flex items-center rounded-md min-h-[40px] px-3 gap-3',
@@ -254,7 +256,7 @@ const CapabilityAwareSidebar = ({ open, onToggle }) => {
                   return (
                     <Tooltip key={item.path || `collapsed-${itemIndex}`} title={tooltipTitle} placement="right">
                       <button
-                        onClick={() => handleNavigation(item.path, disabled)}
+                        onClick={() => handleNavigation(item.path, disabled, item.label)}
                         disabled={disabled}
                         className={cn(
                           'w-full flex items-center justify-center rounded-md min-h-[40px]',
