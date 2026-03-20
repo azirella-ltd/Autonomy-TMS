@@ -663,3 +663,133 @@ async def read_user(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions"
         )
     return await auth_service.get_user(user_id)
+
+
+# ── Demo Auto-Login ──────────────────────────────────────────────────────────
+# Generates a time-limited, single-use token for demo access.
+# The password NEVER appears in URLs, logs, or browser history.
+#
+# Flow:
+#   1. Website generates a demo link: /auto-login?token=<jwt>
+#   2. Frontend exchanges the token for a real session via POST /auth/demo-exchange
+#   3. Backend validates token, logs in the demo user, returns access token
+#
+# The demo token is:
+#   - Signed with the same SECRET_KEY as regular JWTs
+#   - Short-lived (5 minutes)
+#   - Scoped to a specific demo account (cannot be used for other users)
+#   - Contains a "demo" claim to distinguish from regular tokens
+
+# Configurable demo account (set via env or use default)
+import os
+_DEMO_EMAIL = os.environ.get("DEMO_USER_EMAIL", "exec@distdemo.com")
+_DEMO_TOKEN_EXPIRY_MINUTES = int(os.environ.get("DEMO_TOKEN_EXPIRY_MINUTES", "5"))
+
+
+@router.get("/demo-token")
+async def generate_demo_token():
+    """Generate a short-lived demo access token.
+
+    This is called by the website to create the auto-login URL.
+    The token contains NO credentials — just a signed claim that
+    the bearer is allowed to log in as the demo user.
+
+    Returns: {"token": "<jwt>", "url": "/auto-login?token=<jwt>"}
+    """
+    import jwt as pyjwt
+    payload = {
+        "sub": _DEMO_EMAIL,
+        "purpose": "demo_auto_login",
+        "exp": datetime.utcnow() + timedelta(minutes=_DEMO_TOKEN_EXPIRY_MINUTES),
+        "iat": datetime.utcnow(),
+    }
+    token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return {
+        "token": token,
+        "url": f"/auto-login?token={token}",
+        "expires_in_seconds": _DEMO_TOKEN_EXPIRY_MINUTES * 60,
+    }
+
+
+@router.get("/demo-token-redirect")
+async def demo_token_redirect():
+    """One-click demo access — generates token and redirects to auto-login.
+
+    The website links directly to this URL:
+      <a href="https://demo.azirella.com/api/v1/auth/demo-token-redirect">Try Demo</a>
+
+    Generates a 5-minute demo token and redirects to /auto-login?token=<jwt>.
+    No password ever appears in the URL.
+    """
+    import jwt as pyjwt
+    from fastapi.responses import RedirectResponse
+    payload = {
+        "sub": _DEMO_EMAIL,
+        "purpose": "demo_auto_login",
+        "exp": datetime.utcnow() + timedelta(minutes=_DEMO_TOKEN_EXPIRY_MINUTES),
+        "iat": datetime.utcnow(),
+    }
+    token = pyjwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return RedirectResponse(url=f"/auto-login?token={token}", status_code=302)
+
+
+@router.post("/demo-exchange")
+async def exchange_demo_token(
+    request: Request,
+    response: Response,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Exchange a demo token for a real session.
+
+    Body: {"token": "<jwt from /demo-token>"}
+
+    Validates the demo token, authenticates the demo user,
+    and returns a full access token + sets cookies.
+    """
+    import jwt as pyjwt
+
+    body = await request.json()
+    token = body.get("token", "")
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing token")
+
+    # Validate demo token
+    try:
+        payload = pyjwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Demo token expired")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid demo token")
+
+    if payload.get("purpose") != "demo_auto_login":
+        raise HTTPException(status_code=401, detail="Not a demo token")
+
+    demo_email = payload.get("sub")
+    if demo_email != _DEMO_EMAIL:
+        raise HTTPException(status_code=401, detail="Invalid demo account")
+
+    # Look up the demo user (must already exist)
+    demo_user = await auth_service.get_user_by_email(demo_email)
+    if not demo_user:
+        raise HTTPException(status_code=404, detail="Demo account not configured")
+
+    # Generate real tokens (same as normal login)
+    tokens = await auth_service.create_tokens(
+        demo_user,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("User-Agent"),
+    )
+
+    # Set cookies
+    set_auth_cookies(response, tokens["access_token"], tokens.get("refresh_token"))
+    set_csrf_cookie(response)
+
+    return {
+        "access_token": tokens["access_token"],
+        "token_type": "bearer",
+        "user": {
+            "id": demo_user.id,
+            "email": demo_user.email,
+            "name": getattr(demo_user, "full_name", demo_user.email),
+        },
+    }

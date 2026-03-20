@@ -17,6 +17,7 @@ import PlayGame from "./pages/PlayGame";
 import ScenarioReport from "./pages/ScenarioReport.jsx";
 import ScenarioVisualizations from "./pages/ScenarioVisualizations.jsx";
 import Login from "./pages/Login.jsx";
+import AutoLogin from "./pages/AutoLogin.jsx";
 import { WebSocketProvider } from "./contexts/WebSocketContext";
 import { useAuth } from "./contexts/AuthContext";
 import "./utils/fetchInterceptor";
@@ -205,6 +206,7 @@ const AppContent = () => {
       <DebugBanner />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/auto-login" element={<AutoLogin />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
 
         <Route element={<RequireAuth />}>
