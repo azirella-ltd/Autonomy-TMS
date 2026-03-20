@@ -1,8 +1,11 @@
 import { api } from './api';
 
 const executiveBriefingApi = {
-  generate: (briefingType = 'adhoc') =>
-    api.post('/executive-briefing/generate', { briefing_type: briefingType }),
+  generate: (briefingType = 'adhoc', opts = {}) =>
+    api.post('/executive-briefing/generate', {
+      briefing_type: briefingType,
+      ...(opts.verbosity && { verbosity: opts.verbosity }),
+    }),
 
   getLatest: () =>
     api.get('/executive-briefing/latest'),

@@ -7,6 +7,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import { Plus, X, Sparkles, Settings } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import useTabStore from '../stores/useTabStore';
 import { cn } from '../lib/utils/cn';
 
@@ -16,6 +17,7 @@ const TabBar = () => {
   const focusTab = useTabStore((s) => s.focusTab);
   const closeTab = useTabStore((s) => s.closeTab);
   const openTab = useTabStore((s) => s.openTab);
+  const navigate = useNavigate();
   const scrollRef = useRef(null);
 
   // Scroll active tab into view when it changes
@@ -34,8 +36,8 @@ const TabBar = () => {
   };
 
   const handleNewTab = () => {
-    // Open a blank "New" tab — user will type into Azirella to populate it
-    openTab('/dashboard', 'Dashboard');
+    openTab('/executive-dashboard', 'Executive Dashboard');
+    navigate('/executive-dashboard');
   };
 
   return (
@@ -51,7 +53,7 @@ const TabBar = () => {
             <button
               key={tab.id}
               id={`tab-${tab.id}`}
-              onClick={() => focusTab(tab.id)}
+              onClick={() => { focusTab(tab.id); navigate(tab.path); }}
               onMouseDown={(e) => handleMiddleClick(e, tab)}
               className={cn(
                 'group flex items-center gap-1.5 px-3 h-8 rounded-t-md text-xs font-medium',

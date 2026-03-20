@@ -5,6 +5,7 @@ import {
   Calendar, Settings2, History, FileText, Sparkles, ChevronRight,
 } from 'lucide-react';
 import executiveBriefingApi from '../services/executiveBriefingApi';
+import Markdown from 'react-markdown';
 import BriefingRenderer from '../components/briefing/BriefingRenderer';
 import FollowupChat from '../components/briefing/FollowupChat';
 
@@ -45,6 +46,9 @@ export default function ExecutiveBriefingPage() {
   // History state
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Briefing verbosity (per-user, persisted in localStorage)
+  const [verbosity, setVerbosity] = useState(() => localStorage.getItem('briefing:verbosity') || 'normal');
 
   // Schedule state
   const [schedule, setSchedule] = useState(null);
@@ -107,7 +111,7 @@ export default function ExecutiveBriefingPage() {
   const handleGenerate = async () => {
     try {
       setGenerating(true);
-      const { data: resp } = await executiveBriefingApi.generate('adhoc');
+      const { data: resp } = await executiveBriefingApi.generate('adhoc', { verbosity });
       if (resp.success && resp.briefing_id) {
         pollForCompletion(resp.briefing_id);
       }
@@ -315,8 +319,10 @@ export default function ExecutiveBriefingPage() {
               {/* Executive summary */}
               {briefing.executive_summary && (
                 <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
-                  <p className="text-sm font-medium text-primary mb-1">Executive Summary</p>
-                  <p className="text-base leading-relaxed">{briefing.executive_summary}</p>
+                  <p className="text-sm font-medium text-primary mb-2">Executive Summary</p>
+                  <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed [&_p]:mb-2 [&_ul]:mt-1 [&_li]:my-0.5 [&_strong]:text-foreground">
+                    <Markdown>{briefing.executive_summary}</Markdown>
+                  </div>
                 </div>
               )}
 
@@ -517,6 +523,26 @@ export default function ExecutiveBriefingPage() {
                   Go to Knowledge Base
                   <ChevronRight className="h-3 w-3" />
                 </button>
+              </div>
+
+              {/* Briefing verbosity — per-user preference */}
+              <div className="border rounded-lg p-6 space-y-3">
+                <h3 className="font-semibold">Briefing Verbosity</h3>
+                <p className="text-sm text-muted-foreground">
+                  Controls how detailed the generated briefing is. This preference is saved per user.
+                </p>
+                <select
+                  value={verbosity}
+                  onChange={(e) => {
+                    setVerbosity(e.target.value);
+                    localStorage.setItem('briefing:verbosity', e.target.value);
+                  }}
+                  className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                >
+                  <option value="terse">Terse — Key metrics and actions only</option>
+                  <option value="normal">Normal — Balanced analysis with context</option>
+                  <option value="verbose">Verbose — Full detail with supporting data</option>
+                </select>
               </div>
 
               {/* Generation metadata */}

@@ -842,22 +842,6 @@ const TopNavbar = ({ sidebarOpen = true }) => {
           {!isSysAdmin && (
             <>
               <button
-                onClick={handleModeToggle}
-                className={cn(
-                  'p-2 rounded-full transition-colors',
-                  uiMode === 'stream'
-                    ? 'bg-violet-500/10 text-violet-500 hover:bg-violet-500/20'
-                    : 'hover:bg-accent text-muted-foreground hover:text-foreground',
-                )}
-                title={uiMode === 'stream' ? 'Switch to Planning Console' : 'Switch to Decision Stream'}
-              >
-                {uiMode === 'stream' ? (
-                  <LayoutGrid className="h-5 w-5" />
-                ) : (
-                  <Sparkles className="h-5 w-5" />
-                )}
-              </button>
-              <button
                 onClick={() => navigate('/help')}
                 className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
                 title="Help"

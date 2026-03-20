@@ -47,6 +47,7 @@ def _resolve_tenant_id(db: Session, current_user: User) -> int:
 
 class BriefingGenerateRequest(BaseModel):
     briefing_type: str = Field(default="adhoc", description="Briefing type: daily, weekly, monthly, adhoc")
+    verbosity: str = Field(default="normal", description="Briefing verbosity: terse, normal, verbose")
 
 
 class FollowupRequest(BaseModel):
@@ -116,6 +117,10 @@ async def generate_briefing(
     if request.briefing_type not in valid_types:
         raise HTTPException(status_code=400, detail=f"briefing_type must be one of: {valid_types}")
 
+    # Validate verbosity
+    valid_verbosities = {"terse", "normal", "verbose"}
+    verbosity = request.verbosity if request.verbosity in valid_verbosities else "normal"
+
     # Create pending record
     briefing = ExecutiveBriefing(
         tenant_id=tenant_id,
@@ -123,6 +128,8 @@ async def generate_briefing(
         briefing_type=request.briefing_type,
         status="pending",
     )
+    # Store verbosity in data_pack for the background task to read
+    briefing.data_pack = {"_verbosity": verbosity}
     db.add(briefing)
     db.flush()
     briefing_id = briefing.id

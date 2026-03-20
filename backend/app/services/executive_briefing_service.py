@@ -463,7 +463,17 @@ class ExecutiveBriefingService:
             system_prompt = "/no_think\n\n" + system_prompt
 
         # 4. Build user message — JSON reminder at START so it survives context truncation
+        # Verbosity setting (per-user preference, stored in data_pack by endpoint)
+        verbosity = (data_pack or {}).get("_verbosity", "normal")
+        _verbosity_instructions = {
+            "terse": "VERBOSITY: TERSE. Be extremely concise. Executive summary: 2-3 sentences max. Each narrative section: 1-2 bullet points. Recommendations: title + one-line description only. No supporting detail.",
+            "normal": "VERBOSITY: NORMAL. Balanced analysis. Executive summary: 1 paragraph. Narrative sections: 3-5 key points each with brief context. Recommendations: title + description + key data citations.",
+            "verbose": "VERBOSITY: VERBOSE. Full detail. Executive summary: 2-3 paragraphs. Narrative sections: comprehensive analysis with all supporting data points, trend comparisons, and historical context. Recommendations: detailed with full scoring rationale and multiple data citations.",
+        }
+        verbosity_instruction = _verbosity_instructions.get(verbosity, _verbosity_instructions["normal"])
+
         _json_reminder = (
+            f'{verbosity_instruction}\n\n'
             'OUTPUT: JSON only. Start with { end with }. '
             'Keys: title, executive_summary, narrative(whats_changed,situation_overview,'
             'scorecard_narrative,agent_performance_digest,risk_report,external_signals,'
