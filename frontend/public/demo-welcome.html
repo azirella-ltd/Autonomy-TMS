@@ -330,11 +330,8 @@
 </div>
 
 <script>
-  // ─── CONFIGURATION ────────────────────────────────────────────
-  // Replace this URL with your deployed Google Apps Script web app URL.
-  // See setup instructions at: https://github.com/MilesAheadToo/azirella.com#demo-lead-capture
-  var GOOGLE_SHEET_WEBHOOK = '';  // e.g., 'https://script.google.com/macros/s/AKfycb.../exec'
-  // ──────────────────────────────────────────────────────────────
+  // Lead capture is proxied through the backend (POST /api/v1/auth/demo-lead).
+  // The Google Sheets webhook URL is kept server-side in .env (DEMO_GSHEET_WEBHOOK).
 
   var _demoAvailable = true;
   var _capacityPollInterval = null;
@@ -439,20 +436,9 @@
     // Set cookie so we don't ask again
     document.cookie = 'autonomy_demo_lead=1; path=/; max-age=' + (90 * 86400) + '; SameSite=Lax';
 
-    // If no webhook configured, skip sheet submission and go straight to demo
-    if (!GOOGLE_SHEET_WEBHOOK) {
-      console.warn('GOOGLE_SHEET_WEBHOOK not configured — skipping sheet submission');
-      successEl.style.display = 'block';
-      setTimeout(function() {
-        window.location.href = '/api/v1/auth/demo-token-redirect';
-      }, 800);
-      return false;
-    }
-
-    // Submit to Google Sheets via Apps Script web app
-    fetch(GOOGLE_SHEET_WEBHOOK, {
+    // Submit lead to backend (which proxies to Google Sheets server-side)
+    fetch('/api/v1/auth/demo-lead', {
       method: 'POST',
-      mode: 'no-cors',  // Apps Script doesn't support CORS preflight
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     }).then(function() {
@@ -461,7 +447,7 @@
         window.location.href = '/api/v1/auth/demo-token-redirect';
       }, 800);
     }).catch(function(err) {
-      // Still proceed to demo even if sheet write fails
+      // Still proceed to demo even if lead capture fails
       console.error('Lead capture error:', err);
       successEl.style.display = 'block';
       setTimeout(function() {

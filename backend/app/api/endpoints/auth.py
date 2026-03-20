@@ -689,6 +689,49 @@ _DEMO_SESSION_TIMEOUT_MINUTES = int(os.environ.get("DEMO_SESSION_TIMEOUT_MINUTES
 _DEMO_ASSUMED_DURATION_MINUTES = int(os.environ.get("DEMO_ASSUMED_DURATION_MINUTES", "20"))
 _DEMO_MAX_SESSION_MINUTES = int(os.environ.get("DEMO_MAX_SESSION_MINUTES", "30"))
 _DEMO_COOLDOWN_MINUTES = int(os.environ.get("DEMO_COOLDOWN_MINUTES", "60"))
+_DEMO_GSHEET_WEBHOOK = os.environ.get("DEMO_GSHEET_WEBHOOK", "")
+
+
+@router.post("/demo-lead")
+async def capture_demo_lead(request: Request):
+    """Capture demo visitor lead info and forward to Google Sheets.
+
+    The webhook URL is kept server-side in .env (DEMO_GSHEET_WEBHOOK).
+    The frontend never sees it. If not configured, the lead is logged
+    but not forwarded.
+    """
+    import logging
+    logger = logging.getLogger("demo_leads")
+
+    body = await request.json()
+    name = body.get("name", "")
+    email = body.get("email", "")
+    company = body.get("company", "")
+    role = body.get("role", "")
+    timestamp = body.get("timestamp", datetime.utcnow().isoformat())
+    source = body.get("source", "demo-welcome")
+
+    logger.info(f"Demo lead: {name} <{email}> @ {company} ({role})")
+
+    if _DEMO_GSHEET_WEBHOOK:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    _DEMO_GSHEET_WEBHOOK,
+                    json={
+                        "timestamp": timestamp,
+                        "name": name,
+                        "email": email,
+                        "company": company,
+                        "role": role,
+                        "source": source,
+                    },
+                )
+        except Exception as exc:
+            logger.warning(f"Failed to write demo lead to Google Sheets: {exc}")
+
+    return {"status": "ok"}
 
 
 async def _get_active_demo_sessions(db: AsyncSession) -> list:
