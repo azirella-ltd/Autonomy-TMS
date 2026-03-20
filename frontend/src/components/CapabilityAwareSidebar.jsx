@@ -52,7 +52,11 @@ const Tooltip = ({ children, title, placement = 'right' }) => {
   );
 };
 
-const CapabilityAwareSidebar = ({ open, onToggle }) => {
+const ADMIN_SECTIONS = new Set([
+  'Administration', 'AI & Agents', 'Deployment',
+]);
+
+const CapabilityAwareSidebar = ({ open, onToggle, adminOnly = false }) => {
   const { user } = useAuth();
   const { hasCapability, loading: capabilitiesLoading } = useCapabilities();
   // Use configMode from ActiveConfigContext so navigation reacts to config switches
@@ -67,8 +71,13 @@ const CapabilityAwareSidebar = ({ open, onToggle }) => {
   // Get filtered navigation based on user capabilities and config mode
   const navigation = useMemo(() => {
     if (capabilitiesLoading || configLoading) return [];
-    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, configMode);
-  }, [hasCapability, isSysAdmin, isGrpAdmin, capabilitiesLoading, configLoading, configMode]);
+    const nav = getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, configMode);
+    // In adminOnly mode (Administration tab), only show admin-related sections
+    if (adminOnly) {
+      return nav.filter((s) => ADMIN_SECTIONS.has(s.section));
+    }
+    return nav;
+  }, [hasCapability, isSysAdmin, isGrpAdmin, capabilitiesLoading, configLoading, configMode, adminOnly]);
 
   const handleSectionToggle = (sectionId) => {
     setExpandedSections((prev) => ({

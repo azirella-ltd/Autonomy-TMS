@@ -42,6 +42,21 @@ const WorkspaceShell = () => {
   const cachedPanesRef = useRef(new Map());
   const adminTabOpened = useRef(false);
 
+  // ── Clear stale tabs when user changes (e.g., login as different user) ─
+  useEffect(() => {
+    if (!user) return;
+    const prevUser = sessionStorage.getItem('autonomy-tabs-user');
+    if (prevUser && prevUser !== String(user.id)) {
+      // Different user — clear tabs to avoid stale state
+      sessionStorage.removeItem('autonomy-tabs');
+      useTabStore.setState({
+        tabs: [{ id: 'tab-decision-stream', path: '/decision-stream', label: 'Decision Stream', pinned: true, closeable: false, scrollY: 0 }],
+        activeTabId: 'tab-decision-stream',
+      });
+    }
+    sessionStorage.setItem('autonomy-tabs-user', String(user.id));
+  }, [user]);
+
   // ── Auto-open Administration tab for tenant admins / system admins ────
   useEffect(() => {
     if (adminTabOpened.current || !user) return;
@@ -71,13 +86,20 @@ const WorkspaceShell = () => {
   }, [user]);
 
   // ── Sync URL changes → tab store ──────────────────────────────────────
-  // When the URL changes (browser back/forward, deep link), open/focus a tab
+  // When the URL changes (browser back/forward, deep link), open/focus a tab.
+  // Ignore paths that are just redirectors (DashboardRouter, login, etc.)
+  const REDIRECT_PATHS = new Set(['/', '/dashboard', '/login', '/auto-login', '/unauthorized']);
+
   useEffect(() => {
     const path = location.pathname;
+
     if (path === '/' || path === '/decision-stream') {
       focusTab('tab-decision-stream');
       return;
     }
+
+    // Skip redirect-only paths — they'll redirect to the real page
+    if (REDIRECT_PATHS.has(path)) return;
 
     // Check if any tab already has this path
     const existing = tabs.find((t) => t.path === path);
@@ -160,8 +182,13 @@ const WorkspaceShell = () => {
       {/* Top Navbar — always visible */}
       <TopNavbar sidebarOpen={false} />
 
-      {/* Tab Bar — full width */}
-      <div className="pt-16">
+      {/* Tab Bar */}
+      <div
+        className={cn(
+          'pt-16 transition-all duration-200 ease-in-out',
+          isAdminTab ? (sidebarOpen ? 'ml-[280px]' : 'ml-[65px]') : 'ml-0',
+        )}
+      >
         <TabBar />
       </div>
 
@@ -170,6 +197,7 @@ const WorkspaceShell = () => {
         <CapabilityAwareSidebar
           open={sidebarOpen}
           onToggle={handleSidebarToggle}
+          adminOnly={user?.powell_role !== 'DEMO_ALL'}
         />
       )}
 
