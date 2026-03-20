@@ -150,134 +150,82 @@ const DecisionSummaryHeader = ({
         </div>
       </div>
 
-      {/* Urgency × Likelihood list + Type breakdown */}
-      <div className="flex gap-4 flex-wrap">
-        {/* Compact combo list — only shows combos that exist */}
-        <div className="border rounded-lg overflow-hidden flex-1 min-w-[320px]">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-muted/30">
-                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Urgency</th>
-                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Likelihood</th>
-                <th className="px-3 py-1.5 text-center font-medium text-muted-foreground">Count</th>
-                <th className="px-3 py-1.5 text-center font-medium text-muted-foreground">Automated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {combos.map(({ urgency, likelihood, count, automated }, i) => {
-                const tier = URGENCY_TIERS.find(t => t.key === urgency) || URGENCY_TIERS[2];
-                return (
-                  <tr key={i} className={cn('border-t', tier.bgLight)}>
-                    <td className="px-3 py-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <div className={cn('h-2 w-2 rounded-full', tier.color)} />
-                        <span className={cn('font-medium', tier.textColor)}>{urgency}</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-1.5 text-muted-foreground">{likelihood}</td>
-                    <td className="px-3 py-1.5 text-center tabular-nums font-semibold">{count}</td>
-                    <td className="px-3 py-1.5 text-center tabular-nums">
-                      {automated > 0 ? (
-                        <span className="text-green-600 font-medium">{automated}</span>
-                      ) : (
-                        <span className="text-muted-foreground/30">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Compact summary bar — urgency counts + levels inline */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Urgency badges */}
+        <div className="flex items-center gap-2">
+          {URGENCY_TIERS.map(tier => {
+            const count = decisions.filter(d => (d.urgency || 'Medium') === tier.key).length;
+            if (count === 0) return null;
+            return (
+              <div key={tier.key} className={cn('flex items-center gap-1 px-2 py-0.5 rounded-full text-xs', tier.bgLight)}>
+                <div className={cn('h-1.5 w-1.5 rounded-full', tier.color)} />
+                <span className={cn('font-medium', tier.textColor)}>{count}</span>
+                <span className="text-muted-foreground">{tier.key}</span>
+              </div>
+            );
+          })}
+          {(() => {
+            const routine = decisions.filter(d => (d.urgency || '') === 'Routine').length;
+            return routine > 0 ? (
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-50">
+                <div className="h-1.5 w-1.5 rounded-full bg-gray-400" />
+                <span className="font-medium text-gray-600">{routine}</span>
+                <span className="text-muted-foreground">Routine</span>
+              </div>
+            ) : null;
+          })()}
         </div>
 
-        {/* Type breakdown */}
-        <div className="min-w-[160px]">
-          <div className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide">
-            By Type
-          </div>
-          <div className="space-y-1">
-            {typeCounts.map(([label, count]) => (
-              <div key={label} className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="tabular-nums font-semibold">{count}</span>
-              </div>
-            ))}
-          </div>
+        <span className="text-muted-foreground/30">|</span>
+
+        {/* Level badges */}
+        <div className="flex items-center gap-2">
+          {(() => {
+            const LEVELS = [
+              { key: 'strategic', label: 'Strategic', color: 'text-purple-600', bg: 'bg-purple-50' },
+              { key: 'tactical', label: 'Tactical', color: 'text-blue-600', bg: 'bg-blue-50' },
+              { key: 'operational', label: 'Operational', color: 'text-amber-600', bg: 'bg-amber-50' },
+              { key: 'execution', label: 'Execution', color: 'text-gray-600', bg: 'bg-gray-50' },
+            ];
+            return LEVELS.map(lvl => {
+              const count = decisions.filter(d => (d.decision_level || 'execution') === lvl.key).length;
+              if (count === 0) return null;
+              const Tag = canFilterLevels ? 'button' : 'span';
+              const isActive = !activeLevels || activeLevels.has(lvl.key);
+              return (
+                <Tag
+                  key={lvl.key}
+                  onClick={canFilterLevels ? () => onToggleLevel?.(lvl.key) : undefined}
+                  className={cn(
+                    'flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition-opacity',
+                    lvl.bg,
+                    canFilterLevels ? 'cursor-pointer hover:ring-1 hover:ring-inset hover:ring-current' : '',
+                    activeLevels && !isActive ? 'opacity-30' : '',
+                  )}
+                >
+                  <span className={cn('font-medium', lvl.color)}>{count}</span>
+                  <span className={lvl.color}>{lvl.label}</span>
+                </Tag>
+              );
+            });
+          })()}
         </div>
 
-        {/* Level breakdown */}
-        <div className="min-w-[140px]">
-          <div className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide">
-            By Level
-          </div>
-          <div className="space-y-1">
-            {(() => {
-              const levelCounts = {};
-              const LEVEL_ORDER = ['strategic', 'tactical', 'operational', 'execution', 'governance'];
-              const LEVEL_COLORS = {
-                strategic: 'text-purple-600',
-                tactical: 'text-blue-600',
-                operational: 'text-amber-600',
-                execution: 'text-muted-foreground',
-                governance: 'text-red-600',
-              };
-              const LEVEL_LABELS = {
-                strategic: 'Strategic',
-                tactical: 'Tactical',
-                operational: 'Operational',
-                execution: 'Execution',
-                governance: 'Governance',
-              };
-              (decisions || []).forEach(d => {
-                const lvl = d.decision_level || 'execution';
-                levelCounts[lvl] = (levelCounts[lvl] || 0) + 1;
-              });
-              return LEVEL_ORDER
-                .filter(lvl => levelCounts[lvl])
-                .map(lvl => {
-                  const isActive = !activeLevels || activeLevels.has(lvl);
-                  const isFiltering = !!activeLevels;
-                  const Tag = canFilterLevels ? 'button' : 'div';
-                  return (
-                    <Tag
-                      key={lvl}
-                      onClick={canFilterLevels ? () => onToggleLevel && onToggleLevel(lvl) : undefined}
-                      className={cn(
-                        'flex items-center justify-between text-xs w-full px-1.5 py-0.5 rounded transition-colors',
-                        canFilterLevels && isFiltering && isActive
-                          ? 'bg-accent font-semibold'
-                          : canFilterLevels && isFiltering && !isActive
-                          ? 'opacity-40'
-                          : canFilterLevels
-                          ? 'hover:bg-muted/50 cursor-pointer'
-                          : ''
-                      )}
-                    >
-                      <span className={LEVEL_COLORS[lvl] || 'text-muted-foreground'}>
-                        {LEVEL_LABELS[lvl] || lvl}
-                      </span>
-                      <span className="tabular-nums font-semibold">{levelCounts[lvl]}</span>
-                    </Tag>
-                  );
-                });
-            })()}
-          </div>
-          <div className="mt-2 pt-2 border-t text-xs space-y-0.5">
-            {needsAttention > 0 && (
-              <div>
-                <span className="text-red-600 font-semibold">{needsAttention}</span>
-                <span className="text-muted-foreground ml-1">need human judgment</span>
-              </div>
-            )}
-            {autoActioned > 0 && (
-              <div>
-                <span className="text-green-600 font-semibold">{autoActioned}</span>
-                <span className="text-muted-foreground ml-1">auto-actioned</span>
-              </div>
-            )}
-          </div>
+        <span className="text-muted-foreground/30">|</span>
+
+        {/* Action summary */}
+        <div className="flex items-center gap-3 text-xs">
+          {needsAttention > 0 && (
+            <span><span className="text-red-600 font-semibold">{needsAttention}</span> <span className="text-muted-foreground">need you</span></span>
+          )}
+          {autoActioned > 0 && (
+            <span><span className="text-green-600 font-semibold">{autoActioned}</span> <span className="text-muted-foreground">auto-actioned</span></span>
+          )}
         </div>
       </div>
+
+      {/* Old type/level columns removed — now inline badges above */}
     </div>
   );
 };
