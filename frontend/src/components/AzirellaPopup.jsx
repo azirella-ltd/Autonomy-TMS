@@ -345,50 +345,114 @@ function buildMessages({
     !analysisResult?.clarification_needed &&
     !(intent === 'scenario_question' && analysisResult?.answer)
   ) {
+    // Build the enriched prompt display with color-coded additions
+    // Original user text stays white, Azirella additions are purple,
+    // ? placeholders are large, bold, and red
+    const enrichedDisplay = (() => {
+      const text = rephrasedPrompt || '';
+      const original = userPrompt || '';
+
+      // Split enriched text into segments: original text vs added text vs placeholders
+      const parts = [];
+      let remaining = text;
+
+      // Find ? placeholders and mark them
+      const segments = remaining.split(/(\?)/g);
+      segments.forEach((seg, i) => {
+        if (seg === '?') {
+          parts.push(
+            <span key={`q${i}`} className="text-red-500 text-xl font-black mx-0.5 animate-pulse">?</span>
+          );
+        } else if (seg.trim()) {
+          // Check if this segment was in the original text
+          const isOriginal = original.toLowerCase().includes(seg.trim().toLowerCase().substring(0, 15));
+          parts.push(
+            <span
+              key={`s${i}`}
+              className={isOriginal ? 'text-foreground' : 'text-violet-500 font-medium'}
+            >
+              {seg}
+            </span>
+          );
+        }
+      });
+
+      return parts;
+    })();
+
     messages.push({
       role: 'system',
       key: 'rephrased',
       content: (
         <div>
-          <div className="font-medium text-foreground mb-1.5">
-            Please confirm or edit
+          <div className="font-medium text-foreground mb-1.5 flex items-center gap-2">
+            <span>Azirella understood this as:</span>
           </div>
-          <p className="text-xs text-muted-foreground mb-2">
-            I've rephrased your input with resolved names. Edit the{' '}
-            <span className="text-red-500 font-bold">?</span> markers and press
-            Submit.
-          </p>
-          <textarea
-            value={rephrasedPrompt}
-            onChange={(e) => onRephrasedChange?.(e.target.value)}
-            rows={3}
-            className={cn(
-              'w-full rounded-md border border-border bg-background px-3 py-2 text-sm',
-              'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
-              'font-medium leading-relaxed',
-            )}
-          />
-          <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-border">
-            <span className="text-xs text-muted-foreground">
-              Edit the prompt above, then submit
-            </span>
-            <button
-              onClick={onSubmitRephrased}
-              disabled={submitting}
+
+          {/* Rich prompt display — color-coded */}
+          <div className="rounded-md border border-violet-200 bg-violet-50/30 px-3 py-2.5 text-sm leading-relaxed mb-2">
+            {enrichedDisplay}
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-4 text-[10px] text-muted-foreground mb-2">
+            <span>Your words</span>
+            <span className="text-violet-500 font-medium">Added context</span>
+            <span className="text-red-500 font-bold text-sm">?</span>
+            <span>Needs your input</span>
+          </div>
+
+          {/* Editable fallback textarea (collapsed by default) */}
+          <details className="mb-2">
+            <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+              Edit as text
+            </summary>
+            <textarea
+              value={rephrasedPrompt}
+              onChange={(e) => onRephrasedChange?.(e.target.value)}
+              rows={3}
               className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
-                !submitting
-                  ? 'bg-violet-500 text-white hover:bg-violet-600'
-                  : 'bg-muted text-muted-foreground cursor-not-allowed',
+                'w-full mt-1 rounded-md border border-border bg-background px-3 py-2 text-sm',
+                'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                'font-medium leading-relaxed',
               )}
-            >
-              {submitting ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-3 w-3" />
-              )}
-              Submit
-            </button>
+            />
+          </details>
+
+          <div className="flex items-center justify-between pt-2 border-t border-border">
+            <span className="text-xs text-muted-foreground">
+              {(rephrasedPrompt || '').includes('?')
+                ? 'Replace the ? marks, then submit'
+                : 'Looks good — submit to execute'}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  onRephrasedChange?.('');
+                  // Reset — user can start over
+                }}
+                className="px-2.5 py-1.5 rounded-full text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onSubmitRephrased}
+                disabled={submitting}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                  !submitting
+                    ? 'bg-violet-500 text-white hover:bg-violet-600'
+                    : 'bg-muted text-muted-foreground cursor-not-allowed',
+                )}
+              >
+                {submitting ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-3 w-3" />
+                )}
+                Submit
+              </button>
+            </div>
           </div>
         </div>
       ),
