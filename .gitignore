@@ -19,7 +19,7 @@ frontend/.cache/
 # Logs
 *.log
 *.logs
-# backend/debug_logs/
+backend/debug_logs/
 backend/debug_logs/sankey
 logs/
 # Opt-in debug logs for analysis (saved under docs/debug_logs)
