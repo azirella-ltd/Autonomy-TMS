@@ -15,7 +15,6 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
-  Card, CardContent,
 } from '../../components/common';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
@@ -26,9 +25,11 @@ import {
 
 const InventoryOptimization = lazy(() => import('./InventoryOptimization'));
 const InventoryProjection = lazy(() => import('./InventoryProjection'));
+const InventorySegmentation = lazy(() => import('./InventorySegmentation'));
 const AllocationWorklistPage = lazy(() => import('./AllocationWorklistPage'));
 const ATPCTPView = lazy(() => import('./ATPCTPView'));
 const RebalancingWorklistPage = lazy(() => import('./RebalancingWorklistPage'));
+const ExcessObsolete = lazy(() => import('./ExcessObsolete'));
 
 const TABS = [
   { key: 'policies', label: 'Policies', icon: Shield },
@@ -44,15 +45,6 @@ const TabLoading = () => (
   <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>
 );
 
-// Placeholder for tabs that don't have a dedicated page yet
-const ComingSoonTab = ({ title, description }) => (
-  <Card>
-    <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-      <h3 className="text-lg font-semibold mb-2">{title}</h3>
-      <p className="text-muted-foreground max-w-md">{description}</p>
-    </CardContent>
-  </Card>
-);
 
 export default function InventoryPlanningHub() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -88,21 +80,11 @@ export default function InventoryPlanningHub() {
         <Suspense fallback={<TabLoading />}>
           <TabsContent value="policies" className="mt-0 pt-4"><InventoryOptimization /></TabsContent>
           <TabsContent value="projections" className="mt-0 pt-4"><InventoryProjection /></TabsContent>
-          <TabsContent value="segmentation" className="mt-0 pt-4">
-            <ComingSoonTab
-              title="Inventory Segmentation"
-              description="ABC/XYZ classification, demand pattern analysis (smooth, seasonal, intermittent, lumpy), Glenday sieve categorization for production scheduling."
-            />
-          </TabsContent>
+          <TabsContent value="segmentation" className="mt-0 pt-4"><InventorySegmentation /></TabsContent>
           <TabsContent value="allocations" className="mt-0 pt-4"><AllocationWorklistPage /></TabsContent>
           <TabsContent value="atp_ctp" className="mt-0 pt-4"><ATPCTPView /></TabsContent>
           <TabsContent value="rebalancing" className="mt-0 pt-4"><RebalancingWorklistPage /></TabsContent>
-          <TabsContent value="excess" className="mt-0 pt-4">
-            <ComingSoonTab
-              title="Excess & Obsolete"
-              description="E&O identification based on demand velocity, lifecycle stage, and coverage days. Write-off forecasting, disposition planning, and liquidation tracking."
-            />
-          </TabsContent>
+          <TabsContent value="excess" className="mt-0 pt-4"><ExcessObsolete /></TabsContent>
         </Suspense>
       </Tabs>
     </div>

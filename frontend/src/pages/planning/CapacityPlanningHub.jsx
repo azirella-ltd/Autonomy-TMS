@@ -14,7 +14,6 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
-  Card, CardContent,
 } from '../../components/common';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
@@ -24,8 +23,10 @@ import {
 } from 'lucide-react';
 
 const ResourceCapacity = lazy(() => import('./ResourceCapacity'));
+const BottleneckAnalysis = lazy(() => import('./BottleneckAnalysis'));
 const CapacityCheck = lazy(() => import('./CapacityCheck'));
 const ProductionProcesses = lazy(() => import('./ProductionProcesses'));
+const WorkforcePlanning = lazy(() => import('./WorkforcePlanning'));
 const MaintenanceWorklistPage = lazy(() => import('./MaintenanceWorklistPage'));
 
 const TABS = [
@@ -39,15 +40,6 @@ const TABS = [
 
 const TabLoading = () => (
   <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>
-);
-
-const ComingSoonTab = ({ title, description }) => (
-  <Card>
-    <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-      <h3 className="text-lg font-semibold mb-2">{title}</h3>
-      <p className="text-muted-foreground max-w-md">{description}</p>
-    </CardContent>
-  </Card>
 );
 
 export default function CapacityPlanningHub() {
@@ -83,20 +75,10 @@ export default function CapacityPlanningHub() {
 
         <Suspense fallback={<TabLoading />}>
           <TabsContent value="utilization" className="mt-0 pt-4"><ResourceCapacity /></TabsContent>
-          <TabsContent value="bottleneck" className="mt-0 pt-4">
-            <ComingSoonTab
-              title="Bottleneck Analysis"
-              description="Identify binding constraints, evaluate relaxation options (overtime, outsourcing, shift extension), and model capacity-constrained production scenarios."
-            />
-          </TabsContent>
+          <TabsContent value="bottleneck" className="mt-0 pt-4"><BottleneckAnalysis /></TabsContent>
           <TabsContent value="roughcut" className="mt-0 pt-4"><CapacityCheck /></TabsContent>
           <TabsContent value="processes" className="mt-0 pt-4"><ProductionProcesses /></TabsContent>
-          <TabsContent value="workforce" className="mt-0 pt-4">
-            <ComingSoonTab
-              title="Workforce Planning"
-              description="Shift planning, labor availability calendars, skill matrix, overtime tracking, and labor cost modeling by work center."
-            />
-          </TabsContent>
+          <TabsContent value="workforce" className="mt-0 pt-4"><WorkforcePlanning /></TabsContent>
           <TabsContent value="maintenance" className="mt-0 pt-4"><MaintenanceWorklistPage /></TabsContent>
         </Suspense>
       </Tabs>

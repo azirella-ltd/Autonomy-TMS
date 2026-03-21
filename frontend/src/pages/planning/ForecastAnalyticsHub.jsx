@@ -13,7 +13,6 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
-  Card, CardContent,
 } from '../../components/common';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
@@ -24,6 +23,8 @@ import {
 const Forecasting = lazy(() => import('./Forecasting'));
 const KPIMonitoring = lazy(() => import('./KPIMonitoring'));
 const ForecastExceptions = lazy(() => import('./ForecastExceptions'));
+const DistributionAnalysis = lazy(() => import('./DistributionAnalysis'));
+const ForecastBacktesting = lazy(() => import('./ForecastBacktesting'));
 
 const TABS = [
   { key: 'pipeline', label: 'Pipeline', icon: Cpu },
@@ -35,15 +36,6 @@ const TABS = [
 
 const TabLoading = () => (
   <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>
-);
-
-const ComingSoonTab = ({ title, description }) => (
-  <Card>
-    <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-      <h3 className="text-lg font-semibold mb-2">{title}</h3>
-      <p className="text-muted-foreground max-w-md">{description}</p>
-    </CardContent>
-  </Card>
 );
 
 export default function ForecastAnalyticsHub() {
@@ -81,18 +73,8 @@ export default function ForecastAnalyticsHub() {
           <TabsContent value="pipeline" className="mt-0 pt-4"><Forecasting /></TabsContent>
           <TabsContent value="accuracy" className="mt-0 pt-4"><KPIMonitoring /></TabsContent>
           <TabsContent value="drift" className="mt-0 pt-4"><ForecastExceptions /></TabsContent>
-          <TabsContent value="distributions" className="mt-0 pt-4">
-            <ComingSoonTab
-              title="Distribution Analysis"
-              description="MLE-fitted distribution visualization for demand, lead time, and yield. Goodness-of-fit tests (KS, AIC/BIC), Q-Q plots, and distribution parameter tracking over time."
-            />
-          </TabsContent>
-          <TabsContent value="backtesting" className="mt-0 pt-4">
-            <ComingSoonTab
-              title="Forecast Backtesting"
-              description="Holdout validation framework: rolling-origin cross-validation, model comparison (LightGBM vs Holt-Winters vs naive), forecast value-add analysis, and CRPS benchmarking."
-            />
-          </TabsContent>
+          <TabsContent value="distributions" className="mt-0 pt-4"><DistributionAnalysis /></TabsContent>
+          <TabsContent value="backtesting" className="mt-0 pt-4"><ForecastBacktesting /></TabsContent>
         </Suspense>
       </Tabs>
     </div>
