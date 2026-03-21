@@ -156,7 +156,7 @@ autonomy/                          # Shared monorepo with build-time selection
 │   └── d365/                      # NEW: D365 F&O native adapter
 │       ├── models/                # D365 table mappings (X++ entities or OData)
 │       ├── engines/               # MRP/AATP/Buffer using D365 tables
-│       ├── planning/              # Planning via D365 Planning Optimization + extensions
+│       ├── planning/              # Own planning engine reading D365 tables (cannot delegate MC to Planning Optimization)
 │       ├── simulation/            # Digital twin (D365 topology)
 │       └── connector/             # Direct D365 OData/Dataverse integration
 │
@@ -172,14 +172,16 @@ autonomy/                          # Shared monorepo with build-time selection
 ### Data Flow in D365 Fork
 
 ```
-D365 F&O (Azure SQL)
-    ↓ OData v4 / Virtual Entities / Dual-Write
-Dataverse (shared Power Platform layer)
-    ↓
-Autonomy D365 Adapter (reads D365 tables directly)
+D365 F&O (Azure SQL) — Source of Truth for master data
+    ↓ OData v4 / Virtual Entities / Dual-Write (READ)
+Autonomy D365 Adapter
+    ├── Caches D365 master data (InventTable, ReqItemTable, BOMTable, etc.)
+    ├── Runs own planning engine (1,000 MC sims — cannot use Planning Optimization)
+    ├── Builds stochastic distributions from D365 ReqItemTable parameters
     ↓ (extracts state → dataclass abstractions)
 ┌─────────────────────────────────────────┐
 │         COMMON ENGINE (unchanged)        │
+│  Monte Carlo Planning Engine (own)       │
 │  TRM Agents → GNN Models → Conformal    │
 │  Hive Signals → Decision Cycle → AAP    │
 │  Skills → Causal AI → Override Tracking  │
@@ -188,6 +190,10 @@ Autonomy D365 Adapter (reads D365 tables directly)
 D365 Adapter (writes back to D365)
     ↓ OData / Business Events / Custom Service
 D365 F&O (executes: PO release, production order, transfer order)
+
+Note: D365 Planning Optimization runs INDEPENDENTLY for deterministic MRP.
+Autonomy does NOT call Planning Optimization — it runs its own stochastic
+engine in parallel, reading the same master data inputs.
 ```
 
 ---
@@ -218,13 +224,50 @@ This is the **highest-coupling layer**. Every file directly references AWS SC fi
 |------|-----|-------------|-------|
 | `demand_processor.py` | 417 | **REWRITE** | D365 uses `ForecastSales`, not `Forecast` |
 | `inventory_target_calculator.py` | 1,319 | **PARTIAL REWRITE** | 8 policy types stay; field access changes to `ReqItemTable` |
-| `net_requirements_calculator.py` | 1,152 | **REWRITE or DELEGATE** | D365's Planning Optimization does this natively |
+| `net_requirements_calculator.py` | 1,152 | **REWRITE** | Must rewrite against D365 tables (see note below) |
 | `planner.py` | 265 | **REWRITE** | Orchestrator changes for D365 planning flow |
 | `stochastic_sampler.py` | 685 | **COMMON** | Distribution math is data-model-agnostic |
 | `execution_cache.py` | 619 | **REWRITE** | Cache D365 entities instead of AWS SC |
 | Others | ~1,967 | Mixed | |
 
-**Key Decision**: D365's **Planning Optimization** service already provides cloud-native MRP/MPS. The D365 fork could **delegate deterministic planning to D365** and only run the stochastic/probabilistic layer. This would eliminate ~2,500 LOC of net requirements calculation.
+> **CRITICAL — Digital Twin as In-Memory Heuristic Mirror (Not API Client)**
+>
+> D365's Planning Optimization is a **deterministic, single-run, stateful MRP engine**. It runs in 1-2 minutes per execution and **writes planned orders back to D365 tables** (`ReqPO`, `ReqTrans`). Running it 1,000 times for Monte Carlo would take 17-33 hours and pollute production data. There is no dry-run/sandbox API.
+>
+> **But this is not the right framing.** The question is not "how do we call D365's planner 1,000 times?" — it's "how do we replicate D365's planning heuristics as pure in-memory math?"
+>
+> **The digital twin architecture (same pattern as Odoo and SAP forks):**
+>
+> 1. **D365 Planning Optimization runs once** — produces the deterministic baseline plan (standard customer workflow, unchanged)
+> 2. **Autonomy reads D365's planning config once** — extracts `ReqItemTable` parameters (coverage codes, time fences, min/max levels, lead times, safety stock), `BOMTable`/`BOMLine` (component ratios, scrap %), `InventTable` (product master), `InventSum` (on-hand by dimension)
+> 3. **Autonomy's simulation engine replicates the heuristics as numpy operations** — coverage code logic (period, min/max, lot-for-lot), net requirements netting, BOM explosion, lead time offsetting — all as vectorized in-memory math, not ORM queries or API calls
+> 4. **Runs 1,000 stochastic trials in 2-5 minutes** — each trial applies stochastic perturbations (demand variability, lead time variability, yield loss, capacity fluctuation) to the deterministic heuristic rules, observing where they fail under uncertainty
+> 5. **TRMs train on the gap** — the difference between heuristic outcomes and optimal outcomes under uncertainty is what agents learn to compensate for
+>
+> **The simulation engine never calls back to D365 during Monte Carlo.** It is a lightweight mathematical mirror of D365's `ReqItemTable` logic, not an API client. This is identical to how the SAP fork mirrors `MARC`/`MDLV` parameters and the Odoo fork mirrors `stock.warehouse.orderpoint` rules.
+>
+> **Performance comparison:**
+>
+> | Approach | Time for 1,000 trials | Feasible? |
+> |----------|----------------------|-----------|
+> | Call D365 Planning Optimization 1,000× | 17-33 hours | No (also pollutes prod data) |
+> | Autonomy in-memory heuristic mirror | **2-5 minutes** | Yes |
+>
+> **What this means for the fork:**
+>
+> The planning services (`net_requirements_calculator.py`, `demand_processor.py`, `inventory_target_calculator.py`) are **REWRITE** — but the rewrite is a **config extraction + heuristic mirroring** task, not a full MRP reimplementation. The engine reads D365's `ReqItemTable` coverage parameters once, then runs its own vectorized simulation loop. The core mathematical operations (netting, BOM explosion, lead time offsetting) are already implemented and are largely **data-model-agnostic** — what changes is the config extraction layer that reads D365-specific table structures instead of AWS SC entities.
+>
+> **D365-specific heuristics to mirror from `ReqItemTable`:**
+>
+> | D365 Coverage Code | Logic | Autonomy Mirror |
+> |-------------------|-------|-----------------|
+> | `0` — Manual | No automatic planning | Skip (no reorder trigger) |
+> | `1` — Period | Consolidate requirements within `CoverageTimeFence` | Group demand by fence, single planned order per period |
+> | `2` — Requirement (lot-for-lot) | Plan exactly what's needed | 1:1 demand → planned order |
+> | `3` — Min/Max | Reorder to max when below min | `if on_hand < min: order(max - on_hand)` |
+> | `4` — DDMRP (buffer) | Net flow equation against green/yellow/red zones | `net_flow = on_hand + on_order - qualified_demand` |
+>
+> These are simple mathematical rules — trivial to replicate as numpy operations. The complexity is in reading D365's dimensional model (`InventDim`) correctly, not in the planning math itself.
 
 ### Layer 3: Powell Framework — TRM Agents (56,927 LOC, 94 files)
 
@@ -506,8 +549,8 @@ This is an **additive enhancement**, not a requirement. Estimated effort: ~2 wee
 
 | Capability | D365 Native | Quality | Autonomy Adds |
 |-----------|------------|---------|---------------|
-| MRP / Net Requirements | Planning Optimization (cloud-native, 1-2 min) | Excellent | Probabilistic netting with uncertainty |
-| MPS | Planning Optimization | Good | Stochastic MPS with Monte Carlo |
+| MRP / Net Requirements | Planning Optimization (cloud-native, 1-2 min, deterministic single-run) | Excellent for single-run | **In-memory heuristic mirror** — reads `ReqItemTable` config once, replicates coverage code logic as numpy, 1,000 MC trials in 2-5 min (never calls D365 during sim) |
+| MPS | Planning Optimization | Good for deterministic | **In-memory mirror** — same pattern: read D365 config, replicate as math, simulate stochastically |
 | Safety Stock | Fixed qty, DOC, service level | Basic | +5 advanced policies (sl_fitted, conformal, sl_conformal_fitted, econ_optimal, conformal) |
 | DDMRP | Full implementation (free) | Good | Buffer optimization via InventoryBufferTRM |
 | Demand Forecasting | Statistical + Azure ML | Good | Conformal intervals, censored demand handling |
@@ -534,20 +577,50 @@ This is an **additive enhancement**, not a requirement. Estimated effort: ~2 wee
 
 ### Strategic Positioning in D365 Fork
 
-The D365 fork should position as: **"Decision Intelligence layer for D365 SCM"** — not a replacement for Planning Optimization, but a probabilistic/agentic layer on top of it.
+The D365 fork positions as: **"Decision Intelligence layer for D365 SCM"** — running its own stochastic planning engine **alongside** (not on top of) D365's Planning Optimization.
+
+**The digital twin is an in-memory heuristic mirror, not an API client.** D365's Planning Optimization runs once for the deterministic baseline. Autonomy reads D365's `ReqItemTable` config once, replicates the coverage code logic (period, min/max, lot-for-lot, DDMRP) as pure numpy operations, and runs 1,000 stochastic trials in 2-5 minutes. It never calls back to D365 during Monte Carlo.
 
 ```
-D365 Planning Optimization (deterministic MRP/MPS)
-    ↓ planned orders, net requirements
-Autonomy D365 Edition (probabilistic + agentic layer)
-    ├── Conformal intervals on every planned order
-    ├── TRM agents for execution decisions
-    ├── GNN for network-wide optimization
-    ├── Decision Stream for human-in-the-loop
-    └── Override learning for continuous improvement
-    ↓ refined decisions
-D365 F&O (executes: PO release, MO release, TO release)
+┌─────────────────────────────────────────────────────────────────┐
+│                    D365 F&O (Source of Truth)                    │
+│  Master Data: InventTable, ReqItemTable, BOMTable, VendTable    │
+│  Transactions: PurchTable, SalesTable, ProdTable                │
+└────────┬───────────────────────────────────────┬────────────────┘
+         │ (standard workflow)                   │ (one-time config read)
+         ↓                                       ↓
+┌────────────────────────┐       ┌────────────────────────────────┐
+│  D365 Planning         │       │  Autonomy Digital Twin         │
+│  Optimization          │       │                                │
+│                        │       │  1. Read ReqItemTable config   │
+│  • Runs once           │       │  2. Mirror heuristics as numpy │
+│  • Deterministic MRP   │       │     (coverage codes, min/max,  │
+│  • Writes ReqPO        │       │      BOM explosion, netting)   │
+│  • 1-2 min runtime     │       │  3. Run 1,000 MC trials        │
+│                        │       │     (2-5 min, in-memory)       │
+│  Customer's standard   │       │  4. Observe where heuristics   │
+│  production planner    │       │     fail under uncertainty     │
+└────────┬───────────────┘       │  5. TRMs train on the gap     │
+         │                       │                                │
+         ↓                       │  NO callbacks to D365 during   │
+┌────────────────────────┐       │  Monte Carlo — pure math       │
+│  D365 Planned Orders   │       └────────────────┬───────────────┘
+│  (deterministic)       │                        │
+│                        │                        ↓
+│  Standard D365         │       ┌────────────────────────────────┐
+│  approval workflow     │       │  Autonomy Decisions            │
+│                        │       │  • Probabilistic BSC           │
+└────────────────────────┘       │  • Conformal intervals         │
+                                 │  • 11 TRM agents (<10ms)       │
+                                 │  • GNN network optimization    │
+                                 │  • Decision Stream + Override  │
+                                 │    learning feedback loop      │
+                                 └────────────────────────────────┘
 ```
+
+**Key insight**: This is the same architecture across all ERP forks — SAP (mirrors `MARC`/`MDLV` parameters), D365 (mirrors `ReqItemTable` coverage codes), Odoo (mirrors `stock.warehouse.orderpoint` rules). The digital twin is ERP-agnostic in concept — only the **config extraction layer** changes per ERP. The in-memory simulation math (netting, BOM explosion, coverage code logic, lead time offsetting) is the same regardless of source ERP.
+
+Over time, as trust builds, customers shift decision authority from D365's deterministic plans to Autonomy's agent-driven plans. The deterministic baseline becomes a safety net, not the primary decision path.
 
 ---
 
@@ -608,13 +681,13 @@ Effective effort = Rewrite (160K LOC) + 0.3 × Adapt (178K LOC) = ~214K LOC equi
 |-------|----------|------------|
 | **Phase 0 — Architecture** | 2 weeks | Adapter interface design, D365 entity mapping document, Azure architecture finalized |
 | **Phase 1 — Core Adapter** | 6 weeks | `d365_entities.py`, OData client, Azure SQL schema, D365 extension package |
-| **Phase 2 — Engine Rewrite** | 6 weeks | Deterministic engines (AATP, MRP, Buffer) reading D365 tables; Powell decisions writing to Autonomy Azure SQL |
+| **Phase 2 — Config Extraction + Heuristic Mirror** | 7 weeks | D365 config reader (extracts `ReqItemTable` coverage codes, `BOMTable` structures, `InventSum` positions once). Rewrite heuristic mirror to replicate D365's 5 coverage codes as numpy operations. Adapt deterministic engines (AATP, Buffer) to D365 table structures. Core MC math (netting, BOM explosion, lead time offsetting) is largely data-model-agnostic — rewrite is config extraction, not planning algorithm. |
 | **Phase 3 — Frontend** | 8 weeks | Fluent UI 9 component library, PCF controls for key pages (Decision Stream, Planning, Admin) |
 | **Phase 4 — AI/ML on Azure** | 3 weeks | Azure ML endpoints for TRM/GNN, Azure OpenAI integration, Azure AI Search for RAG |
 | **Phase 5 — Digital Twin** | 4 weeks | Simulation engine reading D365 topology, stochastic distributions from D365 `ReqItemTable` |
 | **Phase 6 — Integration Testing** | 4 weeks | End-to-end with D365 Contoso (USMF), provisioning pipeline, decision flow |
 | **Phase 7 — AppSource Prep** | 3 weeks | Packaging, certification, documentation, security review |
-| **TOTAL** | **~36 weeks (9 months)** | |
+| **TOTAL** | **~37 weeks (~9 months)** | |
 
 ### Effort by LOC Category
 
@@ -640,6 +713,7 @@ With a team of 5: **~7 months**. With a team of 4: **~8-9 months**.
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
+| **Heuristic mirroring fidelity** | Autonomy's digital twin must faithfully replicate D365's 5 coverage codes + DDMRP buffer logic + BOM explosion + time fence rules as in-memory numpy operations. If the mirror diverges from D365's actual behavior, TRM training data is poisoned. D365's Planning Optimization is a black box — coverage code edge cases (phantom BOMs, co-products, intercompany planning) may have undocumented behavior. | Start with the 3 most common coverage codes (min/max, lot-for-lot, period). Validate mirror output against Planning Optimization's deterministic run for the same inputs. Add coverage codes incrementally with regression tests. Budget 2 extra weeks for validation. |
 | **D365 F&O API limitations** | OData has 10K row limits, no streaming, limited filter expressions. High-volume planning queries may be slow. | Use Dual-Write to Dataverse for hot data; batch extractions for cold data. Cache aggressively. |
 | **D365 version fragmentation** | Customers on different D365 update waves (10.0.x). Data entities may differ. | Pin to minimum supported version; use feature detection, not version detection. |
 | **InventDim complexity** | Every inventory query needs dimensional context. Pervasive impact across engines, simulation, planning. | Build a robust `InventDimResolver` utility used everywhere. Budget 2 extra weeks. |
@@ -677,7 +751,7 @@ With a team of 5: **~7 months**. With a team of 4: **~8-9 months**.
 
 3. **The frontend is the biggest cost** — MUI → Fluent UI 9 across 430 files is labor-intensive but mechanically straightforward. AI-assisted code migration could accelerate this.
 
-4. **D365 already has strong deterministic planning** — Planning Optimization + DDMRP means the D365 fork can *delegate* MRP/MPS to D365 and focus purely on the probabilistic/agentic layer. This actually *reduces* scope.
+4. **The digital twin is an in-memory heuristic mirror** — D365's Planning Optimization runs once for the deterministic baseline. Autonomy reads `ReqItemTable` config once, replicates coverage code logic as numpy operations, and runs 1,000 MC trials in 2-5 minutes (never calling back to D365). The planning layer (~6,400 LOC) rewrites are a **config extraction + heuristic mirroring** task — the core math (netting, BOM explosion) is data-model-agnostic; only the D365 table reading layer changes. This is the same architecture as the Odoo fork (mirrors `stock.warehouse.orderpoint`) and SAP fork (mirrors `MARC`/`MDLV`).
 
 5. **Microsoft cloud is a better SOC II story** — Azure's built-in compliance tooling is stronger than self-managed PostgreSQL.
 

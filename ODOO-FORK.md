@@ -21,11 +21,12 @@
 10. [What Gets Gained](#10-what-gets-gained)
 11. [Module-by-Module Conversion Map](#11-module-by-module-conversion-map)
 12. [Deployment Architecture](#12-deployment-architecture)
-13. [Deploying on Odoo Cloud (Odoo.sh)](#13-deploying-on-odoo-cloud-odoosh)
-14. [Effort Estimation](#14-effort-estimation)
-15. [Risk Assessment](#15-risk-assessment)
-16. [Alternative: Hybrid Architecture](#16-alternative-hybrid-architecture)
-17. [Recommendation](#17-recommendation)
+13. [Using Odoo's Deterministic Planning Instead of Autonomy's](#13-using-odoos-deterministic-planning-instead-of-autonomys)
+14. [Deploying on Odoo Cloud (Odoo.sh)](#14-deploying-on-odoo-cloud-odoosh)
+15. [Effort Estimation](#15-effort-estimation)
+16. [Risk Assessment](#16-risk-assessment)
+17. [Alternative: Hybrid Architecture](#17-alternative-hybrid-architecture)
+18. [Recommendation](#18-recommendation)
 
 ---
 
@@ -713,9 +714,241 @@ services:
 
 ---
 
-## 13. Deploying on Odoo Cloud (Odoo.sh)
+## 13. Using Odoo's Deterministic Planning Instead of Autonomy's
+
+A natural question when considering an Odoo fork: rather than porting Autonomy's planning algorithms, why not use Odoo's built-in MRP/MPS and layer the AI on top? This section provides an algorithm-by-algorithm comparison to evaluate what would be gained and lost.
+
+### 13.1 Odoo's Planning Engine: What It Actually Computes
+
+Odoo does **not** have a classical MRP scheduler. It uses a **reorder-point replenishment system** based on `stock.warehouse.orderpoint`:
+
+```
+Daily cron job:
+  For each active reorder rule:
+    qty_forecast = on_hand + confirmed_incoming - confirmed_outgoing
+    If qty_forecast < product_min_qty:
+      qty_to_order = product_max_qty - qty_forecast
+      Round to qty_multiple
+      Create draft PO (Buy route) or MO (Manufacture route)
+```
+
+**Key characteristics**:
+- **Not time-phased**: Checks current projected position only — does not project demand forward bucket-by-bucket
+- **Infinite capacity**: Ignores work center capacity entirely
+- **Single-point**: No uncertainty, no distributions, no probabilistic outputs
+- **Cascading BOM**: Multi-level BOMs require multiple scheduler runs (one per level)
+- **No pegging**: Cannot trace which demand drives which supply
+- **No rescheduling**: Does not adjust existing orders when conditions change
+
+The MPS module adds a manual spreadsheet where planners enter demand forecasts, and the system computes suggested replenishment to maintain a user-entered safety stock target. It is not an algorithmic planner.
+
+### 13.2 Head-to-Head Algorithm Comparison
+
+#### Demand Processing
+
+| Aspect | Odoo Native | Autonomy |
+|--------|-------------|----------|
+| **Input** | Confirmed SO lines + manual MPS forecast | Statistical forecast (P10/P50/P90) + confirmed orders |
+| **Netting** | Current position check (is stock < min?) | Time-phased netting per period across horizon |
+| **Forecast consumption** | MPS subtracts SO from forecast manually | `max(forecast, actuals)` with censored demand flagging |
+| **Uncertainty propagation** | None — single-point only | Conformal intervals carried through all 3 steps |
+| **Censored demand** | Not recognized | Flags stockout periods; excludes from distribution fitting |
+| **Output** | Binary: reorder or not | Net demand per (product, site, period) with intervals |
+
+**What's lost by using Odoo**: Forward-looking demand visibility. Odoo's scheduler reacts to the *current* inventory position, not projected future shortfalls. A product with adequate stock today but a large order arriving in week 3 won't trigger replenishment until stock actually drops — by which time the supplier lead time may have passed.
+
+#### Safety Stock / Inventory Policy
+
+| Policy | Odoo Native | Autonomy |
+|--------|-------------|----------|
+| **Absolute level** | `product_min_qty` (manual) | `abs_level` policy (equivalent) |
+| **Days of coverage (demand)** | Not available | `doc_dem` — days × avg daily historical demand |
+| **Days of coverage (forecast)** | Not available | `doc_fcst` — days × avg daily forecasted demand |
+| **Service level (Normal)** | Not available | `sl` — King Formula: z × √(LT×σ_d² + d²×σ_LT²) |
+| **Service level (fitted)** | Not available | `sl_fitted` — Monte Carlo DDLT with Weibull/Lognormal/Gamma |
+| **Conformal prediction** | Not available | `conformal` — distribution-free coverage guarantee |
+| **Hybrid conformal+fitted** | Not available | `sl_conformal_fitted` — fitted with conformal floor |
+| **Economic optimal** | Not available | `econ_optimal` — marginal ROI (Lokad: stock if P(stockout)×cost > holding) |
+| **Hierarchical overrides** | Per warehouse only | Product×Site > Product×Geo > Segment > Company (6 levels) |
+
+**What's lost by using Odoo**: 7 of 8 inventory policies disappear. Odoo offers only a manually-set minimum quantity — no statistical computation, no distribution fitting, no economic optimization. The planner must calculate safety stock externally and enter a number.
+
+**Quantified impact**: The King Formula alone (accounting for both demand and lead time variability) typically reduces safety stock by 15-25% versus the naive "max daily usage × max lead time" formula that Odoo's documentation suggests. The `econ_optimal` policy (marginal economic return) can reduce total inventory cost by 20-35% versus fixed service level targets by stocking where the ROI is highest rather than applying a uniform 95% target.
+
+#### Net Requirements / BOM Explosion
+
+| Aspect | Odoo Native | Autonomy |
+|--------|-------------|----------|
+| **Time-phased netting** | No — current position only | Yes — per period across planning horizon |
+| **BOM explosion** | Cascading reorder rules (multi-run) | Single-pass recursive explosion (max 10 levels, cycle detection) |
+| **Lead time offsetting** | Implicit via security lead times | Explicit: `plan_date = requirement_date - lead_time_days` |
+| **Soft-buffer netting** | No (min qty = hard demand) | Yes — buffer replenishment at lower priority than demand-driven |
+| **Multi-sourcing** | Single route per orderpoint | Ratio-based allocation across multiple sourcing rules with priorities |
+| **Lot sizing** | Min/max/multiple only | Min/max/multiple (same — lot sizing is a future enhancement) |
+| **Scrap rates** | On BOM lines (static) | On BOM lines + stochastic sampling from distributions |
+| **Capacity constraints** | None (infinite capacity) | None in planning (deferred to execution layer TRMs) |
+| **Pegging** | Not available | Full-level pegging with chain tracking (customer→DC→factory→vendor) |
+| **Conformal intervals** | Not available | Demand + lead time intervals propagated to each supply plan |
+
+**What's lost by using Odoo**: The most significant loss is **time-phased netting**. Without it, long-lead-time items are under-planned, and the system cannot generate a coherent supply plan across a multi-week horizon. Odoo's cascading reorder rules are reactive, not proactive.
+
+**Soft-buffer netting** is also a meaningful loss. Odoo treats `product_min_qty` as a hard demand target — the scheduler generates planned orders to replenish the buffer immediately, competing with real customer demand for upstream capacity. Autonomy's DDMRP-inspired approach assigns buffer replenishment lower priority, ensuring customer orders are fulfilled first.
+
+#### Stochastic Simulation
+
+| Aspect | Odoo Native | Autonomy |
+|--------|-------------|----------|
+| **Lead time distributions** | Single-point (7 days) | Triangular/Lognormal/Weibull (P5/median/P95) |
+| **Demand distributions** | Single-point | 21 distribution types, fitted from historical data |
+| **Yield/scrap variability** | Static % on BOM | Stochastic sampling per execution |
+| **Capacity variability** | None | OEE distributions, availability sampling |
+| **Monte Carlo** | Not available | 1000+ scenarios, variance reduction (CRN, antithetic, LHS) |
+| **Probabilistic scorecard** | Not available | P10/P50/P90 for financial, customer, operational, strategic KPIs |
+
+**What's lost by using Odoo**: The entire probabilistic planning capability. Odoo produces a single deterministic plan. Autonomy produces a distribution of outcomes across 1000+ scenarios, enabling statements like "85% chance service level > 95%" rather than "service level = 95% (assuming everything goes exactly as planned)."
+
+### 13.3 The frePPLe Option: Odoo + Third-Party APS
+
+**frePPLe** is an open-source APS that integrates with Odoo and fills the most critical gaps:
+
+| Capability | Odoo Only | Odoo + frePPLe | Autonomy |
+|-----------|-----------|----------------|----------|
+| Time-phased netting | No | Yes | Yes |
+| Finite capacity scheduling | No | Yes | No (deferred to TRMs) |
+| Statistical demand forecasting | No | Yes (auto model selection) | Yes (with conformal intervals) |
+| Safety stock computation | Manual only | Service-level based | 8 policies + conformal + economic |
+| Multi-level BOM explosion | Cascading (multi-run) | Single-pass | Single-pass |
+| What-if scenarios | No | Yes (alternative plans) | Yes (Monte Carlo, 1000+ scenarios) |
+| Rescheduling | No | Yes (automatic) | Via TRM agents (continuous) |
+| Pegging | No | Partial | Full (multi-stage chain tracking) |
+| Stochastic simulation | No | No | Yes (21 distribution types) |
+| AI agents | No | No | Yes (11 TRM types + GNN + GraphSAGE) |
+| Conformal prediction | No | No | Yes (distribution-free guarantees) |
+| Causal AI | No | No | Yes (counterfactual, propensity matching) |
+
+**frePPLe closes ~60% of the planning algorithm gap** (time-phased netting, capacity, forecasting, safety stock). The remaining ~40% (stochastic simulation, conformal prediction, causal AI, TRM agents) is Autonomy's unique value.
+
+**frePPLe licensing**: Community edition is AGPL (copyleft — any modifications must be open-sourced). Cloud edition is proprietary SaaS at €3,000-15,000/year.
+
+### 13.4 What Autonomy's AI Agents Need From Planning
+
+The AI layer doesn't just consume plans — it **depends on specific planning outputs** that Odoo cannot provide:
+
+| AI Component | Required Planning Input | Odoo Provides? |
+|-------------|------------------------|----------------|
+| **TRM training data** | Decision-outcome pairs from stochastic simulation | No — deterministic only, no Monte Carlo |
+| **Conformal calibration** | Forecast intervals (P10/P50/P90) per product-site-period | No — single-point only |
+| **CDT risk bounds** | Historical decision outcomes with actual vs predicted | Partial — no counterfactual computation |
+| **AATP consumption** | Priority-based allocation buckets from tGNN | No — FIFO only |
+| **Soft-buffer netting** | Demand-driven vs buffer-replenishment classification | No — all replenishment is equal priority |
+| **GNN training** | DAG topology with node/edge features per period | No — no explicit DAG, no time-phased features |
+| **Digital twin** | Stochastic execution of deterministic heuristics | No — no simulation engine |
+| **Causal AI** | Counterfactual outcomes for overridden decisions | No — no outcome tracking infrastructure |
+
+**Implication**: If Odoo's deterministic scheduler replaces Autonomy's planning engine, the AI layer loses its training data pipeline. TRMs cannot learn from deterministic single-runs — they need thousands of stochastic executions to observe the distribution of outcomes under uncertainty. The entire "learn by watching" paradigm (Stöckl 2021: data volume >> model size) breaks down.
+
+### 13.5 Hybrid Strategy: Odoo for Heuristics, Autonomy for Intelligence
+
+The most viable approach uses **both**:
+
+```
+Odoo MRP/MPS (deterministic heuristics)
+  │
+  │  ← Customer's existing planning rules replicated in Odoo
+  │     (reorder points, min/max, manual forecasts)
+  │
+  ▼
+Autonomy Digital Twin (stochastic simulation)
+  │
+  │  ← Runs Odoo's heuristics against stochastic reality
+  │     (21 distribution types × 9 variables per entity)
+  │     Observes where heuristics fail under uncertainty
+  │
+  ▼
+Autonomy AI Agents (learned improvements)
+  │
+  │  ← TRMs trained on gap between heuristic decisions and optimal
+  │     Conformal intervals from simulation outcomes
+  │     Causal attribution from decision-outcome pairs
+  │
+  ▼
+Recommendations back to Odoo
+  │
+  │  ← Adjust reorder rules, modify MO quantities, expedite POs
+  │     Surfaced as Odoo activities on relevant records
+```
+
+**This is exactly the Digital Twin pillar's design intent**: replicate the customer's APS heuristics (which in the Odoo fork would BE Odoo's native heuristics), run them against stochastic reality, measure the gap, and train agents to close it.
+
+### 13.6 Decision: Replace or Layer?
+
+| Approach | Effort | AI Training Capability | Planning Quality | Odoo Integration |
+|----------|--------|----------------------|-----------------|------------------|
+| **A. Replace Autonomy planning with Odoo** | Low (delete code) | Broken — no stochastic simulation, no training data | Degraded — 1 of 8 policies, no time-phased netting | Native |
+| **B. Odoo heuristics + Autonomy stochastic layer** | Medium (adapt digital twin to read Odoo state) | Preserved — Odoo heuristics become the "what agents learn to improve" | Baseline from Odoo + improvements from AI | Clean separation |
+| **C. Keep Autonomy planning, ignore Odoo MRP** | Low (current state) | Full capability | Full 8 policies, time-phased, stochastic | Parallel/redundant |
+| **D. Odoo + frePPLe + Autonomy AI** | High (three systems) | Preserved | frePPLe deterministic + Autonomy stochastic | Complex |
+
+### 13.7 Performance Reality: Why Odoo/frePPLe Cannot Be the Simulation Engine
+
+A critical point: the recommendation to use Odoo's heuristics as the baseline does **not** mean running Odoo's MRP scheduler 1,000 times for Monte Carlo simulation. That approach is infeasible for fundamental architectural reasons.
+
+**Odoo's scheduler performance**:
+- A single MRP run on a moderately complex Odoo instance (~500 products, ~50 BOMs, ~20 warehouses) takes **30-120 seconds** depending on reorder rule count and BOM depth
+- Odoo's scheduler is synchronous, single-threaded, and ORM-bound — each reorder rule evaluation involves multiple DB queries through the ORM
+- 1,000 Monte Carlo runs × 90 seconds = **25+ hours** per simulation batch. Daily planning becomes impossible.
+
+**frePPLe's solver performance**:
+- frePPLe is faster (~5-15 seconds for medium complexity) but still designed for **single-run deterministic plans**, not Monte Carlo
+- frePPLe's constraint-based heuristic search (backward scheduling + forward recovery) is fundamentally sequential — it cannot be parallelized across scenarios
+- 1,000 runs × 10 seconds = **2.7 hours** — better but still impractical for daily/hourly calibration cycles
+
+**Why Autonomy's simulation engine is fast**:
+- Autonomy's digital twin is purpose-built for Monte Carlo: a lightweight Python engine (~2,000 lines) that replicates APS heuristics as pure math, not ORM operations
+- No database queries during simulation — all data loaded into memory once, then thousands of trials execute in-memory
+- Parallelizable: `coordinated_sim_runner.py` runs episodes across multiple cores
+- A 1,000-trial Monte Carlo with 365-day horizon completes in **2-5 minutes** on CPU, **30-60 seconds** with GPU-accelerated sampling
+- The simulation engine replicates the *logic* of Odoo's min/max reorder rules and cascading BOM explosion — but as pure numpy/scipy operations, not ORM calls
+
+**The correct architecture for an Odoo fork**:
+
+```
+Odoo MRP Scheduler (runs once, deterministic)
+  │
+  │  ← Produces the baseline plan (what the customer does today)
+  │     This is "ground truth" for the current heuristics
+  │
+  ▼
+Autonomy Simulation Engine (runs 1000×, stochastic)
+  │
+  │  ← Replicates Odoo's reorder rules as in-memory math
+  │     Samples from distributions for demand, lead times, yield, etc.
+  │     Observes where the heuristic plan fails under uncertainty
+  │
+  ▼
+TRM Training Pipeline
+  │
+  │  ← Learns from the gap between heuristic and optimal
+```
+
+The simulation engine **does not call Odoo**. It reads Odoo's configuration (reorder rules, BOMs, routes) once, builds an in-memory model of the planning logic, and then runs that model thousands of times with stochastic inputs. This is the same pattern as Autonomy's existing digital twin — it replicates the customer's APS heuristics (from SAP MARC, D365 ReqItemTable, or Odoo orderpoint parameters) as fast in-memory operations.
+
+**Implication for the Odoo fork**: Even under Approach B, Autonomy's simulation engine is mandatory. Odoo's scheduler is a plan-execution tool, not a simulation engine. The intelligence layer must include the lightweight digital twin that mirrors Odoo's logic at Monte Carlo speeds.
+
+**Recommendation: Approach B (updated).** Let Odoo handle deterministic planning (its native strength), and position Autonomy's intelligence layer as the stochastic overlay that measures where Odoo's plans fail under real-world uncertainty and learns to compensate. This:
+
+1. **Eliminates redundant planning code** in the Odoo fork
+2. **Preserves the AI training pipeline** — Odoo's heuristic decisions become the behavioral cloning baseline
+3. **Creates a clear value narrative**: "Odoo plans. Autonomy measures where those plans fail. Agents learn to fix the gaps."
+4. **Aligns with the Digital Twin pillar**: The twin already replicates customer APS heuristics — in this architecture, Odoo IS the APS
+
+---
+
+## 14. Deploying on Odoo Cloud (Odoo.sh)
 
 This section covers how a forked Autonomy-as-Odoo-modules solution would be deployed on Odoo's managed cloud platform (Odoo.sh), including the constraints, workarounds, and the required external infrastructure for the AI/ML intelligence layer.
+
+> **Note**: If using Approach B from Section 13 (Odoo heuristics + Autonomy stochastic layer), the Odoo.sh deployment becomes simpler — standard Odoo MRP/MPS runs natively, and only the intelligence layer requires the external VM.
 
 ### 13.1 Odoo.sh Overview
 
@@ -1062,9 +1295,9 @@ Outbound:
 
 ---
 
-## 14. Effort Estimation
+## 15. Effort Estimation
 
-### 14.1 Work Breakdown
+### 15.1 Work Breakdown
 
 | Phase | Duration | Team | Deliverable |
 |-------|----------|------|-------------|
@@ -1079,7 +1312,7 @@ Outbound:
 | **Phase 8: Testing & Polish** | 8 weeks | 4 developers | Integration testing, Odoo upgrade compatibility, App Store submission |
 | **Total** | **~58 weeks** | **8 avg** | **~45 person-months** |
 
-### 14.2 Ongoing Maintenance Burden
+### 15.2 Ongoing Maintenance Burden
 
 | Item | Current Platform | Odoo Fork |
 |------|-----------------|-----------|
@@ -1092,9 +1325,9 @@ Outbound:
 
 ---
 
-## 15. Risk Assessment
+## 16. Risk Assessment
 
-### 15.1 High Risks
+### 16.1 High Risks
 
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
@@ -1105,7 +1338,7 @@ Outbound:
 | **Dual codebase divergence** | High | Medium | Odoo modules and intelligence service can drift. Schema changes must be coordinated. |
 | **Odoo upgrade breakage** | Medium | High | Odoo's annual releases regularly break third-party modules. Requires dedicated QA per release. |
 
-### 15.2 Medium Risks
+### 16.2 Medium Risks
 
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
@@ -1114,7 +1347,7 @@ Outbound:
 | **Team skill gap** | High | Medium | Current team knows FastAPI/React. Odoo ORM/OWL is a different skill set. Training needed. |
 | **Market cannibalization** | Medium | Medium | Odoo-only positioning may confuse existing SAP/D365 pipeline. |
 
-### 15.3 Low Risks
+### 16.3 Low Risks
 
 | Risk | Probability | Impact |
 |------|-------------|--------|
@@ -1124,11 +1357,11 @@ Outbound:
 
 ---
 
-## 16. Alternative: Hybrid Architecture
+## 17. Alternative: Hybrid Architecture
 
 Instead of a full fork, consider a **thin Odoo shell** that keeps the intelligence layer intact:
 
-### 16.1 Hybrid Approach
+### 17.1 Hybrid Approach
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -1153,7 +1386,7 @@ Instead of a full fork, consider a **thin Odoo shell** that keeps the intelligen
 └─────────────────────────────────────────────┘
 ```
 
-### 16.2 Hybrid Advantages
+### 17.2 Hybrid Advantages
 
 | Advantage | Details |
 |-----------|---------|
@@ -1165,7 +1398,7 @@ Instead of a full fork, consider a **thin Odoo shell** that keeps the intelligen
 | **Odoo App Store eligible** | Bridge module is a valid Odoo app |
 | **Incremental migration** | Move features to native Odoo over time as needed |
 
-### 16.3 Hybrid Disadvantages
+### 17.3 Hybrid Disadvantages
 
 | Disadvantage | Details |
 |--------------|---------|
@@ -1176,9 +1409,9 @@ Instead of a full fork, consider a **thin Odoo shell** that keeps the intelligen
 
 ---
 
-## 17. Recommendation
+## 18. Recommendation
 
-### 17.1 Decision Matrix
+### 18.1 Decision Matrix
 
 | Factor | Weight | Full Fork | Hybrid | Current (Integration) |
 |--------|--------|-----------|--------|-----------------------|
@@ -1190,7 +1423,7 @@ Instead of a full fork, consider a **thin Odoo shell** that keeps the intelligen
 | **Long-term maintainability** | 5% | 5/10 | 6/10 | 8/10 |
 | **Weighted Score** | | **4.85** | **7.85** | **8.20** |
 
-### 17.2 Verdict
+### 18.2 Verdict
 
 **A full Odoo fork is not recommended at this time.** The conversion effort (~45 person-months, 18-24 months) destroys more value than it creates:
 
@@ -1202,7 +1435,7 @@ Instead of a full fork, consider a **thin Odoo shell** that keeps the intelligen
 
 4. **SOC II compliance becomes harder, not easier.** Odoo's ORM-level security is weaker than PostgreSQL RLS for multi-tenant AI workloads.
 
-### 17.3 Recommended Path
+### 18.3 Recommended Path
 
 **Pursue the Hybrid approach (Option B)** — build a thin `autonomy_bridge` Odoo module that:
 
