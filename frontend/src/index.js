@@ -9,6 +9,7 @@ import "./index.css";
 import "leaflet/dist/leaflet.css";
 import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
+import { AzirellaProvider } from "./contexts/AzirellaContext";
 import { ActiveConfigProvider } from "./contexts/ActiveConfigContext";
 import { DisplayPreferencesProvider } from "./contexts/DisplayPreferencesContext";
 import simulationApi, { api as http } from "./services/api";
@@ -67,6 +68,7 @@ init()
       <HelmetProvider>
         <BrowserRouter>
           <AuthProvider>
+            <AzirellaProvider>
             <DisplayPreferencesProvider>
             <ActiveConfigProvider>
             <SystemConfigProvider>
@@ -81,6 +83,7 @@ init()
             </SystemConfigProvider>
             </ActiveConfigProvider>
             </DisplayPreferencesProvider>
+            </AzirellaProvider>
           </AuthProvider>
         </BrowserRouter>
       </HelmetProvider>

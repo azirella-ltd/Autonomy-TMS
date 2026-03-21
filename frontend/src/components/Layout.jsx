@@ -2,58 +2,43 @@
  * Main Layout Component — Split Screen with Azirella Panel
  *
  * Desktop: Content (left) | Azirella (right, resizable)
- * Mobile: Full-width content with bottom Azirella bar
+ * Mobile: Full-width content + full-screen Azirella overlay
  *
- * Hierarchical tabs sit below the navbar for category navigation.
- * The Azirella panel is persistent — conversation survives page navigation.
+ * TopNavbar portals its input + AzirellaPopup into the panel when open.
+ * When panel is closed, input stays in the bottom bar (azirella-input-root).
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import TopNavbar from './TopNavbar';
 import HierarchicalTabs from './HierarchicalTabs';
+import AzirellaPanel from './AzirellaPanel';
 import NAVIGATION_CONFIG from '../config/navigationConfig';
 import { useAuth } from '../contexts/AuthContext';
-import { cn } from '../lib/utils/cn';
+import { useAzirella } from '../contexts/AzirellaContext';
 
 const Layout = ({ children }) => {
   const location = useLocation();
   const { user } = useAuth();
+  const azirella = useAzirella();
   const isDecisionStream = location.pathname === '/' || location.pathname === '/decision-stream';
 
-  // Active category state for hierarchical tabs
   const [activeCategory, setActiveCategory] = useState(
     isDecisionStream ? 'decision_stream' : null
   );
 
-  // Azirella panel state
-  const [azirellaPanelOpen, setAzirellaPanelOpen] = useState(() => {
-    const saved = localStorage.getItem('azirella:panel-open');
-    return saved === 'true';
-  });
-
-  const azirellaPanelWidth = parseInt(localStorage.getItem('azirella:panel-width') || '380', 10);
-
-  useEffect(() => {
-    localStorage.setItem('azirella:panel-open', String(azirellaPanelOpen));
-  }, [azirellaPanelOpen]);
-
-  // Navigation config
   const navConfig = NAVIGATION_CONFIG || [];
-
-  // Content margin adjusts when panel is open
-  const contentMarginRight = azirellaPanelOpen ? azirellaPanelWidth : 0;
+  const panelWidth = parseInt(localStorage.getItem('azirella:panel-width') || '380', 10);
+  const contentMarginRight = azirella.panelOpen ? panelWidth : 0;
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top Navbar — passes panel toggle */}
       <TopNavbar
         sidebarOpen={false}
-        azirellaPanelOpen={azirellaPanelOpen}
-        onToggleAzirellaPanel={() => setAzirellaPanelOpen(v => !v)}
+        azirellaPanelOpen={azirella.panelOpen}
+        onToggleAzirellaPanel={azirella.togglePanel}
       />
 
-      {/* Hierarchical Tabs — adjusts with panel */}
       <div style={{ marginRight: contentMarginRight }} className="transition-[margin] duration-200">
         <HierarchicalTabs
           navigationConfig={Array.isArray(navConfig) ? navConfig : []}
@@ -62,7 +47,6 @@ const Layout = ({ children }) => {
         />
       </div>
 
-      {/* Page Content — left side, adjusts when panel is open */}
       <main
         className="pb-6 px-6 pt-4 transition-[margin] duration-200"
         style={{ marginRight: contentMarginRight }}
@@ -70,10 +54,18 @@ const Layout = ({ children }) => {
         {children}
       </main>
 
-      {/* Azirella Panel toggle strip (when collapsed) */}
-      {!azirellaPanelOpen && (
+      {/* Azirella Panel — TopNavbar portals content into #azirella-panel-root */}
+      <AzirellaPanel isOpen={azirella.panelOpen} onToggle={azirella.togglePanel} />
+
+      {/* Bottom input bar target (when panel is closed) */}
+      {!azirella.panelOpen && (
+        <div id="azirella-input-root" className="fixed bottom-0 left-0 right-0 z-40" />
+      )}
+
+      {/* Collapsed toggle strip */}
+      {!azirella.panelOpen && (
         <button
-          onClick={() => setAzirellaPanelOpen(true)}
+          onClick={azirella.openPanel}
           className="fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-violet-500 text-white px-1.5 py-6 rounded-l-lg shadow-lg hover:bg-violet-600 transition-colors"
           title="Open Azirella"
         >

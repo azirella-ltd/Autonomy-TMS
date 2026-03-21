@@ -734,8 +734,11 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelOpen = false, onToggleAzir
         {/* ── CENTER: spacer (Azirella input is portalled to bottom) ────────── */}
         <div className="flex-1" />
 
-        {/* ── AZIRELLA INPUT BAR — portalled to #azirella-input-root at bottom of workspace ── */}
-        {typeof document !== 'undefined' && document.getElementById('azirella-input-root') && createPortal(
+        {/* ── AZIRELLA INPUT BAR — portalled to panel or bottom bar ── */}
+        {typeof document !== 'undefined' && (
+          document.getElementById(azirellaPanelOpen ? 'azirella-panel-root' : 'azirella-input-root') ||
+          document.getElementById('azirella-input-root')
+        ) && createPortal(
           <div className="flex justify-center px-4 py-3 border-t border-border bg-background/95 backdrop-blur-sm">
           <div
             className={cn(
@@ -840,6 +843,7 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelOpen = false, onToggleAzir
             }}
           />
           </div>,
+          document.getElementById(azirellaPanelOpen ? 'azirella-panel-root' : 'azirella-input-root') ||
           document.getElementById('azirella-input-root'),
         )}
 
