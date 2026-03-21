@@ -99,7 +99,26 @@ export function AzirellaProvider({ children }) {
 export function useAzirella() {
   const ctx = useContext(AzirellaContext);
   if (!ctx) {
-    throw new Error('useAzirella must be used within AzirellaProvider');
+    // Fallback instead of throwing — prevents Layout crash if provider missing
+    console.warn('useAzirella: no provider found, using fallback');
+    return {
+      panelOpen: false,
+      setPanelOpen: () => {},
+      togglePanel: () => {},
+      openPanel: () => {},
+      messages: [],
+      setMessages: () => {},
+      addMessage: () => {},
+      clearMessages: () => {},
+      inputValue: '',
+      setInputValue: () => {},
+      isProcessing: false,
+      setIsProcessing: () => {},
+      outputContent: null,
+      outputTabVisible: false,
+      showOutput: () => {},
+      hideOutput: () => {},
+    };
   }
   return ctx;
 }
