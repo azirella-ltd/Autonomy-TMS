@@ -1540,14 +1540,14 @@ class DecisionStreamService:
 
                     if scope == "sop_policy":
                         ss_mult = proposed.get("safety_stock_multiplier", 1.0)
-                        summary = f"S&OP Policy Update: SS multiplier {ss_mult:.2f}x at {row.site_key}"
+                        summary = f"Strategic Policy: Safety stock multiplier {ss_mult:.2f}x at {row.site_key}"
                         action = f"Update safety stock multiplier to {ss_mult:.2f}x"
                     elif scope == "execution_directive":
                         order_rec = proposed.get("order_recommendation", 0)
-                        summary = f"tGNN Directive: recommend {order_rec:.0f} units at {row.site_key}"
+                        summary = f"Planning Directive: recommend {order_rec:.0f} units at {row.site_key}"
                         action = f"Order {order_rec:.0f} units"
                     else:
-                        summary = f"Allocation Refresh at {row.site_key}"
+                        summary = f"Allocation Update at {row.site_key}"
                         action = "Review and approve allocation changes"
 
                     # Enrich reasoning with vertical escalation context

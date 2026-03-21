@@ -18,20 +18,30 @@ const URGENCY_TIERS = [
 ];
 
 // Decision type labels
+// User-facing role names — no internal tech names (tGNN, TRM, GraphSAGE)
 const TYPE_LABELS = {
-  atp_executor: 'ATP',
-  rebalancing: 'Rebalancing',
-  po_creation: 'PO Creation',
-  order_tracking: 'Order Exception',
-  mo_execution: 'MO Execution',
-  to_execution: 'TO Execution',
-  quality: 'Quality',
-  quality_disposition: 'Quality',
-  maintenance: 'Maintenance',
-  maintenance_scheduling: 'Maintenance',
-  subcontracting: 'Subcontracting',
-  forecast_adjustment: 'Forecast Adj.',
-  inventory_buffer: 'Buffer Adj.',
+  // Execution agents (role-specific)
+  atp_executor: 'ATP Agent',
+  atp: 'ATP Agent',
+  rebalancing: 'Rebalancing Agent',
+  po_creation: 'Procurement Agent',
+  order_tracking: 'Order Tracking Agent',
+  mo_execution: 'Production Agent',
+  to_execution: 'Transfer Agent',
+  quality: 'Quality Agent',
+  quality_disposition: 'Quality Agent',
+  maintenance: 'Maintenance Agent',
+  maintenance_scheduling: 'Maintenance Agent',
+  subcontracting: 'Subcontracting Agent',
+  forecast_adjustment: 'Demand Agent',
+  inventory_buffer: 'Inventory Agent',
+  // Strategic / tactical agents
+  sop_policy: 'Strategic Policy',
+  execution_directive: 'Planning Directive',
+  allocation_refresh: 'Allocation Update',
+  site_coordination: 'Site Coordination',
+  // Governance
+  directive: 'User Directive',
 };
 
 const DecisionSummaryHeader = ({

@@ -1,7 +1,7 @@
 /**
  * Decision Card Component
  *
- * Compact actionable card for a pending TRM decision, displayed inline
+ * Compact actionable card for a pending agent decision, displayed inline
  * in the Decision Stream. Supports Inspect, Modify, Cancel, and Navigate.
  *
  * Override flow:
@@ -41,7 +41,7 @@ import { Badge, Button, Card, CardContent } from '../common';
 import { cn } from '../../lib/utils/cn';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
-// Override reason codes (aligned with TRMDecisionWorklist)
+// Override reason codes (aligned with agent decision worklists)
 const REASON_CODES = [
   { value: 'MARKET_INTELLIGENCE', label: 'Market Intelligence' },
   { value: 'CUSTOMER_COMMITMENT', label: 'Customer Commitment' },
@@ -122,18 +122,25 @@ const TYPE_ICONS = {
 };
 
 // Decision type display labels
+// User-facing role names — no internal tech names
 const TYPE_LABELS = {
-  atp: 'ATP',
-  rebalancing: 'Rebalancing',
-  po_creation: 'PO Creation',
-  order_tracking: 'Order Exception',
-  mo_execution: 'MO Execution',
-  to_execution: 'TO Execution',
-  quality: 'Quality',
-  maintenance: 'Maintenance',
-  subcontracting: 'Subcontracting',
-  forecast_adjustment: 'Forecast Adj.',
-  inventory_buffer: 'Inv. Buffer',
+  atp: 'ATP Agent',
+  atp_executor: 'ATP Agent',
+  rebalancing: 'Rebalancing Agent',
+  po_creation: 'Procurement Agent',
+  order_tracking: 'Order Tracking Agent',
+  mo_execution: 'Production Agent',
+  to_execution: 'Transfer Agent',
+  quality: 'Quality Agent',
+  maintenance: 'Maintenance Agent',
+  subcontracting: 'Subcontracting Agent',
+  forecast_adjustment: 'Demand Agent',
+  inventory_buffer: 'Inventory Agent',
+  sop_policy: 'Strategic Policy',
+  execution_directive: 'Planning Directive',
+  allocation_refresh: 'Allocation Update',
+  site_coordination: 'Site Coordination',
+  directive: 'User Directive',
 };
 
 const URGENCY_COLORS = {
