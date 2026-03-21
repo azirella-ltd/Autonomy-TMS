@@ -91,14 +91,10 @@ export const getDefaultLandingPath = (user) => {
     return "/admin/tenants";
   }
 
-  if (isTenantAdmin(user)) {
-    // Pure tenant admins land on Administration — NOT Decision Stream.
-    // Users with Demo All Access (trevor@) still get Decision Stream.
-    return "/admin/tenants";
-  }
-
-  // All other users (including USER with Powell capabilities) land on
-  // Decision Stream — the primary interface for the agentic operating model.
+  // ALL users land on Decision Stream — the primary interface for the
+  // agentic operating model. The tenant admin sees it too — they need
+  // to see what agents are doing. Admin capabilities are accessed via
+  // the Administration tab in the hierarchical navigation.
   return "/";
 };
 

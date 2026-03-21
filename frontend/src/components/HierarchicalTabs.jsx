@@ -33,7 +33,8 @@ const CATEGORIES = [
     color: 'border-purple-500 text-purple-700 bg-purple-50',
     activeColor: 'border-purple-600 bg-purple-600 text-white',
     sections: [],  // No sub-tabs — immersive mode
-    hideForTenantAdmin: true,
+    // Decision Stream is visible to ALL users including tenant admins.
+    // The tenant admin needs to see what agents are doing.
   },
   {
     key: 'insights',
@@ -152,9 +153,9 @@ const HierarchicalTabs = ({ navigationConfig = [], activeCategory, onCategoryCha
   // An ATP analyst might see just: [Decision Stream] [ATP Worklist]
   const visibleCategories = useMemo(() => {
     return CATEGORIES.filter(cat => {
-      if (cat.hideForTenantAdmin && isUserTenantAdmin) return false;
+      // No categories are hidden from tenant admin — they need full visibility
       if (cat.adminOnly && !isTenantAdmin) return false;
-      if (cat.key === 'decision_stream') return !isUserTenantAdmin;
+      if (cat.key === 'decision_stream') return true;
 
       // Count accessible items in this category
       let accessibleCount = 0;
