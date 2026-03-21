@@ -65,30 +65,15 @@ const Layout = ({ children }) => {
         {children}
       </main>
 
-      {/* Azirella Panel */}
+      {/* Azirella Panel — always rendered, visibility controlled by isOpen */}
       <AzirellaPanel isOpen={panelOpen} onToggle={togglePanel} />
 
-      {/* Bottom input bar target (when panel is closed) */}
-      {!panelOpen && (
-        <div id="azirella-input-root" className="fixed bottom-0 left-0 right-0 z-40" />
-      )}
-
-      {/* Toggle strip when closed */}
-      {!panelOpen && (
-        <button
-          onClick={() => setPanelOpen(true)}
-          className="fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-violet-500 text-white px-1.5 py-6 rounded-l-lg shadow-lg hover:bg-violet-600 transition-colors"
-          title="Open Azirella"
-        >
-          <div className="flex flex-col items-center gap-1">
-            <img src="/azirella_avatar.svg" alt="" className="h-5 w-5 opacity-90" onError={(e) => {e.target.style.display='none';}} />
-            <span className="text-[9px] font-medium"
-              style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
-              Azirella
-            </span>
-          </div>
-        </button>
-      )}
+      {/* Bottom input bar target — always present so portal can find it */}
+      <div
+        id="azirella-input-root"
+        className="fixed bottom-0 left-0 right-0 z-40"
+        style={{ display: panelOpen ? 'none' : 'block' }}
+      />
     </div>
   );
 };
