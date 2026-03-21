@@ -1,8 +1,70 @@
 # Digital Twin Architecture
 
-**Version**: 1.0 | **Date**: 2026-03-19
+**Version**: 2.0 | **Date**: 2026-03-21 | **Cross-refs**: [D365-FORK.md](../../D365-FORK.md), [SAP-S4HANA-FORK.md](../../SAP-S4HANA-FORK.md)
 
 The digital twin is the foundation of the Autonomy platform's AI agent training. It is NOT a separate system — it IS the customer's current supply chain planning system, replicated as a stochastic simulation. All AI agents learn by watching this simulation run and observing where the existing planning heuristics fail.
+
+---
+
+## 0. In-Memory Heuristic Mirror — Core Architectural Principle
+
+**The digital twin is a lightweight mathematical mirror of the customer's ERP planning heuristics, not an API client.**
+
+Every ERP (SAP, D365, Odoo) has a built-in MRP/MPS engine. These engines are deterministic, stateful, and slow (30 seconds to 2 minutes per run). They write results to production tables. They cannot be called 1,000 times for Monte Carlo simulation.
+
+| ERP Engine | Time per Run | 1,000 Runs | Writes to Prod? |
+|-----------|-------------|-----------|-----------------|
+| SAP MRP (`MD01`/`MD02`) | 30-120 sec | 8-33 hours | Yes (`MDKP`, `MDTB`) |
+| D365 Planning Optimization | 60-120 sec | 17-33 hours | Yes (`ReqPO`, `ReqTrans`) |
+| Odoo MRP Scheduler | 30-120 sec (ORM) | 8-33 hours | Yes (`stock.move`, `procurement.order`) |
+| frePPLe (Odoo add-on) | ~10 sec | 2.7 hours | Yes |
+| **Autonomy in-memory mirror** | **0.1-0.3 sec** | **2-5 minutes** | **No (pure math)** |
+
+**The architecture is the same for every ERP:**
+
+1. **Read config once** — extract the customer's planning parameters from the ERP (SAP `MARC`, D365 `ReqItemTable`, Odoo `stock.warehouse.orderpoint`)
+2. **Mirror heuristics as pure math** — replicate the ERP's coverage code / MRP type / orderpoint logic as vectorized in-memory operations. No ORM, no API calls, no database writes
+3. **Run 1,000 stochastic trials in 2-5 minutes** — each trial perturbs demand, lead times, yield, quality, availability with calibrated distributions per entity in the DAG
+4. **Observe where heuristics fail** — stockouts, excess inventory, late deliveries, expediting costs
+5. **TRMs train on the gap** — the difference between heuristic outcomes and optimal is what agents learn to close
+6. **The simulation engine never calls back to the ERP during Monte Carlo**
+
+This principle applies uniformly:
+- **SAP fork**: mirrors `MARC` fields (`DISMM`/`DISLS`/`MINBE`/`EISBE`/`VRMOD`)
+- **D365 fork**: mirrors `ReqItemTable` fields (`CoverageCode`/`MinInventOnhand`/`SafetyStockQuantity`)
+- **Odoo fork**: mirrors `stock.warehouse.orderpoint` fields (`trigger`/`product_min_qty`/`product_max_qty`)
+- **AWS SC fork** (current): mirrors `inv_policy` fields (`ss_policy`/`reorder_point`/`order_up_to_level`)
+
+Only the **config extraction layer** changes per ERP. The in-memory simulation math (netting, BOM explosion, coverage code logic, lead time offsetting) is data-model-agnostic.
+
+### Current Implementation Status
+
+| Heuristic | SAP Source | D365 Source | Odoo Source | Implemented? |
+|-----------|-----------|------------|------------|-------------|
+| **Reorder Point (ROP)** | `MARC.MINBE` | `ReqItemTable.MinInventOnhand` | `orderpoint.product_min_qty` | ✅ Yes — `_SimSite.compute_replenishment_order()` |
+| **Order-Up-To (s,S)** | `MARC.MABST` | `ReqItemTable.MaxInventOnhand` | `orderpoint.product_max_qty` | ✅ Yes — `order_up_to - inventory_position` |
+| **Safety Stock** | `MARC.EISBE` | `ReqItemTable.SafetyStockQuantity` | `orderpoint.product_min_qty` | ✅ Yes — via `inv_policy.ss_quantity` |
+| **Fixed Lot Size** | `MARC.LOSGR` (DISLS=FX) | `ReqItemTable.StandardOrderQuantity` | `orderpoint.qty_multiple` | ❌ No — orders unconstrained |
+| **Lot-for-Lot** | `MARC.DISLS=EX` | `CoverageCode=2` | Default orderpoint | ❌ No — always uses ROP/s,S |
+| **Period Batching** | `MARC.DISLS=WB` (weekly) | `CoverageCode=1` | N/A | ❌ No — daily buckets only |
+| **Min/Max Lot** | `MARC.BSTMI/BSTMA` | `ReqItemTable.MinimumOrderQuantity/MaximumOrderQuantity` | N/A | ❌ No — no lot bounds enforced |
+| **Replenish-to-Max** | `MARC.DISLS=HB` | `CoverageCode=3` (Min/Max) | `orderpoint` default behavior | ❌ No — uses ROP not min/max |
+| **DDMRP Buffers** | N/A (external) | `CoverageCode=4` | `ddmrp` module | ❌ No — no green/yellow/red zone logic |
+| **MRP Type Routing** | `MARC.DISMM` (VB/VM/PD/ND) | `CoverageCode` (0-4) | `trigger` (auto/manual) | ❌ No — all products use same logic |
+| **Forecast Consumption** | `MARC.VRMOD/VINT1/VINT2` | `ForecastTimeFence` | N/A | ❌ No — uses max(forecast, actuals) |
+| **Time Fences** | `MARC.FXHOR` | `FrozenTimeFence` / `LockingTimeFence` | N/A | ❌ No — no frozen/flexible periods |
+| **BOM Explosion** | `STKO`/`STPO` | `BOMTable`/`BOMLine` | `mrp.bom`/`mrp.bom.line` | ✅ Yes — recursive netting |
+| **Lead Time Offsetting** | `MARC.PLIFZ` | `LeadTimePurchase` | `produce_delay`/`purchase_delay` | ✅ Yes — pipeline delay |
+
+**Current state**: The simulation mirrors **ROP/order-up-to + BOM explosion + lead time offsetting**. This covers the most common heuristic pattern but does NOT differentiate between ERP-specific MRP types, lot sizing procedures, or forecast consumption modes.
+
+**Target state**: Mirror all 5 D365 coverage codes, all 6 SAP lot sizing procedures, and Odoo's orderpoint/DDMRP logic as separate mathematical functions selectable per product-site based on the extracted ERP config.
+
+### Heuristic Mirroring Fidelity Risk
+
+The primary engineering risk is **divergence between the mirror and the real ERP behavior**. If the simulation doesn't faithfully replicate what SAP/D365/Odoo actually does, TRM training data is poisoned — agents learn to compensate for phantom failures that don't occur in production.
+
+**Mitigation**: For each ERP, validate the mirror's output against the ERP's deterministic run for the same inputs. Run both with identical demand and compare planned orders. Discrepancies indicate mirror bugs or undocumented ERP behavior (phantom BOMs, co-products, intercompany transfers).
 
 ---
 

@@ -3,6 +3,7 @@
 **Date**: 2026-03-21
 **Status**: Investigation / Decision Document
 **Author**: Claude Code analysis of Autonomy codebase (528K LOC, 1,144 files)
+**Cross-references**: [DIGITAL_TWIN.md §0](docs/internal/DIGITAL_TWIN.md) (in-memory heuristic mirror architecture — applies to all ERP forks)
 
 ---
 

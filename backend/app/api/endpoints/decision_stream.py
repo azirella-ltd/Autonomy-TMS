@@ -263,6 +263,52 @@ async def get_decision_time_series(
                 lines = [{"key": "forecast", "color": "#8884d8", "label": "Forecast (P50)", "bold": True}]
                 title = f"Forecast — {product_id}"
 
+        # Fallback: if no data from primary source, show decision history
+        if not series and product_id:
+            # Query the decision table for this product's decision history
+            TABLE_MAP = {
+                "forecast_adjustment": ("powell_forecast_adjustment_decisions", "created_at", "confidence"),
+                "atp": ("powell_atp_decisions", "created_at", "confidence"),
+                "po_creation": ("powell_po_decisions", "created_at", "confidence"),
+                "rebalancing": ("powell_rebalance_decisions", "created_at", "confidence"),
+                "inventory_buffer": ("powell_buffer_decisions", "created_at", "confidence"),
+                "mo_execution": ("powell_mo_decisions", "created_at", "confidence"),
+                "to_execution": ("powell_to_decisions", "created_at", "confidence"),
+            }
+            tbl_info = TABLE_MAP.get(decision_type)
+            if tbl_info:
+                tbl_name, date_col, val_col = tbl_info
+                result = await db.execute(
+                    text(f"""
+                        SELECT {date_col}, {val_col}, urgency_at_time,
+                               decision_reasoning
+                        FROM {tbl_name}
+                        WHERE product_id = :pid AND config_id = :cfg
+                        ORDER BY {date_col}
+                        LIMIT 30
+                    """),
+                    {"pid": product_id, "cfg": cfg_id},
+                )
+                rows = result.fetchall()
+                for row in rows:
+                    series.append({
+                        "date": row[0].strftime("%Y-%m-%d %H:%M") if row[0] else "",
+                        "confidence": round(float(row[1] or 0) * 100, 1),
+                        "urgency": round(float(row[2] or 0) * 100, 1),
+                    })
+                lines = [
+                    {"key": "confidence", "color": "#8884d8", "label": "Confidence %", "bold": True},
+                    {"key": "urgency", "color": "#ff7300", "label": "Urgency %", "bold": False},
+                ]
+                # Get product name from description
+                prod_result = await db.execute(
+                    text("SELECT description FROM product WHERE id = :pid"),
+                    {"pid": product_id},
+                )
+                prod_name = prod_result.scalar_one_or_none() or product_id
+                title = f"Agent Decision History — {prod_name}"
+                annotation = f"{len(series)} decisions for this product"
+
     except Exception as e:
         logger.warning(f"Time series query failed: {e}")
         return {"series": [], "lines": [], "error": True}
