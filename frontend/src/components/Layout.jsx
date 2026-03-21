@@ -82,7 +82,8 @@ const Layout = ({ children }) => {
 
       {/* ═══ AZIRELLA PANEL — right side, always visible ═══ */}
       <div
-        className="fixed right-0 top-16 bottom-0 z-30 flex flex-col border-l bg-background"
+        className="fixed right-0 top-16 bottom-0 z-30 flex flex-col border-l"
+        style={{ backgroundColor: '#f8f7ff' }}
         style={{ width: PANEL_WIDTH }}
       >
         {/* Header */}
