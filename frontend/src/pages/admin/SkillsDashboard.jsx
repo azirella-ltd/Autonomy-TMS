@@ -667,10 +667,10 @@ const SkillsDashboard = () => {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Sparkles className="h-6 w-6 text-purple-600" />
-            Claude Skills Monitor
+            Exception Handler
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Hybrid AI agent + Skills architecture — execution agents handle ~95%, Skills handle ~5% exceptions
+            LLM exception handling — execution agents handle ~95% of decisions, exceptions escalate to LLM reasoning
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={fetchData}>

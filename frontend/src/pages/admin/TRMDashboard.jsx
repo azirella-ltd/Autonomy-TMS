@@ -123,10 +123,9 @@ const TRMDashboard = () => {
       </nav>
 
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">AI Agents</h1>
+        <h1 className="text-3xl font-bold mb-2">Execution Agents</h1>
         <p className="text-muted-foreground">
-          Train, manage, and test compact 7M parameter agents for supply chain optimization.
-          Uses recursive refinement for fast (under 10ms) decision making with chain-of-thought reasoning.
+          Execution / Site / Role — 11 narrow decision agents per site, sub-10ms inference.
         </p>
       </div>
 

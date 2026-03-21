@@ -73,10 +73,9 @@ const GNNDashboard = () => {
       </nav>
 
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">Network Agent</h1>
+        <h1 className="text-3xl font-bold mb-2">Tactical Agent</h1>
         <p className="text-muted-foreground">
-          Train, manage, and test 128M+ parameter network models for supply chain optimization.
-          Uses graph attention networks with temporal processing for network-wide optimization.
+          Tactical / Network — daily priority allocations and execution directives across sites.
         </p>
       </div>
 

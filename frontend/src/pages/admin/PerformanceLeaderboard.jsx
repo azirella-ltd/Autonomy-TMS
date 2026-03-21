@@ -201,6 +201,12 @@ const PerformanceLeaderboard = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
+      {/* Demo data banner */}
+      <div className="mb-4 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+        <span className="font-semibold">Demo Data</span>
+        <span>This dashboard shows illustrative data. Real performance rankings will populate from agent decisions and planner activity.</span>
+      </div>
+
       {/* Breadcrumbs */}
       <nav className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
         <Link to="/" className="hover:text-foreground">Home</Link>

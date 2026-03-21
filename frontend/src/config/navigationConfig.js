@@ -788,19 +788,44 @@ export const NAVIGATION_CONFIG = [
   },
 
   // ============================================================================
-  // AI & AGENTS
+  // AI & AGENTS — 4-tier architecture:
+  //   Strategic (Network) → Tactical (Network) → Operational (Site) → Execution (Site/Role)
   // ============================================================================
   {
     section: 'AI & Agents',
     divider: true,
     items: [
+      // ── Agent Tiers ──────────────────────────────────────────────────
       {
-        label: 'AI Assistant',
-        path: '/ai-assistant',
-        icon: AIIcon,
-        requiredCapability: 'view_ai_agents',
-        description: 'Conversational AI for planning queries',
+        label: 'Strategic Agent',
+        path: '/admin/graphsage',
+        icon: BrainIcon,
+        requiredCapability: 'view_gnn_training',
+        description: 'Strategic / Network — weekly policy parameters and risk scoring',
       },
+      {
+        label: 'Tactical Agent',
+        path: '/admin/gnn',
+        icon: BrainIcon,
+        requiredCapability: 'view_gnn_training',
+        description: 'Tactical / Network — daily priority allocations across sites',
+      },
+      {
+        label: 'Operational Agent',
+        path: '/admin/site-tgnn',
+        icon: BrainIcon,
+        requiredCapability: 'view_trm_training',
+        description: 'Operational / Site — hourly cross-agent coordination within a site',
+        comingSoon: true,
+      },
+      {
+        label: 'Execution Agents',
+        path: '/admin/trm',
+        icon: BrainIcon,
+        requiredCapability: 'view_trm_training',
+        description: 'Execution / Site / Role — 11 narrow decision agents per site',
+      },
+      // ── Agent Infrastructure ─────────────────────────────────────────
       {
         label: 'Decision Cascade',
         path: '/admin/powell',
@@ -809,67 +834,47 @@ export const NAVIGATION_CONFIG = [
         description: 'SDAM framework — State → Policy → Decision → Outcome',
       },
       {
-        label: 'S&OP Agent',
-        path: '/admin/graphsage',
-        icon: BrainIcon,
-        requiredCapability: 'view_gnn_training',
-        description: 'S&OP Agent — network structure and risk scoring',
-      },
-      {
-        label: 'Operational Agent',
-        path: '/admin/gnn',
-        icon: BrainIcon,
-        requiredCapability: 'view_gnn_training',
-        description: 'Network Agent — priority allocations and context',
-      },
-      {
-        label: 'Execution Agents',
-        path: '/admin/trm',
-        icon: BrainIcon,
+        label: 'Hive Visualization',
+        path: '/admin/hive',
+        icon: ActivityIcon,
         requiredCapability: 'view_trm_training',
-        description: 'Tiny Recursive Model — narrow execution agents',
+        description: 'Agent coordination — urgency vectors, signal bus, decision cycle',
       },
       {
-        label: 'Claude Skills',
+        label: 'Exception Handler',
         path: '/admin/skills',
         icon: ActivityIcon,
         requiredCapability: 'view_trm_training',
-        description: 'Skills monitoring — escalation rates, RAG memory, outcomes',
+        description: 'LLM exception handling — escalation rates, RAG memory, outcomes',
       },
       {
-        label: 'Reinforcement Learning',
+        label: 'Agent Training',
         path: '/admin/rl',
         icon: BrainIcon,
         requiredCapability: 'view_rl_training',
-        description: 'Reinforcement Learning — VFA fine-tuning for AI agents',
+        description: 'Reinforcement learning — behavioral cloning and fine-tuning',
       },
+      // ── Performance & Feedback ───────────────────────────────────────
       {
         label: 'Agent Benchmark',
         path: '/admin/agent-benchmark',
         icon: AwardIcon,
         requiredCapability: 'view_ai_agents',
-        description: 'Compare agent strategies — cost, service, efficiency',
+        description: 'Compare agent strategies — cost, service, efficiency (demo data)',
       },
       {
-        label: 'RLHF Feedback',
+        label: 'Override Feedback',
         path: '/admin/rlhf',
         icon: ThumbsUpIcon,
         requiredCapability: 'view_rl_training',
-        description: 'Human feedback collection — override patterns and training data',
+        description: 'Human override patterns — training signal from planner decisions (demo data)',
       },
       {
         label: 'Performance Leaderboard',
         path: '/admin/leaderboard',
         icon: TrophyIcon,
         requiredCapability: 'view_ai_agents',
-        description: 'Participant and agent performance rankings',
-      },
-      {
-        label: 'Agent Management',
-        path: '/ai/agents',
-        icon: AIIcon,
-        requiredCapability: 'manage_ai_agents',
-        comingSoon: true,
+        description: 'Agent and planner performance rankings (demo data)',
       },
     ],
   },

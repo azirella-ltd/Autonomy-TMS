@@ -252,9 +252,9 @@ const GraphSAGEDashboard = () => {
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">S&OP Agent</h1>
+        <h1 className="text-3xl font-bold mb-2">Strategic Agent</h1>
         <p className="text-muted-foreground">
-          Medium-term network structure analysis at aggregated hierarchy levels.
+          Strategic / Network — weekly policy parameters at aggregated hierarchy levels.
           Computes policy parameters θ (CFA) — criticality scores, bottleneck risk,
           concentration risk, resilience scores, and safety stock multipliers.
         </p>
