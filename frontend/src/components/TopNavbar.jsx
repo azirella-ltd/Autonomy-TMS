@@ -37,7 +37,7 @@ import AzirellaAvatar from './AzirellaAvatar';
 import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
 import useTabStore from '../stores/useTabStore';
 
-const TopNavbar = ({ sidebarOpen = true }) => {
+const TopNavbar = ({ sidebarOpen = true, azirellaPanelOpen = false, onToggleAzirellaPanel }) => {
   const { user, isAuthenticated, logout } = useAuth();
   const { effectiveConfigId } = useActiveConfig();
   const [currentPath, setCurrentPath] = useState('');
@@ -770,7 +770,13 @@ const TopNavbar = ({ sidebarOpen = true }) => {
               value={talkInput}
               onChange={(e) => setTalkInput(e.target.value)}
               onKeyDown={handleTalkKeyDown}
-              onFocus={() => setTalkFocused(true)}
+              onFocus={() => {
+                setTalkFocused(true);
+                // Open the Azirella panel when user clicks the input
+                if (onToggleAzirellaPanel && !azirellaPanelOpen) {
+                  onToggleAzirellaPanel();
+                }
+              }}
               onBlur={() => setTalkFocused(false)}
               placeholder={
                 voiceAssistant.state === VoiceState.LISTENING ? 'Listening…'
