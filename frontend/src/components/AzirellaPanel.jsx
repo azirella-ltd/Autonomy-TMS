@@ -57,7 +57,24 @@ const AzirellaPanel = ({ isOpen, onToggle }) => {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    // Render a visible toggle button instead of returning null
+    return (
+      <button
+        onClick={onToggle}
+        className="fixed right-0 top-1/2 -translate-y-1/2 z-50 bg-violet-500 text-white px-2 py-8 rounded-l-xl shadow-xl hover:bg-violet-600 transition-all hover:px-3"
+        title="Open Azirella"
+      >
+        <div className="flex flex-col items-center gap-2">
+          <img src="/azirella_avatar.svg" alt="" className="h-6 w-6" onError={(e) => {e.target.style.display='none';}} />
+          <span className="text-[10px] font-semibold tracking-wide"
+            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
+            Azirella
+          </span>
+        </div>
+      </button>
+    );
+  }
 
   // Mobile: full screen overlay
   if (isMobile) {
