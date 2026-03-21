@@ -40,9 +40,15 @@ import { useCapabilities } from '../hooks/useCapabilities';
 
 const DecisionStream = () => {
   const location = useLocation();
-  const { isTenantAdmin } = useAuth();
+  const { user, isTenantAdmin } = useAuth();
   const { hasCapability } = useCapabilities();
-  const canOverride = hasCapability('action_decision_stream') || isTenantAdmin;
+
+  // Tenant admin = technical admin, NOT a functional user.
+  // They see Decision Stream as system health view — can Inspect + Show Me
+  // but NOT Override decisions or issue directives via Talk to Me.
+  const isPureTenantAdmin = user?.user_type === 'TENANT_ADMIN' && !hasCapability('action_decision_stream');
+  const canOverride = hasCapability('action_decision_stream') && !isPureTenantAdmin;
+  const canInspect = true;  // Everyone can Inspect — it's read-only
 
   // Digest state
   const [digest, setDigest] = useState(null);

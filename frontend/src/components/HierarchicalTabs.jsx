@@ -33,8 +33,7 @@ const CATEGORIES = [
     color: 'border-purple-500 text-purple-700 bg-purple-50',
     activeColor: 'border-purple-600 bg-purple-600 text-white',
     sections: [],  // No sub-tabs — immersive mode
-    // Decision Stream is visible to ALL users including tenant admins.
-    // The tenant admin needs to see what agents are doing.
+    // Decision Stream visible to all — read-only system health view for tenant admin
   },
   {
     key: 'insights',
