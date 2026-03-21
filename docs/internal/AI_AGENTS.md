@@ -1594,9 +1594,9 @@ See [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#self-hosted-llm-configuration) f
 
 ## Human-to-AI Signal Channels
 
-### Talk to Me — Natural Language Directive Capture
+### Azirella — Natural Language Directive Capture
 
-The "Talk to Me" prompt bar in the TopNavbar is the primary human-to-AI input channel. Users type natural language directives that the system parses, validates, and routes to the appropriate Powell Cascade layer.
+The "Azirella" prompt bar in the TopNavbar is the primary human-to-AI input channel. Users type natural language directives that the system parses, validates, and routes to the appropriate Powell Cascade layer.
 
 **Flow**: User types directive → POST `/directives/analyze` (LLM parse + gap detection) → Clarification panel (if missing fields) → POST `/directives/submit` (persist + route + auto-apply if confidence ≥ 0.7)
 

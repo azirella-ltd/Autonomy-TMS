@@ -1224,7 +1224,7 @@ const AppContent = () => {
               element={<NTierVisibility />}
             />
 
-            {/* AI Assistant removed — Azirella/Talk to Me replaces it */}
+            {/* AI Assistant removed — Azirella/Azirella replaces it */}
             <Route
               path="/ai-assistant"
               element={<Navigate to="/decision-stream" replace />}

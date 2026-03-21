@@ -2580,7 +2580,7 @@ class DecisionStreamService:
                 pass
             return []
 
-    # Role descriptions for Talk to Me system prompt
+    # Role descriptions for Azirella system prompt
     _ROLE_DESCRIPTIONS = {
         "SC_VP": {
             "title": "VP of Supply Chain",

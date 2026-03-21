@@ -45,7 +45,7 @@ const DecisionStream = () => {
 
   // Tenant admin = technical admin, NOT a functional user.
   // They see Decision Stream as system health view — can Inspect + Show Me
-  // but NOT Override decisions or issue directives via Talk to Me.
+  // but NOT Override decisions or issue directives via Azirella.
   const isPureTenantAdmin = user?.user_type === 'TENANT_ADMIN' && !hasCapability('action_decision_stream');
   const canOverride = hasCapability('action_decision_stream') && !isPureTenantAdmin;
   const canInspect = true;  // Everyone can Inspect — it's read-only
@@ -128,7 +128,7 @@ const DecisionStream = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, chatLoading]);
 
-  // Handle initial prompt or filters from TopNavbar "Talk to me"
+  // Handle initial prompt or filters from TopNavbar "Azirella"
   useEffect(() => {
     const initialPrompt = location.state?.initialPrompt;
     const filters = location.state?.filters;
@@ -136,12 +136,12 @@ const DecisionStream = () => {
       initialPromptHandled.current = true;
       window.history.replaceState({}, '');
       handleSendMessage(initialPrompt);
-    } else if (filters?.fromTalkToMe && !initialPromptHandled.current) {
+    } else if (filters?.fromAzirella && !initialPromptHandled.current) {
       initialPromptHandled.current = true;
       window.history.replaceState({}, '');
       // If routed here with filters, inject as a context message
       const filterSummary = Object.entries(filters)
-        .filter(([k]) => k !== 'fromTalkToMe')
+        .filter(([k]) => k !== 'fromAzirella')
         .map(([k, v]) => `${k}: ${v}`)
         .join(', ');
       if (filterSummary) {

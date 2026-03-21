@@ -6,7 +6,7 @@ The provisioning stepper bootstraps all AI layers for a supply chain config befo
 
 Each supply chain config has one `config_provisioning_status` row tracking the state of all 14 steps. Steps execute in dependency order — a step cannot run until all its prerequisites are complete.
 
-**Why provisioning matters**: When a user issues a directive via [Talk to Me](TALK_TO_ME.md), the directive is routed to a specific Powell layer. If that layer hasn't been provisioned, the directive has nowhere to go:
+**Why provisioning matters**: When a user issues a directive via [Azirella](TALK_TO_ME.md), the directive is routed to a specific Powell layer. If that layer hasn't been provisioned, the directive has nowhere to go:
 
 | Directive Target | Required Steps |
 |-----------------|----------------|
@@ -133,6 +133,6 @@ The `ProvisioningStepper.jsx` modal shows:
 
 ## Related Documentation
 
-- [Talk to Me](TALK_TO_ME.md) — Directive capture system that depends on provisioned layers
+- [Azirella](TALK_TO_ME.md) — Directive capture system that depends on provisioned layers
 - [Conformal Prediction Framework Guide](../knowledge/Conformal_Prediction_Framework_Guide.md) — Two-level CP architecture and tenant scoping
 - [POWELL_APPROACH.md](POWELL_APPROACH.md) — Full Powell SDAM framework including CDT calibration pipeline

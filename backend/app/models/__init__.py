@@ -343,7 +343,7 @@ from .executive_briefing import (
     BriefingType, BriefingStatus,
 )
 
-# 28. User Directives — "Talk to Me" context capture & Powell routing
+# 28. User Directives — "Azirella" context capture & Powell routing
 from .user_directive import UserDirective, ConfigProvisioningStatus
 
 # 29b. Scenario Events — What-if event injection for CDC cascade analysis

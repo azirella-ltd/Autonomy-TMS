@@ -1,8 +1,8 @@
-# Talk to Me — Natural Language Directive Capture & Query Routing
+# Azirella — Natural Language Directive Capture & Query Routing
 
 ## Overview
 
-"Talk to Me" is a persistent AI prompt bar in the TopNavbar that accepts natural language input from any authenticated user. The system handles two modes:
+"Azirella" is a persistent AI prompt bar in the TopNavbar that accepts natural language input from any authenticated user. The system handles two modes:
 
 1. **Directives**: Actionable instructions ("increase service levels by 5% in the SW region") are parsed, gap-checked, and routed to the appropriate Powell Cascade layer.
 2. **Questions**: Informational queries ("show me overdue POs" or "what's our inventory at the Dallas DC?") are answered inline and optionally navigate the user to the relevant page with pre-applied filters.
@@ -100,7 +100,7 @@ Effectiveness tracking uses Bayesian posteriors per `(user_id, directive_type)` 
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/components/TopNavbar.jsx` | "Talk to me" input bar + clarification panel |
+| `frontend/src/components/TopNavbar.jsx` | "Azirella" input bar + clarification panel |
 
 ### API Endpoints
 

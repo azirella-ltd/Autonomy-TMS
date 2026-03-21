@@ -213,7 +213,7 @@ Autonomy's current approach:
 - `decision_reasoning.py` generates human-readable explanations
 - RAG decision memory retrieves similar past decisions
 
-**Opportunity**: Build a lightweight **semantic index** — not an RDF triple store, but a structured metadata layer that maps entity relationships for LLM consumption. This could be a JSON-LD-like representation of the AWS SC entity graph, refreshed periodically, that Claude Skills and the "Talk to Me" system use as grounding context. No new database needed — just a materialized view of entity relationships.
+**Opportunity**: Build a lightweight **semantic index** — not an RDF triple store, but a structured metadata layer that maps entity relationships for LLM consumption. This could be a JSON-LD-like representation of the AWS SC entity graph, refreshed periodically, that Claude Skills and the "Azirella" system use as grounding context. No new database needed — just a materialized view of entity relationships.
 
 **Priority**: Medium. Would improve LLM response quality for complex cross-entity queries.
 

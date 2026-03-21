@@ -274,7 +274,7 @@ Email (customer/supplier) ────┐    Email Signal                 ┌─
                               │     PII scrub,        ────────►│ Service      │
                               │     LLM classify)      /ingest │              │
                               │                                │  Validates   │
-Talk to Me directive ─────────┤    Directive Service            │  → FcstAdj   │
+Azirella directive ─────────┤    Directive Service            │  → FcstAdj   │
   (natural language) ─────────┘    (LLM parse,          POST   │    TRM eval  │
                                     gap detect,       ────────►│  → Confidence│
                                     Powell routing)    /submit  │    gate      │
@@ -289,7 +289,7 @@ IoT sensor (temperature) ────┘    No LLM              /ingest │     
 
 **Email Signal Intelligence** (`email_signal_service.py`): GDPR-safe email ingestion monitors IMAP/Gmail inboxes, strips PII before persistence, classifies emails into 12 supply chain signal types, and auto-routes to TRMs. See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md).
 
-**Talk to Me** (`directive_service.py`): Natural language directives parsed by LLM, routed to Powell layers based on user role. See [TALK_TO_ME.md](TALK_TO_ME.md).
+**Azirella** (`directive_service.py`): Natural language directives parsed by LLM, routed to Powell layers based on user role. See [TALK_TO_ME.md](TALK_TO_ME.md).
 
 #### How External Signals Enter the Hive
 

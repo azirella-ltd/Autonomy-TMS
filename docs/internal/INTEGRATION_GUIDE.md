@@ -1365,7 +1365,7 @@ GET /api/v1/planning-cascade/gnn-analysis/{config_id}/node/{node_id}/ask-why?mod
 
 ---
 
-## Talk to Me — Directive API
+## Azirella — Directive API
 
 Natural language directive capture via the TopNavbar prompt bar.
 

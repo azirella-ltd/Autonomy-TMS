@@ -520,7 +520,7 @@ make proxy-logs
 
 - `pegging_service.py`: Full-Level Pegging — Kinaxis-style supply-demand tracing with multi-stage chain tracking. Every unit of supply is traceable to demand (customer order or forecast), from vendor through factories and DCs to customer. Forward pegging (demand→supply chain), reverse pegging (supply→what orders it serves), product@site summary. Pegging records created by: (1) ATP executor on AATP consumption, (2) supply plan generator on planned orders, (3) decision seeder during provisioning warm-start. Chains are linked via `chain_id` (UUID) and `chain_depth` (0=terminal demand, 1+=upstream).
 - `multi_stage_ctp_service.py`: Multi-Stage Capable-to-Promise — order promising with pegging chain creation. Evaluates feasibility across multiple BOM levels and supply sources, creates pegging preview showing which supply sources would be consumed.
-- `scenario_event_service.py`: Scenario event injection — 24 event types across 5 categories (Demand: 7, Supply: 6, Capacity: 5, Logistics: 3, Macro: 3). Creates scenario branches, modifies DB records, triggers CDC. SAP S/4HANA IDES compatible. Event catalog dynamically injected into Talk to Me LLM prompt via `_build_event_catalog_for_llm()`.
+- `scenario_event_service.py`: Scenario event injection — 24 event types across 5 categories (Demand: 7, Supply: 6, Capacity: 5, Logistics: 3, Macro: 3). Creates scenario branches, modifies DB records, triggers CDC. SAP S/4HANA IDES compatible. Event catalog dynamically injected into Azirella LLM prompt via `_build_event_catalog_for_llm()`.
 
 **API Endpoints** (`api/endpoints/`):
 - `mps.py`: Master Production Scheduling endpoints
@@ -532,7 +532,7 @@ make proxy-logs
 - `model.py`: Training and dataset generation endpoints
 - `auth.py`: Authentication (login, register, MFA)
 - `websocket.py`: Real-time scenario updates
-- `user_directives.py`: "Talk to Me" directive capture (analyze/submit/list)
+- `user_directives.py`: "Azirella" directive capture (analyze/submit/list)
 - `provisioning.py`: Powell Cascade 14-step provisioning stepper
 - `email_signals.py`: GDPR-safe email signal ingestion and management
 - `agent_stochastic_params.py`: Per-agent stochastic parameters CRUD, pipeline config settings
@@ -1156,9 +1156,9 @@ POST /api/v1/sap-data/field-mapping/match    # SAP field mapping
 
 **Access**: Navigation > Administration > ERP Data Management (Tenant Admin required)
 
-### Talk to Me — Natural Language Directive Capture & Query Routing
+### Azirella — Natural Language Directive Capture & Query Routing
 
-A persistent "Talk to me" input in the TopNavbar accepts natural language input from any user. The system handles two modes: **directives** (actionable instructions routed to Powell layers) and **questions** (informational queries that navigate to the relevant page with pre-applied filters). Directives use a two-phase flow to ensure completeness before routing.
+A persistent "Azirella" input in the TopNavbar accepts natural language input from any user. The system handles two modes: **directives** (actionable instructions routed to Powell layers) and **questions** (informational queries that navigate to the relevant page with pre-applied filters). Directives use a two-phase flow to ensure completeness before routing.
 
 **Two-Phase Flow**:
 1. `POST /directives/analyze` — LLM parse + gap detection (no persist). Returns structured fields + `missing_fields` list.
@@ -1203,7 +1203,7 @@ The `decision_seed` step generates realistic decisions from the digital twin sim
 - `backend/app/models/user_directive.py` — UserDirective + ConfigProvisioningStatus models
 - `backend/app/services/provisioning_service.py` — 14-step pipeline orchestrator
 - `backend/app/api/endpoints/provisioning.py` — Provisioning stepper API
-- `frontend/src/components/TopNavbar.jsx` — Talk to me input + clarification panel
+- `frontend/src/components/TopNavbar.jsx` — Azirella input + clarification panel
 - `frontend/src/components/supply-chain-config/ProvisioningStepper.jsx` — Stepper modal
 - `backend/app/services/query_router.py` — Route registry (~60 routes), TF-IDF embedding fallback for query routing
 - Documentation: [docs/internal/TALK_TO_ME.md](docs/internal/TALK_TO_ME.md) (directives + query routing), [docs/internal/PROVISIONING_STEPPER.md](docs/internal/PROVISIONING_STEPPER.md) (14-step pipeline)
@@ -1622,7 +1622,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ PicoClaw/OpenClaw removed (replaced by Claude Skills ecosystem)
 - ✅ Executive Strategy Briefing (LLM-synthesized briefings with follow-up Q&A). See [docs/EXECUTIVE_BRIEFING.md](docs/EXECUTIVE_BRIEFING.md)
 - ✅ Beer Game repositioned as Digital Twin / Learning Tenant module (not primary focus)
-- ✅ "Talk to Me" directive capture with smart clarification flow (two-phase: analyze→clarify→submit) + query routing (LLM + TF-IDF fallback → page navigation with filters)
+- ✅ "Azirella" directive capture with smart clarification flow (two-phase: analyze→clarify→submit) + query routing (LLM + TF-IDF fallback → page navigation with filters)
 - ✅ Provisioning Stepper (14-step Powell Cascade warm-start pipeline with dependency tracking)
 - ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)
 

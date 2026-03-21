@@ -1,4 +1,4 @@
-"""User Directive API endpoints — "Talk to Me" natural language context capture.
+"""User Directive API endpoints — "Azirella" natural language context capture.
 
 Accepts natural language directives from authenticated users, parses them
 with LLM, routes to the appropriate Powell layer based on role, and tracks

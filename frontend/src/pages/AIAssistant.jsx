@@ -122,7 +122,7 @@ const AIAssistant = () => {
     [message, loading, conversationId, selectedConfigId],
   );
 
-  // Auto-submit initial prompt from "Talk to me" navbar input
+  // Auto-submit initial prompt from "Azirella" navbar input
   useEffect(() => {
     const initialPrompt = location.state?.initialPrompt;
     if (initialPrompt && !initialPromptHandled.current) {

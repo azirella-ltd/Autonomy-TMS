@@ -194,9 +194,9 @@ This feeds the existing `signal_source="email"` path that was already designed i
 
 Email signals appear in the Decision Stream as alerts for roles with `"email_signal"` in their `ROLE_RELEVANCE` set (SC_VP, EXECUTIVE, SOP_DIRECTOR, MPS_MANAGER). Deep-link goes to `/admin/email-signals`.
 
-### Talk to Me
+### Azirella
 
-Email signals complement the Talk to Me directive capture. Talk to Me handles human intent ("I want to increase revenue in the SW region"). Email signals handle external intelligence ("our supplier just announced a 3-week lead time extension"). Both feed the same Powell cascade.
+Email signals complement the Azirella directive capture. Azirella handles human intent ("I want to increase revenue in the SW region"). Email signals handle external intelligence ("our supplier just announced a 3-week lead time extension"). Both feed the same Powell cascade.
 
 ## Implementation
 

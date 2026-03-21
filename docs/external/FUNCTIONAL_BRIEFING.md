@@ -260,7 +260,7 @@ When an AI agent identifies an action that crosses functional boundaries (e.g., 
 - **Net benefit threshold**: Configurable threshold controls agent autonomy — above threshold = auto-resolve, near threshold = human reviews, below = reject
 - **25+ negotiation scenarios**: Manufacturing, distribution, channel allocation, procurement, logistics, finance, S&OP
 
-### 6.2 Talk to Me — Natural Language Directive Capture
+### 6.2 Azirella — Natural Language Directive Capture
 
 A persistent AI prompt bar in the top navigation accepts natural language directives from any authenticated user. The system parses directives with an LLM, detects missing information via a smart clarification flow, and routes the completed directive to the appropriate Powell Cascade layer based on the user's role.
 
@@ -270,9 +270,9 @@ A persistent AI prompt bar in the top navigation accepts natural language direct
 - **Confidence-gated auto-apply**: ≥0.7 confidence auto-routed; below that, held for human review
 - **Effectiveness tracking**: Bayesian posteriors per (user, directive type) measure whether directives actually improve outcomes
 
-> **Screenshot 15a — Talk to Me Directive Bar**
+> **Screenshot 15a — Azirella Directive Bar**
 > *Navigation: Always visible in top navigation bar*
-> Shows the persistent "Talk to me..." input bar. When a directive is analyzed, a clarification panel appears with targeted questions for any missing fields.
+> Shows the persistent "Azirella..." input bar. When a directive is analyzed, a clarification panel appears with targeted questions for any missing fields.
 
 ### 6.3 Email Signal Intelligence — Automated External Signal Ingestion
 

@@ -656,11 +656,11 @@ The parameterized optimization policy optimizer — which performs global search
 
 ---
 
-## Part 12: Human-to-AI Signal Channels — Talk to Me & Email Signal Intelligence
+## Part 12: Human-to-AI Signal Channels — Azirella & Email Signal Intelligence
 
 Two input channels allow humans and external communications to inject signals directly into the AI decision pipeline, complementing the autonomous agent-driven workflows with human intent and external intelligence.
 
-### Talk to Me — Natural Language Directive Capture
+### Azirella — Natural Language Directive Capture
 
 A persistent AI prompt bar in the TopNavbar accepts natural language directives from any authenticated user. The two-phase flow (analyze → clarify → submit) uses LLM parsing to extract structured fields (direction, metric, magnitude, duration, scope, justification), detects missing information via smart gap detection, and routes the completed directive to the appropriate Powell Cascade layer based on the user's `powell_role`.
 

@@ -1170,9 +1170,9 @@ Human S&OP Meeting (if extra shift > authority threshold)
 > This end-to-end walkthrough shows exactly how that statement moves from natural language
 > to changed TRM decisions at every site in the network.
 
-### Stage 1 — Capture (Talk to Me → DirectiveService → Layer 4)
+### Stage 1 — Capture (Azirella → DirectiveService → Layer 4)
 
-The planner enters the statement into the Talk to Me input in the top navigation bar.
+The planner enters the statement into the Azirella input in the top navigation bar.
 The two-phase directive flow runs:
 
 1. `POST /directives/analyze` — the LLM parser extracts:

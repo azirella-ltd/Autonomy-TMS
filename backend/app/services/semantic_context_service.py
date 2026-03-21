@@ -2,7 +2,7 @@
 Semantic Context Service — JSON-LD-like entity relationship index for LLM grounding.
 
 Provides structured context about the tenant's supply chain entities so that
-LLM consumers (Claude Skills, Talk to Me directives, query routing) can
+LLM consumers (Claude Skills, Azirella directives, query routing) can
 resolve ambiguous references and understand entity relationships.
 
 This is NOT a knowledge graph — it's a materialized view of existing

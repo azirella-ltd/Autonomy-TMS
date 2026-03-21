@@ -1,5 +1,5 @@
 /**
- * TalkToMePopup — Scrollable, persistent conversation popup for the "Talk to Me" feature.
+ * AzirellaPopup — Scrollable, persistent conversation popup for the "Azirella" feature.
  *
  * Replaces all 6 inline response panels from TopNavbar.jsx with a unified
  * conversation-thread UI anchored below the navbar input bar.
@@ -106,7 +106,7 @@ function buildMessages({
               onClick={() =>
                 onNavigate?.(analysisResult.target_page, {
                   filters: analysisResult.filters || {},
-                  fromTalkToMe: true,
+                  fromAzirella: true,
                 })
               }
               className="mt-3 flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
@@ -205,7 +205,7 @@ function buildMessages({
                 onNavigate?.('/scenario-events', {
                   configId: analysisResult.target_config_id,
                   eventId: analysisResult.event_id,
-                  fromTalkToMe: true,
+                  fromAzirella: true,
                 })
               }
               className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors ml-auto"
@@ -822,7 +822,7 @@ function buildMessages({
           {/* Navigation links */}
           <div className="mt-3 flex items-center gap-3">
             <button
-              onClick={() => onNavigate('/decision-stream', { fromTalkToMe: true })}
+              onClick={() => onNavigate('/decision-stream', { fromAzirella: true })}
               className="flex items-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 transition-colors"
             >
               <span>→</span>
@@ -832,7 +832,7 @@ function buildMessages({
               <button
                 onClick={() => onNavigate('/scenario-events', {
                   configId: directiveResult._target_config_id || scenarioAction?.target_config_id,
-                  fromTalkToMe: true,
+                  fromAzirella: true,
                 })}
                 className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
               >
@@ -849,8 +849,8 @@ function buildMessages({
   return messages;
 }
 
-// ─── TalkToMePopup Component ────────────────────────────────────────────────────
-const TalkToMePopup = ({
+// ─── AzirellaPopup Component ────────────────────────────────────────────────────
+const AzirellaPopup = ({
   open,
   onClose,
   userPrompt,
@@ -1057,4 +1057,4 @@ const TalkToMePopup = ({
   );
 };
 
-export default TalkToMePopup;
+export default AzirellaPopup;

@@ -5,7 +5,7 @@
  * SAP Integration, and Slack Signals with quick navigation to
  * each individual admin page.
  *
- * All sources feed into Talk to Me question answering and
+ * All sources feed into Azirella question answering and
  * AI agent decision context.
  */
 
@@ -414,7 +414,7 @@ export default function ContextEngine() {
               <h1 className="text-2xl font-bold tracking-tight">Context Engine</h1>
             </div>
             <p className="text-muted-foreground ml-12">
-              Configure external context sources that inform AI agent decisions and power Talk to Me answers
+              Configure external context sources that inform AI agent decisions and power Azirella answers
             </p>
           </div>
           <Button
@@ -436,7 +436,7 @@ export default function ContextEngine() {
           <SourceCard
             icon={BookOpen}
             name="Knowledge Base"
-            description="RAG document store powering agent context retrieval and Talk to Me answers. Upload PDFs, policies, and reference materials."
+            description="RAG document store powering agent context retrieval and Azirella answers. Upload PDFs, policies, and reference materials."
             status={kbStatus()}
             loading={kbLoading}
             error={kbError}
@@ -556,7 +556,7 @@ export default function ContextEngine() {
               </div>
 
               <p className="text-xs text-muted-foreground max-w-md">
-                All sources feed into Talk to Me question answering and AI agent decision context
+                All sources feed into Azirella question answering and AI agent decision context
               </p>
             </div>
           </CardContent>

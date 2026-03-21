@@ -3,7 +3,7 @@
  *
  * Top navigation bar using Tailwind CSS and lucide-react icons.
  * Provides user menu, notifications, context breadcrumbs, and
- * a central "Talk to me" AI prompt input with avatar.
+ * a central "Azirella" AI prompt input with avatar.
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -32,7 +32,7 @@ import { isSystemAdmin } from '../utils/authUtils';
 import simulationApi, { api } from '../services/api';
 import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
 import { cn } from '../lib/utils/cn';
-import TalkToMePopup from './TalkToMePopup';
+import AzirellaPopup from './AzirellaPopup';
 import AzirellaAvatar from './AzirellaAvatar';
 import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
 import useTabStore from '../stores/useTabStore';
@@ -95,7 +95,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         return;
       }
 
-      // ── Normal directive/query → Talk to Me submit ──────────────────
+      // ── Normal directive/query → Azirella submit ──────────────────
       setTalkInput(text);
       setPopupOpen(true);
       setTimeout(() => voiceSubmitRef.current?.(), 200);
@@ -302,7 +302,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     }
   };
 
-  // ── Talk to me — Two-Phase Directive Capture ────────────────────────────────
+  // ── Azirella — Two-Phase Directive Capture ────────────────────────────────
 
   const dismissClarification = useCallback(() => {
     setAnalysisResult(null);
@@ -777,7 +777,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
                   : voiceAssistant.state === VoiceState.PROCESSING ? 'Thinking…'
                     : voiceAssistant.state === VoiceState.SPEAKING ? 'Speaking…'
                       : voiceEnabled ? 'Say "Hi Azirella" or type…'
-                        : 'Talk to me…'
+                        : 'Azirella…'
               }
               className={cn(
                 'flex-1 bg-transparent text-sm outline-none min-w-0',
@@ -804,7 +804,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             </button>
           </div>
 
-          <TalkToMePopup
+          <AzirellaPopup
             open={popupOpen}
             onClose={dismissClarification}
             userPrompt={originalText}

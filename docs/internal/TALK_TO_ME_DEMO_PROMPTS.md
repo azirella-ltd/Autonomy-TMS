@@ -1,4 +1,4 @@
-# Talk to Me — Demo Prompt Card
+# Azirella — Demo Prompt Card
 
 **Autonomy Platform** | SAP IDES 1710 Demo | MZ Bikes
 

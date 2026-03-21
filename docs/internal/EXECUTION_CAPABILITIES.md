@@ -945,7 +945,7 @@ The execution layer is augmented by **11 Engine-TRM pairs** that combine determi
 
 Two mechanisms feed external signals into the execution layer:
 
-**Talk to Me (Natural Language Directives)**: Users type directives in the TopNavbar prompt bar (e.g., "Increase SW region revenue by 10% next quarter"). LLM parsing extracts structured fields, gap detection asks clarifying questions, and the completed directive routes to the appropriate Powell layer based on user role. Implementation: `directive_service.py`, `user_directives.py`, `TopNavbar.jsx`. See [TALK_TO_ME.md](TALK_TO_ME.md).
+**Azirella (Natural Language Directives)**: Users type directives in the TopNavbar prompt bar (e.g., "Increase SW region revenue by 10% next quarter"). LLM parsing extracts structured fields, gap detection asks clarifying questions, and the completed directive routes to the appropriate Powell layer based on user role. Implementation: `directive_service.py`, `user_directives.py`, `TopNavbar.jsx`. See [TALK_TO_ME.md](TALK_TO_ME.md).
 
 **Email Signal Intelligence (GDPR-Safe Email Ingestion)**: IMAP/Gmail inbox monitoring extracts supply chain signals from customer/supplier emails. PII stripped before persistence (GDPR-safe by design). LLM classifies into 12 signal types and auto-routes to appropriate TRMs. Demand signals → ForecastAdjustmentTRM (`source="email"`), supply disruptions → POCreationTRM, quality issues → QualityDispositionTRM. Implementation: `email_signal_service.py`, `email_pii_scrubber.py`, `email_connector.py`, `EmailSignalsDashboard.jsx`. See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md).
 

@@ -189,7 +189,7 @@ export default function ScenarioEvents() {
             <p className="text-lg font-medium">Select an event type</p>
             <p className="text-sm mt-1">Choose from the catalog on the left to begin</p>
             <p className="text-xs mt-4 max-w-md text-center">
-              Or use <span className="font-medium text-violet-600">Talk to me</span> — try
+              Or use <span className="font-medium text-violet-600">Azirella</span> — try
               "what if Bigmart places a rush order for 500 C900 bikes"
             </p>
           </div>

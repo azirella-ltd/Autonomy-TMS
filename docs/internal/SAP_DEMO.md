@@ -701,7 +701,7 @@ Three product families, 9 finished goods manufactured at Plant 1710:
 
 ## 8. Scenario Event Catalog (24 Types)
 
-These can be triggered via Talk to Me natural language or the Scenario Events UI.
+These can be triggered via Azirella natural language or the Scenario Events UI.
 
 > **For SAP audiences**: Use the SAP official materials (TG11, FG126, customer 17100001) for standard demo flows.
 > **For SC planning/AI demos**: Use MZ bikes (C900, M500, R200) and named customers (Bigmart, Skymart) for richer scenarios.
@@ -855,9 +855,9 @@ The simulator writes to the same DB tables and triggers the same events as a rea
 
 ---
 
-## 10. "Talk to Me" Demo Scripts
+## 10. "Azirella" Demo Scripts
 
-Pre-written prompts for the Talk to Me bar during live demos. Each prompt is tagged with its behavior:
+Pre-written prompts for the Azirella bar during live demos. Each prompt is tagged with its behavior:
 
 - **STRAIGHT-THROUGH** — All required fields present; routes immediately to the target Powell layer with no clarification.
 - **CLARIFICATION** — Missing one or more required fields; the clarification panel appears with follow-up questions the presenter answers live.
@@ -1090,7 +1090,7 @@ For a 30-minute live demo, run these in order:
 
 ## 11. References
 
-*(Renumbered from §10 after adding Talk to Me scripts)*
+*(Renumbered from §10 after adding Azirella scripts)*
 
 - [SAP S/4HANA FAA Demo Guides — SAP Community](https://community.sap.com/t5/technology-blog-posts-by-sap/sap-s-4hana-fully-activated-appliance-demo-guides/ba-p/13389412)
 - [SAP S/4HANA FAA Getting Started Guide v21](SAP/Documentation/SAP_Getting_Started_Guide_v21.pdf) (local)

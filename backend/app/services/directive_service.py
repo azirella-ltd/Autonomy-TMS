@@ -548,7 +548,7 @@ class DirectiveService:
     ) -> Dict[str, Any]:
         """Inject a scenario event via the ScenarioEventService.
 
-        Called when Talk to Me detects intent='scenario_event'.
+        Called when Azirella detects intent='scenario_event'.
         Auto-creates a scenario branch and injects the event.
         """
         from app.services.scenario_event_service import ScenarioEventService
@@ -579,7 +579,7 @@ class DirectiveService:
                 "navigate_to": "/scenario-events",
             }
         except Exception as e:
-            logger.warning("Scenario event injection via Talk to Me failed: %s", e)
+            logger.warning("Scenario event injection via Azirella failed: %s", e)
             return {
                 "action": "scenario_event_failed",
                 "error": str(e),

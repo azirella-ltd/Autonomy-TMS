@@ -197,7 +197,7 @@ const AzirellaAvatar = ({
         className="relative rounded-full focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2"
         style={{ width: size, height: size }}
         aria-label="Talk to Azirella"
-        title={label || 'Talk to me'}
+        title={label || 'Azirella'}
       >
         {/* Outer pulse ring — subtle in inline mode */}
         <span

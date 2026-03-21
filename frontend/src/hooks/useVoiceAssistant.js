@@ -5,7 +5,7 @@
  *   PASSIVE  — continuous listening for wake word only (no audio leaves browser)
  *   WAKE     — wake word detected, chime plays, avatar activates (~1s)
  *   LISTENING — capturing user's full utterance
- *   PROCESSING — utterance sent to Talk to Me, waiting for response
+ *   PROCESSING — utterance sent to Azirella, waiting for response
  *   SPEAKING — TTS reading the response aloud
  *   IDLE     — voice assistant disabled
  *
@@ -294,7 +294,7 @@ export function useVoiceAssistant({ onUtterance, enabled = false }) {
     setTranscript(text);
     setInterimTranscript('');
 
-    // Send to Talk to Me via callback
+    // Send to Azirella via callback
     onUtterance?.(text);
   }, [onUtterance]);
 

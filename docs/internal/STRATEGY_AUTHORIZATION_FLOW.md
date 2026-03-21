@@ -10,7 +10,7 @@ Autonomy solves this with **Agent-to-Agent (A2A) authorization** — autonomous 
 
 ## A Real Example: The Bigmart Rush Order
 
-A demand planner types into Talk to Me:
+A demand planner types into Azirella:
 
 > "Bigmart just called — they need 500 C900 bikes delivered to Detroit in 2 weeks. This is a new fleet deal we can't lose."
 
@@ -153,7 +153,7 @@ However, when a strategy requires cross-boundary authorization, the winning scen
 ## Technical Architecture
 
 ```
-Talk to Me prompt
+Azirella prompt
     ↓
 Compound parsing (demand signal + directive)
     ↓
@@ -192,7 +192,7 @@ Human can Inspect or Override
 
 ### Data Flow
 
-All communication happens via Server-Sent Events (SSE) for real-time progressive feedback. The Talk to Me popup shows each step as it completes — strategy generation, evaluation progress, comparison table, authority check, A2A conversation, and execution results.
+All communication happens via Server-Sent Events (SSE) for real-time progressive feedback. The Azirella popup shows each step as it completes — strategy generation, evaluation progress, comparison table, authority check, A2A conversation, and execution results.
 
 ---
 

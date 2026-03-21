@@ -166,9 +166,9 @@ In most organizations, this coordination happens through meetings, emails, and p
 - **Activity feeds** show everyone involved what changed, who changed it, and why
 - **Plain-language explanations** make AI recommendations accessible to non-technical stakeholders — a VP of Supply Chain can understand *why* the system recommends a particular action without needing a data science background
 
-### Talk to Me — Natural Language Directive Capture
+### Azirella — Natural Language Directive Capture
 
-Instead of navigating complex screens to change a planning parameter, any authenticated user can type a directive in plain language from the persistent "Talk to Me" bar in the top navigation:
+Instead of navigating complex screens to change a planning parameter, any authenticated user can type a directive in plain language from the persistent "Azirella" bar in the top navigation:
 
 > *"I want to increase revenue by 10% in the Southwest region over the next quarter because customer feedback indicates growing demand."*
 

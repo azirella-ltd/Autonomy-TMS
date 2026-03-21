@@ -5701,11 +5701,11 @@ The urgency adjustments are additive and clamped: `new_urgency = clamp(current_u
 
 ---
 
-#### 5.21 Human-to-AI Signal Channels (Talk to Me & Email Signal Intelligence)
+#### 5.21 Human-to-AI Signal Channels (Azirella & Email Signal Intelligence)
 
 Two external signal channels inject information into the Powell framework's exogenous information process (Wₜ₊₁):
 
-**Talk to Me — Natural Language Directives**: Users type directives in the TopNavbar (e.g., "Increase SW region revenue by 10% next quarter"). The directive service parses via LLM, detects missing fields via gap detection, and routes to the appropriate Powell layer based on the user's `powell_role`:
+**Azirella — Natural Language Directives**: Users type directives in the TopNavbar (e.g., "Increase SW region revenue by 10% next quarter"). The directive service parses via LLM, detects missing fields via gap detection, and routes to the appropriate Powell layer based on the user's `powell_role`:
 - VP/Executive → Layer 4: S&OP GraphSAGE (policy parameter θ adjustment)
 - S&OP Director → Layer 2: Execution tGNN (multi-site daily directives)
 - MPS Manager → Layer 1.5: Site tGNN (single-site cross-TRM modulation)
