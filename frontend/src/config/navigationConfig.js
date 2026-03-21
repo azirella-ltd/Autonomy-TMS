@@ -812,11 +812,10 @@ export const NAVIGATION_CONFIG = [
       },
       {
         label: 'Operational Agent',
-        path: '/admin/site-tgnn',
+        path: '/admin/hive',
         icon: BrainIcon,
         requiredCapability: 'view_trm_training',
         description: 'Operational / Site — hourly cross-agent coordination within a site',
-        comingSoon: true,
       },
       {
         label: 'Execution Agents',
@@ -833,13 +832,7 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_powell',
         description: 'SDAM framework — State → Policy → Decision → Outcome',
       },
-      {
-        label: 'Hive Visualization',
-        path: '/admin/hive',
-        icon: ActivityIcon,
-        requiredCapability: 'view_trm_training',
-        description: 'Agent coordination — urgency vectors, signal bus, decision cycle',
-      },
+      // Hive Visualization is now accessed via Operational Agent above
       {
         label: 'Exception Handler',
         path: '/admin/skills',
