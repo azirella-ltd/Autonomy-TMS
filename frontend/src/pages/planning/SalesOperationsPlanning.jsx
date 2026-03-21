@@ -34,6 +34,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 
 /**
  * Sales & Operations Planning (S&OP) - Strategic Planning
@@ -172,6 +173,9 @@ const SalesOperationsPlanning = () => {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
+      {/* Role time series header */}
+      <RoleTimeSeries roleKey="sop" compact className="mb-4" />
+
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Calendar className="h-8 w-8 text-primary" />

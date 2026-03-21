@@ -22,6 +22,7 @@ import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
 import { useCapabilities } from '../../hooks/useCapabilities';
+import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -312,6 +313,7 @@ const OrderTrackingWorklistPage = ({ configId = 1 }) => {
 
   return (
     <Box sx={{ p: 3 }}>
+      <RoleTimeSeries roleKey="order_tracking" compact className="mb-4" />
       {/* Header */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>

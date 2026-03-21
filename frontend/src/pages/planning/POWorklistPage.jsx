@@ -18,6 +18,7 @@ import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
 import { useCapabilities } from '../../hooks/useCapabilities';
+import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -280,6 +281,7 @@ const POWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
 
   return (
     <Box sx={{ p: 3 }}>
+      <RoleTimeSeries roleKey="po_creation" compact className="mb-4" />
       {/* Header */}
       <Box
         display="flex"

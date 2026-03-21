@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import hiveApi from '../../services/hiveApi';
+import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 
 // ============================================================================
 // Constants
@@ -357,6 +358,7 @@ const HiveDashboard = () => {
 
   return (
     <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+      <RoleTimeSeries roleKey="site_coordinator" compact className="mb-4" />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

@@ -21,6 +21,7 @@ import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
 import { useCapabilities } from '../../hooks/useCapabilities';
 import { useAuth } from '../../contexts/AuthContext';
+import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -288,6 +289,7 @@ const ATPWorklistPage = () => {
 
   return (
     <Box sx={{ p: 3 }}>
+      <RoleTimeSeries roleKey="atp_executor" compact className="mb-4" />
       {/* Page Header */}
       <Box
         display="flex"

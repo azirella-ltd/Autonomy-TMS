@@ -91,6 +91,11 @@ import KPIMonitoring from "./pages/planning/KPIMonitoring.jsx";
 import HierarchicalMetricsDashboard from "./pages/planning/HierarchicalMetricsDashboard.jsx";
 import Recommendations from "./pages/planning/Recommendations.jsx";
 import DemandPlanView from "./pages/planning/DemandPlanView.jsx";
+import DemandPlanningHub from "./pages/planning/DemandPlanningHub.jsx";
+import SupplyPlanningHub from "./pages/planning/SupplyPlanningHub.jsx";
+import InventoryPlanningHub from "./pages/planning/InventoryPlanningHub.jsx";
+import CapacityPlanningHub from "./pages/planning/CapacityPlanningHub.jsx";
+import ForecastAnalyticsHub from "./pages/planning/ForecastAnalyticsHub.jsx";
 import CollaborationHub from "./pages/planning/CollaborationHub.jsx";
 import ProjectOrders from "./pages/planning/ProjectOrders.jsx";
 import MaintenanceOrders from "./pages/planning/MaintenanceOrders.jsx";
@@ -827,7 +832,49 @@ const AppContent = () => {
               }
             />
 
-            {/* Tactical Planning */}
+            {/* Tactical Planning Hubs */}
+            <Route
+              path="/planning/demand-planning"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_demand_planning">
+                  <DemandPlanningHub />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/supply-planning"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_supply_plan">
+                  <SupplyPlanningHub />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/inventory-planning"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_inventory_optimization">
+                  <InventoryPlanningHub />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/capacity-planning"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_capacity_planning">
+                  <CapacityPlanningHub />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/forecast-analytics"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_forecasting">
+                  <ForecastAnalyticsHub />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            {/* Tactical Planning (legacy individual routes — still accessible for deep links) */}
             <Route
               path="/planning/inventory-optimization"
               element={

@@ -51,6 +51,7 @@ import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import PlanningCascadeSankey from '../components/cascade/PlanningCascadeSankey';
 import GartnerMetricCard from '../components/metrics/GartnerMetricCard';
 import CompositeMetricCard from '../components/metrics/CompositeMetricCard';
+import RoleTimeSeries from '../components/charts/RoleTimeSeries';
 
 // =============================================================================
 // Business Outcome KPI Card
@@ -758,6 +759,9 @@ const ExecutiveDashboard = () => {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Role time series header */}
+      <RoleTimeSeries roleKey="executive" configId={activeConfigId} compact />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

@@ -18,6 +18,7 @@ import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
 import { useCapabilities } from '../../hooks/useCapabilities';
+import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -267,6 +268,7 @@ const SubcontractingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
 
   return (
     <Box sx={{ p: 3 }}>
+      <RoleTimeSeries roleKey="subcontracting" compact className="mb-4" />
       {/* Header */}
       <Box
         display="flex"
