@@ -127,6 +127,14 @@ const TRMDashboard = () => {
         <p className="text-muted-foreground">
           Execution / Site / Role — 11 narrow decision agents per site, sub-10ms inference.
         </p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {['ATP', 'PO Creation', 'MO Execution', 'TO Execution', 'Rebalancing',
+            'Buffer Adj.', 'Order Tracking', 'Quality', 'Maintenance', 'Subcontracting', 'Forecast Adj.'].map(name => (
+            <span key={name} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
+              {name}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Status Banner */}

@@ -62,21 +62,33 @@ const PhaseDot = ({ status }) => {
   }
 };
 
-// TRM type display names
+// All 11 execution agent role types
 const TRM_LABELS = {
   atp_executor: 'ATP',
   po_creation: 'PO',
-  inventory_buffer: 'IB',
+  mo_execution: 'MO',
+  to_execution: 'TO',
+  inventory_buffer: 'Buffer',
   rebalancing: 'Rebal',
   order_tracking: 'OT',
+  quality_disposition: 'Quality',
+  maintenance_scheduling: 'Maint',
+  subcontracting: 'Subcon',
+  forecast_adjustment: 'Fcst',
 };
 
 const TRM_FULL_NAMES = {
-  atp_executor: 'ATP Executor',
-  po_creation: 'PO Creation',
-  inventory_buffer: 'Inventory Buffer',
+  atp_executor: 'Available-to-Promise',
+  po_creation: 'Purchase Order Creation',
+  mo_execution: 'Manufacturing Order Execution',
+  to_execution: 'Transfer Order Execution',
+  inventory_buffer: 'Inventory Buffer Adjustment',
   rebalancing: 'Inventory Rebalancing',
-  order_tracking: 'Order Tracking',
+  order_tracking: 'Order Exception Tracking',
+  quality_disposition: 'Quality Disposition',
+  maintenance_scheduling: 'Maintenance Scheduling',
+  subcontracting: 'Subcontracting & Make-vs-Buy',
+  forecast_adjustment: 'Forecast Adjustment',
 };
 
 const TRMTrainingPanelEnhanced = () => {
