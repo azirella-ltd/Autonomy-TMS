@@ -1,17 +1,18 @@
 /**
- * Main Layout Component — Split Screen with Azirella Panel
+ * Main Layout Component — Split Screen
  *
- * Desktop: Content (left) | Azirella (right, resizable)
- * Mobile: Full-width content + bottom Azirella bar
+ * Content (left) | Azirella (right, fixed 380px)
+ * The Azirella panel is ALWAYS visible. No toggle, no collapse.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import TopNavbar from './TopNavbar';
 import HierarchicalTabs from './HierarchicalTabs';
-import AzirellaPanel from './AzirellaPanel';
 import NAVIGATION_CONFIG from '../config/navigationConfig';
 import { useAuth } from '../contexts/AuthContext';
+
+const PANEL_WIDTH = 380;
 
 const Layout = ({ children }) => {
   const location = useLocation();
@@ -22,34 +23,15 @@ const Layout = ({ children }) => {
     isDecisionStream ? 'decision_stream' : null
   );
 
-  // Panel state — simple useState, no context needed
-  const [panelOpen, setPanelOpen] = useState(() => {
-    try {
-      const saved = localStorage.getItem('azirella:panel-open');
-      return saved === null ? true : saved === 'true';
-    } catch { return true; }
-  });
-
-  useEffect(() => {
-    try { localStorage.setItem('azirella:panel-open', String(panelOpen)); } catch {}
-  }, [panelOpen]);
-
-  const togglePanel = () => setPanelOpen(v => !v);
-
   const navConfig = NAVIGATION_CONFIG || [];
-  const panelWidth = panelOpen ? parseInt(localStorage.getItem('azirella:panel-width') || '380', 10) : 0;
 
   return (
     <div className="min-h-screen bg-background">
       {/* Top Navbar */}
-      <TopNavbar
-        sidebarOpen={false}
-        azirellaPanelOpen={panelOpen}
-        onToggleAzirellaPanel={togglePanel}
-      />
+      <TopNavbar sidebarOpen={false} azirellaPanelOpen={true} onToggleAzirellaPanel={() => {}} />
 
       {/* Hierarchical Tabs */}
-      <div style={{ marginRight: panelWidth }} className="transition-[margin] duration-200">
+      <div style={{ marginRight: PANEL_WIDTH }} className="transition-[margin] duration-200">
         <HierarchicalTabs
           navigationConfig={Array.isArray(navConfig) ? navConfig : []}
           activeCategory={activeCategory}
@@ -57,23 +39,30 @@ const Layout = ({ children }) => {
         />
       </div>
 
-      {/* Page Content */}
-      <main
-        className="pb-6 px-6 pt-4 transition-[margin] duration-200"
-        style={{ marginRight: panelWidth }}
-      >
+      {/* Page Content — left side */}
+      <main className="pb-6 px-6 pt-4" style={{ marginRight: PANEL_WIDTH }}>
         {children}
       </main>
 
-      {/* Azirella Panel — always rendered, visibility controlled by isOpen */}
-      <AzirellaPanel isOpen={panelOpen} onToggle={togglePanel} />
-
-      {/* Bottom input bar target — always present so portal can find it */}
+      {/* Azirella Panel — ALWAYS visible, right side */}
       <div
-        id="azirella-input-root"
-        className="fixed bottom-0 left-0 right-0 z-40"
-        style={{ display: panelOpen ? 'none' : 'block' }}
-      />
+        className="fixed right-0 top-16 bottom-0 z-30 flex border-l bg-background"
+        style={{ width: PANEL_WIDTH }}
+      >
+        {/* Panel header */}
+        <div className="flex flex-col w-full">
+          <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 flex-shrink-0">
+            <img src="/azirella_avatar.svg" alt="" className="h-5 w-5" onError={(e) => {e.target.style.display='none';}} />
+            <span className="font-semibold text-xs">Azirella</span>
+          </div>
+
+          {/* Portal target — TopNavbar renders its input + AzirellaPopup here */}
+          <div id="azirella-panel-root" className="flex-1 overflow-y-auto" />
+        </div>
+      </div>
+
+      {/* Hidden bottom bar target (fallback — should not be needed) */}
+      <div id="azirella-input-root" style={{ display: 'none' }} />
     </div>
   );
 };
