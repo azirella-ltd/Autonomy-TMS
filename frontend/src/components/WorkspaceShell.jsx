@@ -23,8 +23,10 @@ import useTabStore from '../stores/useTabStore';
 import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 import { cn } from '../lib/utils/cn';
+import { Send, Loader2 } from 'lucide-react';
 
 const ADMIN_TAB_ID = 'tab-administration';
+const AZIRELLA_PANEL_WIDTH = 380;
 
 const WorkspaceShell = () => {
   const location = useLocation();
@@ -37,6 +39,38 @@ const WorkspaceShell = () => {
   const getActiveTab = useTabStore((s) => s.getActiveTab);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // ── Azirella panel state ────────────────────────────────────────────
+  const [azInput, setAzInput] = useState('');
+  const [azMessages, setAzMessages] = useState([]);
+  const [azLoading, setAzLoading] = useState(false);
+  const azEndRef = useRef(null);
+
+  useEffect(() => {
+    azEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [azMessages, azLoading]);
+
+  const handleAzSubmit = async () => {
+    const text = azInput.trim();
+    if (!text || azLoading) return;
+    setAzMessages(prev => [...prev, { role: 'user', content: text }]);
+    setAzInput('');
+    setAzLoading(true);
+    try {
+      const { api } = await import('../services/api');
+      const resp = await api.post('/decision-stream/chat', { message: text, config_id: null });
+      const answer = resp.data?.response || resp.data?.content || 'No response.';
+      setAzMessages(prev => [...prev, { role: 'assistant', content: answer }]);
+    } catch (err) {
+      setAzMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.response?.data?.detail || err.message}` }]);
+    } finally {
+      setAzLoading(false);
+    }
+  };
+
+  // Show Azirella panel for non-admin tabs
+  const showAzirellaPanel = !isSystemAdmin(user);
+  const panelWidth = showAzirellaPanel ? AZIRELLA_PANEL_WIDTH : 0;
 
   // Map of tabId → rendered React element (cached for background tabs)
   const cachedPanesRef = useRef(new Map());
@@ -224,6 +258,7 @@ const WorkspaceShell = () => {
           'pt-16 transition-all duration-200 ease-in-out',
           isAdminTab ? (sidebarOpen ? 'ml-[280px]' : 'ml-[65px]') : 'ml-0',
         )}
+        style={{ marginRight: panelWidth }}
       >
         <TabBar />
       </div>
@@ -243,6 +278,7 @@ const WorkspaceShell = () => {
           'flex-1 flex flex-col transition-all duration-200 ease-in-out',
           isAdminTab ? (sidebarOpen ? 'ml-[280px]' : 'ml-[65px]') : 'ml-0',
         )}
+        style={{ marginRight: panelWidth }}
       >
         {/* Render ALL open tabs — active one visible, others hidden */}
         {tabs.map((tab) => {
@@ -261,14 +297,77 @@ const WorkspaceShell = () => {
         })}
       </div>
 
-      {/* Azirella input bar — portal target, fixed at bottom */}
-      <div
-        id="azirella-input-root"
-        className={cn(
-          'fixed bottom-0 left-0 right-0 z-30 transition-all duration-200',
-          isAdminTab ? (sidebarOpen ? 'ml-[280px]' : 'ml-[65px]') : 'ml-0',
-        )}
-      />
+      {/* ═══ AZIRELLA PANEL — right side ═══ */}
+      {showAzirellaPanel && (
+        <div
+          className="fixed right-0 top-16 bottom-0 z-30 flex flex-col border-l"
+          style={{ width: AZIRELLA_PANEL_WIDTH, backgroundColor: '#faf9ff' }}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b flex-shrink-0" style={{ backgroundColor: '#f0edff' }}>
+            <img src="/azirella_avatar.svg" alt="" className="h-6 w-6" onError={(e) => {e.target.style.display='none';}} />
+            <span className="font-semibold text-sm" style={{ color: '#5b21b6' }}>Azirella</span>
+            <span className="text-xs ml-auto" style={{ color: '#a78bfa' }}>AI Assistant</span>
+          </div>
+
+          {/* Conversation */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+            {azMessages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-center px-4" style={{ opacity: 0.5 }}>
+                <img src="/azirella_avatar.svg" alt="" className="h-10 w-10 mb-3" style={{ opacity: 0.4 }} onError={(e) => {e.target.style.display='none';}} />
+                <p className="text-sm font-medium" style={{ color: '#6b7280' }}>Ask me anything</p>
+                <p className="text-xs" style={{ color: '#9ca3af' }}>Decisions, metrics, risks, or directives</p>
+              </div>
+            )}
+            {azMessages.map((msg, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '85%',
+                  borderRadius: '16px',
+                  padding: '8px 14px',
+                  fontSize: '13px',
+                  lineHeight: '1.5',
+                  ...(msg.role === 'user'
+                    ? { backgroundColor: '#7c3aed', color: 'white', borderTopRightRadius: '4px' }
+                    : { backgroundColor: '#f3f4f6', color: '#1f2937', borderTopLeftRadius: '4px' }),
+                }}>
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+            {azLoading && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div style={{ backgroundColor: '#f3f4f6', borderRadius: '16px', padding: '8px 14px', fontSize: '13px', color: '#6b7280' }}>
+                  Thinking...
+                </div>
+              </div>
+            )}
+            <div ref={azEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="border-t px-3 py-2.5 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
+            <input
+              type="text"
+              value={azInput}
+              onChange={(e) => setAzInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAzSubmit(); } }}
+              placeholder="Ask Azirella..."
+              style={{ flex: 1, border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', outline: 'none' }}
+            />
+            <button
+              onClick={handleAzSubmit}
+              disabled={azLoading || !azInput.trim()}
+              style={{ padding: '8px', borderRadius: '50%', color: azLoading || !azInput.trim() ? '#9ca3af' : '#7c3aed', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              {azLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Fallback portal target (hidden — only used if panel is somehow not visible) */}
+      <div id="azirella-input-root" style={{ display: 'none' }} />
     </div>
   );
 };
