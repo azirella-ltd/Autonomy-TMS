@@ -1536,6 +1536,19 @@ def seed_decisions_from_simulation(
     product_costs = _load_product_costs(db)
     vendor_names = _load_vendor_names(db, config_id)
 
+    # Load products that have forecast records — forecast adjustment decisions
+    # should ONLY be created for products with actual forecasts in the DB
+    products_with_forecasts: set = set()
+    try:
+        result = db.execute(
+            text("SELECT DISTINCT product_id FROM forecast WHERE config_id = :cid"),
+            {"cid": config_id},
+        )
+        products_with_forecasts = {r[0] for r in result.fetchall()}
+        logger.info("Decision seeder: %d products have forecast records", len(products_with_forecasts))
+    except Exception:
+        pass
+
     # Build config lookup
     cfg_by_id: Dict[int, _SiteSimConfig] = {c.site_id: c for c in site_configs}
 
@@ -1663,12 +1676,16 @@ def seed_decisions_from_simulation(
                         candidates["subcontracting"].append(c)
 
                 # --- Forecast Adjustment ---
+                # Only create forecast adjustment decisions for products that
+                # actually have forecast records in the DB. Otherwise the
+                # decision references data that doesn't exist.
                 if "forecast_adjustment" in active and cfg.is_demand_source:
-                    c = _gen_forecast_adjustment(
-                        node, cfg, config_id, pdesc, day,
-                    )
-                    if c:
-                        candidates["forecast_adjustment"].append(c)
+                    if pid in products_with_forecasts:
+                        c = _gen_forecast_adjustment(
+                            node, cfg, config_id, pdesc, day,
+                        )
+                        if c:
+                            candidates["forecast_adjustment"].append(c)
 
                 # Update prev CV tracker
                 prev_demand_cv[node.site_id] = node.demand_cv
