@@ -92,12 +92,14 @@ export const getDefaultLandingPath = (user) => {
   }
 
   if (isTenantAdmin(user)) {
-    return uiMode === 'stream' ? '/decision-stream' : "/admin?section=scenarios";
+    // Pure tenant admins land on Administration — NOT Decision Stream.
+    // Users with Demo All Access (trevor@) still get Decision Stream.
+    return "/admin/tenants";
   }
 
-  // For all other users (including USER with Powell capabilities),
-  // route based on UI mode preference
-  return uiMode === 'stream' ? '/decision-stream' : "/dashboard";
+  // All other users (including USER with Powell capabilities) land on
+  // Decision Stream — the primary interface for the agentic operating model.
+  return "/";
 };
 
 const parseRedirectTarget = (target) => {

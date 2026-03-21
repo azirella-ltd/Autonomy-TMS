@@ -1,64 +1,56 @@
 /**
- * Main Layout Component - Autonomy UI Kit Version
+ * Main Layout Component — Hierarchical Tab Navigation
  *
- * Provides the main application layout with sidebar and top navbar.
- * Uses Tailwind CSS for styling with CSS variables for theming.
+ * Replaces the sidebar with two-tier tab navigation:
+ * - Top level: Category tabs (Decision Stream, Planning, Execution, AI, Admin)
+ * - Second level: Capability tabs within the selected category
+ *
+ * Decision Stream is always the first tab and collapses all sub-tabs.
+ * Tenant admins do NOT see Decision Stream — they land on Administration.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import CapabilityAwareSidebar from './CapabilityAwareSidebar';
 import TopNavbar from './TopNavbar';
+import HierarchicalTabs from './HierarchicalTabs';
+import NAVIGATION_CONFIG from '../config/navigationConfig';
+import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils/cn';
 
 const Layout = ({ children }) => {
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { user } = useAuth();
 
-  // Auto-collapse sidebar on Decision Stream (immersive view)
   const isDecisionStream = location.pathname === '/' || location.pathname === '/decision-stream';
 
-  // Persist sidebar state (only for non-Decision Stream pages)
-  useEffect(() => {
-    if (!isDecisionStream) {
-      const saved = localStorage.getItem('sidebar:state');
-      if (saved !== null) {
-        setSidebarOpen(saved === 'true');
-      }
-    }
-  }, [isDecisionStream]);
+  // Active category state
+  const [activeCategory, setActiveCategory] = useState(
+    isDecisionStream ? 'decision_stream' : null
+  );
 
-  const handleSidebarToggle = () => {
-    const newState = !sidebarOpen;
-    setSidebarOpen(newState);
-    localStorage.setItem('sidebar:state', String(newState));
-  };
+  // Navigation config is the default export — an array of section objects
+  const navConfig = NAVIGATION_CONFIG || [];
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Left Sidebar — completely hidden on Decision Stream for immersive view */}
-      {!isDecisionStream && (
-        <CapabilityAwareSidebar
-          open={sidebarOpen}
-          onToggle={handleSidebarToggle}
-        />
-      )}
+      {/* Top Navbar */}
+      <TopNavbar sidebarOpen={false} />
 
-      {/* Main Content Area */}
-      <div
-        className={cn(
-          'min-h-screen transition-all duration-200 ease-in-out',
-          isDecisionStream ? 'ml-0' : sidebarOpen ? 'ml-[280px]' : 'ml-[65px]'
-        )}
-      >
-        {/* Top Navbar */}
-        <TopNavbar sidebarOpen={isDecisionStream ? false : sidebarOpen} />
+      {/* Hierarchical Tabs — below navbar */}
+      <HierarchicalTabs
+        navigationConfig={Array.isArray(navConfig) ? navConfig : []}
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+      />
 
-        {/* Page Content */}
-        <main className="pt-20 pb-6 px-6">
-          {children}
-        </main>
-      </div>
+      {/* Page Content — full width, no sidebar margin */}
+      <main className={cn(
+        'pb-6 px-6',
+        // Decision Stream gets less top padding (tabs are thinner)
+        isDecisionStream ? 'pt-4' : 'pt-4',
+      )}>
+        {children}
+      </main>
     </div>
   );
 };
