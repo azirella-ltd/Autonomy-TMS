@@ -18,9 +18,11 @@ export function AzirellaProvider({ children }) {
   // Panel state
   const [panelOpen, setPanelOpen] = useState(() => {
     if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem('azirella:panel-open') === 'true';
+      const saved = localStorage.getItem('azirella:panel-open');
+      // Default to OPEN on first visit (no saved preference)
+      return saved === null ? true : saved === 'true';
     }
-    return false;
+    return true;
   });
 
   const togglePanel = useCallback(() => {
