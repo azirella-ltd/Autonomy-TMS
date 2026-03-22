@@ -331,7 +331,7 @@ async def chat(
     current_user=Depends(get_current_user),
 ):
     """Conversational interaction with decision-context injection."""
-    service = await _get_service(db, current_user, config_id=request.config_id)
+    service = await _get_service(db, current_user)
     powell_role = getattr(current_user, "powell_role", None)
 
     result = await service.chat(

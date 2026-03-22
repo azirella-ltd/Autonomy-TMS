@@ -101,26 +101,17 @@ const WorkspaceShell = () => {
     const powellRole = user.powell_role;
     const currentTabs = useTabStore.getState().tabs;
 
-    // DEMO_ALL → Decision Stream + Full Functionality (NO admin tab)
+    // DEMO_ALL → Decision Stream (active) + Strategy Briefing + Executive Dashboard
     if (powellRole === 'DEMO_ALL') {
       if (!currentTabs.find((t) => t.path === '/strategy-briefing')) {
         useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
       }
-      if (!currentTabs.find((t) => t.id === 'tab-full-functionality')) {
-        useTabStore.setState((s) => ({
-          tabs: [
-            ...s.tabs,
-            {
-              id: 'tab-full-functionality',
-              path: '/executive-dashboard',
-              label: 'Full Functionality',
-              pinned: false,
-              closeable: true,
-              scrollY: 0,
-            },
-          ],
-        }));
+      if (!currentTabs.find((t) => t.path === '/executive-dashboard')) {
+        useTabStore.getState().openTab('/executive-dashboard', 'Executive Dashboard');
       }
+      // Always focus Decision Stream on login
+      useTabStore.getState().focusTab('tab-decision-stream');
+      navigate('/decision-stream');
       return; // Skip admin tab for DEMO_ALL
     }
 
