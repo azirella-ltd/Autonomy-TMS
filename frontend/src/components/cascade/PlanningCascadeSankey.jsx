@@ -125,7 +125,7 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
     return t;
   };
 
-  (sites || []).forEach(s => {
+  (sites || []).filter(s => (s.master_type || s.type) !== 'INACTIVE_PROXY').forEach(s => {
     const masterType = normalizeMasterType(s.master_type || s.type);
     const geoLabel = getGeoLabel(s, geoLevel);
     siteMap[s.id] = { masterType, geoLabel, name: s.name };

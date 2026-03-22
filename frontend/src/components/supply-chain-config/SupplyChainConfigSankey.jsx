@@ -852,7 +852,11 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       return { data: null, error: 'No transportation lanes defined. Connect your sites with lanes to see material flow in the Sankey diagram.' };
     }
 
-    const filteredSites = rawSites.filter((site) => !isAggregatedInputNode(site));
+    const filteredSites = rawSites.filter((site) =>
+      !isAggregatedInputNode(site) &&
+      site.master_type !== 'INACTIVE_PROXY' &&
+      site.masterType !== 'INACTIVE_PROXY'
+    );
 
     const baseSites = filteredSites.map((site) => {
       const rawTypeForLabel =
