@@ -24,6 +24,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 import { cn } from '../lib/utils/cn';
 import { Send, Loader2 } from 'lucide-react';
+import Markdown from 'react-markdown';
+import AzirellaAvatar from './AzirellaAvatar';
 
 const ADMIN_TAB_ID = 'tab-administration';
 const AZIRELLA_PANEL_WIDTH = 380;
@@ -294,9 +296,13 @@ const WorkspaceShell = () => {
           className="fixed right-0 top-16 bottom-0 z-30 flex flex-col border-l"
           style={{ width: AZIRELLA_PANEL_WIDTH, backgroundColor: '#faf9ff' }}
         >
-          {/* Header */}
-          <div className="flex items-center gap-2 px-3 py-2.5 border-b flex-shrink-0" style={{ backgroundColor: '#f0edff' }}>
-            <img src="/azirella_avatar.svg" alt="" className="h-6 w-6" onError={(e) => {e.target.style.display='none';}} />
+          {/* Header with animated Azirella avatar */}
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b flex-shrink-0" style={{ backgroundColor: '#f0edff' }}>
+            <AzirellaAvatar
+              voiceState={azLoading ? 'processing' : 'idle'}
+              size={36}
+              inline
+            />
             <span className="font-semibold text-sm" style={{ color: '#5b21b6' }}>Azirella</span>
             <span className="text-xs ml-auto" style={{ color: '#a78bfa' }}>AI Assistant</span>
           </div>
@@ -305,7 +311,7 @@ const WorkspaceShell = () => {
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
             {azMessages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full text-center px-4" style={{ opacity: 0.5 }}>
-                <img src="/azirella_avatar.svg" alt="" className="h-10 w-10 mb-3" style={{ opacity: 0.4 }} onError={(e) => {e.target.style.display='none';}} />
+                <img src="/Azirella_logo.png" alt="" className="h-10 w-10 mb-3" style={{ opacity: 0.4 }} onError={(e) => {e.target.style.display='none';}} />
                 <p className="text-sm font-medium" style={{ color: '#6b7280' }}>Ask me anything</p>
                 <p className="text-xs" style={{ color: '#9ca3af' }}>Decisions, metrics, risks, or directives</p>
               </div>
@@ -322,14 +328,26 @@ const WorkspaceShell = () => {
                     ? { backgroundColor: '#7c3aed', color: 'white', borderTopRightRadius: '4px' }
                     : { backgroundColor: '#f3f4f6', color: '#1f2937', borderTopLeftRadius: '4px' }),
                 }}>
-                  {msg.content}
+                  {msg.role === 'user' ? msg.content : (
+                    <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5 prose-strong:font-semibold">
+                      <Markdown>{msg.content}</Markdown>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
             {azLoading && (
               <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <div style={{ backgroundColor: '#f3f4f6', borderRadius: '16px', padding: '8px 14px', fontSize: '13px', color: '#6b7280' }}>
-                  Thinking...
+                <div style={{ backgroundColor: '#f3f4f6', borderRadius: '16px', padding: '10px 14px', fontSize: '13px', color: '#6b7280' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: '#7c3aed' }} />
+                      <span style={{ fontSize: '12px', fontWeight: 500 }}>Analyzing your question...</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#9ca3af' }}>
+                      Checking decisions • Loading supply chain context • Querying knowledge base
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

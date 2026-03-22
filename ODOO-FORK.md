@@ -942,6 +942,46 @@ The simulation engine **does not call Odoo**. It reads Odoo's configuration (reo
 3. **Creates a clear value narrative**: "Odoo plans. Autonomy measures where those plans fail. Agents learn to fix the gaps."
 4. **Aligns with the Digital Twin pillar**: The twin already replicates customer APS heuristics — in this architecture, Odoo IS the APS
 
+### 13.8 Cost Implications: Odoo's Planning Is Already Paid For
+
+A key clarification: if the customer already runs Odoo (which they do — this is an Odoo fork), **there is zero incremental cost for using Odoo's MRP scheduler**. It is included in both editions:
+
+| Odoo Module | Community (Free) | Enterprise (Already Subscribed) |
+|-------------|------------------|--------------------------------|
+| **MRP** (Manufacturing, BOM, MO) | Included | Included |
+| **Inventory** (Reorder rules, scheduler) | Included | Included |
+| **Purchase** (PO generation from MRP) | Included | Included |
+| **MPS** (Master Production Schedule) | Not available | Included |
+| **Quality** (Quality checks on MOs) | Not available | Included |
+| **Planning** (Gantt scheduling) | Not available | Included |
+| **Maintenance** (Equipment scheduling) | Not available | Included |
+
+Any manufacturing customer serious enough to evaluate Autonomy's AI layer is already on Odoo Enterprise — MPS, Quality, and Planning are standard requirements for production environments.
+
+**What this means for the Odoo fork cost model**:
+
+| Component | Standalone Autonomy | Odoo Fork (Approach B) | Delta |
+|-----------|--------------------|-----------------------|-------|
+| **Deterministic planning engine** | Built + maintained by Autonomy (~3,500 lines of `demand_processor.py`, `inventory_target_calculator.py`, `net_requirements_calculator.py`) | Odoo MRP — already licensed, zero cost | **Saves ~3 person-months/year** in maintenance |
+| **BOM explosion** | Built by Autonomy (recursive, cycle detection) | Odoo handles natively (cascading procurement) | **Saves ~1 person-month/year** |
+| **Reorder rule management UI** | Built by Autonomy (React pages, 8 policy types) | Basic min/max via Odoo native UI; advanced policies (sl, conformal, econ_optimal) in intelligence layer | **Saves ~2 person-months/year** on CRUD UI |
+| **Demand entry / MPS UI** | Built by Autonomy (React MPS pages) | Odoo MPS grid — native, already available | **Saves ~1 person-month/year** |
+| **Order generation** | Built by Autonomy (supply plan → PO/MO/TO requests) | Odoo generates POs, MOs, internal transfers natively | **Saves ~1 person-month/year** |
+| **Intelligence layer VM** | $800-1,200/mo | $800-1,200/mo (unchanged) | $0 |
+| **Stochastic simulation** | In intelligence layer | In intelligence layer (unchanged) | $0 |
+| **AI agents** | In intelligence layer | In intelligence layer (unchanged) | $0 |
+
+**Net cost impact of Approach B**:
+- **Infrastructure cost**: Neutral — intelligence layer VM is the same cost either way
+- **Odoo licensing cost**: Zero incremental — customer already has it
+- **Development cost saved**: ~8 person-months/year by not maintaining deterministic planning code, BOM explosion, basic CRUD UI, and order generation that Odoo provides out of the box
+- **Development cost added**: ~2-3 person-months one-time to build the Odoo→intelligence bridge (sync service, decision pull, activity creation)
+
+**The economic argument is compelling**: Odoo's deterministic planning is free infrastructure that Autonomy doesn't need to build, maintain, or support. The customer's Odoo subscription already covers it. Autonomy's value-add (stochastic simulation, AI agents, conformal prediction, causal AI) sits cleanly on top as a paid intelligence layer — with no cost overlap on the deterministic base.
+
+**Comparison with standalone Autonomy**:
+In the current standalone architecture, Autonomy must build and maintain its own deterministic planning engine even though its competitive differentiation is the *stochastic and AI layers on top*. The Odoo fork eliminates this undifferentiated heavy lifting. Autonomy stops rebuilding what Odoo already does well (basic MRP, BOM, reorder rules, order generation) and focuses engineering resources entirely on what Odoo cannot do (Monte Carlo simulation, TRM agents, conformal prediction, causal AI).
+
 ---
 
 ## 14. Deploying on Odoo Cloud (Odoo.sh)
@@ -950,7 +990,7 @@ This section covers how a forked Autonomy-as-Odoo-modules solution would be depl
 
 > **Note**: If using Approach B from Section 13 (Odoo heuristics + Autonomy stochastic layer), the Odoo.sh deployment becomes simpler — standard Odoo MRP/MPS runs natively, and only the intelligence layer requires the external VM.
 
-### 13.1 Odoo.sh Overview
+### 14.1 Odoo.sh Overview
 
 Odoo.sh is Odoo's official PaaS (Platform-as-a-Service), tightly integrated with GitHub for CI/CD. It provides managed Odoo instances with staging environments, automated backups, and monitoring.
 
@@ -971,7 +1011,7 @@ Odoo.sh is Odoo's official PaaS (Platform-as-a-Service), tightly integrated with
 - PostgreSQL managed instance (no direct shell access)
 - Odoo Enterprise license included in subscription
 
-### 13.2 Deploying Autonomy Modules on Odoo.sh
+### 14.2 Deploying Autonomy Modules on Odoo.sh
 
 **Step 1: Repository Structure**
 
@@ -1036,7 +1076,7 @@ httpx>=0.25      # For calling intelligence service API
 8. ... (remaining modules)
 ```
 
-### 13.3 The Intelligence Layer: External Cloud Deployment
+### 14.3 The Intelligence Layer: External Cloud Deployment
 
 Since Odoo.sh **cannot run PyTorch, GPU workloads, pgvector, WebSocket servers, or heavy computation**, the intelligence layer must be deployed on a separate cloud instance.
 
@@ -1091,7 +1131,7 @@ Since Odoo.sh **cannot run PyTorch, GPU workloads, pgvector, WebSocket servers, 
 └─────────────────────────────────────────────┘
 ```
 
-### 13.4 Data Synchronization Architecture
+### 14.4 Data Synchronization Architecture
 
 The split deployment creates a **dual-database challenge**: Odoo.sh manages its own PostgreSQL (no direct access, no extensions), while the intelligence layer needs its own database (with pgvector, custom tables).
 
@@ -1166,7 +1206,7 @@ class IntelligenceSyncService(models.Model):
                     )
 ```
 
-### 13.5 Odoo.sh Configuration
+### 14.5 Odoo.sh Configuration
 
 **System Parameters** (Settings → Technical → Parameters → System Parameters):
 
@@ -1189,7 +1229,7 @@ class IntelligenceSyncService(models.Model):
 | Sync Order Changes | Every 15 min | `autonomy.intelligence.sync.sync_orders()` |
 | Sync Forecast Data | Every 6 hours | `autonomy.intelligence.sync.sync_forecasts()` |
 
-### 13.6 Network & Security Configuration
+### 14.6 Network & Security Configuration
 
 **Firewall rules** (between Odoo.sh and Intelligence VM):
 
@@ -1211,7 +1251,7 @@ Outbound:
 - Intelligence → Odoo.sh: Odoo API key (`/json/2` endpoint with `apikey` parameter)
 - Browser → WebSocket: JWT token from Odoo session (validated by WebSocket server)
 
-### 13.7 Odoo.sh Limitations Impact
+### 14.7 Odoo.sh Limitations Impact
 
 | Limitation | Impact on Autonomy | Workaround |
 |-----------|-------------------|------------|
@@ -1226,7 +1266,7 @@ Outbound:
 | **No shell access (shared)** | Cannot debug/tune PostgreSQL | Dedicated tier or external DB |
 | **No db extensions** | No pgaudit for SOC II | External audit logging service |
 
-### 13.8 Cost Model: Odoo.sh + External AI
+### 14.8 Cost Model: Odoo.sh + External AI
 
 | Component | Monthly Cost | Notes |
 |-----------|-------------|-------|
@@ -1245,7 +1285,7 @@ Outbound:
 
 **Comparison**: Current Autonomy (self-hosted Docker Compose) costs ~$800-1,500/month for infrastructure regardless of user count. The Odoo.sh path adds $1,000-2,000/month in platform and licensing fees.
 
-### 13.9 Deployment Checklist
+### 14.9 Deployment Checklist
 
 ```
 □ Phase 1: Odoo.sh Setup
