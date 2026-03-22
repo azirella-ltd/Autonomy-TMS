@@ -932,7 +932,45 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       };
     });
 
-    let sortedSites = [...baseSites].sort((a, b) => {
+    // ── Inject virtual nodes for trading partners on lanes ──────────
+    // Vendor lanes (from_partner_id) and customer lanes (to_partner_id)
+    // need virtual Sankey nodes so the diagram shows the full DAG.
+    const partnerNodeMap = new Map();
+    (Array.isArray(rawLanes) ? rawLanes : []).forEach((lane) => {
+      if (lane.from_partner_id && !lane.from_site_id) {
+        const pid = `partner_${lane.from_partner_id}`;
+        if (!partnerNodeMap.has(pid)) {
+          partnerNodeMap.set(pid, {
+            id: pid,
+            name: lane.from_partner_name || `Vendor ${lane.from_partner_id}`,
+            type: 'MARKET_SUPPLY',
+            master_type: 'MARKET_SUPPLY',
+            dag_type: 'SUPPLIER',
+            color: typeStyles.SUPPLIER?.color || typeStyles.MARKET_SUPPLY?.color || '#4ade80',
+            isPartner: true,
+          });
+        }
+      }
+      if (lane.to_partner_id && !lane.to_site_id) {
+        const pid = `partner_${lane.to_partner_id}`;
+        if (!partnerNodeMap.has(pid)) {
+          partnerNodeMap.set(pid, {
+            id: pid,
+            name: lane.to_partner_name || `Customer ${lane.to_partner_id}`,
+            type: 'MARKET_DEMAND',
+            master_type: 'MARKET_DEMAND',
+            dag_type: 'CUSTOMER',
+            color: typeStyles.CUSTOMER?.color || typeStyles.MARKET_DEMAND?.color || '#f87171',
+            isPartner: true,
+          });
+        }
+      }
+    });
+
+    // Merge partner nodes with site nodes
+    const allNodes = [...baseSites, ...partnerNodeMap.values()];
+
+    let sortedSites = [...allNodes].sort((a, b) => {
       const orderDiff = getTypeOrderIndex(a.type) - getTypeOrderIndex(b.type);
       if (orderDiff !== 0) {
         return orderDiff;
@@ -978,9 +1016,15 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     };
 
     const findSiteForLaneEnd = (lane, direction) => {
-      // AWS SC DM uses from_site_id/to_site_id
-      const siteId = direction === 'upstream' ? lane.from_site_id : lane.to_site_id;
-      return resolveSite(siteId);
+      // AWS SC DM: lanes can connect to internal sites OR external trading partners
+      if (direction === 'upstream') {
+        if (lane.from_site_id) return resolveSite(lane.from_site_id);
+        if (lane.from_partner_id) return resolveSite(`partner_${lane.from_partner_id}`);
+      } else {
+        if (lane.to_site_id) return resolveSite(lane.to_site_id);
+        if (lane.to_partner_id) return resolveSite(`partner_${lane.to_partner_id}`);
+      }
+      return null;
     };
 
     const forwardLinks = rawLanes

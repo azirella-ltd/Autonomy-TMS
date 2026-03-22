@@ -467,9 +467,9 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
     });
 
     const mapEdges = rawLanes.map((lane) => ({
-      from: lane.from_site_id,
-      to: lane.to_site_id,
-    }));
+      from: lane.from_site_id ?? (lane.from_partner_id ? `partner_${lane.from_partner_id}` : null),
+      to: lane.to_site_id ?? (lane.to_partner_id ? `partner_${lane.to_partner_id}` : null),
+    })).filter(e => e.from && e.to);
 
     // Build color map from TYPE_COLORS
     const siteTypeColorMap = {};
