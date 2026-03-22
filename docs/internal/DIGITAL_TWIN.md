@@ -1,6 +1,6 @@
 # Digital Twin Architecture
 
-**Version**: 3.0 | **Date**: 2026-03-22 | **Cross-refs**: [D365-FORK.md](../../D365-FORK.md), [SAP-S4HANA-FORK.md](../../SAP-S4HANA-FORK.md)
+**Version**: 4.0 | **Date**: 2026-03-22 | **Cross-refs**: [D365-FORK.md](../../D365-FORK.md), [SAP-S4HANA-FORK.md](../../SAP-S4HANA-FORK.md)
 
 The digital twin is the foundation of the Autonomy platform's AI agent training. It is NOT a separate system — it IS the customer's current supply chain planning system, replicated as a stochastic simulation. All AI agents learn by watching this simulation run and observing where the existing planning heuristics fail.
 
@@ -809,75 +809,422 @@ def glenday_classify(
     return classifications
 ```
 
-### 8A.3 Creating New ERP-Specific Heuristics
+### 8A.3 Constrained Supply Allocation
 
-To add support for a new ERP or APS system, follow this process:
+When supply is insufficient to meet all demand, the allocation method determines who gets what. The method varies by ERP, by customer, and by DAG level.
 
-**Step 1 — Document the ERP's algorithm**:
-- Read the ERP vendor's documentation for MRP processing logic, lot sizing, and demand processing
-- For open-source ERPs (Odoo): read the actual source code (e.g., `stock_orderpoint.py`)
-- For closed-source ERPs (SAP, D365): use vendor documentation + validated test cases
-- Document the algorithm as pseudocode with explicit parameter references
+#### 8A.3.1 Allocation Methods (12 Methods)
 
-**Step 2 — Identify the config parameters**:
-- Map ERP config fields to the heuristic function's inputs
-- Example: SAP `MARC.DISMM` → `config.mrp_type`, `MARC.DISLS` → `config.lot_sizing`
-- Ensure these fields are extracted by the ERP connector and persisted (or accessible via the staging layer)
+| # | Method | Algorithm | SAP | D365 | Odoo |
+|---|--------|-----------|-----|------|------|
+| 1 | **Fair Share / Proportional** | `A_i = S × (D_i / ΣD)` — each customer gets supply in proportion to their demand | APO Fair Share Rule A; IBP finite heuristic | Via allocation keys on demand forecast | OCA `stock_available_to_promise_release` |
+| 2 | **Equal Target Stock %** | Raise all destinations to the same % of their target stock: `target_pct = (S - deficit_correction) / Σ(target_stock)` | APO Fair Share Rule B | Not native | Not native |
+| 3 | **Quota-Based** | `A_i = S × quota_pct_i` — pre-agreed percentage per customer/region | APO Fair Share Rule C; PAL allocation objects | Allocation keys | Not native |
+| 4 | **Priority / Waterfall** | Serve highest priority fully first: `A_i = min(D_i, remaining); remaining -= A_i` — lower priorities get leftovers | aATP BOP (WIN/GAIN/REDISTRIBUTE/FILL/LOSE); APO Rule D | Native: planning priority 0-100 | OCA priority date module |
+| 5 | **Tiered / Fill Rate Target** | `Target_A = D_A × 95%, Target_B = D_B × 80%, Target_C = D_C × 60%`. Scale down proportionally if insufficient. | aATP PAL allocation groups per customer tier | Coverage groups with differentiated parameters | Not native |
+| 6 | **Profit / Margin-Weighted** | LP: maximize `Σ(A_i × margin_i)` subject to `ΣA_i ≤ S, 0 ≤ A_i ≤ D_i` | IBP Optimizer mode | Not native (custom) | Not native |
+| 7 | **Revenue-Weighted** | `A_i = S × (Revenue_i / ΣRevenue)` — simpler than profit (no cost data needed) | Custom | Custom | Not native |
+| 8 | **Committed-First** | Serve firm orders before forecast: firm > scheduled > safety stock > forecast | Native in ATP (forecast consumption priority) | Native (priority defaults: SO > TO > forecast) | Standard reservation |
+| 9 | **FCFS** | Sort by `order_entry_date ASC`, serve in chronological order | Default without allocation config | Default without priority-based planning | Default reservation behavior |
+| 10 | **Customer Quota Agreement** | `A_i = S × Q_i / 100` with redistribution of unclaimed surplus | Quota arrangements (ME01); PAL with allocation objects per customer | Allocation keys | Not native |
+| 11 | **Backlog Priority** | Oldest backlog first, then new orders: sort by `original_promise_date ASC` | aATP BOP REDISTRIBUTE/FILL strategies | Priority on overdue demands (priority 0) | Manual |
+| 12 | **Geographic Proximity** | Transportation Problem LP: minimize `Σ(x_ij × cost(SP_j, C_i))` — or greedy nearest supplier | APO SNP deployment with lane costs | Sourcing rules with preferred warehouse | Route-based |
 
-**Step 3 — Implement as a pure function**:
-- Input: `SiteState` (inventory, pipeline, backlog, demand history) + `ERPConfig` (all parameters)
-- Output: `order_qty` (float) and any side-effect records (exception messages, action messages)
-- No database access inside the function — all data passed as arguments
+**SAP aATP Backorder Processing (BOP) — the most sophisticated allocation engine:**
 
-**Step 4 — Register in the dispatch map**:
-- Add the new heuristic to `compute_replenishment()` dispatch (§8A.1.1)
-- Add the new lot sizing to the lot sizing dispatch (§8A.1.2)
-- Register any ERP-specific post-processing (scrap, rounding, time fences)
+Six confirmation strategies, processed in rank order:
 
-**Step 5 — Validate against ERP output**:
-- Extract a test scenario from the ERP: demand, supply, on-hand, MRP parameters
-- Run the ERP's MRP deterministically and capture planned orders
-- Run the mirror with identical inputs (zero stochastic variance)
-- Compare planned order quantities, dates, and types
-- Discrepancies are bugs in the mirror — fix until output matches
-- Maintain this as a regression test
+| Strategy | Behavior | Typical Use |
+|----------|----------|------------|
+| **WIN** | Full confirmation on requested date. Never loses quantity. | VIP / rush orders |
+| **GAIN** | Retains current confirmation; improves if possible. Never reduced. | Key accounts |
+| **IMPROVE** | Like GAIN with additional optimization rules (S/4HANA 2022+) | Mid-tier |
+| **REDISTRIBUTE** | May lose some quantity to WIN/GAIN. Gets remainder. | Standard orders |
+| **FILL** | Like REDISTRIBUTE but cannot gain new confirmations | Low priority |
+| **LOSE** | All confirmed quantities forfeit to higher strategies | Credit-blocked |
 
-**Step 6 — Configure for tenant**:
-- During provisioning (step `decision_seed`), the config extraction layer reads the customer's ERP config
-- Each product-site gets its specific netting method, lot sizing, time fences, and consumption mode
-- The simulation engine dispatches to the correct heuristic per product-site
+**SAP Product Allocation (PAL)**:
+1. Define allocation sequence (top-level object)
+2. Within sequence: allocation steps checked in order (e.g., step 1 = by customer, step 2 = by region)
+3. Each step has constraints referencing allocation objects with per-period quantities
+4. Confirmed qty = **minimum across all steps** (most restrictive wins)
+5. Consumption can be discrete (unused expires) or cumulative (unused rolls forward)
 
-### 8A.4 Implementation Roadmap
+**D365 Priority-Based Planning**:
+```
+Priority = 100 × (1 - projected_available / max_inventory_qty)
+```
+Near-zero stock → priority 100 (urgent). Near-max stock → priority 0. Planned orders inherit the priority of the demand that triggered them. Supply at priority P can only satisfy demand at priority P or lower.
 
-| Priority | Heuristic | ERP | Status | Effort |
-|----------|-----------|-----|--------|--------|
-| **P0** | Reorder Point (s,S) | All | ✅ Implemented | Done |
-| **P0** | BOM Explosion (no scrap) | All | ✅ Implemented | Done |
-| **P0** | Lead Time Offsetting | All | ✅ Implemented | Done |
-| **P1** | BOM Explosion with scrap | SAP, D365 | ❌ Schema exists, not applied | 2 days |
-| **P1** | Lot-for-lot (EX/CoverageCode=2) | SAP, D365 | ❌ | 1 day |
-| **P1** | Fixed lot (FX) + Min/Max enforcement | SAP, D365, Odoo | ❌ | 2 days |
-| **P1** | Period batching (WB/MB/CoverageCode=1) | SAP, D365 | ❌ | 2 days |
-| **P1** | Min/Max (HB/CoverageCode=3) | SAP, D365, Odoo | ❌ | 1 day |
-| **P2** | Deterministic MRP (PD) netting | SAP | ❌ | 3 days |
-| **P2** | D365 Positive/Negative Days | D365 | ❌ | 1 day |
-| **P2** | DDMRP buffer zones + net flow | D365, SAP, Odoo | ❌ | 5 days |
-| **P2** | Planning Time Fence (FXHOR) | SAP | ❌ | 2 days |
-| **P2** | D365 Three-Fence Model | D365 | ❌ | 2 days |
-| **P3** | Forecast Consumption (VRMOD 1-5) | SAP | ❌ | 5 days |
-| **P3** | Silver-Meal / PPB / Wagner-Whitin | SAP (DISLS=SP/SM/OP) | ❌ | 3 days |
-| **P3** | Groff Procedure | SAP (DISLS=GR) | ❌ | 2 days |
-| **P3** | EOQ lot sizing | SAP, generic | ❌ | 1 day |
-| **P4** | DRP bottom-up network planning | All | ❌ | 5 days |
-| **P4** | RCCP capacity check | All | ❌ | 3 days |
-| **P4** | Glenday Sieve + changeover minimization | Manufacturing | ❌ (exists in MOExecutionTRM, not in sim) | 2 days |
-| **P4** | Proportional disaggregation | All | ❌ | 1 day |
-| **Total P1** | | | | **~8 days** |
-| **Total P1+P2** | | | | **~22 days** |
-| **Total P1+P2+P3** | | | | **~33 days** |
-| **Total All** | | | | **~44 days** |
+#### 8A.3.2 Allocation at DAG Levels
 
-### 8A.5 Validation Strategy
+Allocation happens at **every level** of the supply chain DAG, not just at the customer-facing tier:
+
+| DAG Level | Allocation Context | Typical Method |
+|-----------|-------------------|---------------|
+| **Supplier → Plant** | Multiple plants competing for scarce raw material from a shared supplier | Quota-based (SAP EQUK) or priority (strategic plant first) |
+| **Plant → DC** | Factory output pushed to DCs (§8A.5 push deployment) | Fair share by demand (APO Rule A) or target stock % (Rule B) |
+| **DC → DC** | Rebalancing between distribution centers | Geographic proximity + target stock equalization |
+| **DC → Customer** | Final allocation of finished goods to customer orders | Priority/waterfall (aATP BOP) or committed-first |
+| **Component → Parent** | Scarce component allocated across multiple parent items that need it | Fair share by parent demand, or priority by parent margin |
+| **Resource → Product** | Scarce production capacity allocated across products | Glenday (GREEN products first) or margin-weighted |
+
+### 8A.4 Alternate Sourcing / Multi-Sourcing
+
+When multiple suppliers or supply routes exist for a product, the sourcing method determines which source is selected and how volume is split.
+
+#### 8A.4.1 Sourcing Methods (9 Methods)
+
+| # | Method | Algorithm | SAP | D365 | Odoo |
+|---|--------|-----------|-----|------|------|
+| 1 | **Fixed (Single Source)** | All volume to one predetermined vendor | Source List (EORD) with one entry | Approved Vendor List, single vendor | Single vendor on Purchase tab |
+| 2 | **Priority-Based** | Try vendor A first; if can't supply, try B | Info Records (EINE) with purchasing priority; Source List with fixed indicator | Preferred vendor on item coverage; trade agreement price fallback | Vendor sequence on Purchase tab |
+| 3 | **Quota-Based (Ratio Split)** | `Quota Rating = (Allocated + Base) / Quota`. Assign to vendor with lowest rating. | Quota Arrangement tables EQUK/EQIA (ME01/ME03). Running total converges to target split. | Multisource policy: `Current% = Vendor_Sourced / Total_Accumulated × 100`. Assign to vendor deviating most below target. | Not native |
+| 4 | **Cost-Based (TCO)** | `total_cost = unit_price + freight + duties + handling + quality_cost`. Select min. | Info Records (EINE) net price; Conditions (KONP) for freight/duties | Trade agreements with qty breaks; vendor price comparison | Vendor pricelists: lowest price matching qty/date |
+| 5 | **Lead-Time-Based** | Select vendor with shortest lead time that meets required date | EINE planned delivery time; MARC-PLIFZ | Trade agreement lead times | `delay` field per vendor on Purchase tab |
+| 6 | **Capacity-Based** | Allocate based on available supplier capacity: `allocate = min(remaining, available_cap)` | Quota arrangement with max release qty | Min/max order qty per vendor in trade agreements | Min quantity on vendor pricelist |
+| 7 | **Geographic / Regional** | Prefer nearest supplier or same-region vendor | Plant-specific source lists | Site-specific item coverage with different preferred vendors | Warehouse-specific reorder rules |
+| 8 | **Risk-Based / Diversification** | No single vendor > X% of total volume; spread across regions | Quota arrangements enforcing splits; SAP Ariba risk scores | Multisource policies with min/max shares | Not native |
+| 9 | **Dual Sourcing (Primary/Backup)** | Normal: 80/20 split. Disruption: 0/100 to backup. Recovery: gradual restore. | Quota arrangement (80/20). Vendor block → auto-shift to backup. | Multisource policy. Vendor hold → allocate to remaining. | Two vendors by sequence; archive primary → falls to secondary |
+
+**SAP Quota Arrangement Rating Algorithm** (critical to implement faithfully):
+
+```python
+def sap_quota_rating(allocated_qty: float, base_qty: float, quota: float) -> float:
+    """Lower rating = gets the next order. Tie-break: highest quota value wins."""
+    return (allocated_qty + base_qty) / quota
+
+# Example: Vendors A(60%), B(30%), C(10%)
+# Initially all at 0 allocated → ratings: A=0/60=0, B=0/30=0, C=0/10=0
+# Tie broken by highest quota → A wins first order (100 units)
+# After: A rating = 100/60=1.67, B=0/30=0, C=0/10=0 → B wins
+# After: B rating = 100/30=3.33, C=0/10=0 → C wins
+# Converges toward 60/30/10 split over many orders
+```
+
+#### 8A.4.2 Transportation Lane Selection (Regular / Expedite / Consolidation)
+
+Multiple transportation options typically exist per lane. The mode selection algorithm:
+
+```python
+def select_transport_mode(
+    weight: float, volume: float, distance: float,
+    required_date: int, today: int,
+    standard_transit: int, expedite_transit: int,
+    standard_rate: float, expedite_rate: float,
+    ftl_threshold: float, ltl_min: float,
+    stockout_penalty: float,
+) -> TransportMode:
+    """Select shipping mode based on urgency, cost, and load."""
+    slack = required_date - today - standard_transit
+
+    # Step 1: Urgency check
+    if slack < 0:
+        return AIR_EXPRESS  # Already late — fastest available
+    if slack < 2:
+        return EXPEDITE_TRUCK
+
+    # Step 2: Load-based mode selection
+    if weight >= ftl_threshold:
+        mode = FTL_TRUCK
+    elif weight >= ltl_min:
+        mode = LTL_TRUCK
+    else:
+        mode = PARCEL
+
+    # Step 3: Cost vs speed evaluation
+    cost_of_expedite = expedite_rate - standard_rate
+    cost_of_late = stockout_penalty  # lost margin + penalty + churn risk
+    if cost_of_expedite < cost_of_late and slack < 5:
+        return EXPEDITE_TRUCK
+
+    return mode
+```
+
+**Consolidation logic**: Group orders within a configurable window (e.g., 3 days) by destination zone. If combined weight ≥ FTL threshold, create consolidated FTL shipment at lower per-unit cost.
+
+**ERP specifics**:
+- **SAP TM**: Carrier selection strategy (cost, priority, cost+priority). Condition type `MTRVT_DET` for rule-based mode/vehicle determination. Freight order types: standard vs express.
+- **D365 TMS**: Rating profiles with tariffs per carrier-mode-lane. Rate shopping via Rate/Route workbench. Routing guides with rules on weight, volume, destination, service level.
+- **Odoo**: Delivery methods with fixed or rule-based pricing. Third-party carrier integration (FedEx/UPS/DHL) for rate quotes. No native TMS optimizer.
+
+### 8A.5 Push-Based Deployment (Production-Driven Distribution)
+
+When manufacturing sites have limited FG storage (dairy, cement, chemicals, continuous production lines), they must **push** output downstream even when downstream demand hasn't explicitly pulled it.
+
+#### 8A.5.1 SAP APO SNP Deployment Heuristic
+
+The most fully documented push deployment algorithm in enterprise software:
+
+**Step 1 — Calculate Available-to-Deploy (ATD)** at source:
+```
+ATD(t) = Σ(ATR receipts from period 0..t) - Σ(ATI issues within checking horizon)
+  ATR = stock + confirmed production + PO receipts + planned receipts
+  ATI = sales orders + reservations + dependent demands + existing deployments
+```
+
+**Step 2 — Compare ATD to total downstream demand:**
+- If **ATD < Demand**: → **Fair Share mode** (shortage allocation, §8A.3)
+- If **ATD ≥ Demand**: → **Push mode** (surplus distribution)
+
+**Step 3 — Push Distribution Methods:**
+
+| Rule | Name | Algorithm |
+|------|------|-----------|
+| **A** | Push by Demands | `push(i) = surplus × (demand(i) / Σdemand)`. Surplus distributed proportionally. |
+| **D** | Push by Priority | Surplus to highest-priority transportation lane first, then next priority. |
+| **Q** | Push by Quota | All supply distributed by quota arrangement. Demand at destinations **ignored** — pure push. |
+| **S** | Push to Target Stock | Push to bring destinations up to target stock level. Only deploys when destination projected stock < target AND meets minimum lot size. |
+
+**Three Horizons**:
+- **Deployment Horizon**: Total days over which stock transfers are planned
+- **Pull Horizon**: Days over which downstream demands are visible (pull-based)
+- **Push Horizon**: Days over which source receipts are pushed immediately
+
+**Pull/Push Hybrid** (most common config): Cover all demand within pull horizon immediately. Beyond pull horizon, no push. This prevents over-deployment while ensuring near-term coverage.
+
+#### 8A.5.2 Storage-Constrained Production Push
+
+When factory FG storage is the binding constraint:
+
+```python
+def push_from_factory(
+    production_output: float,
+    local_storage_available: float,
+    downstream_locations: List[Location],  # sorted by push priority
+    push_method: str,  # "demand_proportional" | "target_stock" | "nearest_first" | "cost_min"
+) -> Dict[str, float]:
+    """Push excess production to downstream locations."""
+    surplus = max(0, production_output - local_storage_available)
+    if surplus <= 0:
+        return {}
+
+    pushes = {}
+    remaining = surplus
+
+    if push_method == "demand_proportional":
+        total_demand = sum(loc.forecast_demand for loc in downstream_locations)
+        for loc in downstream_locations:
+            push_qty = min(remaining, surplus * loc.forecast_demand / total_demand, loc.available_capacity)
+            pushes[loc.id] = push_qty
+            remaining -= push_qty
+
+    elif push_method == "target_stock":
+        # Push to equalize target stock percentage across all DCs
+        deficits = [(loc, loc.target_stock - loc.current_inventory) for loc in downstream_locations]
+        deficits.sort(key=lambda x: x[1], reverse=True)  # largest deficit first
+        for loc, deficit in deficits:
+            push_qty = min(remaining, max(0, deficit), loc.available_capacity)
+            pushes[loc.id] = push_qty
+            remaining -= push_qty
+
+    elif push_method == "nearest_first":
+        for loc in sorted(downstream_locations, key=lambda l: l.distance_from_factory):
+            push_qty = min(remaining, loc.available_capacity)
+            pushes[loc.id] = push_qty
+            remaining -= push_qty
+
+    return pushes
+```
+
+**Critical principle for continuous production**: The deployment plan must be solved **before or simultaneously with** the production plan. Production is gated by `min(equipment_capacity, Σ downstream_storage_available + outbound_shipments_scheduled)`.
+
+#### 8A.5.3 ERP-Specific Push Mechanisms
+
+| ERP | Push Mechanism | Config |
+|-----|---------------|--------|
+| **SAP APO/IBP** | SNP Deployment Heuristic (Rules A/D/Q/S) | Product-Location master SNP2 tab: ATR/ATI category groups, push/pull horizons, fair share rule |
+| **SAP S/4HANA** (without APO) | Cross-plant MRP with Special Procurement Key → Stock Transport Orders (STO) | Material master: special procurement key; Shipping: replenishment delivery |
+| **D365** | Planned Transfer Orders via warehouse refilling; Planned Cross-Docking | Item coverage: refilling checkbox + main warehouse; Cross-docking template |
+| **D365 Intercompany** | Planned intercompany purchase/sales orders | Master plan: "Include planned downstream demand" across legal entities |
+| **Odoo** | Push Rules (`stock.rule` with `action='push'`) — event-driven on stock arrival | Route definition: source location → destination location + delay |
+
+#### 8A.5.4 Push-Pull Boundary / Decoupling Point
+
+The decoupling point is the strategic position where push (forecast-driven) transitions to pull (demand-driven):
+
+```
+Suppliers → Component Mfg → [DECOUPLING POINT] → Assembly → Distribution → Customer
+     PUSH (forecast/MPS)          BUFFER          PULL (actual orders)
+```
+
+- **DDMRP** formalizes this: buffers at decoupling points absorb variability and prevent bullwhip upstream
+- **Postponement**: Push generic product to decoupling point; pull customized product downstream (e.g., paint base pushed to DC, tinting at point of sale)
+- **VMI**: Supplier pushes replenishment within agreed min/max bounds based on customer's real-time inventory
+- **Consignment**: Product pushed to customer warehouse but ownership retained until consumption (SAP special stock indicator W)
+
+### 8A.6 Order Modification Rules
+
+After netting and lot sizing determine the raw order quantity, order modification rules adjust it to comply with vendor, packaging, and logistics constraints.
+
+**Processing sequence** (order matters — each step feeds the next):
+
+```
+Raw net requirement
+  → Lot sizing (§8A.1.2)
+  → MOQ enforcement
+  → Order multiple / rounding
+  → Rounding profile (SAP-specific)
+  → Max order qty (split if exceeded)
+  → Pack size / container fill
+  → Order frequency constraint
+  → Order aggregation window
+  → Final planned order(s)
+```
+
+#### 8A.6.1 Order Constraints
+
+| Constraint | Algorithm | SAP Config | D365 Config | Odoo Config |
+|-----------|-----------|-----------|------------|------------|
+| **MOQ (Minimum Order Qty)** | `if qty < MOQ: qty = MOQ` | `MARC-BSTMI` | `Min. order quantity` on item coverage | `Minimum Quantity` on vendor pricelist |
+| **MOV (Minimum Order Value)** | `if qty × price < MOV: qty = ceil(MOV / price)` | Not native (purchasing BAdI) | Min order amount on trade agreement | Not native |
+| **Maximum Order Qty** | `if qty > max: split into ceil(qty/max) orders` | `MARC-BSTMA` | `Max. order quantity` on item coverage | Not native |
+| **Order Multiple** | `qty = ceil(qty / multiple) × multiple` | `MARC-BSTRF` | `Multiple` on item coverage | `qty_multiple` on reorder rule |
+| **Rounding Profile** | Scaled rounding by threshold: find threshold T where qty > T, round to corresponding multiple | `MARC-RDPRF` (Customizing OMI4) | Not native | Not native |
+| **Pack/Case/Pallet** | `qty = ceil(qty / pack_size) × pack_size` — driven by UoM conversion | MARM (UoM conversion); purchase UoM | Unit conversion; purchase UoM on trade agreement | UoM categories with conversion |
+| **FCL/FTL Fill** | If fill_rate ≥ 85%: round up to full container. `savings = LCL_rate × qty - FCL_rate`. If savings > extra holding cost: round up. | SAP TM optimization | D365 TMS rate shopping | Not native |
+| **Order Frequency** | Can only order on allowed days (e.g., weekly on Monday). Aggregate requirements within review period. | Lot sizing WB/MB/PB (period-based) | `Order period` on coverage group | Daily scheduler (not fine-grained) |
+| **Aggregation Window** | Combine requirements within X days into one order | Implicit in period lot sizing (WB/MB) | Coverage time fence consolidation | Reorder rule cycle |
+
+### 8A.7 Reorder Triggers Beyond ROP
+
+The current simulation only implements Reorder Point (s,S). These additional trigger methods must be mirrored per the customer's ERP config.
+
+| # | Trigger | Algorithm | SAP | D365 | Odoo |
+|---|---------|-----------|-----|------|------|
+| 1 | **(s,S) Min-Max** | If `inv_pos ≤ s: order(S - inv_pos)` — variable order size | ✅ Implemented (VB + HB) | CoverageCode=3 | Default orderpoint |
+| 2 | **(s,Q) Fixed Qty** | If `inv_pos ≤ s: order(Q)` — fixed order regardless of deficit | DISMM=VB + DISLS=FX | Not native as named policy | Not native |
+| 3 | **(R,S) Periodic Review** | Every R days: `order(S - inv_pos)`. SS covers R+L, not just L. | DISMM=R1 (time-phased planning) | CoverageCode=1 (period) | Scheduler runs daily |
+| 4 | **TPOP (Time-Phased OP)** | ROP + forward demand visibility: `if projected_inv[t] < ROP: order at t-LT` | DISMM=R1 with planning cycle | Standard MRP netting with coverage fence | Not native |
+| 5 | **DDMRP Net Flow** | `net_flow = on_hand + on_order - qualified_demand`. If net_flow < top_of_yellow: order. | IBP / third-party | CoverageCode=4 | OCA DDMRP module |
+| 6 | **Kanban / Pull Signal** | Downstream consumption triggers upstream replenishment of fixed container qty. N = `D×L×(1+α)/C` | PP kanban control | Lean Manufacturing kanban rules | Not native |
+| 7 | **Event-Driven** | Large order, promotion, disruption, forecast revision → immediate replan | Net Change (NETCH) replans changed materials only | Net change planning mode | Manual "Run Scheduler" |
+| 8 | **Consumption-Based Auto** | System auto-calculates ROP from historical consumption (exponential smoothing) | DISMM=VM/V2 (automatic reorder point) | Not native (manual SS calc) | Not native |
+
+### 8A.8 Additional Safety Stock / Buffer Methods
+
+Beyond the 8 policies already implemented in `inventory_target_calculator.py`:
+
+| # | Method | Algorithm | Status |
+|---|--------|-----------|--------|
+| 1 | **Dynamic SS (Forecast-Error)** | `MAD_t = (1/n) × Σ|actual-forecast|`. `SS_t = z × 1.25 × MAD_t × √L`. Recalculated every period. | ❌ Not implemented. SAP VM auto-recalculates. |
+| 2 | **Seasonal SS** | `SS_t = base_SS × seasonal_multiplier[month(t)]`. Pre-build buffer before peak. | ❌ Not implemented. SAP: period indicator. D365: minimum key. DDMRP: DAF. |
+| 3 | **ABC/XYZ Differentiated** | A items: SL=99% (z=2.33). B: 95% (z=1.65). C: 90% (z=1.28). Combined with XYZ (CoV): AZ items need largest SS or DDMRP. CZ → make-to-order. | ❌ Not implemented. All ERPs support per-product SL. |
+| 4 | **Multi-Echelon (MESSO / Graves-Willems)** | DP on spanning tree: `F[t] = min_j(F[j-1] + h_j × SS_j(SI_j, S_j))`. Optimizes WHERE in the network to hold SS. 20-40% inventory reduction typical. | ❌ Not implemented. SAP IBP native. Kinaxis native. `stockpyl` open-source lib. |
+| 5 | **Demand-Weighted (Downstream Criticality)** | `SS_j = z × σ_j × √L_j × w_j` where `w_j = Σ(revenue(c) × demand_share(c))` for downstream customers c | ❌ Not implemented. Custom in all ERPs. |
+| 6 | **Censored-Demand-Adjusted** | Stockout periods → observed demand < true demand. Use survival analysis / Tobit model to estimate true σ. `SS_corrected > SS_observed` always. | ❌ Not implemented (Lokad methodology). Censored demand detection exists in `demand_processor.py`. |
+
+### 8A.9 Per-Site ERP/APS Configuration Model
+
+**CRITICAL ARCHITECTURAL REQUIREMENT**: In the real world, companies that have grown through acquisition often run **different ERP and APS systems at different sites** or for different product families. A single customer's supply chain may include:
+
+- Plant A runs SAP S/4HANA (acquired 2019, migrated from ECC)
+- Plant B runs D365 F&O (acquired 2022, came with the acquisition)
+- DC Network runs SAP IBP for demand/supply planning
+- Plant C uses Kinaxis for production scheduling
+- Legacy products still planned in spreadsheets (effectively manual MRP)
+
+The digital twin must mirror the **correct heuristic at each site**, not assume a single ERP across the network.
+
+#### Data Model Extension
+
+The `site` table (or a new `site_planning_config` table) must carry:
+
+```
+site_planning_config:
+  site_id              FK → site
+  product_group_id     FK → product_hierarchy (nullable — site-wide if null)
+  erp_system           ENUM: SAP_S4HANA, SAP_ECC, SAP_IBP, D365_FO, D365_SCM,
+                             ODOO_CE, ODOO_EE, KINAXIS, O9, BLUE_YONDER,
+                             MANUAL, SPREADSHEET
+  erp_version          VARCHAR (e.g., "S/4HANA 2023", "10.0.39", "17.0")
+  planning_method      ENUM: MRP, DDMRP, KANBAN, ROP, MANUAL, EXTERNAL_APS
+  mrp_type             VARCHAR (e.g., "PD", "VB", "VM" for SAP; "2", "3" for D365 coverage code)
+  lot_sizing           VARCHAR (e.g., "EX", "FX", "WB", "GR" for SAP; "Period", "MinMax" for D365)
+  forecast_consumption VARCHAR (e.g., "VRMOD=2,VINT1=30,VINT2=15" for SAP; null for D365/Odoo)
+  allocation_method    VARCHAR (e.g., "fair_share_A", "priority_waterfall", "quota_60_30_10")
+  push_deployment      VARCHAR (e.g., "push_by_demand", "push_to_target_stock", null for pull-only)
+  sourcing_method      VARCHAR (e.g., "priority", "quota", "cost_based")
+  time_fence_config    JSON (e.g., {"fxhor": 14, "firming": 7, "frozen": 3})
+  effective_from       DATE
+  effective_to         DATE (nullable — current if null)
+```
+
+**Key design principles**:
+- **Per product-group at a site**: Different product families at the same plant may use different planning methods (e.g., A-items use DDMRP, C-items use basic ROP)
+- **Temporal versioning**: When a site migrates from ECC to S/4HANA, the effective dates capture which heuristic to use for historical simulation vs current
+- **Sub-network grouping**: Sites sharing the same ERP/APS form a "planning domain". Cross-domain interactions (e.g., SAP plant supplying D365 DC) are handled via the DAG's transportation lanes — each side runs its own heuristic, but the demand signal propagates via DRP/deployment
+
+#### Dispatch Logic
+
+```python
+def simulate_site(site_id: str, product_id: str, state: SiteState, day: int):
+    """Dispatch to the correct heuristic based on site's ERP/APS config."""
+    config = get_site_planning_config(site_id, product_id, day)
+
+    # 1. Netting method (which demand triggers replenishment)
+    net_req = dispatch_netting(state, config)
+
+    # 2. Lot sizing (how much to order)
+    order_qty = dispatch_lot_sizing(net_req, config)
+
+    # 3. Order modifications (MOQ, rounding, max, pack size)
+    order_qty = apply_order_modifications(order_qty, config)
+
+    # 4. Time fence check (suppress if inside frozen zone)
+    order_qty, order_date = apply_time_fences(order_qty, day, config)
+
+    # 5. Source selection (which supplier / which lane)
+    source = dispatch_sourcing(order_qty, site_id, product_id, config)
+
+    # 6. Transport mode (regular vs expedite)
+    transport = dispatch_transport(order_qty, source, site_id, config)
+
+    return PlannedOrder(qty=order_qty, date=order_date, source=source, transport=transport)
+```
+
+#### Why This Matters for Training
+
+TRM agents must learn **per-site** because the heuristic they're compensating for differs by site. An agent trained on SAP VB (reorder point) failures will make bad decisions at a D365 DDMRP site — the failure modes are completely different. The per-site ERP config ensures:
+
+1. **Training data fidelity**: Each site's simulation runs the correct heuristic
+2. **Agent specialization**: TRMs can learn site-specific failure patterns
+3. **Transfer learning**: Sites with the same ERP/config can share training data
+4. **Migration support**: When a site changes ERP (e.g., ECC→S/4HANA), the new heuristic is used from the migration date; agents retrain on the new failure patterns
+
+### 8A.10 Updated Implementation Roadmap
+
+| Priority | Heuristic | Category | Effort |
+|----------|-----------|----------|--------|
+| **P0** | Reorder Point (s,S) + BOM + Lead Time | Site MRP | ✅ Done |
+| **P1** | Lot sizing (L4L, FX, HB, WB/MB) | Site MRP | 6 days |
+| **P1** | BOM explosion with scrap | Site MRP | 2 days |
+| **P1** | MOQ + order multiple + max qty | Order Modification | 2 days |
+| **P1** | Fair share + priority allocation | Allocation | 3 days |
+| **P1** | Per-site ERP config data model | Architecture | 3 days |
+| **P2** | Deterministic MRP (PD) + forecast consumption (VRMOD) | Site MRP (SAP) | 8 days |
+| **P2** | DDMRP buffer zones + net flow | Site MRP (D365/SAP) | 5 days |
+| **P2** | Time fences (SAP FXHOR + D365 three-fence) | Site MRP | 3 days |
+| **P2** | Quota-based sourcing (SAP rating algorithm) | Sourcing | 3 days |
+| **P2** | Push deployment (ATD + 4 push rules) | Network | 5 days |
+| **P2** | D365 positive/negative days | Site MRP (D365) | 1 day |
+| **P3** | Dynamic lot sizing (Silver-Meal, PPB, Wagner-Whitin, Groff) | Site MRP | 5 days |
+| **P3** | Transportation mode selection (regular/expedite/consolidation) | Network | 3 days |
+| **P3** | Rounding profiles + pack size + FCL/FTL fill | Order Modification | 3 days |
+| **P3** | DRP bottom-up network planning | Network | 5 days |
+| **P3** | RCCP capacity + scheduling priority rules | Capacity | 4 days |
+| **P4** | Multi-echelon safety stock (Graves-Willems DP) | Network SS | 8 days |
+| **P4** | Seasonal SS + dynamic SS + ABC/XYZ differentiation | Site SS | 4 days |
+| **P4** | Kanban trigger + TPOP + event-driven replan | Reorder Triggers | 4 days |
+| **P4** | Storage constraint logic (overflow routing, production gating) | Capacity | 4 days |
+| **P4** | Glenday Sieve in simulation (exists in TRM, not in sim) | Production | 2 days |
+| **P4** | S&OP disaggregation (proportional + priority + fair share) | Network | 2 days |
+| **Total P0+P1** | | | **~16 days** |
+| **Total P0-P2** | | | **~41 days** |
+| **Total P0-P3** | | | **~57 days** |
+| **Total All** | | | **~79 days** |
+
+### 8A.11 Validation Strategy
 
 For each implemented heuristic:
 
@@ -885,6 +1232,24 @@ For each implemented heuristic:
 2. **Regression test against ERP**: Extract a representative scenario from the customer's ERP (via staging). Run both the ERP's MRP and the mirror. Compare planned orders (qty, date, type) — they must match within rounding tolerance
 3. **Stochastic divergence test**: Run 100 MC trials with the mirror. Verify that the mean of stochastic outcomes converges to the deterministic output (law of large numbers check)
 4. **Cross-ERP consistency**: For equivalent configurations (SAP DISLS=EX ≡ D365 CoverageCode=2 ≡ Odoo default), verify identical outputs
+5. **Allocation regression**: For shortage scenarios, verify that the allocation method produces the same customer-level quantities as the ERP's native allocation engine (SAP BOP, D365 priority planning)
+6. **Push deployment regression**: For surplus scenarios, verify push quantities match SAP APO deployment output for the same ATD and fair share rule
+
+### 8A.12 Creating New ERP-Specific Heuristics
+
+To add support for a new ERP or APS system, follow this process:
+
+**Step 1 — Document the ERP's algorithm**: Read vendor docs (closed-source) or source code (Odoo). Document as pseudocode with explicit parameter references.
+
+**Step 2 — Identify config parameters**: Map ERP config fields to heuristic function inputs. Ensure extraction by connector and persistence.
+
+**Step 3 — Implement as pure function**: Input `SiteState` + `ERPConfig` → Output `order_qty` + side-effect records. No database access.
+
+**Step 4 — Register in dispatch map**: Add to `compute_replenishment()`, lot sizing, and post-processing dispatchers.
+
+**Step 5 — Validate against ERP output**: Zero-variance mirror vs ERP deterministic run. Discrepancies are bugs.
+
+**Step 6 — Configure per tenant**: Provisioning reads customer's ERP config → per product-site heuristic dispatch via `site_planning_config`.
 
 ---
 

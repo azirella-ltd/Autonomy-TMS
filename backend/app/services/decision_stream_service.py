@@ -2586,47 +2586,53 @@ class DecisionStreamService:
 
             parts = []
 
-            # Executive dashboard KPIs
+            # Executive dashboard KPIs (from performance_metrics, scoped by tenant)
             result = await self.db.execute(
                 _t("""
-                    SELECT metric_name, metric_value, metric_target, status, category
+                    SELECT category, decision_type,
+                           total_decisions, agent_decisions, planner_decisions,
+                           agent_score, planner_score, override_rate,
+                           automation_percentage, active_agents
                     FROM performance_metrics
-                    WHERE config_id = :cid
-                    ORDER BY category, metric_name
-                    LIMIT 30
+                    WHERE tenant_id = :tid AND period_type = 'weekly'
+                    ORDER BY period_end DESC, category
+                    LIMIT 20
                 """),
-                {"cid": config_id},
+                {"tid": self.tenant_id},
             )
             rows = result.fetchall()
             if rows:
                 metrics = []
                 for r in rows:
-                    val = f"{r[1]:.1f}" if r[1] else "N/A"
-                    tgt = f" (target: {r[2]:.1f})" if r[2] else ""
-                    status = f" [{r[3]}]" if r[3] else ""
-                    metrics.append(f"  {r[0]}: {val}{tgt}{status}")
-                parts.append("Performance Metrics:\n" + "\n".join(metrics))
+                    cat = r[0] or "Overall"
+                    agent_s = f"agent score: {r[5]}" if r[5] else ""
+                    auto_pct = f"automation: {r[8]:.0f}%" if r[8] else ""
+                    override = f"override rate: {r[7]:.0f}%" if r[7] else ""
+                    detail = ", ".join(filter(None, [agent_s, auto_pct, override]))
+                    metrics.append(f"  {cat}: {r[2]} decisions ({detail})")
+                parts.append("Weekly Performance (latest):\n" + "\n".join(metrics))
 
-            # Agent decision summary by type
+            # Agent decision summary by type (using config_id for decision tables)
+            cid = config_id or 0
             result = await self.db.execute(
                 _t("""
-                    SELECT 'ATP' as agent, COUNT(*) as decisions,
+                    SELECT 'ATP Agent' as agent, COUNT(*) as decisions,
                            AVG(confidence) as avg_confidence
                     FROM powell_atp_decisions WHERE config_id = :cid
                     UNION ALL
-                    SELECT 'PO Creation', COUNT(*), AVG(confidence)
+                    SELECT 'Procurement Agent', COUNT(*), AVG(confidence)
                     FROM powell_po_decisions WHERE config_id = :cid
                     UNION ALL
-                    SELECT 'Rebalancing', COUNT(*), AVG(confidence)
+                    SELECT 'Rebalancing Agent', COUNT(*), AVG(confidence)
                     FROM powell_rebalance_decisions WHERE config_id = :cid
                     UNION ALL
-                    SELECT 'Forecast Adj', COUNT(*), AVG(confidence)
+                    SELECT 'Demand Agent', COUNT(*), AVG(confidence)
                     FROM powell_forecast_adjustment_decisions WHERE config_id = :cid
                     UNION ALL
-                    SELECT 'Buffer Adj', COUNT(*), AVG(confidence)
+                    SELECT 'Inventory Agent', COUNT(*), AVG(confidence)
                     FROM powell_buffer_decisions WHERE config_id = :cid
                 """),
-                {"cid": config_id},
+                {"cid": cid},
             )
             rows = result.fetchall()
             if rows:
@@ -2650,7 +2656,7 @@ class DecisionStreamService:
                     GROUP BY s.name, s.type
                     ORDER BY total_on_hand DESC
                 """),
-                {"cid": config_id},
+                {"cid": cid},
             )
             rows = result.fetchall()
             if rows:
