@@ -1172,6 +1172,11 @@ class DecisionStreamService:
         if dag_topology:
             decision_context += "\n\n" + dag_topology
 
+        # Load BSC data for performance comparisons
+        bsc_data = await self._get_bsc_context(config_id)
+        if bsc_data:
+            decision_context += "\n\n" + bsc_data
+
         # Build prompt with role-scoped instructions
         prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context, powell_role)
 
@@ -2567,6 +2572,100 @@ class DecisionStreamService:
             logger.debug("DAG topology load failed: %s", e)
             return ""
 
+    async def _get_bsc_context(self, config_id: Optional[int] = None) -> str:
+        """Load balanced scorecard data for performance comparisons.
+
+        Provides the LLM with actual KPI values so it can answer
+        questions like 'best performing region' or 'worst product group'
+        without saying 'I don't have that data'.
+        """
+        if not config_id:
+            return ""
+        try:
+            from sqlalchemy import text as _t
+
+            parts = []
+
+            # Executive dashboard KPIs
+            result = await self.db.execute(
+                _t("""
+                    SELECT metric_name, metric_value, metric_target, status, category
+                    FROM performance_metrics
+                    WHERE config_id = :cid
+                    ORDER BY category, metric_name
+                    LIMIT 30
+                """),
+                {"cid": config_id},
+            )
+            rows = result.fetchall()
+            if rows:
+                metrics = []
+                for r in rows:
+                    val = f"{r[1]:.1f}" if r[1] else "N/A"
+                    tgt = f" (target: {r[2]:.1f})" if r[2] else ""
+                    status = f" [{r[3]}]" if r[3] else ""
+                    metrics.append(f"  {r[0]}: {val}{tgt}{status}")
+                parts.append("Performance Metrics:\n" + "\n".join(metrics))
+
+            # Agent decision summary by type
+            result = await self.db.execute(
+                _t("""
+                    SELECT 'ATP' as agent, COUNT(*) as decisions,
+                           AVG(confidence) as avg_confidence
+                    FROM powell_atp_decisions WHERE config_id = :cid
+                    UNION ALL
+                    SELECT 'PO Creation', COUNT(*), AVG(confidence)
+                    FROM powell_po_decisions WHERE config_id = :cid
+                    UNION ALL
+                    SELECT 'Rebalancing', COUNT(*), AVG(confidence)
+                    FROM powell_rebalance_decisions WHERE config_id = :cid
+                    UNION ALL
+                    SELECT 'Forecast Adj', COUNT(*), AVG(confidence)
+                    FROM powell_forecast_adjustment_decisions WHERE config_id = :cid
+                    UNION ALL
+                    SELECT 'Buffer Adj', COUNT(*), AVG(confidence)
+                    FROM powell_buffer_decisions WHERE config_id = :cid
+                """),
+                {"cid": config_id},
+            )
+            rows = result.fetchall()
+            if rows:
+                agent_lines = []
+                for r in rows:
+                    if r[1] and r[1] > 0:
+                        conf = f" (avg confidence: {r[2]:.0%})" if r[2] else ""
+                        agent_lines.append(f"  {r[0]}: {r[1]} decisions{conf}")
+                if agent_lines:
+                    parts.append("Agent Decision Summary:\n" + "\n".join(agent_lines))
+
+            # Inventory summary by site
+            result = await self.db.execute(
+                _t("""
+                    SELECT s.name, s.type,
+                           COUNT(DISTINCT il.product_id) as products,
+                           SUM(il.on_hand_qty) as total_on_hand
+                    FROM inv_level il
+                    JOIN site s ON s.id = il.site_id
+                    WHERE il.config_id = :cid
+                    GROUP BY s.name, s.type
+                    ORDER BY total_on_hand DESC
+                """),
+                {"cid": config_id},
+            )
+            rows = result.fetchall()
+            if rows:
+                inv_lines = []
+                for r in rows:
+                    inv_lines.append(f"  {r[0]} ({r[1]}): {r[2]} products, {r[3]:,.0f} units on hand")
+                parts.append("Inventory by Site:\n" + "\n".join(inv_lines))
+
+            if parts:
+                return "=== BALANCED SCORECARD & KPI DATA ===\n" + "\n\n".join(parts) + "\n=== END BSC ==="
+            return ""
+        except Exception as e:
+            logger.debug("BSC context load failed: %s", e)
+            return ""
+
     async def _retrieve_context(self, query: str):
         """Retrieve RAG context from knowledge base."""
         try:
@@ -2655,6 +2754,69 @@ class DecisionStreamService:
             "5. For product queries, offer product groups first, then specific products if the group is known.\n"
             "6. Keep clarification questions short — one question at a time."
         )
+
+        # ── Supply Chain Language Glossary ────────────────────────────────
+        # Teach the LLM common SC terms so users don't need to be precise
+        system_prompt += (
+            "\n\nSUPPLY CHAIN GLOSSARY — interpret user language using these definitions:\n"
+            "- 'best performing' / 'top performing' = highest balanced scorecard composite "
+            "(OTIF × fill rate × margin, weighted by revenue). Compare across the dimension the user specifies.\n"
+            "- 'worst performing' = lowest BSC composite. Flag the underperformers.\n"
+            "- 'region' = customer delivery region (demand side), NOT internal site. "
+            "In a distribution network: NW, SW, Central, NE, SE. In a global network: US, Americas, Europe, Asia.\n"
+            "- 'site' / 'DC' / 'warehouse' = internal operational location (supply side).\n"
+            "- 'product group' / 'category' / 'family' = product hierarchy category (e.g., Frozen Proteins, Beverages).\n"
+            "- 'margin' = gross margin % from the balanced scorecard, NOT unit cost.\n"
+            "- 'service level' = OTIF (On-Time In-Full) unless specified otherwise.\n"
+            "- 'fill rate' = order fill rate (% of demand fulfilled from available inventory).\n"
+            "- 'DOS' / 'days of supply' = on-hand inventory ÷ average daily demand.\n"
+            "- 'C2C' / 'cash-to-cash' = DIO + DSO - DPO (inventory + receivables - payables in days).\n"
+            "- 'cost to serve' = total supply chain cost per unit delivered to customer.\n"
+            "- 'bullwhip' = demand amplification ratio (upstream order variance ÷ downstream demand variance).\n"
+            "- 'lead time' = supplier delivery lead time (procurement context) or customer promise time (sales context).\n"
+            "- 'safety stock' / 'buffer' = inventory held to absorb demand/supply uncertainty.\n"
+            "- 'reorder point' = inventory level that triggers a replenishment order.\n"
+            "- 'ATP' = Available-to-Promise (uncommitted inventory available for new orders).\n"
+            "- 'CTP' = Capable-to-Promise (what CAN be made/procured to fulfill an order).\n"
+            "- 'MO' = Manufacturing Order. 'PO' = Purchase Order. 'TO' = Transfer Order.\n"
+            "- 'override' = human planner changed an agent's recommendation.\n"
+            "- 'touchless rate' = % of decisions handled autonomously without human intervention.\n"
+        )
+
+        # ── Role-Aware Metric Interpretation ──────────────────────────────
+        # What metrics each role cares about when they say "performance"
+        ROLE_METRICS = {
+            "SC_VP": (
+                "When this user asks about 'performance', 'how are we doing', or 'best/worst', "
+                "they mean STRATEGIC metrics: Revenue growth, EBIT margin, ROCS (Return on Capital), "
+                "Gross Margin, OTIF, C2C cycle time, and Cost to Serve. "
+                "Present comparisons as a ranked table with the BSC composite score."
+            ),
+            "EXECUTIVE": (
+                "When this user asks about 'performance', they mean the EXECUTIVE DASHBOARD view: "
+                "OTIF, fill rate, margin, cost/order, agent ROI metrics, revenue at risk. "
+                "Compare across regions × product groups using the balanced scorecard. "
+                "Lead with the headline number, then break down by dimension."
+            ),
+            "SOP_DIRECTOR": (
+                "When this user asks about 'performance', they mean S&OP TACTICAL metrics: "
+                "Perfect Order Fulfillment (POF = OTD × IF × DF × DA), demand forecast accuracy (MAPE), "
+                "supply plan adherence, inventory turns, and S&OP worklist resolution rate."
+            ),
+            "MPS_MANAGER": (
+                "When this user asks about 'performance', they mean OPERATIONAL metrics: "
+                "Schedule adherence, capacity utilization, production yield, on-time delivery, "
+                "order cycle time, and exception resolution rate."
+            ),
+            "DEMO_ALL": (
+                "This user has full access. When they ask about 'performance', start with the "
+                "executive view (OTIF, fill rate, margin, cost) then offer to drill into "
+                "tactical or operational metrics."
+            ),
+        }
+        role_metrics = ROLE_METRICS.get(powell_role, ROLE_METRICS.get("DEMO_ALL", ""))
+        if role_metrics:
+            system_prompt += f"\n\nMETRIC INTERPRETATION FOR THIS USER'S ROLE:\n{role_metrics}\n"
 
         if role_cannot and powell_role not in ("DEMO_ALL", "MPS_MANAGER"):
             system_prompt += (
