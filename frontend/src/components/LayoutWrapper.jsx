@@ -7,15 +7,9 @@
 
 import React from 'react';
 import WorkspaceShell from './WorkspaceShell';
-import DemoSessionTimer from './DemoSessionTimer';
 
 const LayoutWrapper = () => {
-  return (
-    <>
-      <DemoSessionTimer />
-      <WorkspaceShell />
-    </>
-  );
+  return <WorkspaceShell />;
 };
 
 export default LayoutWrapper;
