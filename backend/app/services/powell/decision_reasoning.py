@@ -10,7 +10,7 @@ can return instantly (<1ms) instead of routing through the LLM chat path.
 
 Coverage:
 - 11 TRM reasoning generators (one per TRM type)
-- 3 GNN reasoning generators (S&OP GraphSAGE, Network tGNN, Site tGNN)
+- 3 GNN reasoning generators (Strategic Planning Agent, Network Planning Agent, Site Coordination Agent)
 - capture_hive_context() helper for populating HiveSignalMixin fields
 """
 
@@ -769,12 +769,12 @@ def sop_graphsage_reasoning(
     network_risk: Optional[Dict[str, float]] = None,
     score_intervals: Optional[Dict[str, Dict[str, float]]] = None,
 ) -> str:
-    """Generate reasoning for an S&OP GraphSAGE network analysis output.
+    """Generate reasoning for an Strategic Planning Agent network analysis output.
 
     Produces one string per site describing the strategic risk assessment
-    and policy parameter recommendations from the weekly GraphSAGE run.
+    and policy parameter recommendations from the weekly strategic planning cycle.
     """
-    parts = [f"S&OP GraphSAGE analysis for site {site_key}:"]
+    parts = [f"Strategic network analysis for site {site_key}:"]
 
     # Criticality
     if criticality >= 0.8:
@@ -829,12 +829,12 @@ def execution_tgnn_reasoning(
     allocation_interval: Optional[Dict[str, float]] = None,
     propagation_sites: Optional[List[str]] = None,
 ) -> str:
-    """Generate reasoning for a Network tGNN (Execution) inference output.
+    """Generate reasoning for a Network Planning Agent (Execution) inference output.
 
     Produces one string per site describing the daily allocation directive,
     demand forecast, and exception probability.
     """
-    parts = [f"Network tGNN daily directive for site {site_key}:"]
+    parts = [f"Network planning directive for site {site_key}:"]
 
     # Demand forecast
     if demand_forecast_next is not None:
@@ -878,12 +878,12 @@ def demand_planning_tgnn_reasoning(
     confidence: float,
     demand_interval: Optional[Dict[str, float]] = None,
 ) -> str:
-    """Generate reasoning for a Demand Planning tGNN (tactical layer) inference output.
+    """Generate reasoning for a Demand Planning Agent (tactical layer) inference output.
 
     Produces one string per site describing the demand forecast, volatility
-    estimate, and bullwhip amplification detected by the Demand Planning tGNN.
+    estimate, and bullwhip amplification detected by the Demand Planning Agent.
     """
-    parts = [f"Demand Planning tGNN (tactical) for site {site_key}:"]
+    parts = [f"Demand Planning Agent (tactical) for site {site_key}:"]
 
     # Demand forecast
     if demand_forecast_next is not None:
@@ -930,12 +930,12 @@ def supply_planning_tgnn_reasoning(
     confidence: float,
     allocation_interval: Optional[Dict[str, float]] = None,
 ) -> str:
-    """Generate reasoning for a Supply Planning tGNN (tactical layer) inference output.
+    """Generate reasoning for a Supply Planning Agent (tactical layer) inference output.
 
     Produces one string per site describing supply exception risk, order
-    recommendations, and lead time risk from the Supply Planning tGNN.
+    recommendations, and lead time risk from the Supply Planning Agent.
     """
-    parts = [f"Supply Planning tGNN (tactical) for site {site_key}:"]
+    parts = [f"Supply Planning Agent (tactical) for site {site_key}:"]
 
     # Exception probability
     if supply_exception_probability >= 0.7:
@@ -991,13 +991,13 @@ def inventory_optimization_tgnn_reasoning(
     inventory_health: float,
     confidence: float,
 ) -> str:
-    """Generate reasoning for an Inventory Optimization tGNN (tactical layer) inference output.
+    """Generate reasoning for an Inventory Optimization Agent (tactical layer) inference output.
 
     Produces one string per site describing buffer adjustment direction,
     rebalancing urgency, stockout risk, and inventory health from the
-    Inventory Optimization tGNN.
+    Inventory Optimization Agent.
     """
-    parts = [f"Inventory Optimization tGNN (tactical) for site {site_key}:"]
+    parts = [f"Inventory Optimization Agent (tactical) for site {site_key}:"]
 
     # Buffer adjustment signal
     if buffer_adjustment_signal > 0.3:
@@ -1053,12 +1053,12 @@ def site_tgnn_reasoning(
     confidence_modifiers: Dict[str, float],
     coordination_signals: Dict[str, float],
 ) -> str:
-    """Generate reasoning for a Site tGNN (Layer 1.5) inference output.
+    """Generate reasoning for a Site Coordination Agent (Layer 1.5) inference output.
 
-    Produces a single string per site summarizing the cross-TRM urgency
+    Produces a single string per site summarizing the cross-agent urgency
     adjustments and the causal coordination patterns detected.
     """
-    parts = [f"Site tGNN hourly coordination for {site_key}:"]
+    parts = [f"Site coordination (hourly) for {site_key}:"]
 
     # Identify significant urgency adjustments (|adj| > 0.01)
     boosted = []
@@ -1081,7 +1081,7 @@ def site_tgnn_reasoning(
         trm for trm, sig in coordination_signals.items() if sig > 0.7
     ]
     if high_coord:
-        parts.append(f"High cross-TRM attention on: {', '.join(high_coord)}.")
+        parts.append(f"High cross-agent attention on: {', '.join(high_coord)}.")
 
     # Identify confidence adjustments
     conf_changes = [

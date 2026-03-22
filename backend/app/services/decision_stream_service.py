@@ -1570,6 +1570,7 @@ class DecisionStreamService:
                     blocked_by = getattr(row, "local_resolution_blocked_by", None)
                     revenue = _safe_float(getattr(row, "revenue_at_risk", None))
                     cost_delay = _safe_float(getattr(row, "cost_of_delay_per_day", None))
+                    site_display = site_names.get(str(row.site_key), row.site_key)
 
                     if scope == "sop_policy":
                         # Strategic policy — describe what's changing, not just SS multiplier
@@ -1621,8 +1622,11 @@ class DecisionStreamService:
                     if source_signals:
                         sig_descs = []
                         for sig in source_signals[:3]:
+                            # Map internal agent type to business-friendly name
+                            agent_key = sig.get('agent_type', sig.get('trm_type', '?'))
+                            agent_label = self._DIGEST_TYPE_LABELS.get(agent_key, agent_key.replace('_', ' ').title())
                             sig_descs.append(
-                                f"{sig.get('trm_type', '?')}: {sig.get('observation', sig.get('signal_type', '?'))}"
+                                f"{agent_label}: {sig.get('observation', sig.get('signal_type', '?'))}"
                                 f" (urgency {sig.get('urgency', 0):.0%})"
                             )
                         reasoning_parts.append("Escalated from: " + "; ".join(sig_descs))
@@ -2824,6 +2828,11 @@ class DecisionStreamService:
             "specific numbers and facts. Do NOT tell the user to navigate to another page — "
             "the data is already here. Reference specific values from the data context. "
             "Keep answers concise and actionable.\n\n"
+            "CRITICAL: If the data context below says 'No recent agent decisions' or contains "
+            "limited data, DO NOT fabricate numbers or say 'your inventory is 0'. Instead, "
+            "summarize what you DO have (market intelligence, BSC data, topology) and "
+            "suggest what the user should look at based on the available context. "
+            "Never invent metrics, quantities, or inventory levels that aren't in the data.\n\n"
             "CLARIFICATION PROTOCOL: When the user's question is ambiguous or could apply to "
             "multiple entities (sites, products, regions, vendors, customers), you MUST:\n"
             "1. Ask for clarification by offering the VALID OPTIONS from the SUPPLY CHAIN TOPOLOGY "
@@ -2983,20 +2992,89 @@ class DecisionStreamService:
         return "\n\n".join(parts)
 
     async def _call_llm(self, prompt: str) -> str:
-        """Call the LLM via the existing suggestion service."""
+        """Call the LLM for Azirella chat responses.
+
+        Strategy: Claude Haiku (primary) → Qwen/vLLM (fallback).
+        Claude Haiku handles the full 7K+ context prompt easily (200K window).
+        Qwen 8B is the air-gapped fallback but limited to ~3.9K tokens.
+        """
+        import os
+
+        # ── Try Claude first (if API key configured) ──────────────────
+        claude_key = os.getenv("CLAUDE_API_KEY", "")
+        if claude_key:
+            try:
+                import httpx
+                claude_model = os.getenv("CLAUDE_MODEL_HAIKU", "claude-haiku-4-5-20251001")
+
+                async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+                    resp = await client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        json={
+                            "model": claude_model,
+                            "max_tokens": 1500,
+                            "messages": [
+                                {"role": "user", "content": prompt},
+                            ],
+                        },
+                        headers={
+                            "x-api-key": claude_key,
+                            "anthropic-version": "2023-06-01",
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    data = resp.json()
+
+                    if resp.status_code == 200:
+                        content_blocks = data.get("content", [])
+                        text = " ".join(
+                            b.get("text", "") for b in content_blocks if b.get("type") == "text"
+                        )
+                        if text.strip():
+                            return text.strip()
+                    else:
+                        error = data.get("error", {}).get("message", str(data))
+                        logger.warning(f"Claude API error ({resp.status_code}): {error}")
+            except Exception as e:
+                logger.warning(f"Claude call failed, falling back to local LLM: {e}")
+
+        # ── Fallback: local Qwen/vLLM ────────────────────────────────
         try:
-            from app.services.llm_suggestion_service import LLMSuggestionService
-            llm = LLMSuggestionService(provider="openai-compatible")
-            result = await llm.generate_conversation_response(
-                prompt=prompt,
-                context={"tenant_id": self.tenant_id},
-            )
-            text = result.get("content", "I couldn't generate a response. Please try again.")
-            # Strip chain-of-thought <think>...</think> tags that Qwen/Ollama models emit
+            import httpx
+            api_base = os.getenv("LLM_API_BASE", "http://localhost:8001/v1")
+            model = os.getenv("LLM_MODEL_NAME", "qwen3-8b")
+            api_key = os.getenv("LLM_API_KEY", "not-needed")
+
+            # Truncate prompt for small context windows
+            max_prompt_chars = 6000  # ~1500 tokens, leave room for response
+            truncated = prompt[:max_prompt_chars] if len(prompt) > max_prompt_chars else prompt
+
+            # Qwen3 thinking mode wastes tokens — disable with /no_think
+            if "qwen" in model.lower():
+                truncated += "\n\n/no_think"
+
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+                resp = await client.post(
+                    f"{api_base}/chat/completions",
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": truncated}],
+                        "temperature": 0.7,
+                        "max_tokens": 800,
+                    },
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                data = resp.json()
+                text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+            # Strip chain-of-thought <think>...</think> tags
             text = re.sub(r'<think>.*?</think>\s*', '', text, flags=re.DOTALL)
-            return text.strip()
+            return text.strip() if text.strip() else "I couldn't generate a response. Please try again."
         except Exception as e:
-            logger.error(f"LLM call failed: {e}")
+            logger.error(f"LLM call failed (both Claude and local): {e}")
             return (
                 "I'm currently unable to process your question due to a service issue. "
                 "Please ensure the LLM service is running and try again."

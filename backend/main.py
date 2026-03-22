@@ -6581,6 +6581,10 @@ api.include_router(data_drift_router, tags=["data-drift"])
 from app.api.endpoints.scenario_events import router as scenario_events_router
 api.include_router(scenario_events_router, tags=["scenario-events"])
 
+# Demo auth endpoints (demo-token-redirect, demo-capacity, etc.)
+from app.api.endpoints.auth import router as auth_router
+api.include_router(auth_router, prefix="/auth", tags=["auth"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------

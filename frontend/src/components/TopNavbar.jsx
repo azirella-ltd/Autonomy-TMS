@@ -25,6 +25,9 @@ import {
   SendHorizontal,
   Sparkles,
   LayoutGrid,
+  MessageSquare,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
@@ -37,7 +40,7 @@ import AzirellaAvatar from './AzirellaAvatar';
 import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
 import useTabStore from '../stores/useTabStore';
 
-const TopNavbar = ({ sidebarOpen = true, azirellaPanelOpen = false, onToggleAzirellaPanel }) => {
+const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOpen = false, onToggleAzirella }) => {
   const { user, isAuthenticated, logout } = useAuth();
   const { effectiveConfigId } = useActiveConfig();
   const [currentPath, setCurrentPath] = useState('');
@@ -705,9 +708,10 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelOpen = false, onToggleAzir
     <>
     <header
       className={cn(
-        "fixed top-0 right-0 z-30 h-16 bg-background/80 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200 ease-in-out",
+        "fixed top-0 z-40 h-16 bg-background/80 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200 ease-in-out",
         sidebarOpen ? "left-[280px]" : "left-0"
       )}
+      style={{ right: azirellaPanelWidth }}
     >
       <div className="flex items-center h-full px-4 md:px-6 gap-4">
 
@@ -776,8 +780,8 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelOpen = false, onToggleAzir
               onFocus={() => {
                 setTalkFocused(true);
                 // Open the Azirella panel when user clicks the input
-                if (onToggleAzirellaPanel && !azirellaPanelOpen) {
-                  onToggleAzirellaPanel();
+                if (onToggleAzirella && !azirellaPanelOpen) {
+                  onToggleAzirella();
                 }
               }}
               onBlur={() => setTalkFocused(false)}
@@ -865,6 +869,24 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelOpen = false, onToggleAzir
                 <Bell className="h-5 w-5" />
                 <span className="absolute top-1 right-1 h-2 w-2 bg-destructive rounded-full" />
               </button>
+              {/* Azirella panel toggle */}
+              {onToggleAzirella && (
+                <button
+                  onClick={onToggleAzirella}
+                  className={cn(
+                    "p-2 rounded-full transition-colors",
+                    azirellaPanelOpen
+                      ? "bg-violet-100 text-violet-700 hover:bg-violet-200"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                  title={azirellaPanelOpen ? "Hide Azirella" : "Show Azirella"}
+                >
+                  {azirellaPanelOpen
+                    ? <PanelRightClose className="h-5 w-5" />
+                    : <PanelRightOpen className="h-5 w-5" />
+                  }
+                </button>
+              )}
             </>
           )}
 
@@ -898,7 +920,7 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelOpen = false, onToggleAzir
 
             {/* Dropdown Menu */}
             {menuOpen && (
-              <div className="absolute right-0 mt-2 w-56 bg-popover border border-border rounded-lg shadow-lg py-1 z-50">
+              <div className="absolute right-0 mt-2 w-56 bg-popover border border-border rounded-lg shadow-lg py-1 z-[60]">
                 {menuItems.map((item) => (
                   <button
                     key={item.path}

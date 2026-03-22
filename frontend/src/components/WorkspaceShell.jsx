@@ -46,6 +46,8 @@ const WorkspaceShell = () => {
   const [azInput, setAzInput] = useState('');
   const [azMessages, setAzMessages] = useState([]);
   const [azLoading, setAzLoading] = useState(false);
+  const [azPanelOpen, setAzPanelOpen] = useState(true); // Toggle panel visibility
+  const [azConversationId, setAzConversationId] = useState(null); // Thread conversation history
   const azEndRef = useRef(null);
 
   useEffect(() => {
@@ -60,8 +62,16 @@ const WorkspaceShell = () => {
     setAzLoading(true);
     try {
       const { api } = await import('../services/api');
-      const resp = await api.post('/decision-stream/chat', { message: text, config_id: null });
+      const resp = await api.post('/decision-stream/chat', {
+        message: text,
+        conversation_id: azConversationId,  // Thread history
+        config_id: null,  // Backend resolves from user's active config
+      });
       const answer = resp.data?.response || resp.data?.content || 'No response.';
+      // Persist conversation ID for subsequent messages
+      if (resp.data?.conversation_id) {
+        setAzConversationId(resp.data.conversation_id);
+      }
       setAzMessages(prev => [...prev, { role: 'assistant', content: answer }]);
     } catch (err) {
       setAzMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.response?.data?.detail || err.message}` }]);
@@ -70,8 +80,9 @@ const WorkspaceShell = () => {
     }
   };
 
-  // Show Azirella panel for non-admin tabs
-  const showAzirellaPanel = !isSystemAdmin(user);
+  // Show Azirella panel for non-system-admin users when toggled open
+  const canShowAzirella = !isSystemAdmin(user);
+  const showAzirellaPanel = canShowAzirella && azPanelOpen;
   const panelWidth = showAzirellaPanel ? AZIRELLA_PANEL_WIDTH : 0;
 
   // Map of tabId → rendered React element (cached for background tabs)
@@ -138,10 +149,13 @@ const WorkspaceShell = () => {
       return;
     }
 
-    // Executives → Decision Stream + Strategy Briefing
+    // Executives → Decision Stream + Strategy Briefing + Executive Dashboard
     if (powellRole === 'SC_VP' || powellRole === 'EXECUTIVE') {
       if (!currentTabs.find((t) => t.path === '/strategy-briefing')) {
         useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
+      }
+      if (!currentTabs.find((t) => t.path === '/executive-dashboard')) {
+        useTabStore.getState().openTab('/executive-dashboard', 'Executive Dashboard');
       }
     }
   }, [user]);
@@ -243,7 +257,12 @@ const WorkspaceShell = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Top Navbar — always visible */}
-      <TopNavbar sidebarOpen={false} />
+      <TopNavbar
+        sidebarOpen={false}
+        azirellaPanelWidth={panelWidth}
+        azirellaPanelOpen={showAzirellaPanel}
+        onToggleAzirella={canShowAzirella ? () => setAzPanelOpen(prev => !prev) : null}
+      />
 
       {/* Tab Bar */}
       <div

@@ -860,7 +860,7 @@ async def generate_demo_token():
 
     Returns: {"token": "<jwt>", "url": "/auto-login?token=<jwt>"}
     """
-    import jwt as pyjwt
+    from jose import jwt as pyjwt
     payload = {
         "sub": _DEMO_EMAIL,
         "purpose": "demo_auto_login",
@@ -886,7 +886,7 @@ async def demo_token_redirect(db: AsyncSession = Depends(get_db)):
     Checks capacity before issuing token. Returns 429 if demo is full.
     No password ever appears in the URL.
     """
-    import jwt as pyjwt
+    from jose import jwt as pyjwt
     from fastapi.responses import RedirectResponse, JSONResponse
 
     # Check capacity
@@ -930,7 +930,7 @@ async def exchange_demo_token(
     Validates the demo token, authenticates the demo user,
     and returns a full access token + sets cookies.
     """
-    import jwt as pyjwt
+    from jose import jwt as pyjwt
 
     body = await request.json()
     token = body.get("token", "")
@@ -942,7 +942,7 @@ async def exchange_demo_token(
         payload = pyjwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Demo token expired")
-    except pyjwt.InvalidTokenError:
+    except pyjwt.JWTError:
         raise HTTPException(status_code=401, detail="Invalid demo token")
 
     if payload.get("purpose") != "demo_auto_login":
@@ -965,11 +965,11 @@ async def exchange_demo_token(
     )
 
     # Set cookies
-    set_auth_cookies(response, tokens["access_token"], tokens.get("refresh_token"))
+    set_auth_cookies(response, tokens.access_token, tokens.refresh_token)
     set_csrf_cookie(response)
 
     return {
-        "access_token": tokens["access_token"],
+        "access_token": tokens.access_token,
         "token_type": "bearer",
         "user": {
             "id": demo_user.id,
