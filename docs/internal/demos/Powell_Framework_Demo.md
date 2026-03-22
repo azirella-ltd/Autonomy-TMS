@@ -40,7 +40,7 @@ python scripts/demo_powell_dashboards.py
 make up
 
 # Seed demo data
-docker compose exec backend python scripts/seed_dot_foods_demo.py
+docker compose exec backend python scripts/seed_us_foods_demo.py
 
 # Or seed from the demo script
 python scripts/demo_powell_dashboards.py --seed
@@ -268,4 +268,4 @@ python scripts/demo_powell_dashboards.py --no-pause --delay 5
 - Frontend Pages: `frontend/src/pages/ExecutiveDashboard.jsx`, `SOPWorklistPage.jsx`
 - Navigation: `frontend/src/config/navigationConfig.js`
 - Capabilities: `backend/app/core/capabilities.py`
-- Demo Seed: `backend/scripts/seed_dot_foods_demo.py`
+- Demo Seed: `backend/scripts/seed_us_foods_demo.py`

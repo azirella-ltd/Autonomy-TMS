@@ -125,6 +125,9 @@ from .subcontracting_order import SubcontractingOrder, SubcontractingOrderLineIt
 # Import Product and other SC entities
 from .sc_entities import TradingPartner, Product, ProductBom
 
+# 4e-ext. Site Planning Config (Extension — ERP-specific heuristic dispatch)
+from .site_planning_config import SitePlanningConfig
+
 # 4e. Supplier models (Phase 2) - SC Compliant
 # VendorProduct must be imported after TradingPartner to resolve relationships
 from .supplier import (
@@ -351,6 +354,9 @@ from .scenario_event import ScenarioEvent
 
 # 29. Email Signals — GDPR-safe email ingestion for SC intelligence
 from .email_signal import EmailSignal, EmailConnection
+
+# 29c. External Signals — Outside-in planning intelligence (FRED, weather, energy, GDELT, etc.)
+from .external_signal import ExternalSignal, ExternalSignalSource
 
 # 30. RCCP — Rough-Cut Capacity Planning (Bill of Resources + Validation Runs)
 from .rccp import BillOfResources, RCCPRun, RCCPMethod, ProductionPhase, RCCPRunStatus

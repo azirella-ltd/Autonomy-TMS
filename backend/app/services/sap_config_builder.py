@@ -955,6 +955,7 @@ class SAPConfigBuilder:
         """Execute step 8: Planning Data."""
         forecast_count = 0
         inv_count = 0
+        spc_count = 0
         if opts.get("include_forecasts", True):
             forecast_count = await self._create_forecasts(
                 horizon_weeks=opts.get("forecast_horizon_weeks", 52)
@@ -964,16 +965,94 @@ class SAPConfigBuilder:
                 default_policy=opts.get("default_inv_policy", "doc_dem"),
                 safety_days=opts.get("default_safety_days", 14),
             )
+            spc_count = await self._create_site_planning_configs()
 
         result.sample_data.append({
             "forecasts_created": forecast_count,
             "inventory_records_created": inv_count,
+            "site_planning_configs_created": spc_count,
             "policy_type": opts.get("default_inv_policy", "doc_dem"),
             "safety_days": opts.get("default_safety_days", 14),
         })
 
         result.anomalies = self._detect_planning_anomalies()
-        return forecast_count + inv_count
+        return forecast_count + inv_count + spc_count
+
+    async def _create_site_planning_configs(self) -> int:
+        """Create SitePlanningConfig rows from SAP MARC data.
+
+        Persists the MRP planning parameters (DISMM, DISLS, VRMOD, FXHOR, etc.)
+        that were previously extracted but never stored.  These drive the digital
+        twin's heuristic dispatch — see DIGITAL_TWIN.md §8A and §8C.
+        """
+        from app.models.site_planning_config import (
+            SitePlanningConfig, SAP_DISMM_MAP, SAP_DISLS_MAP, PlanningMethod, LotSizingRule,
+        )
+
+        marc = self._data.get("MARC", pd.DataFrame())
+        if marc.empty:
+            logger.info("No MARC data — skipping site_planning_config creation")
+            return 0
+
+        count = 0
+        prefix = f"CFG{self._config.id}_"
+        tenant_id = getattr(self._config, "tenant_id", None)
+        if tenant_id is None:
+            logger.warning("Config has no tenant_id — skipping site_planning_config")
+            return 0
+
+        for _, row in marc.iterrows():
+            mat_key = str(row.get("MATNR", "")).strip()
+            site_key = str(row.get("WERKS", "")).strip()
+
+            if mat_key not in self._products or site_key not in self._sites:
+                continue
+
+            product_id = f"{prefix}{mat_key}"
+            site_id = self._sites[site_key].id
+
+            dismm = str(row.get("DISMM", "")).strip()
+            disls = str(row.get("DISLS", "")).strip()
+
+            spc = SitePlanningConfig(
+                config_id=self._config.id,
+                tenant_id=tenant_id,
+                site_id=site_id,
+                product_id=product_id,
+                planning_method=SAP_DISMM_MAP.get(dismm, PlanningMethod.REORDER_POINT.value),
+                lot_sizing_rule=SAP_DISLS_MAP.get(disls, LotSizingRule.LOT_FOR_LOT.value),
+                fixed_lot_size=float(pd.to_numeric(row.get("LOSGR", 0), errors="coerce") or 0) or None,
+                min_order_quantity=float(pd.to_numeric(row.get("BSTMI", 0), errors="coerce") or 0) or None,
+                max_order_quantity=float(pd.to_numeric(row.get("BSTMA", 0), errors="coerce") or 0) or None,
+                order_multiple=float(pd.to_numeric(row.get("BSTRF", 0), errors="coerce") or 0) or None,
+                frozen_horizon_days=int(pd.to_numeric(row.get("FXHOR", 0), errors="coerce") or 0) or None,
+                forecast_consumption_mode=str(row.get("VRMOD", "")).strip() or None,
+                forecast_consumption_fwd_days=int(pd.to_numeric(row.get("VINT1", 0), errors="coerce") or 0) or None,
+                forecast_consumption_bwd_days=int(pd.to_numeric(row.get("VINT2", 0), errors="coerce") or 0) or None,
+                procurement_type=str(row.get("BESKZ", "")).strip() or None,
+                strategy_group=str(row.get("STRGR", "")).strip() or None,
+                mrp_controller=str(row.get("DISPO", "")).strip() or None,
+                erp_source="SAP",
+                erp_params={
+                    k: v for k, v in {
+                        "DISMM": dismm, "DISLS": disls,
+                        "LOSGR": float(pd.to_numeric(row.get("LOSGR", 0), errors="coerce") or 0),
+                        "VRMOD": str(row.get("VRMOD", "")).strip(),
+                        "VINT1": int(pd.to_numeric(row.get("VINT1", 0), errors="coerce") or 0),
+                        "VINT2": int(pd.to_numeric(row.get("VINT2", 0), errors="coerce") or 0),
+                        "FXHOR": int(pd.to_numeric(row.get("FXHOR", 0), errors="coerce") or 0),
+                        "STRGR": str(row.get("STRGR", "")).strip(),
+                        "BESKZ": str(row.get("BESKZ", "")).strip(),
+                        "DISPO": str(row.get("DISPO", "")).strip(),
+                    }.items() if v  # omit empty/zero values
+                },
+            )
+            self.db.add(spc)
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} site_planning_config records from MARC")
+        return count
 
     # ------------------------------------------------------------------
     # Entity Reload (for stateless step-by-step mode)
@@ -2880,13 +2959,25 @@ class SAPConfigBuilder:
         default_policy: str = "doc_dem",
         safety_days: int = 14,
     ) -> int:
-        """Create InvLevel and InvPolicy from MARD data."""
+        """Create InvLevel and InvPolicy from MARD data.
+
+        Also populates erp_planning_params JSONB on InvPolicy from MARC data
+        when available, closing the data-loss gap identified in DIGITAL_TWIN.md §8C.
+        """
         count = 0
         prefix = f"CFG{self._config.id}_"
 
         mard = self._data.get("MARD", pd.DataFrame())
         if mard.empty:
             return 0
+
+        # Build MARC lookup for enriching InvPolicy with planning params
+        marc = self._data.get("MARC", pd.DataFrame())
+        marc_lookup: dict = {}
+        if not marc.empty:
+            for _, mrow in marc.iterrows():
+                mk = (str(mrow.get("MATNR", "")).strip(), str(mrow.get("WERKS", "")).strip())
+                marc_lookup[mk] = mrow
 
         for _, row in mard.iterrows():
             mat_key = str(row.get("MATNR", "")).strip()
@@ -2908,13 +2999,65 @@ class SAPConfigBuilder:
             )
             self.db.add(inv)
 
-            # Create default inventory policy
+            # Create inventory policy enriched with MARC planning params
+            marc_row = marc_lookup.get((mat_key, site_key))
+            erp_params = None
+            extra_fields = {}
+
+            if marc_row is not None:
+                # Extract MARC fields that have dedicated InvPolicy columns
+                eisbe = float(pd.to_numeric(marc_row.get("EISBE", 0), errors="coerce") or 0)
+                minbe = float(pd.to_numeric(marc_row.get("MINBE", 0), errors="coerce") or 0)
+                mabst = float(pd.to_numeric(marc_row.get("MABST", 0), errors="coerce") or 0)
+                losgr = float(pd.to_numeric(marc_row.get("LOSGR", 0), errors="coerce") or 0)
+                bstmi = float(pd.to_numeric(marc_row.get("BSTMI", 0), errors="coerce") or 0)
+                bstma = float(pd.to_numeric(marc_row.get("BSTMA", 0), errors="coerce") or 0)
+                bstrf = float(pd.to_numeric(marc_row.get("BSTRF", 0), errors="coerce") or 0)
+
+                if eisbe > 0:
+                    extra_fields["ss_quantity"] = eisbe
+                    extra_fields["ss_policy"] = "abs_level"
+                if minbe > 0:
+                    extra_fields["reorder_point"] = minbe
+                if mabst > 0:
+                    extra_fields["order_up_to_level"] = mabst
+                if losgr > 0:
+                    extra_fields["fixed_order_quantity"] = losgr
+                if bstmi > 0:
+                    extra_fields["min_order_quantity"] = bstmi
+                if bstma > 0:
+                    extra_fields["max_order_quantity"] = bstma
+                if bstrf > 0:
+                    extra_fields["fixed_order_quantity"] = bstrf
+
+                # Store all MARC planning fields in JSONB extension
+                erp_params = {
+                    k: v for k, v in {
+                        "DISMM": str(marc_row.get("DISMM", "")).strip(),
+                        "DISLS": str(marc_row.get("DISLS", "")).strip(),
+                        "VRMOD": str(marc_row.get("VRMOD", "")).strip(),
+                        "VINT1": int(pd.to_numeric(marc_row.get("VINT1", 0), errors="coerce") or 0),
+                        "VINT2": int(pd.to_numeric(marc_row.get("VINT2", 0), errors="coerce") or 0),
+                        "FXHOR": int(pd.to_numeric(marc_row.get("FXHOR", 0), errors="coerce") or 0),
+                        "STRGR": str(marc_row.get("STRGR", "")).strip(),
+                        "BESKZ": str(marc_row.get("BESKZ", "")).strip(),
+                        "DISPO": str(marc_row.get("DISPO", "")).strip(),
+                    }.items() if v
+                }
+
             policy = InvPolicy(
                 config_id=self._config.id,
                 product_id=product_id,
                 site_id=site_id,
-                ss_policy=default_policy,
-                ss_days=safety_days,
+                ss_policy=extra_fields.get("ss_policy", default_policy),
+                ss_quantity=extra_fields.get("ss_quantity"),
+                ss_days=safety_days if "ss_quantity" not in extra_fields else None,
+                reorder_point=extra_fields.get("reorder_point"),
+                order_up_to_level=extra_fields.get("order_up_to_level"),
+                fixed_order_quantity=extra_fields.get("fixed_order_quantity"),
+                min_order_quantity=extra_fields.get("min_order_quantity"),
+                max_order_quantity=extra_fields.get("max_order_quantity"),
+                erp_planning_params=erp_params if erp_params else None,
                 is_active="true",
             )
             self.db.add(policy)

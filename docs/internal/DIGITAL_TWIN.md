@@ -1,6 +1,6 @@
 # Digital Twin Architecture
 
-**Version**: 4.0 | **Date**: 2026-03-22 | **Cross-refs**: [D365-FORK.md](../../D365-FORK.md), [SAP-S4HANA-FORK.md](../../SAP-S4HANA-FORK.md)
+**Version**: 5.0 | **Date**: 2026-03-22 | **Cross-refs**: [D365-FORK.md](../../D365-FORK.md), [SAP-S4HANA-FORK.md](../../SAP-S4HANA-FORK.md)
 
 The digital twin is the foundation of the Autonomy platform's AI agent training. It is NOT a separate system — it IS the customer's current supply chain planning system, replicated as a stochastic simulation. All AI agents learn by watching this simulation run and observing where the existing planning heuristics fail.
 
@@ -1250,6 +1250,394 @@ To add support for a new ERP or APS system, follow this process:
 **Step 5 — Validate against ERP output**: Zero-variance mirror vs ERP deterministic run. Discrepancies are bugs.
 
 **Step 6 — Configure per tenant**: Provisioning reads customer's ERP config → per product-site heuristic dispatch via `site_planning_config`.
+
+---
+
+---
+
+## 8B. Baseline Data Creation from ERP/APS
+
+The digital twin cannot run without a **baseline** — the complete set of topology, planning parameters, inventory positions, demand patterns, and cost data that define the customer's supply chain. This section defines how baselines are created from each ERP/APS, and what to do when no ERP instance is available.
+
+### 8B.1 What the Baseline Must Contain
+
+| Category | Data | Minimum Viable | Full Fidelity |
+|----------|------|----------------|---------------|
+| **Topology** | Sites, transportation lanes, master types | ≥1 internal site + connectivity | All sites with geographic coordinates, capacities, calendars |
+| **Products** | Product master, UoM, unit cost | ≥1 product per site | Full catalog with ABC classification, product hierarchy |
+| **BOMs** | Bill of materials (parent → component) | Flat BOM for manufacturers | Multi-level with scrap rates, alternates, yield factors |
+| **Planning Parameters** | MRP type, lot sizing, ROP, SS, time fences | ROP + SS + order-up-to per product-site | Full MARC/ReqItemTable/orderpoint per product-site (see §8C gap audit) |
+| **Inventory Positions** | On-hand qty, reserved, in-transit | On-hand per product-site | Dimensional inventory (site/warehouse/batch/serial) |
+| **Open Orders** | POs, SOs, MOs with quantities and dates | Current open POs and SOs | Full order book with schedule lines, confirmations, delivery status |
+| **Demand History** | Historical demand for stochastic fitting | ≥12 months outbound order history | 24-36 months with seasonal decomposition, promotional flags |
+| **Lead Time History** | Actual vs planned lead times | Vendor lead times from master | Historical PO-to-GR actuals for distribution fitting (P5/median/P95) |
+| **Forecasts** | Demand forecasts with uncertainty | P50 per product-site | P10/P50/P90 with forecast method, version, horizon |
+| **Costs** | Holding, stockout, ordering | Unit cost (holding = 25%/yr) | Full cost-to-serve: holding, backlog, ordering, expediting, transport |
+| **Sourcing Rules** | Vendor/source assignments | Primary vendor per product | Multi-source with priorities, quotas, lead times, MOQs |
+| **Capacity** | Production and storage limits | Infinite (no constraint) | Finite capacity per resource with calendars, efficiency rates |
+
+### 8B.2 Baseline Creation by Source
+
+#### Path 1: Live ERP Connection (Preferred)
+
+```
+Customer's ERP Instance (SAP/D365/Odoo)
+    ↓ RFC / OData / JSON-RPC / HANA SQL
+ERP Connector (already implemented: 11K LOC SAP, D365, Odoo)
+    ↓
+Staging Schema (sap_staging / d365_staging / odoo_staging)
+    ↓ JSONB rows preserved for audit trail + delta detection
+Config Builder (SAP: 3,762 LOC / D365: ~400 LOC / Odoo: ~400 LOC)
+    ↓ 8-step pipeline: company → sites → products → lanes → partners → BOMs → planning data
+AWS SC Data Model (public schema)
+    ↓
+Provisioning Pipeline (14 steps)
+    ↓
+Digital Twin Ready
+```
+
+**Data extraction frequencies**: Master (weekly), Transaction (daily), CDC (hourly).
+
+**What each ERP connector extracts**:
+
+| | SAP | D365 | Odoo |
+|---|---|---|---|
+| **Tables/Entities** | 62 (30 master, 21 txn, 11 CDC) | 42 (24 master, 11 txn, 7 CDC) | 27 models |
+| **Connection Methods** | RFC, OData, HANA SQL, CSV | OData v4, DMF, CSV | JSON-RPC, XML-RPC, CSV |
+| **Planning Params** | MARC (23 fields mapped) | ItemCoverageSettings (19 fields mapped) | orderpoint (10 fields mapped) |
+| **Config Builder** | Complete 8-step | Partial (inventory method incomplete) | Partial |
+
+#### Path 2: CSV Export (No Live Connection)
+
+When the customer can't provide live ERP access (security, firewall, on-premise without Cloud Connector):
+
+```
+Customer exports CSV files from ERP
+    ↓ Drop into imports/{TENANT_NAME}/{ERP_VARIANT}/{YYYY-MM-DD}/
+Folder watcher (APScheduler every 6h or manual trigger)
+    ↓ Filename normalization, pandas dtype=str, column uppercase
+Staging Schema (same JSONB format as live extraction)
+    ↓
+Config Builder (same pipeline)
+    ↓
+AWS SC Data Model → Provisioning → Digital Twin
+```
+
+**Requirements**: One CSV per table (MARA.csv, EKKO.csv, etc.). Optional MANIFEST.json with metadata. Column names must match ERP field names (the field mapping service handles translation).
+
+#### Path 3: Synthetic Data Generator (No ERP at All)
+
+When no customer ERP data exists (demos, trials, POCs, new implementations):
+
+```
+Admin selects company archetype (Retailer / Distributor / Manufacturer)
+    ↓ POST /api/v1/synthetic-data/generate  OR  Claude Wizard chat
+Synthetic Data Generator (already implemented)
+    ↓ Generates complete: sites, products, lanes, BOMs, forecasts, policies, hierarchies
+AWS SC Data Model → Provisioning → Digital Twin
+```
+
+**Three archetypes**:
+- **Retailer**: 2 CDCs → 6 RDCs → 50 stores, 200 SKUs, seasonal demand
+- **Distributor**: 2 NDCs → 8 RDCs → 20 LDCs, 720 SKUs, trending demand
+- **Manufacturer**: 3 plants → sub-assembly → FG DCs → RDCs, 160 SKUs, promotional spikes
+
+**Limitation**: Synthetic data uses generic heuristics (ROP/order-up-to), not ERP-specific MRP types or coverage codes. The digital twin will learn from generic heuristic failures, not the customer's specific ERP failures. Useful for demos and initial training, not for production deployment.
+
+#### Path 4: Manual Parameter Entry (Hybrid)
+
+When partial ERP data exists but planning parameters must be entered manually:
+
+```
+Customer provides spreadsheet with planning parameters
+    ↓ Upload via Admin UI (TenantManagement or StochasticParamsEditor)
+Manual entry to InvPolicy / SourcingRules / TransportationLane
+    ↓
+Provisioning → Digital Twin
+```
+
+**When this is needed**: New ERP implementation (planning parameters haven't been configured yet), migration between ERPs (old system decommissioned, new not yet live), or APS overlay (planning done in Kinaxis/o9/Blue Yonder, not in the base ERP).
+
+#### Path 5: Industry Templates (Cold Start Without Customer Data)
+
+When no customer data exists AND the archetype generator is too generic:
+
+```
+Select industry template (e.g., "Pharmaceutical Manufacturer" or "FMCG Distributor")
+    ↓
+Industry-calibrated parameters:
+  - Demand CoV by product category (§3.3 industry benchmarks)
+  - Lead time distributions (§3.2 nine distribution classes)
+  - Safety stock policies (service level by ABC class)
+  - Typical network topology (plants/DCs/warehouses)
+  - Industry-standard lot sizing (MOQ, pack sizes, container fill)
+    ↓
+Synthetic generator with industry-specific overrides
+    ↓
+AWS SC Data Model → Provisioning → Digital Twin
+```
+
+### 8B.3 What to Do Without an ERP Instance
+
+| Scenario | Recommended Path | Quality | Limitation |
+|----------|-----------------|---------|-----------|
+| **Customer has live ERP, grants access** | Path 1 (live connection) | Highest — real parameters, real history | None |
+| **Customer has ERP, no live access** | Path 2 (CSV export) | High — real parameters, possibly stale | No CDC, manual refresh |
+| **Customer has ERP, only partial access** | Path 2 + Path 4 (CSV + manual) | Medium — real topology, estimated parameters | Parameters may not match actual ERP config |
+| **New implementation, no ERP yet** | Path 5 (industry template) | Low-Medium — industry-calibrated but not customer-specific | TRM agents train on generic heuristics |
+| **Demo / POC / Trial** | Path 3 (synthetic) | Low — demo quality | Not representative of any specific customer |
+| **Customer uses external APS** (Kinaxis/o9/Blue Yonder) | Path 2 (CSV from APS) + Path 4 (manual planning params) | Medium — depends on what APS exports | APS planning logic is proprietary and hard to mirror |
+
+**Key principle**: The digital twin's value is proportional to how faithfully it mirrors the customer's actual planning heuristics. A synthetic baseline demonstrates the platform's capabilities. A live ERP baseline delivers measurable improvement.
+
+---
+
+## 8C. ERP Planning Parameter Gap Audit
+
+**CRITICAL**: This section documents the gap between what the heuristic library (§8A) needs and what the platform currently extracts and stores. Many parameters are **extracted from ERPs but never persisted** to the Autonomy database — they exist in staging JSONB but are lost when the config builder runs.
+
+### 8C.1 SAP MARC Field Audit (23 Fields)
+
+| # | MARC Field | Meaning | Extracted? | Stored in DB? | Used by Sim? | Gap |
+|---|-----------|---------|:---:|:---:|:---:|-----|
+| 1 | `DISMM` | MRP Type (PD/VB/VM/VV/ND) | ✅ | ❌ | ❌ | **MAPPED but NOT STORED** |
+| 2 | `DISPO` | MRP Controller | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 3 | `DISLS` | Lot Sizing (EX/FX/HB/WB/GR/SP/OP) | ✅ | ❌ | ❌ | **MAPPED but NOT STORED** |
+| 4 | `BESKZ` | Procurement Type (E/F) | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 5 | `SOBSL` | Special Procurement Key | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 6 | `MINBE` | Reorder Point | ✅ | ✅ `reorder_point` | ✅ | ✓ Complete |
+| 7 | `EISBE` | Safety Stock | ✅ | ✅ `ss_quantity` | ✅ | ✓ Complete |
+| 8 | `MABST` | Order-Up-To / Max Stock | ✅ | ✅ `order_up_to_level` | ✅ | ✓ Complete |
+| 9 | `LOSGR` | Fixed Lot Size | ✅ | ✅ `lot_size` | ❌ | Stored but UNUSED |
+| 10 | `BSTMI` | Min Lot Size | ✅ | ✅ `min_order_quantity` | ❌ | Stored but UNUSED |
+| 11 | `BSTMA` | Max Lot Size | ✅ | ✅ `max_order_quantity` | ❌ | Stored but UNUSED |
+| 12 | `BSTRF` | Rounding Value | ✅ | ✅ `fixed_order_quantity` | ❌ | Stored but UNUSED |
+| 13 | `RDPRF` | Rounding Profile | ❌ | ❌ | ❌ | **NOT EXTRACTED** |
+| 14 | `PLIFZ` | Planned Delivery Time | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 15 | `DZEIT` | In-House Production Time | ❌ | ❌ | ❌ | **NOT EXTRACTED** |
+| 16 | `WEBAZ` | GR Processing Time | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 17 | `SHZET` | Safety Time (days) | ❌ | ❌ | ❌ | **NOT EXTRACTED** |
+| 18 | `VRMOD` | Consumption Mode (1-5) | ✅ | ❌ | ❌ | **MAPPED but NOT STORED** |
+| 19 | `VINT1` | Backward Consumption Period | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 20 | `VINT2` | Forward Consumption Period | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 21 | `FXHOR` | Planning Time Fence | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 22 | `STRGR` | Planning Strategy Group | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 23 | `AUSSS` | Assembly Scrap % | ❌ | ❌ | ❌ | **NOT EXTRACTED** |
+
+**BOM-level**: `STPO.AUSCH` (component scrap %) → ✅ Extracted, ✅ Stored as `ProductBom.scrap_percentage`, ❌ NOT used by simulation.
+
+**Summary**: 15/23 extracted, 7/23 stored, 3/23 used by simulation. **12 fields are mapped for extraction but never persisted.**
+
+### 8C.2 D365 ItemCoverageSettings Audit (19 Fields)
+
+| # | D365 Field | Meaning | Extracted? | Stored? | Used? | Gap |
+|---|-----------|---------|:---:|:---:|:---:|-----|
+| 1 | `CoverageCode` | MRP type (0-4) | ✅ | ❌ | ❌ | **MAPPED but NOT STORED** |
+| 2 | `PlannedOrderType` | Purchase/Production/Transfer | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 3 | `MinInventOnhand` | Reorder Point | ✅ | ✅ `reorder_point` | ✅ | ✓ Complete |
+| 4 | `MaxInventOnhand` | Max Stock | ✅ | ✅ `order_up_to_level` | ✅ | ✓ Complete |
+| 5 | `SafetyStockQuantity` | Safety Stock | ✅ | ✅ `ss_quantity` | ✅ | ✓ Complete |
+| 6 | `StandardOrderQuantity` | Fixed Lot Size | ✅ | ✅ `fixed_order_quantity` | ❌ | Stored but UNUSED |
+| 7 | `MinimumOrderQuantity` | MOQ | ✅ | ✅ `min_order_quantity` | ❌ | Stored but UNUSED |
+| 8 | `MaximumOrderQuantity` | Max Order Qty | ✅ | ✅ `max_order_quantity` | ❌ | Stored but UNUSED |
+| 9 | `Multiple` | Order Rounding | ✅ | ❌ | ❌ | **MAPPED but NOT STORED** |
+| 10 | `LeadTimePurchase` | Purchase LT Override | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 11 | `LeadTimeProduction` | Production LT Override | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 12 | `LeadTimeTransfer` | Transfer LT Override | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 13 | `CoverageTimeFence` | Planning Horizon | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 14 | `LockingTimeFence` | Firming Fence | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 15 | `FrozenTimeFence` | Frozen Fence | ❌ | ❌ | ❌ | **NOT EXTRACTED** |
+| 16 | `MaxPositiveDays` | Early Supply Tolerance | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 17 | `MaxNegativeDays` | Late Supply Tolerance | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 18 | `FulfillMinimum` | Min Fill Policy | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 19 | `PreferredVendor` | Primary Source | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+
+**Summary**: 18/19 extracted, 6/19 stored, 3/19 used by simulation.
+
+### 8C.3 Odoo Orderpoint Audit (10 Fields)
+
+| # | Odoo Field | Meaning | Extracted? | Stored? | Used? | Gap |
+|---|-----------|---------|:---:|:---:|:---:|-----|
+| 1 | `trigger` | auto/manual | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 2 | `product_min_qty` | Reorder Point | ✅ | ✅ `reorder_point` | ✅ | ✓ Complete |
+| 3 | `product_max_qty` | Order-Up-To | ✅ | ✅ `order_up_to_level` | ✅ | ✓ Complete |
+| 4 | `qty_multiple` | Order Multiple | ✅ | ❌ | ❌ | **MAPPED but NOT STORED** |
+| 5 | `route_id` | Buy/Manufacture/Resupply | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 6 | `produce_delay` | Manufacturing LT | ✅ | ❌ | ❌ | MAPPED but NOT STORED |
+| 7 | `purchase_delay` | Purchase LT (via supplierinfo) | ✅ | ✅ `vendor_lead_time` | ✅ | ✓ Complete |
+| 8 | `seller_ids` | Vendor priority list | ⚠️ Partial | ✅ via `SourcingRules` | ✅ | Partial |
+| 9 | `bom_id` | BOM reference | ✅ | ✅ `ProductBom` | ✅ | ✓ Complete |
+| 10 | DDMRP fields | OCA buffer params | ❌ | ❌ | ❌ | **NOT EXTRACTED** |
+
+**Summary**: 8/10 extracted, 4/10 stored, 5/10 used.
+
+### 8C.4 The Data Loss Pipeline
+
+The root problem: parameters flow through a **three-stage pipeline** where most are lost at stage 2:
+
+```
+Stage 1: ERP → Staging (JSONB)     ← Most parameters ARE extracted here
+Stage 2: Staging → AWS SC Model    ← LOSS: config builders only persist ~6 core fields
+Stage 3: AWS SC → Simulation       ← Only 3-4 fields actually used
+```
+
+**12 SAP fields, 12 D365 fields, and 5 Odoo fields** are extracted and staged but **never persisted** to any Autonomy table. They exist in `sap_staging.rows` / `d365_staging.rows` / `odoo_staging.rows` as JSONB, but the config builders don't read them.
+
+### 8C.5 Storage Approach Options
+
+The InvPolicy table currently has **no columns** for MRP type, lot sizing procedure, forecast consumption mode, time fences, or other ERP-specific planning control fields. Three approaches:
+
+#### Option A: Add Columns to InvPolicy (Simple, ERP-Agnostic)
+
+Add generic columns that map across all ERPs:
+
+```sql
+ALTER TABLE inv_policy ADD COLUMN planning_method VARCHAR(20);
+    -- SAP: DISMM (PD/VB/VM/ND) | D365: CoverageCode (0-4) | Odoo: trigger (auto/manual)
+
+ALTER TABLE inv_policy ADD COLUMN lot_sizing_procedure VARCHAR(20);
+    -- SAP: DISLS (EX/FX/HB/WB/GR/SP/OP) | D365: implicit from CoverageCode | Odoo: N/A
+
+ALTER TABLE inv_policy ADD COLUMN procurement_type VARCHAR(20);
+    -- SAP: BESKZ (E/F) | D365: PlannedOrderType | Odoo: route_id
+
+ALTER TABLE inv_policy ADD COLUMN rounding_quantity DOUBLE PRECISION;
+    -- SAP: BSTRF | D365: Multiple | Odoo: qty_multiple
+
+ALTER TABLE inv_policy ADD COLUMN planning_time_fence_days INTEGER;
+    -- SAP: FXHOR | D365: CoverageTimeFence | Odoo: N/A
+
+ALTER TABLE inv_policy ADD COLUMN firming_time_fence_days INTEGER;
+    -- SAP: N/A (implicit in FXHOR) | D365: LockingTimeFence | Odoo: N/A
+
+ALTER TABLE inv_policy ADD COLUMN frozen_time_fence_days INTEGER;
+    -- SAP: N/A | D365: FrozenTimeFence | Odoo: N/A
+
+ALTER TABLE inv_policy ADD COLUMN safety_time_days INTEGER;
+    -- SAP: SHZET | D365: N/A | Odoo: N/A
+
+ALTER TABLE inv_policy ADD COLUMN positive_days INTEGER;
+    -- SAP: N/A | D365: MaxPositiveDays | Odoo: N/A
+
+ALTER TABLE inv_policy ADD COLUMN negative_days INTEGER;
+    -- SAP: N/A | D365: MaxNegativeDays | Odoo: N/A
+```
+
+**Pros**: Simple, queryable, type-safe, works with existing SQLAlchemy patterns.
+**Cons**: Many NULL columns per ERP (SAP doesn't use positive_days; D365 doesn't use VRMOD). Schema grows with each new ERP.
+
+#### Option B: JSONB Extension Column per Entity (Flexible, ERP-Specific)
+
+Add a single JSONB column to each entity that stores ERP-specific parameters:
+
+```sql
+ALTER TABLE inv_policy ADD COLUMN erp_planning_params JSONB DEFAULT '{}';
+-- SAP example:
+-- {"dismm": "PD", "disls": "WB", "vrmod": 2, "vint1": 30, "vint2": 15,
+--  "fxhor": 14, "strgr": "40", "beschz": "F", "shzet": 5, "ausss": 0.02}
+
+-- D365 example:
+-- {"coverage_code": 2, "planned_order_type": 0, "lt_purchase": 5,
+--  "lt_production": 3, "coverage_fence": 90, "firming_fence": 14,
+--  "positive_days": 7, "negative_days": 3, "preferred_vendor": "V001"}
+
+-- Odoo example:
+-- {"trigger": "auto", "qty_multiple": 12, "route_id": 5,
+--  "produce_delay": 3, "ddmrp_lt_mul": 0.5, "ddmrp_ss_mul": 0.3}
+
+ALTER TABLE product_bom ADD COLUMN erp_bom_params JSONB DEFAULT '{}';
+-- {"assembly_scrap_pct": 0.02, "phantom": false, "alternate_bom_id": "BOM-002"}
+
+ALTER TABLE production_process ADD COLUMN erp_process_params JSONB DEFAULT '{}';
+-- {"gr_processing_time": 1, "scheduling_margin_key": "001"}
+
+ALTER TABLE transportation_lane ADD COLUMN erp_lane_params JSONB DEFAULT '{}';
+-- {"transit_mode": "TRUCK", "expedite_available": true, "expedite_lt_factor": 0.5}
+```
+
+**Pros**: Infinitely extensible — new ERP fields added without schema migration. Each ERP stores only its relevant fields. One column per entity regardless of ERP count. The heuristic library reads from this JSONB at simulation time.
+**Cons**: Not type-safe (JSONB is untyped). Not queryable with standard ORM patterns (requires `->` operators). No referential integrity on values.
+
+#### Option C: Separate Per-ERP Planning Config Table (Normalized, Clean)
+
+Create `site_planning_config` (already proposed in §8A.9) as a dedicated table:
+
+```sql
+CREATE TABLE site_planning_config (
+    id SERIAL PRIMARY KEY,
+    config_id INTEGER REFERENCES supply_chain_configs(id),
+    site_id VARCHAR REFERENCES site(id),
+    product_id VARCHAR REFERENCES product(id),
+    product_group_id VARCHAR,  -- nullable, site-wide if null
+
+    -- ERP identification
+    erp_system VARCHAR(30) NOT NULL,  -- SAP_S4HANA, D365_FO, ODOO_CE, etc.
+    erp_version VARCHAR(30),
+
+    -- Universal planning control (cross-ERP)
+    planning_method VARCHAR(20),      -- PD/VB/VM/ND (SAP) or 0-4 (D365) or auto/manual (Odoo)
+    lot_sizing VARCHAR(20),           -- EX/FX/HB/WB/GR/SP/OP (SAP) or implicit (D365)
+    procurement_type VARCHAR(20),     -- E/F (SAP), Purchase/Production/Transfer (D365), route (Odoo)
+
+    -- ERP-specific parameters (all optional)
+    erp_params JSONB DEFAULT '{}',    -- Everything else in a single JSONB
+
+    effective_from DATE,
+    effective_to DATE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**Pros**: Clean separation of concerns — AWS SC entities stay pure; ERP planning logic isolated to its own table. Supports per-site-per-product-group config (§8A.9 multi-ERP requirement). Temporal versioning for ERP migrations. Combines typed columns for universal fields with JSONB for ERP-specific fields.
+**Cons**: Additional JOIN required when simulation loads config. Must be populated by config builders (new code).
+
+### 8C.6 Recommended Approach
+
+**Option C (hybrid table)** is recommended because:
+
+1. **Preserves AWS SC compliance** — the 35 core entities remain untouched
+2. **Supports multi-ERP per network** — different ERPs at different sites (§8A.9)
+3. **Typed where it matters** — `planning_method`, `lot_sizing`, `procurement_type` are typed columns (queryable, validated)
+4. **Flexible where needed** — `erp_params` JSONB holds SAP VRMOD/VINT, D365 positive/negative days, Odoo DDMRP fields
+5. **Temporally versioned** — when a site migrates from ECC to S/4HANA, both configs coexist with date ranges
+6. **Single JOIN** — simulation `_ConfigLoader` joins `site_planning_config` to get the complete heuristic dispatch config
+
+**Additionally**: Add `erp_planning_params JSONB` to `InvPolicy` (Option B) as a **secondary store** for parameters that are tightly coupled to the inventory policy record (like rounding_quantity, safety_time). This avoids forcing a JOIN for simple per-product-site lookups.
+
+### 8C.7 Extraction Gaps to Close
+
+Fields that need to be **added to extraction** (currently NOT extracted):
+
+| ERP | Field | Why Needed |
+|-----|-------|-----------|
+| SAP | `RDPRF` (Rounding Profile) | Scaled rounding by threshold — needed for order modification rules (§8A.6) |
+| SAP | `DZEIT` (In-House Production Time) | Manufacturing lead time for backward scheduling |
+| SAP | `SHZET` (Safety Time in days) | Safety lead time buffer — adds to effective lead time |
+| SAP | `AUSSS` (Assembly Scrap %) | Assembly-level yield loss for BOM explosion (§8A.1.6) |
+| D365 | `FrozenTimeFence` | Most restrictive fence — needed for §8A.1.5 time fence logic |
+| Odoo | DDMRP fields (`ddmrp_lt_mul`, `ddmrp_ss_mul`, `ddmrp_po_mul`) | Buffer profile params if OCA DDMRP installed |
+
+### 8C.8 Config Builder Updates Required
+
+Each config builder must be updated to persist ERP planning parameters to the new `site_planning_config` table:
+
+| Config Builder | Current State | Update Needed |
+|---------------|--------------|---------------|
+| **SAP** (`sap_config_builder.py`) | Extracts 15/23 MARC fields; persists only 7 to InvPolicy | Read all MARC fields from staging → populate `site_planning_config.erp_params` |
+| **D365** (`d365/config_builder.py`) | Extracts 18/19 fields; persists only 6 to InvPolicy | Read ItemCoverageSettings from staging → populate `site_planning_config` |
+| **Odoo** (`odoo/config_builder.py`) | Extracts 8/10 fields; persists only 4 | Read orderpoint + supplierinfo → populate `site_planning_config` |
+| **Synthetic** (`synthetic_data_generator.py`) | Generates generic ROP/s,S only | Add ERP profile selection → generate `site_planning_config` with realistic MRP type + lot sizing |
+
+### 8C.9 Simulation _ConfigLoader Update
+
+The `_ConfigLoader` in `simulation_calibration_service.py` must be extended to:
+
+1. **JOIN** `site_planning_config` when loading site configs
+2. **Pass** `erp_system`, `planning_method`, `lot_sizing`, and `erp_params` to each `_SiteSimConfig`
+3. **Dispatch** to the correct heuristic function based on these fields (§8A.1.1 unified dispatch)
+
+Currently `_SimSite.compute_replenishment_order()` has a hardcoded ROP check. After the update, it calls `compute_replenishment(state, config)` which dispatches based on `config.planning_method`.
 
 ---
 

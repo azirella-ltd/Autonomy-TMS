@@ -53,7 +53,7 @@ SessionLocal = sessionmaker(bind=sync_engine)
 CONFIG_ID = 22
 TENANT_ID = 3
 BATCH_ID = "STORY_DATA_2026"
-COMPANY_ID = "DF_CORP_13"  # existing company_id in forecast table
+COMPANY_ID = "UF_CORP_13"  # existing company_id in forecast table
 
 # Site IDs (from seed_food_dist_demo.py)
 DC = 256          # CDC_WEST (West Valley City, UT)

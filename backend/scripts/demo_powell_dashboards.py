@@ -8,7 +8,7 @@ Demonstrates the Powell Framework role-based dashboards:
 - Agent Performance - Detailed agent performance analysis
 
 Prerequisites:
-    docker compose exec backend python scripts/seed_dot_foods_demo.py
+    docker compose exec backend python scripts/seed_us_foods_demo.py
 
 Demo User:
     Email: demo@distdemo.com
@@ -315,7 +315,7 @@ def main():
         console.print("[bold]Seeding demo data...[/bold]")
         import subprocess
         result = subprocess.run(
-            ["python", "scripts/seed_dot_foods_demo.py"],
+            ["python", "scripts/seed_us_foods_demo.py"],
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
         if result.returncode != 0:
@@ -349,7 +349,7 @@ def main():
         "[bold green]Demo Complete![/bold green]\n\n"
         "[bold]To run the actual UI demo:[/bold]\n"
         "1. Start the stack: make up\n"
-        "2. Seed demo data: docker compose exec backend python scripts/seed_dot_foods_demo.py\n"
+        "2. Seed demo data: docker compose exec backend python scripts/seed_us_foods_demo.py\n"
         "3. Open: http://localhost:8088\n"
         "4. Login: demo@distdemo.com / Autonomy@2026\n"
         "5. Navigate: Executive Dashboard → S&OP Worklist → Agent Performance\n\n"

@@ -359,7 +359,7 @@ The protocol tracks these dependency chains. All conditions must be met before a
 
 The SO Agent expedite example in Section 1 is one instance of a much broader landscape of cross-authority negotiations in a manufacturing supply chain. This section catalogs the full range, organized by supply chain function.
 
-Each scenario identifies the originating agent, the authorization surface crossed, and the balanced scorecard tradeoff. These are grounded in real-world patterns observed in food manufacturing/distribution (e.g., Dot Foods model), semiconductor allocation (TSMC/automotive), CPFR exception management, and the Oliver Wyman "Supply Chain Triangle" (Service, Cost, Working Capital).
+Each scenario identifies the originating agent, the authorization surface crossed, and the balanced scorecard tradeoff. These are grounded in real-world patterns observed in food manufacturing/distribution (e.g., US Foods model), semiconductor allocation (TSMC/automotive), CPFR exception management, and the Oliver Wyman "Supply Chain Triangle" (Service, Cost, Working Capital).
 
 ### 5.1 Manufacturing Negotiations
 
@@ -451,7 +451,7 @@ Distribution networks create authorization surfaces around shared warehouse capa
 | **Authorization Surface** | Each DC's Inventory Agent controls its own safety stock; Logistics Agent controls transfer capacity and cost |
 | **Scorecard Tradeoff** | Operational (GREEN: network DOS normalized) vs. Financial (AMBER: $3,200 inter-DC transfer cost) vs. Customer (GREEN: fill rate improvement at DC West) |
 | **Multi-Party** | Inventory(East) -> Inventory(West): "I can release 1,500 cases." Inventory(East) -> Logistics: "Can you transport 1,500 cases East->West by Friday?" Both must authorize. |
-| **Real-World Parallel** | Every multi-DC distributor faces this; Dot Foods operates 15 DCs covering 5M sq ft with redistribution as its core business model. The "lot-rolling" negotiation in multi-echelon systems (ResearchGate 2015) formalizes exactly this pattern. |
+| **Real-World Parallel** | Every multi-DC distributor faces this; US Foods operates 15 DCs covering 5M sq ft with redistribution as its core business model. The "lot-rolling" negotiation in multi-echelon systems (ResearchGate 2015) formalizes exactly this pattern. |
 
 #### 5.2.2 Forward Positioning for Promotional Event
 
@@ -502,7 +502,7 @@ Multi-channel operations create some of the most contentious authorization surfa
 | **Authorization Surface** | Allocation Agent controls distribution; each Channel Agent owns its customer commitments; S&OP Agent owns the allocation policy |
 | **Scorecard Tradeoff** | Multiple competing Customer metrics (each channel has its own OTIF) vs. Financial (margin varies by channel: E-Commerce 35%, Retail 22%, Foodservice 18%) vs. Strategic (Foodservice has 3-year exclusive contract) |
 | **Multi-Party** | Allocation -> Channel(Retail): "Propose 55% instead of 60%." Channel(Retail) -> "Reject: contractual minimum is 58%." Allocation -> Channel(E-Commerce): "Propose 12% instead of 15%." Channel(E-Commerce) -> "Counter: 13% acceptable if priority on next allocation." Allocation -> S&OP: "Request policy exception: contractual minimums exceed available supply." |
-| **Real-World Parallel** | During COVID-19, food manufacturers like Dot Foods, Sysco, and US Foods had to reallocate between collapsed foodservice demand and surging retail demand. Distributors shared data with manufacturers to manage allocations. Channel conflict in foodservice is well-documented (FES Magazine): broadline distributors, big-box retailers, and specialty distributors compete for the same constrained supply. SAP S/4HANA Product Allocation (PAL) implements this with priority groups and sequence-based consumption. |
+| **Real-World Parallel** | During COVID-19, food manufacturers like US Foods, Sysco, and US Foods had to reallocate between collapsed foodservice demand and surging retail demand. Distributors shared data with manufacturers to manage allocations. Channel conflict in foodservice is well-documented (FES Magazine): broadline distributors, big-box retailers, and specialty distributors compete for the same constrained supply. SAP S/4HANA Product Allocation (PAL) implements this with priority groups and sequence-based consumption. |
 
 #### 5.3.2 Customer Priority Override
 

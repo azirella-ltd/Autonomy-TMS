@@ -203,6 +203,20 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered risk condition monitor job (every 4h at :15)")
 
+    # Daily at 05:30: External Signal Intelligence — outside-in planning data refresh
+    # Fetches weather, economic indicators, energy prices, geopolitical events,
+    # consumer sentiment, and regulatory signals from free public APIs.
+    # Runs after CFA optimization (04:00) so fresh signals inform the next day's context.
+    scheduler.add_job(
+        func=_run_external_signal_refresh,
+        trigger=CronTrigger(hour=5, minute=30),
+        id="external_signal_refresh",
+        name="External: Outside-In Signal Refresh (daily)",
+        replace_existing=True,
+        misfire_grace_time=7200,
+    )
+    logger.info("Registered external signal daily refresh job (daily at 05:30)")
+
 
 # ---------------------------------------------------------------------------
 # Job execution functions
@@ -730,3 +744,36 @@ def _run_risk_condition_monitor() -> None:
             db.close()
         except Exception:
             pass
+
+
+def _run_external_signal_refresh() -> None:
+    """Daily refresh of external market intelligence from all configured sources.
+
+    Iterates over all tenants with active ExternalSignalSource records,
+    fetches new signals from public APIs (FRED, Open-Meteo, EIA, GDELT, etc.),
+    and persists them for RAG injection into Azirella chat context.
+    """
+    import asyncio
+    from app.db.session import async_session_factory
+
+    logger.info("Starting external signal daily refresh")
+
+    async def _refresh():
+        async with async_session_factory() as db:
+            try:
+                from app.services.external_signal_service import refresh_all_tenants
+                stats = await refresh_all_tenants(db)
+                logger.info(
+                    "External signal refresh completed: "
+                    f"{stats['tenants_processed']} tenants, "
+                    f"{stats['signals_collected']} signals, "
+                    f"{stats['errors']} errors"
+                )
+            except Exception as e:
+                logger.error(f"External signal refresh failed: {e}", exc_info=True)
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_refresh())
+    finally:
+        loop.close()

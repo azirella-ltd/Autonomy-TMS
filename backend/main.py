@@ -6426,6 +6426,10 @@ api.include_router(bsc_config_router, tags=["bsc-config"])
 from app.api.endpoints.tenant_preferences import router as tenant_prefs_router
 api.include_router(tenant_prefs_router, tags=["tenant-preferences"])
 
+# External Signal Intelligence — Outside-in planning data (FRED, weather, energy, GDELT, trends, FDA)
+from app.api.endpoints.external_signals import router as external_signals_router
+api.include_router(external_signals_router, tags=["external-signals"])
+
 # Slack Signal Intelligence — SC signals from Slack channels
 from app.api.endpoints.slack_signals import router as slack_signals_router
 api.include_router(slack_signals_router, tags=["slack-signals"])

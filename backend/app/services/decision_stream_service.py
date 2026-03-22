@@ -895,13 +895,36 @@ class DecisionStreamService:
 
         return result
 
+    # Business-friendly labels for digest text — no tech names
+    _DIGEST_TYPE_LABELS = {
+        "atp_executor": "ATP Fulfillment",
+        "atp": "ATP Fulfillment",
+        "rebalancing": "Inventory Rebalancing",
+        "po_creation": "Procurement",
+        "order_tracking": "Order Exception",
+        "mo_execution": "Production",
+        "to_execution": "Transfer",
+        "quality": "Quality",
+        "quality_disposition": "Quality",
+        "maintenance": "Maintenance",
+        "maintenance_scheduling": "Maintenance",
+        "subcontracting": "Make-vs-Buy",
+        "forecast_adjustment": "Demand Forecast",
+        "inventory_buffer": "Inventory Buffer",
+        "sop_policy": "Strategic Policy",
+        "execution_directive": "Planning Directive",
+        "allocation_refresh": "Allocation Update",
+        "site_coordination": "Site Coordination",
+        "directive": "Executive Directive",
+    }
+
     def _build_quick_digest(self, decisions: List[Dict[str, Any]]) -> str:
         """Build a fast summary without LLM — counts by type + top actions."""
         from collections import Counter
         type_counts = Counter(d["decision_type"] for d in decisions)
         parts = []
         for dtype, count in type_counts.most_common(5):
-            label = dtype.replace("_", " ").title()
+            label = self._DIGEST_TYPE_LABELS.get(dtype, dtype.replace("_", " ").title())
             parts.append(f"**{label}**: {count}")
         summary = f"{len(decisions)} decisions made by Autonomy agents:\n\n" + "\n".join(
             f"- {p}" for p in parts
@@ -1176,6 +1199,11 @@ class DecisionStreamService:
         bsc_data = await self._get_bsc_context(config_id)
         if bsc_data:
             decision_context += "\n\n" + bsc_data
+
+        # Load external market intelligence (outside-in signals)
+        ext_signals = await self._get_external_signals_context()
+        if ext_signals:
+            decision_context += "\n\n" + ext_signals
 
         # Build prompt with role-scoped instructions
         prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context, powell_role)
@@ -1544,15 +1572,46 @@ class DecisionStreamService:
                     cost_delay = _safe_float(getattr(row, "cost_of_delay_per_day", None))
 
                     if scope == "sop_policy":
-                        ss_mult = proposed.get("safety_stock_multiplier", 1.0)
-                        summary = f"Strategic Policy: Safety stock multiplier {ss_mult:.2f}x at {row.site_key}"
-                        action = f"Update safety stock multiplier to {ss_mult:.2f}x"
+                        # Strategic policy — describe what's changing, not just SS multiplier
+                        policy_action = proposed.get("action", "")
+                        if policy_action:
+                            # Use the action description if available (e.g., "protein_portfolio_rebalance")
+                            action_desc = policy_action.replace("_", " ").title()
+                            summary = f"Strategic Policy: {action_desc} at {site_display}"
+                            action = f"Review and approve: {action_desc}"
+                        else:
+                            ss_mult = proposed.get("safety_stock_multiplier", None)
+                            if ss_mult and ss_mult != 1.0:
+                                summary = f"Strategic Policy: Safety stock adjustment to {ss_mult:.2f}x at {site_display}"
+                                action = f"Approve safety stock multiplier {ss_mult:.2f}x"
+                            else:
+                                summary = f"Strategic Policy Review at {site_display}"
+                                action = "Review strategic policy recommendation"
                     elif scope == "execution_directive":
+                        # Tactical/operational — describe the directive meaningfully
                         order_rec = proposed.get("order_recommendation", 0)
-                        summary = f"Planning Directive: recommend {order_rec:.0f} units at {row.site_key}"
-                        action = f"Order {order_rec:.0f} units"
+                        demand_fcst = proposed.get("demand_forecast", None)
+                        exception_prob = proposed.get("exception_probability", None)
+                        alloc = proposed.get("allocation", None)
+
+                        if order_rec and order_rec > 0:
+                            summary = f"Planning Directive: {order_rec:.0f} units at {site_display}"
+                            action = f"Approve {order_rec:.0f} unit order"
+                        elif demand_fcst:
+                            fcst_val = demand_fcst if isinstance(demand_fcst, (int, float)) else "updated"
+                            summary = f"Demand Forecast Update at {site_display}"
+                            action = f"Review demand forecast: {fcst_val}"
+                        elif exception_prob:
+                            summary = f"Exception Alert at {site_display}"
+                            action = "Review exception and recommended action"
+                        elif alloc:
+                            summary = f"Allocation Directive at {site_display}"
+                            action = "Review allocation adjustment"
+                        else:
+                            summary = f"Planning Directive at {site_display}"
+                            action = "Review planning recommendation"
                     else:
-                        summary = f"Allocation Update at {row.site_key}"
+                        summary = f"Allocation Update at {site_display}"
                         action = "Review and approve allocation changes"
 
                     # Enrich reasoning with vertical escalation context
@@ -1965,7 +2024,9 @@ class DecisionStreamService:
             f"then list the 3-5 most important decisions as bullet points (use '- **Category**: details' format). "
             f"Be specific about product names, sites, and quantities. "
             f"Group related decisions where possible (e.g. combine multiple POs into one bullet). "
-            f"Do NOT list all {len(decisions)} — just the highlights.\n\n"
+            f"Do NOT list all {len(decisions)} — just the highlights. "
+            f"NEVER use internal technology names (tGNN, TRM, GraphSAGE, GNN). "
+            f"Use business terms: 'Strategic Policy', 'Planning Directive', 'Procurement Agent', etc.\n\n"
             f"Decisions:\n"
             + "\n".join(f"- {s}" for s in decision_summaries)
             + "\n\n"
@@ -1975,7 +2036,9 @@ class DecisionStreamService:
         def _template_fallback() -> str:
             lines = [f"**{len(decisions)} decisions** made by Autonomy agents:"]
             for d in decisions[:5]:
-                lines.append(f"- **{d.get('decision_type', 'Decision')}**: {d['summary']}")
+                dtype = d.get('decision_type', 'Decision')
+                label = self._DIGEST_TYPE_LABELS.get(dtype, dtype.replace('_', ' ').title())
+                lines.append(f"- **{label}**: {d['summary']}")
             if alerts:
                 lines.append(f"\n**{len(alerts)} alert{'s' if len(alerts) != 1 else ''}** active.")
             return "\n".join(lines)
@@ -2670,6 +2733,20 @@ class DecisionStreamService:
             return ""
         except Exception as e:
             logger.debug("BSC context load failed: %s", e)
+            return ""
+
+    async def _get_external_signals_context(self) -> str:
+        """Load recent external market intelligence for outside-in planning context.
+
+        Injects weather, economic, energy, geopolitical, sentiment, and regulatory
+        signals from the tenant's configured sources into the chat context.
+        """
+        try:
+            from app.services.external_signal_service import ExternalSignalService
+            service = ExternalSignalService(self.db, self.tenant_id)
+            return await service.get_signals_for_chat_context(max_signals=8, max_age_days=7)
+        except Exception as e:
+            logger.debug("External signals context load failed: %s", e)
             return ""
 
     async def _retrieve_context(self, query: str):

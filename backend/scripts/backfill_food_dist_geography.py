@@ -4,7 +4,7 @@ Backfill hierarchical Geography records for existing Food Dist sites.
 
 Creates a proper Country → Region → State → City hierarchy using parent_geo_id,
 updates site coordinates to new locations (DC in Utah, customers in AZ/CA/OR/WA),
-and renames DOTFOODS_DC site to CDC_WEST.
+and renames USFOODS_DC site to CDC_WEST.
 
 Safe to re-run - updates existing records and creates missing ones.
 
@@ -56,7 +56,7 @@ SITE_COORDINATES = {
     # DC - West Valley City, UT
     "CDC_WEST": ("West Valley City", "UT", 40.6916, -112.0011),
     # Also match old name for migration
-    "DOTFOODS_DC": ("West Valley City", "UT", 40.6916, -112.0011),
+    "USFOODS_DC": ("West Valley City", "UT", 40.6916, -112.0011),
     # Suppliers (real HQ locations)
     "TYSON": ("Springdale", "AR", 36.1544, -94.1537),
     "KRAFT": ("Pittsburgh", "PA", 40.4545, -79.9909),
@@ -83,7 +83,7 @@ SITE_COORDINATES = {
 
 # Rename map for sites: old_name -> new_name
 SITE_RENAMES = {
-    "DOTFOODS_DC": "CDC_WEST",
+    "USFOODS_DC": "CDC_WEST",
 }
 
 
@@ -112,7 +112,7 @@ def main():
             db.query(SupplyChainConfig)
             .filter(
                 SupplyChainConfig.name.ilike("%Food Dist%")
-                | SupplyChainConfig.name.ilike("%DotFoods%")
+                | SupplyChainConfig.name.ilike("%USFoods%")
             )
             .all()
         )
@@ -123,12 +123,12 @@ def main():
 
         # Also rename configs with old names
         for config in configs:
-            if "DotFoods" in config.name:
+            if "USFoods" in config.name:
                 old_name = config.name
-                config.name = config.name.replace("DotFoods", "Food Dist")
+                config.name = config.name.replace("USFoods", "Food Dist")
                 print(f"  RENAME config: '{old_name}' -> '{config.name}'")
-            if "Dot Foods" in (config.description or ""):
-                config.description = config.description.replace("Dot Foods", "Food Dist")
+            if "US Foods" in (config.description or ""):
+                config.description = config.description.replace("US Foods", "Food Dist")
 
         stats = {"hierarchy_created": 0, "site_geo_created": 0, "updated": 0, "linked": 0, "renamed": 0}
 

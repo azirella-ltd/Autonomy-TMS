@@ -437,6 +437,9 @@ class OdooConfigBuilder:
             result.inv_levels_created += 1
 
         # Inventory policies from stock.warehouse.orderpoint
+        from app.models.site_planning_config import SitePlanningConfig, PlanningMethod, LotSizingRule
+
+        spc_count = 0
         for op in orderpoints:
             prod_id = op.get("product_id")
             if isinstance(prod_id, (list, tuple)):
@@ -452,16 +455,69 @@ class OdooConfigBuilder:
             if not site:
                 continue
 
+            # Extract Odoo orderpoint fields
+            min_qty = float(op.get("product_min_qty", 0) or 0)
+            max_qty = float(op.get("product_max_qty", 0) or 0)
+            qty_multiple = float(op.get("qty_multiple", 0) or 0)
+            trigger = str(op.get("trigger", "auto")).strip()
+            route_id = op.get("route_id")
+            if isinstance(route_id, (list, tuple)):
+                route_id = route_id[0] if route_id else None
+
             policy = InvPolicy(
                 config_id=config.id,
                 product_id=product.id,
                 site_id=site.id,
-                policy_type="abs_level",
-                ss_quantity=op.get("product_min_qty", 0),
+                ss_policy="abs_level" if min_qty > 0 else "doc_dem",
+                ss_quantity=min_qty if min_qty > 0 else None,
+                ss_days=14 if min_qty <= 0 else None,
+                reorder_point=min_qty if min_qty > 0 else None,
+                order_up_to_level=max_qty if max_qty > 0 else None,
                 company_id=str(self.tenant_id),
+                is_active="true",
+                erp_planning_params={
+                    k: v for k, v in {
+                        "trigger": trigger,
+                        "qty_multiple": qty_multiple,
+                        "route_id": route_id,
+                        "product_min_qty": min_qty,
+                        "product_max_qty": max_qty,
+                    }.items() if v
+                } or None,
             )
             self.db.add(policy)
             result.inv_policies_created += 1
+
+            # Create SitePlanningConfig for heuristic dispatch
+            planning_method = (
+                PlanningMethod.NO_PLANNING.value if trigger == "manual"
+                else PlanningMethod.REORDER_POINT.value
+            )
+
+            spc = SitePlanningConfig(
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                site_id=site.id,
+                product_id=product.id,
+                planning_method=planning_method,
+                lot_sizing_rule=LotSizingRule.LOT_FOR_LOT.value,
+                min_order_quantity=min_qty if min_qty > 0 else None,
+                order_multiple=qty_multiple if qty_multiple > 0 else None,
+                erp_source="ODOO",
+                erp_params={
+                    k: v for k, v in {
+                        "trigger": trigger,
+                        "qty_multiple": qty_multiple,
+                        "route_id": route_id,
+                    }.items() if v
+                } or None,
+            )
+            self.db.add(spc)
+            spc_count += 1
+
+        if spc_count:
+            await self.db.flush()
+            logger.info(f"Created {spc_count} site_planning_config records from Odoo orderpoints")
 
 
 class OdooIngestionMonitor:

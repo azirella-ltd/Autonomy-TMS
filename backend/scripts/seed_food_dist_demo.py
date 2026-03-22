@@ -15,10 +15,10 @@ Individual Role Users (for testing specific role flows):
 
 Usage:
     # Run via docker compose
-    docker compose exec backend python scripts/seed_dot_foods_demo.py
+    docker compose exec backend python scripts/seed_us_foods_demo.py
 
     # Or directly with venv
-    cd backend && python scripts/seed_dot_foods_demo.py
+    cd backend && python scripts/seed_us_foods_demo.py
 
 Demo Flow:
     1. Login as demo@distdemo.com (password: Autonomy@2026)

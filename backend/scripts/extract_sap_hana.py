@@ -88,10 +88,10 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     "MARC": (
         ["MATNR", "WERKS", "EKGRP", "DISMM", "DISPO", "DISLS", "BESKZ",
          "SOBSL", "LGPRO", "LGFSB", "PLIFZ", "WEBAZ", "EISBE", "BSTMI",
-         "BSTMA", "BSTFE", "BSTRF", "MABST", "LOSGR", "SBDKZ", "LAGPR",
-         "ALTSL", "KZAUS", "AUSSS", "AUSDT", "NFMAT", "SERNP", "STDPD",
-         "STLNR", "MINBE", "SHZET", "DZEIT", "FHORI", "FXHOR", "STRGR",
-         "PRCTR", "VRMOD", "VINT1", "VINT2"],
+         "BSTMA", "BSTFE", "BSTRF", "RDPRF", "MABST", "LOSGR", "SBDKZ",
+         "LAGPR", "ALTSL", "KZAUS", "AUSSS", "AUSDT", "NFMAT", "SERNP",
+         "STDPD", "STLNR", "MINBE", "SHZET", "DZEIT", "FHORI", "FXHOR",
+         "STRGR", "PRCTR", "VRMOD", "VINT1", "VINT2"],
         "WERKS IN ({werks})",
     ),
     "MARD": (
@@ -1100,15 +1100,38 @@ TRANSACTION_TABLES = [
 
 
 def get_plants_for_company(conn, company_code: str) -> List[str]:
-    """Query T001W to get all plants belonging to a company code."""
+    """Query T001W to get all plants belonging to a company code.
+
+    In S/4HANA, T001W does not have BUKRS directly — the company code
+    to plant mapping goes through T001K (valuation area = plant in S/4).
+    Falls back to extracting all plants if the join fails.
+    """
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT WERKS FROM T001W WHERE BUKRS = ?",
-        (company_code,),
-    )
-    plants = [row[0] for row in cursor.fetchall()]
+    try:
+        # S/4HANA: T001K maps BWKEY (= WERKS in standard config) to BUKRS
+        cursor.execute(
+            "SELECT DISTINCT w.WERKS FROM SAPHANADB.T001W w "
+            "INNER JOIN SAPHANADB.T001K k ON w.BWKEY = k.BWKEY "
+            "WHERE k.BUKRS = ?",
+            (company_code,),
+        )
+        plants = [row[0] for row in cursor.fetchall()]
+        if plants:
+            cursor.close()
+            logger.info(f"Found {len(plants)} plants for company code {company_code} via T001K: {plants}")
+            return plants
+    except Exception as e:
+        logger.warning(f"T001K join failed ({e}), falling back to all plants")
+
+    # Fallback: extract all plants
+    try:
+        cursor.execute("SELECT DISTINCT WERKS FROM SAPHANADB.T001W")
+        plants = [row[0] for row in cursor.fetchall()]
+    except Exception:
+        cursor.execute("SELECT DISTINCT WERKS FROM T001W")
+        plants = [row[0] for row in cursor.fetchall()]
     cursor.close()
-    logger.info(f"Found {len(plants)} plants for company code {company_code}: {plants}")
+    logger.info(f"Using all {len(plants)} plants (company code filter unavailable): {plants}")
     return plants
 
 

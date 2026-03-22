@@ -512,6 +512,9 @@ class D365ConfigBuilder:
 
     async def _build_inventory(self, config, inv_on_hand, coverage, site_map, product_map, result):
         from app.models.aws_sc_planning import InvLevel, InvPolicy
+        from app.models.site_planning_config import (
+            SitePlanningConfig, D365_COVERAGE_CODE_MAP, PlanningMethod, LotSizingRule,
+        )
 
         for inv in inv_on_hand:
             item = inv.get("ItemNumber")
@@ -531,6 +534,7 @@ class D365ConfigBuilder:
             self.db.add(level)
             result["inv_levels_created"] += 1
 
+        spc_count = 0
         for cov in coverage:
             item = cov.get("ItemNumber")
             site_id = cov.get("SiteId")
@@ -539,16 +543,91 @@ class D365ConfigBuilder:
             if not product or not site:
                 continue
 
+            # Extract D365 ItemCoverageSettings fields
+            coverage_code = int(cov.get("CoverageCode", 0) or 0)
+            ss_qty = float(cov.get("SafetyStockQuantity", 0) or 0)
+            min_inv = float(cov.get("MinimumInventoryLevel", 0) or cov.get("MinInventOnhand", 0) or 0)
+            max_inv = float(cov.get("MaximumInventoryLevel", 0) or cov.get("MaxInventOnhand", 0) or 0)
+            std_order_qty = float(cov.get("StandardOrderQuantity", 0) or 0)
+            min_order_qty = float(cov.get("MinimumOrderQuantity", 0) or 0)
+            max_order_qty = float(cov.get("MaximumOrderQuantity", 0) or 0)
+            order_multiple = float(cov.get("MultipleQuantity", 0) or cov.get("Multiple", 0) or 0)
+            lt_purchase = int(cov.get("LeadTimePurchase", 0) or 0)
+            coverage_fence = int(cov.get("CoverageTimeFence", 0) or 0)
+            firming_fence = int(cov.get("LockingTimeFence", 0) or cov.get("FirmingTimeFence", 0) or 0)
+            pos_days = int(cov.get("MaxPositiveDays", 0) or 0)
+            neg_days = int(cov.get("MaxNegativeDays", 0) or 0)
+
+            # Determine lot sizing rule from coverage code
+            lot_rule = LotSizingRule.LOT_FOR_LOT.value
+            if coverage_code == 1:
+                lot_rule = LotSizingRule.WEEKLY_BATCH.value
+            elif coverage_code == 3:
+                lot_rule = LotSizingRule.REPLENISH_TO_MAX.value
+
+            # Create enriched InvPolicy
             policy = InvPolicy(
                 config_id=config.id,
                 product_id=product.id,
                 site_id=site.id,
-                policy_type="abs_level",
-                ss_quantity=cov.get("SafetyStockQuantity", 0),
+                ss_policy="abs_level" if ss_qty > 0 else "doc_dem",
+                ss_quantity=ss_qty if ss_qty > 0 else None,
+                ss_days=14 if ss_qty <= 0 else None,
+                reorder_point=min_inv if min_inv > 0 else None,
+                order_up_to_level=max_inv if max_inv > 0 else None,
+                fixed_order_quantity=std_order_qty if std_order_qty > 0 else None,
+                min_order_quantity=min_order_qty if min_order_qty > 0 else None,
+                max_order_quantity=max_order_qty if max_order_qty > 0 else None,
                 company_id=str(self.tenant_id),
+                is_active="true",
+                erp_planning_params={
+                    k: v for k, v in {
+                        "CoverageCode": coverage_code,
+                        "StandardOrderQuantity": std_order_qty,
+                        "MultipleQuantity": order_multiple,
+                        "LeadTimePurchase": lt_purchase,
+                        "CoverageTimeFence": coverage_fence,
+                        "LockingTimeFence": firming_fence,
+                        "MaxPositiveDays": pos_days,
+                        "MaxNegativeDays": neg_days,
+                        "PreferredVendor": cov.get("PreferredVendor", ""),
+                    }.items() if v
+                } or None,
             )
             self.db.add(policy)
             result["inv_policies_created"] += 1
+
+            # Create SitePlanningConfig row for heuristic dispatch
+            spc = SitePlanningConfig(
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                site_id=site.id,
+                product_id=product.id,
+                planning_method=D365_COVERAGE_CODE_MAP.get(coverage_code, PlanningMethod.REORDER_POINT.value),
+                lot_sizing_rule=lot_rule,
+                fixed_lot_size=std_order_qty if std_order_qty > 0 else None,
+                min_order_quantity=min_order_qty if min_order_qty > 0 else None,
+                max_order_quantity=max_order_qty if max_order_qty > 0 else None,
+                order_multiple=order_multiple if order_multiple > 0 else None,
+                frozen_horizon_days=firming_fence if firming_fence > 0 else None,
+                planning_time_fence_days=coverage_fence if coverage_fence > 0 else None,
+                erp_source="D365",
+                erp_params={
+                    k: v for k, v in {
+                        "CoverageCode": coverage_code,
+                        "MaxPositiveDays": pos_days,
+                        "MaxNegativeDays": neg_days,
+                        "LeadTimePurchase": lt_purchase,
+                        "PreferredVendor": cov.get("PreferredVendor", ""),
+                    }.items() if v
+                } or None,
+            )
+            self.db.add(spc)
+            spc_count += 1
+
+        if spc_count:
+            await self.db.flush()
+            logger.info(f"Created {spc_count} site_planning_config records from D365 ItemCoverageSettings")
 
 
 class D365IngestionMonitor:

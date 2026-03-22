@@ -187,6 +187,19 @@ class _SiteSimConfig:
     upstream_site_id: Optional[int]   # site that supplies this site
     downstream_site_ids: List[int] = field(default_factory=list)
 
+    # --- ERP heuristic dispatch (from SitePlanningConfig) ---
+    # Default values ensure backward compatibility when no SitePlanningConfig exists.
+    planning_method: str = "REORDER_POINT"
+    lot_sizing_rule: str = "LOT_FOR_LOT"
+    fixed_lot_size: float = 0.0
+    min_order_quantity: float = 0.0
+    max_order_quantity: float = 0.0
+    order_multiple: float = 0.0
+    max_inventory: float = 0.0       # for MIN_MAX / REPLENISH_TO_MAX
+    review_period_days: int = 7
+    frozen_horizon_days: int = 0
+    forecast_daily: float = 0.0      # current-period forecast for forecast-based methods
+
 
 # ---------------------------------------------------------------------------
 # Stochastic generators
@@ -302,19 +315,48 @@ class _SimSite:
         self._update_forecast(demand)
         return shipped
 
-    def compute_replenishment_order(self) -> float:
-        """
-        Reorder-point heuristic (PO creation / TO execution).
+    def compute_replenishment_order(self, sim_day: int = 0) -> float:
+        """Dispatch to the correct ERP heuristic via heuristic_library.
 
-        Uses InvPolicy.reorder_point and order_up_to_level from DB.
-        If IP < ROP, order up to order_up_to_level.
+        Uses SitePlanningConfig.planning_method and lot_sizing_rule
+        loaded from the customer's ERP configuration.  Falls back to
+        reorder-point (s,S) when no SitePlanningConfig exists (backward
+        compatible).
+
+        See DIGITAL_TWIN.md §8A for full algorithmic specification.
         """
-        ip = self.inventory_position
-        rop = self.cfg.reorder_point
-        if ip < rop:
-            order_qty = max(0.0, self.cfg.order_up_to - ip)
-        else:
-            order_qty = 0.0
+        from app.services.powell.heuristic_library import (
+            compute_replenishment, ReplenishmentState, ReplenishmentConfig,
+        )
+
+        state = ReplenishmentState(
+            inventory_position=self.inventory_position,
+            on_hand=self.inventory,
+            backlog=self.backlog,
+            pipeline_qty=sum(qty for qty, _ in self._pipeline),
+            avg_daily_demand=self._forecast,
+            demand_cv=self.cfg.demand_cv,
+            lead_time_days=self.cfg.lead_time_days,
+            forecast_daily=self.cfg.forecast_daily,
+            day_of_week=sim_day % 7,
+            day_of_month=(sim_day % 30) + 1,
+        )
+
+        config = ReplenishmentConfig(
+            planning_method=self.cfg.planning_method,
+            lot_sizing_rule=self.cfg.lot_sizing_rule,
+            reorder_point=self.cfg.reorder_point,
+            order_up_to=self.cfg.order_up_to,
+            safety_stock=self.cfg.safety_stock,
+            fixed_lot_size=self.cfg.fixed_lot_size,
+            min_order_quantity=self.cfg.min_order_quantity,
+            max_order_quantity=self.cfg.max_order_quantity,
+            order_multiple=self.cfg.order_multiple,
+            review_period_days=self.cfg.review_period_days,
+            max_inventory=self.cfg.max_inventory,
+        )
+
+        order_qty = compute_replenishment(state, config)
         self.period_order_qty = order_qty
         return order_qty
 
@@ -461,9 +503,11 @@ class _DagChain:
         )
         max_lt = max((c.lead_time_days for c in site_configs if c.lead_time_days > 0), default=7.0)
         self._max_cost_ref = max_demand * max_backlog_rate * max_lt * 2.0
+        self._day_counter = 0
 
     def tick(self) -> Dict[str, Any]:
         """Execute one daily time step across the DAG."""
+        self._day_counter += 1
 
         # Step 1: All sites receive arriving shipments
         for node in self.nodes.values():
@@ -487,8 +531,8 @@ class _DagChain:
             # Fulfill demand (FIFO ATP heuristic)
             node.fulfill(demand)
 
-            # Compute replenishment order (ROP heuristic)
-            order_qty = node.compute_replenishment_order()
+            # Compute replenishment order (ERP-specific heuristic dispatch)
+            order_qty = node.compute_replenishment_order(sim_day=self._day_counter)
 
             # Route order upstream
             if cfg.upstream_site_id and cfg.upstream_site_id in self.nodes:
@@ -853,6 +897,29 @@ class _ConfigLoader:
             if initial_inv <= 0:
                 initial_inv = out  # start at order-up-to if no inventory snapshot
 
+            # --- Load ERP heuristic config from SitePlanningConfig ---
+            from app.models.site_planning_config import SitePlanningConfig
+
+            spc = (
+                self.db.query(SitePlanningConfig)
+                .filter(
+                    SitePlanningConfig.config_id == self.config_id,
+                    SitePlanningConfig.site_id == sid,
+                    SitePlanningConfig.product_id == product_id,
+                )
+                .first()
+            )
+            # Defaults to REORDER_POINT / LOT_FOR_LOT when no SPC exists (backward compat)
+            planning_method = spc.planning_method if spc else "REORDER_POINT"
+            lot_sizing_rule = spc.lot_sizing_rule if spc else "LOT_FOR_LOT"
+            fixed_lot_size = (spc.fixed_lot_size or 0.0) if spc else 0.0
+            moq = (spc.min_order_quantity or 0.0) if spc else 0.0
+            max_oq = (spc.max_order_quantity or 0.0) if spc else 0.0
+            order_mult = (spc.order_multiple or 0.0) if spc else 0.0
+            max_inv = max_oq  # approximate — MIN_MAX uses this as target
+            review_days = int(spc.planning_time_fence_days or 7) if spc else 7
+            frozen_days = int(spc.frozen_horizon_days or 0) if spc else 0
+
             cfg = _SiteSimConfig(
                 site_id=sid,
                 site_name=site.name,
@@ -871,6 +938,17 @@ class _ConfigLoader:
                 safety_stock=ss,
                 upstream_site_id=upstream_of.get(sid),
                 downstream_site_ids=list(downstream_of.get(sid, set())),
+                # ERP heuristic dispatch fields
+                planning_method=planning_method,
+                lot_sizing_rule=lot_sizing_rule,
+                fixed_lot_size=fixed_lot_size,
+                min_order_quantity=moq,
+                max_order_quantity=max_oq,
+                order_multiple=order_mult,
+                max_inventory=max_inv,
+                review_period_days=review_days,
+                frozen_horizon_days=frozen_days,
+                forecast_daily=demand_mean_daily,
             )
             site_configs.append(cfg)
 

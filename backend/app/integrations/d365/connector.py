@@ -424,11 +424,26 @@ D365_SC_ENTITIES: Dict[str, List[str]] = {
         "MinimumOrderQuantity", "MaximumOrderQuantity",
         "StandardOrderQuantity", "LeadTimePurchasing",
     ],
-    # Safety stock
+    # Coverage / safety stock / MRP planning parameters
     "ItemCoverageSettings": [
         "ItemNumber", "SiteId", "WarehouseId",
         "MinimumInventoryLevel", "MaximumInventoryLevel",
         "SafetyStockQuantity", "CoveragePlanGroupId",
+        # Planning method & lot sizing (added for heuristic mirror — DIGITAL_TWIN.md §8C)
+        "CoverageCode",              # MRP type: 0=Manual, 1=Period, 2=Requirement, 3=MinMax, 4=DDMRP
+        "StandardOrderQuantity",     # Fixed lot size
+        "MinimumOrderQuantity",      # MOQ
+        "MaximumOrderQuantity",      # Max order qty
+        "MultipleQuantity",          # Order rounding multiple
+        "LeadTimePurchase",          # Purchase lead time override (days)
+        "LeadTimeProduction",        # Production lead time override (days)
+        "LeadTimeTransfer",          # Transfer lead time override (days)
+        "CoverageTimeFence",         # Planning horizon (days)
+        "LockingTimeFence",          # Firming time fence (days)
+        "MaxPositiveDays",           # How early supply can be accepted
+        "MaxNegativeDays",           # How late supply can cover demand
+        "PreferredVendor",           # Primary vendor ID
+        "FulfillMinimum",            # Minimum fill policy
     ],
     # Purchase orders
     "PurchaseOrderHeadersV2": [

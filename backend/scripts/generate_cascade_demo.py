@@ -16,8 +16,8 @@ Pipeline:
   7. Summary
 
 Prerequisites:
-    - seed_dot_foods_demo.py must have been run first
-    - seed_dot_foods_allocation_demo.py recommended (creates hierarchies)
+    - seed_us_foods_demo.py must have been run first
+    - seed_us_foods_allocation_demo.py recommended (creates hierarchies)
 
 Usage:
     docker compose exec backend python scripts/generate_cascade_demo.py
@@ -51,7 +51,7 @@ from app.models.user import User
 random.seed(42)
 
 # ---------------------------------------------------------------------------
-# Constants imported from seed_dot_foods_allocation_demo
+# Constants imported from seed_us_foods_allocation_demo
 # ---------------------------------------------------------------------------
 
 CUSTOMER_PRIORITIES = {
@@ -559,7 +559,7 @@ def main():
 
         tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
         if not tenant:
-            print("ERROR: 'Food Dist' tenant not found. Run seed_dot_foods_demo.py first.")
+            print("ERROR: 'Food Dist' tenant not found. Run seed_us_foods_demo.py first.")
             sys.exit(1)
         print(f"   Tenant: {tenant.name} (id={tenant.id})")
 
@@ -567,7 +567,7 @@ def main():
             SupplyChainConfig.tenant_id == tenant.id
         ).first()
         if not config:
-            print("ERROR: No SC config for Food Dist. Run seed_dot_foods_demo.py first.")
+            print("ERROR: No SC config for Food Dist. Run seed_us_foods_demo.py first.")
             sys.exit(1)
         print(f"   SC Config: {config.name} (id={config.id})")
 

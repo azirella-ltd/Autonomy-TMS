@@ -337,6 +337,13 @@ class InvPolicy(Base):
     backlog_cost_range = Column(JSON)
     selling_price_range = Column(JSON)
 
+    # Extension: ERP-specific planning parameters (JSONB)
+    # Stores raw ERP fields that don't have dedicated columns (SAP DISMM, DISLS,
+    # VRMOD/VINT1/VINT2, D365 CoverageCode, Odoo trigger, etc.).
+    # See DIGITAL_TWIN.md §8C.5 Option B. The primary planning config is in
+    # site_planning_config table; this is a secondary store for per-policy params.
+    erp_planning_params = Column(JSON, nullable=True)
+
     # Relationships
     site = relationship("Site", back_populates="inv_policies")
     geography = relationship("Geography")

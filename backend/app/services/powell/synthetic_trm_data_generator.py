@@ -158,7 +158,7 @@ class SyntheticTRMDataGenerator:
         self.sites: List[Site] = []
         self.lanes: List[TransportationLane] = []
         self.products: List[str] = []  # product IDs
-        self.company_id: str = f"DF_CORP_{tenant_id}"  # Default company ID format
+        self.company_id: str = f"UF_CORP_{tenant_id}"  # Default company ID format
 
         # Simulation state
         self.site_states: Dict[int, SiteState] = {}

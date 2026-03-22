@@ -727,6 +727,7 @@ SiteAgent reloads model
 | `SiteTGNNInferenceService` | Hourly (:25) | Intra-site cross-TRM urgency modulation (Layer 1.5) |
 | `SiteTGNNTrainer` | Every 12h (:50) | Evaluate & train Site tGNN from MultiHeadTrace data |
 | `_run_cfa_optimization()` | Weekly (Sun 04:00) | CFA policy parameter re-optimization via Differential Evolution across all active configs |
+| `_run_external_signal_refresh()` | Daily (05:30) | Outside-in signal collection from FRED, Open-Meteo, EIA, GDELT, Google Trends, openFDA |
 | `ConditionMonitorService` | On-demand | 6 real-time DB condition checks (ATP shortfall, inventory, capacity, orders past due, forecast deviation) |
 
 Database tables: `powell_cdc_trigger_log`, `powell_site_agent_decisions`, `powell_site_agent_checkpoints`, `powell_cdc_thresholds`
@@ -1283,6 +1284,65 @@ POST /api/v1/email-signals/ingest-manual         # Manual email paste
 
 **Access**: Navigation > Administration > Email Signals (Tenant Admin required)
 
+### External Signal Intelligence (Outside-In Planning)
+
+Implements Lora Cecere's outside-in planning methodology: weather, economic indicators, energy prices, geopolitical events, consumer sentiment, and regulatory signals are ingested daily from free public APIs and injected into Azirella's RAG context.
+
+**Sources (all free tier)**:
+| Source | Category | API Key Required | Data |
+|--------|----------|-----------------|------|
+| **FRED** | Economic, Trade | Yes (free registration) | CPI, PPI, unemployment, sentiment, oil, gas, treasury, dollar index |
+| **Open-Meteo** | Weather | No | Temperature extremes, precipitation, severe weather by location |
+| **EIA** | Energy | Yes (free registration) | WTI crude, natural gas, diesel prices |
+| **GDELT** | Geopolitical | No | Supply chain disruptions, port strikes, trade sanctions, factory shutdowns |
+| **Google Trends** | Sentiment | No (pytrends) | Consumer search interest for tenant-relevant keywords |
+| **openFDA** | Regulatory | No | FDA recalls, safety alerts, enforcement actions |
+
+**Signal Categories**: economic, weather, energy, geopolitical, sentiment, regulatory, commodity, trade
+
+**Daily Pipeline**: APScheduler job (05:30) → For each tenant's active sources → Fetch via connector → Dedup (signal_key unique) → Score relevance (tenant industry/region/product tags) → Persist → Available in Azirella chat context
+
+**RAG Injection**: `ExternalSignalService.get_signals_for_chat_context()` returns formatted markdown injected into the Azirella system prompt. Grouped by category, showing title, date, change direction, and SC-relevant summary.
+
+**SC Impact Mapping**: Each signal type maps to affected TRM agents and planning layers (e.g., oil_price_spike → [to_execution, po_creation], tactical layer).
+
+**Implementation Files**:
+- `backend/app/models/external_signal.py` — ExternalSignal + ExternalSignalSource models, SOURCE_REGISTRY, SIGNAL_SC_IMPACT
+- `backend/app/services/external_signal_connectors.py` — 6 source connectors (FRED, Open-Meteo, EIA, GDELT, Google Trends, openFDA)
+- `backend/app/services/external_signal_service.py` — Orchestrator: source management, collection, RAG context generation
+- `backend/app/api/endpoints/external_signals.py` — REST API endpoints
+- `backend/app/services/powell/relearning_jobs.py` — Daily refresh job (05:30)
+- `backend/app/services/decision_stream_service.py` — `_get_external_signals_context()` wires into chat
+
+**API Endpoints**:
+```bash
+# Source management
+GET  /api/v1/external-signals/sources              # List tenant sources
+POST /api/v1/external-signals/sources              # Add source
+POST /api/v1/external-signals/sources/activate-defaults  # Activate free defaults
+PUT  /api/v1/external-signals/sources/{id}/toggle  # Enable/disable
+PUT  /api/v1/external-signals/sources/{id}/params  # Update config
+
+# Signal collection & refresh
+POST /api/v1/external-signals/refresh/{source_id}  # Manual refresh (single source)
+POST /api/v1/external-signals/refresh-all          # Manual refresh (all sources)
+
+# Signal querying
+GET  /api/v1/external-signals/signals              # List signals (filterable)
+GET  /api/v1/external-signals/dashboard            # Summary stats
+GET  /api/v1/external-signals/chat-context         # Preview RAG context
+GET  /api/v1/external-signals/registry             # Available source types
+```
+
+**Environment Variables**:
+```env
+FRED_API_KEY=your_key_here      # https://fred.stlouisfed.org/docs/api/api_key.html
+EIA_API_KEY=your_key_here       # https://www.eia.gov/opendata/register.php
+# Open-Meteo, GDELT, openFDA require no API keys
+```
+
+**Tenant Configuration**: Each tenant activates sources and configures relevance filters (industry_tags, region_tags, product_tags). Signals are boosted when they match the tenant's tags. Default sources (Open-Meteo, GDELT, openFDA) can be auto-activated via `/sources/activate-defaults`.
+
 **SAP System Access**: Free S/4HANA FAA (Fully-Activated Appliance) with IDES sample data available via [cal.sap.com](https://cal.sap.com). Requires SAP ID ([register here](https://account.sap.com/core/create/register)) and a cloud provider account (AWS/Azure/GCP, ~$1-3/hr compute). See [SAP_INTEGRATION_GUIDE.md](docs/external/SAP_INTEGRATION_GUIDE.md#getting-access-to-sap-s4hana-free) for full setup instructions.
 
 ---
@@ -1625,6 +1685,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ "Azirella" directive capture with smart clarification flow (two-phase: analyze→clarify→submit) + query routing (LLM + TF-IDF fallback → page navigation with filters)
 - ✅ Provisioning Stepper (14-step Powell Cascade warm-start pipeline with dependency tracking)
 - ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)
+- ✅ External Signal Intelligence (Outside-in planning: FRED, Open-Meteo, EIA, GDELT, Google Trends, openFDA → daily refresh → RAG context)
 
 ---
 

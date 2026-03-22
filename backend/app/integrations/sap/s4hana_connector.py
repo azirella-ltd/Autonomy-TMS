@@ -77,20 +77,31 @@ class S4HANAConnector:
         "DISPO",  # MRP Controller
         "DISGR",  # MRP Group
         "DISMM",  # MRP Type
-        "DISLS",  # Lot Size
+        "DISLS",  # Lot Sizing Procedure (EX/FX/HB/WB/TB/GR/SP/SM/OP)
         "BSTMI",  # Minimum Lot Size
         "BSTMA",  # Maximum Lot Size
         "BSTFE",  # Fixed Lot Size
         "BSTRF",  # Rounding Value
-        "BESKZ",  # Procurement Type
+        "RDPRF",  # Rounding Profile
+        "BESKZ",  # Procurement Type (E=in-house, F=external)
         "SOBSL",  # Special Procurement Type
         "LGPRO",  # Production Scheduler
         "EISBE",  # Safety Stock
-        "BSTMI",  # Minimum Stock
+        "MINBE",  # Reorder Point
+        "MABST",  # Maximum Stock Level (order-up-to)
+        "LOSGR",  # Fixed Lot Size (from MRP1 view)
         "PLIFZ",  # Planned Delivery Time
         "WEBAZ",  # Goods Receipt Processing Time
-        "AUSSS",  # Assembly Scrap
         "DZEIT",  # In-House Production Time
+        "SHZET",  # Safety Time (safety lead time in days)
+        "AUSSS",  # Assembly Scrap %
+        "VRMOD",  # Consumption Mode (1=backward, 2=bwd+fwd, 3=fwd, 4=fwd+bwd, 5=period)
+        "VINT1",  # Backward Consumption Period (work days)
+        "VINT2",  # Forward Consumption Period (work days)
+        "FXHOR",  # Planning Time Fence (work days)
+        "STRGR",  # Planning Strategy Group (10/11/30/40)
+        "FHORI",  # Scheduling Margin Key / Forecast Horizon
+        "MTVFP",  # Availability Check Group
     ]
 
     PURCHASE_ORDER_HEADER_FIELDS = [

@@ -376,7 +376,7 @@ if dataset == 'Honeywell':
         ]
 
 
-elif dataset == 'DotFoods':
+elif dataset == 'USFoods':
     file_path = data_folder + 'UPC_ID.csv'
     df = pd.read_csv(file_path)
 

@@ -70,13 +70,15 @@ All ports are on the **SAP S/4HANA 2025 & SAP HANA DB 2.0** VM unless noted:
 
 #### Connection Details
 
-External IPs are assigned by AWS. With **Public Static IP** enabled, these persist across restarts:
+External IPs are assigned by AWS. With **Public Static IP** enabled (confirmed), these persist across restarts:
 
 | VM | Internal IP | External IP | Primary Access |
 |----|-------------|-------------|----------------|
-| SAP S/4HANA 2025 & SAP HANA DB 2.0 | 10.0.8.104 | *(from CAL Info tab)* | RFC 3300, Fiori 44301, SAP GUI 3200 |
-| SAP NetWeaver 7.50 AS JAVA | 10.0.3.227 | *(from CAL Info tab)* | HTTP 50000 |
-| Windows Remote Desktop | 10.0.15.197 | *(from CAL Info tab)* | RDP 3389 |
+| SAP S/4HANA 2025 & SAP HANA DB 2.0 | 10.0.8.104 | `63.182.191.72` | RFC 3300, Fiori 44301, HANA 30215, SAP GUI 3200 |
+| SAP NetWeaver 7.50 AS JAVA | 10.0.3.227 | `35.157.182.78` | HTTP 50000 |
+| Windows Remote Desktop | 10.0.15.197 | `3.124.111.17` | RDP 3389 (direct, no SSH tunnel) |
+
+**Region**: eu-central-1 (Frankfurt) | **Account**: AWS Autonomy | **Termination Protection**: Enabled
 
 **Note**: Internal IPs are stable within the VPC. From the Windows RDP VM, connect to SAP GUI using the internal IP (10.0.8.104) rather than the external IP.
 
@@ -104,29 +106,37 @@ RDP is required for SAP GUI access (pre-connection steps, demo execution, user m
 - RDP client installed (Linux: Remmina or xfreerdp; macOS: Microsoft Remote Desktop; Windows: built-in)
 - Access Points IP Range allows your public IP
 
-**Connection**:
+**Connection** (current instance):
 
 | Field | Value |
 |-------|-------|
 | Protocol | RDP |
-| Server | *(Windows VM external IP from CAL Info tab)* |
+| Server | `3.124.111.17` |
 | Port | 3389 |
 | Username | `Administrator` |
-| Password | *(from CAL "Connect" button or Getting Started Guide — uses the Master Password set during appliance creation)* |
+| Password | Master Password (set during CAL appliance creation) |
+| SSH Tunnel | **NOT needed** — RDP port is directly accessible |
 
-**Linux (Remmina)**:
-1. Open Remmina → click "+" or use quick connect
-2. Protocol: RDP, Server: `<WINDOWS_EXTERNAL_IP>`, Username: `Administrator`
-3. If Remmina fails with "Could not resolve hostname to IPv6", install and use xfreerdp instead:
-   ```bash
-   sudo apt install -y freerdp3-x11
-   xfreerdp3 /v:<WINDOWS_EXTERNAL_IP> /u:Administrator /port:3389
-   ```
+**Local files** (in `~/Downloads/`):
+- `Autonomy.pem` — SSH key (encrypted, for SSH-based access if needed)
+- `Autonomy.sap` — SAP GUI connection file (points to 63.182.191.72, SID S4H, instance 00, client 100)
+
+**Linux (Remmina)** — direct RDP (no SSH tunnel):
+1. Open Remmina → open saved profile "SAP RDP" or create new
+2. **Basic tab**: Protocol: RDP, Server: `3.124.111.17`, Username: `Administrator`, Password: master password
+3. **SSH Tunnel tab**: Ensure "Enable SSH tunnel" is **UNCHECKED** (port 22 is not open on the Windows VM; RDP 3389 is directly accessible)
+4. Click "Save and Connect"
+
+**Alternative (xfreerdp)**:
+```bash
+xfreerdp3 /v:3.124.111.17 /u:Administrator /port:3389 /size:1920x1080
+```
 
 **Troubleshooting RDP**:
 - **"Could not resolve hostname to IPv6"**: Your network may route via IPv6 but the SAP security group only allows IPv4. Add your IPv6 address to the Access Points IP Range, or use xfreerdp with explicit IPv4.
 - **Connection timeout**: Check that the appliance is Active in CAL (not Suspended). Verify Access Points IP Range includes your current public IP.
-- **After reactivation**: If Public Static IP was not enabled, external IPs will have changed. Check the Info tab for new IPs.
+- **After reactivation**: If Public Static IP was enabled (it is), external IPs persist. If not, check the Info tab for new IPs.
+- **SSH tunnel fails**: Don't use SSH tunnel — port 22 is not open on the Windows VM. Connect directly on port 3389.
 
 **Once connected**: SAP GUI is pre-installed on the Windows desktop with a connection pre-configured to the S/4HANA system (internal IP 10.0.8.104, instance 00).
 
@@ -146,11 +156,175 @@ For detailed user permissions by connection type (RFC, OData, HANA DB, CSV), see
 |-------|-------|
 | System Type | S/4HANA |
 | Connection Method | RFC |
-| Application Server | `<ABAP_PUBLIC_IP>` |
+| Application Server | `63.182.191.72` |
 | System Number | 00 |
 | Client | 100 |
 | User | ZRFC_AUTONOMY (or unlocked BPINST) |
 | Company Code Filter | 1710 |
+
+#### Autonomy Integration Quick Reference (Current Instance)
+
+| Connection | Host | Port | User | Password | Schema/SID |
+|-----------|------|------|------|----------|-----------|
+| **HANA DB** (extraction) | `63.182.191.72` | 30215 | `SAPHANADB` | `Wedding$19890617#` | Schema: `SAPHANADB` |
+| **RFC** (real-time) | `63.182.191.72` | 3300 | `ZRFC_AUTONO` | `Autonomy@2026` (reset 2026-03-22) | SID: S4H, Instance: 00, Client: 100 |
+| **OData** (REST) | `63.182.191.72` | 44301 (HTTPS) | N/A — ZRFC_AUTONO is User Type B (System), cannot auth via HTTP | — |
+| **SAP GUI** (via RDP) | `10.0.8.104` (internal) | 3200 | `DDIC` / client 000 | `Wedding$19890617#` | SID: S4H, Instance: 00 |
+| **Windows RDP** | `3.124.111.17` | 3389 | `Administrator` | `Wedding$19890617#` | No SSH tunnel needed |
+
+**Master Password**: `Wedding$19890617#` (set during CAL appliance creation; used for DDIC, Administrator, SAPHANADB, SYSTEM HANA users)
+
+**ABAP Users** (Client 100):
+- `ZRFC_AUTONO` — Autonomy RFC User, Type B (System), password `Autonomy@2026`. Status: Saved (not locked). Has `ZRFC_AUTONOMY` role with RFC table read + BAPI access.
+- `BPINST` — Technical user, password `Welcome1`. May need unlocking after fresh activation via SU01.
+
+**Demo Users** (Client 100, Password: `Welcome1`):
+`S4H_SD_DEM` (Sales), `S4H_MM_DEM` (Purchasing), `S4H_PP_DEM` (Production), `S4H_EWM_DEM` (Warehouse), `S4H_PM_DEM` (Maintenance)
+
+**HANA DB Notes** (discovered 2026-03-22):
+- `SAPHANADB` user has SELECT access to all tables but **cannot CREATE USER or ALTER USER** (insufficient privilege)
+- `SYSTEM` user password is NOT the same as the master password — authentication fails with the master password
+- `AUTONOMY_EXTRACT` user does not exist on this instance (cannot be created without SYSTEM access)
+- **Workaround**: Extract directly as `SAPHANADB` — works for all SELECT operations
+- DBA Cockpit SQL Editor (tCode DBACOCKPIT → Diagnostics → SQL Editor) runs as SAPHANADB — cannot CREATE USER
+
+**S/4HANA 2025 Data Model Notes** (discovered 2026-03-22):
+- Many ECC column names have been removed/renamed in S/4HANA 2025 (BUKRS not on T001W, STLNR not on MARC, etc.)
+- The extraction script uses **auto-discovered columns** (`SELECT COLUMN_NAME FROM TABLE_COLUMNS`) to avoid hardcoded field lists
+- MARC has **309 columns** in S/4HANA 2025 (vs ~30 in the hardcoded list)
+- All 20 MRP planning fields confirmed present: DISMM, DISLS, VRMOD, VINT1, VINT2, FXHOR, STRGR, MINBE, EISBE, MABST, LOSGR, BSTMI, BSTMA, BSTRF, SHZET, RDPRF, AUSSS, DZEIT, BESKZ, PLIFZ
+
+**HANA DB extraction command** (from Autonomy host):
+```bash
+cd /home/trevor/Documents/Autonomy/backend
+# Uses auto-column-discovery (inline script) — handles S/4HANA 2025 schema changes
+python3 scripts/extract_sap_hana.py \
+    --host 63.182.191.72 --port 30215 \
+    --user SAPHANADB --password 'Wedding$19890617#' \
+    --company-code 1710 \
+    --output-dir ../imports/sap_faa_extract_20260322
+```
+
+**Last extraction**: 2026-03-22 — 191,584 rows across 49 tables. Key tables: MARC (669 rows, 309 cols), MARA (2,770), STKO (284), STPO (1,400), AFKO (1,138), EKPO (10,813), VBAP (8,609).
+
+**First-time setup on fresh activation**:
+1. RDP to `3.124.111.17` → login as `Administrator` / master password
+2. Open SAP GUI → client 000 → login as `DDIC` / master password
+3. tCode `SU01` → unlock `BPINST` user (if needed)
+4. tCode `SU01` → reset `ZRFC_AUTONO` password if needed
+5. HANA user creation: use DBA Cockpit SQL Editor (DBACOCKPIT → Diagnostics → SQL Editor) — but note SAPHANADB user cannot CREATE USER. Alternative: direct extraction as SAPHANADB works fine.
+6. (Optional) To create AUTONOMY_EXTRACT: need SYSTEM user access — password unknown on current instance. Reset via HANA recovery or SAP Note 1600929.
+   ```sql
+   CREATE USER AUTONOMY_EXTRACT PASSWORD "Autonomy@2026" NO FORCE_FIRST_PASSWORD_CHANGE;
+   GRANT SELECT ON SCHEMA SAPHANADB TO AUTONOMY_EXTRACT;
+   GRANT CATALOG READ TO AUTONOMY_EXTRACT;
+   ```
+
+#### Running MRP Remotely (Baseline Plan)
+
+**Why**: The digital twin mirrors SAP's MRP heuristics. To validate the mirror, we need SAP's actual MRP output (planned orders) as ground truth. The comparison: "Does Autonomy's `compute_replenishment()` produce the same planned orders as SAP's MD01 for the same material-plant with the same MARC parameters?"
+
+**Remote execution options** (investigated 2026-03-22):
+
+| Method | Status | Notes |
+|--------|--------|-------|
+| **RFC via pyrfc** | ❌ Not available | `pyrfc` requires SAP NW RFC SDK (C library) — not installed locally or in Docker. Function modules: `BAPI_MATERIAL_PLANNING`, `MD_RUN_MRP`, `BAPI_REQUIREMENTS_GETDETAIL` |
+| **OData** | ❌ Cannot auth | `ZRFC_AUTONO` is User Type B (System) — cannot authenticate via HTTP. OData services require Dialog or Communication type users. |
+| **HANA SQL direct** | ⚠️ Read-only | Can READ planned orders (PLAF), MRP lists (MDKP/MDTB or PPH_*), stock/requirements — but **cannot EXECUTE MRP** (that requires ABAP runtime) |
+| **SAP GUI via RDP** | ✅ Works | Only option for running MRP transactions (MD01/MD02). Must be done interactively. |
+
+**To install pyrfc** (future — enables remote MRP execution):
+1. Download SAP NW RFC SDK from [SAP Support Launchpad](https://launchpad.support.sap.com/#/softwarecenter) (requires S-user)
+2. Install: `pip install pyrfc` + set `SAPNWRFC_HOME` to SDK lib path
+3. Then `Connection(ashost='63.182.191.72', sysnr='00', client='100', user='ZRFC_AUTONO', passwd='Autonomy@2026')`
+4. Call: `conn.call('BAPI_MATERIAL_PLANNING', PLANT='1710', MATERIAL='AVC_RBT_BUNDLE')`
+
+**Manual MRP via SAP GUI** (via RDP):
+
+1. **Run MRP** — tCode `MD01` (total) or `MD02` (single material):
+   - Plant: `1710`, Processing: `NETCH`, Create PR: `1`, MRP List: `1`
+   - For single material: `MD02` → Material `AVC_RBT_BUNDLE` → Plant `1710`
+
+2. **Check results** — tCode `MD04` (stock/requirements list):
+   - Material + Plant → shows planned orders, safety stock, exception messages
+   - This is the **ground truth** for mirror validation
+
+3. **Extract results** — after MRP run, extract PLAF (planned orders) via HANA:
+   ```sql
+   SELECT MATNR, PLWRK, PLART, GSMNG, PSTTR, PEDTR, VEESSION
+   FROM SAPHANADB.PLAF
+   WHERE MANDT='100' AND PLWRK='1710'
+   ORDER BY MATNR, PSTTR
+   ```
+
+**What we do with the results**:
+1. Extract PLAF (planned orders) to CSV after MRP run
+2. For each material: compare SAP's planned order qty/date against `heuristic_library.compute_replenishment()` output with the same MARC parameters
+3. Discrepancies indicate mirror bugs — fix until output matches
+4. This becomes a **regression test** per DIGITAL_TWIN.md §8A.11
+
+**Existing MRP baseline** (discovered 2026-03-22):
+- **313 planned orders** already exist in PLAF from prior IDES demo MRP runs
+- Extracted to `imports/sap_faa_extract_20260322/PLAF.csv` (139 columns)
+- All top materials use DISMM=PD, DISLS=EX, LOSGR=100, STRGR=40 or 70
+- Date range: 2020–2025 (historical IDES demo data)
+- Top materials: SG21 (44 orders, 4,651 units), FG1_CP (30 orders), SG224 (28 orders)
+
+**Running a fresh MRP (via SAP GUI on RDP)**:
+
+1. **Total MRP** — tCode `/nMD01`:
+   | Field | Value |
+   |-------|-------|
+   | Plant | `1710` |
+   | MRP | `NETCH` (net change in total horizon) |
+   | Create purchase req | `1` |
+   | Schedule lines | blank |
+   | MRP list | `1` (create) |
+   | Planning mode | `1` (adapt existing) |
+   | Scheduling | `1` (basic dates) |
+
+   Press F8 to execute. Takes 1-5 minutes for plant 1710.
+
+2. **Single-material MRP** — tCode `/nMD02`:
+   | Field | Value |
+   |-------|-------|
+   | Material | e.g., `SG21` |
+   | Plant | `1710` |
+   | Processing Key | `NETCH` |
+
+   Press F8. Instant for single material.
+
+3. **Check results** — tCode `/nMD04`:
+   - Enter material + plant → shows stock/requirements list
+   - Shows: planned orders, firmed orders, safety stock, exception messages
+   - This is the **ground truth** for heuristic mirror validation
+
+4. **Extract results via HANA** (after MRP run):
+   ```bash
+   python3 << 'PYEOF'
+   import sys; sys.path.insert(0, 'backend')
+   from hdbcli import dbapi
+   conn = dbapi.connect(address='63.182.191.72', port=30215,
+       user='SAPHANADB', password='Wedding$19890617#',
+       encrypt=True, sslValidateCertificate=False)
+   cursor = conn.cursor()
+   cursor.execute("""
+       SELECT MATNR, PLWRK, GSMNG, PSTTR, PEDTR, BESKZ
+       FROM SAPHANADB.PLAF
+       WHERE MANDT='100' AND PLWRK='1710'
+       ORDER BY MATNR, PSTTR
+   """)
+   for r in cursor.fetchall():
+       print(f"{r[0]:30s} plant={r[1]} qty={r[2]:>8} start={r[3]} end={r[4]} proc={r[5]}")
+   conn.close()
+   PYEOF
+   ```
+
+**Key materials for validation** (from extraction — DISMM=PD, representative of 161/178 products):
+- `SG21` — manufactured (BESKZ=E), STRGR=40, LOSGR=100 — **44 existing planned orders** (highest count)
+- `FG1_CP` — manufactured (BESKZ=E), STRGR=40, LOSGR=100 — 30 planned orders
+- `AVC_RBT_BUNDLE` — manufactured (BESKZ=E), STRGR=25, LOSGR=100, DZEIT=2d — 0 planned orders (no demand)
+- `FG3_CP` — mixed (BESKZ=X), STRGR=70, LOSGR=1 — 10 planned orders
 
 ---
 

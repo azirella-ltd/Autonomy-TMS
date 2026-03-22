@@ -13,7 +13,7 @@ cd backend && python scripts/demo_planning_cascade.py --no-pause --delay 3
 
 **[Title Screen Appears]**
 
-> "Welcome to the Autonomy Planning Cascade demo. Today I'll show you how Autonomy helps distributors like Dot Foods manage their supply chain planning with AI agents and human oversight."
+> "Welcome to the Autonomy Planning Cascade demo. Today I'll show you how Autonomy helps distributors like US Foods manage their supply chain planning with AI agents and human oversight."
 
 ---
 
@@ -213,7 +213,7 @@ This user has access to ALL Powell Framework dashboards - no logout needed!
 
 To seed demo data:
 ```bash
-docker compose exec backend python scripts/seed_dot_foods_demo.py
+docker compose exec backend python scripts/seed_us_foods_demo.py
 ```
 
 ## Related Demos

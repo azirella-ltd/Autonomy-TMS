@@ -16,11 +16,11 @@ demo data for the Food Dist tenant. Seeds:
 9. Two new demo users (Allocation Manager, Order Promising Manager)
 
 Prerequisites:
-    - seed_dot_foods_demo.py must have been run first
+    - seed_us_foods_demo.py must have been run first
     - Food Dist SC config must exist (from FoodDistConfigGenerator)
 
 Usage:
-    docker compose exec backend python scripts/seed_dot_foods_allocation_demo.py
+    docker compose exec backend python scripts/seed_us_foods_allocation_demo.py
 """
 
 import os
@@ -1003,8 +1003,8 @@ def seed_demo_users(db: Session, customer_id: int) -> dict:
     # Allocation Manager gets narrow ALLOCATION_MANAGER role (only Allocation Worklist)
     alloc_role = rbac_service.get_role_by_slug("allocation_manager", tenant_id=None)
     if not alloc_role:
-        # Create if not yet seeded by seed_dot_foods_demo.py
-        from scripts.seed_dot_foods_demo import create_powell_role
+        # Create if not yet seeded by seed_us_foods_demo.py
+        from scripts.seed_us_foods_demo import create_powell_role
         alloc_role = create_powell_role(db, rbac_service, "ALLOCATION_MANAGER")
     # Remove any broader roles first
     alloc_user.roles = [r for r in alloc_user.roles if r.slug not in ("sop_director",)]
@@ -1015,7 +1015,7 @@ def seed_demo_users(db: Session, customer_id: int) -> dict:
     # Order Promising Manager gets narrow ORDER_PROMISE_MANAGER role (ATP Worklist only)
     opm_role = rbac_service.get_role_by_slug("order_promise_manager", tenant_id=None)
     if not opm_role:
-        from scripts.seed_dot_foods_demo import create_powell_role
+        from scripts.seed_us_foods_demo import create_powell_role
         opm_role = create_powell_role(db, rbac_service, "ORDER_PROMISE_MANAGER")
     # Remove any broader roles first
     order_user.roles = [r for r in order_user.roles if r.slug not in ("mps_manager",)]
@@ -1422,7 +1422,7 @@ def main():
 
         tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
         if not tenant:
-            print("ERROR: 'Food Dist' tenant not found. Run seed_dot_foods_demo.py first.")
+            print("ERROR: 'Food Dist' tenant not found. Run seed_us_foods_demo.py first.")
             sys.exit(1)
         print(f"   Tenant: {tenant.name} (id={tenant.id})")
 

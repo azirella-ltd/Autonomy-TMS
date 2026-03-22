@@ -47,7 +47,7 @@ with engine.connect() as _conn:
     _comp = _conn.execute(text(
         "SELECT id FROM company WHERE id LIKE :pat LIMIT 1"
     ), {"pat": f"%CORP_{TENANT_ID}"}).fetchone()
-    COMPANY_ID = _comp[0] if _comp else f"DF_CORP_{TENANT_ID}"
+    COMPANY_ID = _comp[0] if _comp else f"UF_CORP_{TENANT_ID}"
 
 SUPPLIER_SITES = [
     (257, "TYSON"), (258, "KRAFT"), (259, "GENMILLS"), (260, "NESTLE"),

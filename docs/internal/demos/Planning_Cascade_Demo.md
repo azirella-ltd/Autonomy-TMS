@@ -37,8 +37,8 @@ python scripts/demo_planning_cascade.py
 # Start the full stack
 make up
 
-# Seed Dot Foods demo data (recommended)
-docker compose exec backend python scripts/seed_dot_foods_demo.py
+# Seed US Foods demo data (recommended)
+docker compose exec backend python scripts/seed_us_foods_demo.py
 
 # Or start services individually:
 # Terminal 1: Backend
@@ -68,7 +68,7 @@ See also: [Powell Framework Demo](Powell_Framework_Demo.md) for role-based dashb
 
 **Talking Points:**
 
-> "Today I'm going to show you how Autonomy helps distributors like Dot Foods manage their supply chain planning."
+> "Today I'm going to show you how Autonomy helps distributors like US Foods manage their supply chain planning."
 
 > "Distributors face a classic challenge: they need to balance service levels against inventory costs. Order too much, and you tie up capital. Order too little, and you miss sales."
 
@@ -141,7 +141,7 @@ See also: [Powell Framework Demo](Powell_Framework_Demo.md) for role-based dashb
 | "Here are my service targets" | "Based on 1000 scenarios, here are the recommended targets" |
 | Simple input form | What-if scenario comparison |
 
-**Demo Data - Dot Foods:**
+**Demo Data - US Foods:**
 
 | Segment | OTIF Floor | Fill Rate Target |
 |---------|------------|------------------|

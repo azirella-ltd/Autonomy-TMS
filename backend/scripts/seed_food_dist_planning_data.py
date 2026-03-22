@@ -19,7 +19,7 @@ Data Generated:
   - Inventory optimization records
 
 Prerequisites:
-  - Run seed_dot_foods_demo.py first (creates customer + users)
+  - Run seed_us_foods_demo.py first (creates customer + users)
   - Run seed_food_dist_hierarchies.py first (creates SC config, sites, products)
 
 Usage:
@@ -1092,7 +1092,7 @@ TRM_REASON_CODES = [
     "EXPEDITE_REQUIRED", "RISK_MITIGATION", "OTHER",
 ]
 
-# TRM specialist user emails (from seed_dot_foods_demo.py)
+# TRM specialist user emails (from seed_us_foods_demo.py)
 TRM_SPECIALIST_USERS = {
     "atp": "atp@distdemo.com",
     "rebalancing": "rebalancing@distdemo.com",
@@ -2199,7 +2199,7 @@ def main():
         tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
         if not tenant:
             print("\nERROR: Food Dist tenant not found!")
-            print("Run seed_dot_foods_demo.py first.")
+            print("Run seed_us_foods_demo.py first.")
             return
 
         print(f"\nFound tenant: {tenant.name} (ID: {tenant.id}, Mode: {tenant.mode})")

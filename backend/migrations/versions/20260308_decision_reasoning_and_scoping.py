@@ -79,12 +79,12 @@ def upgrade():
 
     # ── 3. Populate site_hierarchy_node.site_id FKs ──────────────────
     # Match SITE-level hierarchy nodes to site table records.
-    # Hierarchy code format: DF_SITE_DOTFOODS_DC → site.name = FOODDIST_DC
+    # Hierarchy code format: DF_SITE_USFOODS_DC → site.name = FOODDIST_DC
     # We match by: strip 'DF_SITE_' prefix from code, then find matching site
     # using the last segment of hierarchy_path (which IS the site identifier).
     #
     # hierarchy_path examples:
-    #   DF_COMPANY/DF_CENTRAL/DF_US/DOTFOODS_DC → last segment = DOTFOODS_DC
+    #   DF_COMPANY/DF_CENTRAL/DF_US/USFOODS_DC → last segment = USFOODS_DC
     # site.name examples: FOODDIST_DC, CUST_PDX, etc.
     #
     # Since naming conventions differ, use a mapping approach:
@@ -160,7 +160,7 @@ def upgrade():
 
     # ── 5. Fix user scope values to use actual hierarchy codes ────────
     # Current: site_scope=['REGION_Central', 'SITE_DC-Chicago']
-    # Needed: site_scope=['DF_CENTRAL', 'DF_SITE_DOTFOODS_DC']
+    # Needed: site_scope=['DF_CENTRAL', 'DF_SITE_USFOODS_DC']
     # Current: product_scope=['CATEGORY_Frozen', 'CATEGORY_Refrigerated']
     # Needed: product_scope=['DF_CAT_FROZEN', 'DF_CAT_REFRIGERATED']
     #

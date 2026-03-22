@@ -69,7 +69,7 @@ D365_ENTITY_REGISTRY: Dict[str, Dict] = {
     "RoutingOperations":            {"category": "master", "keys": ["RoutingType", "RoutingNumber", "OperationNumber"], "description": "Routing Operation Steps"},
     "CapacityData":                 {"category": "master", "keys": ["CapacityId"], "description": "Capacity Planning Data"},
     "InventWarehouseOnHandEntity":  {"category": "master", "keys": ["ItemNumber", "WarehouseId", "SiteId"], "description": "Inventory On-Hand"},
-    "ItemCoverageSettings":         {"category": "master", "keys": ["ItemNumber", "SiteId", "WarehouseId"], "description": "Safety Stock / Coverage Settings"},
+    "ItemCoverageSettings":         {"category": "master", "keys": ["ItemNumber", "SiteId", "WarehouseId"], "description": "MRP Coverage / Safety Stock / Planning Params (CoverageCode, lot sizing, time fences, lead times)"},
     "BatchMaster":                  {"category": "master", "keys": ["ItemNumber", "BatchNumber"], "description": "Batch / Lot Master"},
     "DemandForecastEntries":        {"category": "master", "keys": ["ItemNumber", "SiteId", "ForecastDate"], "description": "Demand Forecast"},
     # --- TRANSACTION DATA ---

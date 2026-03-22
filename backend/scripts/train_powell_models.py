@@ -11,7 +11,7 @@ End-to-end training pipeline that:
   F. Prints summary
 
 Prerequisites:
-    - seed_dot_foods_demo.py must have been run first
+    - seed_us_foods_demo.py must have been run first
     - powell_training_config / trm_training_config / powell_training_run
       tables must exist (migration 20260210_powell_training_tables)
 
@@ -681,7 +681,7 @@ def main():
 
         tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
         if not tenant:
-            print("ERROR: 'Food Dist' tenant not found. Run seed_dot_foods_demo.py first.")
+            print("ERROR: 'Food Dist' tenant not found. Run seed_us_foods_demo.py first.")
             sys.exit(1)
         print(f"   Tenant: {tenant.name} (id={tenant.id})")
 
@@ -689,7 +689,7 @@ def main():
             SupplyChainConfig.tenant_id == tenant.id
         ).first()
         if not config:
-            print("ERROR: No SC config for Food Dist. Run seed_dot_foods_demo.py first.")
+            print("ERROR: No SC config for Food Dist. Run seed_us_foods_demo.py first.")
             sys.exit(1)
         print(f"   SC Config: {config.name} (id={config.id})")
 

@@ -327,9 +327,9 @@ for prediction_run_id in run_id_list:
         global_forecast = global_forecast.drop(columns=['class_new'])
         class_list = global_forecast['class'].unique().tolist()
 
-    elif 'DotFoods' in run_id:
+    elif 'USFoods' in run_id:
         SQL = f"SELECT upc_id, tier \
-            FROM `DotFoods - Raw` \
+            FROM `USFoods - Raw` \
             GROUP BY upc_id, tier"
         class_df = pd.read_sql(SQL, data_engine)
         global_forecast['upc_id'] = global_forecast['unique_id'].str.split('|').str[0]

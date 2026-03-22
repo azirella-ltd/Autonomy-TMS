@@ -51,6 +51,7 @@ import ERPDataManagement from "./pages/admin/ERPDataManagement.jsx";
 import EmailSignalsDashboard from "./pages/admin/EmailSignalsDashboard.jsx";
 import BscConfigPage from "./pages/admin/BscConfigPage.jsx";
 import ContextEngine from "./pages/admin/ContextEngine.jsx";
+import ExternalSignalsDashboard from "./pages/admin/ExternalSignalsDashboard.jsx";
 import StochasticParamsEditor from "./pages/admin/StochasticParamsEditor.jsx";
 import MetricConfigPage from "./pages/admin/MetricConfigPage.jsx";
 
@@ -509,6 +510,10 @@ const AppContent = () => {
             <Route
               path="/admin/context-engine"
               element={<ContextEngine />}
+            />
+            <Route
+              path="/admin/external-signals"
+              element={<ExternalSignalsDashboard />}
             />
 
             <Route

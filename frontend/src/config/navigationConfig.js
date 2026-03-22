@@ -871,6 +871,13 @@ export const NAVIGATION_CONFIG = [
         description: 'Unified hub for all external context sources',
       },
       {
+        label: 'Market Intelligence',
+        path: '/admin/external-signals',
+        icon: LayersIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Outside-in planning signals: weather, economics, energy, geopolitical, sentiment, regulatory',
+      },
+      {
         label: 'SAP Data Management',
         path: '/admin/sap-data',
         icon: DatabaseIcon,

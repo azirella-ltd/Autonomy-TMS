@@ -516,12 +516,32 @@ def main():
                "ReservedQuantity", "AvailableQuantity", "dataAreaId"])
 
     # ── ItemCoverageSettings.csv ─────────────────────────────────────────
+    # Maps SAP MARC planning fields to D365 ItemCoverageSettings
+    # See DIGITAL_TWIN.md §8C for the full field mapping
+    DISMM_TO_COVERAGE_CODE = {
+        "PD": 2,  # Deterministic MRP → Requirement (lot-for-lot)
+        "VB": 3,  # Reorder Point → Min/Max
+        "VM": 3,  # Auto Reorder Point → Min/Max
+        "V1": 3,  # ROP + External → Min/Max
+        "V2": 3,  # Auto ROP + External → Min/Max
+        "VV": 2,  # Forecast-based → Requirement
+        "ND": 0,  # No planning → Manual
+    }
+
     coverage_rows = []
     for mat in sorted(materials):
         marc_r = marc_map.get(mat, {})
         eisbe = safe_float(marc_r.get("EISBE", "0"))
         minbe = safe_float(marc_r.get("MINBE", "0"))
         mabst = safe_float(marc_r.get("MABST", "0"))
+        dismm = marc_r.get("DISMM", "").strip()
+        losgr = safe_float(marc_r.get("LOSGR", "0"))
+        bstmi = safe_float(marc_r.get("BSTMI", "0"))
+        bstma = safe_float(marc_r.get("BSTMA", "0"))
+        bstrf = safe_float(marc_r.get("BSTRF", "0"))
+        plifz = int(safe_float(marc_r.get("PLIFZ", "0")))
+        dzeit = int(safe_float(marc_r.get("DZEIT", "0")))
+        fxhor = int(safe_float(marc_r.get("FXHOR", "0")))
 
         coverage_rows.append({
             "ItemNumber": mat,
@@ -531,12 +551,32 @@ def main():
             "MaximumInventoryLevel": mabst,
             "SafetyStockQuantity": eisbe,
             "CoveragePlanGroupId": marc_r.get("DISMM", ""),
+            # New planning fields (SAP MARC → D365 ItemCoverageSettings)
+            "CoverageCode": DISMM_TO_COVERAGE_CODE.get(dismm, 2),
+            "StandardOrderQuantity": losgr,
+            "MinimumOrderQuantity": bstmi,
+            "MaximumOrderQuantity": bstma,
+            "MultipleQuantity": bstrf,
+            "LeadTimePurchase": plifz if marc_r.get("BESKZ", "").strip() == "F" else 0,
+            "LeadTimeProduction": dzeit if marc_r.get("BESKZ", "").strip() in ("E", "X") else 0,
+            "LeadTimeTransfer": 0,  # No SAP equivalent for inter-plant transfer LT in MARC
+            "CoverageTimeFence": fxhor if fxhor > 0 else 90,  # Default 90 days
+            "LockingTimeFence": fxhor,  # SAP FXHOR ≈ D365 firming fence
+            "MaxPositiveDays": 7,   # Default: accept supply up to 7 days early
+            "MaxNegativeDays": 3,   # Default: accept supply up to 3 days late
+            "PreferredVendor": "",  # Would come from EORD source list
+            "FulfillMinimum": "",
             "dataAreaId": data_area,
         })
     write_csv(output_dir, "ItemCoverageSettings.csv", coverage_rows,
               ["ItemNumber", "SiteId", "WarehouseId", "MinimumInventoryLevel",
                "MaximumInventoryLevel", "SafetyStockQuantity",
-               "CoveragePlanGroupId", "dataAreaId"])
+               "CoveragePlanGroupId", "CoverageCode",
+               "StandardOrderQuantity", "MinimumOrderQuantity", "MaximumOrderQuantity",
+               "MultipleQuantity", "LeadTimePurchase", "LeadTimeProduction", "LeadTimeTransfer",
+               "CoverageTimeFence", "LockingTimeFence",
+               "MaxPositiveDays", "MaxNegativeDays",
+               "PreferredVendor", "FulfillMinimum", "dataAreaId"])
 
     # ── ProductionOrderHeaders.csv ───────────────────────────────────────
     prod_orders = []

@@ -23,6 +23,7 @@ Usage:
 
 import argparse
 import csv
+import json
 import os
 import sys
 from collections import defaultdict, Counter
@@ -190,13 +191,35 @@ def main():
     for r in marc_plant:
         mat_beskz[r["MATNR"]] = r.get("BESKZ", "")
 
-    # Safety stock from MARC
+    # Safety stock and planning parameters from MARC
     mat_eisbe = {}
     mat_minbe = {}
+    mat_marc_params = {}  # Full MARC planning fields per material
     for r in marc_plant:
         mat = r["MATNR"]
         mat_eisbe[mat] = safe_float(r.get("EISBE", "0"))
         mat_minbe[mat] = safe_float(r.get("MINBE", "0"))
+        mat_marc_params[mat] = {
+            "DISMM": r.get("DISMM", "").strip(),
+            "DISLS": r.get("DISLS", "").strip(),
+            "LOSGR": safe_float(r.get("LOSGR", "0")),
+            "BSTMI": safe_float(r.get("BSTMI", "0")),
+            "BSTMA": safe_float(r.get("BSTMA", "0")),
+            "BSTRF": safe_float(r.get("BSTRF", "0")),
+            "MABST": safe_float(r.get("MABST", "0")),
+            "VRMOD": r.get("VRMOD", "").strip(),
+            "VINT1": int(safe_float(r.get("VINT1", "0"))),
+            "VINT2": int(safe_float(r.get("VINT2", "0"))),
+            "FXHOR": int(safe_float(r.get("FXHOR", "0"))),
+            "STRGR": r.get("STRGR", "").strip(),
+            "DISPO": r.get("DISPO", "").strip(),
+            "BESKZ": r.get("BESKZ", "").strip(),
+            "SHZET": int(safe_float(r.get("SHZET", "0"))),
+            "PLIFZ": int(safe_float(r.get("PLIFZ", "0"))),
+            "DZEIT": int(safe_float(r.get("DZEIT", "0"))),
+            "AUSSS": safe_float(r.get("AUSSS", "0")),
+            "RDPRF": r.get("RDPRF", "").strip(),
+        }
 
     # Stock levels from MARD
     mat_stock = defaultdict(float)
@@ -640,11 +663,19 @@ def main():
                     rop = 50.0
                 policy_source = "DEFAULT"
 
+            # Get MARC planning params for erp_planning_params JSONB
+            marc_p = mat_marc_params.get(mat_id, {})
+            erp_params_json = {k: v for k, v in marc_p.items() if v} if marc_p else None
+
             session.execute(
                 text("""
                     INSERT INTO inv_policy (config_id, site_id, product_id, ss_policy, ss_quantity,
-                                           reorder_point, service_level, review_period, is_active, source)
-                    VALUES (:cid, :sid, :pid, 'abs_level', :ss, :rop, 0.95, 7, 'Y', :src)
+                                           reorder_point, order_up_to_level, min_order_quantity,
+                                           max_order_quantity, fixed_order_quantity,
+                                           service_level, review_period, is_active, source,
+                                           erp_planning_params)
+                    VALUES (:cid, :sid, :pid, 'abs_level', :ss, :rop, :oul, :moq, :maxq, :foq,
+                            0.95, 7, 'Y', :src, CAST(:erp_params AS jsonb))
                 """),
                 {
                     "cid": config_id,
@@ -652,13 +683,96 @@ def main():
                     "pid": prod_id,
                     "ss": ss_qty,
                     "rop": rop,
+                    "oul": marc_p.get("MABST", 0) if marc_p.get("MABST", 0) > 0 else rop * 2,
+                    "moq": marc_p.get("BSTMI", 0) or None,
+                    "maxq": marc_p.get("BSTMA", 0) or None,
+                    "foq": marc_p.get("LOSGR", 0) or marc_p.get("BSTRF", 0) or None,
                     "src": policy_source,
+                    "erp_params": json.dumps(erp_params_json) if erp_params_json else None,
                 },
             )
             policy_count += 1
 
         session.flush()
-        print(f"    Created {policy_count} inventory policies")
+        print(f"    Created {policy_count} inventory policies (with erp_planning_params)")
+
+        # ---------------------------------------------------------------
+        # 4g-ext. Create site_planning_config rows (ERP heuristic dispatch)
+        # ---------------------------------------------------------------
+        print(f"  Creating site_planning_config rows...")
+
+        # DISMM → PlanningMethod mapping
+        DISMM_MAP = {
+            "VB": "REORDER_POINT", "VM": "REORDER_POINT",
+            "V1": "MRP_AUTO", "V2": "MRP_AUTO",
+            "VV": "FORECAST_BASED",
+            "PD": "MRP_DETERMINISTIC",
+            "ND": "NO_PLANNING",
+        }
+        # DISLS → LotSizingRule mapping
+        DISLS_MAP = {
+            "EX": "LOT_FOR_LOT", "FX": "FIXED", "HB": "REPLENISH_TO_MAX",
+            "WB": "WEEKLY_BATCH", "MB": "MONTHLY_BATCH", "TB": "DAILY_BATCH",
+        }
+
+        spc_count = 0
+        for mat_id in sorted(materials):
+            prod_id = f"CFG{config_id}_{mat_id}"
+            marc_p = mat_marc_params.get(mat_id, {})
+            dismm = marc_p.get("DISMM", "")
+            disls = marc_p.get("DISLS", "")
+
+            erp_params_json = {k: v for k, v in marc_p.items() if v} if marc_p else None
+
+            session.execute(
+                text("""
+                    INSERT INTO site_planning_config
+                        (config_id, tenant_id, site_id, product_id,
+                         planning_method, lot_sizing_rule,
+                         fixed_lot_size, min_order_quantity, max_order_quantity, order_multiple,
+                         frozen_horizon_days, planning_time_fence_days,
+                         forecast_consumption_mode, forecast_consumption_fwd_days, forecast_consumption_bwd_days,
+                         procurement_type, strategy_group, mrp_controller,
+                         erp_source, erp_params)
+                    VALUES (:cid, :tid, :sid, :pid,
+                            :pm, :ls,
+                            :fls, :moq, :maxq, :mult,
+                            :fhz, :ptf,
+                            :fcm, :fcf, :fcb,
+                            :pt, :sg, :mc,
+                            'SAP', CAST(:erp_params AS jsonb))
+                    ON CONFLICT (config_id, site_id, product_id) DO UPDATE SET
+                        planning_method = EXCLUDED.planning_method,
+                        lot_sizing_rule = EXCLUDED.lot_sizing_rule,
+                        erp_params = EXCLUDED.erp_params,
+                        updated_at = NOW()
+                """),
+                {
+                    "cid": config_id,
+                    "tid": tenant_id,
+                    "sid": plant_site_id,
+                    "pid": prod_id,
+                    "pm": DISMM_MAP.get(dismm, "REORDER_POINT"),
+                    "ls": DISLS_MAP.get(disls, "LOT_FOR_LOT"),
+                    "fls": marc_p.get("LOSGR") or None,
+                    "moq": marc_p.get("BSTMI") or None,
+                    "maxq": marc_p.get("BSTMA") or None,
+                    "mult": marc_p.get("BSTRF") or None,
+                    "fhz": marc_p.get("FXHOR") or None,
+                    "ptf": marc_p.get("PLIFZ") or None,
+                    "fcm": marc_p.get("VRMOD") or None,
+                    "fcf": marc_p.get("VINT2") or None,
+                    "fcb": marc_p.get("VINT1") or None,
+                    "pt": marc_p.get("BESKZ") or None,
+                    "sg": marc_p.get("STRGR") or None,
+                    "mc": marc_p.get("DISPO") or None,
+                    "erp_params": json.dumps(erp_params_json) if erp_params_json else None,
+                },
+            )
+            spc_count += 1
+
+        session.flush()
+        print(f"    Created {spc_count} site_planning_config rows")
 
         # ---------------------------------------------------------------
         # 4h. Create inventory levels (from MARD stock)

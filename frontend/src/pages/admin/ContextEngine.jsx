@@ -16,6 +16,7 @@ import {
   Mail,
   Database,
   MessageSquare,
+  Globe,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -249,6 +250,11 @@ export default function ContextEngine() {
   const [slackLoading, setSlackLoading] = useState(true);
   const [slackError, setSlackError] = useState(false);
 
+  // -- External Signals state (outside-in planning intelligence)
+  const [extData, setExtData] = useState(null);
+  const [extLoading, setExtLoading] = useState(true);
+  const [extError, setExtError] = useState(false);
+
   // -- Global refresh
   const [refreshing, setRefreshing] = useState(false);
 
@@ -341,6 +347,26 @@ export default function ContextEngine() {
     }
   }, []);
 
+  const fetchExternalSignals = useCallback(async () => {
+    setExtLoading(true);
+    setExtError(false);
+    try {
+      const res = await api.get('/external-signals/dashboard');
+      const d = res.data;
+      setExtData({
+        activeSources: d.sources?.filter(s => s.is_active).length ?? 0,
+        totalSources: d.sources?.length ?? 0,
+        signalsLast30d: d.total_signals_30d ?? 0,
+        highRelevance: d.high_relevance_signals ?? 0,
+        topCategory: Object.entries(d.signals_by_category || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'None',
+      });
+    } catch {
+      setExtError(true);
+    } finally {
+      setExtLoading(false);
+    }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     setRefreshing(true);
     await Promise.allSettled([
@@ -348,9 +374,10 @@ export default function ContextEngine() {
       fetchEmailSignals(),
       fetchSapData(),
       fetchSlackSignals(),
+      fetchExternalSignals(),
     ]);
     setRefreshing(false);
-  }, [fetchKnowledgeBase, fetchEmailSignals, fetchSapData, fetchSlackSignals]);
+  }, [fetchKnowledgeBase, fetchEmailSignals, fetchSapData, fetchSlackSignals, fetchExternalSignals]);
 
   useEffect(() => {
     fetchAll();
@@ -363,15 +390,17 @@ export default function ContextEngine() {
     !emailError && emailData && emailData.activeConnections > 0,
     !sapError && sapData && sapData.connections > 0,
     !slackError && slackData && slackData.activeConnections > 0,
+    !extError && extData && extData.activeSources > 0,
   ].filter(Boolean).length;
 
   const totalIngested = (
     (kbData?.documentCount || 0) +
     (emailData?.signalsLast7d || 0) +
-    (slackData?.signalsLast7d || 0)
+    (slackData?.signalsLast7d || 0) +
+    (extData?.signalsLast30d || 0)
   );
 
-  const allLoading = kbLoading && emailLoading && sapLoading && slackLoading;
+  const allLoading = kbLoading && emailLoading && sapLoading && slackLoading && extLoading;
 
   // ── Status resolvers ───────────────────────────────────────────────────────
 
@@ -397,6 +426,12 @@ export default function ContextEngine() {
     if (slackError) return 'not_configured';
     if (!slackData) return 'not_configured';
     return slackData.activeConnections > 0 ? 'active' : 'inactive';
+  }
+
+  function extStatus() {
+    if (extError) return 'not_configured';
+    if (!extData) return 'not_configured';
+    return extData.activeSources > 0 ? 'active' : 'inactive';
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -507,6 +542,33 @@ export default function ContextEngine() {
             primaryLabel="Manage Slack"
             primaryAction={() => navigate('/admin/slack-signals')}
           />
+
+          {/* External Signals — Outside-In Planning */}
+          <SourceCard
+            icon={Globe}
+            name="Market Intelligence"
+            description="Outside-in planning signals from public APIs: weather, economic indicators, energy prices, geopolitical events, consumer trends, and regulatory alerts."
+            status={extStatus()}
+            loading={extLoading}
+            error={extError}
+            iconBgClass="bg-sky-500/10"
+            iconColorClass="text-sky-600 dark:text-sky-400"
+            metrics={[
+              { label: 'Active sources', value: extData ? `${extData.activeSources} of ${extData.totalSources}` : null },
+              { label: 'Signals (last 30 days)', value: extData?.signalsLast30d?.toLocaleString() },
+              { label: 'High-relevance signals', value: extData?.highRelevance?.toLocaleString() },
+              { label: 'Top category', value: extData?.topCategory },
+            ]}
+            primaryLabel="Manage Sources"
+            primaryAction={() => navigate('/admin/external-signals')}
+            secondaryLabel="Activate Defaults"
+            secondaryAction={async () => {
+              try {
+                await api.post('/external-signals/sources/activate-defaults');
+                fetchExternalSignals();
+              } catch { /* ignore */ }
+            }}
+          />
         </div>
 
         {/* ── Summary status bar ──────────────────────────────────────────── */}
@@ -517,7 +579,7 @@ export default function ContextEngine() {
                 {/* Active sources */}
                 <div className="flex items-center gap-2">
                   <div className="flex -space-x-1">
-                    {[kbStatus(), emailStatus(), sapStatus(), slackStatus()].map(
+                    {[kbStatus(), emailStatus(), sapStatus(), slackStatus(), extStatus()].map(
                       (s, i) => (
                         <div
                           key={i}
@@ -534,7 +596,7 @@ export default function ContextEngine() {
                       <Loader2 className="h-4 w-4 animate-spin inline" />
                     ) : (
                       <>
-                        {activeCount} of 4{' '}
+                        {activeCount} of 5{' '}
                         <span className="text-muted-foreground font-normal">
                           sources active
                         </span>
