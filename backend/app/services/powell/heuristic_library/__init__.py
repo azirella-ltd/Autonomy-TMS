@@ -1,81 +1,72 @@
 """
-ERP/APS-Specific Deterministic Heuristic Library -- Backward Compatibility Wrapper.
+ERP-Aware Heuristic Library Package.
 
-This file preserves the original API for existing callers while delegating
-to the new modular ``heuristic_library/`` package.  The package provides
-ERP-specific implementations (SAP, D365, Odoo) for all 11 TRM types.
+Modular heuristic implementations for SAP S/4HANA, Microsoft Dynamics 365
+Finance & Operations, and Odoo Community/Enterprise.  Each ERP vendor has
+a dedicated implementation of all 11 TRM decision types.
 
-New code should import from ``app.services.powell.heuristic_library`` (the package)
-directly.  This wrapper exists so that:
-  - ``simulation_calibration_service.py`` keeps working unchanged
-  - ``tests/powell/test_heuristic_library.py`` keeps working unchanged
+Usage::
 
-See DIGITAL_TWIN.md section 8A for full algorithmic specification.
+    from app.services.powell.heuristic_library import (
+        compute_decision,
+        load_erp_params,
+        HeuristicDecision,
+        ERPPlanningParams,
+    )
+
+    # Load params from DB
+    params = load_erp_params(product_id, site_id, config_id, db)
+
+    # Compute a decision (dispatches to SAP/D365/Odoo based on erp_source)
+    decision = compute_decision('po_creation', state, params)
+
+Architecture::
+
+    dispatch.py              -- reads erp_source, routes to correct impl
+    base.py                  -- abstract interface, shared dataclasses
+    sap_heuristics.py        -- SAP MARC/EORD/STKO logic
+    d365_heuristics.py       -- D365 ReqItemTable/coverage logic
+    odoo_heuristics.py       -- Odoo orderpoint/route logic
+
+See DIGITAL_TWIN.md section 8A for the full algorithmic specification.
 """
 
 from __future__ import annotations
 
-# NOTE: Python resolves ``heuristic_library`` as the *package* (directory)
-# since this file and the package coexist.  However, this file IS
-# ``heuristic_library.py`` and gets shadowed once the package directory
-# exists with __init__.py.  To make this work, we need to re-export
-# everything the old module provided.
-#
-# Since Python will prefer the package directory over this .py file when
-# both exist, THIS FILE WILL NOT BE IMPORTED.  The package __init__.py
-# will be imported instead.  We keep this file for documentation and as
-# a safety net during the transition period.
-#
-# All existing imports like:
-#   from app.services.powell.heuristic_library import ReplenishmentState
-# will resolve to the package's __init__.py exports.
-
 import math
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Tuple
+
+from .dispatch import compute_decision, load_erp_params
+from .base import (
+    HeuristicDecision,
+    ERPPlanningParams,
+    BaseHeuristics,
+    ReplenishmentState,
+    ReplenishmentConfig,
+    ATPState,
+    RebalancingState,
+    OrderTrackingState,
+    MOExecutionState,
+    TOExecutionState,
+    QualityState,
+    MaintenanceState,
+    SubcontractingState,
+    ForecastAdjustmentState,
+    InventoryBufferState,
+    apply_lot_sizing,
+    apply_order_modifications,
+)
+from .sap_heuristics import SAPHeuristics
+from .d365_heuristics import D365Heuristics
+from .odoo_heuristics import OdooHeuristics
 
 
 # ---------------------------------------------------------------------------
-# State & Config dataclasses (kept for any direct importers)
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ReplenishmentState:
-    """What the simulation site knows at decision time.  Read-only snapshot."""
-
-    inventory_position: float     # on_hand + pipeline - backlog
-    on_hand: float
-    backlog: float
-    pipeline_qty: float           # total in-transit (sum of pipeline)
-    avg_daily_demand: float
-    demand_cv: float
-    lead_time_days: float
-    forecast_daily: float         # current-period forecast (for forecast-based methods)
-    day_of_week: int              # 0=Mon ... 6=Sun (for weekly batching)
-    day_of_month: int             # 1-31 (for monthly batching)
-
-
-@dataclass(frozen=True)
-class ReplenishmentConfig:
-    """Planning parameters from ``SitePlanningConfig`` + ``InvPolicy``."""
-
-    planning_method: str          # PlanningMethod value
-    lot_sizing_rule: str          # LotSizingRule value
-    reorder_point: float
-    order_up_to: float
-    safety_stock: float
-    fixed_lot_size: float = 0.0
-    min_order_quantity: float = 0.0
-    max_order_quantity: float = 0.0   # 0 = unlimited
-    order_multiple: float = 0.0
-    review_period_days: int = 7
-    frozen_horizon_days: int = 0
-    max_inventory: float = 0.0        # for MIN_MAX / REPLENISH_TO_MAX
-
-
-# ---------------------------------------------------------------------------
-# Netting methods -- one per PlanningMethod
+# Backward-compatible netting functions
+#
+# These were originally top-level functions in the old heuristic_library.py.
+# Existing callers (tests, simulation_calibration_service) import them.
+# They operate on the legacy ReplenishmentState + ReplenishmentConfig.
 # ---------------------------------------------------------------------------
 
 
@@ -94,12 +85,12 @@ def _net_forecast_based(state: ReplenishmentState, cfg: ReplenishmentConfig) -> 
 
 
 def _net_mrp_auto(state: ReplenishmentState, cfg: ReplenishmentConfig) -> float:
-    """SAP V1/V2: auto-calculated ROP with external requirements.  Delegates."""
+    """SAP V1/V2: auto-calculated ROP with external requirements."""
     return _net_forecast_based(state, cfg)
 
 
 def _net_mrp_deterministic(state: ReplenishmentState, cfg: ReplenishmentConfig) -> float:
-    """SAP PD: deterministic MRP netting.  Delegates to forecast-based for simulation."""
+    """SAP PD: deterministic MRP netting."""
     return _net_forecast_based(state, cfg)
 
 
@@ -111,7 +102,6 @@ def _net_lot_for_lot(state: ReplenishmentState, cfg: ReplenishmentConfig) -> flo
 
 def _net_period_batching(state: ReplenishmentState, cfg: ReplenishmentConfig) -> float:
     """D365 CoverageCode=1 / SAP WB/MB: accumulate demand, order on review boundary."""
-    # Only place orders on the boundary day
     if cfg.lot_sizing_rule == "WEEKLY_BATCH" and state.day_of_week != 0:
         return 0.0
     if cfg.lot_sizing_rule == "MONTHLY_BATCH" and state.day_of_month != 1:
@@ -119,7 +109,6 @@ def _net_period_batching(state: ReplenishmentState, cfg: ReplenishmentConfig) ->
     if cfg.lot_sizing_rule == "DAILY_BATCH":
         pass  # order every day
 
-    # Cover the full review period
     coverage = state.avg_daily_demand * cfg.review_period_days
     net_need = coverage + cfg.safety_stock - state.inventory_position
     return max(0.0, net_need)
@@ -143,10 +132,6 @@ def _net_no_planning(state: ReplenishmentState, cfg: ReplenishmentConfig) -> flo
     return 0.0
 
 
-# ---------------------------------------------------------------------------
-# Netting dispatch table
-# ---------------------------------------------------------------------------
-
 _NETTING_DISPATCH: Dict[str, Callable[[ReplenishmentState, ReplenishmentConfig], float]] = {
     "REORDER_POINT": _net_reorder_point,
     "FORECAST_BASED": _net_forecast_based,
@@ -160,15 +145,9 @@ _NETTING_DISPATCH: Dict[str, Callable[[ReplenishmentState, ReplenishmentConfig],
 }
 
 
-def _net_by_method(state: ReplenishmentState, cfg: ReplenishmentConfig) -> float:
-    fn = _NETTING_DISPATCH.get(cfg.planning_method)
-    if fn is None:
-        return _net_reorder_point(state, cfg)
-    return fn(state, cfg)
-
-
 # ---------------------------------------------------------------------------
-# Lot sizing
+# Backward-compatible lot sizing and order modifications
+# (Legacy signature: takes ReplenishmentState + ReplenishmentConfig)
 # ---------------------------------------------------------------------------
 
 
@@ -204,11 +183,6 @@ def _apply_lot_sizing(
     return raw_qty
 
 
-# ---------------------------------------------------------------------------
-# Order modification (MOQ, rounding, max)
-# ---------------------------------------------------------------------------
-
-
 def _apply_order_modifications(qty: float, cfg: ReplenishmentConfig) -> float:
     """Apply MOQ, order multiple, max-order-quantity constraints."""
     if qty <= 0:
@@ -227,7 +201,7 @@ def _apply_order_modifications(qty: float, cfg: ReplenishmentConfig) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Top-level dispatch
+# Top-level dispatch (backward compat)
 # ---------------------------------------------------------------------------
 
 
@@ -240,6 +214,12 @@ def compute_replenishment(
     Pipeline:  netting -> lot sizing -> order modifications.
     All steps are pure functions.
     """
+    def _net_by_method(state: ReplenishmentState, cfg: ReplenishmentConfig) -> float:
+        fn = _NETTING_DISPATCH.get(cfg.planning_method)
+        if fn is None:
+            return _net_reorder_point(state, cfg)
+        return fn(state, cfg)
+
     raw_qty = _net_by_method(state, config)
     if raw_qty <= 0:
         return 0.0
@@ -252,7 +232,7 @@ def compute_replenishment(
 
 
 # ---------------------------------------------------------------------------
-# BOM explosion with scrap
+# BOM explosion with scrap (shared utility)
 # ---------------------------------------------------------------------------
 
 
@@ -272,7 +252,7 @@ def explode_bom_with_scrap(
 
 
 # ---------------------------------------------------------------------------
-# Constrained supply allocation
+# Constrained supply allocation (shared utility)
 # ---------------------------------------------------------------------------
 
 
@@ -347,3 +327,48 @@ def priority_allocate(
             allocations[loc] = 0.0
 
     return allocations
+
+
+__all__ = [
+    # New package API
+    "compute_decision",
+    "load_erp_params",
+    # Dataclasses
+    "HeuristicDecision",
+    "ERPPlanningParams",
+    "ReplenishmentState",
+    "ReplenishmentConfig",
+    "ATPState",
+    "RebalancingState",
+    "OrderTrackingState",
+    "MOExecutionState",
+    "TOExecutionState",
+    "QualityState",
+    "MaintenanceState",
+    "SubcontractingState",
+    "ForecastAdjustmentState",
+    "InventoryBufferState",
+    # Base class
+    "BaseHeuristics",
+    # Implementations
+    "SAPHeuristics",
+    "D365Heuristics",
+    "OdooHeuristics",
+    # Shared utilities
+    "apply_lot_sizing",
+    "apply_order_modifications",
+    # Backward compat (legacy API)
+    "compute_replenishment",
+    "explode_bom_with_scrap",
+    "fair_share_allocate",
+    "priority_allocate",
+    # Backward compat (private netting functions used by tests)
+    "_net_reorder_point",
+    "_net_forecast_based",
+    "_net_lot_for_lot",
+    "_net_period_batching",
+    "_net_min_max",
+    "_net_no_planning",
+    "_apply_lot_sizing",
+    "_apply_order_modifications",
+]
