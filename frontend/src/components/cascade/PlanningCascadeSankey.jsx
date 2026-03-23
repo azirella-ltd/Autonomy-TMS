@@ -49,8 +49,10 @@ import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext'
 // AWS SC DM: VENDOR = external supplier (TradingPartner), CUSTOMER = external demand
 const COLUMN_ORDER = [
   'VENDOR',
+  'CDC',
   'INVENTORY',
   'MANUFACTURER',
+  'RDC',
   'DISTRIBUTOR',
   'WHOLESALER',
   'RETAILER',
@@ -60,7 +62,9 @@ const COLUMN_ORDER = [
 // Site type colors (consistent with SupplyChainConfigSankey)
 const TYPE_COLORS = {
   VENDOR: '#1d4ed8',          // blue (external supplier diamond)
+  CDC: '#6366f1',             // indigo (central DC)
   INVENTORY: '#0ea5e9',       // sky blue
+  RDC: '#14b8a6',             // teal (regional DC)
   MANUFACTURER: '#0891b2',    // cyan
   DISTRIBUTOR: '#f59e0b',     // amber
   WHOLESALER: '#f97316',      // orange
@@ -117,16 +121,23 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
 
   // ── 1. Build site ID → metadata map ──────────────────────────────
   const siteMap = {};
-  // Normalize AWS SC master_type to display tokens used in COLUMN_ORDER/TYPE_COLORS
-  const normalizeMasterType = (raw) => {
-    const t = (raw || '').toUpperCase();
-    if (t === 'VENDOR') return 'VENDOR';
-    if (t === 'CUSTOMER') return 'CUSTOMER';
-    return t;
+  // Normalize to display tokens used in COLUMN_ORDER/TYPE_COLORS.
+  // Prefer the more specific site type (cdc, rdc) over generic master_type (INVENTORY)
+  // so that CDC→RDC links span different columns (d3-sankey requires this).
+  const normalizeMasterType = (masterType, siteType) => {
+    const mt = (masterType || '').toUpperCase();
+    const st = (siteType || '').toUpperCase();
+    if (mt === 'VENDOR' || st === 'VENDOR') return 'VENDOR';
+    if (mt === 'CUSTOMER' || st === 'CUSTOMER') return 'CUSTOMER';
+    // Use specific site type when it differs from generic INVENTORY
+    if (st === 'CDC') return 'CDC';
+    if (st === 'RDC') return 'RDC';
+    if (st === 'DC') return 'INVENTORY';
+    return mt || st || 'INVENTORY';
   };
 
   (sites || []).filter(s => (s.master_type || s.type) !== 'INACTIVE_PROXY').forEach(s => {
-    const masterType = normalizeMasterType(s.master_type || s.type);
+    const masterType = normalizeMasterType(s.master_type, s.type);
     const geoLabel = getGeoLabel(s, geoLevel);
     siteMap[s.id] = { masterType, geoLabel, name: s.name };
   });
