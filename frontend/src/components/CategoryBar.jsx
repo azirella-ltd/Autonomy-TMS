@@ -29,6 +29,15 @@ const CategoryBar = ({ sections, activeCategoryId, onSelectCategory, onOpenPalet
       onSelectCategory(null);
     } else {
       onSelectCategory(sectionId);
+      // Navigate to the first navigable page in this category
+      const section = sections.find((s) => s.section === sectionId);
+      if (section?.items) {
+        const firstPage = section.items.find((item) => item.path && !item.isSectionHeader);
+        if (firstPage) {
+          openTab(firstPage.path, firstPage.label);
+          navigate(firstPage.path);
+        }
+      }
     }
   };
 
