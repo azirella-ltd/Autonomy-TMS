@@ -160,6 +160,11 @@ class ConfigProvisioningStatus(Base):
     trm_training_at = Column(DateTime, nullable=True)
     trm_training_error = Column(Text, nullable=True)
 
+    # Step 8b: TRM Phase 2 (Simulation-based RL / PPO fine-tuning)
+    rl_training_status = Column(String(20), default="pending")
+    rl_training_at = Column(DateTime, nullable=True)
+    rl_training_error = Column(Text, nullable=True)
+
     # Step 9: Supply plan generation
     supply_plan_status = Column(String(20), default="pending")
     supply_plan_at = Column(DateTime, nullable=True)
@@ -206,8 +211,8 @@ class ConfigProvisioningStatus(Base):
     STEPS = [
         "warm_start", "sop_graphsage", "cfa_optimization",
         "lgbm_forecast", "demand_tgnn", "supply_tgnn", "inventory_tgnn",
-        "trm_training", "supply_plan", "rccp_validation", "decision_seed",
-        "site_tgnn", "conformal", "briefing",
+        "trm_training", "rl_training", "supply_plan", "rccp_validation",
+        "decision_seed", "site_tgnn", "conformal", "briefing",
     ]
 
     # Steps that run for PARAMETER_ONLY reprovisioning (policy/parameter changes).
@@ -230,6 +235,7 @@ class ConfigProvisioningStatus(Base):
         "rccp_validation": "Rough-Cut Capacity Validation",
         "inventory_tgnn": "Inventory Optimization Agent",
         "trm_training": "Execution Role Agent Training",
+        "rl_training": "Simulation RL Fine-Tuning",
         "supply_plan": "Supply Plan Generation",
         "decision_seed": "Decision Stream Seeding",
         "site_tgnn": "Operational Site Agent Training",
@@ -246,9 +252,10 @@ class ConfigProvisioningStatus(Base):
         "supply_tgnn": ["lgbm_forecast", "sop_graphsage"],
         "inventory_tgnn": ["supply_tgnn"],
         "trm_training": ["demand_tgnn", "supply_tgnn", "inventory_tgnn"],
-        "supply_plan": ["cfa_optimization", "trm_training"],
+        "rl_training": ["trm_training"],
+        "supply_plan": ["cfa_optimization", "rl_training"],
         "rccp_validation": ["supply_plan"],
-        "decision_seed": ["trm_training"],
+        "decision_seed": ["rl_training"],
         "site_tgnn": ["decision_seed"],
         "conformal": ["warm_start"],
         "briefing": ["supply_plan", "decision_seed"],

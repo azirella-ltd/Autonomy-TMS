@@ -505,8 +505,22 @@ class _DagChain:
         self._max_cost_ref = max_demand * max_backlog_rate * max_lt * 2.0
         self._day_counter = 0
 
-    def tick(self) -> Dict[str, Any]:
-        """Execute one daily time step across the DAG."""
+    def tick(
+        self,
+        policy: Any = None,
+        policy_site_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Execute one daily time step across the DAG.
+
+        Args:
+            policy: Optional DecisionPolicy. When provided AND policy_site_id
+                matches the current site, ``policy.decide(node, cfg, ctx)``
+                is called instead of ``node.compute_replenishment_order()``.
+                All other sites continue to use the default heuristic.
+                Default ``None`` preserves existing behavior.
+            policy_site_id: The site ID to which the policy applies.  If
+                ``None``, the policy applies to ALL sites.
+        """
         self._day_counter += 1
 
         # Step 1: All sites receive arriving shipments
@@ -517,6 +531,12 @@ class _DagChain:
         # demand_source sites get external demand
         # upstream sites get orders forwarded from their downstream sites
         pending_demand: Dict[int, float] = defaultdict(float)
+
+        # Tick context made available to policy.decide()
+        tick_context: Dict[str, Any] = {
+            "day": self._day_counter,
+            "network_size": len(self.nodes),
+        }
 
         for site_id in self.topo_order:
             node = self.nodes[site_id]
@@ -531,8 +551,17 @@ class _DagChain:
             # Fulfill demand (FIFO ATP heuristic)
             node.fulfill(demand)
 
-            # Compute replenishment order (ERP-specific heuristic dispatch)
-            order_qty = node.compute_replenishment_order(sim_day=self._day_counter)
+            # Compute replenishment order:
+            # Use policy.decide() when a policy is provided and this site matches
+            use_policy = (
+                policy is not None
+                and (policy_site_id is None or policy_site_id == site_id)
+            )
+            if use_policy:
+                order_qty = policy.decide(node, cfg, tick_context)
+                node.period_order_qty = order_qty
+            else:
+                order_qty = node.compute_replenishment_order(sim_day=self._day_counter)
 
             # Route order upstream
             if cfg.upstream_site_id and cfg.upstream_site_id in self.nodes:
