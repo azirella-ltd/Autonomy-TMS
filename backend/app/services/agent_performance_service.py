@@ -142,78 +142,138 @@ class AgentPerformanceService:
             if not config:
                 return None
 
-            # Aggregate forecast × product data across all sites with forecasts.
-            # Works for both site-based topologies (SAP Demo: customer sites)
-            # and partner-based topologies (Food Dist: customers as trading partners on lanes).
+            # Build treemap from Forecast × Product data.
+            # AWS SC DM: Forecast has both site_id (ship-from) and customer_id (ship-to).
+            # Two paths for geography:
+            #   Path A: customer_id → TradingPartner.state_prov (partner-based, preferred)
+            #   Path B: site_id → Site → Geography hierarchy (site-based, fallback)
             horizon_start = date.today()
             horizon_end = date(horizon_start.year + 1, horizon_start.month, horizon_start.day)
 
-            def _base_q(region_col):
-                return (
+            from app.models.sc_entities import TradingPartner
+
+            base_filters = [
+                Forecast.config_id == config.id,
+                Forecast.is_active == "true",
+                Forecast.forecast_date >= horizon_start,
+                Forecast.forecast_date < horizon_end,
+                Product.unit_price.isnot(None),
+                Product.unit_cost.isnot(None),
+                Product.category.isnot(None),
+            ]
+
+            rows = []
+
+            # ── Path A: customer_id → TradingPartner geography ───────────────
+            # This is the correct AWS SC DM path: forecast.customer_id → trading_partner
+            try:
+                tp_rows = (
                     self.db.query(
                         Product.category.label("category"),
-                        region_col.label("region_name"),
+                        TradingPartner.state_prov.label("region_name"),
                         func.sum(Forecast.forecast_p50 * Product.unit_price).label("revenue"),
                         func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
                     )
                     .join(Product, Forecast.product_id == Product.id)
-                    .join(Site, Forecast.site_id == Site.id)
-                    .filter(Forecast.config_id == config.id)
-                    .filter(Forecast.is_active == "true")
-                    .filter(Site.master_type != "INACTIVE_PROXY")
-                    .filter(Forecast.forecast_date >= horizon_start)
-                    .filter(Forecast.forecast_date < horizon_end)
-                    .filter(Product.unit_price.isnot(None))
-                    .filter(Product.unit_cost.isnot(None))
-                    .filter(Product.category.isnot(None))
+                    .join(TradingPartner, Forecast.customer_id == TradingPartner.id)
+                    .filter(*base_filters)
+                    .filter(Forecast.customer_id.isnot(None))
+                    .group_by(Product.category, TradingPartner.state_prov)
+                    .all()
                 )
+                if tp_rows:
+                    rows = [
+                        type("Row", (), {
+                            "category": r.category,
+                            "region_name": self._STATE_TO_REGION.get(
+                                r.region_name or "", r.region_name or "Other"
+                            ),
+                            "revenue": r.revenue,
+                            "cost": r.cost,
+                        })()
+                        for r in tp_rows
+                        if r.region_name
+                    ]
+            except Exception as e:
+                logger.debug("Treemap Path A (customer TradingPartner) failed: %s", e)
 
-            # ── Attempt 1: 3-level hierarchy (city → state → region) ──────────
-            CityGeo = aliased(Geography, name="city_geo")
-            StateGeo = aliased(Geography, name="state_geo")
-            RegionGeo = aliased(Geography, name="region_geo")
-
-            rows = (
-                _base_q(RegionGeo.description)
-                .join(CityGeo, Site.geo_id == CityGeo.id)
-                .join(StateGeo, CityGeo.parent_geo_id == StateGeo.id)
-                .join(RegionGeo, StateGeo.parent_geo_id == RegionGeo.id)
-                .group_by(Product.category, RegionGeo.description)
-                .all()
-            )
-
-            # ── Attempt 2: 2-level hierarchy (site-geo → parent) ─────────────
+            # ── Path B: site_id → Site → Geography hierarchy (fallback) ──────
             if not rows:
+                def _base_q(region_col):
+                    return (
+                        self.db.query(
+                            Product.category.label("category"),
+                            region_col.label("region_name"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_price).label("revenue"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
+                        )
+                        .join(Product, Forecast.product_id == Product.id)
+                        .join(Site, Forecast.site_id == Site.id)
+                        .filter(*base_filters)
+                        .filter(Site.master_type != "INACTIVE_PROXY")
+                    )
+
+                CityGeo = aliased(Geography, name="city_geo")
+                StateGeo = aliased(Geography, name="state_geo")
+                RegionGeo = aliased(Geography, name="region_geo")
+
+                # 3-level geo hierarchy
                 rows = (
-                    _base_q(StateGeo.description)
+                    _base_q(RegionGeo.description)
                     .join(CityGeo, Site.geo_id == CityGeo.id)
                     .join(StateGeo, CityGeo.parent_geo_id == StateGeo.id)
-                    .group_by(Product.category, StateGeo.description)
+                    .join(RegionGeo, StateGeo.parent_geo_id == RegionGeo.id)
+                    .group_by(Product.category, RegionGeo.description)
                     .all()
                 )
 
-            # ── Attempt 3: flat geo with state_prov + Python region mapping ──
-            # Used when site.geo_id points to a geography that has no parent
-            # (e.g. GEO_TBG_22_RETAIL_* records which store state_prov directly).
-            if not rows:
-                flat_rows = (
-                    _base_q(CityGeo.state_prov)
-                    .join(CityGeo, Site.geo_id == CityGeo.id)
-                    .group_by(Product.category, CityGeo.state_prov)
-                    .all()
-                )
-                rows = [
-                    type("Row", (), {
-                        "category": r.category,
-                        "region_name": self._STATE_TO_REGION.get(
-                            r.region_name or "", r.region_name or "Other"
-                        ),
-                        "revenue": r.revenue,
-                        "cost": r.cost,
-                    })()
-                    for r in flat_rows
-                    if r.region_name  # skip rows with no geo state
-                ]
+                # 2-level geo hierarchy
+                if not rows:
+                    rows = (
+                        _base_q(StateGeo.description)
+                        .join(CityGeo, Site.geo_id == CityGeo.id)
+                        .join(StateGeo, CityGeo.parent_geo_id == StateGeo.id)
+                        .group_by(Product.category, StateGeo.description)
+                        .all()
+                    )
+
+                # Flat geo with state_prov + region mapping
+                if not rows:
+                    flat_rows = (
+                        _base_q(CityGeo.state_prov)
+                        .join(CityGeo, Site.geo_id == CityGeo.id)
+                        .group_by(Product.category, CityGeo.state_prov)
+                        .all()
+                    )
+                    rows = [
+                        type("Row", (), {
+                            "category": r.category,
+                            "region_name": self._STATE_TO_REGION.get(
+                                r.region_name or "", r.region_name or "Other"
+                            ),
+                            "revenue": r.revenue,
+                            "cost": r.cost,
+                        })()
+                        for r in flat_rows
+                        if r.region_name
+                    ]
+
+                # Last resort: group by site name (no geography)
+                if not rows:
+                    rows = (
+                        self.db.query(
+                            Product.category.label("category"),
+                            Site.name.label("region_name"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_price).label("revenue"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
+                        )
+                        .join(Product, Forecast.product_id == Product.id)
+                        .join(Site, Forecast.site_id == Site.id)
+                        .filter(*base_filters)
+                        .filter(Site.master_type != "INACTIVE_PROXY")
+                        .group_by(Product.category, Site.name)
+                        .all()
+                    )
 
             if not rows:
                 return None
