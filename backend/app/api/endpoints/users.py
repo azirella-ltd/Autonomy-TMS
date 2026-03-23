@@ -51,16 +51,38 @@ async def read_users(
         user_type=user_type,
     )
 
-@router.post("/", response_model=User, status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_user(
-    user_in: UserCreate,
-    user_service: UserService = Depends(get_user_service),
+    user_in: dict,
+    db: Session = Depends(get_sync_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
     Create new user (admin only).
+    Accepts capabilities list alongside standard user fields.
     """
-    return user_service.create_user(user_in, current_user)
+    user_service = UserService(db)
+
+    # Extract capabilities before passing to model create
+    capabilities = user_in.pop("capabilities", None)
+
+    create_data = UserCreate(**user_in)
+    new_user = user_service.create_user(create_data, current_user)
+
+    # If capabilities were provided, sync them via RBAC
+    if capabilities and isinstance(capabilities, list) and new_user:
+        from app.services.rbac_service import RBACService
+        rbac_service = RBACService(db)
+        user_id = new_user.id if hasattr(new_user, 'id') else new_user.get('id')
+        tenant_id = new_user.tenant_id if hasattr(new_user, 'tenant_id') else new_user.get('tenant_id')
+        if user_id:
+            rbac_service.sync_user_capabilities(
+                user_id=user_id,
+                capability_names=capabilities,
+                tenant_id=tenant_id
+            )
+
+    return new_user
 
 @router.delete("/{user_id}", response_model=dict)
 async def delete_user(
@@ -74,17 +96,39 @@ async def delete_user(
     """
     return user_service.delete_user(user_id, current_user, replacement_admin_id)
 
-@router.put("/{user_id}", response_model=User)
+@router.put("/{user_id}")
 async def update_user(
     user_id: int,
-    user_in: UserUpdate,
-    user_service: UserService = Depends(get_user_service),
+    user_in: dict,
+    db: Session = Depends(get_sync_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
     Update a user (admin or self).
+    Accepts capabilities list alongside standard user fields.
     """
-    return user_service.update_user(user_id, user_in, current_user)
+    user_service = UserService(db)
+
+    # Extract capabilities before passing to model update
+    capabilities = user_in.pop("capabilities", None)
+
+    # Update model fields (email, name, decision_level, etc.)
+    update_data = UserUpdate(**{k: v for k, v in user_in.items() if v is not None})
+    updated_user = user_service.update_user(user_id, update_data, current_user)
+
+    # If capabilities were provided, sync them via RBAC
+    if capabilities is not None and isinstance(capabilities, list):
+        from app.services.rbac_service import RBACService
+        rbac_service = RBACService(db)
+        target_user = user_service.get_user(user_id)
+        if target_user:
+            rbac_service.sync_user_capabilities(
+                user_id=user_id,
+                capability_names=capabilities,
+                tenant_id=target_user.tenant_id
+            )
+
+    return updated_user
 
 @router.post("/{user_id}/change-password", response_model=dict)
 async def change_password(
