@@ -46,7 +46,7 @@ const WorkspaceShell = () => {
   const [azInput, setAzInput] = useState('');
   const [azMessages, setAzMessages] = useState([]);
   const [azLoading, setAzLoading] = useState(false);
-  const [azPanelOpen, setAzPanelOpen] = useState(true); // Toggle panel visibility
+  const [azPanelOpen, setAzPanelOpen] = useState(false); // Hidden by default, toggle via navbar button
   const [azConversationId, setAzConversationId] = useState(null); // Thread conversation history
   const azEndRef = useRef(null);
 
@@ -312,13 +312,8 @@ const WorkspaceShell = () => {
           className="fixed right-0 top-16 bottom-0 z-30 flex flex-col border-l"
           style={{ width: AZIRELLA_PANEL_WIDTH, backgroundColor: '#faf9ff' }}
         >
-          {/* Header with animated Azirella avatar */}
+          {/* Minimal header */}
           <div className="flex items-center gap-2 px-3 py-1.5 border-b flex-shrink-0" style={{ backgroundColor: '#f0edff' }}>
-            <AzirellaAvatar
-              voiceState={azLoading ? 'processing' : 'idle'}
-              size={36}
-              inline
-            />
             <span className="font-semibold text-sm" style={{ color: '#5b21b6' }}>Azirella</span>
             <span className="text-xs ml-auto" style={{ color: '#a78bfa' }}>AI Assistant</span>
           </div>
@@ -370,8 +365,13 @@ const WorkspaceShell = () => {
             <div ref={azEndRef} />
           </div>
 
-          {/* Input */}
+          {/* Input with avatar */}
           <div className="border-t px-3 py-2.5 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
+            <AzirellaAvatar
+              voiceState={azLoading ? 'processing' : 'idle'}
+              size={32}
+              inline
+            />
             <input
               type="text"
               value={azInput}
