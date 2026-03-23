@@ -334,25 +334,28 @@ const WorkspaceShell = () => {
         })}
       </div>
 
-      {/* ═══ FLOATING AZIRELLA AVATAR — bottom right ═══ */}
-      {canShowAzirella && !showAzirellaPanel && (
+      {/* ═══ FLOATING AZIRELLA AVATAR — bottom right, always visible ═══ */}
+      {canShowAzirella && (
         <button
-          onClick={() => setAzPanelOpen(true)}
-          className="fixed z-50 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
+          onClick={() => setAzPanelOpen(prev => !prev)}
+          className={cn(
+            "fixed z-50 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105",
+            showAzirellaPanel && "ring-2 ring-violet-400 ring-offset-2"
+          )}
           style={{
             bottom: 24,
-            right: 24,
-            width: 56,
-            height: 56,
+            right: showAzirellaPanel ? AZIRELLA_PANEL_WIDTH + 24 : 24,
+            width: 80,
+            height: 80,
             padding: 0,
             border: '2px solid #a78bfa',
             background: 'white',
             cursor: 'pointer',
             overflow: 'hidden',
           }}
-          title="Talk to Azirella"
+          title={showAzirellaPanel ? "Close Azirella" : "Talk to Azirella"}
         >
-          <AzirellaAvatar size={52} inline voiceState="idle" />
+          <AzirellaAvatar size={76} inline voiceState="idle" />
         </button>
       )}
 
@@ -364,7 +367,6 @@ const WorkspaceShell = () => {
         >
           {/* Header with close */}
           <div className="flex items-center gap-2 px-3 py-1.5 border-b flex-shrink-0" style={{ backgroundColor: '#f0edff' }}>
-            <AzirellaAvatar size={28} inline voiceState={azLoading ? 'processing' : voiceEnabled ? 'listening' : 'idle'} />
             <span className="font-semibold text-sm" style={{ color: '#5b21b6' }}>Azirella</span>
             <span className="text-xs ml-auto" style={{ color: '#a78bfa' }}>AI Assistant</span>
             <button
@@ -423,8 +425,14 @@ const WorkspaceShell = () => {
             <div ref={azEndRef} />
           </div>
 
-          {/* Input bar with voice toggle */}
-          <div className="border-t px-3 py-2.5 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
+          {/* Avatar + Input bar */}
+          <div className="border-t flex flex-col items-center pt-2 pb-2.5 px-3 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
+            {/* Azirella avatar above input */}
+            <div className="mb-2">
+              <AzirellaAvatar size={44} inline voiceState={azLoading ? 'processing' : voiceEnabled ? 'listening' : 'idle'} />
+            </div>
+          </div>
+          <div className="px-3 pb-2.5 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
             {/* Voice toggle — red=off, green=on */}
             <button
               onClick={() => setVoiceEnabled(prev => !prev)}

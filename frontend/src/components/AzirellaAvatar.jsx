@@ -300,12 +300,7 @@ const AzirellaAvatar = ({
           )}
         </div>
 
-        {/* Status dot */}
-        <span className={cn(
-          'absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white transition-colors duration-300',
-          STATUS_DOT[voiceState] || 'bg-gray-400',
-          isActive ? 'animate-pulse' : '',
-        )} />
+        {/* Status dot removed — voice state shown via ring animations */}
       </button>
     </div>
   );
