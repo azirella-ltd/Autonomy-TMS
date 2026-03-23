@@ -1145,7 +1145,7 @@ export const GROUP_MODES = TENANT_MODES;
  * @param {string} tenantMode - Tenant mode: 'learning' or 'production' (default: 'production')
  * @returns {Array} Filtered navigation sections with enabled/disabled state
  */
-export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmin, tenantMode = 'production') {
+export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmin, tenantMode = 'production', decisionLevel = null) {
   // System admins get special navigation
   if (isSystemAdmin) {
     return SYSTEM_ADMIN_NAVIGATION.map(section => ({
@@ -1157,6 +1157,23 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmi
       })),
     }));
   }
+
+  // Decision-level section visibility — derived from the user's role in the Powell hierarchy.
+  // DEMO_ALL and tenant admins see everything. Others see only sections relevant to their level.
+  const DECISION_LEVEL_SECTIONS = {
+    EXECUTIVE:     ['Home', 'Insights & Analytics'],
+    SC_VP:         ['Home', 'Insights & Analytics'],
+    SOP_DIRECTOR:  ['Home', 'Insights & Analytics', 'Planning', 'Planning Cascade'],
+    MPS_MANAGER:   ['Home', 'Insights & Analytics', 'Planning', 'Planning Cascade', 'Execution'],
+    DEMO_ALL:      null, // null = show all
+  };
+  const allowedSections = (decisionLevel && DECISION_LEVEL_SECTIONS[decisionLevel]) || null;
+  // Tenant admins always see Administration
+  const sectionFilter = (sectionName) => {
+    if (!allowedSections) return true; // DEMO_ALL or null → show all
+    if (sectionName === 'Administration' && isTenantAdmin) return true;
+    return allowedSections.includes(sectionName);
+  };
 
   // Learning customers get simplified navigation (user education mode)
   // For admin sections, show if user is TENANT_ADMIN OR has any admin capability
@@ -1189,9 +1206,11 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmi
   }
 
   // Production mode - full navigation
-  // Filter and mark items as enabled/disabled based on capabilities
+  // Filter by decision level (section visibility) and capabilities (item visibility)
   return NAVIGATION_CONFIG
     .filter(section => {
+      // Decision-level section filter
+      if (!sectionFilter(section.section)) return false;
       // Show admin sections if user is TENANT_ADMIN or has admin-related capabilities
       if (section.adminOnly && !isTenantAdmin && !hasAdminCapability) {
         return false;

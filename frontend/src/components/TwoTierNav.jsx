@@ -34,11 +34,12 @@ const TwoTierNav = () => {
   const isSysAdmin = isSystemAdmin(user);
   const isGrpAdmin = checkIsTenantAdmin(user);
 
-  // Build filtered navigation sections
+  // Build filtered navigation sections — scoped by decision level
+  const decisionLevel = user?.decision_level || null;
   const filteredSections = useMemo(() => {
     if (capLoading || cfgLoading) return [];
-    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, configMode);
-  }, [hasCapability, isSysAdmin, isGrpAdmin, configMode, capLoading, cfgLoading]);
+    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, configMode, decisionLevel);
+  }, [hasCapability, isSysAdmin, isGrpAdmin, configMode, decisionLevel, capLoading, cfgLoading]);
 
   // Determine if Decision Stream should show (not for admin-only users)
   const showDecisionStream = !isSysAdmin && !isGrpAdmin;
