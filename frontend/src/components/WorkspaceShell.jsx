@@ -16,7 +16,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import TopNavbar from './TopNavbar';
-import TabBar from './TabBar';
+import TwoTierNav from './TwoTierNav';
 import TabPane from './TabPane';
 import CapabilityAwareSidebar from './CapabilityAwareSidebar';
 import useTabStore from '../stores/useTabStore';
@@ -268,7 +268,7 @@ const WorkspaceShell = () => {
         onToggleAzirella={canShowAzirella ? () => setAzPanelOpen(prev => !prev) : null}
       />
 
-      {/* Tab Bar */}
+      {/* Two-Tier Navigation */}
       <div
         className={cn(
           'pt-16 transition-all duration-200 ease-in-out',
@@ -276,7 +276,7 @@ const WorkspaceShell = () => {
         )}
         style={{ marginRight: panelWidth }}
       >
-        <TabBar />
+        <TwoTierNav />
       </div>
 
       {/* Sidebar removed — all navigation through tabs via "+" palette */}

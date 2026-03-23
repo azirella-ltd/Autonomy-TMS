@@ -92,6 +92,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Home',
+    sectionIcon: SparklesIcon,
     items: [
       {
         label: 'Decision Stream',
@@ -122,6 +123,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Insights & Analytics',
+    sectionIcon: AnalyticsIcon,
     divider: true,
     items: [
       // Worklists by ADH level (Strategic → Tactical → Operational)
@@ -251,6 +253,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Planning',
+    sectionIcon: CalendarIcon,
     divider: true,
     items: [
       // --- STRATEGIC PLANNING (18-36 month horizon) ---
@@ -362,6 +365,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Planning Cascade',
+    sectionIcon: CascadeIcon,
     divider: true,
     items: [
       {
@@ -515,6 +519,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Execution',
+    sectionIcon: ExecutionIcon,
     divider: true,
     items: [
       // --- FULFILLMENT ---
@@ -680,6 +685,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Scenarios',
+    sectionIcon: ScenariosIcon,
     divider: true,
     productionOnly: true,  // Only show in Production mode
     items: [
@@ -713,6 +719,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'AI & Agents',
+    sectionIcon: BrainIcon,
     divider: true,
     items: [
       // ── Agent Tiers ──────────────────────────────────────────────────
@@ -797,6 +804,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Deployment',
+    sectionIcon: WandIcon,
     divider: true,
     items: [
       {
@@ -828,6 +836,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Administration',
+    sectionIcon: AdminIcon,
     divider: true,
     adminOnly: true,
     items: [
@@ -974,6 +983,7 @@ export const NAVIGATION_CONFIG = [
 export const SYSTEM_ADMIN_NAVIGATION = [
   {
     section: 'System Administration',
+    sectionIcon: AdminIcon,
     items: [
       {
         label: 'Organizations',
@@ -996,6 +1006,7 @@ export const SYSTEM_ADMIN_NAVIGATION = [
 export const LEARNING_NAVIGATION = [
   {
     section: 'Dashboard',
+    sectionIcon: DashboardIcon,
     items: [
       {
         label: 'Learning Home',
@@ -1008,6 +1019,7 @@ export const LEARNING_NAVIGATION = [
   },
   {
     section: 'Simulate',
+    sectionIcon: ScenariosIcon,
     divider: true,
     items: [
       {
@@ -1028,6 +1040,7 @@ export const LEARNING_NAVIGATION = [
   },
   {
     section: 'Results',
+    sectionIcon: AnalyticsIcon,
     divider: true,
     items: [
       {
@@ -1055,6 +1068,7 @@ export const LEARNING_NAVIGATION = [
   },
   {
     section: 'Learn',
+    sectionIcon: BookOpenIcon,
     divider: true,
     items: [
       {
@@ -1077,6 +1091,7 @@ export const LEARNING_NAVIGATION = [
   },
   {
     section: 'Administration',
+    sectionIcon: AdminIcon,
     divider: true,
     adminOnly: true,
     items: [
