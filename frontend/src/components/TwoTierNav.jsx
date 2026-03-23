@@ -41,19 +41,14 @@ const TwoTierNav = () => {
     return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, configMode, decisionLevel);
   }, [hasCapability, isSysAdmin, isGrpAdmin, configMode, decisionLevel, capLoading, cfgLoading]);
 
-  // Determine if Decision Stream should show (not for admin-only users)
-  const showDecisionStream = !isSysAdmin && !isGrpAdmin;
-
   // Sync URL -> active category on navigation
   useEffect(() => {
     const path = location.pathname;
 
-    // Decision Stream path — clear category
+    // Decision Stream and root both belong to Home
     if (path === '/decision-stream' || path === '/') {
-      // Don't force category to null here — let the user's explicit category choice stand
-      // unless they navigated to decision stream
-      if (path === '/decision-stream') {
-        setActiveCategory(null);
+      if (filteredSections.find(s => s.section === 'Home')) {
+        setActiveCategory('Home');
       }
       return;
     }
@@ -93,6 +88,14 @@ const TwoTierNav = () => {
     return section?.items || [];
   }, [activeCategoryId, filteredSections]);
 
+  // Default to Home on initial load if no category selected
+  useEffect(() => {
+    if (!activeCategoryId && filteredSections.length > 0) {
+      const home = filteredSections.find(s => s.section === 'Home');
+      if (home) setActiveCategory('Home');
+    }
+  }, [filteredSections]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Ctrl+T opens palette
   useEffect(() => {
     const handler = (e) => {
@@ -113,7 +116,6 @@ const TwoTierNav = () => {
         activeCategoryId={activeCategoryId}
         onSelectCategory={setActiveCategory}
         onOpenPalette={() => setPaletteOpen(true)}
-        showDecisionStream={showDecisionStream}
       />
 
       {/* Tier 2 — Page bar (only when a category is selected and has items) */}
