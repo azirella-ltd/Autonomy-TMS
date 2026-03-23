@@ -39,9 +39,14 @@ const DEFAULT_ROLE_COLORS = {
   factory: '#ef4444',
   manufacturer: '#ef4444',
   supplier: '#f59e0b',
+  vendor: '#f59e0b',
   market_supply: '#f59e0b',
   market_demand: '#10b981',
+  customer: '#10b981',
   inventory: '#0ea5e9',
+  cdc: '#6366f1',
+  rdc: '#14b8a6',
+  dc: '#0ea5e9',
 }
 
 // Lead time color scale (same as Sankey: green → orange → red)
@@ -83,9 +88,11 @@ const resolveLeadTimeColor = (leadTime, stats) => {
   return interpolateHex(LEAD_COLOR_MEDIAN, LEAD_COLOR_MAX, Math.min((leadTime - median) / range, 1))
 }
 
-const getRoleColor = (role, siteTypeColors) => {
-  if (!role) return '#6b7280'
-  const key = role.toLowerCase().replace(/[\s-]+/g, '_')
+const getRoleColor = (role, siteTypeColors, site) => {
+  // Resolve role from multiple sources: role → type → master_type
+  const effectiveRole = role || (site && (site.type || site.master_type)) || null
+  if (!effectiveRole) return '#6b7280'
+  const key = effectiveRole.toLowerCase().replace(/[\s-]+/g, '_')
   if (siteTypeColors && siteTypeColors[key]) return siteTypeColors[key]
   return DEFAULT_ROLE_COLORS[key] || '#6b7280'
 }
@@ -404,11 +411,11 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
       {(() => {
         const roleSet = new Map()
         sitesWithCoords.forEach((site) => {
-          const role = site.role
+          const role = site.role || site.type || site.master_type
           if (!role) return
           const key = role.toLowerCase().replace(/[\s-]+/g, '_')
           if (!roleSet.has(key)) {
-            roleSet.set(key, { key, label: formatRoleLabel(role), color: getRoleColor(role, siteTypeColors) })
+            roleSet.set(key, { key, label: formatRoleLabel(role), color: getRoleColor(role, siteTypeColors, site) })
           }
         })
         const entries = Array.from(roleSet.values())
@@ -593,7 +600,7 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
           sitesWithCoords.map((site) => {
             const cap = site.capacity ?? 0
             if (cap <= 0 && !site.attributes?.aggregated) return null
-            const color = getRoleColor(site.role, siteTypeColors)
+            const color = getRoleColor(site.role, siteTypeColors, site)
             const radius = site.attributes?.aggregated
               ? 20 + Math.min(site.attributes.child_count * 5, 30)
               : getSizeRadius(cap)
@@ -618,7 +625,7 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
 
         {/* Site dot markers */}
         {sitesWithCoords.map((site) => {
-          const color = getRoleColor(site.role, siteTypeColors)
+          const color = getRoleColor(site.role, siteTypeColors, site)
           const isAgg = site.attributes?.aggregated
           const dotSize = isAgg ? 16 : 10
           const icon = createDotIcon(color, dotSize)

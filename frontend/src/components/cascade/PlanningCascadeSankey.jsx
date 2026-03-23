@@ -303,7 +303,7 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
   const [rawProducts, setRawProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [viewMode, setViewMode] = useState('sankey');
+  const [viewMode, setViewMode] = useState('map');
   const [resolvedConfigId, setResolvedConfigId] = useState(configIdProp || null);
 
   // Hierarchy navigation state (unified via HierarchyAggregationBar)
