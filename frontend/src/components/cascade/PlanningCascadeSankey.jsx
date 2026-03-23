@@ -592,15 +592,37 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
     }
 
     if (viewMode === 'sankey' && sankeyData) {
+      // Auto-size height: tallest column determines minimum height
+      const typeCounts = {};
+      sankeyData.nodes.forEach(n => {
+        typeCounts[n.type] = (typeCounts[n.type] || 0) + 1;
+      });
+      const maxNodesInColumn = Math.max(...Object.values(typeCounts), 1);
+      const autoHeight = Math.max(height, maxNodesInColumn * 36 + 60);
+
+      // Auto-size margins based on longest label in first/last columns
+      const order = sankeyData.columnOrder || [];
+      const firstType = order[0];
+      const lastType = order[order.length - 1];
+      const longestLeft = sankeyData.nodes
+        .filter(n => n.type === firstType)
+        .reduce((max, n) => Math.max(max, (n.name || '').length), 0);
+      const longestRight = sankeyData.nodes
+        .filter(n => n.type === lastType)
+        .reduce((max, n) => Math.max(max, (n.name || '').length), 0);
+      const leftMargin = Math.max(120, Math.min(longestLeft * 7, 260));
+      const rightMargin = Math.max(120, Math.min(longestRight * 7, 260));
+
       return (
         <>
           <SankeyDiagram
             nodes={sankeyData.nodes}
             links={sankeyData.links}
-            height={height}
+            height={autoHeight}
             nodeWidth={14}
-            nodePadding={16}
+            nodePadding={12}
             align="justify"
+            margin={{ top: 16, right: rightMargin, bottom: 16, left: leftMargin }}
             columnOrder={sankeyData.columnOrder}
             nodeTooltip={nodeTooltipFn}
             linkTooltip={linkTooltipFn}
