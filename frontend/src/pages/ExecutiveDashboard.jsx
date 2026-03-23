@@ -765,7 +765,7 @@ const ExecutiveDashboard = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Executive Dashboard</h1>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">
             Performance overview across all business units
           </p>

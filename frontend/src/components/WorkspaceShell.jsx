@@ -142,13 +142,13 @@ const WorkspaceShell = () => {
     const decisionLevel = user.decision_level;
     const currentTabs = useTabStore.getState().tabs;
 
-    // DEMO_ALL → Decision Stream (active) + Strategy Briefing + Executive Dashboard
+    // DEMO_ALL → Decision Stream (active) + Briefing + Dashboard
     if (decisionLevel === 'DEMO_ALL') {
       if (!currentTabs.find((t) => t.path === '/strategy-briefing')) {
-        useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
+        useTabStore.getState().openTab('/strategy-briefing', 'Briefing');
       }
       if (!currentTabs.find((t) => t.path === '/executive-dashboard')) {
-        useTabStore.getState().openTab('/executive-dashboard', 'Executive Dashboard');
+        useTabStore.getState().openTab('/executive-dashboard', 'Dashboard');
       }
       // Always focus Decision Stream on login
       useTabStore.getState().focusTab('tab-decision-stream');
@@ -181,13 +181,13 @@ const WorkspaceShell = () => {
       return;
     }
 
-    // Executives → Decision Stream + Strategy Briefing + Executive Dashboard
+    // Executives → Decision Stream + Briefing + Dashboard
     if (decisionLevel === 'SC_VP' || decisionLevel === 'EXECUTIVE') {
       if (!currentTabs.find((t) => t.path === '/strategy-briefing')) {
-        useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
+        useTabStore.getState().openTab('/strategy-briefing', 'Briefing');
       }
       if (!currentTabs.find((t) => t.path === '/executive-dashboard')) {
-        useTabStore.getState().openTab('/executive-dashboard', 'Executive Dashboard');
+        useTabStore.getState().openTab('/executive-dashboard', 'Dashboard');
       }
     }
   }, [user]);

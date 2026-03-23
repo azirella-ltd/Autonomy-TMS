@@ -99,8 +99,23 @@ export const NAVIGATION_CONFIG = [
         label: 'Decision Stream',
         path: '/decision-stream',
         icon: SparklesIcon,
-        requiredCapability: null, // Always visible
+        requiredCapability: null, // Visible to all except tenant admin (filtered below)
+        hiddenForTenantAdmin: true, // Tenant admin uses Administration, not Decision Stream
         description: 'LLM-first decision inbox with conversational triage',
+      },
+      {
+        label: 'Briefing',
+        path: '/strategy-briefing',
+        icon: BookOpenIcon,
+        requiredCapability: 'view_executive_dashboard',
+        description: 'AI-generated executive briefings with follow-up',
+      },
+      {
+        label: 'Dashboard',
+        path: '/executive-dashboard',
+        icon: DashboardIcon,
+        requiredCapability: 'view_executive_dashboard',
+        description: 'Strategic KPIs, performance summary, ROI',
       },
       {
         label: 'Scenario Events',
@@ -108,13 +123,6 @@ export const NAVIGATION_CONFIG = [
         icon: ScenarioEventIcon,
         requiredCapability: null, // Always visible
         description: 'Inject what-if events and see CDC cascade responses',
-      },
-      {
-        label: 'Dashboard',
-        path: '/dashboard',
-        icon: DashboardIcon,
-        requiredCapability: null, // Always visible
-        description: 'Role-adaptive home with KPIs and alerts',
       },
     ],
   },
@@ -128,20 +136,7 @@ export const NAVIGATION_CONFIG = [
     divider: true,
     items: [
       // Worklists by ADH level (Strategic → Tactical → Operational)
-      {
-        label: 'Executive Dashboard',
-        path: '/executive-dashboard',
-        icon: AnalyticsIcon,
-        requiredCapability: 'view_executive_dashboard',
-        description: 'Strategic KPIs, performance summary, ROI',
-      },
-      {
-        label: 'Strategy Briefing',
-        path: '/strategy-briefing',
-        icon: BookOpenIcon,
-        requiredCapability: 'view_executive_dashboard',
-        description: 'AI-generated executive strategy briefings',
-      },
+      // NOTE: Briefing and Dashboard moved to Home section
       {
         label: 'S&OP Worklist',
         path: '/sop-worklist',
@@ -1176,7 +1171,7 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmi
     DEMO_ALL:      null, // null = show all
   };
   // Executive/SC_VP: only show these items within Home
-  const EXECUTIVE_HOME_ITEMS = new Set(['Decision Stream', 'Strategy Briefing', 'Executive Dashboard', 'Dashboard']);
+  const EXECUTIVE_HOME_ITEMS = new Set(['Decision Stream', 'Briefing', 'Dashboard']);
   const isExecutiveLevel = decisionLevel === 'EXECUTIVE' || decisionLevel === 'SC_VP';
 
   const allowedSections = (decisionLevel && DECISION_LEVEL_SECTIONS[decisionLevel]) || null;
@@ -1247,6 +1242,11 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmi
               enabled: true,
               disabled: false,
             };
+          }
+
+          // Hide items flagged for tenant admin exclusion
+          if (item.hiddenForTenantAdmin && isTenantAdmin) {
+            return { ...item, enabled: false, disabled: true };
           }
 
           // Items without capability requirement are always enabled

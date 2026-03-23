@@ -215,7 +215,7 @@ export default function ExecutiveBriefingPage() {
         <div className="flex items-center gap-3">
           <BookOpen className="h-10 w-10 text-primary" />
           <div>
-            <h1 className="text-3xl font-bold">Strategy Briefing</h1>
+            <h1 className="text-3xl font-bold">Briefing</h1>
             <p className="text-muted-foreground">AI-generated executive briefings with follow-up</p>
           </div>
         </div>
