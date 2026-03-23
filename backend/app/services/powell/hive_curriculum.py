@@ -6,6 +6,12 @@ Follows the same 3-phase pattern as the existing 4 curricula in trm_curriculum.p
   Phase 2: Mixed complexity (trade-offs, multiple factors)
   Phase 3: Stress/disruption scenarios (chaos, cascading failures)
 
+Expert actions are computed by the ERP-aware heuristic library
+(``app.services.powell.heuristic_library``) rather than inline if/then
+rules.  The curriculum still generates random state vectors (controlling
+difficulty progression per phase), but the *label* for each sample comes
+from ``compute_decision(trm_type, state_dataclass, erp_params)``.
+
 TRMs covered:
   - MOExecutionCurriculum   (mo_execution)
   - TOExecutionCurriculum   (to_execution)
@@ -25,6 +31,18 @@ import numpy as np
 
 from .trm_curriculum import TRMCurriculumBase, CurriculumData, SCConfigData
 
+from app.services.powell.heuristic_library.dispatch import compute_decision
+from app.services.powell.heuristic_library.base import (
+    ERPPlanningParams,
+    MOExecutionState,
+    TOExecutionState,
+    QualityState,
+    MaintenanceState,
+    SubcontractingState,
+    ForecastAdjustmentState,
+    InventoryBufferState,
+)
+
 
 # ---------------------------------------------------------------------------
 # State dimensions per TRM
@@ -38,6 +56,38 @@ MAINTENANCE_STATE_DIM = 14  # Must match app.models.trm.MS_STATE_DIM
 SUBCONTRACTING_STATE_DIM = 16   # Must match app.models.trm.SUB_STATE_DIM
 FORECAST_ADJ_STATE_DIM = 18     # Must match app.models.trm.FA_STATE_DIM
 INVENTORY_BUFFER_STATE_DIM = 14  # Must match app.models.trm.IB_STATE_DIM
+
+
+# ---------------------------------------------------------------------------
+# Action mapping: heuristic library -> curriculum action indices
+# ---------------------------------------------------------------------------
+# MO heuristic: 0=no-action, 1=release, 2=rework(?), 3=expedite, 4=defer
+# MO curriculum: 0=release, 1=defer, 2=split, 3=expedite, 4=cancel
+_MO_ACTION_MAP = {0: 1, 1: 0, 2: 2, 3: 3, 4: 1}
+
+# TO heuristic: 0=no-action, 1=release, 2=consolidate, 3=expedite
+# TO curriculum: 0=release, 1=defer, 2=consolidate, 3=expedite
+_TO_ACTION_MAP = {0: 1, 1: 0, 2: 2, 3: 3}
+
+# Quality heuristic: 1=accept, 2=rework, 3=scrap
+# Quality curriculum: 0=accept, 1=reject, 2=rework, 3=scrap, 4=use_as_is
+_QUALITY_ACTION_MAP = {0: 1, 1: 0, 2: 2, 3: 3}
+
+# Maintenance heuristic: 0=no-action, 1=schedule, 2=defer
+# Maintenance curriculum: 0=schedule, 1=defer, 2=expedite, 3=outsource
+_MAINT_ACTION_MAP = {0: 1, 1: 0, 2: 1}
+
+# Subcontracting heuristic: 1=internal, 2=external, 3=split
+# Subcontracting curriculum: 0=keep_internal, 1=route_external, 2=split, 3=change_vendor
+_SUB_ACTION_MAP = {0: 0, 1: 0, 2: 1, 3: 2}
+
+# Forecast adjustment heuristic: 0=no_adjustment, 1=increase, 2=decrease
+# Forecast curriculum: 0=increase_high, 1=increase_low, 2=hold, 3=decrease_low, 4=decrease_high
+_FA_ACTION_MAP = {0: 2, 1: 1, 2: 3}
+
+# Inventory buffer heuristic: 0=maintain, 1=increase, 2=decrease
+# Buffer curriculum: 0=maintain, 1=increase_small, 2=increase_large, 3=decrease_small, 4=decrease_large
+_IB_ACTION_MAP = {0: 0, 1: 1, 2: 3}
 
 
 # ---------------------------------------------------------------------------
@@ -79,14 +129,12 @@ class MOExecutionCurriculum(TRMCurriculumBase):
         for i in range(n):
             if phase == 1:
                 states[i] = self._phase1_state()
-                actions[i] = 0  # release
-                rewards[i] = 1.0
             elif phase == 2:
                 states[i] = self._phase2_state()
-                actions[i], rewards[i] = self._phase2_decision(states[i])
             else:
                 states[i] = self._phase3_state()
-                actions[i], rewards[i] = self._phase3_decision(states[i])
+
+            actions[i], rewards[i] = self._compute_mo_decision(states[i], phase)
 
         return CurriculumData(
             state_vectors=states,
@@ -97,6 +145,43 @@ class MOExecutionCurriculum(TRMCurriculumBase):
             is_expert=np.ones(n, dtype=bool),
             dones=np.zeros(n, dtype=bool),
         )
+
+    def _compute_mo_decision(self, s, phase):
+        """Build MOExecutionState from normalised state vector and call heuristic."""
+        # Denormalise key fields for the heuristic state dataclass
+        capacity_hours = s[1] * 100.0  # normalised -> hours
+        setup_hours = s[18] * 8.0
+        run_hours = s[19] * 16.0
+        order_qty = s[2] * 500.0
+
+        mo_state = MOExecutionState(
+            mo_id="CURRICULUM",
+            product_id="CURRICULUM",
+            site_id="CURRICULUM",
+            quantity=order_qty,
+            priority=max(1, int(s[11] * 5)),
+            due_date="",
+            setup_time_hours=setup_hours,
+            run_time_hours=run_hours,
+            available_capacity_hours=capacity_hours,
+            current_wip=s[0] * 200.0,
+            glenday_category="yellow",
+            oee=float(s[7]),
+        )
+        decision = compute_decision("mo_execution", mo_state, self.erp_params)
+
+        # Map heuristic action to curriculum action
+        curriculum_action = _MO_ACTION_MAP.get(decision.action, 1)
+
+        # Handle material unavailability (not captured by heuristic state)
+        if s[5] < 0.5:
+            curriculum_action = 1  # defer when no material
+
+        phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        reward_map = {0: 0.9, 1: 0.5, 2: 0.7, 3: 0.6, 4: 0.3}
+        reward = reward_map.get(curriculum_action, 0.5) * phase_discount
+
+        return curriculum_action, reward
 
     def _phase1_state(self):
         return np.array([
@@ -137,24 +222,6 @@ class MOExecutionCurriculum(TRMCurriculumBase):
         s[9] = np.random.uniform(0.3, 0.8)   # maintenance due
         return s
 
-    def _phase2_decision(self, s):
-        if s[5] < 0.5:  # no material
-            return 1, 0.5  # defer
-        if s[1] < 0.25:  # very low capacity
-            return 2, 0.7  # split
-        return 0, 0.9  # release
-
-    def _phase3_decision(self, s):
-        if s[7] < 0.8:  # poor quality rate
-            return 1, 0.3  # defer
-        if s[9] > 0.5 and s[3] < 0.7:
-            return 1, 0.4  # defer for maintenance
-        if s[3] > 0.8:
-            return 3, 0.6  # expedite
-        if s[1] < 0.1:
-            return 2, 0.5  # split
-        return 0, 0.7  # release
-
 
 # ---------------------------------------------------------------------------
 # TO Execution Curriculum
@@ -193,14 +260,12 @@ class TOExecutionCurriculum(TRMCurriculumBase):
         for i in range(n):
             if phase == 1:
                 states[i] = self._simple_state()
-                actions[i] = 0
-                rewards[i] = 1.0
             elif phase == 2:
                 states[i] = self._mixed_state()
-                actions[i], rewards[i] = self._mixed_decision(states[i])
             else:
                 states[i] = self._stress_state()
-                actions[i], rewards[i] = self._stress_decision(states[i])
+
+            actions[i], rewards[i] = self._compute_to_decision(states[i], phase)
 
         return CurriculumData(
             state_vectors=states,
@@ -211,6 +276,35 @@ class TOExecutionCurriculum(TRMCurriculumBase):
             is_expert=np.ones(n, dtype=bool),
             dones=np.zeros(n, dtype=bool),
         )
+
+    def _compute_to_decision(self, s, phase):
+        """Build TOExecutionState from normalised state vector and call heuristic."""
+        priority = max(1, int(s[9] * 5))
+        quantity = s[12] * 500.0
+        consolidation_days = 2 if s[8] > 0.5 else 0
+
+        to_state = TOExecutionState(
+            to_id="CURRICULUM",
+            product_id="CURRICULUM",
+            from_site_id="CURRICULUM_SRC",
+            to_site_id="CURRICULUM_DST",
+            quantity=quantity,
+            priority=priority,
+            due_date="",
+            transport_mode="truck",
+            consolidation_window_days=consolidation_days,
+            current_load_pct=float(1.0 - s[8]) if s[8] > 0.5 else 0.8,
+            is_expeditable=True,
+        )
+        decision = compute_decision("to_execution", to_state, self.erp_params)
+
+        curriculum_action = _TO_ACTION_MAP.get(decision.action, 1)
+
+        phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        reward_map = {0: 0.9, 1: 0.5, 2: 0.8, 3: 0.7}
+        reward = reward_map.get(curriculum_action, 0.5) * phase_discount
+
+        return curriculum_action, reward
 
     def _simple_state(self):
         return np.array([
@@ -246,22 +340,6 @@ class TOExecutionCurriculum(TRMCurriculumBase):
         s[10] = np.random.uniform(0.5, 0.85) # lower reliability
         s[13] = np.random.uniform(0.3, 0.8)  # high dest backlog
         return s
-
-    def _mixed_decision(self, s):
-        if s[8] > 0.5:
-            return 2, 0.8  # consolidate
-        if s[6] > 0.6:
-            return 3, 0.7  # expedite
-        return 0, 0.9  # release
-
-    def _stress_decision(self, s):
-        if s[1] < 0.1 and s[6] > 0.8:
-            return 3, 0.6  # expedite critically
-        if s[10] < 0.6:
-            return 1, 0.5  # defer (unreliable route)
-        if s[13] > 0.6:
-            return 3, 0.5  # expedite (high backlog)
-        return 0, 0.7  # release
 
 
 # ---------------------------------------------------------------------------
@@ -300,13 +378,12 @@ class QualityDispositionCurriculum(TRMCurriculumBase):
         for i in range(n):
             if phase == 1:
                 states[i] = self._simple_state()
-                actions[i], rewards[i] = self._simple_decision(states[i])
             elif phase == 2:
                 states[i] = self._mixed_state()
-                actions[i], rewards[i] = self._mixed_decision(states[i])
             else:
                 states[i] = self._stress_state()
-                actions[i], rewards[i] = self._stress_decision(states[i])
+
+            actions[i], rewards[i] = self._compute_quality_decision(states[i], phase)
 
         return CurriculumData(
             state_vectors=states,
@@ -317,6 +394,46 @@ class QualityDispositionCurriculum(TRMCurriculumBase):
             is_expert=np.ones(n, dtype=bool),
             dones=np.zeros(n, dtype=bool),
         )
+
+    def _compute_quality_decision(self, s, phase):
+        """Build QualityState from normalised state vector and call heuristic."""
+        # Map severity score to severity string
+        if s[1] > 0.7:
+            severity_str = "critical"
+        elif s[1] > 0.3:
+            severity_str = "major"
+        else:
+            severity_str = "minor"
+
+        # Map defect rate to defect type
+        defect_types = ["visual", "dimensional", "functional", "contamination"]
+        defect_type = defect_types[np.random.randint(0, len(defect_types))]
+
+        unit_cost = 50.0  # representative unit cost
+        q_state = QualityState(
+            lot_id="CURRICULUM",
+            product_id="CURRICULUM",
+            defect_type=defect_type,
+            defect_severity=severity_str,
+            quantity=s[2] * 500.0,
+            unit_cost=unit_cost,
+            rework_cost_per_unit=s[3] * unit_cost,
+            scrap_value_per_unit=s[4] * unit_cost * 0.1,
+            customer_impact=bool(s[11] > 0.5),
+        )
+        decision = compute_decision("quality_disposition", q_state, self.erp_params)
+
+        curriculum_action = _QUALITY_ACTION_MAP.get(decision.action, 1)
+
+        # Handle urgent orders with minor defects -> use_as_is
+        if s[6] > 0.8 and s[0] < 0.08 and severity_str == "minor" and phase >= 3:
+            curriculum_action = 4  # use_as_is
+
+        phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        reward_map = {0: 0.9, 1: 0.7, 2: 0.7, 3: 0.5, 4: 0.4}
+        reward = reward_map.get(curriculum_action, 0.5) * phase_discount
+
+        return curriculum_action, reward
 
     def _simple_state(self):
         return np.array([
@@ -350,29 +467,6 @@ class QualityDispositionCurriculum(TRMCurriculumBase):
         s[6] = np.random.uniform(0.6, 1.0)    # high order urgency
         s[8] = np.random.uniform(0.2, 0.5)    # low rework capacity
         return s
-
-    def _simple_decision(self, s):
-        if s[0] < 0.02:
-            return 0, 1.0  # accept
-        return 1, 0.8  # reject
-
-    def _mixed_decision(self, s):
-        if s[0] < 0.03 and s[1] < 0.3:
-            return 0, 0.9  # accept minor
-        if s[0] > 0.08:
-            if s[4] < s[3] * 0.5:
-                return 3, 0.6  # scrap (cheaper than rework)
-            return 1, 0.7  # reject
-        return 2, 0.7  # rework
-
-    def _stress_decision(self, s):
-        if s[6] > 0.8 and s[0] < 0.08:
-            return 4, 0.4  # use_as_is (urgent order override)
-        if s[1] > 0.8:
-            return 3, 0.5  # scrap critical defects
-        if s[0] > 0.1:
-            return 1, 0.6  # reject
-        return 2, 0.5  # rework
 
 
 # ---------------------------------------------------------------------------
@@ -411,14 +505,12 @@ class MaintenanceSchedulingCurriculum(TRMCurriculumBase):
         for i in range(n):
             if phase == 1:
                 states[i] = self._simple_state()
-                actions[i] = 0
-                rewards[i] = 0.9
             elif phase == 2:
                 states[i] = self._mixed_state()
-                actions[i], rewards[i] = self._mixed_decision(states[i])
             else:
                 states[i] = self._stress_state()
-                actions[i], rewards[i] = self._stress_decision(states[i])
+
+            actions[i], rewards[i] = self._compute_maint_decision(states[i], phase)
 
         return CurriculumData(
             state_vectors=states,
@@ -429,6 +521,52 @@ class MaintenanceSchedulingCurriculum(TRMCurriculumBase):
             is_expert=np.ones(n, dtype=bool),
             dones=np.zeros(n, dtype=bool),
         )
+
+    def _compute_maint_decision(self, s, phase):
+        """Build MaintenanceState from normalised state vector and call heuristic."""
+        # Map criticality score to letter
+        if s[11] > 0.7:
+            criticality = "A"
+        elif s[11] > 0.4:
+            criticality = "B"
+        else:
+            criticality = "C"
+
+        mtbf_days = 90.0  # representative MTBF
+        hours_since_pm = s[10] * mtbf_days * 24  # normalised -> hours
+
+        m_state = MaintenanceState(
+            asset_id="CURRICULUM",
+            site_id="CURRICULUM",
+            last_maintenance_date="",
+            mtbf_days=mtbf_days,
+            mttr_hours=s[4] * 24.0,
+            current_operating_hours=hours_since_pm,
+            hours_since_last_pm=hours_since_pm,
+            criticality=criticality,
+            upcoming_production_load=float(s[3]),
+            maintenance_cost=s[13] * 1000.0,
+        )
+        decision = compute_decision("maintenance_scheduling", m_state, self.erp_params)
+
+        curriculum_action = _MAINT_ACTION_MAP.get(decision.action, 1)
+
+        # Handle conditions not captured by heuristic state:
+        # Low crew -> defer; no parts -> outsource
+        if s[5] < 0.5 and phase >= 2:
+            curriculum_action = 1  # defer (low crew)
+        elif s[6] < 0.5 and phase >= 2:
+            curriculum_action = 3  # outsource (no parts)
+
+        # High failure risk with urgency -> expedite
+        if s[1] > 0.4 and s[7] > 0.7 and phase >= 3:
+            curriculum_action = 2  # expedite
+
+        phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        reward_map = {0: 0.8, 1: 0.5, 2: 0.6, 3: 0.5}
+        reward = reward_map.get(curriculum_action, 0.5) * phase_discount
+
+        return curriculum_action, reward
 
     def _simple_state(self):
         return np.array([
@@ -462,26 +600,6 @@ class MaintenanceSchedulingCurriculum(TRMCurriculumBase):
         s[3] = np.random.uniform(0.6, 1.0)   # high production impact
         s[7] = np.random.uniform(0.5, 0.9)   # higher order urgency
         return s
-
-    def _mixed_decision(self, s):
-        if s[5] < 0.5:  # low crew
-            return 1, 0.6  # defer
-        if s[6] < 0.5:  # no parts
-            return 3, 0.5  # outsource
-        if s[3] > 0.6:  # high production impact
-            return 1, 0.5  # defer
-        return 0, 0.8  # schedule
-
-    def _stress_decision(self, s):
-        if s[1] > 0.4:  # high failure risk
-            if s[6] < 0.5:
-                return 3, 0.4  # outsource urgently
-            return 2, 0.6  # expedite
-        if s[7] > 0.7:
-            return 2, 0.5  # expedite
-        if s[3] > 0.8:
-            return 1, 0.3  # defer (risky)
-        return 0, 0.6  # schedule
 
 
 # ---------------------------------------------------------------------------
@@ -520,14 +638,12 @@ class SubcontractingCurriculum(TRMCurriculumBase):
         for i in range(n):
             if phase == 1:
                 states[i] = self._simple_state()
-                actions[i] = 0  # keep internal
-                rewards[i] = 0.9
             elif phase == 2:
                 states[i] = self._mixed_state()
-                actions[i], rewards[i] = self._mixed_decision(states[i])
             else:
                 states[i] = self._stress_state()
-                actions[i], rewards[i] = self._stress_decision(states[i])
+
+            actions[i], rewards[i] = self._compute_sub_decision(states[i], phase)
 
         return CurriculumData(
             state_vectors=states,
@@ -538,6 +654,37 @@ class SubcontractingCurriculum(TRMCurriculumBase):
             is_expert=np.ones(n, dtype=bool),
             dones=np.zeros(n, dtype=bool),
         )
+
+    def _compute_sub_decision(self, s, phase):
+        """Build SubcontractingState from normalised state vector and call heuristic."""
+        qty_needed = s[0] * 500.0
+        internal_capacity = s[1] * 500.0
+        unit_cost_base = 50.0
+
+        sub_state = SubcontractingState(
+            product_id="CURRICULUM",
+            site_id="CURRICULUM",
+            quantity_needed=qty_needed,
+            internal_capacity_available=internal_capacity,
+            internal_cost_per_unit=s[2] * unit_cost_base,
+            external_cost_per_unit=s[5] * unit_cost_base,
+            external_lead_time_days=s[6] * 30.0,
+            internal_lead_time_days=s[3] * 30.0,
+            quality_risk_external=float(1.0 - s[7]),
+        )
+        decision = compute_decision("subcontracting", sub_state, self.erp_params)
+
+        curriculum_action = _SUB_ACTION_MAP.get(decision.action, 0)
+
+        # Handle vendor reject rate -> change_vendor
+        if s[13] > 0.1 and curriculum_action == 1 and phase >= 3:
+            curriculum_action = 3  # change vendor (bad external quality)
+
+        phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        reward_map = {0: 0.8, 1: 0.7, 2: 0.7, 3: 0.4}
+        reward = reward_map.get(curriculum_action, 0.5) * phase_discount
+
+        return curriculum_action, reward
 
     def _simple_state(self):
         return np.array([
@@ -572,22 +719,6 @@ class SubcontractingCurriculum(TRMCurriculumBase):
         s[14] = np.random.uniform(0.6, 1.0)  # high demand urgency
         s[15] = np.random.uniform(0.3, 0.8)  # high backlog
         return s
-
-    def _mixed_decision(self, s):
-        if s[1] < 0.4 and s[9] < 0.5:
-            return 1, 0.7  # route external
-        if s[1] < 0.6:
-            return 2, 0.7  # split
-        return 0, 0.8  # keep internal
-
-    def _stress_decision(self, s):
-        if s[9] > 0.5 and s[7] < 0.9:
-            return 0, 0.5  # keep internal (critical product, bad vendor)
-        if s[1] < 0.2:
-            return 1, 0.5  # route external (no choice)
-        if s[13] > 0.1:
-            return 3, 0.4  # change vendor
-        return 2, 0.6  # split
 
 
 # ---------------------------------------------------------------------------
@@ -629,13 +760,12 @@ class ForecastAdjustmentCurriculum(TRMCurriculumBase):
         for i in range(n):
             if phase == 1:
                 states[i] = self._simple_state()
-                actions[i], rewards[i] = self._simple_decision(states[i])
             elif phase == 2:
                 states[i] = self._mixed_state()
-                actions[i], rewards[i] = self._mixed_decision(states[i])
             else:
                 states[i] = self._stress_state()
-                actions[i], rewards[i] = self._stress_decision(states[i])
+
+            actions[i], rewards[i] = self._compute_fa_decision(states[i], phase)
 
         return CurriculumData(
             state_vectors=states,
@@ -646,6 +776,56 @@ class ForecastAdjustmentCurriculum(TRMCurriculumBase):
             is_expert=np.ones(n, dtype=bool),
             dones=np.zeros(n, dtype=bool),
         )
+
+    def _compute_fa_decision(self, s, phase):
+        """Build ForecastAdjustmentState from normalised state vector and call heuristic."""
+        # Map signal direction from continuous to categorical
+        if s[1] > 0.3:
+            direction_str = "increase"
+        elif s[1] < -0.3:
+            direction_str = "decrease"
+        else:
+            direction_str = "unchanged"
+
+        signal_types = ["email", "voice", "market_intel", "demand_sensing"]
+        signal_type = signal_types[np.random.randint(0, len(signal_types))]
+
+        current_forecast = max(1.0, s[3] * 1000.0)
+
+        fa_state = ForecastAdjustmentState(
+            product_id="CURRICULUM",
+            site_id="CURRICULUM",
+            current_forecast=current_forecast,
+            signal_type=signal_type,
+            signal_direction=direction_str,
+            signal_magnitude_pct=float(s[16] * 50.0),  # up to 50% adjustment
+            signal_confidence=float(s[2]),
+            forecast_error_recent=float(s[4]),
+            demand_cv=float(abs(s[5]) + 0.1),
+        )
+        decision = compute_decision("forecast_adjustment", fa_state, self.erp_params)
+
+        # Base mapping from heuristic
+        base_action = _FA_ACTION_MAP.get(decision.action, 2)
+
+        # Refine: distinguish high vs low magnitude
+        curriculum_action = base_action
+        if base_action == 1 and s[16] > 0.1:
+            curriculum_action = 0  # increase_high
+        elif base_action == 3 and s[16] > 0.1:
+            curriculum_action = 4  # decrease_high
+
+        # Low confidence -> hold regardless
+        if s[0] < 0.4 and phase >= 3:
+            curriculum_action = 2
+        if s[15] < 0.5 and phase >= 3:
+            curriculum_action = 2
+
+        phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        reward_map = {0: 0.7, 1: 0.8, 2: 0.6, 3: 0.8, 4: 0.7}
+        reward = reward_map.get(curriculum_action, 0.5) * phase_discount
+
+        return curriculum_action, reward
 
     def _simple_state(self):
         direction = np.random.choice([-1.0, 0.0, 1.0])
@@ -684,37 +864,6 @@ class ForecastAdjustmentCurriculum(TRMCurriculumBase):
         s[5] = np.random.uniform(-0.2, 0.2) # strong trend
         return s
 
-    def _simple_decision(self, s):
-        if s[0] > 0.8 and s[2] > 0.8:
-            if s[1] > 0.5:
-                return 1, 0.9  # increase_low
-            elif s[1] < -0.5:
-                return 3, 0.9  # decrease_low
-        return 2, 0.7  # hold
-
-    def _mixed_decision(self, s):
-        if s[0] > 0.6 and s[2] > 0.6:
-            if s[1] > 0.5:
-                if s[16] > 0.1:
-                    return 0, 0.7  # increase_high
-                return 1, 0.7  # increase_low
-            elif s[1] < -0.5:
-                if s[16] > 0.1:
-                    return 4, 0.7  # decrease_high
-                return 3, 0.7  # decrease_low
-        return 2, 0.6  # hold (uncertain)
-
-    def _stress_decision(self, s):
-        if s[0] < 0.4:
-            return 2, 0.5  # too uncertain, hold
-        if s[15] < 0.5:
-            return 2, 0.4  # low historical accuracy, hold
-        if s[1] > 0.5:
-            return 1, 0.5  # increase_low only
-        elif s[1] < -0.5:
-            return 3, 0.5  # decrease_low only
-        return 2, 0.5
-
 
 # ---------------------------------------------------------------------------
 # Inventory Buffer Curriculum
@@ -751,14 +900,12 @@ class InventoryBufferCurriculum(TRMCurriculumBase):
         for i in range(n):
             if phase == 1:
                 states[i] = self._simple_state()
-                actions[i] = 0  # maintain
-                rewards[i] = 0.8
             elif phase == 2:
                 states[i] = self._mixed_state()
-                actions[i], rewards[i] = self._mixed_decision(states[i])
             else:
                 states[i] = self._stress_state()
-                actions[i], rewards[i] = self._stress_decision(states[i])
+
+            actions[i], rewards[i] = self._compute_ib_decision(states[i], phase)
 
         return CurriculumData(
             state_vectors=states,
@@ -769,6 +916,58 @@ class InventoryBufferCurriculum(TRMCurriculumBase):
             is_expert=np.ones(n, dtype=bool),
             dones=np.zeros(n, dtype=bool),
         )
+
+    def _compute_ib_decision(self, s, phase):
+        """Build InventoryBufferState from normalised state vector and call heuristic."""
+        avg_demand = max(1.0, s[1] * 200.0)
+        current_ss = s[0] * avg_demand * 3.0  # denormalise
+        lead_time = max(1.0, s[3] * 30.0)
+
+        ib_state = InventoryBufferState(
+            product_id="CURRICULUM",
+            site_id="CURRICULUM",
+            current_safety_stock=current_ss,
+            avg_daily_demand=avg_demand,
+            demand_cv=float(s[2]),
+            lead_time_days=lead_time,
+            lead_time_cv=float(s[4]),
+            service_level_target=float(s[5]),
+            recent_stockout_count=int(s[7] * 20),
+            recent_excess_days=int(s[8] * 30),
+            holding_cost_per_unit=float(s[9] * 10.0),
+            stockout_cost_per_unit=float(s[9] * 50.0),
+        )
+        decision = compute_decision("inventory_buffer", ib_state, self.erp_params)
+
+        # Base mapping from heuristic
+        base_action = _IB_ACTION_MAP.get(decision.action, 0)
+
+        # Refine: distinguish small vs large adjustments
+        curriculum_action = base_action
+        if decision.action == 1:
+            # Increase: check magnitude
+            if current_ss > 0 and decision.quantity > current_ss * 1.3:
+                curriculum_action = 2  # increase_large
+            else:
+                curriculum_action = 1  # increase_small
+        elif decision.action == 2:
+            # Decrease: check magnitude
+            if current_ss > 0 and decision.quantity < current_ss * 0.7:
+                curriculum_action = 4  # decrease_large
+            else:
+                curriculum_action = 3  # decrease_small
+
+        # Override for stockout frequency
+        if s[7] > 0.15 and phase >= 3:
+            curriculum_action = 2  # increase_large (frequent stockouts)
+        elif s[8] > 0.2 and s[7] < 0.05 and phase >= 3:
+            curriculum_action = 4  # decrease_large (excess with no stockouts)
+
+        phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        reward_map = {0: 0.8, 1: 0.7, 2: 0.6, 3: 0.7, 4: 0.4}
+        reward = reward_map.get(curriculum_action, 0.5) * phase_discount
+
+        return curriculum_action, reward
 
     def _simple_state(self):
         return np.array([
@@ -803,24 +1002,6 @@ class InventoryBufferCurriculum(TRMCurriculumBase):
         s[7] = np.random.uniform(0.1, 0.25)   # frequent stockouts
         s[11] = np.random.uniform(0.4, 1.0)   # ATP shortage
         return s
-
-    def _mixed_decision(self, s):
-        if s[6] < s[5] - 0.03:  # service level below target
-            if s[7] > 0.1:
-                return 2, 0.7  # increase large
-            return 1, 0.8  # increase small
-        if s[8] > 0.15:  # high excess cost
-            return 3, 0.7  # decrease small
-        return 0, 0.8  # maintain
-
-    def _stress_decision(self, s):
-        if s[7] > 0.15:  # frequent stockouts
-            return 2, 0.6  # increase large
-        if s[6] < s[5] - 0.05:
-            return 1, 0.6  # increase small
-        if s[8] > 0.2 and s[7] < 0.05:
-            return 4, 0.4  # decrease large (excess)
-        return 0, 0.5  # maintain (uncertain)
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,12 @@ Each TRM has its own curriculum with 3 progressive phases:
 All curricula generate numpy arrays matching the TRM model's exact
 state/action contract, sourced from realistic SC config parameters.
 
+Expert actions are computed by the ERP-aware heuristic library
+(``app.services.powell.heuristic_library``) rather than inline if/then
+rules.  The curriculum still generates random state vectors (controlling
+difficulty progression per phase), but the *label* for each sample comes
+from ``compute_decision(trm_type, state_dataclass, erp_params)``.
+
 Usage:
     curriculum = CURRICULUM_REGISTRY["atp_executor"](sc_config_data)
     data = curriculum.generate(phase=1, num_samples=5000)
@@ -29,7 +35,90 @@ from app.models.trm.order_tracking_trm_model import (
     OT_STATE_DIM, OT_NUM_EXCEPTION_TYPES, OT_NUM_SEVERITIES, OT_NUM_ACTIONS,
 )
 
+from app.services.powell.heuristic_library.dispatch import compute_decision
+from app.services.powell.heuristic_library.base import (
+    ERPPlanningParams,
+    ATPState,
+    RebalancingState,
+    ReplenishmentState,
+    OrderTrackingState,
+)
+
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers: build ERPPlanningParams from SCConfigData
+# ---------------------------------------------------------------------------
+
+def _build_erp_params(sc_config: "SCConfigData") -> ERPPlanningParams:
+    """Construct ERPPlanningParams from the lightweight SC config data.
+
+    Uses values from the SC config where available, otherwise sensible
+    defaults matching SAP MARC parameters.
+    """
+    cfg = sc_config.extra_config if hasattr(sc_config, "extra_config") and sc_config.extra_config else {}
+    return ERPPlanningParams(
+        planning_method=cfg.get("planning_method", "REORDER_POINT"),
+        lot_sizing_rule=cfg.get("lot_sizing_rule", "LOT_FOR_LOT"),
+        reorder_point=cfg.get("reorder_point", sc_config.avg_demand * sc_config.avg_lead_time * 0.5),
+        safety_stock=cfg.get("safety_stock", sc_config.avg_demand * 1.5),
+        order_up_to=cfg.get("order_up_to", sc_config.avg_demand * sc_config.avg_lead_time * 1.5),
+        fixed_lot_size=cfg.get("fixed_lot_size", 0.0),
+        min_order_quantity=cfg.get("min_order_quantity", 0.0),
+        max_order_quantity=cfg.get("max_order_quantity", 0.0),
+        order_multiple=cfg.get("order_multiple", 0.0),
+        lead_time_days=int(cfg.get("lead_time_days", sc_config.avg_lead_time)),
+        review_period_days=int(cfg.get("review_period_days", 7)),
+        frozen_horizon_days=int(cfg.get("frozen_horizon_days", 0)),
+        max_inventory=cfg.get("max_inventory", 0.0),
+        procurement_type=cfg.get("procurement_type", "buy"),
+        erp_source=cfg.get("erp_source", "sap"),
+        erp_params=cfg.get("erp_params", {}),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Action mapping: heuristic library action -> curriculum action index
+# ---------------------------------------------------------------------------
+# The heuristic library and the curriculum may use different action index
+# conventions.  These maps translate heuristic library actions to the
+# curriculum action space.
+#
+# ATP heuristic: 0=reject/backorder, 1=confirm, 2=partial
+# ATP curriculum: 0=fulfill, 1=partial, 2=defer, 3=reserve, 4=reject
+_ATP_ACTION_MAP = {0: 4, 1: 0, 2: 1}
+
+# Rebalancing heuristic: 0=hold, 1=transfer  (same as curriculum)
+_REB_ACTION_MAP = {0: 0, 1: 1}
+
+# PO heuristic: 0=no order, 1=order (same as curriculum 0=order, 1=defer)
+# Heuristic returns action=0 for "no order" and action=1 for "order".
+# Curriculum: 0=order, 1=defer, 2=expedite, 3=cancel
+_PO_ACTION_MAP = {0: 1, 1: 0}  # heuristic 0(no-order)->curriculum 1(defer), heuristic 1(order)->curriculum 0(order)
+
+# Order tracking heuristic: action = severity (0=none, 1=monitor, 2=expedite, 3=escalate)
+# Curriculum: action_discrete = exception type, cont[0] = severity, cont[1] = recommended action
+# These are different enough that we handle order_tracking specially.
+
+
+# ---------------------------------------------------------------------------
+# Reward from heuristic decision
+# ---------------------------------------------------------------------------
+
+def _reward_from_decision(action: int, quantity: float, confidence: float,
+                          phase: int) -> float:
+    """Derive a reward from the heuristic decision quality.
+
+    Higher phases get slightly lower base rewards to reflect increased
+    difficulty.
+    """
+    phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+    # Heuristic confidence is always 1.0 for deterministic heuristics,
+    # so we base the reward on whether an action was taken.
+    if action == 0 and quantity <= 0:
+        return 0.5 * phase_discount  # No-action baseline
+    return confidence * phase_discount
 
 
 @dataclass
@@ -43,6 +132,7 @@ class SCConfigData:
     num_suppliers: int = 2
     num_priority_levels: int = 5
     site_types: Optional[List[str]] = None
+    extra_config: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -62,6 +152,7 @@ class TRMCurriculumBase(ABC):
 
     def __init__(self, sc_config: SCConfigData, seed: Optional[int] = None):
         self.sc_config = sc_config
+        self.erp_params = _build_erp_params(sc_config)
         if seed is not None:
             np.random.seed(seed)
             random.seed(seed)
@@ -117,6 +208,42 @@ class ATPCurriculum(TRMCurriculumBase):
         else:
             return self._phase3(num_samples)
 
+    def _compute_atp_action(self, priority, requested, inventory, pipeline,
+                            safety, forecast, phase):
+        """Build ATPState and call the heuristic library."""
+        atp_state = ATPState(
+            order_qty=requested,
+            order_priority=int(priority),
+            product_id="CURRICULUM",
+            site_id="CURRICULUM",
+            available_inventory=inventory + pipeline,
+            allocated_inventory=0.0,
+            pipeline_qty=pipeline,
+            forecast_remaining=forecast,
+            confirmed_orders=0.0,
+        )
+        decision = compute_decision("atp_executor", atp_state, self.erp_params)
+
+        # Map heuristic action to curriculum action space
+        curriculum_action = _ATP_ACTION_MAP.get(decision.action, 4)
+        fulfill_fraction = decision.quantity / (requested + 1e-6)
+        fulfill_fraction = min(1.0, max(0.0, fulfill_fraction))
+
+        # Derive reward: fulfilled orders are good, higher priority fulfillment is better
+        if curriculum_action == 0:  # fulfill
+            reward = 1.0 + (3 - priority) * 0.1
+        elif curriculum_action == 1:  # partial
+            reward = fulfill_fraction * 0.8
+        elif curriculum_action == 2:  # defer
+            reward = 0.3
+        elif curriculum_action == 3:  # reserve
+            reward = 0.2
+        else:  # reject
+            reward = -0.2
+
+        reward *= {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        return curriculum_action, fulfill_fraction, reward
+
     def _phase1(self, n: int) -> CurriculumData:
         """Phase 1: Single product, abundant inventory, stable demand."""
         states = np.zeros((n, ATP_STATE_DIM), dtype=np.float32)
@@ -137,16 +264,11 @@ class ATPCurriculum(TRMCurriculumBase):
             states[i] = [priority, requested, inventory, pipeline, safety,
                          forecast, uncertainty, *allocs]
 
-            # Easy: inventory always sufficient → fulfill
-            available = inventory + pipeline
-            if available >= requested:
-                actions[i] = 0  # fulfill
-                qty_fracs[i, 0] = 1.0
-                rewards[i] = 1.0
-            else:
-                actions[i] = 1  # partial
-                qty_fracs[i, 0] = available / requested
-                rewards[i] = available / requested
+            act, frac, rew = self._compute_atp_action(
+                priority, requested, inventory, pipeline, safety, forecast, 1)
+            actions[i] = act
+            qty_fracs[i, 0] = frac
+            rewards[i] = rew
 
         next_states = states.copy()
         next_states[:, 2] -= states[:, 1] * qty_fracs[:, 0]  # reduce inventory
@@ -184,23 +306,11 @@ class ATPCurriculum(TRMCurriculumBase):
             states[i] = [priority, requested, inventory, pipeline, safety,
                          forecast, uncertainty, *allocs]
 
-            available = inventory + pipeline
-            if available >= requested and priority <= 2:
-                actions[i] = 0  # fulfill high priority
-                qty_fracs[i, 0] = 1.0
-                rewards[i] = 1.0 + (3 - priority) * 0.1
-            elif available >= requested * 0.5:
-                actions[i] = 1  # partial
-                qty_fracs[i, 0] = min(1.0, available / requested)
-                rewards[i] = qty_fracs[i, 0] * 0.8
-            elif priority >= 4:
-                actions[i] = 2  # defer low priority
-                qty_fracs[i, 0] = 0.0
-                rewards[i] = 0.3
-            else:
-                actions[i] = 3  # reserve
-                qty_fracs[i, 0] = 0.0
-                rewards[i] = 0.2
+            act, frac, rew = self._compute_atp_action(
+                priority, requested, inventory, pipeline, safety, forecast, 2)
+            actions[i] = act
+            qty_fracs[i, 0] = frac
+            rewards[i] = rew
 
         next_states = states.copy()
         next_states[:, 2] -= states[:, 1] * qty_fracs[:, 0]
@@ -242,29 +352,11 @@ class ATPCurriculum(TRMCurriculumBase):
             states[i] = [priority, requested, inventory, pipeline, safety,
                          forecast, uncertainty, *allocs]
 
-            available = inventory + pipeline
-            ratio = available / (requested + 1e-6)
-
-            if ratio >= 1.0 and priority <= 2:
-                actions[i] = 0
-                qty_fracs[i, 0] = 1.0
-                rewards[i] = 1.0 + (3 - priority) * 0.15
-            elif ratio >= 0.5:
-                actions[i] = 1
-                qty_fracs[i, 0] = min(1.0, ratio)
-                rewards[i] = ratio * 0.7
-            elif priority >= 4 or disruption:
-                actions[i] = 2  # defer
-                qty_fracs[i, 0] = 0.0
-                rewards[i] = 0.1 if not disruption else 0.3
-            elif ratio < 0.1:
-                actions[i] = 4  # reject
-                qty_fracs[i, 0] = 0.0
-                rewards[i] = -0.2
-            else:
-                actions[i] = 3  # reserve
-                qty_fracs[i, 0] = 0.0
-                rewards[i] = 0.15
+            act, frac, rew = self._compute_atp_action(
+                priority, requested, inventory, pipeline, safety, forecast, 3)
+            actions[i] = act
+            qty_fracs[i, 0] = frac
+            rewards[i] = rew
 
         next_states = states.copy()
         next_states[:, 2] -= states[:, 1] * qty_fracs[:, 0]
@@ -327,6 +419,35 @@ class RebalancingCurriculum(TRMCurriculumBase):
             dos, capacity_util, service_level, holding_cost, stockout_risk, excess
         ], dtype=np.float32)
 
+    def _compute_reb_action(self, src_oh, src_safety, src_backlog,
+                            dst_oh, dst_safety, dst_backlog,
+                            transit_cost, phase):
+        """Build RebalancingState and call the heuristic library."""
+        demand = self.sc_config.avg_demand
+        reb_state = RebalancingState(
+            source_on_hand=src_oh,
+            source_backlog=src_backlog,
+            source_avg_demand=demand,
+            source_safety_stock=src_safety,
+            target_on_hand=dst_oh,
+            target_backlog=dst_backlog,
+            target_avg_demand=demand,
+            target_safety_stock=dst_safety,
+            transfer_lead_time_days=self.sc_config.avg_lead_time * 0.5,
+            transfer_cost_per_unit=transit_cost,
+        )
+        decision = compute_decision("inventory_rebalancing", reb_state, self.erp_params)
+
+        curriculum_action = _REB_ACTION_MAP.get(decision.action, 0)
+        transfer_qty = max(0.0, decision.quantity)
+
+        if curriculum_action == 1 and transfer_qty > 0:
+            reward = 0.8 * {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        else:
+            reward = 0.5 * {1: 1.0, 2: 0.85, 3: 0.7}.get(phase, 0.7)
+
+        return curriculum_action, transfer_qty, reward
+
     def _phase1(self, n: int) -> CurriculumData:
         """Phase 1: 2 sites, 1 product, clear imbalance."""
         states = np.zeros((n, REB_STATE_DIM), dtype=np.float32)
@@ -346,14 +467,18 @@ class RebalancingCurriculum(TRMCurriculumBase):
                 src_oh = np.random.uniform(safety * 0.8, safety * 1.2)
                 dst_oh = np.random.uniform(safety * 0.8, safety * 1.2)
 
+            src_backlog = 0.0
+            dst_backlog = np.random.uniform(0, 10)
+
             src = self._make_site_features(
-                src_oh, safety, 0, np.random.uniform(10, 30),
+                src_oh, safety, src_backlog, np.random.uniform(10, 30),
                 demand, demand * 0.1, 0.5, 0.95, 0.01, 0.05)
             dst = self._make_site_features(
-                dst_oh, safety, np.random.uniform(0, 10), np.random.uniform(5, 20),
+                dst_oh, safety, dst_backlog, np.random.uniform(5, 20),
                 demand, demand * 0.1, 0.5, 0.85, 0.01, 0.3)
 
-            lane = np.array([3.0, 0.5, 0.95], dtype=np.float32)
+            transit_cost = 0.5
+            lane = np.array([3.0, transit_cost, 0.95], dtype=np.float32)
             imbalance = abs(src_oh - dst_oh) / (safety + 1e-6)
             excess = max(0, src_oh - safety)
             deficit = max(0, safety - dst_oh)
@@ -361,18 +486,14 @@ class RebalancingCurriculum(TRMCurriculumBase):
 
             states[i] = np.concatenate([src, dst, lane, network])
 
-            if src_oh > safety * 1.5 and dst_oh < safety * 0.7:
-                actions[i] = 1  # transfer
-                qty = min(src_oh - safety, safety - dst_oh)
-                qtys[i, 0] = max(0, qty)
-                rewards[i] = 0.8
-            else:
-                actions[i] = 0  # hold
-                qtys[i, 0] = 0
-                rewards[i] = 0.5
+            act, qty, rew = self._compute_reb_action(
+                src_oh, safety, src_backlog, dst_oh, safety, dst_backlog,
+                transit_cost, 1)
+            actions[i] = act
+            qtys[i, 0] = qty
+            rewards[i] = rew
 
         next_states = states.copy()
-        # Update inventories after transfer
         transferred = actions.astype(float) * qtys[:, 0]
         next_states[:, 0] -= transferred  # source on_hand
         next_states[:, 12] += transferred  # dest on_hand
@@ -408,14 +529,16 @@ class RebalancingCurriculum(TRMCurriculumBase):
             safety = demand * np.random.uniform(1.0, 2.0)
             src_oh = np.random.uniform(safety * 0.3, safety * 2.5)
             dst_oh = np.random.uniform(safety * 0.2, safety * 1.8)
+            src_backlog = np.random.uniform(0, 15)
+            dst_backlog = np.random.uniform(0, 20)
 
             src = self._make_site_features(
-                src_oh, safety, np.random.uniform(0, 15), np.random.uniform(10, 40),
+                src_oh, safety, src_backlog, np.random.uniform(10, 40),
                 demand, demand * 0.2, np.random.uniform(0.4, 0.8),
                 np.random.uniform(0.8, 0.98), np.random.uniform(0.005, 0.02),
                 np.random.uniform(0.05, 0.3))
             dst = self._make_site_features(
-                dst_oh, safety, np.random.uniform(0, 20), np.random.uniform(5, 30),
+                dst_oh, safety, dst_backlog, np.random.uniform(5, 30),
                 demand, demand * 0.2, np.random.uniform(0.3, 0.7),
                 np.random.uniform(0.7, 0.95), np.random.uniform(0.005, 0.02),
                 np.random.uniform(0.1, 0.5))
@@ -432,20 +555,12 @@ class RebalancingCurriculum(TRMCurriculumBase):
 
             states[i] = np.concatenate([src, dst, lane, network])
 
-            # Trade-off: benefit of transfer vs cost
-            transfer_benefit = max(0, safety - dst_oh) / (safety + 1e-6)
-            transfer_cost_norm = transit_cost / 3.0
-            net_benefit = transfer_benefit - transfer_cost_norm * 0.3
-
-            if net_benefit > 0.2 and src_oh > safety:
-                actions[i] = 1
-                qty = min(src_oh - safety * 0.8, deficit)
-                qtys[i, 0] = max(0, qty)
-                rewards[i] = net_benefit
-            else:
-                actions[i] = 0
-                qtys[i, 0] = 0
-                rewards[i] = 0.3 if dst_oh > safety * 0.5 else -0.1
+            act, qty, rew = self._compute_reb_action(
+                src_oh, safety, src_backlog, dst_oh, safety, dst_backlog,
+                transit_cost, 2)
+            actions[i] = act
+            qtys[i, 0] = qty
+            rewards[i] = rew
 
         next_states = states.copy()
         transferred = actions.astype(float) * qtys[:, 0]
@@ -482,13 +597,16 @@ class RebalancingCurriculum(TRMCurriculumBase):
             stockout_risk_src = max(0, 1 - src_oh / (safety + 1e-6))
             stockout_risk_dst = max(0, 1 - dst_oh / (safety + 1e-6))
 
+            src_backlog = np.random.uniform(0, 25)
+            dst_backlog = np.random.uniform(0, 30)
+
             src = self._make_site_features(
-                src_oh, safety, np.random.uniform(0, 25), np.random.uniform(0, 50),
+                src_oh, safety, src_backlog, np.random.uniform(0, 50),
                 demand, demand * np.random.uniform(0.1, 0.4),
                 np.random.uniform(0.3, 0.9), np.random.uniform(0.6, 0.99),
                 np.random.uniform(0.005, 0.03), stockout_risk_src)
             dst = self._make_site_features(
-                dst_oh, safety, np.random.uniform(0, 30), np.random.uniform(0, 40),
+                dst_oh, safety, dst_backlog, np.random.uniform(0, 40),
                 demand, demand * np.random.uniform(0.1, 0.4),
                 np.random.uniform(0.3, 0.9), np.random.uniform(0.5, 0.95),
                 np.random.uniform(0.005, 0.03), stockout_risk_dst)
@@ -505,26 +623,12 @@ class RebalancingCurriculum(TRMCurriculumBase):
 
             states[i] = np.concatenate([src, dst, lane, network])
 
-            # Proactive: transfer even before crisis if risk is high
-            if stockout_risk_dst > 0.6 and src_oh > safety * 0.8:
-                actions[i] = 1
-                qty = min(src_oh * 0.3, deficit)
-                qtys[i, 0] = max(0, qty)
-                rewards[i] = 0.7 + (stockout_risk_dst - 0.6)
-            elif src_oh > safety * 1.5 and dst_oh < safety * 0.5:
-                actions[i] = 1
-                qty = min(src_oh - safety, safety - dst_oh)
-                qtys[i, 0] = max(0, qty)
-                rewards[i] = 0.6
-            elif reliability < 0.7 and transit_time > 7:
-                # Unreliable lane — risky to transfer
-                actions[i] = 0
-                qtys[i, 0] = 0
-                rewards[i] = 0.4
-            else:
-                actions[i] = 0
-                qtys[i, 0] = 0
-                rewards[i] = 0.3 if dst_oh > safety * 0.5 else -0.1
+            act, qty, rew = self._compute_reb_action(
+                src_oh, safety, src_backlog, dst_oh, safety, dst_backlog,
+                transit_cost, 3)
+            actions[i] = act
+            qtys[i, 0] = qty
+            rewards[i] = rew
 
         next_states = states.copy()
         transferred = actions.astype(float) * qtys[:, 0]
@@ -576,6 +680,86 @@ class POCreationCurriculum(TRMCurriculumBase):
         else:
             return self._phase3(num_samples)
 
+    def _compute_po_action(self, on_hand, in_transit, on_order, committed,
+                           backlog, safety, rop, forecast, lead_time, moq,
+                           otr, available, supply_risk, phase):
+        """Build ReplenishmentState and call the heuristic library."""
+        ip = on_hand + in_transit + on_order - committed - backlog
+        demand_daily = forecast / 30.0
+
+        replenishment_state = ReplenishmentState(
+            inventory_position=ip,
+            on_hand=on_hand,
+            backlog=backlog,
+            pipeline_qty=in_transit + on_order,
+            avg_daily_demand=demand_daily,
+            demand_cv=0.2,
+            lead_time_days=lead_time,
+            forecast_daily=demand_daily,
+            day_of_week=np.random.randint(0, 5),
+            day_of_month=np.random.randint(1, 29),
+        )
+
+        # Build ERP params with the sampled per-sample overrides
+        erp = ERPPlanningParams(
+            planning_method=self.erp_params.planning_method,
+            lot_sizing_rule=self.erp_params.lot_sizing_rule,
+            reorder_point=rop,
+            safety_stock=safety,
+            order_up_to=rop + safety,
+            min_order_quantity=moq,
+            lead_time_days=int(lead_time),
+            erp_source=self.erp_params.erp_source,
+            erp_params=self.erp_params.erp_params,
+        )
+
+        decision = compute_decision("po_creation", replenishment_state, erp)
+
+        # Map heuristic action to curriculum action space
+        # Heuristic: action=0 (no order) -> curriculum defer (1)
+        # Heuristic: action=1 (order) -> curriculum order (0)
+        if decision.action == 0 and decision.quantity <= 0:
+            # No order needed
+            curriculum_action = 1  # defer
+            qty = 0.0
+        elif decision.action == 1 and decision.quantity > 0:
+            # Order
+            curriculum_action = 0  # order
+            qty = decision.quantity
+        else:
+            # Edge case
+            curriculum_action = 1
+            qty = 0.0
+
+        # Adjust for supplier unavailability and urgency (phase 2+)
+        if not available and phase >= 2:
+            if ip < safety * 0.3 and phase == 3:
+                curriculum_action = 3  # cancel (find alternate)
+                qty = 0.0
+            else:
+                curriculum_action = 1  # defer
+                qty = 0.0
+
+        # Check for expedite condition (urgent replenishment)
+        if curriculum_action == 0 and ip < safety * 0.5 and phase >= 2:
+            curriculum_action = 2  # expedite
+            # Keep the quantity from the heuristic
+
+        # Reward based on action appropriateness
+        phase_discount = {1: 1.0, 2: 0.9, 3: 0.8}.get(phase, 0.8)
+        if curriculum_action == 0:
+            reward = 0.8 * phase_discount
+        elif curriculum_action == 1:
+            reward = 0.6 * phase_discount
+        elif curriculum_action == 2:
+            reward = 0.5 * phase_discount  # expediting is costly
+        elif curriculum_action == 3:
+            reward = 0.2 * phase_discount
+        else:
+            reward = 0.4 * phase_discount
+
+        return curriculum_action, qty, reward
+
     def _phase1(self, n: int) -> CurriculumData:
         """Phase 1: 1 reliable supplier, clear reorder point."""
         states = np.zeros((n, PO_STATE_DIM), dtype=np.float32)
@@ -606,19 +790,15 @@ class POCreationCurriculum(TRMCurriculumBase):
                          safety, rop, dos, lead_time, unit_cost, moq, otr,
                          available, forecast, uncertainty, supply_risk, demand_vol]
 
-            ip = on_hand + in_transit + on_order - committed - backlog
-            if ip < rop:
-                actions[i] = 0  # order
-                qty = max(moq, rop - ip + safety * 0.5)
-                qtys[i, 0] = qty
-                rewards[i] = 0.8
-            else:
-                actions[i] = 1  # defer
-                qtys[i, 0] = 0
-                rewards[i] = 0.6
+            act, qty, rew = self._compute_po_action(
+                on_hand, in_transit, on_order, committed, backlog,
+                safety, rop, forecast, lead_time, moq, otr, available,
+                supply_risk, 1)
+            actions[i] = act
+            qtys[i, 0] = qty
+            rewards[i] = rew
 
         next_states = states.copy()
-        # After ordering, on_order increases
         next_states[:, 2] += qtys[:, 0]  # on_order
         next_states[:, 7] = (next_states[:, 0] + qtys[:, 0]) / (states[:, 13] / 30 + 1e-6)
 
@@ -662,26 +842,13 @@ class POCreationCurriculum(TRMCurriculumBase):
                          safety, rop, dos, lead_time, unit_cost, moq, otr,
                          available, forecast, uncertainty, supply_risk, demand_vol]
 
-            ip = on_hand + in_transit + on_order - committed - backlog
-
-            if not available:
-                actions[i] = 1  # defer (supplier unavailable)
-                qtys[i, 0] = 0
-                rewards[i] = 0.2
-            elif ip < safety * 0.5:
-                actions[i] = 2  # expedite (urgent)
-                qty = max(moq, rop - ip + safety)
-                qtys[i, 0] = qty
-                rewards[i] = 0.6
-            elif ip < rop:
-                actions[i] = 0  # order
-                qty = max(moq, rop - ip + safety * 0.3)
-                qtys[i, 0] = qty
-                rewards[i] = 0.8
-            else:
-                actions[i] = 1  # defer
-                qtys[i, 0] = 0
-                rewards[i] = 0.5
+            act, qty, rew = self._compute_po_action(
+                on_hand, in_transit, on_order, committed, backlog,
+                safety, rop, forecast, lead_time, moq, otr, available,
+                supply_risk, 2)
+            actions[i] = act
+            qtys[i, 0] = qty
+            rewards[i] = rew
 
         next_states = states.copy()
         next_states[:, 2] += qtys[:, 0]
@@ -731,35 +898,13 @@ class POCreationCurriculum(TRMCurriculumBase):
                          safety, rop, dos, lead_time, unit_cost, moq, otr,
                          available, forecast, uncertainty, supply_risk, demand_vol]
 
-            ip = on_hand + in_transit + on_order - committed - backlog
-
-            if not available:
-                if ip < safety * 0.3:
-                    actions[i] = 3  # cancel (find alternate)
-                    qtys[i, 0] = 0
-                    rewards[i] = 0.1
-                else:
-                    actions[i] = 1  # defer
-                    qtys[i, 0] = 0
-                    rewards[i] = 0.3
-            elif ip < safety * 0.3:
-                actions[i] = 2  # expedite
-                qty = max(moq, rop - ip + safety)
-                qtys[i, 0] = qty
-                rewards[i] = 0.5  # expedite is costly
-            elif ip < rop:
-                actions[i] = 0  # order
-                qty = max(moq, rop - ip + safety * 0.5)
-                qtys[i, 0] = qty
-                rewards[i] = 0.8
-            elif ip > rop * 1.5:
-                actions[i] = 3  # cancel excess
-                qtys[i, 0] = 0
-                rewards[i] = 0.4
-            else:
-                actions[i] = 1  # defer
-                qtys[i, 0] = 0
-                rewards[i] = 0.6
+            act, qty, rew = self._compute_po_action(
+                on_hand, in_transit, on_order, committed, backlog,
+                safety, rop, forecast, lead_time, moq, otr, available,
+                supply_risk, 3)
+            actions[i] = act
+            qtys[i, 0] = qty
+            rewards[i] = rew
 
         next_states = states.copy()
         next_states[:, 2] += qtys[:, 0]
@@ -790,10 +935,7 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
         partner_fill_rate, typical_transit_days
 
     Action discrete: exception_type (9), severity (4), recommended_action (9)
-        Encoded as single index: exception_type * (4*9) + severity * 9 + action
-        OR we output 3 separate discrete arrays.
-
-    For simplicity, we use 3 separate arrays in CurriculumData:
+        For simplicity, we use 3 separate arrays in CurriculumData:
         action_discrete = exception_type index (0-8)
         action_continuous[:, 0] = severity index (0-3)
         action_continuous[:, 1] = recommended_action index (0-8)
@@ -815,6 +957,76 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
         else:
             return self._phase3(num_samples)
 
+    def _compute_ot_action(self, order_type_str, days_overdue, qty_ordered,
+                           qty_received, otr, is_critical, price_var,
+                           is_transit, is_partial, days_since, transit_days,
+                           phase):
+        """Build OrderTrackingState and call the heuristic library.
+
+        Returns (exception_type, severity, recommended_action, reward).
+
+        The heuristic library returns a severity-based action (0-3) and
+        the remaining quantity.  We map this to the curriculum's richer
+        exception-type / severity / action triple.
+        """
+        ot_state = OrderTrackingState(
+            order_id="CURRICULUM",
+            order_type=order_type_str,
+            expected_date="",
+            current_status="in_transit" if is_transit else "open",
+            quantity_ordered=qty_ordered,
+            quantity_received=qty_received,
+            days_overdue=days_overdue,
+            supplier_on_time_rate=otr,
+            is_critical=is_critical,
+        )
+        decision = compute_decision("order_tracking", ot_state, self.erp_params)
+
+        # The heuristic library returns action = severity (0-3)
+        heuristic_severity = decision.action
+        fill_rate = qty_received / (qty_ordered + 1e-6)
+
+        # Map to curriculum triple: (exception_type, severity, recommended_action)
+        if heuristic_severity == 0:
+            # No exception
+            return 8, 0, 0, 0.9 * {1: 1.0, 2: 0.95, 3: 0.9}.get(phase, 0.9)
+
+        # Classify exception type from state context
+        if days_overdue > 0:
+            exception_type = 0  # late_delivery
+        elif qty_received > 0 and qty_received < qty_ordered:
+            exception_type = 2  # quantity_shortage
+        elif abs(price_var) > 0.1:
+            exception_type = 7  # price_variance
+        elif is_transit and days_since > transit_days * 2:
+            exception_type = 6  # stuck_in_transit
+        elif not is_transit and not is_partial and qty_received == 0 and days_since > 2:
+            exception_type = 5  # missing_confirmation
+        else:
+            exception_type = 0  # default to late
+
+        # Map severity to recommended action
+        if heuristic_severity >= 3:
+            rec_action = 4  # find_alternate
+            reward = 0.5
+        elif heuristic_severity >= 2:
+            rec_action = 1  # expedite
+            reward = 0.6
+        else:
+            rec_action = 1  # expedite (monitor)
+            reward = 0.7
+
+        # Override for specific exception types
+        if exception_type == 7:
+            rec_action = 7  # price_negotiation
+        elif exception_type == 5:
+            rec_action = 8  # escalate
+        elif exception_type == 2 and fill_rate < 0.75:
+            rec_action = 3  # partial_receipt
+
+        reward *= {1: 1.0, 2: 0.95, 3: 0.9}.get(phase, 0.9)
+        return exception_type, heuristic_severity, rec_action, reward
+
     def _phase1(self, n: int) -> CurriculumData:
         """Phase 1: Binary late/on-time detection."""
         states = np.zeros((n, OT_STATE_DIM), dtype=np.float32)
@@ -828,6 +1040,7 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
             is_po = float(otype == 0)
             is_to = float(otype == 1)
             is_co = float(otype == 2)
+            otype_str = ["PO", "TO", "CO"][otype]
 
             # Status
             is_transit = float(np.random.random() < 0.6)
@@ -837,6 +1050,7 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
             is_late = np.random.random() < 0.3
             days_until = np.random.uniform(-10, 0) if is_late else np.random.uniform(0, 10)
             days_since = np.random.uniform(1, 20)
+            days_overdue = max(0, -days_until)
 
             # Quantities
             ordered = np.random.uniform(20, 100)
@@ -853,19 +1067,16 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
                          days_until, days_since, ordered, received, remaining,
                          fill_rate, price_var, partner_otr, partner_fr, transit_days]
 
-            if is_late and days_until < -2:
-                exception_types[i] = 0  # late_delivery
-                cont[i, 0] = 1  # warning
-                cont[i, 1] = 1  # expedite
-                rewards[i] = 0.7
-            else:
-                exception_types[i] = 8  # no_exception
-                cont[i, 0] = 0  # info
-                cont[i, 1] = 0  # no_action
-                rewards[i] = 0.9
+            et, sev, act, rew = self._compute_ot_action(
+                otype_str, days_overdue, ordered, received, partner_otr,
+                False, price_var, bool(is_transit), bool(is_partial),
+                days_since, transit_days, 1)
+            exception_types[i] = et
+            cont[i, 0] = sev
+            cont[i, 1] = act
+            rewards[i] = rew
 
         next_states = states.copy()
-        # After detection, order progresses
         next_states[:, 5] -= 1  # one day closer
 
         return CurriculumData(
@@ -888,6 +1099,7 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
         for i in range(n):
             otype = np.random.choice(3)
             is_po, is_to, is_co = float(otype == 0), float(otype == 1), float(otype == 2)
+            otype_str = ["PO", "TO", "CO"][otype]
             is_transit = float(np.random.random() < 0.5)
             is_partial = float(not is_transit and np.random.random() < 0.3)
 
@@ -904,57 +1116,20 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
             partner_otr = np.random.uniform(0.7, 0.98)
             partner_fr = np.random.uniform(0.8, 0.99)
             transit_days = np.random.uniform(2, 15)
+            days_overdue = max(0, -days_until)
 
             states[i] = [is_po, is_to, is_co, is_transit, is_partial,
                          days_until, days_since, ordered, received, remaining,
                          fill_rate, price_var, partner_otr, partner_fr, transit_days]
 
-            # Classify exception
-            if days_until < -7:
-                exception_types[i] = 0  # late
-                cont[i, 0] = 3  # critical
-                cont[i, 1] = 4  # find_alternate
-                rewards[i] = 0.6
-            elif days_until < -2:
-                exception_types[i] = 0  # late
-                cont[i, 0] = 2  # high
-                cont[i, 1] = 1  # expedite
-                rewards[i] = 0.7
-            elif days_until > transit_days * 0.5 and is_transit:
-                exception_types[i] = 1  # early
-                cont[i, 0] = 1  # warning
-                cont[i, 1] = 2  # delay_acceptance
-                rewards[i] = 0.75
-            elif shortage and fill_rate < 0.75:
-                exception_types[i] = 2  # quantity_shortage
-                cont[i, 0] = 2  # high
-                cont[i, 1] = 3  # partial_receipt
-                rewards[i] = 0.65
-            elif shortage and fill_rate < 0.95:
-                exception_types[i] = 2  # quantity_shortage
-                cont[i, 0] = 1  # warning
-                cont[i, 1] = 3  # partial_receipt
-                rewards[i] = 0.75
-            elif abs(price_var) > 0.1:
-                exception_types[i] = 7  # price_variance
-                cont[i, 0] = 1  # warning
-                cont[i, 1] = 7  # price_negotiation
-                rewards[i] = 0.7
-            elif days_since > transit_days * 2 and is_transit:
-                exception_types[i] = 6  # stuck_in_transit
-                cont[i, 0] = 3  # critical
-                cont[i, 1] = 4  # find_alternate
-                rewards[i] = 0.5
-            elif days_since > 2 and not is_transit and not is_partial and received == 0:
-                exception_types[i] = 5  # missing_confirmation
-                cont[i, 0] = 2  # high
-                cont[i, 1] = 8  # escalate
-                rewards[i] = 0.6
-            else:
-                exception_types[i] = 8  # no_exception
-                cont[i, 0] = 0  # info
-                cont[i, 1] = 0  # no_action
-                rewards[i] = 0.9
+            et, sev, act, rew = self._compute_ot_action(
+                otype_str, days_overdue, ordered, received, partner_otr,
+                False, price_var, bool(is_transit), bool(is_partial),
+                days_since, transit_days, 2)
+            exception_types[i] = et
+            cont[i, 0] = sev
+            cont[i, 1] = act
+            rewards[i] = rew
 
         next_states = states.copy()
         next_states[:, 5] -= 1
@@ -979,6 +1154,7 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
         for i in range(n):
             otype = np.random.choice(3)
             is_po, is_to, is_co = float(otype == 0), float(otype == 1), float(otype == 2)
+            otype_str = ["PO", "TO", "CO"][otype]
             is_transit = float(np.random.random() < 0.4)
             is_partial = float(not is_transit and np.random.random() < 0.3)
 
@@ -1023,61 +1199,22 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
 
             fill_rate = received / (ordered + 1e-6)
             remaining = ordered - received
+            days_overdue = max(0, -days_until)
+
+            is_critical = scenario in ("late", "stuck") and np.random.random() < 0.3
 
             states[i] = [is_po, is_to, is_co, is_transit, is_partial,
                          days_until, days_since, ordered, received, remaining,
                          fill_rate, price_var, partner_otr, partner_fr, transit_days]
 
-            # Context-aware decisions
-            if scenario == "late":
-                severity_val = 3 if days_until < -10 else (2 if days_until < -5 else 1)
-                if severity_val == 3 and partner_otr < 0.7:
-                    exception_types[i] = 0
-                    cont[i] = [3, 4]  # critical, find_alternate
-                    rewards[i] = 0.5
-                elif severity_val >= 2:
-                    exception_types[i] = 0
-                    cont[i] = [severity_val, 1]  # expedite
-                    rewards[i] = 0.6
-                else:
-                    exception_types[i] = 0
-                    cont[i] = [1, 1]  # warning, expedite
-                    rewards[i] = 0.7
-            elif scenario == "early":
-                exception_types[i] = 1
-                cont[i] = [1, 2]  # warning, delay_acceptance
-                rewards[i] = 0.75
-            elif scenario == "shortage":
-                sev = 3 if fill_rate < 0.5 else (2 if fill_rate < 0.75 else 1)
-                action = 4 if sev == 3 else 3  # find_alternate or partial_receipt
-                exception_types[i] = 2
-                cont[i] = [sev, action]
-                rewards[i] = 0.5 + fill_rate * 0.3
-            elif scenario == "overage":
-                exception_types[i] = 3
-                cont[i] = [0, 0]  # info, no_action
-                rewards[i] = 0.8
-            elif scenario == "quality":
-                exception_types[i] = 4
-                cont[i] = [2, 6]  # high, quality_inspection
-                rewards[i] = 0.55
-            elif scenario == "stuck":
-                exception_types[i] = 6
-                cont[i] = [3, 4]  # critical, find_alternate
-                rewards[i] = 0.4
-            elif scenario == "price":
-                sev = 2 if abs(price_var) > 0.15 else 1
-                exception_types[i] = 7
-                cont[i] = [sev, 7]  # price_negotiation
-                rewards[i] = 0.65
-            elif scenario == "missing":
-                exception_types[i] = 5
-                cont[i] = [2, 8]  # high, escalate
-                rewards[i] = 0.55
-            else:
-                exception_types[i] = 8
-                cont[i] = [0, 0]
-                rewards[i] = 0.9
+            et, sev, act, rew = self._compute_ot_action(
+                otype_str, days_overdue, ordered, received, partner_otr,
+                is_critical, price_var, bool(is_transit), bool(is_partial),
+                days_since, transit_days, 3)
+            exception_types[i] = et
+            cont[i, 0] = sev
+            cont[i, 1] = act
+            rewards[i] = rew
 
         next_states = states.copy()
         next_states[:, 5] -= 1
