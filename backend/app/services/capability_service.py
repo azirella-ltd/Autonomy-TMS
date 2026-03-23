@@ -39,11 +39,11 @@ def get_user_capabilities(user: User, db: Session) -> CapabilitySet:
     if user.is_superuser or user.user_type == UserTypeEnum.SYSTEM_ADMIN:
         return CapabilitySet({cap for cap in Capability})
 
-    # Check powell_role first (more specific than user_type).
-    # Without this, any USER with a powell_role (SC_VP, SOP_DIRECTOR, etc.)
+    # Check decision_level first (more specific than user_type).
+    # Without this, any USER with a decision_level (SC_VP, SOP_DIRECTOR, etc.)
     # would only get {VIEW_DASHBOARD, VIEW_SCENARIOS, PLAY_SCENARIO}.
-    if hasattr(user, 'powell_role') and user.powell_role:
-        role_caps = get_capabilities_for_user_type(user.powell_role.value)
+    if hasattr(user, 'decision_level') and user.decision_level:
+        role_caps = get_capabilities_for_user_type(user.decision_level.value)
         if role_caps.capabilities != USER_CAPABILITIES.capabilities:
             base_caps = role_caps
         else:

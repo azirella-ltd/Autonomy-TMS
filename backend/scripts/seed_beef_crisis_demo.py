@@ -38,7 +38,7 @@ def main():
     try:
         # ── Find tenant admin user ───────────────────────────────────────
         row = db.execute(text(
-            "SELECT id FROM users WHERE tenant_id = :tid AND powell_role = 'SC_VP' LIMIT 1"
+            "SELECT id FROM users WHERE tenant_id = :tid AND decision_level = 'SC_VP' LIMIT 1"
         ), {"tid": TENANT_ID}).fetchone()
         if not row:
             row = db.execute(text(

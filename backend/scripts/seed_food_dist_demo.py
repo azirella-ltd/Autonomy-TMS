@@ -39,7 +39,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import sync_engine
-from app.models.user import User, UserTypeEnum, PowellRoleEnum
+from app.models.user import User, UserTypeEnum, DecisionLevelEnum
 from app.models.tenant import Tenant, TenantMode
 from app.models.rbac import Role, Permission
 from app.core.security import get_password_hash
@@ -80,7 +80,7 @@ DEMO_USERS = [
         "full_name": "Food Dist Admin",
         "user_type": UserTypeEnum.TENANT_ADMIN,
         "is_tenant_admin": True,
-        "powell_role": "DEMO_ALL",  # Lands on /executive-dashboard for demos
+        "decision_level": "DEMO_ALL",  # Lands on /executive-dashboard for demos
         "site_scope": None,  # Full access
         "product_scope": None,  # Full access
     },
@@ -94,7 +94,7 @@ DEMO_USERS = [
         "full_name": "Executive (CEO)",
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "EXECUTIVE",
+        "decision_level": "EXECUTIVE",
         "site_scope": None,  # Full visibility
         "product_scope": None,  # Full visibility
     },
@@ -107,7 +107,7 @@ DEMO_USERS = [
         "full_name": "Sarah Chen (VP Supply Chain)",
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "SC_VP",
+        "decision_level": "SC_VP",
         "site_scope": None,  # Full access (strategic level)
         "product_scope": None,  # Full access (strategic level)
     },
@@ -117,7 +117,7 @@ DEMO_USERS = [
         "full_name": "Michael Torres (S&OP Director)",
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "SOP_DIRECTOR",
+        "decision_level": "SOP_DIRECTOR",
         "site_scope": None,  # Full access (for demo; production would restrict)
         "product_scope": ["CATEGORY_Frozen", "CATEGORY_Refrigerated"],  # Product category scope
     },
@@ -127,7 +127,7 @@ DEMO_USERS = [
         "full_name": "Jennifer Park (MPS Manager)",
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "MPS_MANAGER",
+        "decision_level": "MPS_MANAGER",
         "site_scope": ["REGION_Central", "SITE_DC-Chicago", "SITE_DC-Indianapolis"],  # Site scope
         "product_scope": None,  # Full product access within sites
     },
@@ -142,7 +142,7 @@ DEMO_USERS = [
         "full_name": "David Kim (ATP Analyst)",
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "ATP_ANALYST",
+        "decision_level": "ATP_ANALYST",
         "site_scope": ["REGION_Central", "SITE_DC-Chicago"],  # Assigned sites
         "product_scope": None,  # All products at assigned sites
     },
@@ -152,7 +152,7 @@ DEMO_USERS = [
         "full_name": "Maria Santos (Rebalancing Analyst)",
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "REBALANCING_ANALYST",
+        "decision_level": "REBALANCING_ANALYST",
         "site_scope": ["REGION_Central", "SITE_DC-Chicago", "SITE_DC-Indianapolis"],  # Cross-site scope
         "product_scope": None,  # All products for transfers
     },
@@ -162,7 +162,7 @@ DEMO_USERS = [
         "full_name": "James Wilson (PO Analyst)",
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "PO_ANALYST",
+        "decision_level": "PO_ANALYST",
         "site_scope": ["SITE_DC-Chicago"],  # Single site focus
         "product_scope": ["CATEGORY_Frozen", "CATEGORY_Refrigerated"],  # Product category scope
     },
@@ -172,7 +172,7 @@ DEMO_USERS = [
         "full_name": "Lisa Chen (Order Tracking Analyst)",
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "ORDER_TRACKING_ANALYST",
+        "decision_level": "ORDER_TRACKING_ANALYST",
         "site_scope": None,  # All sites (exceptions can come from anywhere)
         "product_scope": None,  # All products
     },
@@ -213,15 +213,15 @@ def create_or_get_user(
     full_name: str,
     user_type: UserTypeEnum,
     tenant_id: int,
-    powell_role: PowellRoleEnum = None,
+    decision_level: DecisionLevelEnum = None,
     site_scope: list = None,
     product_scope: list = None,
 ) -> User:
     """Create a user or update existing one with correct attributes.
 
     Args:
-        powell_role: Powell Framework role that determines landing page.
-                     Separate from capabilities which can be customized.
+        decision_level: Decision level that determines landing page.
+                        Separate from capabilities which can be customized.
     """
     existing = db.query(User).filter(User.email == email).first()
     if existing:
@@ -231,11 +231,11 @@ def create_or_get_user(
             print(f"  Updating user '{username}' user_type: {existing.user_type.value} -> {user_type.value}")
             existing.user_type = user_type
             updated = True
-        if existing.powell_role != powell_role:
-            old_role = existing.powell_role.value if existing.powell_role else None
-            new_role = powell_role.value if powell_role else None
-            print(f"  Updating user '{username}' powell_role: {old_role} -> {new_role}")
-            existing.powell_role = powell_role
+        if existing.decision_level != decision_level:
+            old_role = existing.decision_level.value if existing.decision_level else None
+            new_role = decision_level.value if decision_level else None
+            print(f"  Updating user '{username}' decision_level: {old_role} -> {new_role}")
+            existing.decision_level = decision_level
             updated = True
         if existing.site_scope != site_scope:
             existing.site_scope = site_scope
@@ -265,7 +265,7 @@ def create_or_get_user(
         hashed_password=get_password_hash(DEFAULT_PASSWORD),
         user_type=user_type,
         tenant_id=tenant_id,
-        powell_role=powell_role,
+        decision_level=decision_level,
         is_active=True,
         is_superuser=False,
         site_scope=site_scope,
@@ -273,8 +273,8 @@ def create_or_get_user(
     )
     db.add(user)
     db.flush()
-    powell_str = powell_role.value if powell_role else "None"
-    print(f"  Created user '{username}' (id={user.id}, type={user_type.value}, powell_role={powell_str})")
+    dl_str = decision_level.value if decision_level else "None"
+    print(f"  Created user '{username}' (id={user.id}, type={user_type.value}, decision_level={dl_str})")
     return user
 
 
@@ -312,7 +312,7 @@ def create_or_get_tenant(db: Session, admin_user: User) -> Tenant:
     return tenant
 
 
-def create_powell_role(
+def create_decision_level_role(
     db: Session,
     rbac_service: RBACService,
     role_name: str,
@@ -444,10 +444,10 @@ def main():
         print("\n4. Creating Powell-aligned RBAC roles...")
         rbac_service = RBACService(db)
 
-        powell_roles = {}
+        level_roles = {}
         for role_name in POWELL_ROLE_CAPABILITIES.keys():
-            role = create_powell_role(db, rbac_service, role_name, customer_id=tenant.id)
-            powell_roles[role_name] = role
+            role = create_decision_level_role(db, rbac_service, role_name, customer_id=tenant.id)
+            level_roles[role_name] = role
 
         db.commit()
 
@@ -457,14 +457,14 @@ def main():
             if user_config["is_tenant_admin"]:
                 continue  # Already created
 
-            # Convert powell_role string to enum (if specified)
-            powell_role_str = user_config.get("powell_role")
-            powell_role_enum = None
-            if powell_role_str:
+            # Convert decision_level string to enum (if specified)
+            dl_str = user_config.get("decision_level")
+            dl_enum = None
+            if dl_str:
                 try:
-                    powell_role_enum = PowellRoleEnum(powell_role_str)
+                    dl_enum = DecisionLevelEnum(dl_str)
                 except ValueError:
-                    print(f"  Warning: Unknown powell_role '{powell_role_str}', skipping")
+                    print(f"  Warning: Unknown decision_level '{dl_str}', skipping")
 
             user = create_or_get_user(
                 db=db,
@@ -473,14 +473,14 @@ def main():
                 full_name=user_config["full_name"],
                 user_type=user_config["user_type"],
                 tenant_id=tenant.id,
-                powell_role=powell_role_enum,  # Store on user for landing page routing
+                decision_level=dl_enum,  # Store on user for landing page routing
                 site_scope=user_config.get("site_scope"),
                 product_scope=user_config.get("product_scope"),
             )
 
             # Assign RBAC role for capabilities (can be customized by tenant admin)
-            if powell_role_str:
-                role = powell_roles.get(powell_role_str)
+            if dl_str:
+                role = level_roles.get(dl_str)
                 if role and role not in user.roles:
                     user.roles.append(role)
                     print(f"    Assigned RBAC role '{role.name}' to '{user.username}'")
@@ -501,7 +501,7 @@ def main():
         print("-" * 50)
 
         for user_config in DEMO_USERS:
-            powell_role = user_config.get("powell_role", "TENANT_ADMIN")
+            dl = user_config.get("decision_level", "TENANT_ADMIN")
             level = {
                 "SC_VP": "Strategic/CFA",
                 "SOP_DIRECTOR": "Tactical/S&OP",
@@ -512,7 +512,7 @@ def main():
                 "ORDER_TRACKING_ANALYST": "Execution/Order Tracking TRM",
                 "DEMO_ALL": "ALL LEVELS (Demo)",
                 None: "Admin",
-            }.get(powell_role, "Unknown")
+            }.get(dl, "Unknown")
 
             print(f"  {user_config['username']:<20} | {user_config['email']:<30}")
             print(f"    Powell Level: {level}")

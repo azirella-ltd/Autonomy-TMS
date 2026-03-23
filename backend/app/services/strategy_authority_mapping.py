@@ -10,24 +10,24 @@ another agent's domain.
 from enum import Enum
 from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
-from app.models.user import PowellRoleEnum
+from app.models.user import DecisionLevelEnum
 from app.services.authorization_protocol import AgentRole
 
 
-# ── Powell Role → Agent Role ─────────────────────────────────────────────
+# ── Decision Level → Agent Role ──────────────────────────────────────────
 
-POWELL_TO_AGENT: Dict[PowellRoleEnum, AgentRole] = {
-    PowellRoleEnum.ATP_ANALYST: AgentRole.SO_ATP,
-    PowellRoleEnum.ORDER_TRACKING_ANALYST: AgentRole.SO_ATP,
-    PowellRoleEnum.ORDER_PROMISE_MANAGER: AgentRole.SO_ATP,
-    PowellRoleEnum.MPS_MANAGER: AgentRole.PLANT,
-    PowellRoleEnum.PO_ANALYST: AgentRole.PROCUREMENT,
-    PowellRoleEnum.REBALANCING_ANALYST: AgentRole.INVENTORY,
-    PowellRoleEnum.ALLOCATION_MANAGER: AgentRole.ALLOCATION,
-    PowellRoleEnum.SOP_DIRECTOR: AgentRole.SOP,
-    PowellRoleEnum.SC_VP: AgentRole.SOP,
-    PowellRoleEnum.EXECUTIVE: AgentRole.SOP,
-    PowellRoleEnum.DEMO_ALL: AgentRole.SOP,  # Full authority for demos
+DECISION_LEVEL_TO_AGENT: Dict[DecisionLevelEnum, AgentRole] = {
+    DecisionLevelEnum.ATP_ANALYST: AgentRole.SO_ATP,
+    DecisionLevelEnum.ORDER_TRACKING_ANALYST: AgentRole.SO_ATP,
+    DecisionLevelEnum.ORDER_PROMISE_MANAGER: AgentRole.SO_ATP,
+    DecisionLevelEnum.MPS_MANAGER: AgentRole.PLANT,
+    DecisionLevelEnum.PO_ANALYST: AgentRole.PROCUREMENT,
+    DecisionLevelEnum.REBALANCING_ANALYST: AgentRole.INVENTORY,
+    DecisionLevelEnum.ALLOCATION_MANAGER: AgentRole.ALLOCATION,
+    DecisionLevelEnum.SOP_DIRECTOR: AgentRole.SOP,
+    DecisionLevelEnum.SC_VP: AgentRole.SOP,
+    DecisionLevelEnum.EXECUTIVE: AgentRole.SOP,
+    DecisionLevelEnum.DEMO_ALL: AgentRole.SOP,  # Full authority for demos
 }
 
 # Agent roles with broad authority (can authorize across most domains)
@@ -36,22 +36,22 @@ BROAD_AUTHORITY_ROLES: FrozenSet[AgentRole] = frozenset({
 })
 
 
-def map_powell_role_to_agent_role(
-    powell_role: Optional[PowellRoleEnum],
+def map_decision_level_to_agent_role(
+    decision_level: Optional[DecisionLevelEnum],
 ) -> AgentRole:
-    """Map a user's Powell role to the corresponding AAP agent role.
+    """Map a user's decision level to the corresponding AAP agent role.
 
-    Users without a powell_role (e.g., TENANT_ADMIN) default to SOP
+    Users without a decision_level (e.g., TENANT_ADMIN) default to SOP
     (broadest authority) since they have admin-level access.
     """
-    if powell_role is None:
+    if decision_level is None:
         return AgentRole.SOP
-    if isinstance(powell_role, str):
+    if isinstance(decision_level, str):
         try:
-            powell_role = PowellRoleEnum(powell_role)
+            decision_level = DecisionLevelEnum(decision_level)
         except ValueError:
             return AgentRole.SOP
-    return POWELL_TO_AGENT.get(powell_role, AgentRole.SOP)
+    return DECISION_LEVEL_TO_AGENT.get(decision_level, AgentRole.SOP)
 
 
 # ── Action Type → Authority Domain ──────────────────────────────────────

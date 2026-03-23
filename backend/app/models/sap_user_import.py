@@ -73,7 +73,7 @@ class SAPUserImportLog(Base):
 
 class SAPRoleMapping(Base):
     """
-    Configurable mapping from SAP AGR_NAME pattern to Autonomy powell_role.
+    Configurable mapping from SAP AGR_NAME pattern to Autonomy decision_level.
 
     Stored per tenant so each organization can define their own mappings.
     Patterns are evaluated in priority order; first match wins.
@@ -87,7 +87,7 @@ class SAPRoleMapping(Base):
     agr_name_pattern = Column(String(100), nullable=False)
     pattern_type = Column(String(10), default="glob", nullable=False)
 
-    powell_role = Column(String(50), nullable=False)
+    decision_level = Column(String(50), nullable=False)
     user_type = Column(String(20), default="USER", nullable=False)
 
     derive_site_scope_from_werks = Column(Boolean, default=True)
@@ -110,7 +110,7 @@ class SAPRoleMapping(Base):
             "tenant_id": self.tenant_id,
             "agr_name_pattern": self.agr_name_pattern,
             "pattern_type": self.pattern_type,
-            "powell_role": self.powell_role,
+            "decision_level": self.decision_level,
             "user_type": self.user_type,
             "derive_site_scope_from_werks": self.derive_site_scope_from_werks,
             "derive_product_scope_from_matkl": self.derive_product_scope_from_matkl,

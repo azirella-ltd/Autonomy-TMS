@@ -2117,7 +2117,7 @@ class SAPDataStagingService:
         Delegate to SAPUserProvisioningService for SC-relevant user import.
 
         The raw SAP data was stored by _map_user_import; here we execute
-        the import which creates/updates User records with proper powell_role
+        the import which creates/updates User records with proper decision_level
         and site_scope based on SAP authorization objects.
         """
         raw_data = getattr(self, "_user_import_raw", None)

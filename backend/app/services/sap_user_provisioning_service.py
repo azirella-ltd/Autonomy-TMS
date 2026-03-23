@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash
 from app.models.sap_user_import import SAPRoleMapping, SAPUserImportLog
-from app.models.user import User, UserTypeEnum, PowellRoleEnum
+from app.models.user import User, UserTypeEnum, DecisionLevelEnum
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +155,7 @@ class SAPUserProvisioningService:
                 continue
 
             # Resolve mapping
-            powell_role, user_type = self._resolve_powell_role(
+            decision_level, user_type = self._resolve_decision_level(
                 sc_roles, mappings
             )
             site_scope = self._extract_werks_scope(
@@ -185,12 +185,12 @@ class SAPUserProvisioningService:
                 "full_name": full_name,
                 "sc_roles": sc_roles,
                 "all_roles": info["agr_names"],
-                "proposed_powell_role": powell_role,
+                "proposed_decision_level": decision_level,
                 "proposed_user_type": user_type,
                 "proposed_site_scope": site_scope,
                 "action": action,
             })
-            role_dist[powell_role] += 1
+            role_dist[decision_level] += 1
 
         return {
             "total_users": len(user_map),
@@ -270,7 +270,7 @@ class SAPUserProvisioningService:
                     continue
 
                 sc_eligible += 1
-                powell_role, user_type_str = self._resolve_powell_role(
+                decision_level, user_type_str = self._resolve_decision_level(
                     sc_roles, mappings
                 )
                 site_scope = self._extract_werks_scope(
@@ -290,11 +290,11 @@ class SAPUserProvisioningService:
                 if existing_user:
                     changed = False
                     try:
-                        target_role = PowellRoleEnum[powell_role]
+                        target_role = DecisionLevelEnum[decision_level]
                     except KeyError:
-                        target_role = PowellRoleEnum.MPS_MANAGER
-                    if existing_user.powell_role != target_role:
-                        existing_user.powell_role = target_role
+                        target_role = DecisionLevelEnum.MPS_MANAGER
+                    if existing_user.decision_level != target_role:
+                        existing_user.decision_level = target_role
                         changed = True
                     if existing_user.site_scope != site_scope:
                         existing_user.site_scope = site_scope
@@ -305,9 +305,9 @@ class SAPUserProvisioningService:
                         skipped += 1
                 else:
                     try:
-                        target_role = PowellRoleEnum[powell_role]
+                        target_role = DecisionLevelEnum[decision_level]
                     except KeyError:
-                        target_role = PowellRoleEnum.MPS_MANAGER
+                        target_role = DecisionLevelEnum.MPS_MANAGER
                     try:
                         target_user_type = UserTypeEnum[user_type_str]
                     except KeyError:
@@ -322,7 +322,7 @@ class SAPUserProvisioningService:
                         is_active=True,
                         is_superuser=False,
                         user_type=target_user_type,
-                        powell_role=target_role,
+                        decision_level=target_role,
                         site_scope=site_scope,
                         tenant_id=self.tenant_id,
                     )
@@ -479,20 +479,20 @@ class SAPUserProvisioningService:
         )
         return list(result.scalars().all())
 
-    def _resolve_powell_role(
+    def _resolve_decision_level(
         self,
         agr_names: list[str],
         mappings: list[SAPRoleMapping],
     ) -> tuple[str, str]:
-        """Map SAP roles to Autonomy powell_role via 3-layer cascade."""
+        """Map SAP roles to Autonomy decision_level via 3-layer cascade."""
         # Layer 1: configured mappings
         for agr_name in agr_names:
             mapping = self._find_mapping(agr_name, mappings)
             if mapping:
-                return mapping.powell_role, mapping.user_type
+                return mapping.decision_level, mapping.user_type
 
         # Layer 2: heuristic fallback
-        return self._heuristic_powell_role(agr_names)
+        return self._heuristic_decision_level(agr_names)
 
     def _find_mapping(
         self, agr_name: str, mappings: list[SAPRoleMapping]
@@ -515,7 +515,7 @@ class SAPUserProvisioningService:
         return fnmatch.fnmatch(agr_name.upper(), pattern.upper())
 
     @staticmethod
-    def _heuristic_powell_role(agr_names: list[str]) -> tuple[str, str]:
+    def _heuristic_decision_level(agr_names: list[str]) -> tuple[str, str]:
         """Fallback role mapping from well-known SAP naming conventions."""
         combined = " ".join(agr_names).upper()
 

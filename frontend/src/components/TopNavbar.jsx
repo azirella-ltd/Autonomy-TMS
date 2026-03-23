@@ -902,8 +902,8 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
               <div className="hidden sm:block text-left mr-1">
                 <p className="text-sm font-medium text-foreground">{user?.name || user?.full_name || 'User'}</p>
                 <p className="text-xs text-muted-foreground">
-                  {user?.powell_role
-                    ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+                  {user?.decision_level
+                    ? user.decision_level.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
                     : user?.user_type === 'systemadmin'
                       ? 'System Admin'
                       : user?.user_type === 'tenantadmin'

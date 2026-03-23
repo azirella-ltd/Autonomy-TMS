@@ -535,7 +535,7 @@ class ScenarioStrategyService:
         Returns a list of execution results for the SSE stream.
         """
         from app.services.strategy_authority_mapping import (
-            map_powell_role_to_agent_role,
+            map_decision_level_to_agent_role,
             partition_actions,
         )
         from app.services.strategy_a2a_responder import A2AAuthorizationResponder
@@ -545,8 +545,8 @@ class ScenarioStrategyService:
             return [{"type": "no_actions", "message": "Strategy has no concrete actions to execute"}]
 
         # 1. Resolve user's agent role
-        user_role = await self._get_user_powell_role(user_id)
-        user_agent_role = map_powell_role_to_agent_role(user_role)
+        user_role = await self._get_user_decision_level(user_id)
+        user_agent_role = map_decision_level_to_agent_role(user_role)
 
         # 2. Partition actions by authority boundary
         unilateral, cross_boundary = partition_actions(user_agent_role, actions)
@@ -708,11 +708,11 @@ class ScenarioStrategyService:
 
         return results
 
-    async def _get_user_powell_role(self, user_id: int):
-        """Fetch the user's powell_role from the DB."""
+    async def _get_user_decision_level(self, user_id: int):
+        """Fetch the user's decision_level from the DB."""
         try:
             result = await self.db.execute(
-                text("SELECT powell_role FROM users WHERE id = :uid"),
+                text("SELECT decision_level FROM users WHERE id = :uid"),
                 {"uid": user_id},
             )
             row = result.fetchone()

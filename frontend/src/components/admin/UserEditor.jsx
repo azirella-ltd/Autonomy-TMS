@@ -7,13 +7,15 @@
  * Migrated from Material-UI to Autonomy UI Kit.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   User,
   Shield,
   Save,
   X,
+  Layers,
 } from 'lucide-react';
+import { api } from '../../services/api';
 import {
   Modal,
   ModalHeader,
@@ -40,9 +42,26 @@ import CapabilitySelector from './CapabilitySelector';
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSave - Callback when user is saved
  */
+// Decision level display names
+const DECISION_LEVEL_LABELS = {
+  '': '— Select Decision Level —',
+  'EXECUTIVE': 'Executive (CEO/Board)',
+  'SC_VP': 'VP Supply Chain (Strategic)',
+  'SOP_DIRECTOR': 'S&OP Director (Tactical)',
+  'MPS_MANAGER': 'MPS Manager (Operational)',
+  'ALLOCATION_MANAGER': 'Allocation Manager',
+  'ORDER_PROMISE_MANAGER': 'Order Promise Manager',
+  'ATP_ANALYST': 'ATP Analyst (Execution)',
+  'REBALANCING_ANALYST': 'Rebalancing Analyst (Execution)',
+  'PO_ANALYST': 'Procurement Analyst (Execution)',
+  'ORDER_TRACKING_ANALYST': 'Order Tracking Analyst (Execution)',
+  'DEMO_ALL': 'Demo User (All Capabilities)',
+};
+
 const UserEditor = ({ open, user, onClose, onSave }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [decisionLevelMeta, setDecisionLevelMeta] = useState(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -51,9 +70,18 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
     full_name: '',
     password: '',
     user_type: 'USER',
+    decision_level: '',
     is_active: true,
     capabilities: [],
   });
+
+  // Fetch decision level → capabilities mapping
+  useEffect(() => {
+    if (!open) return;
+    api.get('/capabilities/decision-levels')
+      .then(res => setDecisionLevelMeta(res.data.decision_levels))
+      .catch(() => {}); // non-fatal
+  }, [open]);
 
   // Initialize form when user prop changes
   useEffect(() => {
@@ -64,6 +92,7 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
         full_name: user.full_name || '',
         password: '', // Never pre-fill password
         user_type: user.user_type || 'USER',
+        decision_level: user.decision_level || '',
         is_active: user.is_active !== undefined ? user.is_active : true,
         capabilities: Array.isArray(user.capabilities) ? user.capabilities : [],
       });
@@ -75,12 +104,26 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
         full_name: '',
         password: '',
         user_type: 'USER',
+        decision_level: '',
         is_active: true,
         capabilities: [],
       });
     }
     setError(null);
   }, [user, open]);
+
+  // Auto-populate capabilities when decision_level changes
+  const handleDecisionLevelChange = useCallback((e) => {
+    const level = e.target.value;
+    setFormData(prev => {
+      const newData = { ...prev, decision_level: level };
+      // Auto-populate capabilities from the level's defaults
+      if (level && decisionLevelMeta?.[level]) {
+        newData.capabilities = decisionLevelMeta[level].capabilities;
+      }
+      return newData;
+    });
+  }, [decisionLevelMeta]);
 
   /**
    * Handle form field changes
@@ -142,6 +185,7 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
         username: formData.username || null,
         full_name: formData.full_name || null,
         user_type: formData.user_type,
+        decision_level: formData.decision_level || null,
         is_active: formData.is_active,
         capabilities: formData.capabilities,
       };
@@ -254,7 +298,7 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
 
           <hr className="border-border" />
 
-          <FormField label="User Type" helperText="User has standard access, Customer Admin can manage users">
+          <FormField label="User Type" helperText="User has standard access, Organization Admin can manage users">
             <NativeSelect
               value={formData.user_type}
               onChange={handleChange('user_type')}
@@ -264,6 +308,30 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
               <SelectOption value="TENANT_ADMIN">Organization Admin</SelectOption>
             </NativeSelect>
           </FormField>
+
+          {formData.user_type === 'USER' && (
+            <FormField
+              label="Decision Level"
+              helperText="Determines landing page, default capabilities, and which decisions are visible"
+            >
+              <NativeSelect
+                value={formData.decision_level}
+                onChange={handleDecisionLevelChange}
+                disabled={saving}
+              >
+                {Object.entries(DECISION_LEVEL_LABELS).map(([value, label]) => (
+                  <SelectOption key={value} value={value}>{label}</SelectOption>
+                ))}
+              </NativeSelect>
+              {formData.decision_level && decisionLevelMeta?.[formData.decision_level] && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {decisionLevelMeta[formData.decision_level].planning_level}
+                  {' — '}
+                  {decisionLevelMeta[formData.decision_level].description}
+                </p>
+              )}
+            </FormField>
+          )}
 
           <div className="flex items-center gap-3">
             <label className="relative inline-flex items-center cursor-pointer">

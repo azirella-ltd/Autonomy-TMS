@@ -3052,7 +3052,7 @@ async def _load_sap_data(
 class RoleMappingCreateRequest(BaseModel):
     agr_name_pattern: str = Field(..., description="SAP role pattern (glob or regex)")
     pattern_type: str = Field("glob", description="Pattern type: glob or regex")
-    powell_role: str = Field(..., description="Target Autonomy powell_role")
+    decision_level: str = Field(..., description="Target Autonomy decision_level")
     user_type: str = Field("USER", description="Target user type")
     derive_site_scope_from_werks: bool = Field(True)
     derive_product_scope_from_matkl: bool = Field(False)
@@ -3111,7 +3111,7 @@ async def create_role_mapping(
         tenant_id=current_user.tenant_id,
         agr_name_pattern=body.agr_name_pattern,
         pattern_type=body.pattern_type,
-        powell_role=body.powell_role,
+        decision_level=body.decision_level,
         user_type=body.user_type,
         derive_site_scope_from_werks=body.derive_site_scope_from_werks,
         derive_product_scope_from_matkl=body.derive_product_scope_from_matkl,

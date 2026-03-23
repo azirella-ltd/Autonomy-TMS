@@ -40,7 +40,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy import select
 
 from app.db.session import sync_engine
-from app.models.user import User, UserTypeEnum, PowellRoleEnum
+from app.models.user import User, UserTypeEnum, DecisionLevelEnum
 from app.models.tenant import Tenant
 from app.models.supply_chain_config import SupplyChainConfig
 from app.models.sc_entities import Product
@@ -982,7 +982,7 @@ def seed_demo_users(db: Session, customer_id: int) -> dict:
         full_name="Rachel Martinez (Allocation Manager)",
         user_type=UserTypeEnum.USER,
         customer_id=customer_id,
-        powell_role=PowellRoleEnum.ALLOCATION_MANAGER,  # Narrow scope: Allocation Worklist only
+        decision_level=DecisionLevelEnum.ALLOCATION_MANAGER,  # Narrow scope: Allocation Worklist only
     )
     users["alloc_manager"] = alloc_user
 
@@ -993,7 +993,7 @@ def seed_demo_users(db: Session, customer_id: int) -> dict:
         full_name="Carlos Rivera (Order Promising Manager)",
         user_type=UserTypeEnum.USER,
         customer_id=customer_id,
-        powell_role=PowellRoleEnum.ORDER_PROMISE_MANAGER,  # Narrow scope: ATP Worklist only
+        decision_level=DecisionLevelEnum.ORDER_PROMISE_MANAGER,  # Narrow scope: ATP Worklist only
     )
     users["order_promise_mgr"] = order_user
 
@@ -1004,8 +1004,8 @@ def seed_demo_users(db: Session, customer_id: int) -> dict:
     alloc_role = rbac_service.get_role_by_slug("allocation_manager", tenant_id=None)
     if not alloc_role:
         # Create if not yet seeded by seed_us_foods_demo.py
-        from scripts.seed_us_foods_demo import create_powell_role
-        alloc_role = create_powell_role(db, rbac_service, "ALLOCATION_MANAGER")
+        from scripts.seed_us_foods_demo import create_decision_level_role
+        alloc_role = create_decision_level_role(db, rbac_service, "ALLOCATION_MANAGER")
     # Remove any broader roles first
     alloc_user.roles = [r for r in alloc_user.roles if r.slug not in ("sop_director",)]
     if alloc_role not in alloc_user.roles:
@@ -1015,8 +1015,8 @@ def seed_demo_users(db: Session, customer_id: int) -> dict:
     # Order Promising Manager gets narrow ORDER_PROMISE_MANAGER role (ATP Worklist only)
     opm_role = rbac_service.get_role_by_slug("order_promise_manager", tenant_id=None)
     if not opm_role:
-        from scripts.seed_us_foods_demo import create_powell_role
-        opm_role = create_powell_role(db, rbac_service, "ORDER_PROMISE_MANAGER")
+        from scripts.seed_us_foods_demo import create_decision_level_role
+        opm_role = create_decision_level_role(db, rbac_service, "ORDER_PROMISE_MANAGER")
     # Remove any broader roles first
     order_user.roles = [r for r in order_user.roles if r.slug not in ("mps_manager",)]
     if opm_role not in order_user.roles:
@@ -1030,13 +1030,13 @@ def seed_demo_users(db: Session, customer_id: int) -> dict:
 def _create_or_get_user(
     db: Session, username: str, email: str, full_name: str,
     user_type: UserTypeEnum, customer_id: int,
-    powell_role: PowellRoleEnum = None,
+    decision_level: DecisionLevelEnum = None,
 ) -> User:
     """Create a user or return existing."""
     existing = db.query(User).filter(User.email == email).first()
     if existing:
         print(f"    User '{username}' already exists (id={existing.id})")
-        existing.powell_role = powell_role
+        existing.decision_level = decision_level
         existing.customer_id = customer_id
         db.flush()
         return existing
@@ -1048,13 +1048,13 @@ def _create_or_get_user(
         hashed_password=get_password_hash(DEFAULT_PASSWORD),
         user_type=user_type,
         customer_id=customer_id,
-        powell_role=powell_role,
+        decision_level=decision_level,
         is_active=True,
         is_superuser=False,
     )
     db.add(user)
     db.flush()
-    print(f"    Created user '{username}' (id={user.id}, powell_role={powell_role.value if powell_role else 'None'})")
+    print(f"    Created user '{username}' (id={user.id}, decision_level={decision_level.value if decision_level else 'None'})")
     return user
 
 

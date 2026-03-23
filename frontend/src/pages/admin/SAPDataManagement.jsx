@@ -2819,12 +2819,12 @@ const UserImportTab = ({ connections = [] }) => {
   const [newMapping, setNewMapping] = useState({
     agr_name_pattern: '',
     pattern_type: 'glob',
-    powell_role: 'MPS_MANAGER',
+    decision_level: 'MPS_MANAGER',
     priority: 100,
     description: '',
   });
 
-  const powellRoles = [
+  const decisionLevels = [
     'SC_VP', 'SOP_DIRECTOR', 'MPS_MANAGER', 'PO_ANALYST', 'ALLOCATION_MANAGER',
   ];
 
@@ -2852,7 +2852,7 @@ const UserImportTab = ({ connections = [] }) => {
     try {
       await api.post('/sap-data/user-import/role-mappings', newMapping);
       setShowAddMapping(false);
-      setNewMapping({ agr_name_pattern: '', pattern_type: 'glob', powell_role: 'MPS_MANAGER', priority: 100, description: '' });
+      setNewMapping({ agr_name_pattern: '', pattern_type: 'glob', decision_level: 'MPS_MANAGER', priority: 100, description: '' });
       loadData();
     } catch (err) {
       console.error('Failed to create mapping:', err);
@@ -3014,7 +3014,7 @@ const UserImportTab = ({ connections = [] }) => {
                     <tr key={m.id} className="border-b hover:bg-muted/50">
                       <td className="py-2 px-3 font-mono text-xs">{m.agr_name_pattern}</td>
                       <td className="py-2 px-3"><Badge variant="outline">{m.pattern_type}</Badge></td>
-                      <td className="py-2 px-3"><Badge>{m.powell_role}</Badge></td>
+                      <td className="py-2 px-3"><Badge>{m.decision_level}</Badge></td>
                       <td className="py-2 px-3">{m.priority}</td>
                       <td className="py-2 px-3 text-muted-foreground">{m.description || '—'}</td>
                       <td className="py-2 px-3">
@@ -3061,10 +3061,10 @@ const UserImportTab = ({ connections = [] }) => {
                   <div>
                     <label className="text-sm font-medium">Platform Role</label>
                     <NativeSelect
-                      value={newMapping.powell_role}
-                      onChange={e => setNewMapping(p => ({ ...p, powell_role: e.target.value }))}
+                      value={newMapping.decision_level}
+                      onChange={e => setNewMapping(p => ({ ...p, decision_level: e.target.value }))}
                     >
-                      {powellRoles.map(r => <option key={r} value={r}>{r}</option>)}
+                      {decisionLevels.map(r => <option key={r} value={r}>{r}</option>)}
                     </NativeSelect>
                   </div>
                 </div>
@@ -3300,7 +3300,7 @@ const UserImportTab = ({ connections = [] }) => {
                         ))}
                         {row.sc_roles?.length > 2 && <span className="text-muted-foreground">+{row.sc_roles.length - 2}</span>}
                       </td>
-                      <td className="py-2 px-2"><Badge>{row.proposed_powell_role}</Badge></td>
+                      <td className="py-2 px-2"><Badge>{row.proposed_decision_level}</Badge></td>
                       <td className="py-2 px-2 text-xs">
                         {row.proposed_site_scope ? row.proposed_site_scope.join(', ') : 'All'}
                       </td>

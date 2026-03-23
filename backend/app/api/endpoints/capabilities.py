@@ -24,31 +24,31 @@ async def get_my_capabilities(
     current_user: User = Depends(deps.get_current_active_user)
 ):
     """
-    Get the current user's capabilities and Powell role.
+    Get the current user's capabilities and decision level.
 
     Returns:
         - capabilities: List of capability strings for UI visibility control
         - user_type: User classification (SYSTEM_ADMIN, TENANT_ADMIN, USER)
-        - powell_role: Powell Framework role for landing page routing (optional)
+        - decision_level: Decision level for landing page routing (optional)
           - SC_VP → /executive-dashboard
           - SOP_DIRECTOR → /sop-worklist
           - MPS_MANAGER → /insights/actions
           - DEMO_ALL → /executive-dashboard (has all capabilities)
 
-    Note: powell_role determines the fixed landing page, while capabilities
+    Note: decision_level determines the fixed landing page, while capabilities
     (which can be customized by tenant admin) control what the user can do.
     """
     capabilities = get_user_capabilities_list(current_user, db)
 
-    # Get powell_role for routing (may be None for non-Powell users)
-    powell_role = None
-    if hasattr(current_user, 'powell_role') and current_user.powell_role:
-        powell_role = current_user.powell_role.value
+    # Get decision_level for routing (may be None for non-level users)
+    decision_level = None
+    if hasattr(current_user, 'decision_level') and current_user.decision_level:
+        decision_level = current_user.decision_level.value
 
     return {
         "capabilities": capabilities,
         "user_type": current_user.user_type.value,
-        "powell_role": powell_role,  # For landing page routing
+        "decision_level": decision_level,  # For landing page routing
     }
 
 
@@ -97,6 +97,38 @@ async def check_path_access(
         "allowed": has_access,
         "user_type": current_user.user_type.value,
     }
+
+
+@router.get("/decision-levels", response_model=Dict[str, Any])
+async def get_decision_levels():
+    """
+    Get all decision levels with their default capabilities.
+    Used by UserEditor to auto-populate capabilities when a level is selected.
+    """
+    from app.core.capabilities import get_capabilities_for_user_type, POWELL_ROLE_DESCRIPTIONS
+
+    levels = [
+        "SC_VP", "EXECUTIVE", "SOP_DIRECTOR", "MPS_MANAGER",
+        "ALLOCATION_MANAGER", "ORDER_PROMISE_MANAGER",
+        "ATP_ANALYST", "REBALANCING_ANALYST", "PO_ANALYST",
+        "ORDER_TRACKING_ANALYST", "DEMO_ALL",
+    ]
+
+    result = {}
+    for level in levels:
+        cap_set = get_capabilities_for_user_type(level)
+        desc = POWELL_ROLE_DESCRIPTIONS.get(level, {})
+        # CapabilitySet has .capabilities attribute (set of Capability enums)
+        cap_names = sorted([c.value for c in cap_set.capabilities])
+        result[level] = {
+            "name": desc.get("name", level.replace("_", " ").title()),
+            "planning_level": desc.get("powell_level", ""),
+            "description": desc.get("description", ""),
+            "scope": desc.get("scope", ""),
+            "capabilities": cap_names,
+        }
+
+    return {"decision_levels": result}
 
 
 @router.post("/validate")

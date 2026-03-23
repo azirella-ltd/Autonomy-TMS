@@ -464,7 +464,7 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
     """
     Get current user information.
 
-    Requires authentication. Includes powell_role and capabilities
+    Requires authentication. Includes decision_level and capabilities
     so the frontend can determine tab visibility and role-based UI.
     """
     # Build response dict with all fields the frontend needs
@@ -478,12 +478,12 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
         "tenant_id": getattr(current_user, "tenant_id", None),
         "is_superuser": getattr(current_user, "is_superuser", False),
         "default_config_id": getattr(current_user, "default_config_id", None),
-        "powell_role": None,
+        "decision_level": None,
     }
-    # Extract powell_role (may be enum or string)
-    pr = getattr(current_user, "powell_role", None)
+    # Extract decision_level (may be enum or string)
+    pr = getattr(current_user, "decision_level", None)
     if pr is not None:
-        user_dict["powell_role"] = pr.value if hasattr(pr, "value") else str(pr)
+        user_dict["decision_level"] = pr.value if hasattr(pr, "value") else str(pr)
 
     return user_dict
 

@@ -70,10 +70,10 @@ async def get_decision_digest(
     - Escalated decisions from the level below always pass through
     """
     service = await _get_service(db, current_user)
-    powell_role = getattr(current_user, "powell_role", None)
+    decision_level = getattr(current_user, "decision_level", None)
 
     result = await service.get_decision_digest(
-        powell_role=powell_role,
+        decision_level=decision_level,
         config_id=config_id,
         level_override=level,
     )
@@ -92,9 +92,9 @@ async def refresh_digest(
     """
     service = await _get_service(db, current_user)
     invalidate_digest_cache(tenant_id=service.tenant_id, config_id=config_id)
-    powell_role = getattr(current_user, "powell_role", None)
+    decision_level = getattr(current_user, "decision_level", None)
     result = await service.get_decision_digest(
-        powell_role=powell_role,
+        decision_level=decision_level,
         config_id=config_id,
         force_refresh=True,
     )
@@ -332,12 +332,12 @@ async def chat(
 ):
     """Conversational interaction with decision-context injection."""
     service = await _get_service(db, current_user)
-    powell_role = getattr(current_user, "powell_role", None)
+    decision_level = getattr(current_user, "decision_level", None)
 
     result = await service.chat(
         message=request.message,
         conversation_id=request.conversation_id,
         config_id=request.config_id,
-        powell_role=powell_role,
+        decision_level=decision_level,
     )
     return result

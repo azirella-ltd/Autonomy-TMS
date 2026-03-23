@@ -4,7 +4,7 @@
  * Routes users to appropriate dashboard based on their ADH role and user type.
  *
  * KEY DESIGN PRINCIPLE (Feb 2026):
- * - powell_role (stored on user) → Determines landing page (FIXED)
+ * - decision_level (stored on user) → Determines landing page (FIXED)
  * - capabilities (via RBAC roles) → Determines what user can do (CUSTOMIZABLE)
  *
  * This separation allows customer admins to customize a user's capabilities
@@ -12,7 +12,7 @@
  *
  * Routing Priority:
  * 1. SYSTEM_ADMIN always → /admin/tenants
- * 2. ADH role checked FIRST for all other users (from user.powell_role field)
+ * 2. ADH role checked FIRST for all other users (from user.decision_level field)
  * 3. Falls back to user_type based routing if no ADH role
  *
  * Adaptive Decision Hierarchy Routing (role-based, checked first):
@@ -27,14 +27,14 @@
  *
  * - DEMO_ALL: → /executive-dashboard (has all capabilities for demos)
  *
- * Fallback Routing (user_type based, if no Powell role):
+ * Fallback Routing (user_type based, if no decision level):
  * - TENANT_ADMIN (Learning Tenant): → /admin (Learning Home - game-centric training dashboard)
  * - TENANT_ADMIN (Production Tenant): → /admin/production (Configuration-focused dashboard)
  *   Features: Supply Chains, Scenarios (tree), Users, Settings (hierarchies, data sources, CDC)
  * - USER: → Active game or /scenarios/play
  *
  * Demo User (demo@distdemo.com):
- * - Has powell_role=DEMO_ALL → lands on /executive-dashboard
+ * - Has decision_level=DEMO_ALL → lands on /executive-dashboard
  * - Has all ADH capabilities → can navigate to all ADH dashboards without logout
  */
 
@@ -52,21 +52,21 @@ import { api } from '../services/api';
  * ADH role is now stored on the user record (not derived from capabilities).
  * This allows capabilities to be customized while maintaining fixed landing pages.
  *
- * Returns: { powellRole: 'SC_VP' | 'SOP_DIRECTOR' | 'MPS_MANAGER' | 'DEMO_ALL' | null, capabilities: string[] }
+ * Returns: { decisionLevel: 'SC_VP' | 'SOP_DIRECTOR' | 'MPS_MANAGER' | 'DEMO_ALL' | null, capabilities: string[] }
  */
-const getPowellRoleFromAPI = async () => {
+const getDecisionLevelFromAPI = async () => {
   try {
-    // Use /capabilities/me endpoint - returns powell_role and capabilities
+    // Use /capabilities/me endpoint - returns decision_level and capabilities
     const response = await api.get('/capabilities/me');
-    const { powell_role, capabilities = [] } = response.data;
+    const { decision_level, capabilities = [] } = response.data;
 
     return {
-      powellRole: powell_role || null,  // Explicit powell_role from user record
+      decisionLevel: decision_level || null,  // Explicit decision_level from user record
       capabilities,
     };
   } catch (err) {
-    console.error('Failed to fetch Powell role:', err);
-    return { powellRole: null, capabilities: [] };
+    console.error('Failed to fetch decision level:', err);
+    return { decisionLevel: null, capabilities: [] };
   }
 };
 
@@ -77,8 +77,8 @@ const getPowellRoleFromAPI = async () => {
  * This allows customer admins to customize user capabilities while maintaining
  * consistent navigation patterns for each role.
  */
-const getPowellLandingPage = (powellRole) => {
-  switch (powellRole) {
+const getDecisionLevelLandingPage = (decisionLevel) => {
+  switch (decisionLevel) {
     case 'SC_VP':
     case 'EXECUTIVE':
       return '/strategy-briefing';
@@ -124,7 +124,7 @@ const DashboardRouter = () => {
         return;
       }
 
-      // SYSTEM_ADMIN: Always go to Organization Management (skip Powell check)
+      // SYSTEM_ADMIN: Always go to Organization Management (skip decision level check)
       if (user.user_type === 'SYSTEM_ADMIN') {
         navigate('/admin/tenants', { replace: true });
         return;
@@ -133,11 +133,11 @@ const DashboardRouter = () => {
       // Check ADH role FIRST for ALL non-system users (USER, TENANT_ADMIN, etc.)
       // ADH role is stored on user record - determines landing page (fixed)
       // Capabilities determine what user can do (customizable by customer admin)
-      const { powellRole } = await getPowellRoleFromAPI();
-      const powellLanding = getPowellLandingPage(powellRole);
+      const { decisionLevel } = await getDecisionLevelFromAPI();
+      const decisionLevelLanding = getDecisionLevelLandingPage(decisionLevel);
 
-      if (powellLanding) {
-        navigate(powellLanding, { replace: true });
+      if (decisionLevelLanding) {
+        navigate(decisionLevelLanding, { replace: true });
         return;
       }
 

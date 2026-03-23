@@ -311,7 +311,7 @@ class MeResponse(BaseModel):
     user_type: Optional[str] = None
     is_superuser: bool = False
     default_config_id: Optional[int] = None
-    powell_role: Optional[str] = None
+    decision_level: Optional[str] = None
     capabilities: List[str] = []
     roles: List[str] = []
 
@@ -782,8 +782,8 @@ async def logout(response: Response):
 @api.get("/auth/me", response_model=MeResponse, tags=["auth"])
 async def me(user: Dict[str, Any] = Depends(get_current_user)):
     display_name = user.get("name") or user.get("full_name") or user.get("username") or user["email"]
-    # Extract powell_role — may be an enum or string
-    pr = user.get("powell_role")
+    # Extract decision_level — may be an enum or string
+    pr = user.get("decision_level")
     if pr is not None and hasattr(pr, "value"):
         pr = pr.value
 
@@ -826,7 +826,7 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
         user_type=user.get("user_type"),
         is_superuser=bool(user.get("is_superuser", False)),
         default_config_id=user.get("default_config_id"),
-        powell_role=pr,
+        decision_level=pr,
         capabilities=capabilities,
         roles=role_names,
     )
@@ -1633,8 +1633,8 @@ def _build_user_payload_from_model(user: User) -> Dict[str, Any]:
     name = data.get("full_name") or data.get("username") or data.get("email")
     user_type = (data.get("user_type") or "")
     role = _normalize_role_from_user(user_type, bool(data.get("is_superuser")))
-    # Extract powell_role (may be enum or string)
-    pr = getattr(user, "powell_role", None)
+    # Extract decision_level (may be enum or string)
+    pr = getattr(user, "decision_level", None)
     if pr is not None and hasattr(pr, "value"):
         pr = pr.value
 
@@ -1647,7 +1647,7 @@ def _build_user_payload_from_model(user: User) -> Dict[str, Any]:
         "is_superuser": bool(data.get("is_superuser")),
         "user_type": user_type,
         "default_config_id": getattr(user, "default_config_id", None),
-        "powell_role": pr,
+        "decision_level": pr,
     }
     return payload
 

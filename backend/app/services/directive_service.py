@@ -24,24 +24,24 @@ def now_utc() -> datetime:
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import User, PowellRoleEnum
+from app.models.user import User, DecisionLevelEnum
 from app.models.user_directive import UserDirective
 
 logger = logging.getLogger(__name__)
 
-# Role → Powell layer mapping
+# Decision level → Powell layer mapping
 _ROLE_TO_LAYER = {
-    PowellRoleEnum.SC_VP: "strategic",
-    PowellRoleEnum.EXECUTIVE: "strategic",
-    PowellRoleEnum.SOP_DIRECTOR: "tactical",
-    PowellRoleEnum.MPS_MANAGER: "operational",
-    PowellRoleEnum.ALLOCATION_MANAGER: "operational",
-    PowellRoleEnum.ORDER_PROMISE_MANAGER: "operational",
-    PowellRoleEnum.ATP_ANALYST: "execution",
-    PowellRoleEnum.REBALANCING_ANALYST: "execution",
-    PowellRoleEnum.PO_ANALYST: "execution",
-    PowellRoleEnum.ORDER_TRACKING_ANALYST: "execution",
-    PowellRoleEnum.DEMO_ALL: "strategic",
+    DecisionLevelEnum.SC_VP: "strategic",
+    DecisionLevelEnum.EXECUTIVE: "strategic",
+    DecisionLevelEnum.SOP_DIRECTOR: "tactical",
+    DecisionLevelEnum.MPS_MANAGER: "operational",
+    DecisionLevelEnum.ALLOCATION_MANAGER: "operational",
+    DecisionLevelEnum.ORDER_PROMISE_MANAGER: "operational",
+    DecisionLevelEnum.ATP_ANALYST: "execution",
+    DecisionLevelEnum.REBALANCING_ANALYST: "execution",
+    DecisionLevelEnum.PO_ANALYST: "execution",
+    DecisionLevelEnum.ORDER_TRACKING_ANALYST: "execution",
+    DecisionLevelEnum.DEMO_ALL: "strategic",
 }
 
 # Layer descriptions for the LLM prompt
@@ -382,7 +382,7 @@ class DirectiveService:
             target_config_id: The branched config ID from a prior injection.
         """
         # Determine Powell layer from user role
-        layer = _ROLE_TO_LAYER.get(user.powell_role, "operational")
+        layer = _ROLE_TO_LAYER.get(user.decision_level, "operational")
         if user.user_type and user.user_type.value == "TENANT_ADMIN":
             layer = "strategic"
 
@@ -1184,7 +1184,7 @@ class DirectiveService:
             forced_intent = "question"
             raw_text = raw_text[len("[Question] "):]
 
-        role_name = user.powell_role.value if user.powell_role else "TENANT_ADMIN"
+        role_name = user.decision_level.value if user.decision_level else "TENANT_ADMIN"
         layer_desc = _LAYER_DESCRIPTIONS.get(layer, "")
 
         # Build compact event catalog from registry for LLM context
@@ -1344,7 +1344,7 @@ class DirectiveService:
         - "scenario_question"→ inject event + answer question (two-pass)
         - "unknown"          → ask the user to clarify
         """
-        layer = _ROLE_TO_LAYER.get(user.powell_role, "operational")
+        layer = _ROLE_TO_LAYER.get(user.decision_level, "operational")
         if user.user_type and user.user_type.value == "TENANT_ADMIN":
             layer = "strategic"
 
@@ -1543,7 +1543,7 @@ class DirectiveService:
         """Execute a directive action — persist UserDirective and route to Powell layer."""
         from datetime import timedelta
 
-        layer = _ROLE_TO_LAYER.get(user.powell_role, "operational")
+        layer = _ROLE_TO_LAYER.get(user.decision_level, "operational")
         if user.user_type and user.user_type.value == "TENANT_ADMIN":
             layer = "strategic"
 
@@ -1861,7 +1861,7 @@ class DirectiveService:
             '  "filters": {"region": "SW", "product": "Frozen Proteins", ...} or null\n'
             '}\n\n'
             "Return ONLY valid JSON.\n\n"
-            f"User role: {user.powell_role.value if user.powell_role else 'TENANT_ADMIN'}\n"
+            f"User role: {user.decision_level.value if user.decision_level else 'TENANT_ADMIN'}\n"
             f"Powell layer: {layer}\n"
             f"Available sites: {json.dumps(tenant_context.get('site_names', []))}\n"
             f"Available product families: {json.dumps(tenant_context.get('product_families', []))}\n\n"

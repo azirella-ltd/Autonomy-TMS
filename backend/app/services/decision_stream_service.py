@@ -100,7 +100,7 @@ _ABANDON_COMBINED_THRESHOLD = float(
 # In-memory conversation cache (same pattern as AssistantService)
 _STREAM_CONVERSATION_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 
-# Digest-level cache: keyed by (tenant_id, config_id, powell_role) → full digest response
+# Digest-level cache: keyed by (tenant_id, config_id, decision_level) → full digest response
 _DIGEST_CACHE: Dict[str, Dict[str, Any]] = {}
 _DIGEST_CACHE_TTL = int(os.environ.get("DECISION_STREAM_DIGEST_CACHE_TTL", 300))  # 5 min
 
@@ -274,7 +274,7 @@ ROLE_RELEVANCE = {
 }
 
 
-def _get_role_filter(powell_role: Optional[str], level_override: Optional[str] = None):
+def _get_role_filter(decision_level: Optional[str], level_override: Optional[str] = None):
     """Compute which decision types and levels a role should see.
 
     Returns (allowed_levels, allowed_types, escalation_from_level).
@@ -283,13 +283,13 @@ def _get_role_filter(powell_role: Optional[str], level_override: Optional[str] =
     - escalation_from_level: decisions from this level are ALSO shown
       if they have source_signals (i.e., they were escalated)
     """
-    if not powell_role:
+    if not decision_level:
         return None, None, None  # No filtering
 
-    role_config = ROLE_DEFAULT_LEVELS.get(powell_role)
+    role_config = ROLE_DEFAULT_LEVELS.get(decision_level)
     if not role_config:
         # Fallback to legacy ROLE_RELEVANCE
-        return None, ROLE_RELEVANCE.get(powell_role), None
+        return None, ROLE_RELEVANCE.get(decision_level), None
 
     levels = role_config["default_levels"].copy()
     escalation_from = role_config.get("escalation_from")
@@ -299,7 +299,7 @@ def _get_role_filter(powell_role: Optional[str], level_override: Optional[str] =
         levels = {level_override}
         escalation_from = None  # explicit level = no escalation passthrough
 
-    type_filter = ROLE_TYPE_FILTER.get(powell_role)
+    type_filter = ROLE_TYPE_FILTER.get(decision_level)
     return levels, type_filter, escalation_from
 
 # Per-table site column filter builder: type_key -> (model, allowed_site_names) -> filter clause or None
@@ -786,7 +786,7 @@ class DecisionStreamService:
 
     async def get_decision_digest(
         self,
-        powell_role: Optional[str] = None,
+        decision_level: Optional[str] = None,
         config_id: Optional[int] = None,
         force_refresh: bool = False,
         level_override: Optional[str] = None,
@@ -805,7 +805,7 @@ class DecisionStreamService:
         3. LLM synthesis (fallback, writes result to DB for future loads)
         """
         # --- Tier 1: Check in-memory cache ---
-        cache_key = f"digest:{self.tenant_id}:{config_id}:{powell_role}:{level_override}"
+        cache_key = f"digest:{self.tenant_id}:{config_id}:{decision_level}:{level_override}"
         if not force_refresh:
             cached = _DIGEST_CACHE.get(cache_key)
             if cached:
@@ -818,7 +818,7 @@ class DecisionStreamService:
 
         # 1. Collect pending decisions from all tables (TRM + GNN + governance)
         decisions, product_names, site_names = await self._collect_pending_decisions(
-            config_id, powell_role, level_override=level_override,
+            config_id, decision_level, level_override=level_override,
         )
 
         # 2. Prioritize
@@ -831,25 +831,25 @@ class DecisionStreamService:
         digest_text = None
         if not force_refresh and config_id:
             digest_text = await self._load_persisted_digest(
-                config_id, powell_role
+                config_id, decision_level
             )
 
         # --- Tier 3: LLM synthesis (fire-and-forget background task) ---
         if not digest_text and decisions:
             if force_refresh:
                 # Explicit refresh: user is willing to wait
-                digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
+                digest_text = await self._synthesize_digest(decisions, alerts, decision_level)
                 digest_text = _humanize_ids(digest_text, product_names, site_names)
                 if digest_text and config_id:
                     await self._persist_digest(
-                        config_id, powell_role, digest_text, decisions, alerts,
+                        config_id, decision_level, digest_text, decisions, alerts,
                     )
             else:
                 # First load: return decisions immediately, synthesize in background
                 digest_text = self._build_quick_digest(decisions)
                 asyncio.create_task(
                     self._background_synthesize(
-                        config_id, powell_role, decisions, alerts, product_names, site_names, cache_key,
+                        config_id, decision_level, decisions, alerts, product_names, site_names, cache_key,
                     )
                 )
 
@@ -937,7 +937,7 @@ class DecisionStreamService:
     async def _background_synthesize(
         self,
         config_id: Optional[int],
-        powell_role: Optional[str],
+        decision_level: Optional[str],
         decisions: List[Dict[str, Any]],
         alerts: List[Dict[str, Any]],
         product_names: Dict[str, str],
@@ -946,14 +946,14 @@ class DecisionStreamService:
     ):
         """Run LLM digest synthesis in the background and update caches."""
         try:
-            digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
+            digest_text = await self._synthesize_digest(decisions, alerts, decision_level)
             digest_text = _humanize_ids(digest_text, product_names, site_names)
             if digest_text and config_id:
                 try:
                     from app.db.session import async_session_factory
                     async with async_session_factory() as db:
                         svc = DecisionStreamService(db=db, tenant_id=self.tenant_id, tenant_name=self.tenant_name)
-                        await svc._persist_digest(config_id, powell_role, digest_text, decisions, alerts)
+                        await svc._persist_digest(config_id, decision_level, digest_text, decisions, alerts)
                 except Exception as e:
                     logger.warning("Background digest persist failed: %s", e)
             if digest_text:
@@ -966,16 +966,16 @@ class DecisionStreamService:
             logger.warning("Background digest synthesis failed: %s", e)
 
     async def _load_persisted_digest(
-        self, config_id: int, powell_role: Optional[str]
+        self, config_id: int, decision_level: Optional[str]
     ) -> Optional[str]:
         """Load digest from decision_stream_digests table."""
         try:
             from app.db.session import sync_session_factory
             from sqlalchemy import text as sa_text
-            role_clause = "AND powell_role = :role" if powell_role else "AND powell_role IS NULL"
+            role_clause = "AND decision_level = :role" if decision_level else "AND decision_level IS NULL"
             params = {"cid": config_id, "tid": self.tenant_id}
-            if powell_role:
-                params["role"] = powell_role
+            if decision_level:
+                params["role"] = decision_level
             sync_db = sync_session_factory()
             try:
                 result = sync_db.execute(
@@ -998,7 +998,7 @@ class DecisionStreamService:
     async def _persist_digest(
         self,
         config_id: int,
-        powell_role: Optional[str],
+        decision_level: Optional[str],
         digest_text: str,
         decisions: list,
         alerts: list,
@@ -1025,9 +1025,9 @@ class DecisionStreamService:
                 sync_db.execute(
                     sa_text("""
                         INSERT INTO decision_stream_digests
-                            (config_id, tenant_id, powell_role, digest_text, decisions, alerts, total_pending, created_at)
+                            (config_id, tenant_id, decision_level, digest_text, decisions, alerts, total_pending, created_at)
                         VALUES (:cid, :tid, :role, :digest, CAST(:decs AS jsonb), CAST(:alerts AS jsonb), :total, CURRENT_TIMESTAMP)
-                        ON CONFLICT (config_id, tenant_id, powell_role)
+                        ON CONFLICT (config_id, tenant_id, decision_level)
                         DO UPDATE SET digest_text = EXCLUDED.digest_text,
                                       decisions = EXCLUDED.decisions,
                                       alerts = EXCLUDED.alerts,
@@ -1037,7 +1037,7 @@ class DecisionStreamService:
                     {
                         "cid": config_id,
                         "tid": self.tenant_id,
-                        "role": powell_role,
+                        "role": decision_level,
                         "digest": digest_text,
                         "decs": dec_json,
                         "alerts": alerts_json,
@@ -1045,7 +1045,7 @@ class DecisionStreamService:
                     },
                 )
                 sync_db.commit()
-                logger.info("Digest persisted to DB (config=%d, role=%s)", config_id, powell_role)
+                logger.info("Digest persisted to DB (config=%d, role=%s)", config_id, decision_level)
             finally:
                 sync_db.close()
         except Exception as e:
@@ -1151,7 +1151,7 @@ class DecisionStreamService:
         message: str,
         conversation_id: Optional[str] = None,
         config_id: Optional[int] = None,
-        powell_role: Optional[str] = None,
+        decision_level: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Process a conversational message with decision context injection."""
         _evict_stale()
@@ -1186,7 +1186,7 @@ class DecisionStreamService:
         )
 
         # Collect brief decision context for the LLM
-        decision_context = await self._get_brief_decision_context(config_id, powell_role)
+        decision_context = await self._get_brief_decision_context(config_id, decision_level)
         if enrichment_text:
             decision_context += "\n\n" + enrichment_text
 
@@ -1206,7 +1206,7 @@ class DecisionStreamService:
             decision_context += "\n\n" + ext_signals
 
         # Build prompt with role-scoped instructions
-        prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context, powell_role)
+        prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context, decision_level)
 
         # Call LLM
         response_text = await self._call_llm(prompt)
@@ -1244,7 +1244,7 @@ class DecisionStreamService:
     async def _collect_pending_decisions(
         self,
         config_id: Optional[int] = None,
-        powell_role: Optional[str] = None,
+        decision_level: Optional[str] = None,
         level_override: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], Dict[str, str], Dict[str, str]]:
         """Query powell_*_decisions tables + gnn_directive_reviews + governance sources.
@@ -1260,7 +1260,7 @@ class DecisionStreamService:
             (decisions, product_names, site_names) — maps IDs → display names.
         """
         # Level-based role filtering (replaces flat ROLE_RELEVANCE)
-        allowed_levels, type_filter, escalation_from = _get_role_filter(powell_role, level_override)
+        allowed_levels, type_filter, escalation_from = _get_role_filter(decision_level, level_override)
 
         # For backward compatibility, compute relevant_types from levels + type_filter
         if allowed_levels is not None:
@@ -2003,7 +2003,7 @@ class DecisionStreamService:
         self,
         decisions: List[Dict[str, Any]],
         alerts: List[Dict[str, Any]],
-        powell_role: Optional[str] = None,
+        decision_level: Optional[str] = None,
     ) -> str:
         """Use LLM to synthesize a natural-language digest paragraph."""
         if not decisions and not alerts:
@@ -2017,8 +2017,8 @@ class DecisionStreamService:
         alert_summaries = [a["message"] for a in alerts[:_LLM_SUMMARY_MAX_ALERTS]]
 
         role_context = ""
-        if powell_role:
-            role_context = f"You are addressing a {powell_role.replace('_', ' ')} user. "
+        if decision_level:
+            role_context = f"You are addressing a {decision_level.replace('_', ' ')} user. "
 
         prompt = (
             f"You are an AI supply chain planning assistant for {self.tenant_name}. "
@@ -2553,11 +2553,11 @@ class DecisionStreamService:
     async def _get_brief_decision_context(
         self,
         config_id: Optional[int] = None,
-        powell_role: Optional[str] = None,
+        decision_level: Optional[str] = None,
     ) -> str:
         """Get a brief text summary of pending decisions for chat context injection."""
         try:
-            decisions, _pnames, _snames = await self._collect_pending_decisions(config_id, powell_role)
+            decisions, _pnames, _snames = await self._collect_pending_decisions(config_id, decision_level)
             if not decisions:
                 return "No recent agent decisions."
             summaries = [d["summary"] for d in decisions[:_DIGEST_SUMMARY_MAX_DECISIONS]]
@@ -2806,13 +2806,13 @@ class DecisionStreamService:
         history: List[Dict[str, str]],
         rag_results: list,
         decision_context: str,
-        powell_role: Optional[str] = None,
+        decision_level: Optional[str] = None,
     ) -> str:
         """Build the LLM prompt with decision context, RAG, role scope, and conversation history."""
         parts = []
 
         # System prompt with role-scoped instructions
-        role_info = self._ROLE_DESCRIPTIONS.get(powell_role, {})
+        role_info = self._ROLE_DESCRIPTIONS.get(decision_level, {})
         role_title = role_info.get("title", "Supply Chain Planner")
         role_scope = role_info.get("scope", "supply chain planning and decision review")
         role_can = role_info.get("can_do", "view and inspect decisions")
@@ -2943,11 +2943,11 @@ class DecisionStreamService:
                 "tactical or operational metrics."
             ),
         }
-        role_metrics = ROLE_METRICS.get(powell_role, ROLE_METRICS.get("DEMO_ALL", ""))
+        role_metrics = ROLE_METRICS.get(decision_level, ROLE_METRICS.get("DEMO_ALL", ""))
         if role_metrics:
             system_prompt += f"\n\nMETRIC INTERPRETATION FOR THIS USER'S ROLE:\n{role_metrics}\n"
 
-        if role_cannot and powell_role not in ("DEMO_ALL", "MPS_MANAGER"):
+        if role_cannot and decision_level not in ("DEMO_ALL", "MPS_MANAGER"):
             system_prompt += (
                 f"\n\nROLE BOUNDARIES: The user CAN: {role_can}. "
                 f"The user CANNOT: {role_cannot}. "

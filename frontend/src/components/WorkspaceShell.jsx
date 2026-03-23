@@ -111,11 +111,11 @@ const WorkspaceShell = () => {
 
     const isTenantAdm = checkIsTenantAdmin(user);
     const isSysAdm = isSystemAdmin(user);
-    const powellRole = user.powell_role;
+    const decisionLevel = user.decision_level;
     const currentTabs = useTabStore.getState().tabs;
 
     // DEMO_ALL → Decision Stream (active) + Strategy Briefing + Executive Dashboard
-    if (powellRole === 'DEMO_ALL') {
+    if (decisionLevel === 'DEMO_ALL') {
       if (!currentTabs.find((t) => t.path === '/strategy-briefing')) {
         useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
       }
@@ -150,7 +150,7 @@ const WorkspaceShell = () => {
     }
 
     // Executives → Decision Stream + Strategy Briefing + Executive Dashboard
-    if (powellRole === 'SC_VP' || powellRole === 'EXECUTIVE') {
+    if (decisionLevel === 'SC_VP' || decisionLevel === 'EXECUTIVE') {
       if (!currentTabs.find((t) => t.path === '/strategy-briefing')) {
         useTabStore.getState().openTab('/strategy-briefing', 'Strategy Briefing');
       }
@@ -280,7 +280,7 @@ const WorkspaceShell = () => {
         <CapabilityAwareSidebar
           open={sidebarOpen}
           onToggle={handleSidebarToggle}
-          adminOnly={!isFullFunctionalityTab && user?.powell_role !== 'DEMO_ALL'}
+          adminOnly={!isFullFunctionalityTab && user?.decision_level !== 'DEMO_ALL'}
         />
       )}
 

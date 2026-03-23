@@ -58,9 +58,9 @@ class UserTypeEnum(str, Enum):
     USER = "USER"
 
 
-class PowellRoleEnum(str, Enum):
+class DecisionLevelEnum(str, Enum):
     """
-    Powell Framework role classification for Production tenant users.
+    Decision level classification for Production tenant users.
 
     Determines landing page routing (fixed) while capabilities can be customized.
 
@@ -100,9 +100,9 @@ class UserBase(BaseModel):
     is_superuser: bool = False
     tenant_id: Optional[int] = None
     user_type: UserTypeEnum = Field(default=UserTypeEnum.USER)
-    powell_role: Optional[PowellRoleEnum] = Field(
+    decision_level: Optional[DecisionLevelEnum] = Field(
         default=None,
-        description="Powell role determines landing page; capabilities can be customized separately"
+        description="Decision level determines landing page; capabilities can be customized separately"
     )
 
     class Config:
@@ -185,11 +185,11 @@ class User(Base):
     # Powell Framework Role - determines landing page for Production tenant users
     # NULL means use user_type for routing (e.g., TENANT_ADMIN → /admin/production)
     # This is separate from capabilities which can be customized by tenant admin
-    powell_role: Mapped[Optional[PowellRoleEnum]] = mapped_column(
-        SAEnum(PowellRoleEnum, name="powell_role_enum"),
+    decision_level: Mapped[Optional[DecisionLevelEnum]] = mapped_column(
+        SAEnum(DecisionLevelEnum, name="decision_level_enum"),
         nullable=True,
         index=True,
-        comment="Powell role determines landing page; capabilities can be customized"
+        comment="Decision level determines landing page; capabilities can be customized"
     )
 
     # Agent Explainability Override (user-level override of tenant default)
