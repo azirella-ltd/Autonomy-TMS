@@ -320,6 +320,12 @@ const SankeyDiagram = ({
         const { index, width, y0, y1, ...rest } = link;
         return { ...rest };
       });
+
+      // Guard: d3-sankey crashes on empty or malformed input
+      if (!cleanNodes.length || !cleanLinks.length) {
+        return null;
+      }
+
       const sankeyData = generator({
         nodes: cleanNodes,
         links: cleanLinks,
