@@ -711,7 +711,7 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
         "fixed top-0 z-40 h-16 bg-background/80 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200 ease-in-out",
         sidebarOpen ? "left-[280px]" : "left-0"
       )}
-      style={{ right: azirellaPanelWidth }}
+      style={{ right: 0 }}
     >
       <div className="flex items-center h-full px-4 md:px-6 gap-4">
 

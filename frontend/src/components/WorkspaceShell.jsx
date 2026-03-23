@@ -425,14 +425,8 @@ const WorkspaceShell = () => {
             <div ref={azEndRef} />
           </div>
 
-          {/* Avatar + Input bar */}
-          <div className="border-t flex flex-col items-center pt-2 pb-2.5 px-3 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
-            {/* Azirella avatar above input */}
-            <div className="mb-2">
-              <AzirellaAvatar size={44} inline voiceState={azLoading ? 'processing' : voiceEnabled ? 'listening' : 'idle'} />
-            </div>
-          </div>
-          <div className="px-3 pb-2.5 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
+          {/* Input bar with voice toggle */}
+          <div className="border-t px-3 py-2.5 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
             {/* Voice toggle — red=off, green=on */}
             <button
               onClick={() => setVoiceEnabled(prev => !prev)}
