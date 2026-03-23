@@ -311,6 +311,7 @@ class MeResponse(BaseModel):
     user_type: Optional[str] = None
     is_superuser: bool = False
     default_config_id: Optional[int] = None
+    powell_role: Optional[str] = None
 
 
 class OrderSubmission(BaseModel):
@@ -779,6 +780,11 @@ async def logout(response: Response):
 @api.get("/auth/me", response_model=MeResponse, tags=["auth"])
 async def me(user: Dict[str, Any] = Depends(get_current_user)):
     display_name = user.get("name") or user.get("full_name") or user.get("username") or user["email"]
+    # Extract powell_role — may be an enum or string
+    pr = user.get("powell_role")
+    if pr is not None and hasattr(pr, "value"):
+        pr = pr.value
+
     return MeResponse(
         id=user["id"],
         email=user["email"],
@@ -788,6 +794,7 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
         user_type=user.get("user_type"),
         is_superuser=bool(user.get("is_superuser", False)),
         default_config_id=user.get("default_config_id"),
+        powell_role=pr,
     )
 
 @api.post("/auth/refresh", response_model=TokenResponse, tags=["auth"])
@@ -1592,6 +1599,11 @@ def _build_user_payload_from_model(user: User) -> Dict[str, Any]:
     name = data.get("full_name") or data.get("username") or data.get("email")
     user_type = (data.get("user_type") or "")
     role = _normalize_role_from_user(user_type, bool(data.get("is_superuser")))
+    # Extract powell_role (may be enum or string)
+    pr = getattr(user, "powell_role", None)
+    if pr is not None and hasattr(pr, "value"):
+        pr = pr.value
+
     payload = {
         "id": data["id"],
         "email": data["email"],
@@ -1601,6 +1613,7 @@ def _build_user_payload_from_model(user: User) -> Dict[str, Any]:
         "is_superuser": bool(data.get("is_superuser")),
         "user_type": user_type,
         "default_config_id": getattr(user, "default_config_id", None),
+        "powell_role": pr,
     }
     return payload
 
@@ -1884,6 +1897,9 @@ def _serialize_site(site: SupplySiteModel, region_map: Optional[Dict[str, str]] 
         "dag_type": site_type,
         "geo_id": geo_id,
         "geography": geo_data,
+        "latitude": getattr(site, "latitude", None),
+        "longitude": getattr(site, "longitude", None),
+        "attributes": attrs if isinstance(attrs, dict) else {},
         "inventory_capacity_min": None,
         "inventory_capacity_max": None,
         "initial_inventory_min": None,

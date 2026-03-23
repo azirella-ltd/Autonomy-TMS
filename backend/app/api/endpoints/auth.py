@@ -464,10 +464,28 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
     """
     Get current user information.
 
-    Requires authentication.
+    Requires authentication. Includes powell_role and capabilities
+    so the frontend can determine tab visibility and role-based UI.
     """
-    _normalize_customer_admin_context(current_user)
-    return current_user
+    # Build response dict with all fields the frontend needs
+    user_dict = {
+        "id": getattr(current_user, "id", None),
+        "email": getattr(current_user, "email", None),
+        "name": getattr(current_user, "full_name", None) or getattr(current_user, "name", None),
+        "full_name": getattr(current_user, "full_name", None) or getattr(current_user, "name", None),
+        "role": getattr(current_user, "user_type", "USER"),
+        "user_type": str(getattr(current_user, "user_type", "USER")),
+        "tenant_id": getattr(current_user, "tenant_id", None),
+        "is_superuser": getattr(current_user, "is_superuser", False),
+        "default_config_id": getattr(current_user, "default_config_id", None),
+        "powell_role": None,
+    }
+    # Extract powell_role (may be enum or string)
+    pr = getattr(current_user, "powell_role", None)
+    if pr is not None:
+        user_dict["powell_role"] = pr.value if hasattr(pr, "value") else str(pr)
+
+    return user_dict
 
 
 @router.put("/me", response_model=UserPublic)
@@ -682,13 +700,13 @@ async def read_user(
 
 # Configurable demo account (set via env or use default)
 import os
-_DEMO_EMAIL = os.environ.get("DEMO_USER_EMAIL", "exec@distdemo.com")
+_DEMO_EMAIL = os.environ.get("DEMO_USER_EMAIL", "visitor@demo.azirella.com")
 _DEMO_TOKEN_EXPIRY_MINUTES = int(os.environ.get("DEMO_TOKEN_EXPIRY_MINUTES", "5"))
-_DEMO_MAX_CONCURRENT = int(os.environ.get("DEMO_MAX_CONCURRENT", "10"))
+_DEMO_MAX_CONCURRENT = int(os.environ.get("DEMO_MAX_CONCURRENT", "5"))
 _DEMO_SESSION_TIMEOUT_MINUTES = int(os.environ.get("DEMO_SESSION_TIMEOUT_MINUTES", "30"))
-_DEMO_ASSUMED_DURATION_MINUTES = int(os.environ.get("DEMO_ASSUMED_DURATION_MINUTES", "20"))
+_DEMO_ASSUMED_DURATION_MINUTES = int(os.environ.get("DEMO_ASSUMED_DURATION_MINUTES", "30"))
 _DEMO_MAX_SESSION_MINUTES = int(os.environ.get("DEMO_MAX_SESSION_MINUTES", "30"))
-_DEMO_COOLDOWN_MINUTES = int(os.environ.get("DEMO_COOLDOWN_MINUTES", "60"))
+_DEMO_COOLDOWN_MINUTES = int(os.environ.get("DEMO_COOLDOWN_MINUTES", "120"))
 _DEMO_GSHEET_WEBHOOK = os.environ.get("DEMO_GSHEET_WEBHOOK", "")
 
 
@@ -785,7 +803,8 @@ async def demo_capacity(db: AsyncSession = Depends(get_db)):
         "available": available,
         "queue_position": queue_position,
         "estimated_wait_minutes": estimated_wait_minutes,
-        "session_timeout_minutes": _DEMO_SESSION_TIMEOUT_MINUTES,
+        "session_minutes": _DEMO_MAX_SESSION_MINUTES,
+        "cooldown_minutes": _DEMO_COOLDOWN_MINUTES,
     }
 
 
