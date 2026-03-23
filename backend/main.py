@@ -6489,6 +6489,10 @@ api.include_router(provisioning_router, tags=["provisioning"])
 from app.api.endpoints.email_signals import router as email_signals_router
 api.include_router(email_signals_router, tags=["email-signals"])
 
+# Experiential Knowledge — Alicke's "Planner Was the System" (Powell Bₜ)
+from app.api.endpoints.experiential_knowledge import router as ek_router
+api.include_router(ek_router, tags=["experiential-knowledge"])
+
 # BSC Configuration — tenant-admin BSC weights for CDT calibration loss function
 from app.api.endpoints.bsc_config import router as bsc_config_router
 api.include_router(bsc_config_router, tags=["bsc-config"])

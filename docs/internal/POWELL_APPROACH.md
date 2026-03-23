@@ -1877,6 +1877,67 @@ Human overrides of AI agent decisions are not blindly trusted. The system mainta
 **API**: `GET /decision-metrics/override-posteriors` — per-user posterior summaries with 90% credible intervals
 **Methodology**: See [docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md](docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md) for full Bayesian derivation, tiered signal strengths, systemic BSC comparison, causal inference pipeline, and mathematical appendix.
 
+#### 5.9.11 Experiential Knowledge (EK) Integration
+
+> **Reference**: Knut Alicke, "The Planner Was the System" (knutalicke.substack.com/p/the-planner-was-the-system)
+
+Override Effectiveness Tracking (§5.9.10) scores whether overrides help or hurt. The Experiential Knowledge layer goes further: it **elevates recurring override reasoning into structured, queryable knowledge entities** that feed directly into the RL training pipeline.
+
+**The problem**: TRM state vectors (12-30 floats) contain only operational data (inventory, backlog, demand). They lack contextual features like "is this Q4?" or "is this supplier historically unreliable in this period?" When a planner repeatedly overrides PO timing every Q4 for Supplier X, the Bayesian posterior correctly weights those overrides higher, but the TRM **cannot learn the conditional pattern** because the condition isn't in its state representation. This is a missing Belief State variable (Bₜ) in the Powell framework.
+
+**Pattern Detection**: A daily job (03:15) queries all overridden decisions from the past 90 days, groups by `(user, trm_type, reason_code, entity_context)`, and creates CANDIDATE knowledge entities when ≥3 overrides share the same pattern. Candidates are confirmed by planners via Azirella follow-up.
+
+**Causal AI → EK Pipeline** (how override effectiveness feeds into knowledge entities):
+
+Each evidence item in an EK entity is enriched with causal data from the Outcome Collector (§5.9.9) and Override Effectiveness Service (§5.9.10):
+- `override_delta`: Human reward minus agent counterfactual reward (signed impact)
+- `override_classification`: BENEFICIAL / NEUTRAL / DETRIMENTAL (from Tier 1-3 causal inference)
+- `composite_override_score`: `0.4 × local_delta + 0.6 × site_bsc_delta` (systemic impact)
+
+Entity **confidence** is computed from three causal factors:
+1. **Override count**: 3 overrides → 0.30 base, 10 → 0.60, 20+ → 0.80
+2. **Causal effectiveness ratio**: Proportion of BENEFICIAL overrides in the pattern, ±0.15 boost
+3. **User Bayesian posterior**: `OverrideEffectivenessService.get_training_weight()` for the source user, ±0.10 boost. Proven-effective overriders (high E[p]) contribute higher-confidence knowledge
+
+**Auto-classification** from causal evidence:
+- Majority BENEFICIAL → auto-classified **GENUINE** (planner knows something the system doesn't)
+- Majority DETRIMENTAL → auto-classified **COMPENSATING** (workaround that doesn't actually help)
+- Mixed or insufficient causal data → NULL (requires human classification via Azirella or dashboard)
+
+This closes the loop between causal AI and knowledge management: the system doesn't just score overrides — it learns *what behavioral patterns produce good overrides* and encodes them as reusable knowledge that feeds back into TRM training.
+
+**GENUINE vs COMPENSATING** (Alicke's key distinction):
+- **GENUINE**: Real behavioral pattern valid regardless of data quality (e.g., "Q4 harvest delays Supplier X"). These contribute reward shaping and state features. Auto-classified when causal evidence shows overrides were consistently BENEFICIAL.
+- **COMPENSATING**: Workaround for system deficiency (e.g., "forecast model bad for product X"). These are documented but excluded from reward shaping. Auto-classified when causal evidence shows overrides were DETRIMENTAL despite planner intent. When the root cause is fixed, COMPENSATING entities are marked SUPERSEDED.
+
+**Four RL Integration Channels**:
+
+| Channel | Method | Effect | Knowledge Type |
+|---------|--------|--------|---------------|
+| **State Augmentation** | `get_state_augmentation()` | Appends conditional features to TRM state vector (e.g., `[ek_is_q4=1, ek_supplier_risk=1.5]`) | Both |
+| **Reward Shaping** | `get_reward_shaping()` | ±0.05 bonus for decisions aligned with knowledge | GENUINE only |
+| **Conditional CDT** | `get_cdt_uncertainty_modifier()` | Multiplies conformal interval width when conditions active (>1 = wider = more human oversight) | Both |
+| **Simulation Modifiers** | `get_conditional_modifiers()` | Applies multipliers to stochastic distributions during Monte Carlo trials | Both |
+
+**Learning Flywheel**:
+1. EK widens CDT intervals → more human oversight in flagged conditions
+2. Overrides in flagged conditions confirm/refine the pattern → evidence grows
+3. State augmentation lets TRM see the conditional → TRM accuracy improves in training
+4. CDT intervals narrow as TRM confidence increases → fewer escalations needed
+5. Eventually TRM handles the condition autonomously → EK becomes documentation, not a crutch
+
+**Lifecycle Management**:
+- **Stagnation**: ACTIVE entities not validated in N days → STALE → queued for planner review
+- **Contradiction**: Same entity context + pattern type but different effects from different users → both CONTRADICTED → queued for resolution
+- **Sole-source retirement**: When a planner leaves, entities where they're the sole source → flagged for review
+- **Supersession**: When statistical signals capture what was previously experiential → COMPENSATING entities → SUPERSEDED
+
+**Key Files**: `backend/app/models/experiential_knowledge.py`, `backend/app/services/experiential_knowledge_service.py` (includes `_get_causal_classification()`, `_compute_causal_confidence()`)
+**Causal Integration Points**: `outcome_collector.py` (provides override_delta/classification), `override_effectiveness_service.py` (provides user training weight), `atp_executor.py` (state augmentation), `trm_trainer.py` (reward shaping), `conformal_decision.py` (conditional CDT)
+**Database Table**: `experiential_knowledge` (tenant-scoped, pgvector 768-dim, JSON conditions/effects/evidence with causal fields: override_delta, override_classification, composite_override_score)
+**API**: `/api/v1/experiential-knowledge/` — CRUD, lifecycle actions, pattern detection trigger
+**Dashboard**: `frontend/src/pages/admin/ExperientialKnowledgeDashboard.jsx`
+
 #### 5.10 Unified SiteAgent Architecture
 
 > **See also**: [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) for the "Hive" model that reconceptualizes each SiteAgent as a colony of 11 specialized TRM workers coordinating through signal-mediated communication, with the tGNN serving as inter-hive connective tissue. Sections 10-12 integrate the Hive with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) and define a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios and negotiate via the AAP.

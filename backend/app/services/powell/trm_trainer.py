@@ -439,10 +439,40 @@ class RewardCalculator:
         Uses the Gartner L4 metrics as semantic labels but returns a single
         float for compatibility with existing RL training loops.
         For a named breakdown use calculate_reward_with_breakdown().
+
+        Includes EK reward shaping: ±0.05 bonus from GENUINE experiential
+        knowledge entities (Alicke's "Planner Was the System").
         """
-        return self.calculate_reward_with_breakdown(
+        base_reward = self.calculate_reward_with_breakdown(
             trm_type, outcome, metric_config=None
         ).total_reward
+
+        # Experiential Knowledge reward shaping (GENUINE only, ±0.05 max)
+        ek_bonus = self._get_ek_reward_shaping(trm_type, outcome)
+        return base_reward + ek_bonus
+
+    def _get_ek_reward_shaping(self, trm_type: str, outcome: Dict[str, Any]) -> float:
+        """Return EK reward shaping bonus. Returns 0.0 if unavailable."""
+        try:
+            config_id = outcome.get("config_id")
+            tenant_id = outcome.get("tenant_id")
+            if not config_id or not tenant_id:
+                return 0.0
+            from app.services.experiential_knowledge_service import ExperientialKnowledgeService
+            from app.db.session import sync_session_factory
+            db = sync_session_factory()
+            try:
+                svc = ExperientialKnowledgeService(db=db, tenant_id=tenant_id, config_id=config_id)
+                return svc.get_reward_shaping(
+                    config_id=config_id,
+                    trm_type=trm_type,
+                    product_id=outcome.get("product_id"),
+                    site_id=outcome.get("site_id") or outcome.get("location_id"),
+                )
+            finally:
+                db.close()
+        except Exception:
+            return 0.0
 
     def calculate_reward_with_breakdown(
         self,

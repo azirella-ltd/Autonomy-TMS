@@ -157,6 +157,38 @@ class ConformalDecisionWrapper:
         # Tracking for adaptive adjustment
         self._recent_outcomes: List[bool] = []  # Was risk assessment correct?
 
+    def _get_ek_uncertainty_modifier(
+        self,
+        config_id: Optional[int],
+        tenant_id: Optional[int],
+        product_id: Optional[str],
+        site_id: Optional[str],
+    ) -> float:
+        """Return EK uncertainty multiplier for conditional CDT.
+
+        Queries ACTIVE experiential knowledge entities and returns the max
+        cdt_uncertainty_multiplier for matching conditions. Returns 1.0
+        if no EK entities match or service unavailable (backward compatible).
+        """
+        if not config_id or not tenant_id:
+            return 1.0
+        try:
+            from app.services.experiential_knowledge_service import ExperientialKnowledgeService
+            from app.db.session import sync_session_factory
+            db = sync_session_factory()
+            try:
+                svc = ExperientialKnowledgeService(db=db, tenant_id=tenant_id, config_id=config_id)
+                return svc.get_cdt_uncertainty_modifier(
+                    config_id=config_id,
+                    trm_type=self.agent_type,
+                    product_id=product_id,
+                    site_id=site_id,
+                )
+            finally:
+                db.close()
+        except Exception:
+            return 1.0
+
     def calibrate(
         self,
         decision_outcome_pairs: List[DecisionOutcomePair],
@@ -205,6 +237,10 @@ class ConformalDecisionWrapper:
         self,
         decision_cost_estimate: float,
         state_features: Optional[np.ndarray] = None,
+        config_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
+        product_id: Optional[str] = None,
+        site_id: Optional[str] = None,
     ) -> RiskAssessment:
         """
         Compute conformal risk bound for a decision.
@@ -215,9 +251,17 @@ class ConformalDecisionWrapper:
         This is computed using the empirical distribution of calibration losses
         with conformal coverage guarantee.
 
+        When experiential knowledge entities are active for the given context,
+        the conformal interval is widened by the EK uncertainty multiplier
+        (Alicke's conditional CDT — "The Planner Was the System").
+
         Args:
             decision_cost_estimate: Agent's estimated cost for this decision
             state_features: Current state features (for future conditional CDT)
+            config_id: SC config ID for EK lookup (optional)
+            tenant_id: Tenant ID for EK lookup (optional)
+            product_id: Product ID for EK condition matching (optional)
+            site_id: Site ID for EK condition matching (optional)
 
         Returns:
             RiskAssessment with provable risk bound
@@ -245,6 +289,16 @@ class ConformalDecisionWrapper:
         # Apply adaptive correction (ACI-style)
         risk_bound = risk_bound * (1 + self._alpha - 0.10)
         risk_bound = float(np.clip(risk_bound, 0.0, 1.0))
+
+        # Experiential Knowledge conditional CDT (Alicke's Belief State Bₜ)
+        # When EK conditions are active, widen the uncertainty by multiplying
+        # the risk bound. This routes more decisions to human oversight until
+        # TRMs learn the conditional pattern via state augmentation.
+        ek_multiplier = self._get_ek_uncertainty_modifier(
+            config_id, tenant_id, product_id, site_id
+        )
+        if ek_multiplier > 1.0:
+            risk_bound = float(np.clip(risk_bound * ek_multiplier, 0.0, 1.0))
 
         # Expected loss from calibration distribution
         expected_loss = float(np.mean(self._calibration_losses))

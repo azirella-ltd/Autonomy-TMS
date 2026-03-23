@@ -217,6 +217,17 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered external signal daily refresh job (daily at 05:30)")
 
+    # 9. Experiential Knowledge — Override pattern detection + lifecycle (daily 03:15)
+    scheduler.add_job(
+        func=_run_experiential_knowledge_detection,
+        trigger=CronTrigger(hour=3, minute=15),
+        id="experiential_knowledge_detection",
+        name="EK: Override Pattern Detection (daily)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info("Registered experiential knowledge detection job (daily at 03:15)")
+
 
 # ---------------------------------------------------------------------------
 # Job execution functions
@@ -777,3 +788,50 @@ def _run_external_signal_refresh() -> None:
         loop.run_until_complete(_refresh())
     finally:
         loop.close()
+
+
+def _run_experiential_knowledge_detection() -> None:
+    """Daily override pattern detection and lifecycle management.
+
+    Detects recurring override patterns (≥3 occurrences), creates CANDIDATE
+    knowledge entities, and runs stagnation/contradiction checks.
+    Based on Alicke's 'The Planner Was the System'.
+    """
+    from app.db.session import sync_session_factory
+
+    logger.info("Starting experiential knowledge pattern detection")
+
+    db = sync_session_factory()
+    try:
+        from app.services.experiential_knowledge_service import ExperientialKnowledgeService
+        from app.models.tenant import Tenant
+        from sqlalchemy import select
+
+        # Iterate over all tenants
+        tenants = db.execute(select(Tenant)).scalars().all()
+        total_created = 0
+        total_stale = 0
+
+        for tenant in tenants:
+            try:
+                svc = ExperientialKnowledgeService(
+                    db=db, tenant_id=tenant.id
+                )
+                detection = svc.detect_patterns(lookback_days=90)
+                lifecycle = svc.check_lifecycle()
+                total_created += detection.get("created", 0)
+                total_stale += lifecycle.get("stale", 0)
+            except Exception as e:
+                logger.warning(
+                    "EK detection failed for tenant %d: %s", tenant.id, e
+                )
+                continue
+
+        logger.info(
+            "EK detection completed: %d new candidates, %d stale across %d tenants",
+            total_created, total_stale, len(tenants),
+        )
+    except Exception as e:
+        logger.error("EK detection job failed: %s", e, exc_info=True)
+    finally:
+        db.close()

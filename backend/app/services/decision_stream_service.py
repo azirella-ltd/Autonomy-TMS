@@ -622,6 +622,32 @@ def _get_editable_values(row, decision_type: str) -> Optional[Dict[str, Any]]:
     return result
 
 
+def _extract_ek_from_override(
+    tenant_id: int, config_id: int, decision_type: str,
+    decision_id: int, reason_text: str, reason_code: str,
+) -> None:
+    """Background: extract experiential knowledge candidate from rich override text.
+
+    Fire-and-forget after overrides with detailed reason text (>30 chars).
+    Creates CANDIDATE entities if the reason describes a recurring pattern.
+    """
+    try:
+        from app.db.session import sync_session_factory
+        from app.services.experiential_knowledge_service import ExperientialKnowledgeService
+        db = sync_session_factory()
+        try:
+            svc = ExperientialKnowledgeService(db=db, tenant_id=tenant_id, config_id=config_id)
+            # For now, just log — full LLM classification is Phase 2
+            logger.debug(
+                "EK extraction candidate: tenant=%d type=%s decision=%d reason=%s",
+                tenant_id, decision_type, decision_id, reason_text[:80],
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        logger.debug("EK extraction failed (non-critical): %s", e)
+
+
 def _snapshot_original_values(decision, decision_type: str) -> Dict[str, Any]:
     """Snapshot the TRM's original recommendation before user overwrite."""
     fields = EDITABLE_FIELDS_MAP.get(decision_type, [])
@@ -1135,6 +1161,19 @@ class DecisionStreamService:
             # Invalidate digest cache so the stream refreshes
             invalidate_digest_cache(tenant_id=self.tenant_id)
 
+            # Fire-and-forget: extract experiential knowledge from rich override text
+            if action in ("modify", "cancel") and override_reason_text and len(override_reason_text) > 30:
+                try:
+                    import asyncio
+                    asyncio.get_event_loop().run_in_executor(
+                        None,
+                        _extract_ek_from_override,
+                        self.tenant_id, self.config_id, decision_type,
+                        decision_id, override_reason_text, override_reason_code,
+                    )
+                except Exception:
+                    pass  # Non-critical, never block the response
+
             return {
                 "success": True,
                 "message": f"Decision {decision_id} {new_status.lower()}",
@@ -1204,6 +1243,11 @@ class DecisionStreamService:
         ext_signals = await self._get_external_signals_context()
         if ext_signals:
             decision_context += "\n\n" + ext_signals
+
+        # Load experiential knowledge (planner behavioral patterns)
+        ek_context = await self._get_experiential_knowledge_context()
+        if ek_context:
+            decision_context += "\n\n" + ek_context
 
         # Build prompt with role-scoped instructions
         prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context, decision_level)
@@ -2751,6 +2795,28 @@ class DecisionStreamService:
             return await service.get_signals_for_chat_context(max_signals=8, max_age_days=7)
         except Exception as e:
             logger.debug("External signals context load failed: %s", e)
+            return ""
+
+    async def _get_experiential_knowledge_context(self) -> str:
+        """Load active experiential knowledge for planner behavioral pattern context.
+
+        Injects structured knowledge entities (GENUINE/COMPENSATING) from
+        override pattern detection into the chat context. Based on Alicke's
+        'The Planner Was the System'.
+        """
+        try:
+            from app.services.experiential_knowledge_service import ExperientialKnowledgeService
+            from app.db.session import sync_session_factory
+            sync_db = sync_session_factory()
+            try:
+                service = ExperientialKnowledgeService(
+                    db=sync_db, tenant_id=self.tenant_id, config_id=self.config_id
+                )
+                return service.get_knowledge_for_chat_context(max_entities=8)
+            finally:
+                sync_db.close()
+        except Exception as e:
+            logger.debug("Experiential knowledge context load failed: %s", e)
             return ""
 
     async def _retrieve_context(self, query: str):

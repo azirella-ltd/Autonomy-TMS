@@ -71,6 +71,7 @@ import {
   ThumbsUp as ThumbsUpIcon,
   Trophy as TrophyIcon,
   Mail as MailIcon,
+  BrainCircuit as BrainCircuitIcon,
   Dice5 as MonteCarloIcon,
   Zap as ScenarioEventIcon,
   Scale as GovernanceIcon,
@@ -920,6 +921,13 @@ export const NAVIGATION_CONFIG = [
         icon: MailIcon,
         requiredCapability: 'manage_tenant_users',
         description: 'GDPR-safe email ingestion for supply chain intelligence',
+      },
+      {
+        label: 'Experiential Knowledge',
+        path: '/admin/experiential-knowledge',
+        icon: BrainCircuitIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Planner behavioral patterns — override-driven knowledge for RL training',
       },
       {
         label: 'Knowledge Base',

@@ -48,6 +48,49 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# EK state augmentation cache (module-level, refreshed per process)
+_ek_cache: Dict = {}
+
+
+def _augment_state_with_ek(
+    features: np.ndarray,
+    config_id: Optional[int],
+    tenant_id: Optional[int],
+    product_id: Optional[str] = None,
+    site_id: Optional[str] = None,
+    supplier_id: Optional[str] = None,
+) -> np.ndarray:
+    """Append experiential knowledge features to TRM state vector.
+
+    Queries ACTIVE EK entities matching the context and appends conditional
+    features. Returns original features unchanged if no EK entities match
+    or if EK service is unavailable (backward compatible).
+
+    This is a shared pattern — all 11 TRM executors can use this function.
+    """
+    if not config_id or not tenant_id:
+        return features
+    try:
+        from app.services.experiential_knowledge_service import ExperientialKnowledgeService
+        from app.db.session import sync_session_factory
+        db = sync_session_factory()
+        try:
+            svc = ExperientialKnowledgeService(db=db, tenant_id=tenant_id, config_id=config_id)
+            ek_features = svc.get_state_augmentation(
+                config_id=config_id,
+                product_id=product_id,
+                site_id=site_id,
+                supplier_id=supplier_id,
+            )
+            if ek_features:
+                extra = np.array(list(ek_features.values()), dtype=np.float32)
+                return np.concatenate([features, extra])
+        finally:
+            db.close()
+    except Exception:
+        pass  # Non-critical — TRM works without EK features
+    return features
+
 
 @dataclass
 class ATPRequest:
@@ -395,6 +438,15 @@ class ATPExecutorTRM:
         """
         try:
             features = state.to_features()
+
+            # Experiential Knowledge state augmentation (Alicke's Belief State Bₜ)
+            # Appends conditional features from ACTIVE EK entities matching current context.
+            # Same pattern applies to all 11 TRM executors.
+            features = _augment_state_with_ek(
+                features, self._config_id, self._tenant_id,
+                product_id=getattr(state, 'product_id', None),
+                site_id=getattr(state, 'site_id', None),
+            )
 
             # TRM inference — returns dict with action_logits, fulfill_qty, confidence, value
             output = self.trm_model.predict(features.reshape(1, -1))

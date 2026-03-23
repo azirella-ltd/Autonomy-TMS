@@ -49,6 +49,7 @@ import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
 import ERPDataManagement from "./pages/admin/ERPDataManagement.jsx";
 import EmailSignalsDashboard from "./pages/admin/EmailSignalsDashboard.jsx";
+import ExperientialKnowledgeDashboard from "./pages/admin/ExperientialKnowledgeDashboard.jsx";
 import BscConfigPage from "./pages/admin/BscConfigPage.jsx";
 import ContextEngine from "./pages/admin/ContextEngine.jsx";
 import ExternalSignalsDashboard from "./pages/admin/ExternalSignalsDashboard.jsx";
@@ -502,6 +503,10 @@ const AppContent = () => {
             <Route
               path="/admin/email-signals"
               element={<EmailSignalsDashboard />}
+            />
+            <Route
+              path="/admin/experiential-knowledge"
+              element={<ExperientialKnowledgeDashboard />}
             />
             <Route
               path="/admin/bsc-config"

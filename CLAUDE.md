@@ -324,11 +324,13 @@ Narrow TRMs (VFA - Value Function Approximation)
 
 5. **Outcome Collection Pipeline** (`outcome_collector.py`, `relearning_jobs.py`): Three parallel collection paths — SiteAgentDecision (:30), all 11 TRM types (:32), Claude Skills decisions (:33). Feedback horizons matched to decision type (ATP: 4h, PO: 7d, inventory buffer: 14d).
 
+6. **Experiential Knowledge Layer** (`experiential_knowledge_service.py`): Elevates recurring override patterns into structured, queryable knowledge entities. When planners repeatedly override the same decision type for the same reason (e.g., "Q4 supplier delays"), the system detects the pattern, creates a CANDIDATE entity, and prompts the planner for confirmation via Azirella. **Causal AI integration**: Each evidence item is enriched with `override_delta`, `override_classification` (BENEFICIAL/NEUTRAL/DETRIMENTAL), and `composite_override_score` from the Outcome Collector's counterfactual analysis. Entity confidence is computed from three causal factors: (1) override count, (2) BENEFICIAL ratio from causal classifications (±0.15 boost), (3) user's Bayesian posterior effectiveness (±0.10 boost from `OverrideEffectivenessService`). GENUINE vs COMPENSATING is auto-classified: majority BENEFICIAL overrides → GENUINE (planner knows something the system doesn't); majority DETRIMENTAL → COMPENSATING (workaround that doesn't actually help). Confirmed entities (ACTIVE) feed into the RL pipeline via four channels: (a) **State augmentation** — appends conditional features to TRM state vectors (e.g., `[ek_is_q4=1, ek_supplier_risk=1.5]`), enabling TRMs to learn conditional patterns they couldn't previously represent; (b) **Reward shaping** — ±0.05 bonus for decisions aligned with GENUINE knowledge; (c) **Conditional CDT** — widens conformal intervals when EK conditions are active, routing more decisions to human oversight until TRMs learn; (d) **Simulation modifiers** — digital twin applies EK multipliers to stochastic distributions during Monte Carlo trials. Lifecycle includes stagnation detection, contradiction detection, and sole-source retirement tracking.
+
 **Why this matters**: Causal AI is what makes the learning flywheel trustworthy. Without it, the system would learn from spurious correlations — an agent that happened to increase orders during a demand surge would appear successful, even though any action would have succeeded. With causal inference, the system learns *which specific decision patterns actually cause better outcomes*, producing agents that generalize to novel situations rather than overfitting to historical accidents.
 
-**Implementation files**: `outcome_collector.py`, `override_effectiveness_service.py`, `causal_matching_service.py`, `conformal_prediction/conformal_decision.py`, `cdt_calibration_service.py`, `relearning_jobs.py`
-**Database tables**: `override_effectiveness_posteriors`, `override_causal_match_pairs`, `powell_*_decisions` (11 tables with outcome columns)
-**Documentation**: [OVERRIDE_EFFECTIVENESS_METHODOLOGY.md](docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md), [POWELL_APPROACH.md](POWELL_APPROACH.md) §5.9.10
+**Implementation files**: `outcome_collector.py`, `override_effectiveness_service.py`, `causal_matching_service.py`, `conformal_prediction/conformal_decision.py`, `cdt_calibration_service.py`, `experiential_knowledge_service.py`, `relearning_jobs.py`
+**Database tables**: `override_effectiveness_posteriors`, `override_causal_match_pairs`, `experiential_knowledge`, `powell_*_decisions` (11 tables with outcome columns)
+**Documentation**: [OVERRIDE_EFFECTIVENESS_METHODOLOGY.md](docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md), [POWELL_APPROACH.md](POWELL_APPROACH.md) §5.9.10-5.9.11
 
 ---
 
@@ -593,6 +595,7 @@ make proxy-logs
 - `ScenarioTreeManager.jsx`: Git-like scenario branching
 - `AuthorizationProtocolBoard.jsx`: AAP cross-functional negotiation visualization
 - `Governance.jsx` / `ExceptionWorkflows.jsx` / `ApprovalTemplates.jsx`: Governance and workflows
+- `ExperientialKnowledgeDashboard.jsx`: Experiential knowledge management — knowledge library, candidate confirmation, validation queue, contradiction resolution, analytics (GENUINE vs COMPENSATING, RL impact)
 
 **Components** (`components/`):
 - `supply-chain-config/`: Network configuration UI with D3-Sankey diagrams
@@ -753,6 +756,16 @@ Human overrides are scored using **Bayesian Beta posteriors** per `(user_id, trm
 
 See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 
+**Experiential Knowledge Layer** (extends override effectiveness into structured knowledge):
+- **Model**: `backend/app/models/experiential_knowledge.py` — `ExperientialKnowledge` with pgvector embedding, GENUINE/COMPENSATING classification, lifecycle management
+- **Service**: `backend/app/services/experiential_knowledge_service.py` — Pattern detection from override history, lifecycle management, RL integration methods (`get_state_augmentation`, `get_reward_shaping`, `get_cdt_uncertainty_modifier`, `get_conditional_modifiers`)
+- **Causal AI Integration**: Evidence enriched with `override_delta`, `override_classification`, `composite_override_score` from OutcomeCollector. Confidence computed from: (1) override count, (2) BENEFICIAL ratio from causal classifications (±0.15), (3) user Bayesian posterior effectiveness from `OverrideEffectivenessService` (±0.10). Auto-classification: majority BENEFICIAL → GENUINE, majority DETRIMENTAL → COMPENSATING
+- **API**: `/api/v1/experiential-knowledge/` — CRUD, lifecycle actions (validate, classify, resolve-contradiction, confirm candidate), pattern detection trigger
+- **Database table**: `experiential_knowledge` (tenant-scoped, pgvector 768-dim embedding, JSON conditions/effects/evidence with causal fields)
+- **Scheduler**: Daily at 03:15 — detects recurring override patterns (≥3 occurrences), stagnation, contradictions
+- **RL Integration**: State augmentation (appends conditional features to TRM state vectors), reward shaping (±0.05 from GENUINE only), conditional CDT (widens intervals when conditions active), simulation modifiers (multipliers on stochastic distributions)
+- **Reference**: Knut Alicke, "The Planner Was the System" — experiential knowledge as Powell Belief State (Bₜ)
+
 ### AWS SC Planning Flow
 
 **3-Step Planning Process** (AWS SC standard):
@@ -878,6 +891,7 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `powell_buffer_decisions`: Inventory buffer adjustment decisions
 - `override_effectiveness_posteriors`: Bayesian Beta posteriors per (user, trm_type) for override quality tracking
 - `override_causal_match_pairs`: Matched override vs non-override decision pairs for causal inference
+- `experiential_knowledge`: Structured behavioral knowledge entities elevated from override patterns — GENUINE/COMPENSATING classification, pgvector embedding for RAG, lifecycle management (CANDIDATE/ACTIVE/STALE/CONTRADICTED/RETIRED/SUPERSEDED), RL integration via state augmentation + reward shaping + conditional CDT
 
 ---
 
@@ -1686,6 +1700,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ Provisioning Stepper (14-step Powell Cascade warm-start pipeline with dependency tracking)
 - ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)
 - ✅ External Signal Intelligence (Outside-in planning: FRED, Open-Meteo, EIA, GDELT, Google Trends, openFDA → daily refresh → RAG context)
+- ✅ Experiential Knowledge Layer (Alicke's "Planner Was the System": override pattern detection → structured knowledge entities → RL state augmentation + reward shaping + conditional CDT + simulation modifiers. GENUINE vs COMPENSATING classification. Powell Belief State Bₜ integration)
 
 ---
 

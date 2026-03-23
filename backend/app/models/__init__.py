@@ -128,6 +128,9 @@ from .sc_entities import TradingPartner, Product, ProductBom
 # 4e-ext. Site Planning Config (Extension — ERP-specific heuristic dispatch)
 from .site_planning_config import SitePlanningConfig
 
+# 4e-ext2. Experiential Knowledge (Alicke's "Planner Was the System" — Powell Bₜ)
+from .experiential_knowledge import ExperientialKnowledge
+
 # 4e. Supplier models (Phase 2) - SC Compliant
 # VendorProduct must be imported after TradingPartner to resolve relationships
 from .supplier import (
