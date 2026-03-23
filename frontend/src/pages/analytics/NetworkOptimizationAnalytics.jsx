@@ -56,7 +56,7 @@ function computeGraphMetrics(siteList, laneList) {
   // --- Echelon depth (BFS from demand sinks) ---
   const echelon = {};
   const demandSites = siteList.filter(s =>
-    s.master_type === 'MARKET_DEMAND' || (degree[s.id]?.out === 0 && s.master_type !== 'MARKET_SUPPLY')
+    s.master_type === 'CUSTOMER' || (degree[s.id]?.out === 0 && s.master_type !== 'VENDOR')
   );
   // BFS backward from demand
   const queue = [];
@@ -93,8 +93,8 @@ function computeGraphMetrics(siteList, laneList) {
   const betweenness = {};
   for (const s of siteList) betweenness[s.id] = 0;
   // BFS from each source to each sink, count intermediaries
-  const sources = siteList.filter(s => s.master_type === 'MARKET_SUPPLY' || (degree[s.id]?.in === 0 && s.master_type !== 'MARKET_DEMAND'));
-  const sinks = siteList.filter(s => s.master_type === 'MARKET_DEMAND' || (degree[s.id]?.out === 0 && s.master_type !== 'MARKET_SUPPLY'));
+  const sources = siteList.filter(s => s.master_type === 'VENDOR' || (degree[s.id]?.in === 0 && s.master_type !== 'CUSTOMER'));
+  const sinks = siteList.filter(s => s.master_type === 'CUSTOMER' || (degree[s.id]?.out === 0 && s.master_type !== 'VENDOR'));
   for (const src of sources) {
     // BFS to find all reachable paths
     const parent = {};
@@ -126,12 +126,12 @@ function computeGraphMetrics(siteList, laneList) {
   // --- Single-source risk (internal sites with exactly 1 upstream supplier) ---
   const singleSource = {};
   for (const s of siteList) {
-    if (s.master_type === 'MARKET_SUPPLY' || s.master_type === 'MARKET_DEMAND') continue;
+    if (s.master_type === 'VENDOR' || s.master_type === 'CUSTOMER') continue;
     singleSource[s.id] = (inEdges[s.id] || []).length <= 1;
   }
 
   // --- Network metrics ---
-  const internal = siteList.filter(s => s.master_type !== 'MARKET_SUPPLY' && s.master_type !== 'MARKET_DEMAND');
+  const internal = siteList.filter(s => s.master_type !== 'VENDOR' && s.master_type !== 'CUSTOMER');
   const maxEchelon = Math.max(...Object.values(echelon), 0);
   const density = siteList.length > 1 ? laneList.length / (siteList.length * (siteList.length - 1)) : 0;
   const avgDegree = siteList.length > 0 ? Object.values(degree).reduce((s, d) => s + d.total, 0) / siteList.length : 0;
@@ -166,8 +166,8 @@ function computeGraphMetrics(siteList, laneList) {
 const TYPE_COLORS = {
   MANUFACTURER: { bg: 'bg-purple-100 text-purple-700', border: 'border-l-purple-500' },
   INVENTORY: { bg: 'bg-blue-100 text-blue-700', border: 'border-l-blue-500' },
-  MARKET_SUPPLY: { bg: 'bg-green-100 text-green-700', border: 'border-l-green-500' },
-  MARKET_DEMAND: { bg: 'bg-amber-100 text-amber-700', border: 'border-l-amber-500' },
+  VENDOR: { bg: 'bg-green-100 text-green-700', border: 'border-l-green-500' },
+  CUSTOMER: { bg: 'bg-amber-100 text-amber-700', border: 'border-l-amber-500' },
 };
 
 const RiskBadge = ({ value, label }) => {
@@ -186,12 +186,12 @@ const RiskBadge = ({ value, label }) => {
 // ---------------------------------------------------------------------------
 
 const ECHELON_LABELS = {
-  MARKET_DEMAND: 'Customer',
+  CUSTOMER: 'Customer',
   0: 'Retail / DC',
   1: 'Distribution',
   2: 'Manufacturing',
   3: 'Component Supply',
-  MARKET_SUPPLY: 'Vendor',
+  VENDOR: 'Vendor',
 };
 
 const ECHELON_COLORS = [
@@ -219,15 +219,15 @@ const ValueStreamMap = ({ sites, lanes, graph, hierarchy }) => {
   // Group sites by echelon
   const echelons = useMemo(() => {
     const groups = {};
-    const demandSites = sites.filter(s => s.master_type === 'MARKET_DEMAND' && matchesGeo(s));
-    const supplySites = sites.filter(s => s.master_type === 'MARKET_SUPPLY');
+    const demandSites = sites.filter(s => s.master_type === 'CUSTOMER' && matchesGeo(s));
+    const supplySites = sites.filter(s => s.master_type === 'VENDOR');
 
     if (demandSites.length > 0) {
       groups['demand'] = {
         label: 'Customers',
         echelon: -1,
         sites: demandSites,
-        type: 'MARKET_DEMAND',
+        type: 'CUSTOMER',
       };
     }
 
@@ -235,8 +235,8 @@ const ValueStreamMap = ({ sites, lanes, graph, hierarchy }) => {
     for (let e = 0; e <= maxEch; e++) {
       const eSites = sites.filter(s =>
         graph.echelon[s.id] === e &&
-        s.master_type !== 'MARKET_DEMAND' &&
-        s.master_type !== 'MARKET_SUPPLY'
+        s.master_type !== 'CUSTOMER' &&
+        s.master_type !== 'VENDOR'
       );
       const filtered = eSites.filter(matchesGeo);
       if (filtered.length > 0) {
@@ -254,7 +254,7 @@ const ValueStreamMap = ({ sites, lanes, graph, hierarchy }) => {
         label: 'Vendors',
         echelon: maxEch + 1,
         sites: supplySites,
-        type: 'MARKET_SUPPLY',
+        type: 'VENDOR',
       };
     }
 
@@ -337,7 +337,7 @@ const ValueStreamMap = ({ sites, lanes, graph, hierarchy }) => {
                   <span className="text-[10px] text-muted-foreground">Sites</span>
                   <span className="text-sm font-bold">{ech.sites.length}</span>
                 </div>
-                {ech.type !== 'MARKET_DEMAND' && ech.type !== 'MARKET_SUPPLY' && (
+                {ech.type !== 'CUSTOMER' && ech.type !== 'VENDOR' && (
                   <>
                     <div className="flex justify-between items-baseline">
                       <span className="text-[10px] text-muted-foreground">Avg Centrality</span>
@@ -464,7 +464,7 @@ const NetworkOptimizationAnalytics = () => {
   // Build enriched site list with all metrics
   const enrichedSites = useMemo(() => {
     return sites
-      .filter(s => s.master_type !== 'MARKET_SUPPLY' && s.master_type !== 'MARKET_DEMAND')
+      .filter(s => s.master_type !== 'VENDOR' && s.master_type !== 'CUSTOMER')
       .map(s => ({
         ...s,
         inDegree: graph.degree[s.id]?.in || 0,

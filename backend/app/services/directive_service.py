@@ -1964,10 +1964,10 @@ class DirectiveService:
 
         # Customer and vendor names for scenario event detection
         customer_names = [
-            s["name"] for s in sites if s.get("master_type") in ("MARKET_DEMAND", "CUSTOMER")
+            s["name"] for s in sites if s.get("master_type") in ("CUSTOMER", "CUSTOMER")
         ]
         vendor_names = [
-            s["name"] for s in sites if s.get("master_type") in ("MARKET_SUPPLY", "VENDOR")
+            s["name"] for s in sites if s.get("master_type") in ("VENDOR", "VENDOR")
         ]
 
         return {

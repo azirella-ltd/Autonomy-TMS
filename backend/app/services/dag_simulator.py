@@ -210,9 +210,9 @@ class LoadedTopology:
     vendor_reliability: Dict[str, float]             # supplier_name -> reliability (0-1)
 
     # Topology analysis
-    supply_sites: List[Node]      # vendor TradingPartner endpoints (VENDOR / MARKET_SUPPLY legacy)
+    supply_sites: List[Node]      # vendor TradingPartner endpoints (VENDOR / VENDOR legacy)
     inventory_sites: List[Node]   # INVENTORY / MANUFACTURER
-    demand_sites: List[Node]      # customer TradingPartner endpoints (CUSTOMER / MARKET_DEMAND legacy)
+    demand_sites: List[Node]      # customer TradingPartner endpoints (CUSTOMER / CUSTOMER legacy)
 
     # DAG structure: site_name -> list of (upstream_site_name, lane)
     upstream_map: Dict[str, List[Tuple[str, TransportationLane]]]
@@ -1441,7 +1441,7 @@ class DAGSimulator:
 
 
 def _is_supply(site: Node) -> bool:
-    """Check if site is a supply source (VENDOR or legacy MARKET_SUPPLY)."""
+    """Check if site is a supply source (VENDOR or legacy VENDOR)."""
     master = getattr(site, 'master_type', '') or ''
     node_type = getattr(site, 'node_type', '') or ''
     tpartner_type = getattr(site, 'tpartner_type', '') or ''
@@ -1454,7 +1454,7 @@ def _is_supply(site: Node) -> bool:
 
 
 def _is_demand(site: Node) -> bool:
-    """Check if site is a demand sink (CUSTOMER or legacy MARKET_DEMAND)."""
+    """Check if site is a demand sink (CUSTOMER or legacy CUSTOMER)."""
     master = getattr(site, 'master_type', '') or ''
     node_type = getattr(site, 'node_type', '') or ''
     tpartner_type = getattr(site, 'tpartner_type', '') or ''

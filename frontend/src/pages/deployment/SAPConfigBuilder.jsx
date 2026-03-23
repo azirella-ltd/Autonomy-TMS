@@ -83,8 +83,8 @@ const WIZARD_STEPS = [
 const MASTER_TYPES = [
   { value: 'MANUFACTURER', label: 'Manufacturer' },
   { value: 'INVENTORY', label: 'Inventory (DC/Warehouse)' },
-  { value: 'MARKET_SUPPLY', label: 'Market Supply (Vendor)' },
-  { value: 'MARKET_DEMAND', label: 'Market Demand (Customer)' },
+  { value: 'VENDOR', label: 'Vendor (Supplier)' },
+  { value: 'CUSTOMER', label: 'Customer' },
 ];
 
 const INV_POLICY_TYPES = [

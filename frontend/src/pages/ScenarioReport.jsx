@@ -78,8 +78,8 @@ const FALLBACK_ROLE_COLORS = [
   "#8b5cf6",
 ];
 
-const MARKET_DEMAND_TYPE = "market_demand";
-const MARKET_SUPPLY_TYPE = "market_supply";
+const CUSTOMER_TYPE = "market_demand";
+const VENDOR_TYPE = "market_supply";
 
 const normalizeNodeTypeToken = (value) =>
   String(value ?? "")
@@ -682,8 +682,8 @@ const ScenarioReport = () => {
       [
         ...roles,
         ...Array.from(observedNodeTypesSet || []),
-        MARKET_DEMAND_TYPE,
-        MARKET_SUPPLY_TYPE,
+        CUSTOMER_TYPE,
+        VENDOR_TYPE,
       ]
         .map((entry) => normalizeNodeTypeToken(entry))
         .filter(Boolean)
@@ -691,10 +691,10 @@ const ScenarioReport = () => {
     const ordered = allowedTypes.filter(
       (role) => present.has(role) && allowedTypes.includes(role)
     );
-    const supplyIndex = ordered.indexOf(MARKET_SUPPLY_TYPE);
+    const supplyIndex = ordered.indexOf(VENDOR_TYPE);
     if (supplyIndex >= 0) {
       ordered.splice(supplyIndex, 1);
-      ordered.push(MARKET_SUPPLY_TYPE);
+      ordered.push(VENDOR_TYPE);
     }
     const remaining = Array.from(present).filter(
       (role) => !ordered.includes(role) && allowedTypes.includes(role)
@@ -722,9 +722,9 @@ const ScenarioReport = () => {
       const normalizedKey = normalizeNodeTypeToken(key) || String(key ?? "");
       map[normalizedKey] = value;
     });
-    map.market = map.market || map.market_demand || "Market Demand";
-    map.market_demand = map.market_demand || "Market Demand";
-    map.market_supply = map.market_supply || "Market Supply";
+    map.market = map.market || map.market_demand || "Customer";
+    map.market_demand = map.market_demand || "Customer";
+    map.market_supply = map.market_supply || "Vendor";
     return map;
   }, [siteTypeLabelMap]);
 
@@ -1671,7 +1671,7 @@ const ScenarioReport = () => {
   const getTableMetricForRole = useCallback(
     (role, summary, entry) => {
       const normalizedRole = normalizeNodeTypeToken(role);
-      if (normalizedRole === MARKET_DEMAND_TYPE) {
+      if (normalizedRole === CUSTOMER_TYPE) {
         if (summary && summary.demand !== undefined && summary.demand !== null) {
           return parseNumberSafe(summary.demand);
         }
@@ -1680,7 +1680,7 @@ const ScenarioReport = () => {
         }
         return 0;
       }
-      if (normalizedRole === MARKET_SUPPLY_TYPE) {
+      if (normalizedRole === VENDOR_TYPE) {
         if (summary && summary.shipments !== undefined && summary.shipments !== null) {
           return parseNumberSafe(summary.shipments);
         }
@@ -1716,7 +1716,7 @@ const ScenarioReport = () => {
       const summaries = entry.node_type_summaries || {};
       let demandSummary = null;
       for (const [typeKey, summary] of Object.entries(summaries)) {
-        if (normalizeNodeTypeToken(typeKey) === MARKET_DEMAND_TYPE) {
+        if (normalizeNodeTypeToken(typeKey) === CUSTOMER_TYPE) {
           demandSummary = summary;
           break;
         }
@@ -2035,7 +2035,7 @@ const ScenarioReport = () => {
                         {report?.name || "Supply Chain Simulation"}
                       </h1>
                       <p className="text-indigo-700 text-lg">
-                        Market Demand Orders Satisfied
+                        Customer Orders Satisfied
                       </p>
                       <p className="text-4xl font-extrabold text-indigo-900">
                         {quantityFormatter.format(

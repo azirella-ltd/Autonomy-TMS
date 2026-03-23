@@ -588,7 +588,7 @@ class MultiStageCTPService:
         cumulative_lt: int,
     ) -> StageResult:
         """
-        Check availability at a vendor (VENDOR / MARKET_SUPPLY legacy) site.
+        Check availability at a vendor (VENDOR / VENDOR legacy) site.
 
         Terminal stage — assumes vendor can supply (with lead time).
         Uses vendor capacity if configured, otherwise assumes unlimited.

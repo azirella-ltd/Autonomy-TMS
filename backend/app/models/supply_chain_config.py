@@ -34,8 +34,8 @@ class NodeType(str, PyEnum):
     # External trading partners — represented by TradingPartner records, not internal sites.
     # These values are retained for backward compatibility with existing DB rows during migration.
     # New code must use Site.is_external=True + Site.trading_partner_id instead.
-    VENDOR = "VENDOR"       # replaces MARKET_SUPPLY
-    CUSTOMER = "CUSTOMER"   # replaces MARKET_DEMAND
+    VENDOR = "VENDOR"       # replaces VENDOR
+    CUSTOMER = "CUSTOMER"   # replaces CUSTOMER
     # Legacy TBG types — retained for backward compatibility with existing DB rows.
     # New configs should use DISTRIBUTION_CENTER, WAREHOUSE, MANUFACTURING_PLANT.
     RETAILER = "RETAILER"
@@ -270,7 +270,7 @@ class Site(Base):
     master_type = Column(String(100), nullable=True)
 
     # External party flags (Phase 1 of Site/TradingPartner refactor)
-    # is_external=True marks vendor/customer network endpoints (was MARKET_SUPPLY/MARKET_DEMAND).
+    # is_external=True marks vendor/customer network endpoints (was VENDOR/CUSTOMER).
     is_external = Column(Boolean, nullable=False, default=False)
     # FK to TradingPartner._id — mandatory when is_external=True.
     trading_partner_id = Column(Integer, ForeignKey("trading_partners._id"), nullable=True)

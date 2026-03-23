@@ -64,7 +64,7 @@ const CapacityOptimizationAnalytics = () => {
             setAllSites(sitesList);
             setAllProducts(Array.isArray(prodsResp.data) ? prodsResp.data : []);
             const internal = sitesList.filter(
-              s => s.master_type !== 'MARKET_SUPPLY' && s.master_type !== 'MARKET_DEMAND'
+              s => s.master_type !== 'VENDOR' && s.master_type !== 'CUSTOMER'
             );
             for (const s of internal) {
               const util = 55 + Math.random() * 40; // 55-95%

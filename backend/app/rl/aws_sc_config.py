@@ -112,8 +112,8 @@ class SiteType(str, Enum):
     INVENTORY = "INVENTORY"              # Storage/fulfillment
     MANUFACTURER = "MANUFACTURER"        # Transform node with BOM
     # Legacy aliases kept for backward compatibility with existing DB rows
-    MARKET_DEMAND = "CUSTOMER"
-    MARKET_SUPPLY = "VENDOR"
+    CUSTOMER = "CUSTOMER"
+    VENDOR = "VENDOR"
 
 
 # Simulation role to SC site type mapping
@@ -485,7 +485,7 @@ def get_sc_node_features(
         List of feature values matching AWS_SC_NODE_FEATURES
     """
     # Site type one-hot (4 types — CUSTOMER/VENDOR are the canonical names;
-    # MARKET_DEMAND/MARKET_SUPPLY are legacy aliases that map to the same slots)
+    # CUSTOMER/VENDOR are legacy aliases that map to the same slots)
     site_type_onehot = [0.0] * 4
     site_types = [
         SiteType.CUSTOMER.value,

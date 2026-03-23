@@ -276,7 +276,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     });
     // Always recognise AWS SC market types so SAP-imported configs resolve
     // correctly even when definitions don't explicitly list them.
-    ['MARKET_DEMAND', 'MARKET_SUPPLY', 'CUSTOMER', 'VENDOR', 'INVENTORY', 'MANUFACTURER',
+    ['CUSTOMER', 'VENDOR', 'CUSTOMER', 'VENDOR', 'INVENTORY', 'MANUFACTURER',
      'DISTRIBUTION_CENTER', 'WAREHOUSE', 'MANUFACTURING_PLANT',
      'RETAILER', 'WHOLESALER', 'DISTRIBUTOR'].forEach(
       (token) => {
@@ -297,8 +297,8 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     // AWS SC canonical mapping — normalize external trading partner master types
     // to their human-friendly equivalents so all configs use consistent tokens.
     const MARKET_TYPE_CANONICAL = {
-      MARKET_DEMAND: 'CUSTOMER',
-      MARKET_SUPPLY: 'VENDOR',
+      CUSTOMER: 'CUSTOMER',
+      VENDOR: 'VENDOR',
     };
     if (masterType && MARKET_TYPE_CANONICAL[masterType]) {
       return MARKET_TYPE_CANONICAL[masterType];
@@ -947,10 +947,10 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
           partnerNodeMap.set(pid, {
             id: pid,
             name: lane.from_partner_name || `Vendor ${lane.from_partner_id}`,
-            type: 'MARKET_SUPPLY',
-            master_type: 'MARKET_SUPPLY',
+            type: 'VENDOR',
+            master_type: 'VENDOR',
             dag_type: 'SUPPLIER',
-            color: typeStyles.SUPPLIER?.color || typeStyles.MARKET_SUPPLY?.color || '#4ade80',
+            color: typeStyles.SUPPLIER?.color || typeStyles.VENDOR?.color || '#4ade80',
             isPartner: true,
           });
         }
@@ -961,10 +961,10 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
           partnerNodeMap.set(pid, {
             id: pid,
             name: lane.to_partner_name || `Customer ${lane.to_partner_id}`,
-            type: 'MARKET_DEMAND',
-            master_type: 'MARKET_DEMAND',
+            type: 'CUSTOMER',
+            master_type: 'CUSTOMER',
             dag_type: 'CUSTOMER',
-            color: typeStyles.CUSTOMER?.color || typeStyles.MARKET_DEMAND?.color || '#f87171',
+            color: typeStyles.CUSTOMER?.color || typeStyles.CUSTOMER?.color || '#f87171',
             isPartner: true,
           });
         }
@@ -1402,8 +1402,8 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     const customerKey = normalizeTypeToken(CUSTOMER_TYPE);
     const vendorKey = normalizeTypeToken(VENDOR_TYPE);
     // Also recognize AWS SC master types that resolve to CUSTOMER/VENDOR
-    const marketDemandKey = normalizeTypeToken('MARKET_DEMAND');
-    const marketSupplyKey = normalizeTypeToken('MARKET_SUPPLY');
+    const marketDemandKey = normalizeTypeToken('CUSTOMER');
+    const marketSupplyKey = normalizeTypeToken('VENDOR');
     if (normalizedTypeSet.has(customerKey)) registerType(CUSTOMER_TYPE);
     if (normalizedTypeSet.has(vendorKey)) registerType(VENDOR_TYPE);
 
@@ -1412,7 +1412,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     // toward supply sources. We reverse later so vendors are on the left.
     const distanceByType = new Map();
     const queue = [];
-    // Seed from CUSTOMER and/or MARKET_DEMAND (both resolve to CUSTOMER via
+    // Seed from CUSTOMER and/or CUSTOMER (both resolve to CUSTOMER via
     // resolveSiteTypeToken, but handle configs that use either convention)
     if (normalizedTypeSet.has(customerKey)) {
       queue.push([customerKey, 0]);
@@ -1465,7 +1465,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       }
     }
 
-    // If BFS didn't seed (no CUSTOMER/MARKET_DEMAND), seed from terminal sink
+    // If BFS didn't seed (no CUSTOMER/CUSTOMER), seed from terminal sink
     // types (no outgoing edges = demand endpoints) and re-run.
     if (distanceByType.size === 0) {
       normalizedTypeSet.forEach((typeKey) => {
@@ -2435,7 +2435,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         return null;
       }
       const magnitude = Number.isFinite(Number(link.value)) ? Number(link.value) : 0;
-      const returnLabel = `${formatSite(link.source?.id, link.source?.name) || 'Market Demand'} → ${formatSite(link.target?.id, link.target?.name) || 'Market Supply'}`;
+      const returnLabel = `${formatSite(link.source?.id, link.source?.name) || 'Customer'} → ${formatSite(link.target?.id, link.target?.name) || 'Vendor'}`;
       return (
         <div className="flex flex-col gap-1 p-1">
           <span className="text-sm font-semibold">

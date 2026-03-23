@@ -164,8 +164,8 @@ def get_selectable_entities(
     # Sites by type
     sites = db.query(SiteModel).filter(SiteModel.config_id == config_id).all()
     internal_sites = [s for s in sites if s.master_type in ("MANUFACTURER", "INVENTORY")]
-    customer_sites = [s for s in sites if s.master_type in ("MARKET_DEMAND", "CUSTOMER")]
-    vendor_sites = [s for s in sites if s.master_type in ("MARKET_SUPPLY", "VENDOR")]
+    customer_sites = [s for s in sites if s.master_type in ("CUSTOMER", "CUSTOMER")]
+    vendor_sites = [s for s in sites if s.master_type in ("VENDOR", "VENDOR")]
 
     # Lanes
     lanes = db.query(Lane).filter(Lane.config_id == config_id).all()

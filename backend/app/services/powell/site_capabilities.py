@@ -146,7 +146,7 @@ def get_active_trms(
     """
     mt = master_type.lower()
 
-    # Backward-compatibility: map legacy MARKET_SUPPLY/MARKET_DEMAND to new names
+    # Backward-compatibility: map legacy VENDOR/CUSTOMER to new names
     _LEGACY_MAP = {"market_supply": "vendor", "market_demand": "customer"}
     mt = _LEGACY_MAP.get(mt, mt)
 

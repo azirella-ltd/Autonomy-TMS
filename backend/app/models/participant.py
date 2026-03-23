@@ -117,8 +117,8 @@ class ScenarioUserRole(str, Enum):
     DISTRIBUTOR = NodeType.DISTRIBUTOR.value
     MANUFACTURER = NodeType.MANUFACTURER.value
     SUPPLIER = NodeType.SUPPLIER.value
-    VENDOR = NodeType.VENDOR.value      # replaces MARKET_SUPPLY
-    CUSTOMER = NodeType.CUSTOMER.value  # replaces MARKET_DEMAND
+    VENDOR = NodeType.VENDOR.value      # replaces VENDOR
+    CUSTOMER = NodeType.CUSTOMER.value  # replaces CUSTOMER
 
 
 class ScenarioUserType(str, Enum):

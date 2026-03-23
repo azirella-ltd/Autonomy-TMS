@@ -120,8 +120,8 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
   // Normalize AWS SC master_type to display tokens used in COLUMN_ORDER/TYPE_COLORS
   const normalizeMasterType = (raw) => {
     const t = (raw || '').toUpperCase();
-    if (t === 'MARKET_SUPPLY') return 'VENDOR';
-    if (t === 'MARKET_DEMAND') return 'CUSTOMER';
+    if (t === 'VENDOR') return 'VENDOR';
+    if (t === 'CUSTOMER') return 'CUSTOMER';
     return t;
   };
 

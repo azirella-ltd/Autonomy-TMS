@@ -39,7 +39,7 @@ const InventoryOptimizationAnalytics = () => {
         setAllSites(sitesList);
         setAllProducts(Array.isArray(prodsResp.data) ? prodsResp.data : []);
         const internal = sitesList.filter(
-          s => s.master_type !== 'MARKET_SUPPLY' && s.master_type !== 'MARKET_DEMAND'
+          s => s.master_type !== 'VENDOR' && s.master_type !== 'CUSTOMER'
         );
 
         // Build inventory policy view per site

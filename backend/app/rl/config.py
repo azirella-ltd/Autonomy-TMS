@@ -17,8 +17,8 @@ NODE_FEATURES: List[str] = [
     "incoming_shipments",
     "on_order",           # pipeline (orders placed but not arrived yet)
     # Site-type conditioning — AWS SC master_type one-hot
-    "site_type_vendor",          # VENDOR (upstream source; legacy: MARKET_SUPPLY)
-    "site_type_customer",        # CUSTOMER (terminal demand sink; legacy: MARKET_DEMAND)
+    "site_type_vendor",          # VENDOR (upstream source; legacy: VENDOR)
+    "site_type_customer",        # CUSTOMER (terminal demand sink; legacy: CUSTOMER)
     "site_type_inventory",       # INVENTORY (storage/fulfillment)
     "site_type_manufacturer",    # MANUFACTURER (transform with BOM)
     "lead_time_order", "lead_time_supply",

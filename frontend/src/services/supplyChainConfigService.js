@@ -215,7 +215,7 @@ export const deleteMarket = async (configId, marketId) => {
   await api.delete(`${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/markets/${marketId}`);
 };
 
-// Market Demands CRUD
+// Customers CRUD
 export const getMarketDemands = async (configId) => {
   const response = await api.get(`${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/market-demands`);
   return response.data;
@@ -330,7 +330,7 @@ export const DEFAULT_PRODUCT_SITE_CONFIG = {
   selling_price_range: { min: 5, max: 50 },
 };
 
-export const DEFAULT_MARKET_DEMAND = {
+export const DEFAULT_CUSTOMER = {
   product_id: null,  // AWS SC DM compliant (was item_id)
   market_id: null,
   demand_pattern: {
@@ -354,12 +354,12 @@ export const CLASSIC_SUPPLY_CHAIN = {
     },
   ],
   sites: [
-    { id: 1, name: 'Market Supply', type: 'market_supply', description: '' },
+    { id: 1, name: 'Vendor', type: 'market_supply', description: '' },
     { id: 2, name: 'Manufacturer 1', type: 'manufacturer', description: '' },
     { id: 3, name: 'Distributor 1', type: 'distributor', description: '' },
     { id: 4, name: 'Wholesaler 1', type: 'wholesaler', description: '' },
     { id: 5, name: 'Retailer 1', type: 'retailer', description: '' },
-    { id: 6, name: 'Market Demand', type: 'market_demand', description: '' },
+    { id: 6, name: 'Customer', type: 'market_demand', description: '' },
   ],
   lanes: [
     {
