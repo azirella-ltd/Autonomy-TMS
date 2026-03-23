@@ -23,9 +23,10 @@ import useTabStore from '../stores/useTabStore';
 import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 import { cn } from '../lib/utils/cn';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, Mic, MicOff } from 'lucide-react';
 import Markdown from 'react-markdown';
 import AzirellaAvatar from './AzirellaAvatar';
+import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
 
 const ADMIN_TAB_ID = 'tab-administration';
 const AZIRELLA_PANEL_WIDTH = 380;
@@ -46,9 +47,36 @@ const WorkspaceShell = () => {
   const [azInput, setAzInput] = useState('');
   const [azMessages, setAzMessages] = useState([]);
   const [azLoading, setAzLoading] = useState(false);
-  const [azPanelOpen, setAzPanelOpen] = useState(false); // Hidden by default, toggle via navbar button
-  const [azConversationId, setAzConversationId] = useState(null); // Thread conversation history
+  const [azPanelOpen, setAzPanelOpen] = useState(false);
+  const [azConversationId, setAzConversationId] = useState(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const azEndRef = useRef(null);
+  const azInputRef = useRef(null);
+
+  // Voice assistant for the conversation panel
+  const voiceAssistant = useVoiceAssistant({
+    onUtterance: (text) => {
+      if (text && voiceEnabled) {
+        setAzInput(text);
+        // Auto-submit after voice input
+        setTimeout(() => {
+          const submitBtn = document.getElementById('az-panel-submit');
+          if (submitBtn) submitBtn.click();
+        }, 300);
+      }
+    },
+    enabled: voiceEnabled && azPanelOpen,
+  });
+
+  // Turn off voice when panel closes
+  useEffect(() => {
+    if (!azPanelOpen && voiceEnabled) {
+      setVoiceEnabled(false);
+      if (voiceAssistant.state === VoiceState.LISTENING) {
+        voiceAssistant.stop?.();
+      }
+    }
+  }, [azPanelOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     azEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -306,16 +334,46 @@ const WorkspaceShell = () => {
         })}
       </div>
 
+      {/* ═══ FLOATING AZIRELLA AVATAR — bottom right ═══ */}
+      {canShowAzirella && !showAzirellaPanel && (
+        <button
+          onClick={() => setAzPanelOpen(true)}
+          className="fixed z-50 rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
+          style={{
+            bottom: 24,
+            right: 24,
+            width: 56,
+            height: 56,
+            padding: 0,
+            border: '2px solid #a78bfa',
+            background: 'white',
+            cursor: 'pointer',
+            overflow: 'hidden',
+          }}
+          title="Talk to Azirella"
+        >
+          <AzirellaAvatar size={52} inline voiceState="idle" />
+        </button>
+      )}
+
       {/* ═══ AZIRELLA PANEL — right side ═══ */}
       {showAzirellaPanel && (
         <div
           className="fixed right-0 top-16 bottom-0 z-30 flex flex-col border-l"
           style={{ width: AZIRELLA_PANEL_WIDTH, backgroundColor: '#faf9ff' }}
         >
-          {/* Minimal header */}
+          {/* Header with close */}
           <div className="flex items-center gap-2 px-3 py-1.5 border-b flex-shrink-0" style={{ backgroundColor: '#f0edff' }}>
+            <AzirellaAvatar size={28} inline voiceState={azLoading ? 'processing' : voiceEnabled ? 'listening' : 'idle'} />
             <span className="font-semibold text-sm" style={{ color: '#5b21b6' }}>Azirella</span>
             <span className="text-xs ml-auto" style={{ color: '#a78bfa' }}>AI Assistant</span>
+            <button
+              onClick={() => setAzPanelOpen(false)}
+              className="ml-1 p-1 rounded hover:bg-violet-200 transition-colors"
+              title="Close Azirella"
+            >
+              <svg className="h-4 w-4" style={{ color: '#7c3aed' }} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
           </div>
 
           {/* Conversation */}
@@ -365,22 +423,32 @@ const WorkspaceShell = () => {
             <div ref={azEndRef} />
           </div>
 
-          {/* Input with avatar */}
+          {/* Input bar with voice toggle */}
           <div className="border-t px-3 py-2.5 flex items-center gap-2 flex-shrink-0" style={{ backgroundColor: '#faf9ff' }}>
-            <AzirellaAvatar
-              voiceState={azLoading ? 'processing' : 'idle'}
-              size={32}
-              inline
-            />
+            {/* Voice toggle — red=off, green=on */}
+            <button
+              onClick={() => setVoiceEnabled(prev => !prev)}
+              className={cn(
+                "flex-shrink-0 p-2 rounded-full transition-all duration-200",
+                voiceEnabled
+                  ? "bg-green-100 text-green-600 hover:bg-green-200 ring-2 ring-green-300"
+                  : "bg-red-50 text-red-400 hover:bg-red-100"
+              )}
+              title={voiceEnabled ? "Voice on — click to mute" : "Voice off — click to enable"}
+            >
+              {voiceEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+            </button>
             <input
+              ref={azInputRef}
               type="text"
               value={azInput}
               onChange={(e) => setAzInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAzSubmit(); } }}
-              placeholder="Ask Azirella..."
+              placeholder={voiceEnabled ? 'Listening… or type here' : 'Ask Azirella...'}
               style={{ flex: 1, border: '1px solid #e5e7eb', borderRadius: '8px', padding: '8px 12px', fontSize: '13px', outline: 'none' }}
             />
             <button
+              id="az-panel-submit"
               onClick={handleAzSubmit}
               disabled={azLoading || !azInput.trim()}
               style={{ padding: '8px', borderRadius: '50%', color: azLoading || !azInput.trim() ? '#9ca3af' : '#7c3aed', background: 'none', border: 'none', cursor: 'pointer' }}

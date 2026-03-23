@@ -869,24 +869,7 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
                 <Bell className="h-5 w-5" />
                 <span className="absolute top-1 right-1 h-2 w-2 bg-destructive rounded-full" />
               </button>
-              {/* Azirella panel toggle */}
-              {onToggleAzirella && (
-                <button
-                  onClick={onToggleAzirella}
-                  className={cn(
-                    "p-2 rounded-full transition-colors",
-                    azirellaPanelOpen
-                      ? "bg-violet-100 text-violet-700 hover:bg-violet-200"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  )}
-                  title={azirellaPanelOpen ? "Hide Azirella" : "Show Azirella"}
-                >
-                  {azirellaPanelOpen
-                    ? <PanelRightClose className="h-5 w-5" />
-                    : <PanelRightOpen className="h-5 w-5" />
-                  }
-                </button>
-              )}
+              {/* Azirella panel toggle removed — floating avatar handles this */}
             </>
           )}
 
