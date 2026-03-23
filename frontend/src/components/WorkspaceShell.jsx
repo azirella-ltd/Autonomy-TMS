@@ -128,24 +128,28 @@ const WorkspaceShell = () => {
       return; // Skip admin tab for DEMO_ALL
     }
 
-    // Tenant admin / System admin → Decision Stream + Administration
+    // Tenant admin / System admin → Administration only (no Decision Stream)
     if (isTenantAdm || isSysAdm) {
-      const adminPath = isSysAdm ? '/admin/tenants' : '/admin';
-      if (!currentTabs.find((t) => t.id === ADMIN_TAB_ID)) {
-        useTabStore.setState((s) => ({
-          tabs: [
-            ...s.tabs,
-            {
-              id: ADMIN_TAB_ID,
-              path: adminPath,
-              label: 'Administration',
-              pinned: false,
-              closeable: true,
-              scrollY: 0,
-            },
-          ],
-        }));
-      }
+      const adminPath = isSysAdm ? '/admin/tenants' : '/admin/user-management';
+      // Replace tabs entirely — admin doesn't get Decision Stream
+      const adminTab = {
+        id: ADMIN_TAB_ID,
+        path: adminPath,
+        label: 'Administration',
+        pinned: true,
+        closeable: false,
+        scrollY: 0,
+      };
+      // Remove Decision Stream, keep only Administration as the pinned tab
+      useTabStore.setState((s) => {
+        const nonDS = s.tabs.filter((t) => t.id !== 'tab-decision-stream');
+        const hasAdmin = nonDS.find((t) => t.id === ADMIN_TAB_ID);
+        return {
+          tabs: hasAdmin ? nonDS : [adminTab, ...nonDS],
+          activeTabId: ADMIN_TAB_ID,
+        };
+      });
+      navigate(adminPath);
       return;
     }
 
