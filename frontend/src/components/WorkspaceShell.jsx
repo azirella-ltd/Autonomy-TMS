@@ -272,27 +272,20 @@ const WorkspaceShell = () => {
       <div
         className={cn(
           'pt-16 transition-all duration-200 ease-in-out',
-          isAdminTab ? (sidebarOpen ? 'ml-[280px]' : 'ml-[65px]') : 'ml-0',
+          'ml-0',
         )}
         style={{ marginRight: panelWidth }}
       >
         <TabBar />
       </div>
 
-      {/* Sidebar — only visible when an admin tab is active */}
-      {isAdminTab && (
-        <CapabilityAwareSidebar
-          open={sidebarOpen}
-          onToggle={handleSidebarToggle}
-          adminOnly={!isFullFunctionalityTab && user?.decision_level !== 'DEMO_ALL'}
-        />
-      )}
+      {/* Sidebar removed — all navigation through tabs via "+" palette */}
 
       {/* Tab content area */}
       <div
         className={cn(
           'flex-1 flex flex-col transition-all duration-200 ease-in-out',
-          isAdminTab ? (sidebarOpen ? 'ml-[280px]' : 'ml-[65px]') : 'ml-0',
+          'ml-0',
         )}
         style={{ marginRight: panelWidth }}
       >
