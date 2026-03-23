@@ -647,6 +647,7 @@ class HierarchicalMetricsService:
             today = date.today()
             year_end = date(today.year + 1, today.month, today.day)
 
+            # Try customer-scoped first, then fall back to all forecasts
             row = (
                 self.db.query(
                     func.sum(Forecast.forecast_p50 * Product.unit_price).label("rev"),
@@ -665,6 +666,24 @@ class HierarchicalMetricsService:
                 )
                 .first()
             )
+            # Fallback: no customer sites → use all forecasts
+            if not row or not row.rev:
+                row = (
+                    self.db.query(
+                        func.sum(Forecast.forecast_p50 * Product.unit_price).label("rev"),
+                        func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
+                    )
+                    .join(Product, Forecast.product_id == Product.id)
+                    .filter(
+                        Forecast.config_id == config.id,
+                        Forecast.is_active == "true",
+                        Forecast.forecast_date >= today,
+                        Forecast.forecast_date < year_end,
+                        Product.unit_price.isnot(None),
+                        Product.unit_cost.isnot(None),
+                    )
+                    .first()
+                )
             if row and row.rev and float(row.rev) > 0:
                 rev = float(row.rev)
                 cost = float(row.cost or 0)
@@ -716,6 +735,7 @@ class HierarchicalMetricsService:
             year_end = date(today.year + 1, today.month, today.day)
 
             # Annual demand (COGS basis)
+            # First try customer-scoped demand, then fall back to all demand
             demand_row = (
                 self.db.query(
                     func.sum(Forecast.forecast_p50 * Product.unit_cost).label("annual_cogs"),
@@ -732,6 +752,22 @@ class HierarchicalMetricsService:
                 )
                 .first()
             )
+            # Fallback: if no customer-scoped demand, use all forecasts
+            if not demand_row or not demand_row.annual_cogs:
+                demand_row = (
+                    self.db.query(
+                        func.sum(Forecast.forecast_p50 * Product.unit_cost).label("annual_cogs"),
+                    )
+                    .join(Product, Forecast.product_id == Product.id)
+                    .filter(
+                        Forecast.config_id == config.id,
+                        Forecast.is_active == "true",
+                        Forecast.forecast_date >= today,
+                        Forecast.forecast_date < year_end,
+                        Product.unit_cost.isnot(None),
+                    )
+                    .first()
+                )
 
             inv_value = float(oh_row.inv_value or 0) if oh_row else 0
             annual_cogs = float(demand_row.annual_cogs or 0) if demand_row else 0
@@ -744,6 +780,27 @@ class HierarchicalMetricsService:
         except Exception:
             logger.exception("Failed to compute inventory metrics for tenant=%s", tenant_id)
             return {}
+
+    def _get_company_ids_for_tenant(self, tenant_id: int) -> List[str]:
+        """Return all company_id values linked to a tenant's configs."""
+        from app.models.supply_chain_config import SupplyChainConfig
+        from app.models.sc_entities import Company
+        configs = (
+            self.db.query(SupplyChainConfig.id)
+            .filter(SupplyChainConfig.tenant_id == tenant_id)
+            .all()
+        )
+        if not configs:
+            return []
+        config_ids = [c.id for c in configs]
+        # Get company_ids from sites linked to these configs
+        from app.models.supply_chain_config import Site
+        company_rows = (
+            self.db.query(func.distinct(Site.company_id))
+            .filter(Site.config_id.in_(config_ids), Site.company_id.isnot(None))
+            .all()
+        )
+        return [r[0] for r in company_rows if r[0]]
 
     def _compute_l1_strategic(self, tenant_id: int) -> Dict[str, Any]:
         """Compute SCOR Level 1 strategic metrics: POF, SCCT, C2C."""
@@ -761,6 +818,8 @@ class HierarchicalMetricsService:
             )
             if not config:
                 return metrics
+
+            company_ids = self._get_company_ids_for_tenant(tenant_id)
 
             # ── POF: Perfect Order Fulfillment ──
             # % of orders delivered in full, on time, undamaged, with correct docs
@@ -780,7 +839,39 @@ class HierarchicalMetricsService:
                     .limit(500)
                     .all()
                 )
-                if ool_rows:
+                # Fallback to FulfillmentOrder if OutboundOrderLine is empty
+                if not ool_rows and company_ids:
+                    fo_rows = (
+                        self.db.query(
+                            FulfillmentOrder.quantity,
+                            FulfillmentOrder.shipped_quantity,
+                            FulfillmentOrder.promised_date,
+                            FulfillmentOrder.ship_date,
+                            FulfillmentOrder.status,
+                        )
+                        .filter(
+                            FulfillmentOrder.company_id.in_(company_ids),
+                            FulfillmentOrder.status.in_(["DELIVERED", "SHIPPED"]),
+                        )
+                        .limit(500)
+                        .all()
+                    )
+                    if fo_rows:
+                        perfect = 0
+                        for r in fo_rows:
+                            qty_ok = (r.shipped_quantity or 0) >= (r.quantity or 0)
+                            time_ok = (
+                                r.ship_date is not None
+                                and r.promised_date is not None
+                                and r.ship_date <= r.promised_date
+                            ) if r.promised_date else True
+                            if qty_ok and time_ok:
+                                perfect += 1
+                        n = len(fo_rows)
+                        ci_lo, ci_hi = _wilson_ci(perfect, n)
+                        metrics["perfect_order_fulfillment"] = round(perfect / n * 100, 1)
+                        metrics["_ci_perfect_order_fulfillment"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": n}
+                elif ool_rows:
                     perfect = 0
                     for r in ool_rows:
                         qty_ok = (r.shipped_quantity or 0) >= (r.ordered_quantity or 0)
@@ -816,7 +907,33 @@ class HierarchicalMetricsService:
                     .limit(500)
                     .all()
                 )
-                if ct_rows:
+                # Fallback to FulfillmentOrder
+                if not ct_rows and company_ids:
+                    ct_rows_fo = (
+                        self.db.query(
+                            FulfillmentOrder.created_date,
+                            FulfillmentOrder.delivery_date,
+                        )
+                        .filter(
+                            FulfillmentOrder.company_id.in_(company_ids),
+                            FulfillmentOrder.created_date.isnot(None),
+                            FulfillmentOrder.delivery_date.isnot(None),
+                            FulfillmentOrder.status == "DELIVERED",
+                        )
+                        .limit(500)
+                        .all()
+                    )
+                    if ct_rows_fo:
+                        cycle_days = []
+                        for r in ct_rows_fo:
+                            delta = (r.delivery_date - r.created_date).days
+                            if 0 <= delta <= 365:
+                                cycle_days.append(delta)
+                        if cycle_days:
+                            mean_val, ci_lo, ci_hi = _mean_ci(cycle_days)
+                            metrics["supply_chain_cycle_time"] = round(sum(cycle_days) / len(cycle_days), 1)
+                            metrics["_ci_supply_chain_cycle_time"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": len(cycle_days)}
+                elif ct_rows:
                     cycle_days = []
                     for r in ct_rows:
                         delta = (r.last_ship_date - r.order_date).days
@@ -907,7 +1024,7 @@ class HierarchicalMetricsService:
             return metrics
         try:
             from app.models.supply_chain_config import SupplyChainConfig, Site
-            from app.models.sc_entities import OutboundOrderLine, Forecast
+            from app.models.sc_entities import OutboundOrderLine, FulfillmentOrder, Forecast
 
             config = (
                 self.db.query(SupplyChainConfig)
@@ -916,6 +1033,8 @@ class HierarchicalMetricsService:
             )
             if not config:
                 return metrics
+
+            company_ids = self._get_company_ids_for_tenant(tenant_id)
 
             # ── FR: Fill Rate ──
             # % of ordered quantity actually shipped
@@ -931,12 +1050,12 @@ class HierarchicalMetricsService:
                     )
                     .first()
                 )
-                if fr_row and fr_row.ordered and float(fr_row.ordered) > 0:
+                has_ool_fr = fr_row and fr_row.ordered and float(fr_row.ordered) > 0
+                if has_ool_fr:
                     shipped = float(fr_row.shipped or 0)
                     ordered = float(fr_row.ordered)
                     fr = min(shipped / ordered * 100, 100.0)
                     metrics["fill_rate"] = round(fr, 1)
-                    # FR is an aggregate ratio, not a proportion — use per-line fill for CI
                     fr_lines = (
                         self.db.query(OutboundOrderLine.shipped_quantity, OutboundOrderLine.ordered_quantity)
                         .filter(
@@ -950,6 +1069,37 @@ class HierarchicalMetricsService:
                         filled = sum(1 for r in fr_lines if (r.shipped_quantity or 0) >= (r.ordered_quantity or 0))
                         ci_lo, ci_hi = _wilson_ci(filled, len(fr_lines))
                         metrics["_ci_fill_rate"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": len(fr_lines)}
+                elif company_ids:
+                    # Fallback to FulfillmentOrder
+                    fo_fr = (
+                        self.db.query(
+                            func.sum(FulfillmentOrder.shipped_quantity).label("shipped"),
+                            func.sum(FulfillmentOrder.quantity).label("ordered"),
+                        )
+                        .filter(
+                            FulfillmentOrder.company_id.in_(company_ids),
+                            FulfillmentOrder.quantity > 0,
+                        )
+                        .first()
+                    )
+                    if fo_fr and fo_fr.ordered and float(fo_fr.ordered) > 0:
+                        shipped = float(fo_fr.shipped or 0)
+                        ordered = float(fo_fr.ordered)
+                        fr = min(shipped / ordered * 100, 100.0)
+                        metrics["fill_rate"] = round(fr, 1)
+                        fo_lines = (
+                            self.db.query(FulfillmentOrder.shipped_quantity, FulfillmentOrder.quantity)
+                            .filter(
+                                FulfillmentOrder.company_id.in_(company_ids),
+                                FulfillmentOrder.quantity > 0,
+                            )
+                            .limit(500)
+                            .all()
+                        )
+                        if fo_lines:
+                            filled = sum(1 for r in fo_lines if (r.shipped_quantity or 0) >= (r.quantity or 0))
+                            ci_lo, ci_hi = _wilson_ci(filled, len(fo_lines))
+                            metrics["_ci_fill_rate"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": len(fo_lines)}
             except Exception:
                 logger.debug("FR computation failed", exc_info=True)
 
@@ -970,7 +1120,29 @@ class HierarchicalMetricsService:
                     .limit(500)
                     .all()
                 )
-                if otd_rows:
+                if not otd_rows and company_ids:
+                    # Fallback to FulfillmentOrder
+                    fo_otd = (
+                        self.db.query(
+                            FulfillmentOrder.promised_date,
+                            FulfillmentOrder.ship_date,
+                        )
+                        .filter(
+                            FulfillmentOrder.company_id.in_(company_ids),
+                            FulfillmentOrder.status.in_(["DELIVERED", "SHIPPED"]),
+                            FulfillmentOrder.promised_date.isnot(None),
+                            FulfillmentOrder.ship_date.isnot(None),
+                        )
+                        .limit(500)
+                        .all()
+                    )
+                    if fo_otd:
+                        n = len(fo_otd)
+                        on_time = sum(1 for r in fo_otd if r.ship_date <= r.promised_date)
+                        metrics["on_time_delivery"] = round(on_time / n * 100, 1)
+                        ci_lo, ci_hi = _wilson_ci(on_time, n)
+                        metrics["_ci_on_time_delivery"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": n}
+                elif otd_rows:
                     n = len(otd_rows)
                     on_time = sum(1 for r in otd_rows if r.last_ship_date <= r.promised_delivery_date)
                     metrics["on_time_delivery"] = round(on_time / n * 100, 1)
@@ -1040,24 +1212,66 @@ class HierarchicalMetricsService:
                     )
                     .first()
                 )
-                if backlog_row and backlog_row.total_backlog:
+                has_ool_backlog = backlog_row and backlog_row.total_backlog
+                if has_ool_backlog:
                     metrics["stockout_lost_demand"] = int(float(backlog_row.total_backlog))
+                elif company_ids:
+                    # Fallback: use FulfillmentOrder short_quantity + Backorder table
+                    from app.models.sc_entities import Backorder
+                    bo_row = (
+                        self.db.query(
+                            func.sum(Backorder.quantity).label("total_backlog"),
+                        )
+                        .filter(Backorder.company_id.in_(company_ids))
+                        .first()
+                    )
+                    if bo_row and bo_row.total_backlog:
+                        metrics["stockout_lost_demand"] = int(float(bo_row.total_backlog))
+                    else:
+                        # Try short_quantity from FulfillmentOrder
+                        short_row = (
+                            self.db.query(
+                                func.sum(FulfillmentOrder.short_quantity).label("total_short"),
+                            )
+                            .filter(
+                                FulfillmentOrder.company_id.in_(company_ids),
+                                FulfillmentOrder.short_quantity > 0,
+                            )
+                            .first()
+                        )
+                        if short_row and short_row.total_short:
+                            metrics["stockout_lost_demand"] = int(float(short_row.total_short))
 
-                # Also compute backlog rate as a percentage
-                total_row = (
-                    self.db.query(
-                        func.sum(OutboundOrderLine.ordered_quantity).label("total_ordered"),
+                # Backlog rate
+                total_ordered = None
+                if has_ool_backlog:
+                    total_row = (
+                        self.db.query(
+                            func.sum(OutboundOrderLine.ordered_quantity).label("total_ordered"),
+                        )
+                        .filter(
+                            OutboundOrderLine.config_id == config.id,
+                            OutboundOrderLine.ordered_quantity > 0,
+                        )
+                        .first()
                     )
-                    .filter(
-                        OutboundOrderLine.config_id == config.id,
-                        OutboundOrderLine.ordered_quantity > 0,
+                    total_ordered = float(total_row.total_ordered) if total_row and total_row.total_ordered else None
+                elif company_ids:
+                    fo_total = (
+                        self.db.query(
+                            func.sum(FulfillmentOrder.quantity).label("total_ordered"),
+                        )
+                        .filter(
+                            FulfillmentOrder.company_id.in_(company_ids),
+                            FulfillmentOrder.quantity > 0,
+                        )
+                        .first()
                     )
-                    .first()
-                )
-                if (backlog_row and backlog_row.total_backlog
-                        and total_row and total_row.total_ordered
-                        and float(total_row.total_ordered) > 0):
-                    backlog_pct = float(backlog_row.total_backlog) / float(total_row.total_ordered) * 100
+                    total_ordered = float(fo_total.total_ordered) if fo_total and fo_total.total_ordered else None
+
+                sold_val = metrics.get("stockout_lost_demand")
+                if sold_val and total_ordered and total_ordered > 0:
+                    backlog_pct = sold_val / total_ordered * 100
                     metrics["backlog_rate"] = round(backlog_pct, 1)
             except Exception:
                 logger.debug("SOLD computation failed", exc_info=True)
