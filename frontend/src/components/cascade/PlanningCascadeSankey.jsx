@@ -47,17 +47,49 @@ import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext'
 
 // Column order: upstream (vendor source) → downstream (customer sink)
 // AWS SC DM: VENDOR = external supplier (TradingPartner), CUSTOMER = external demand
-const COLUMN_ORDER = [
-  'VENDOR',
-  'CDC',
-  'INVENTORY',
-  'MANUFACTURER',
-  'RDC',
-  'DISTRIBUTOR',
-  'WHOLESALER',
-  'RETAILER',
-  'CUSTOMER',
-];
+/**
+ * Derive column order from the DAG topology via topological sort.
+ * Each unique node type becomes a column; the sort order follows material flow.
+ */
+const deriveColumnOrder = (links) => {
+  // Build adjacency: type → Set of downstream types
+  const downstream = new Map();
+  const allTypes = new Set();
+  links.forEach(l => {
+    const srcType = l.sourceType || l.source?.split('::')[0];
+    const tgtType = l.targetType || l.target?.split('::')[0];
+    if (!srcType || !tgtType || srcType === tgtType) return;
+    allTypes.add(srcType);
+    allTypes.add(tgtType);
+    if (!downstream.has(srcType)) downstream.set(srcType, new Set());
+    downstream.get(srcType).add(tgtType);
+  });
+
+  // Kahn's algorithm for topological sort
+  const inDegree = new Map();
+  allTypes.forEach(t => inDegree.set(t, 0));
+  downstream.forEach((targets) => {
+    targets.forEach(t => inDegree.set(t, (inDegree.get(t) || 0) + 1));
+  });
+
+  const queue = [];
+  inDegree.forEach((deg, type) => { if (deg === 0) queue.push(type); });
+
+  const sorted = [];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    sorted.push(current);
+    (downstream.get(current) || new Set()).forEach(next => {
+      inDegree.set(next, inDegree.get(next) - 1);
+      if (inDegree.get(next) === 0) queue.push(next);
+    });
+  }
+
+  // Append any remaining types (cycles) at the end
+  allTypes.forEach(t => { if (!sorted.includes(t)) sorted.push(t); });
+
+  return sorted;
+};
 
 // Site type colors (consistent with SupplyChainConfigSankey)
 const TYPE_COLORS = {
@@ -121,7 +153,7 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
 
   // ── 1. Build site ID → metadata map ──────────────────────────────
   const siteMap = {};
-  // Normalize to display tokens used in COLUMN_ORDER/TYPE_COLORS.
+  // Normalize to display tokens used in TYPE_COLORS and DAG-derived column order.
   // Prefer the more specific site type (cdc, rdc) over generic master_type (INVENTORY)
   // so that CDC→RDC links span different columns (d3-sankey requires this).
   const normalizeMasterType = (masterType, siteType) => {
@@ -232,6 +264,7 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
         value: 0,
         laneCount: 0,
         sourceType: fromMeta.masterType,
+        targetType: toMeta.masterType,
       };
     }
     // Accumulate lead time for averaging
@@ -299,9 +332,8 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
     };
   });
 
-  // Build columnOrder from types actually present in the data
-  const presentTypes = new Set(nodes.map(n => n.type));
-  const columnOrder = COLUMN_ORDER.filter(t => presentTypes.has(t));
+  // Derive column order from DAG topology (topological sort of type-level flow)
+  const columnOrder = deriveColumnOrder(Object.values(linkMap));
 
   return { nodes, links, columnOrder };
 };
@@ -569,7 +601,7 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
             nodeWidth={14}
             nodePadding={16}
             align="justify"
-            columnOrder={sankeyData.columnOrder || COLUMN_ORDER}
+            columnOrder={sankeyData.columnOrder}
             nodeTooltip={nodeTooltipFn}
             linkTooltip={linkTooltipFn}
             defaultLinkOpacity={0.45}
