@@ -441,30 +441,70 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
     );
   }, [timeBucket, formatSite]);
 
-  // Build map data from raw sites/lanes
+  // Build map data from raw sites/lanes (including partner nodes)
   const mapData = useMemo(() => {
-    const sitesWithCoords = rawSites.filter(
-      (s) => s.geography?.latitude && s.geography?.longitude
-    );
-    if (sitesWithCoords.length === 0) return null;
+    // Build site list with coordinates (prefer top-level lat/lon, fallback to geography)
+    const mapSites = rawSites
+      .filter(s => s.master_type !== 'INACTIVE_PROXY')
+      .map((site) => {
+        const attrs = typeof site.attributes === 'object' && site.attributes ? site.attributes : {};
+        const lat = site.latitude ?? site.geography?.latitude;
+        const lon = site.longitude ?? site.geography?.longitude;
+        return {
+          id: site.id,
+          name: formatSite(site.id, site.name),
+          role: site.type || site.dag_type || site.master_type,
+          master_type: site.master_type || site.dag_type,
+          latitude: lat,
+          longitude: lon,
+          location: site.geography
+            ? [site.geography.city, site.geography.state_prov, site.geography.country]
+                .filter(Boolean)
+                .join(', ')
+            : null,
+          attributes: attrs,
+        };
+      });
 
-    const mapSites = rawSites.map((site) => {
-      const attrs = typeof site.attributes === 'object' && site.attributes ? site.attributes : {};
-      return {
-        id: site.id,
-        name: formatSite(site.id, site.name),
-        role: site.type || site.dag_type || site.master_type,
-        master_type: site.master_type || site.dag_type,
-        latitude: site.geography?.latitude,
-        longitude: site.geography?.longitude,
-        location: site.geography
-          ? [site.geography.city, site.geography.state_prov, site.geography.country]
-              .filter(Boolean)
-              .join(', ')
-          : null,
-        attributes: attrs,
-      };
+    // Add virtual partner nodes from lanes (vendors/customers with coordinates)
+    const partnerIds = new Set();
+    rawLanes.forEach((lane) => {
+      if (lane.from_partner_id && !lane.from_site_id) {
+        const pid = `partner_${lane.from_partner_id}`;
+        if (!partnerIds.has(pid)) {
+          partnerIds.add(pid);
+          mapSites.push({
+            id: pid,
+            name: lane.from_partner_name || `Vendor ${lane.from_partner_id}`,
+            role: 'Vendor',
+            master_type: 'VENDOR',
+            latitude: lane.from_partner_lat ?? null,
+            longitude: lane.from_partner_lon ?? null,
+            location: lane.from_partner_name,
+            attributes: {},
+          });
+        }
+      }
+      if (lane.to_partner_id && !lane.to_site_id) {
+        const pid = `partner_${lane.to_partner_id}`;
+        if (!partnerIds.has(pid)) {
+          partnerIds.add(pid);
+          mapSites.push({
+            id: pid,
+            name: lane.to_partner_name || `Customer ${lane.to_partner_id}`,
+            role: 'Customer',
+            master_type: 'CUSTOMER',
+            latitude: lane.to_partner_lat ?? null,
+            longitude: lane.to_partner_lon ?? null,
+            location: lane.to_partner_name,
+            attributes: {},
+          });
+        }
+      }
     });
+
+    const sitesWithCoords = mapSites.filter(s => s.latitude && s.longitude);
+    if (sitesWithCoords.length === 0) return null;
 
     const mapEdges = rawLanes.map((lane) => ({
       from: lane.from_site_id ?? (lane.from_partner_id ? `partner_${lane.from_partner_id}` : null),

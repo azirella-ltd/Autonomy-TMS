@@ -142,8 +142,9 @@ class AgentPerformanceService:
             if not config:
                 return None
 
-            # Scope to demand sites (customers) and a 52-week horizon
-            # to get a meaningful annual revenue picture.
+            # Aggregate forecast × product data across all sites with forecasts.
+            # Works for both site-based topologies (SAP Demo: customer sites)
+            # and partner-based topologies (Food Dist: customers as trading partners on lanes).
             horizon_start = date.today()
             horizon_end = date(horizon_start.year + 1, horizon_start.month, horizon_start.day)
 
@@ -159,7 +160,7 @@ class AgentPerformanceService:
                     .join(Site, Forecast.site_id == Site.id)
                     .filter(Forecast.config_id == config.id)
                     .filter(Forecast.is_active == "true")
-                    .filter((Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"))
+                    .filter(Site.master_type != "INACTIVE_PROXY")
                     .filter(Forecast.forecast_date >= horizon_start)
                     .filter(Forecast.forecast_date < horizon_end)
                     .filter(Product.unit_price.isnot(None))

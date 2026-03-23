@@ -1916,34 +1916,55 @@ def _serialize_transportation_lane(lane: SupplyLaneModel) -> Dict[str, Any]:
     lead_time = lane.lead_time_days or {}
     lead_time_range = _extract_range(lead_time)
     capacity_value = _as_float(lane.capacity)
-    # Resolve partner names for partner-endpoint lanes (vendor→plant or plant→customer)
+    # Resolve partner names and coordinates for partner-endpoint lanes
     from_partner_name = None
     to_partner_name = None
+    from_partner_lat = None
+    from_partner_lon = None
+    to_partner_lat = None
+    to_partner_lon = None
     if lane.from_partner_id:
         try:
-            from_partner_name = lane.upstream_partner.description if lane.upstream_partner else None
+            p = lane.upstream_partner
+            if p:
+                from_partner_name = p.description
+                from_partner_lat = getattr(p, "latitude", None)
+                from_partner_lon = getattr(p, "longitude", None)
         except Exception:
             pass
     if lane.to_partner_id:
         try:
-            to_partner_name = lane.downstream_partner.description if lane.downstream_partner else None
+            p = lane.downstream_partner
+            if p:
+                to_partner_name = p.description
+                to_partner_lat = getattr(p, "latitude", None)
+                to_partner_lon = getattr(p, "longitude", None)
         except Exception:
             pass
+
+    supply_lt = lane.supply_lead_time or {}
+    demand_lt = lane.demand_lead_time or {}
 
     return {
         "id": lane.id,
         "config_id": lane.config_id,
-        "from_site_id": lane.from_site_id,        # AWS SC DM: internal site endpoint
-        "to_site_id": lane.to_site_id,            # AWS SC DM: internal site endpoint
-        "from_partner_id": lane.from_partner_id,    # AWS SC DM: external vendor endpoint
-        "to_partner_id": lane.to_partner_id,        # AWS SC DM: external customer endpoint
+        "from_site_id": lane.from_site_id,
+        "to_site_id": lane.to_site_id,
+        "from_partner_id": lane.from_partner_id,
+        "to_partner_id": lane.to_partner_id,
         "from_partner_name": from_partner_name,
         "to_partner_name": to_partner_name,
+        "from_partner_lat": from_partner_lat,
+        "from_partner_lon": from_partner_lon,
+        "to_partner_lat": to_partner_lat,
+        "to_partner_lon": to_partner_lon,
         "capacity": capacity_value,
         "capacity_int": int(capacity_value) if capacity_value is not None else None,
         "lead_time_days": lead_time,
         "lead_time_min": lead_time_range["min"],
         "lead_time_max": lead_time_range["max"],
+        "supply_lead_time": supply_lt,
+        "demand_lead_time": demand_lt,
     }
 
 
