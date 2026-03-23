@@ -156,31 +156,47 @@ async def read_user_me(
     """
     return current_user
 
-@router.get("/{user_id}", response_model=User)
+@router.get("/{user_id}")
 async def read_user(
     user_id: int,
-    user_service: UserService = Depends(get_user_service),
+    db: Session = Depends(get_sync_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
     Get a specific user by ID (admin only).
+    Returns user fields including decision_level.
     """
+    user_service = UserService(db)
     user = user_service.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    if current_user.user_type == UserTypeEnum.SYSTEM_ADMIN or current_user.id == user_id:
-        return user
-
-    if user_service.is_customer_admin(current_user):
-        if (
-            user.tenant_id == current_user.tenant_id
-            and user_service.get_user_type(user) == UserTypeEnum.USER
-        ):
-            return user
-
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Not enough permissions",
+    # Permission check
+    allowed = (
+        current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
+        or current_user.id == user_id
+        or (current_user.user_type == UserTypeEnum.TENANT_ADMIN and user.tenant_id == current_user.tenant_id)
     )
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Build response with decision_level
+    dl = getattr(user, 'decision_level', None)
+    if dl and hasattr(dl, 'value'):
+        dl = dl.value
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "username": getattr(user, 'username', None),
+        "full_name": getattr(user, 'full_name', None),
+        "tenant_id": user.tenant_id,
+        "user_type": user.user_type.value if hasattr(user.user_type, 'value') else str(user.user_type),
+        "is_active": user.is_active,
+        "decision_level": dl,
+        "default_config_id": getattr(user, 'default_config_id', None),
+    }
+
 
 
 # ===== RBAC Capability Endpoints =====

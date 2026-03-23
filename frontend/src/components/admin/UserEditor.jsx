@@ -83,21 +83,35 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
       .catch(() => {}); // non-fatal
   }, [open]);
 
-  // Initialize form when user prop changes
+  // Initialize form when user prop changes — fetch capabilities and decision_level from API
   useEffect(() => {
+    if (!open) return;
+
     if (user) {
+      // Start with what we have from the list
       setFormData({
         email: user.email || '',
         username: user.username || '',
         full_name: user.full_name || '',
-        password: '', // Never pre-fill password
+        password: '',
         user_type: user.user_type || 'USER',
         decision_level: user.decision_level || '',
         is_active: user.is_active !== undefined ? user.is_active : true,
         capabilities: Array.isArray(user.capabilities) ? user.capabilities : [],
       });
+
+      // Fetch full user details (decision_level + capabilities) from API
+      api.get(`/users/${user.id}/capabilities`).then(res => {
+        const caps = res.data?.capabilities || [];
+        setFormData(prev => ({ ...prev, capabilities: caps }));
+      }).catch(() => {});
+
+      // Fetch decision_level from user detail
+      api.get(`/users/${user.id}`).then(res => {
+        const dl = res.data?.decision_level;
+        if (dl) setFormData(prev => ({ ...prev, decision_level: dl }));
+      }).catch(() => {});
     } else {
-      // Reset for new user
       setFormData({
         email: '',
         username: '',
