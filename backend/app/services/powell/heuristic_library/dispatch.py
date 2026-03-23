@@ -40,6 +40,10 @@ _ERP_DISPATCH = {
     "odoo": _ODOO,
     "odoo_community": _ODOO,
     "odoo_enterprise": _ODOO,
+    # Tenants without ERP use SAP heuristics as universal planning logic
+    "generic": _SAP,
+    "none": _SAP,
+    "": _SAP,
 }
 
 
@@ -128,8 +132,42 @@ def load_erp_params(
     spc = db.execute(stmt).scalars().first()
 
     if spc is None:
-        # No config row -- return sensible defaults
-        return ERPPlanningParams(erp_source="sap")
+        # No SitePlanningConfig row — fall back to inv_policy parameters.
+        # This is the common case for non-ERP tenants (Food Dist, synthetic data).
+        inv_stmt = select(InvPolicy).where(
+            InvPolicy.product_id == product_id,
+            InvPolicy.config_id == config_id,
+        )
+        inv_policy = db.execute(inv_stmt).scalars().first()
+        if inv_policy:
+            # Map inv_policy ss_policy to planning method
+            _SS_POLICY_TO_METHOD = {
+                "abs_level": "REORDER_POINT",
+                "doc_dem": "REORDER_POINT",
+                "doc_fcst": "FORECAST_BASED",
+                "sl": "REORDER_POINT",
+                "sl_fitted": "REORDER_POINT",
+                "conformal": "REORDER_POINT",
+                "sl_conformal_fitted": "REORDER_POINT",
+                "econ_optimal": "MIN_MAX",
+            }
+            return ERPPlanningParams(
+                planning_method=_SS_POLICY_TO_METHOD.get(
+                    getattr(inv_policy, "ss_policy", "") or "", "REORDER_POINT"
+                ),
+                lot_sizing_rule="LOT_FOR_LOT",
+                safety_stock=_float_or(inv_policy, "ss_quantity", 0.0),
+                reorder_point=_float_or(inv_policy, "reorder_point", 0.0),
+                order_up_to=_float_or(inv_policy, "order_up_to_level", 0.0),
+                min_order_quantity=_float_or(inv_policy, "min_order_quantity", 0.0),
+                max_order_quantity=_float_or(inv_policy, "max_order_quantity", 0.0),
+                review_period_days=_int_or(inv_policy, "review_period", 7),
+                lead_time_days=7,  # Default; enriched from vendor_lead_time if available
+                erp_source="generic",  # No ERP — use universal planning logic
+                erp_params={"source": "inv_policy", "ss_policy": getattr(inv_policy, "ss_policy", None)},
+            )
+        # No inv_policy either — return bare defaults
+        return ERPPlanningParams(erp_source="generic")
 
     params = ERPPlanningParams(
         planning_method=spc.planning_method or "REORDER_POINT",

@@ -321,6 +321,33 @@ The digital twin must faithfully replicate what the customer's ERP actually does
 3. **Composable pipeline**: Netting → Lot Sizing → Scrap Adjustment → Rounding → Min/Max → Lead Time Offset → BOM Explosion. Each step is a separate function; steps can be swapped per ERP.
 4. **Validation against ERP output**: Every heuristic must be validated by comparing its deterministic output (zero stochastic variance) against the real ERP's MRP run for the same data. Discrepancies are bugs.
 
+### 8A.0 ERP Parameter Resolution & Non-ERP Fallback
+
+**Implementation**: `backend/app/services/powell/heuristic_library/dispatch.py`
+
+The heuristic library resolves planning parameters through a **three-tier fallback chain**:
+
+1. **`site_planning_config` table** (primary) — populated by ERP extraction pipelines (SAP/D365/Odoo staging → mapping). Contains MARC-equivalent fields per product-site: `planning_method`, `lot_sizing_rule`, `erp_source`, etc.
+
+2. **`inv_policy` table** (fallback) — populated by provisioning/seed scripts for all tenants. Contains safety stock, reorder point, order-up-to level, review period, MOQ. The `ss_policy` field maps to a planning method:
+   - `abs_level`, `doc_dem`, `sl`, `sl_fitted`, `conformal`, `sl_conformal_fitted` → `REORDER_POINT`
+   - `doc_fcst` → `FORECAST_BASED`
+   - `econ_optimal` → `MIN_MAX`
+
+3. **Bare defaults** (last resort) — `erp_source='generic'`, `planning_method='REORDER_POINT'`, zero safety stock. Used only when neither `site_planning_config` nor `inv_policy` exists.
+
+**Non-ERP tenants** (e.g., Food Dist, synthetic data): The `erp_source` is set to `'generic'`, which dispatches to SAP heuristics — these implement universal MRP/reorder-point logic that is ERP-agnostic. The parameters come from `inv_policy` records seeded during provisioning.
+
+**ERP tenants** (e.g., SAP Demo): The `erp_source` is set to `'sap'`/`'d365'`/`'odoo'`, and ERP-specific algorithms apply (SAP DISMM-dispatched netting, D365 CoverageCode coverage calculation, Odoo orderpoint min/max).
+
+| Tenant Type | Parameter Source | erp_source | Heuristic Implementation |
+|-------------|-----------------|------------|--------------------------|
+| SAP customer | `site_planning_config` (from MARC extraction) | `sap` | SAP-specific (DISMM, DISLS, AFVGD) |
+| D365 customer | `site_planning_config` (from ReqItemTable) | `d365` | D365-specific (CoverageCode, DDMRP zones) |
+| Odoo customer | `site_planning_config` (from orderpoint) | `odoo` | Odoo-specific (min/max, routes) |
+| Non-ERP tenant | `inv_policy` (from provisioning seed) | `generic` | Universal (SAP MRP logic without SAP-specific fields) |
+| Synthetic/demo | `inv_policy` (from synthetic data wizard) | `generic` | Universal |
+
 ### 8A.1 Site-Level MRP Heuristics
 
 These run per product-site, per simulation day. They determine **when and how much to order**.
