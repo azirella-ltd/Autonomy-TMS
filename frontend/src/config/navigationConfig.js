@@ -1169,18 +1169,29 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmi
   // Decision-level section visibility — derived from the user's role in the Powell hierarchy.
   // DEMO_ALL and tenant admins see everything. Others see only sections relevant to their level.
   const DECISION_LEVEL_SECTIONS = {
-    EXECUTIVE:     ['Home', 'Insights & Analytics'],
-    SC_VP:         ['Home', 'Insights & Analytics'],
+    EXECUTIVE:     ['Home'],
+    SC_VP:         ['Home'],
     SOP_DIRECTOR:  ['Home', 'Insights & Analytics', 'Planning', 'Planning Cascade'],
     MPS_MANAGER:   ['Home', 'Insights & Analytics', 'Planning', 'Planning Cascade', 'Execution'],
     DEMO_ALL:      null, // null = show all
   };
+  // Executive/SC_VP: only show these items within Home
+  const EXECUTIVE_HOME_ITEMS = new Set(['Decision Stream', 'Strategy Briefing', 'Executive Dashboard', 'Dashboard']);
+  const isExecutiveLevel = decisionLevel === 'EXECUTIVE' || decisionLevel === 'SC_VP';
+
   const allowedSections = (decisionLevel && DECISION_LEVEL_SECTIONS[decisionLevel]) || null;
   // Tenant admins always see Administration
   const sectionFilter = (sectionName) => {
     if (!allowedSections) return true; // DEMO_ALL or null → show all
     if (sectionName === 'Administration' && isTenantAdmin) return true;
     return allowedSections.includes(sectionName);
+  };
+  // Item-level filter for executives
+  const itemFilter = (sectionName, itemLabel) => {
+    if (isExecutiveLevel && sectionName === 'Home') {
+      return EXECUTIVE_HOME_ITEMS.has(itemLabel);
+    }
+    return true;
   };
 
   // Learning customers get simplified navigation (user education mode)
@@ -1256,8 +1267,8 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmi
             disabled: !enabled,
           };
         })
-        // Filter out disabled items (hide items user can't access)
-        .filter(item => item.enabled || item.isSectionHeader)
+        // Filter out disabled items and decision-level restricted items
+        .filter(item => (item.enabled || item.isSectionHeader) && itemFilter(section.section, item.label))
     }))
     // Remove section headers that have no following items
     .map(section => {
