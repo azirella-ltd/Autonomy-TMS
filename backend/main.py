@@ -312,6 +312,8 @@ class MeResponse(BaseModel):
     is_superuser: bool = False
     default_config_id: Optional[int] = None
     powell_role: Optional[str] = None
+    capabilities: List[str] = []
+    roles: List[str] = []
 
 
 class OrderSubmission(BaseModel):
@@ -785,6 +787,36 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
     if pr is not None and hasattr(pr, "value"):
         pr = pr.value
 
+    # Load capabilities and roles from DB
+    capabilities = []
+    role_names = []
+    try:
+        from app.db.session import sync_session_factory as _sync_sf
+        session = _sync_sf()
+        try:
+            from sqlalchemy import text
+            rows = session.execute(text("""
+                SELECT DISTINCT p.name
+                FROM permissions p
+                JOIN role_permissions rp ON rp.permission_id = p.id
+                JOIN user_roles ur ON ur.role_id = rp.role_id
+                WHERE ur.user_id = :uid
+                ORDER BY p.name
+            """), {"uid": user["id"]}).fetchall()
+            capabilities = [r[0] for r in rows]
+
+            rrows = session.execute(text("""
+                SELECT r.name FROM roles r
+                JOIN user_roles ur ON ur.role_id = r.id
+                WHERE ur.user_id = :uid
+                ORDER BY r.name
+            """), {"uid": user["id"]}).fetchall()
+            role_names = [r[0] for r in rrows]
+        finally:
+            session.close()
+    except Exception:
+        pass  # Non-fatal — return empty capabilities
+
     return MeResponse(
         id=user["id"],
         email=user["email"],
@@ -795,6 +827,8 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
         is_superuser=bool(user.get("is_superuser", False)),
         default_config_id=user.get("default_config_id"),
         powell_role=pr,
+        capabilities=capabilities,
+        roles=role_names,
     )
 
 @api.post("/auth/refresh", response_model=TokenResponse, tags=["auth"])
@@ -6504,6 +6538,10 @@ api.include_router(maintenance_orders_router, prefix="/maintenance-orders", tags
 api.include_router(turnaround_orders_router, prefix="/turnaround-orders", tags=["turnaround-orders", "sprint6"])
 api.include_router(user_capabilities_router)  # prefix="/users" defined in router
 api.include_router(capabilities_router)  # prefix="/capabilities" defined in router - for /capabilities/me
+
+# User CRUD (create, update, delete, change-password, status)
+from app.api.endpoints.users import router as users_crud_router
+api.include_router(users_crud_router, prefix="/users", tags=["users"])
 
 # Decision Metrics API (Agent Performance for Powell Framework Dashboards)
 from app.api.endpoints.decision_metrics import router as decision_metrics_router
