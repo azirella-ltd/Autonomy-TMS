@@ -367,6 +367,9 @@ from .rccp import BillOfResources, RCCPRun, RCCPMethod, ProductionPhase, RCCPRun
 # 31. Agent Stochastic Parameters — Per-agent distribution values with default tracking
 from .agent_stochastic_param import AgentStochasticParam
 
+# 32. Scenario Engine — Machine-speed what-if planning (agent scenario branches)
+from .agent_scenario import AgentScenario, AgentScenarioAction, ScenarioTemplate
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions

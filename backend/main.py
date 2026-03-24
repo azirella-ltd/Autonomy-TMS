@@ -6485,6 +6485,10 @@ api.include_router(directives_router, tags=["directives"])
 from app.api.endpoints.provisioning import router as provisioning_router
 api.include_router(provisioning_router, tags=["provisioning"])
 
+# Scenario Engine API — Machine-speed what-if planning
+from app.api.endpoints.scenarios_engine import router as scenarios_engine_router
+api.include_router(scenarios_engine_router, tags=["scenario-engine"])
+
 # Email Signal Intelligence — GDPR-safe email ingestion for SC signals
 from app.api.endpoints.email_signals import router as email_signals_router
 api.include_router(email_signals_router, tags=["email-signals"])
