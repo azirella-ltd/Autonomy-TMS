@@ -426,6 +426,25 @@ class ProvisioningService:
             from app.models.supply_chain_config import SupplyChainConfig
             from app.models.tenant import Tenant
 
+            # Clean up orphaned records from previous provisioning cycles
+            # (forecasts/inv_levels referencing deleted products after config rebuild)
+            from sqlalchemy import text as sql_text
+            for child_table in ("forecast", "inv_level", "inv_policy", "supply_plan"):
+                try:
+                    deleted = db.execute(sql_text(f"""
+                        DELETE FROM {child_table} c
+                        WHERE c.config_id = :cid
+                        AND NOT EXISTS (SELECT 1 FROM product p WHERE p.id = c.product_id)
+                    """), {"cid": config_id})
+                    if deleted.rowcount > 0:
+                        logger.info(
+                            "Warm start: cleaned %d orphaned %s rows for config %d",
+                            deleted.rowcount, child_table, config_id,
+                        )
+                except Exception:
+                    pass  # table may not have product_id column
+            db.flush()
+
             config = db.query(SupplyChainConfig).filter(
                 SupplyChainConfig.id == config_id,
             ).first()
