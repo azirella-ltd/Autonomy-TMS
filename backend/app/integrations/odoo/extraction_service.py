@@ -32,7 +32,7 @@ MASTER_DATA_MODELS = {
     "res.company": ["id", "name", "country_id", "currency_id", "street", "city", "zip", "phone", "vat"],
     # Tier 1: Sites
     "stock.warehouse": ["id", "name", "code", "partner_id", "company_id", "active"],
-    "stock.location": ["id", "name", "complete_name", "usage", "warehouse_id", "company_id", "active"],
+    "stock.location": ["id", "name", "complete_name", "usage", "location_id", "warehouse_id", "company_id", "active"],
     # Tier 2: Products
     "product.product": [
         "id", "name", "default_code", "type", "categ_id", "uom_id",

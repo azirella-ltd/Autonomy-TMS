@@ -39,11 +39,13 @@ class ExtractionPhase(str, Enum):
 MASTER_DATA_ENTITIES = [
     # Tier 0: Organisation
     "LegalEntities",
-    # Tier 1: Sites & warehouses
+    # Tier 1: Sites, warehouses & storage locations
     "OperationalSites",
     "Warehouses",
+    "StorageLocations",
     # Tier 2: Products & hierarchy
     "ReleasedProductsV2",
+    "ProductCategoryHierarchies",
     "ProductCategories",
     # Tier 3: Trading partners
     "Vendors",

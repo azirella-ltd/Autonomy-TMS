@@ -68,6 +68,23 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
         ["WERKS", "LGORT", "LGOBE", "KOBER"],
         "WERKS IN ({werks})",
     ),
+    # Geo hierarchy: country and region master data
+    "T005": (
+        ["LAND1", "LANDK", "LNPLZ", "PRESSION", "INTCA", "INTCA3", "XEGLD"],
+        "",
+    ),
+    "T005T": (
+        ["SPRAS", "LAND1", "LANDX", "NATIO"],
+        "SPRAS = 'E'",
+    ),
+    "T005S": (
+        ["LAND1", "BLAND", "FPRCD", "HERBL"],
+        "",
+    ),
+    "T005U": (
+        ["SPRAS", "LAND1", "BLAND", "BEZEI"],
+        "SPRAS = 'E'",
+    ),
     "ADRC": (
         ["ADDRNUMBER", "NAME1", "CITY1", "CITY2", "REGION", "COUNTRY",
          "POST_CODE1", "STREET", "STR_SUPPL1", "STR_SUPPL2", "BUILDING",
@@ -1329,6 +1346,10 @@ TABLE_LABELS = {
     "T001": "company_codes",
     "T001W": "plants",
     "T001L": "storage_locations",
+    "T005": "countries",
+    "T005T": "country_text",
+    "T005S": "region_codes",
+    "T005U": "region_text",
     "ADRC": "addresses",
     "MARA": "materials",
     "MAKT": "descriptions",

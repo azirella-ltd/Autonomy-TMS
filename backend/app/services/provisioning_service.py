@@ -448,6 +448,18 @@ class ProvisioningService:
                         geo_result["updated_lanes"], config_id,
                     )
 
+            # Auto-generate site and product hierarchies from config entities
+            # (idempotent — skips if nodes already exist for this tenant)
+            from app.services.hierarchy_auto_seeder import auto_seed_hierarchies
+            hierarchy_result = auto_seed_hierarchies(db, config_id, config.tenant_id)
+            if hierarchy_result.get("created"):
+                logger.info(
+                    "Warm start: auto-seeded %d site + %d product hierarchy nodes for config %d",
+                    hierarchy_result.get("site_nodes", 0),
+                    hierarchy_result.get("product_nodes", 0),
+                    config_id,
+                )
+
             from app.services.warm_start_generator import WarmStartGenerator
             result = WarmStartGenerator(db).generate_for_config(config_id, weeks=52)
             db.commit()

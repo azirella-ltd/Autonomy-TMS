@@ -47,6 +47,7 @@ from app.models.quality_order import QualityOrder
 from app.models.supplier import VendorProduct, VendorLeadTime
 from app.models.tenant import Tenant
 
+from app.models.planning_hierarchy import SiteHierarchyNode, ProductHierarchyNode
 from app.integrations.sap.data_mapper import SupplyChainMapper
 from app.services.sap_field_mapping_service import (
     SAPFieldMappingService,
@@ -416,7 +417,7 @@ class SAPConfigBuilder:
                 await progress_callback(step, total, desc)
 
         try:
-            total_steps = 9
+            total_steps = 10
 
             # Step 1: Create config (also deactivates previous active configs)
             await _report(1, total_steps, "Creating supply chain config...")
@@ -442,16 +443,20 @@ class SAPConfigBuilder:
             await _report(4, total_steps, "Creating products from material master...")
             product_count = await self._create_products()
 
-            # Step 5: Trading Partners & Sourcing
-            await _report(5, total_steps, "Creating trading partners & sourcing rules...")
+            # Step 5: Site & Product Hierarchy Nodes
+            await _report(5, total_steps, "Building site geo hierarchy & product hierarchy nodes...")
+            hierarchy_counts = await self._create_hierarchy_nodes()
+
+            # Step 6: Trading Partners & Sourcing
+            await _report(6, total_steps, "Creating trading partners & sourcing rules...")
             vendor_count, customer_count, sourcing_count = await self._create_partners_and_sourcing()
 
-            # Step 6: BOM & Manufacturing
-            await _report(6, total_steps, "Building bill of materials...")
+            # Step 7: BOM & Manufacturing
+            await _report(7, total_steps, "Building bill of materials...")
             bom_count = await self._create_bom_and_manufacturing()
 
-            # Step 7: Planning Data
-            await _report(7, total_steps, "Generating forecasts & inventory policies...")
+            # Step 8: Planning Data
+            await _report(8, total_steps, "Generating forecasts & inventory policies...")
             forecast_count = 0
             inv_count = 0
             if opts.get("include_forecasts", True):
@@ -464,20 +469,20 @@ class SAPConfigBuilder:
                     safety_days=opts.get("default_safety_days", 14),
                 )
 
-            # Step 8: Transactional Data (orders, production orders, quality orders)
-            await _report(8, total_steps, "Importing orders & transactional data...")
+            # Step 9: Transactional Data (orders, production orders, quality orders)
+            await _report(9, total_steps, "Importing orders & transactional data...")
             order_counts = await self._create_transactional_data(opts)
 
-            # Await geocoding completion before step 9 (lanes need coordinates
+            # Await geocoding completion before step 10 (lanes need coordinates
             # for distance-based lead time calculation)
             if geocode_task is not None:
-                await _report(9, total_steps, "Waiting for geocoding to complete...")
+                await _report(10, total_steps, "Waiting for geocoding to complete...")
                 await geocode_task
 
-            # Step 9: Transportation Lanes (after transactions so we can
+            # Step 10: Transportation Lanes (after transactions so we can
             # infer lanes from EKKO/EKPO/VBAK/VBAP/LIKP/LIPS if available,
             # falling back to EORD source list + full connectivity default)
-            await _report(9, total_steps, "Inferring transportation lanes from sourcing & shipping data...")
+            await _report(10, total_steps, "Inferring transportation lanes from sourcing & shipping data...")
             lane_count = await self._create_lanes()
 
             await self.db.commit()
@@ -488,6 +493,8 @@ class SAPConfigBuilder:
                 "summary": {
                     "sites": site_count,
                     "products": product_count,
+                    "site_hierarchy_nodes": hierarchy_counts.get("site_nodes", 0),
+                    "product_hierarchy_nodes": hierarchy_counts.get("product_nodes", 0),
                     "lanes": lane_count,
                     "vendors": vendor_count,
                     "customers": customer_count,
@@ -2015,6 +2022,226 @@ class SAPConfigBuilder:
 
         logger.info(f"Created {count} internal sites (no proxy vendor/customer sites — using TradingPartner endpoints)")
         return count
+
+    async def _create_hierarchy_nodes(self) -> Dict[str, int]:
+        """Create SiteHierarchyNode and ProductHierarchyNode from SAP geo and product hierarchy tables.
+
+        Site hierarchy:  Company (T001) → Country (T005T) → Region (T005U) → Plant (T001W)
+        Product hierarchy: T179 tree with text from T179T, linked to products via MARA.PRDHA
+        """
+        tenant_id = self._config.tenant_id
+        site_count = 0
+        product_count = 0
+
+        # ── SITE GEO HIERARCHY ────────────────────────────────────────────
+        t001 = self._data.get("T001", pd.DataFrame())
+        t001w = self._data.get("T001W", pd.DataFrame())
+        t005t = self._data.get("T005T", pd.DataFrame())
+        t005u = self._data.get("T005U", pd.DataFrame())
+
+        # Build country name lookup: LAND1 → English name
+        country_names: Dict[str, str] = {}
+        if not t005t.empty:
+            for _, r in t005t.iterrows():
+                country_names[str(r.get("LAND1", "")).strip()] = str(r.get("LANDX", "")).strip()
+
+        # Build region name lookup: (LAND1, BLAND) → English name
+        region_names: Dict[Tuple[str, str], str] = {}
+        if not t005u.empty:
+            for _, r in t005u.iterrows():
+                key = (str(r.get("LAND1", "")).strip(), str(r.get("BLAND", "")).strip())
+                region_names[key] = str(r.get("BEZEI", "")).strip()
+
+        # Root: Company from T001
+        if not t001.empty:
+            company_row = t001.iloc[0]
+            company_code = str(company_row.get("BUKRS", "")).strip()
+            company_name = str(company_row.get("BUTXT", "")).strip() or f"Company {company_code}"
+        else:
+            company_code = f"TENANT_{tenant_id}"
+            company_name = self._config.name or "Company"
+
+        root_code = f"CO_{company_code}"
+        root = SiteHierarchyNode(
+            tenant_id=tenant_id,
+            code=root_code,
+            name=company_name,
+            hierarchy_level="COMPANY",
+            hierarchy_path=root_code,
+            depth=0,
+        )
+        self.db.add(root)
+        await self.db.flush()
+        site_count += 1
+
+        # Group plants by country → region
+        country_nodes: Dict[str, SiteHierarchyNode] = {}
+        region_nodes: Dict[Tuple[str, str], SiteHierarchyNode] = {}
+
+        if not t001w.empty:
+            for _, plant in t001w.iterrows():
+                werks = str(plant.get("WERKS", "")).strip()
+                land1 = str(plant.get("LAND1", "")).strip()
+                regio = str(plant.get("REGIO", "")).strip()
+
+                # Skip plants not in our config's sites
+                if werks not in self._sites:
+                    continue
+
+                # Country node (idempotent)
+                if land1 and land1 not in country_nodes:
+                    cname = country_names.get(land1, land1)
+                    ccode = f"COUNTRY_{land1}"
+                    cnode = SiteHierarchyNode(
+                        tenant_id=tenant_id,
+                        code=ccode,
+                        name=cname,
+                        hierarchy_level="COUNTRY",
+                        hierarchy_path=f"{root_code}/{ccode}",
+                        depth=1,
+                        parent_id=root.id,
+                    )
+                    self.db.add(cnode)
+                    await self.db.flush()
+                    country_nodes[land1] = cnode
+                    site_count += 1
+
+                # Region/State node (idempotent)
+                region_key = (land1, regio)
+                if regio and region_key not in region_nodes and land1 in country_nodes:
+                    rname = region_names.get(region_key, regio)
+                    rcode = f"REGION_{land1}_{regio}"
+                    rnode = SiteHierarchyNode(
+                        tenant_id=tenant_id,
+                        code=rcode,
+                        name=rname,
+                        hierarchy_level="STATE",
+                        hierarchy_path=f"{root_code}/COUNTRY_{land1}/{rcode}",
+                        depth=2,
+                        parent_id=country_nodes[land1].id,
+                    )
+                    self.db.add(rnode)
+                    await self.db.flush()
+                    region_nodes[region_key] = rnode
+                    site_count += 1
+
+                # Plant node — link to the Site entity
+                parent_node = region_nodes.get(region_key) or country_nodes.get(land1) or root
+                site_entity = self._sites.get(werks)
+                plant_name = str(plant.get("NAME1", "")).strip() or werks
+                pcode = f"SITE_{werks}"
+                pnode = SiteHierarchyNode(
+                    tenant_id=tenant_id,
+                    code=pcode,
+                    name=plant_name,
+                    hierarchy_level="SITE",
+                    hierarchy_path=f"{parent_node.hierarchy_path}/{pcode}",
+                    depth=parent_node.depth + 1,
+                    parent_id=parent_node.id,
+                    site_id=site_entity.id if site_entity else None,
+                )
+                self.db.add(pnode)
+                site_count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {site_count} site hierarchy nodes (Company→Country→Region→Plant)")
+
+        # ── PRODUCT HIERARCHY ─────────────────────────────────────────────
+        t179 = self._data.get("T179", pd.DataFrame())
+        t179t = self._data.get("T179T", pd.DataFrame())
+
+        # Build PRODH → text lookup
+        prodh_text: Dict[str, str] = {}
+        if not t179t.empty:
+            for _, r in t179t.iterrows():
+                prodh_text[str(r.get("PRODH", "")).strip()] = str(r.get("VTEXT", "")).strip()
+
+        if not t179.empty:
+            # Root node
+            prod_root_code = f"PRODUCTS_{tenant_id}"
+            prod_root = ProductHierarchyNode(
+                tenant_id=tenant_id,
+                code=prod_root_code,
+                name="All Products",
+                hierarchy_level="CATEGORY",
+                hierarchy_path=prod_root_code,
+                depth=0,
+            )
+            self.db.add(prod_root)
+            await self.db.flush()
+            product_count += 1
+
+            # T179 rows have PRODH (hierarchy code) and STUFE (level: 1, 2, 3)
+            # PRODH codes are hierarchical: "00001" (level 1), "0000100001" (level 2),
+            # "000010000100000001" (level 3). Parent is determined by prefix.
+            prodh_nodes: Dict[str, ProductHierarchyNode] = {"": prod_root}
+            level_map = {"CATEGORY": 0, "FAMILY": 1, "GROUP": 2, "PRODUCT": 3}
+            level_names = {0: "CATEGORY", 1: "FAMILY", 2: "GROUP", 3: "PRODUCT"}
+
+            # Sort by PRODH length so parents are created before children
+            t179_sorted = t179.sort_values(by="PRODH", key=lambda s: s.str.len())
+
+            for _, r in t179_sorted.iterrows():
+                prodh = str(r.get("PRODH", "")).strip()
+                stufe = int(r.get("STUFE", 0)) if pd.notna(r.get("STUFE")) else 0
+                if not prodh or stufe == 0:
+                    continue  # root or empty
+
+                # Find parent by progressively shortening PRODH
+                parent = prod_root
+                for candidate_len in range(len(prodh) - 1, 0, -1):
+                    candidate = prodh[:candidate_len]
+                    if candidate in prodh_nodes:
+                        parent = prodh_nodes[candidate]
+                        break
+
+                text = prodh_text.get(prodh, f"Category {prodh}")
+                hlevel = level_names.get(stufe, "GROUP")
+                hcode = f"PRODH_{prodh}"
+                node = ProductHierarchyNode(
+                    tenant_id=tenant_id,
+                    code=hcode,
+                    name=text,
+                    hierarchy_level=hlevel,
+                    hierarchy_path=f"{parent.hierarchy_path}/{hcode}",
+                    depth=parent.depth + 1,
+                    parent_id=parent.id,
+                )
+                self.db.add(node)
+                await self.db.flush()
+                prodh_nodes[prodh] = node
+                product_count += 1
+
+            # Link products to hierarchy nodes via MARA.PRDHA
+            mara = self._data.get("MARA", pd.DataFrame())
+            if not mara.empty:
+                linked = 0
+                for _, r in mara.iterrows():
+                    prdha = str(r.get("PRDHA", "")).strip()
+                    matnr = str(r.get("MATNR", "")).strip()
+                    if prdha and prdha in prodh_nodes and matnr in self._products:
+                        product_entity = self._products[matnr]
+                        # Find or create a leaf node for this product
+                        parent_h = prodh_nodes[prdha]
+                        pcode = f"PROD_{product_entity.id}_{tenant_id}"
+                        leaf = ProductHierarchyNode(
+                            tenant_id=tenant_id,
+                            code=pcode,
+                            name=product_entity.description or matnr,
+                            hierarchy_level="PRODUCT",
+                            hierarchy_path=f"{parent_h.hierarchy_path}/{pcode}",
+                            depth=parent_h.depth + 1,
+                            parent_id=parent_h.id,
+                            product_id=product_entity.id,
+                        )
+                        self.db.add(leaf)
+                        product_count += 1
+                        linked += 1
+                await self.db.flush()
+                logger.info(f"Linked {linked} products to T179 hierarchy nodes")
+
+        logger.info(f"Created {product_count} product hierarchy nodes total")
+        return {"site_nodes": site_count, "product_nodes": product_count}
 
     def _compute_market_regions(
         self,
