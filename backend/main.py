@@ -6501,13 +6501,14 @@ api.include_router(ek_router, tags=["experiential-knowledge"])
 @api.get("/hierarchy/site-tree", tags=["hierarchy"])
 async def get_site_hierarchy_tree(tenant_id: int = None):
     """Return site hierarchy tree for user scope assignment."""
+    from sqlalchemy import select as sa_select
     from app.db.session import async_session_factory
     from app.models.planning_hierarchy import SiteHierarchyNode
     if not tenant_id:
         return []
     async with async_session_factory() as db:
         result = await db.execute(
-            select(SiteHierarchyNode)
+            sa_select(SiteHierarchyNode)
             .where(SiteHierarchyNode.tenant_id == tenant_id)
             .order_by(SiteHierarchyNode.hierarchy_path)
         )
@@ -6524,14 +6525,15 @@ async def get_site_hierarchy_tree(tenant_id: int = None):
 @api.get("/hierarchy/product-tree", tags=["hierarchy"])
 async def get_product_hierarchy_tree(tenant_id: int = None):
     """Return product hierarchy tree for user scope assignment."""
+    from sqlalchemy import select as sa_select
     from app.db.session import async_session_factory
     from app.models.planning_hierarchy import ProductHierarchyNode
     if not tenant_id:
         return []
     async with async_session_factory() as db:
         result = await db.execute(
-            select(ProductHierarchyNode)
-            .where(ProductHierarchyNode.tenant_id == tid)
+            sa_select(ProductHierarchyNode)
+            .where(ProductHierarchyNode.tenant_id == tenant_id)
             .order_by(ProductHierarchyNode.hierarchy_path)
         )
         nodes = result.scalars().all()
