@@ -334,21 +334,36 @@ const SearchTab = () => {
 };
 
 // ============================================================================
-// Sources Tab — URL-based ingestion
+// Market Intelligence Tab — Standard + Custom Sources
 // ============================================================================
 
-// ── Standard source definitions (built-in, free public APIs) ──────────────────
+// Tier definitions for badge rendering
+const TIER_OPEN = 'open';
+const TIER_FREE = 'free';
+const TIER_PAID = 'paid';
+
+const TIER_META = {
+  [TIER_OPEN]: { label: 'Open', color: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
+  [TIER_FREE]: { label: 'Free', color: 'bg-blue-100 text-blue-700', dot: 'bg-blue-500' },
+  [TIER_PAID]: { label: 'Paid', color: 'bg-purple-100 text-purple-700', dot: 'bg-purple-500' },
+};
+
+// ── Standard source definitions with tier classification ─────────────────────
 
 const STANDARD_SOURCES = [
-  { key: 'open_meteo', icon: '🌦️', name: 'Weather (Open-Meteo)', desc: 'Temperature, precipitation, severe weather at your site and lane locations', needsKey: false },
-  { key: 'nws_alerts', icon: '⛈️', name: 'NWS Severe Weather Alerts', desc: 'Winter storms, floods, tornado warnings for your operating states', needsKey: false },
-  { key: 'dot_disruptions', icon: '🚛', name: 'Transportation Disruptions (DOT)', desc: 'Road closures, bridge restrictions, port congestion on your freight corridors', needsKey: false },
-  { key: 'gdelt', icon: '🌍', name: 'Geopolitical Events (GDELT)', desc: 'Supply disruptions, port strikes, trade sanctions — keywords from your industry', needsKey: false },
-  { key: 'openfda', icon: '🏛️', name: 'Regulatory Alerts (FDA)', desc: 'Product recalls and safety alerts matching your product categories', needsKey: false },
-  { key: 'google_trends', icon: '📈', name: 'Consumer Trends (Google)', desc: 'Search interest for your product keywords (demand sensing)', needsKey: false },
-  { key: 'reddit_sentiment', icon: '💬', name: 'Industry Sentiment (Reddit)', desc: 'Frontline worker sentiment from industry subreddits — leading indicator for demand and supply shifts', needsKey: false },
-  { key: 'fred', icon: '📊', name: 'Economic Indicators (FRED)', desc: 'Industry-specific CPI, PPI, commodity prices, regional unemployment, diesel', needsKey: true, keyEnv: 'FRED_API_KEY' },
-  { key: 'eia', icon: '⚡', name: 'Energy Prices (EIA)', desc: 'Crude oil, natural gas, diesel — affects logistics and manufacturing costs', needsKey: true, keyEnv: 'EIA_API_KEY' },
+  // Completely Open (no registration)
+  { key: 'open_meteo', name: 'Open-Meteo', desc: 'Temperature extremes, precipitation, severe weather by site and lane locations', tier: TIER_OPEN },
+  { key: 'gdelt', name: 'GDELT', desc: 'Supply chain disruptions, port strikes, trade sanctions, factory shutdowns', tier: TIER_OPEN },
+  { key: 'openfda', name: 'openFDA', desc: 'FDA recalls, safety alerts, enforcement actions matching your product categories', tier: TIER_OPEN },
+  { key: 'google_trends', name: 'Google Trends', desc: 'Consumer search interest for your product keywords (demand sensing)', tier: TIER_OPEN },
+  { key: 'reddit_sentiment', name: 'Reddit', desc: 'Frontline worker sentiment from industry subreddits — leading indicator for demand and supply shifts', tier: TIER_OPEN },
+
+  // Free with Registration
+  { key: 'fred', name: 'FRED API', desc: 'Economic indicators: CPI, PPI, unemployment, consumer sentiment, oil, gas, treasury, dollar index', tier: TIER_FREE, keyEnv: 'FRED_API_KEY', keyUrl: 'https://fred.stlouisfed.org/docs/api/api_key.html' },
+  { key: 'eia', name: 'EIA API', desc: 'Energy prices: WTI crude, natural gas, diesel — affects logistics and manufacturing costs', tier: TIER_FREE, keyEnv: 'EIA_API_KEY', keyUrl: 'https://www.eia.gov/opendata/register.php' },
+
+  // Paid Subscription
+  { key: 'newsapi', name: 'NewsAPI', desc: 'Headline sentiment analysis from 80K+ sources. Free tier: 100 req/day', tier: TIER_PAID, keyEnv: 'NEWSAPI_KEY', keyUrl: 'https://newsapi.org/pricing' },
 ];
 
 const SourcesTab = ({ onRefresh }) => {
@@ -356,13 +371,14 @@ const SourcesTab = ({ onRefresh }) => {
   const [sources, setSources] = useState([]);
   const [sourcesLoading, setSourcesLoading] = useState(true);
   const [activating, setActivating] = useState(false);
+  const [expandedApiKey, setExpandedApiKey] = useState(null);
 
   // ── Config selector ─────────────────────────────────────────────────
   const [configs, setConfigs] = useState([]);
   const [selectedConfigId, setSelectedConfigId] = useState(null);
 
   // ── Custom URL sources state ────────────────────────────────────────
-  const [customForm, setCustomForm] = useState({ url: '', title: '', category: '', tags: '', username: '', password: '' });
+  const [customForm, setCustomForm] = useState({ url: '', title: '', category: '', tags: '', refreshFreq: 'one-time', username: '', password: '', apiKey: '' });
   const [ingesting, setIngesting] = useState(false);
   const [ingestResult, setIngestResult] = useState(null);
   const [ingestError, setIngestError] = useState(null);
@@ -393,7 +409,6 @@ const SourcesTab = ({ onRefresh }) => {
 
   // ── Standard source actions ─────────────────────────────────────────
 
-  const isSourceActive = (key) => sources.some(s => s.source_key === key && s.is_active);
   const getSource = (key) => sources.find(s => s.source_key === key);
 
   const handleActivateAll = async () => {
@@ -409,13 +424,11 @@ const SourcesTab = ({ onRefresh }) => {
   const handleToggle = async (sourceKey) => {
     const src = getSource(sourceKey);
     if (src) {
-      // Toggle existing source
       try {
         await api.put(`/external-signals/sources/${src.id}/toggle?is_active=${!src.is_active}`);
         await loadSources();
       } catch { /* ignore */ }
     } else if (selectedConfigId) {
-      // Activate new source
       try {
         await api.post(`/external-signals/sources?source_key=${sourceKey}&config_id=${selectedConfigId}`);
         await loadSources();
@@ -446,13 +459,13 @@ const SourcesTab = ({ onRefresh }) => {
         category: customForm.category || null,
         tags: customForm.tags ? customForm.tags.split(',').map(t => t.trim()).filter(Boolean) : null,
       };
-      // If credentials provided, include them (backend handles auth)
       if (customForm.username) payload.auth_username = customForm.username;
       if (customForm.password) payload.auth_password = customForm.password;
+      if (customForm.apiKey) payload.auth_api_key = customForm.apiKey;
 
       const response = await api.post('/knowledge-base/ingest-url', payload);
       setIngestResult(response.data.document);
-      setCustomForm({ url: '', title: '', category: '', tags: '', username: '', password: '' });
+      setCustomForm({ url: '', title: '', category: '', tags: '', refreshFreq: 'one-time', username: '', password: '', apiKey: '' });
       setShowCustomForm(false);
       onRefresh();
     } catch (err) {
@@ -461,6 +474,44 @@ const SourcesTab = ({ onRefresh }) => {
       setIngesting(false);
     }
   };
+
+  // ── Tier badge component ────────────────────────────────────────────
+  const TierBadge = ({ tier }) => {
+    const meta = TIER_META[tier];
+    if (!meta) return null;
+    return (
+      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${meta.color}`}>
+        {meta.label}
+      </span>
+    );
+  };
+
+  // ── Toggle switch component ─────────────────────────────────────────
+  const ToggleSwitch = ({ checked, onChange, disabled }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onChange}
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed ${
+        checked ? 'bg-blue-600' : 'bg-gray-200'
+      }`}
+    >
+      <span
+        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+          checked ? 'translate-x-4' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  );
+
+  // ── Group sources by tier ───────────────────────────────────────────
+  const tierGroups = [
+    { tier: TIER_OPEN, title: 'Completely Open', subtitle: 'No registration required' },
+    { tier: TIER_FREE, title: 'Free with Registration', subtitle: 'Requires a free API key' },
+    { tier: TIER_PAID, title: 'Paid Subscription', subtitle: 'Commercial API plans' },
+  ];
 
   // ── Render ──────────────────────────────────────────────────────────
 
@@ -502,92 +553,165 @@ const SourcesTab = ({ onRefresh }) => {
       <div className="bg-white rounded-lg border">
         <div className="px-5 py-3 border-b">
           <h3 className="text-base font-semibold">Standard Sources</h3>
-          <p className="text-xs text-gray-500">Free public APIs — auto-configured from your DAG topology. Refreshed daily at 05:30.</p>
+          <p className="text-xs text-gray-500">Built-in market intelligence feeds — auto-configured from your DAG topology. Refreshed daily at 05:30.</p>
         </div>
-        <div className="divide-y">
-          {STANDARD_SOURCES.map(std => {
-            const src = getSource(std.key);
-            const active = src?.is_active ?? false;
-            const hasSignals = (src?.signals_collected || 0) > 0;
-            const lastRefresh = src?.last_refresh_at;
 
-            return (
-              <div key={std.key} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
-                {/* Active checkbox */}
-                <button
-                  onClick={() => handleToggle(std.key)}
-                  className="flex-shrink-0"
-                  title={active ? 'Deactivate' : 'Activate'}
-                >
-                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                    active
-                      ? 'bg-blue-600 border-blue-600'
-                      : 'border-gray-300 hover:border-gray-400'
-                  }`}>
-                    {active && (
-                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
-                </button>
+        {tierGroups.map(group => {
+          const groupSources = STANDARD_SOURCES.filter(s => s.tier === group.tier);
+          if (groupSources.length === 0) return null;
 
-                {/* Icon */}
-                <span className="text-lg flex-shrink-0 w-7 text-center">{std.icon}</span>
-
-                {/* Name and description */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-sm font-medium ${active ? 'text-gray-900' : 'text-gray-500'}`}>
-                      {std.name}
-                    </span>
-                    {std.needsKey && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">API key required</span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-400 leading-tight">{std.desc}</p>
-
-                  {/* Show DAG-derived params when active */}
-                  {active && src?.source_params && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
-                      {src.source_params.locations?.length > 0 && (
-                        <span className="text-[10px] text-blue-600">{src.source_params.locations.length} locations</span>
-                      )}
-                      {src.source_params.states?.length > 0 && (
-                        <span className="text-[10px] text-blue-600">States: {src.source_params.states.join(', ')}</span>
-                      )}
-                      {src.source_params.keywords?.length > 0 && (
-                        <span className="text-[10px] text-blue-600">{src.source_params.keywords.length} keywords</span>
-                      )}
-                      {src.source_params.route_keywords?.length > 0 && (
-                        <span className="text-[10px] text-blue-600">Routes: {src.source_params.route_keywords.slice(0, 5).join(', ')}</span>
-                      )}
-                      {src.source_params.corridors?.length > 0 && (
-                        <span className="text-[10px] text-blue-600">{src.source_params.corridors.length} freight corridors</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Status */}
-                <div className="flex-shrink-0 text-right min-w-[100px]">
-                  {active && hasSignals && (
-                    <span className="text-xs text-gray-500">{src.signals_collected?.toLocaleString()} signals</span>
-                  )}
-                  {active && lastRefresh && (
-                    <p className="text-[10px] text-gray-400">
-                      {src.last_refresh_status === 'success' ? '✓' : src.last_refresh_status === 'error' ? '✗' : '…'}{' '}
-                      {new Date(lastRefresh).toLocaleDateString()}
-                    </p>
-                  )}
-                </div>
+          return (
+            <div key={group.tier}>
+              {/* Tier group header */}
+              <div className="px-5 py-2 bg-gray-50 border-b border-t flex items-center gap-2">
+                <TierBadge tier={group.tier} />
+                <span className="text-xs font-medium text-gray-600">{group.title}</span>
+                <span className="text-[10px] text-gray-400">— {group.subtitle}</span>
               </div>
-            );
-          })}
-        </div>
+
+              <div className="divide-y">
+                {groupSources.map(std => {
+                  const src = getSource(std.key);
+                  const active = src?.is_active ?? false;
+                  const hasSignals = (src?.signals_collected || 0) > 0;
+                  const lastRefresh = src?.last_refresh_at;
+                  const needsKey = !!std.keyEnv;
+                  const apiKeyExpanded = expandedApiKey === std.key;
+
+                  const isPaid = std.tier === TIER_PAID;
+                  const isFree = std.tier === TIER_FREE;
+                  const isOpen = std.tier === TIER_OPEN;
+                  // Free/Paid: disable toggle until API key is configured
+                  const keyConfigured = src?.api_key_encrypted || false;
+                  const canToggle = isOpen || keyConfigured;
+
+                  return (
+                    <div key={std.key} className="px-5 py-3 hover:bg-gray-50/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        {/* Toggle switch — disabled for Free/Paid until API key entered */}
+                        <div className="relative">
+                          <ToggleSwitch
+                            checked={active}
+                            onChange={() => canToggle ? handleToggle(std.key) : setExpandedApiKey(std.key)}
+                          />
+                          {!canToggle && (
+                            <div className="absolute -bottom-3 left-0 text-[9px] text-amber-600 whitespace-nowrap">
+                              Key required
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Name and description */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-medium ${active ? 'text-gray-900' : 'text-gray-500'}`}>
+                              {std.name}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-400 leading-tight mt-0.5">{std.desc}</p>
+
+                          {/* Free tier: API key always visible inline */}
+                          {isFree && (
+                            <div className="mt-2 flex items-center gap-2 max-w-md">
+                              <input
+                                type="password"
+                                placeholder={`Enter ${std.keyEnv} key`}
+                                className="flex-1 border rounded px-2 py-1 text-xs font-mono"
+                                autoComplete="new-password"
+                              />
+                              {std.keyUrl && (
+                                <a
+                                  href={std.keyUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] text-blue-600 hover:text-blue-800 whitespace-nowrap"
+                                >
+                                  Get free key &rarr;
+                                </a>
+                              )}
+                              <button className="text-xs px-2 py-1 rounded bg-primary text-white hover:bg-primary/90">
+                                Save
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Paid tier: API key + Advanced config, expandable */}
+                          {isPaid && (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2 max-w-md">
+                                <input
+                                  type="password"
+                                  placeholder={`Enter ${std.keyEnv || 'API'} key`}
+                                  className="flex-1 border rounded px-2 py-1 text-xs font-mono"
+                                  autoComplete="new-password"
+                                />
+                                <button className="text-xs px-2 py-1 rounded bg-primary text-white hover:bg-primary/90">
+                                  Save
+                                </button>
+                              </div>
+                              <button
+                                onClick={() => setExpandedApiKey(apiKeyExpanded ? null : std.key)}
+                                className="text-[10px] text-gray-500 hover:text-gray-700 mt-1"
+                              >
+                                {apiKeyExpanded ? '▾ Hide advanced' : '▸ Advanced settings'}
+                              </button>
+                              {apiKeyExpanded && (
+                                <div className="mt-1 space-y-1 max-w-md pl-2 border-l-2 border-gray-200">
+                                  <input placeholder="Subscription tier" className="w-full border rounded px-2 py-1 text-xs" />
+                                  <input placeholder="Rate limit (req/day)" className="w-full border rounded px-2 py-1 text-xs" />
+                                  <input placeholder="Custom endpoint URL" className="w-full border rounded px-2 py-1 text-xs" />
+                                  <p className="text-[10px] text-gray-400">Contact provider for API access details</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Open tier: nothing extra needed — just the toggle */}
+                          {/* Show DAG-derived params when active */}
+                          {active && src?.source_params && (
+                            <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+                              {src.source_params.locations?.length > 0 && (
+                                <span className="text-[10px] text-blue-600">{src.source_params.locations.length} locations</span>
+                              )}
+                              {src.source_params.states?.length > 0 && (
+                                <span className="text-[10px] text-blue-600">States: {src.source_params.states.join(', ')}</span>
+                              )}
+                              {src.source_params.keywords?.length > 0 && (
+                                <span className="text-[10px] text-blue-600">{src.source_params.keywords.length} keywords</span>
+                              )}
+                              {src.source_params.route_keywords?.length > 0 && (
+                                <span className="text-[10px] text-blue-600">Routes: {src.source_params.route_keywords.slice(0, 5).join(', ')}</span>
+                              )}
+                              {src.source_params.corridors?.length > 0 && (
+                                <span className="text-[10px] text-blue-600">{src.source_params.corridors.length} freight corridors</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Last refresh + signal count */}
+                        <div className="flex-shrink-0 text-right min-w-[100px]">
+                          {active && hasSignals && (
+                            <span className="text-xs text-gray-500">{src.signals_collected?.toLocaleString()} signals</span>
+                          )}
+                          {active && lastRefresh && (
+                            <p className="text-[10px] text-gray-400">
+                              {src.last_refresh_status === 'success' ? 'OK' : src.last_refresh_status === 'error' ? 'Error' : 'Pending'}{' '}
+                              {new Date(lastRefresh).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* ── Custom URL Sources ───────────────────────────────────────── */}
+      {/* ── Custom Sources ────────────────────────────────────────────── */}
       <div className="bg-white rounded-lg border">
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <div>
@@ -599,7 +723,7 @@ const SourcesTab = ({ onRefresh }) => {
             className="flex items-center gap-1 px-3 py-1.5 text-sm border rounded-md hover:bg-gray-50"
           >
             <Plus className="w-3.5 h-3.5" />
-            Add URL
+            Add Source
           </button>
         </div>
 
@@ -609,16 +733,16 @@ const SourcesTab = ({ onRefresh }) => {
             <div className="space-y-3 max-w-2xl">
               <input
                 type="url"
-                placeholder="https://example.com/feed.json or https://intranet.usfoods.com/data"
+                placeholder="https://example.com/feed.json or https://intranet.company.com/data"
                 value={customForm.url}
                 onChange={e => setCustomForm({ ...customForm, url: e.target.value })}
                 onKeyDown={e => e.key === 'Enter' && handleIngestUrl()}
                 className="w-full border rounded px-3 py-2 text-sm font-mono"
               />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <input
                   type="text"
-                  placeholder="Title (optional)"
+                  placeholder="Name"
                   value={customForm.title}
                   onChange={e => setCustomForm({ ...customForm, title: e.target.value })}
                   className="border rounded px-3 py-2 text-sm"
@@ -628,10 +752,19 @@ const SourcesTab = ({ onRefresh }) => {
                   onChange={e => setCustomForm({ ...customForm, category: e.target.value })}
                   className="border rounded px-3 py-2 text-sm"
                 >
-                  <option value="">Category (optional)</option>
+                  <option value="">Category</option>
                   {CATEGORIES.map(c => (
                     <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
+                </select>
+                <select
+                  value={customForm.refreshFreq}
+                  onChange={e => setCustomForm({ ...customForm, refreshFreq: e.target.value })}
+                  className="border rounded px-3 py-2 text-sm"
+                >
+                  <option value="one-time">One-time fetch</option>
+                  <option value="daily">Daily refresh</option>
+                  <option value="weekly">Weekly refresh</option>
                 </select>
               </div>
               <input
@@ -642,28 +775,38 @@ const SourcesTab = ({ onRefresh }) => {
                 className="w-full border rounded px-3 py-2 text-sm"
               />
 
-              {/* Authentication (optional) */}
+              {/* Authentication (collapsed) */}
               <details className="text-sm">
                 <summary className="cursor-pointer text-gray-500 hover:text-gray-700 select-none">
                   Authentication (optional — for subscription or intranet sources)
                 </summary>
-                <div className="grid grid-cols-2 gap-3 mt-2">
+                <div className="space-y-2 mt-2">
                   <input
                     type="text"
-                    placeholder="Username or API key"
-                    value={customForm.username}
-                    onChange={e => setCustomForm({ ...customForm, username: e.target.value })}
-                    className="border rounded px-3 py-2 text-sm"
+                    placeholder="API key"
+                    value={customForm.apiKey}
+                    onChange={e => setCustomForm({ ...customForm, apiKey: e.target.value })}
+                    className="w-full border rounded px-3 py-2 text-sm"
                     autoComplete="off"
                   />
-                  <input
-                    type="password"
-                    placeholder="Password or token"
-                    value={customForm.password}
-                    onChange={e => setCustomForm({ ...customForm, password: e.target.value })}
-                    className="border rounded px-3 py-2 text-sm"
-                    autoComplete="new-password"
-                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Username (if basic auth)"
+                      value={customForm.username}
+                      onChange={e => setCustomForm({ ...customForm, username: e.target.value })}
+                      className="border rounded px-3 py-2 text-sm"
+                      autoComplete="off"
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password (if basic auth)"
+                      value={customForm.password}
+                      onChange={e => setCustomForm({ ...customForm, password: e.target.value })}
+                      className="border rounded px-3 py-2 text-sm"
+                      autoComplete="new-password"
+                    />
+                  </div>
                 </div>
               </details>
 
@@ -674,7 +817,7 @@ const SourcesTab = ({ onRefresh }) => {
                   className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   {ingesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  {ingesting ? 'Testing & Indexing...' : 'Test URL & Index'}
+                  {ingesting ? 'Testing & Indexing...' : 'Test & Add'}
                 </button>
                 <button
                   onClick={() => { setShowCustomForm(false); setIngestError(null); }}
@@ -705,7 +848,7 @@ const SourcesTab = ({ onRefresh }) => {
         {/* Placeholder when no custom sources */}
         {!showCustomForm && (
           <div className="px-5 py-6 text-center text-sm text-gray-400">
-            No custom sources added yet. Click "Add URL" to add a subscription feed, intranet page, or industry report.
+            No custom sources added yet. Click "Add Source" to add a subscription feed, intranet page, or industry report.
           </div>
         )}
       </div>
@@ -714,7 +857,7 @@ const SourcesTab = ({ onRefresh }) => {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
         <p className="font-medium mb-1">How it works</p>
         <ul className="list-disc pl-4 space-y-1 text-blue-700">
-          <li><b>Standard sources</b> are free public APIs — auto-configured from your supply chain network (site locations, freight lanes, products).</li>
+          <li><b>Standard sources</b> are built-in market intelligence feeds — auto-configured from your supply chain network (site locations, freight lanes, products).</li>
           <li>They refresh daily at 05:30 and inject signals into Azirella's context for outside-in planning awareness.</li>
           <li>Expired signals (e.g., yesterday's weather) are automatically cleaned up — only current intelligence is used.</li>
           <li><b>Custom sources</b> are URLs you add manually — HTML pages, PDFs, or JSON feeds. They are fetched, chunked, and embedded into the knowledge base.</li>

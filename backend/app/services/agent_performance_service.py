@@ -164,36 +164,94 @@ class AgentPerformanceService:
 
             rows = []
 
-            # ── Path A: customer_id → TradingPartner geography ───────────────
+            # ── Path A: customer_id → TradingPartner → Geography hierarchy ───
             # This is the correct AWS SC DM path: forecast.customer_id → trading_partner
+            # Use TradingPartner.geo_id → Geography hierarchy (3/2/1-level) for
+            # region names, falling back to TradingPartner.state_prov + mapping.
             try:
-                tp_rows = (
-                    self.db.query(
-                        Product.category.label("category"),
-                        TradingPartner.state_prov.label("region_name"),
-                        func.sum(Forecast.forecast_p50 * Product.unit_price).label("revenue"),
-                        func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
+                tp_base_filters = [
+                    *base_filters,
+                    Forecast.customer_id.isnot(None),
+                ]
+
+                def _tp_base_q(region_col):
+                    return (
+                        self.db.query(
+                            Product.category.label("category"),
+                            region_col.label("region_name"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_price).label("revenue"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
+                        )
+                        .join(Product, Forecast.product_id == Product.id)
+                        .join(TradingPartner, Forecast.customer_id == TradingPartner.id)
+                        .filter(*tp_base_filters)
                     )
-                    .join(Product, Forecast.product_id == Product.id)
-                    .join(TradingPartner, Forecast.customer_id == TradingPartner.id)
-                    .filter(*base_filters)
-                    .filter(Forecast.customer_id.isnot(None))
-                    .group_by(Product.category, TradingPartner.state_prov)
+
+                TPGeo = aliased(Geography, name="tp_geo")
+                TPStateGeo = aliased(Geography, name="tp_state_geo")
+                TPRegionGeo = aliased(Geography, name="tp_region_geo")
+
+                # A1: 3-level geo hierarchy (city → state → region)
+                tp_rows = (
+                    _tp_base_q(TPRegionGeo.description)
+                    .join(TPGeo, TradingPartner.geo_id == TPGeo.id)
+                    .join(TPStateGeo, TPGeo.parent_geo_id == TPStateGeo.id)
+                    .join(TPRegionGeo, TPStateGeo.parent_geo_id == TPRegionGeo.id)
+                    .group_by(Product.category, TPRegionGeo.description)
                     .all()
                 )
-                if tp_rows:
-                    rows = [
-                        type("Row", (), {
-                            "category": r.category,
-                            "region_name": self._STATE_TO_REGION.get(
-                                r.region_name or "", r.region_name or "Other"
-                            ),
-                            "revenue": r.revenue,
-                            "cost": r.cost,
-                        })()
-                        for r in tp_rows
-                        if r.region_name
-                    ]
+
+                # A2: 2-level geo hierarchy (city → state/region)
+                if not tp_rows:
+                    tp_rows = (
+                        _tp_base_q(TPStateGeo.description)
+                        .join(TPGeo, TradingPartner.geo_id == TPGeo.id)
+                        .join(TPStateGeo, TPGeo.parent_geo_id == TPStateGeo.id)
+                        .group_by(Product.category, TPStateGeo.description)
+                        .all()
+                    )
+
+                # A3: 1-level geo (direct geo description)
+                if not tp_rows:
+                    tp_rows = (
+                        _tp_base_q(TPGeo.description)
+                        .join(TPGeo, TradingPartner.geo_id == TPGeo.id)
+                        .group_by(Product.category, TPGeo.description)
+                        .all()
+                    )
+
+                # A4: Flat fallback — TradingPartner.state_prov + STATE_TO_REGION mapping
+                if not tp_rows:
+                    tp_rows = (
+                        self.db.query(
+                            Product.category.label("category"),
+                            TradingPartner.state_prov.label("region_name"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_price).label("revenue"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
+                        )
+                        .join(Product, Forecast.product_id == Product.id)
+                        .join(TradingPartner, Forecast.customer_id == TradingPartner.id)
+                        .filter(*tp_base_filters)
+                        .group_by(Product.category, TradingPartner.state_prov)
+                        .all()
+                    )
+                    if tp_rows:
+                        rows = [
+                            type("Row", (), {
+                                "category": r.category,
+                                "region_name": self._STATE_TO_REGION.get(
+                                    r.region_name or "", r.region_name or "Other"
+                                ),
+                                "revenue": r.revenue,
+                                "cost": r.cost,
+                            })()
+                            for r in tp_rows
+                            if r.region_name
+                        ]
+
+                # For A1-A3, rows come directly with proper region names
+                if tp_rows and not rows:
+                    rows = [r for r in tp_rows if r.region_name]
             except Exception as e:
                 logger.debug("Treemap Path A (customer TradingPartner) failed: %s", e)
 
