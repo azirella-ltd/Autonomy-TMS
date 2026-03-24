@@ -6497,6 +6497,53 @@ api.include_router(email_signals_router, tags=["email-signals"])
 from app.api.endpoints.experiential_knowledge import router as ek_router
 api.include_router(ek_router, tags=["experiential-knowledge"])
 
+# Hierarchy Tree — site/product hierarchy for user scope picker
+@api.get("/hierarchy/site-tree", tags=["hierarchy"])
+async def get_site_hierarchy_tree(tenant_id: int = None):
+    """Return site hierarchy tree for user scope assignment."""
+    from app.db.session import async_session_factory
+    from app.models.planning_hierarchy import SiteHierarchyNode
+    if not tenant_id:
+        return []
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(SiteHierarchyNode)
+            .where(SiteHierarchyNode.tenant_id == tenant_id)
+            .order_by(SiteHierarchyNode.hierarchy_path)
+        )
+        nodes = result.scalars().all()
+        return [
+            {
+                "id": n.id, "code": n.code, "name": n.name,
+                "level": n.hierarchy_level, "parent_id": n.parent_id,
+                "depth": n.depth,
+            }
+            for n in nodes
+        ]
+
+@api.get("/hierarchy/product-tree", tags=["hierarchy"])
+async def get_product_hierarchy_tree(tenant_id: int = None):
+    """Return product hierarchy tree for user scope assignment."""
+    from app.db.session import async_session_factory
+    from app.models.planning_hierarchy import ProductHierarchyNode
+    if not tenant_id:
+        return []
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(ProductHierarchyNode)
+            .where(ProductHierarchyNode.tenant_id == tid)
+            .order_by(ProductHierarchyNode.hierarchy_path)
+        )
+        nodes = result.scalars().all()
+        return [
+            {
+                "id": n.id, "code": n.code, "name": n.name,
+                "level": n.hierarchy_level, "parent_id": n.parent_id,
+                "depth": n.depth,
+            }
+            for n in nodes
+        ]
+
 # BSC Configuration — tenant-admin BSC weights for CDT calibration loss function
 from app.api.endpoints.bsc_config import router as bsc_config_router
 api.include_router(bsc_config_router, tags=["bsc-config"])

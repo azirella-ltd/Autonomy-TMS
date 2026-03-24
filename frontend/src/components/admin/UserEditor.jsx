@@ -14,6 +14,8 @@ import {
   Save,
   X,
   Layers,
+  Globe,
+  Package,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import {
@@ -32,6 +34,7 @@ import {
 } from '../common';
 import { cn } from '../../lib/utils/cn';
 import CapabilitySelector from './CapabilitySelector';
+import HierarchyScopePicker from './HierarchyScopePicker';
 
 /**
  * UserEditor Component
@@ -62,6 +65,9 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [decisionLevelMeta, setDecisionLevelMeta] = useState(null);
+  const [siteNodes, setSiteNodes] = useState([]);
+  const [productNodes, setProductNodes] = useState([]);
+  const [hierarchyLoading, setHierarchyLoading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -73,14 +79,26 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
     decision_level: '',
     is_active: true,
     capabilities: [],
+    site_scope: [],
+    product_scope: [],
   });
 
-  // Fetch decision level → capabilities mapping
+  // Fetch decision level → capabilities mapping + hierarchy trees
   useEffect(() => {
     if (!open) return;
     api.get('/capabilities/decision-levels')
       .then(res => setDecisionLevelMeta(res.data.decision_levels))
       .catch(() => {}); // non-fatal
+
+    // Fetch hierarchy trees for scope picker
+    setHierarchyLoading(true);
+    Promise.all([
+      api.get('/hierarchy/site-tree').catch(() => ({ data: [] })),
+      api.get('/hierarchy/product-tree').catch(() => ({ data: [] })),
+    ]).then(([siteRes, productRes]) => {
+      setSiteNodes(siteRes.data || []);
+      setProductNodes(productRes.data || []);
+    }).finally(() => setHierarchyLoading(false));
   }, [open]);
 
   // Initialize form when user prop changes — fetch capabilities and decision_level from API
@@ -98,6 +116,8 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
         decision_level: user.decision_level || '',
         is_active: user.is_active !== undefined ? user.is_active : true,
         capabilities: Array.isArray(user.capabilities) ? user.capabilities : [],
+        site_scope: Array.isArray(user.site_scope) ? user.site_scope : [],
+        product_scope: Array.isArray(user.product_scope) ? user.product_scope : [],
       });
 
       // Fetch full user details (decision_level + capabilities) from API
@@ -106,10 +126,15 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
         setFormData(prev => ({ ...prev, capabilities: caps }));
       }).catch(() => {});
 
-      // Fetch decision_level from user detail
+      // Fetch decision_level + scope from user detail
       api.get(`/users/${user.id}`).then(res => {
-        const dl = res.data?.decision_level;
-        if (dl) setFormData(prev => ({ ...prev, decision_level: dl }));
+        const d = res.data || {};
+        setFormData(prev => ({
+          ...prev,
+          decision_level: d.decision_level || prev.decision_level,
+          site_scope: Array.isArray(d.site_scope) ? d.site_scope : prev.site_scope,
+          product_scope: Array.isArray(d.product_scope) ? d.product_scope : prev.product_scope,
+        }));
       }).catch(() => {});
     } else {
       setFormData({
@@ -121,6 +146,8 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
         decision_level: '',
         is_active: true,
         capabilities: [],
+        site_scope: [],
+        product_scope: [],
       });
     }
     setError(null);
@@ -202,6 +229,8 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
         decision_level: formData.decision_level || null,
         is_active: formData.is_active,
         capabilities: formData.capabilities,
+        site_scope: formData.site_scope?.length > 0 ? formData.site_scope : null,
+        product_scope: formData.product_scope?.length > 0 ? formData.product_scope : null,
       };
 
       // Only include password if provided
@@ -345,6 +374,46 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
                 </p>
               )}
             </FormField>
+          )}
+
+          {/* Scope Section — only for regular users (tenant admin has full access) */}
+          {formData.user_type === 'USER' && (siteNodes.length > 0 || productNodes.length > 0) && (
+            <>
+              <hr className="border-border" />
+
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Globe className="h-4 w-4" />
+                <span>Data Scope</span>
+              </div>
+
+              <Text className="text-muted-foreground text-sm">
+                Restrict which sites and products this user can see. Empty = full access.
+                Selecting a parent node includes all its children.
+              </Text>
+
+              <div className="grid grid-cols-2 gap-3">
+                {siteNodes.length > 0 && (
+                  <HierarchyScopePicker
+                    nodes={siteNodes}
+                    selectedCodes={formData.site_scope || []}
+                    onChange={(codes) => setFormData(prev => ({ ...prev, site_scope: codes }))}
+                    label="Site Scope"
+                    loading={hierarchyLoading}
+                    icon={Globe}
+                  />
+                )}
+                {productNodes.length > 0 && (
+                  <HierarchyScopePicker
+                    nodes={productNodes}
+                    selectedCodes={formData.product_scope || []}
+                    onChange={(codes) => setFormData(prev => ({ ...prev, product_scope: codes }))}
+                    label="Product Scope"
+                    loading={hierarchyLoading}
+                    icon={Package}
+                  />
+                )}
+              </div>
+            </>
           )}
 
           <div className="flex items-center gap-3">
