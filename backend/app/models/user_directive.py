@@ -190,7 +190,12 @@ class ConfigProvisioningStatus(Base):
     conformal_at = Column(DateTime, nullable=True)
     conformal_error = Column(Text, nullable=True)
 
-    # Step 13: Executive briefing
+    # Step 13: Scenario bootstrap (warm-start template priors)
+    scenario_bootstrap_status = Column(String(20), default="pending")
+    scenario_bootstrap_at = Column(DateTime, nullable=True)
+    scenario_bootstrap_error = Column(Text, nullable=True)
+
+    # Step 14: Executive briefing
     briefing_status = Column(String(20), default="pending")
     briefing_at = Column(DateTime, nullable=True)
     briefing_error = Column(Text, nullable=True)
@@ -212,7 +217,7 @@ class ConfigProvisioningStatus(Base):
         "warm_start", "sop_graphsage", "cfa_optimization",
         "lgbm_forecast", "demand_tgnn", "supply_tgnn", "inventory_tgnn",
         "trm_training", "rl_training", "supply_plan", "rccp_validation",
-        "decision_seed", "site_tgnn", "conformal", "briefing",
+        "decision_seed", "site_tgnn", "conformal", "scenario_bootstrap", "briefing",
     ]
 
     # Steps that run for PARAMETER_ONLY reprovisioning (policy/parameter changes).
@@ -240,6 +245,7 @@ class ConfigProvisioningStatus(Base):
         "decision_seed": "Decision Stream Seeding",
         "site_tgnn": "Operational Site Agent Training",
         "conformal": "Uncertainty Calibration",
+        "scenario_bootstrap": "Scenario Skill Warm-Start",
         "briefing": "Executive Briefing",
     }
 
@@ -258,7 +264,8 @@ class ConfigProvisioningStatus(Base):
         "decision_seed": ["rl_training"],
         "site_tgnn": ["decision_seed"],
         "conformal": ["warm_start"],
-        "briefing": ["supply_plan", "decision_seed"],
+        "scenario_bootstrap": ["conformal", "decision_seed"],
+        "briefing": ["supply_plan", "decision_seed", "scenario_bootstrap"],
     }
 
     def to_dict(self):
