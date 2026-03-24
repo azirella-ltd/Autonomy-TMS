@@ -99,8 +99,12 @@ When implementing any entity:
 | EXPIRED (DecisionStatus) | ACTIONED | AIIO: time expired, auto-resolved |
 | REJECTED (DecisionStatus) | OVERRIDDEN | AIIO: user rejected with alternative |
 | — | INSPECTED | AIIO: user reviewed, no action needed (new) |
+| powell_role | decision_level | User model field, API field, enum |
+| PowellRoleEnum | DecisionLevelEnum | Enum class name |
 
 > **Terminology Note — AIIO Decision Status (Mar 2026)**: The `DecisionStatus` enum in `decision_tracking.py` (used by `agent_decisions` and `sop_worklist_items` tables) has been renamed to the **AIIO model**: **A**ctioned, **I**nformed, **I**nspected, **O**verridden. This applies only to the agent decision workflow — the planning decision workflow (`planning_decision.py`: PENDING/APPLIED/PENDING_APPROVAL/APPROVED/REJECTED/REVERTED/SUPERSEDED) and AAP ThreadStatus are unchanged. The `commit_status` enum (PROPOSED/REVIEWED/ACCEPTED/OVERRIDDEN/SUBMITTED) used in planning commit workflows also remains unchanged.
+
+> **Terminology Note — Decision Level (Mar 2026)**: The `powell_role` field on the User model and `PowellRoleEnum` have been renamed to `decision_level` and `DecisionLevelEnum`. This clarifies that the field represents the user's planning hierarchy level (VP/EXECUTIVE, S&OP_DIRECTOR, MPS_MANAGER, ANALYST), not a "role" in the RBAC sense. All API endpoints, serializers, and frontend references updated. The enum values themselves are unchanged.
 
 > **Terminology Note — Inventory Buffer (Feb 2026)**: At the TRM/Powell execution layer, "SafetyStockTRM" has been renamed to **InventoryBufferTRM**. This addresses the DDMRP critique that "safety stock" as a concept causes MRP to treat it as a hard demand target, generating planned orders that compete with real customer demand for upstream capacity. At the TRM level, the inventory buffer is an **uncertainty absorber**, NOT a hard demand target for MRP. Buffer-replenishment planned orders get lower priority than demand-driven orders (soft-buffer netting). **Important**: The AWS SC data model fields (`safety_stock` column, `ss_quantity`, `inv_policy` policy types) remain unchanged for compliance — the rename applies only to TRM agent names, Powell decision tables, and hive signal types.
 
@@ -522,6 +526,9 @@ make proxy-logs
 
 - `pegging_service.py`: Full-Level Pegging — Kinaxis-style supply-demand tracing with multi-stage chain tracking. Every unit of supply is traceable to demand (customer order or forecast), from vendor through factories and DCs to customer. Forward pegging (demand→supply chain), reverse pegging (supply→what orders it serves), product@site summary. Pegging records created by: (1) ATP executor on AATP consumption, (2) supply plan generator on planned orders, (3) decision seeder during provisioning warm-start. Chains are linked via `chain_id` (UUID) and `chain_depth` (0=terminal demand, 1+=upstream).
 - `multi_stage_ctp_service.py`: Multi-Stage Capable-to-Promise — order promising with pegging chain creation. Evaluates feasibility across multiple BOM levels and supply sources, creates pegging preview showing which supply sources would be consumed.
+- `powell/scenario_engine.py`: MCTS what-if planning — ScenarioEngine, ScenarioTrigger, CandidateGenerator, ContextualBSC. See [Scenario Engine](#scenario-engine-mcts-what-if-planning) section.
+- `powell/simulation_rl_trainer.py`: SimulationRLTrainer — PPO fine-tuning of TRMs inside the digital twin (Phase 2 of training pipeline)
+- `powell/heuristic_library/`: ERP-aware heuristic library — 11 TRM types x 3 ERP vendors (SAP, D365, Odoo). See [ERP-Aware Heuristic Library](#erp-aware-heuristic-library) section.
 - `scenario_event_service.py`: Scenario event injection — 24 event types across 5 categories (Demand: 7, Supply: 6, Capacity: 5, Logistics: 3, Macro: 3). Creates scenario branches, modifies DB records, triggers CDC. SAP S/4HANA IDES compatible. Event catalog dynamically injected into Azirella LLM prompt via `_build_event_catalog_for_llm()`.
 
 **API Endpoints** (`api/endpoints/`):
@@ -535,7 +542,7 @@ make proxy-logs
 - `auth.py`: Authentication (login, register, MFA)
 - `websocket.py`: Real-time scenario updates
 - `user_directives.py`: "Azirella" directive capture (analyze/submit/list)
-- `provisioning.py`: Powell Cascade 14-step provisioning stepper
+- `provisioning.py`: Powell Cascade 16-step provisioning stepper
 - `email_signals.py`: GDPR-safe email signal ingestion and management
 - `agent_stochastic_params.py`: Per-agent stochastic parameters CRUD, pipeline config settings
 
@@ -559,6 +566,15 @@ make proxy-logs
 - `utils/`: Helper utilities
 
 ### Frontend Structure (`frontend/src/`)
+
+**Two-Tier Navigation** (Mar 2026 — replaces sidebar):
+- Sidebar removed for all users. Navigation is now fully horizontal.
+- **Tier 1 — CategoryBar**: Top-level sections (Decision Stream, Planning, Execution, Visibility, AI & Agents, Simulation, Administration). Rendered as horizontal tabs.
+- **Tier 2 — PageBar**: Pages within the selected category. Rendered as a second horizontal row below CategoryBar.
+- Capability-filtered via `getFilteredNavigation()` — users only see categories and pages their capabilities allow.
+- **Decision Stream** pinned as first tab for functional users (VP, S&OP Director, MPS Manager, Analyst). Hidden for tenant admins (admin lands on Administration tab).
+- **Azirella panel** slides in from the right side (not in TopNavbar).
+- Files: `TwoTierNav.jsx`, `CategoryBar.jsx`, `PageBar.jsx`, `useNavStore.js` (Zustand store for active category/page)
 
 **Planning Pages** (`pages/planning/` — 43+ pages implemented):
 - `MasterProductionScheduling.jsx`: MPS plan management with approval workflow
@@ -640,7 +656,26 @@ See [DAG_Logic.md](DAG_Logic.md) for detailed master site type mappings and conf
 - **Layer 4 — S&OP Consensus Board** (weekly): Policy parameters θ negotiated by functional agents
 - **Key principle**: TRMs never call across sites. All cross-site information flows through the tGNN directive or AAP authorization. Site tGNN (Layer 1.5) provides learned cross-TRM causal coordination within a single site, sitting between reactive signals and daily network inference.
 
-**Digital Twin Training Pipeline** (✅ IMPLEMENTED, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15): Six-phase cold-start pipeline using platform simulation capabilities as digital twin — (1) Individual BC warm-start from curriculum, (2) Multi-head coordinated traces from SimPy/Beer Game, (3) Site tGNN training from coordinated traces (BC + PPO), (4) Stochastic stress-testing via Monte Carlo (TRMs + Site tGNN active), (5) Copilot calibration from human overrides (Site tGNN in shadow mode), (6) Autonomous CDC relearning from production outcomes. Implementation files: `hive_curriculum.py` (1,126 lines), `hive_feedback.py` (6,957 lines), `inter_hive_signal.py` (7,613 lines), `coordinated_sim_runner.py` (12,314 lines), `decision_cycle.py` (7,583 lines), `site_tgnn_trainer.py`.
+**Digital Twin Training Pipeline** (✅ IMPLEMENTED, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15): Seven-phase cold-start pipeline using platform simulation capabilities as digital twin — (1) Individual BC warm-start from curriculum, (2) Simulation RL fine-tuning via PPO inside digital twin *(new — Mar 2026)*, (3) Multi-head coordinated traces from SimPy/Beer Game, (4) Site tGNN training from coordinated traces (BC + PPO), (5) Stochastic stress-testing via Monte Carlo (TRMs + Site tGNN active), (6) Copilot calibration from human overrides (Site tGNN in shadow mode), (7) Autonomous CDC relearning from production outcomes. Implementation files: `hive_curriculum.py` (1,126 lines), `hive_feedback.py` (6,957 lines), `inter_hive_signal.py` (7,613 lines), `coordinated_sim_runner.py` (12,314 lines), `decision_cycle.py` (7,583 lines), `site_tgnn_trainer.py`, `simulation_rl_trainer.py`.
+
+**Simulation RL Trainer** (Phase 2 — between BC warm-start and CDT calibration):
+- `SimulationRLTrainer`: PPO training with GAE (Generalized Advantage Estimation) advantages inside the digital twin
+- `DecisionPolicy` protocol: Pluggable heuristic or TRM policy in `_DagChain.tick()` — allows swapping between ERP heuristic baseline and learned TRM policy during episodes
+- `SimStateEncoder`: Maps `_SimSite` state to per-TRM feature vectors (11 types), producing tensors compatible with TRM input format
+- Episode structure: 30-day warmup (heuristic policy, no gradient) followed by 150-day training (TRM policy, PPO updates) followed by evaluation
+- Training config: 50 episodes x 180 days, saves v2 checkpoints only if BSC improvement > 0% over BC baseline
+- File: `backend/app/services/powell/simulation_rl_trainer.py`
+
+**ERP-Aware Heuristic Library** (✅ IMPLEMENTED, Mar 2026):
+The heuristic library provides ERP-vendor-specific planning heuristics for all 11 TRM types. These heuristics replicate what the customer's ERP actually does (reorder points, lot sizing, MRP logic), serving as both the behavioral cloning teacher and the digital twin's deterministic baseline.
+
+- **Location**: `backend/app/services/powell/heuristic_library/`
+- **Files**: `base.py` (HeuristicResult dataclass, BaseHeuristic ABC), `dispatch.py` (get_heuristic dispatcher), `sap_heuristics.py` (SAP S/4HANA logic), `d365_heuristics.py` (D365 F&O logic), `odoo_heuristics.py` (Odoo logic)
+- **Coverage**: 3,908 lines, all 11 TRM types x 3 ERP vendors (SAP, D365, Odoo)
+- **Parameter resolution**: `site_planning_config` (product-site level) → `inv_policy` (policy parameters) → bare defaults. No silent fallbacks — raises `ValueError` if critical parameters missing.
+- **Generic fallback**: `erp_source='generic'` for non-ERP tenants uses SAP MRP as universal logic (industry standard)
+- **Integration**: Curriculum generators (`hive_curriculum.py`) refactored to call `get_heuristic(trm_type, erp_source)` instead of inline rules. `_DagChain.tick()` uses heuristic library for baseline policy during simulation.
+- **Per-ERP logic differences**: SAP uses MRP type (VB/VM/V1/V2) and lot-sizing procedure (EX/FX/TB/WB); D365 uses coverage groups and min/max keys; Odoo uses reordering rules with route-based procurement. All map to the same `HeuristicResult` interface.
 
 **Strategy Types** (see [AGENT_SYSTEM.md](AGENT_SYSTEM.md)):
 - `naive`: Mirrors incoming demand (baseline)
@@ -766,6 +801,44 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - **RL Integration**: State augmentation (appends conditional features to TRM state vectors), reward shaping (±0.05 from GENUINE only), conditional CDT (widens intervals when conditions active), simulation modifiers (multipliers on stochastic distributions)
 - **Reference**: Knut Alicke, "The Planner Was the System" — experiential knowledge as Powell Belief State (Bₜ)
 
+### Scenario Engine (MCTS What-If Planning)
+
+**Status**: ✅ IMPLEMENTED (Mar 2026)
+
+MCTS-style what-if planning — agents test decision cascades in simulation before committing to real execution. No LLM in the loop; pure computation with learned priors.
+
+**Core Components** (`backend/app/services/powell/scenario_engine.py` + related files):
+- **ScenarioEngine**: Branch simulation via `_DagChain` fork, inject candidate actions, BSC scoring against baseline. Manages scenario lifecycle (create → evaluate → promote/reject).
+- **ScenarioTrigger**: Logistic regression on `(risk_bound, urgency, impact, confidence)` with hard caps. Determines when MCTS exploration is worth the compute cost vs. immediate TRM execution.
+- **CandidateGenerator**: 40 templates across 11 TRM types (e.g., "increase safety stock by 15%", "split PO across 2 vendors"). Beta posterior ranking from historical success rates. Templates calibrated during `scenario_bootstrap` provisioning step.
+- **ContextualBSC**: Dynamic BSC weights based on current context (revenue pressure, customer importance). Risk-adjusted scoring penalizes high-variance outcomes. Satisficing threshold: 5% improvement over baseline required to promote.
+
+**Three-Tier Anytime Execution**:
+| Tier | Latency | Method | When Used |
+|------|---------|--------|-----------|
+| TRM solo | <10ms | Direct TRM inference | High confidence, low risk |
+| Template search | 100ms-1s | Evaluate top-K templates from Beta ranking | Medium confidence |
+| MCTS | 1-30s | Full tree search with simulation rollouts | Low confidence, high impact |
+
+**Database Tables**:
+- `agent_scenarios`: Scenario branches with parent_id, BSC scores, status (EVALUATING/PROMOTED/REJECTED)
+- `agent_scenario_actions`: Individual actions within a scenario branch
+- `scenario_templates`: 40 candidate templates with Beta(alpha, beta) priors per TRM type, calibrated by `scenario_bootstrap` step
+
+**API Endpoints**:
+```bash
+POST /api/v1/scenarios/evaluate          # Trigger scenario evaluation for a decision
+GET  /api/v1/scenarios/                   # List scenario branches
+GET  /api/v1/scenarios/compare/{id}      # Compare scenario vs baseline BSC
+POST /api/v1/scenarios/{id}/promote      # Promote scenario to execution
+POST /api/v1/scenarios/{id}/reject       # Reject scenario branch
+```
+
+**Implementation Files**:
+- `backend/app/services/powell/scenario_engine.py` — ScenarioEngine, ScenarioTrigger, CandidateGenerator, ContextualBSC
+- `backend/app/models/agent_scenario.py` — AgentScenario, AgentScenarioAction, ScenarioTemplate models
+- Documentation: [docs/internal/SCENARIO_ENGINE.md](docs/internal/SCENARIO_ENGINE.md)
+
 ### AWS SC Planning Flow
 
 **3-Step Planning Process** (AWS SC standard):
@@ -865,7 +938,7 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 
 **Directive & Signal Tables**:
 - `user_directives`: Natural language directive capture, LLM parsing, Powell routing, effectiveness tracking
-- `config_provisioning_status`: 14-step provisioning pipeline with dependency tracking
+- `config_provisioning_status`: 16-step provisioning pipeline with dependency tracking (includes rl_training and scenario_bootstrap steps)
 - `email_connections`: IMAP/Gmail inbox configurations per tenant
 - `email_signals`: GDPR-safe supply chain signals extracted from emails (no PII stored)
 
@@ -891,18 +964,25 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `powell_buffer_decisions`: Inventory buffer adjustment decisions
 - `override_effectiveness_posteriors`: Bayesian Beta posteriors per (user, trm_type) for override quality tracking
 - `override_causal_match_pairs`: Matched override vs non-override decision pairs for causal inference
+- `agent_scenarios`: MCTS scenario branches with parent_id, BSC scores, status (EVALUATING/PROMOTED/REJECTED)
+- `agent_scenario_actions`: Individual actions within a scenario branch
+- `scenario_templates`: Candidate templates with Beta(alpha, beta) priors per TRM type for MCTS ranking
 - `experiential_knowledge`: Structured behavioral knowledge entities elevated from override patterns — GENUINE/COMPENSATING classification, pgvector embedding for RAG, lifecycle management (CANDIDATE/ACTIVE/STALE/CONTRADICTED/RETIRED/SUPERSEDED), RL integration via state augmentation + reward shaping + conditional CDT
 
 ---
 
 ## Key Implementation Details
 
-### Authentication
+### Authentication & User Management
 - JWT tokens with HTTP-only cookies
 - CSRF protection via double-submit cookie pattern
 - Role-based access: SYSTEM_ADMIN, GROUP_ADMIN, PLAYER
 - MFA support via TOTP (PyOTP)
 - Capability-based permissions (view_mps, manage_mps, approve_mps, etc.)
+- `/auth/me` returns `capabilities[]` and `roles[]` arrays for frontend capability filtering
+- Full User CRUD wired: `POST /users/` (create), `PUT /users/{id}` (update), `DELETE /users/{id}` (delete)
+- **UserEditor** includes `decision_level` dropdown with auto-populated capabilities from `GET /capabilities/decision-levels`
+- Capabilities persisted via `RBACService.sync_user_capabilities()` on user create/update — ensures capabilities match the selected decision level
 
 ### WebSocket Updates
 Real-time scenario state broadcasting on period completion:
@@ -1189,15 +1269,19 @@ A persistent "Azirella" input in the TopNavbar accepts natural language input fr
 - **Geography** (which sites/regions — lenient for strategic layer)
 - **Products** (which product families — lenient for strategic layer)
 
-**Powell Routing** (based on user's `powell_role`):
+**Powell Routing** (based on user's `decision_level`):
 - VP/Executive → Layer 4: S&OP GraphSAGE (network-wide policy parameters)
 - S&OP Director → Layer 2: Execution tGNN (multi-site daily directives)
 - MPS/Allocation Manager → Layer 1.5: Site tGNN (single-site coordination)
 - Analysts → Layer 1: Individual TRM (specific execution decision)
 
 **Provisioning Stepper** (replaces warm-start button):
-14-step Powell Cascade warm-start pipeline with dependency tracking:
-warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → supply_plan → rccp_validation → decision_seed → site_tgnn → conformal → briefing
+16-step Powell Cascade warm-start pipeline with dependency tracking:
+warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → rl_training → supply_plan → rccp_validation → decision_seed → site_tgnn → conformal → scenario_bootstrap → briefing
+
+New steps (Mar 2026):
+- **rl_training** (Step 9): Simulation-based RL fine-tuning for TRM agents. After BC warm-start (trm_training), TRMs run inside the digital twin using PPO (50 episodes x 180 days). Saves v2 checkpoints only if improvement > 0% over BC baseline.
+- **scenario_bootstrap** (Step 15): Warm-starts scenario template Beta priors by testing 50 random situations per TRM type against the digital twin. Populates `scenario_templates` with calibrated success rates for MCTS candidate ranking.
 
 **"Learn by Watching" — Decision Seed + CDT Calibration**:
 The `decision_seed` step generates realistic decisions from the digital twin simulation AND populates synthetic outcomes (was_committed, actual_cost, etc.) on every record. This implements the Stöckl (2021) "learn by watching" paradigm: deterministic heuristics execute during warm-start and outcomes are observed. The subsequent `conformal` step reads these decision-outcome pairs via `CDTCalibrationService.calibrate_all()` to calibrate all active TRM agents' risk bounds. If fewer than 11 agents are calibrated from DB outcomes, the conformal step also runs a simulation bootstrap (50 episodes × 365 days = 18,250 pairs per agent) as a second pass. After provisioning, **all active TRM agents must show as calibrated** (no "0/11 agents ready" banner).
@@ -1207,7 +1291,7 @@ The `decision_seed` step generates realistic decisions from the digital twin sim
 **Config Versioning on Reprovisioning**: When `reprovision(config_id, scope)` is called, the current config is archived as a read-only snapshot (e.g., "SAP IDES 1710 (v2)") with `scenario_type=ARCHIVED`, `is_active=False`, and the original `created_at` preserved. The active config's `version` is incremented. Archived configs appear in the SC config list for audit trail.
 
 **Provisioning Scope** (`provisioning_scope` column on `config_provisioning_status`):
-- **FULL** (default): All 14 steps — required for structural changes (new sites, lanes, products, BOMs)
+- **FULL** (default): All 16 steps — required for structural changes (new sites, lanes, products, BOMs)
 - **PARAMETER_ONLY**: Only 4 steps — `cfa_optimization`, `decision_seed`, `conformal`, `briefing`. Reuses existing TRM weights, GNN models, and simulation data. Use for policy/parameter changes (safety stock policy, service level targets, CFA parameters).
 - API: `POST /provisioning/reprovision/{config_id}?scope=PARAMETER_ONLY`
 - Frontend: Two buttons in ProvisioningStepper footer — "Parameters Only" (fast) and "Full Re-provision"
@@ -1216,12 +1300,13 @@ The `decision_seed` step generates realistic decisions from the digital twin sim
 - `backend/app/services/directive_service.py` — LLM parsing, gap detection, routing
 - `backend/app/api/endpoints/user_directives.py` — Analyze/submit/list API
 - `backend/app/models/user_directive.py` — UserDirective + ConfigProvisioningStatus models
-- `backend/app/services/provisioning_service.py` — 14-step pipeline orchestrator
+- `backend/app/services/provisioning_service.py` — 16-step pipeline orchestrator
+- `backend/app/services/powell/simulation_rl_trainer.py` — SimulationRLTrainer for rl_training step
 - `backend/app/api/endpoints/provisioning.py` — Provisioning stepper API
 - `frontend/src/components/TopNavbar.jsx` — Azirella input + clarification panel
 - `frontend/src/components/supply-chain-config/ProvisioningStepper.jsx` — Stepper modal
 - `backend/app/services/query_router.py` — Route registry (~60 routes), TF-IDF embedding fallback for query routing
-- Documentation: [docs/internal/TALK_TO_ME.md](docs/internal/TALK_TO_ME.md) (directives + query routing), [docs/internal/PROVISIONING_STEPPER.md](docs/internal/PROVISIONING_STEPPER.md) (14-step pipeline)
+- Documentation: [docs/internal/TALK_TO_ME.md](docs/internal/TALK_TO_ME.md) (directives + query routing), [docs/internal/PROVISIONING_STEPPER.md](docs/internal/PROVISIONING_STEPPER.md) (16-step pipeline)
 
 **Query Routing** (question mode):
 - LLM classifies questions and returns `target_page` + `filters` from a route registry of ~60 pages
@@ -1697,10 +1782,17 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ Executive Strategy Briefing (LLM-synthesized briefings with follow-up Q&A). See [docs/EXECUTIVE_BRIEFING.md](docs/EXECUTIVE_BRIEFING.md)
 - ✅ Beer Game repositioned as Digital Twin / Learning Tenant module (not primary focus)
 - ✅ "Azirella" directive capture with smart clarification flow (two-phase: analyze→clarify→submit) + query routing (LLM + TF-IDF fallback → page navigation with filters)
-- ✅ Provisioning Stepper (14-step Powell Cascade warm-start pipeline with dependency tracking)
+- ✅ Provisioning Stepper (16-step Powell Cascade warm-start pipeline with dependency tracking)
 - ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)
 - ✅ External Signal Intelligence (Outside-in planning: FRED, Open-Meteo, EIA, GDELT, Google Trends, openFDA → daily refresh → RAG context)
 - ✅ Experiential Knowledge Layer (Alicke's "Planner Was the System": override pattern detection → structured knowledge entities → RL state augmentation + reward shaping + conditional CDT + simulation modifiers. GENUINE vs COMPENSATING classification. Powell Belief State Bₜ integration)
+- ✅ ERP-Aware Heuristic Library (3,908 lines, 11 TRM types x 3 ERP vendors, parameter resolution from site_planning_config)
+- ✅ Scenario Engine (MCTS what-if planning: branch simulation, template search, Beta posterior ranking, satisficing threshold)
+- ✅ Simulation RL Trainer (PPO fine-tuning inside digital twin, Phase 2 of training pipeline, v2 checkpoints)
+- ✅ Two-Tier Navigation (sidebar removed, horizontal CategoryBar + PageBar, capability-filtered, Decision Stream pinned)
+- ✅ User Management CRUD (full create/update/delete, decision_level dropdown, auto-populate capabilities)
+- ✅ Provisioning expanded to 16 steps (added rl_training and scenario_bootstrap)
+- ✅ powell_role → decision_level rename (User model, enum, API, frontend)
 
 ---
 
