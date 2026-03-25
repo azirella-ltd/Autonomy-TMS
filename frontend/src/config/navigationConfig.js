@@ -96,14 +96,6 @@ export const NAVIGATION_CONFIG = [
     sectionIcon: SparklesIcon,
     items: [
       {
-        label: 'Decision Stream',
-        path: '/decision-stream',
-        icon: SparklesIcon,
-        requiredCapability: null, // Visible to all except tenant admin (filtered below)
-        hiddenForTenantAdmin: true, // Tenant admin uses Administration, not Decision Stream
-        description: 'LLM-first decision inbox with conversational triage',
-      },
-      {
         label: 'Briefing',
         path: '/strategy-briefing',
         icon: BookOpenIcon,
@@ -116,6 +108,14 @@ export const NAVIGATION_CONFIG = [
         icon: DashboardIcon,
         requiredCapability: 'view_executive_dashboard',
         description: 'Strategic KPIs, performance summary, ROI',
+      },
+      {
+        label: 'Decision Stream',
+        path: '/decision-stream',
+        icon: SparklesIcon,
+        requiredCapability: null, // Visible to all except tenant admin (filtered below)
+        hiddenForTenantAdmin: true, // Tenant admin uses Administration, not Decision Stream
+        description: 'Agent decisions with inspect and override',
       },
       {
         label: 'Scenario Events',

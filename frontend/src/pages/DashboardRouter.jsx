@@ -117,16 +117,15 @@ const DashboardRouter = () => {
         return;
       }
 
-      // Check UI mode preference — Decision Stream is the default
-      const uiMode = localStorage.getItem('ui:mode') || 'stream';
-      if (uiMode === 'stream' && user.user_type !== 'SYSTEM_ADMIN') {
-        navigate('/decision-stream', { replace: true });
+      // SYSTEM_ADMIN: Always go to Organization Management
+      if (user.user_type === 'SYSTEM_ADMIN') {
+        navigate('/admin/tenants', { replace: true });
         return;
       }
 
-      // SYSTEM_ADMIN: Always go to Organization Management (skip decision level check)
-      if (user.user_type === 'SYSTEM_ADMIN') {
-        navigate('/admin/tenants', { replace: true });
+      // TENANT_ADMIN: Always go to User Management (their primary task)
+      if (user.user_type === 'TENANT_ADMIN' && !user.decision_level) {
+        navigate('/admin/user-management', { replace: true });
         return;
       }
 
