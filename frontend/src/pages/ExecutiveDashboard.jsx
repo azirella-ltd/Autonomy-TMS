@@ -48,7 +48,7 @@ import {
 } from '../components/common';
 import { api } from '../services/api';
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
-import PlanningCascadeSankey from '../components/cascade/PlanningCascadeSankey';
+import SupplyChainConfigSankey from '../components/supply-chain-config/SupplyChainConfigSankey';
 import GartnerMetricCard from '../components/metrics/GartnerMetricCard';
 import CompositeMetricCard from '../components/metrics/CompositeMetricCard';
 import RoleTimeSeries from '../components/charts/RoleTimeSeries';
@@ -847,8 +847,8 @@ const ExecutiveDashboard = () => {
         </div>
       </div>
 
-      {/* Row 2: Supply Chain Sankey (full width) */}
-      <PlanningCascadeSankey configId={activeConfigId} height={300} />
+      {/* Row 2: Supply Chain Flow (same component as admin SC config page) */}
+      <SupplyChainConfigSankey />
 
       {/* Row 3: Gartner Tier 1 ASSESS — Strategic Metrics */}
       <div>
