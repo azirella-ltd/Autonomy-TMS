@@ -657,7 +657,7 @@ class HierarchicalMetricsService:
                 .join(Site, Forecast.site_id == Site.id)
                 .filter(
                     Forecast.config_id == config.id,
-                    Forecast.is_active == "true",
+                    Forecast.is_active.in_(["true", "Y", "1"]),
                     (Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"),
                     Forecast.forecast_date >= today,
                     Forecast.forecast_date < year_end,
@@ -676,7 +676,7 @@ class HierarchicalMetricsService:
                     .join(Product, Forecast.product_id == Product.id)
                     .filter(
                         Forecast.config_id == config.id,
-                        Forecast.is_active == "true",
+                        Forecast.is_active.in_(["true", "Y", "1"]),
                         Forecast.forecast_date >= today,
                         Forecast.forecast_date < year_end,
                         Product.unit_price.isnot(None),
@@ -744,7 +744,7 @@ class HierarchicalMetricsService:
                 .join(Site, Forecast.site_id == Site.id)
                 .filter(
                     Forecast.config_id == config.id,
-                    Forecast.is_active == "true",
+                    Forecast.is_active.in_(["true", "Y", "1"]),
                     (Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"),
                     Forecast.forecast_date >= today,
                     Forecast.forecast_date < year_end,
@@ -761,7 +761,7 @@ class HierarchicalMetricsService:
                     .join(Product, Forecast.product_id == Product.id)
                     .filter(
                         Forecast.config_id == config.id,
-                        Forecast.is_active == "true",
+                        Forecast.is_active.in_(["true", "Y", "1"]),
                         Forecast.forecast_date >= today,
                         Forecast.forecast_date < year_end,
                         Product.unit_cost.isnot(None),
@@ -1160,7 +1160,7 @@ class HierarchicalMetricsService:
                     .filter(
                         Forecast.config_id == config.id,
                         Forecast.forecast_error.isnot(None),
-                        Forecast.is_active == "true",
+                        Forecast.is_active.in_(["true", "Y", "1"]),
                     )
                     .limit(500)
                     .all()
@@ -1184,7 +1184,7 @@ class HierarchicalMetricsService:
                         .filter(
                             Forecast.config_id == config.id,
                             Forecast.forecast_bias.isnot(None),
-                            Forecast.is_active == "true",
+                            Forecast.is_active.in_(["true", "Y", "1"]),
                         )
                         .limit(500)
                         .all()
