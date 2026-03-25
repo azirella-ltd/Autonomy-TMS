@@ -638,7 +638,10 @@ class HierarchicalMetricsService:
 
             config = (
                 self.db.query(SupplyChainConfig)
-                .filter(SupplyChainConfig.tenant_id == tenant_id)
+                .filter(
+                    SupplyChainConfig.tenant_id == tenant_id,
+                    SupplyChainConfig.is_active == True,
+                )
                 .first()
             )
             if not config:
@@ -647,18 +650,20 @@ class HierarchicalMetricsService:
             today = date.today()
             year_end = date(today.year + 1, today.month, today.day)
 
-            # Try customer-scoped first, then fall back to all forecasts
+            # Compute revenue and cost from forecast × product (config-scoped join)
+            from sqlalchemy import and_
             row = (
                 self.db.query(
                     func.sum(Forecast.forecast_p50 * Product.unit_price).label("rev"),
                     func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
                 )
-                .join(Product, Forecast.product_id == Product.id)
-                .join(Site, Forecast.site_id == Site.id)
+                .join(Product, and_(
+                    Forecast.product_id == Product.id,
+                    Forecast.config_id == Product.config_id,
+                ))
                 .filter(
                     Forecast.config_id == config.id,
                     Forecast.is_active.in_(["true", "Y", "1"]),
-                    (Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"),
                     Forecast.forecast_date >= today,
                     Forecast.forecast_date < year_end,
                     Product.unit_price.isnot(None),
@@ -666,24 +671,6 @@ class HierarchicalMetricsService:
                 )
                 .first()
             )
-            # Fallback: no customer sites → use all forecasts
-            if not row or not row.rev:
-                row = (
-                    self.db.query(
-                        func.sum(Forecast.forecast_p50 * Product.unit_price).label("rev"),
-                        func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
-                    )
-                    .join(Product, Forecast.product_id == Product.id)
-                    .filter(
-                        Forecast.config_id == config.id,
-                        Forecast.is_active.in_(["true", "Y", "1"]),
-                        Forecast.forecast_date >= today,
-                        Forecast.forecast_date < year_end,
-                        Product.unit_price.isnot(None),
-                        Product.unit_cost.isnot(None),
-                    )
-                    .first()
-                )
             if row and row.rev and float(row.rev) > 0:
                 rev = float(row.rev)
                 cost = float(row.cost or 0)
@@ -705,11 +692,16 @@ class HierarchicalMetricsService:
 
             config = (
                 self.db.query(SupplyChainConfig)
-                .filter(SupplyChainConfig.tenant_id == tenant_id)
+                .filter(
+                    SupplyChainConfig.tenant_id == tenant_id,
+                    SupplyChainConfig.is_active == True,
+                )
                 .first()
             )
             if not config:
                 return {}
+
+            from sqlalchemy import and_
 
             # Total on-hand inventory value — use only the LATEST snapshot date
             latest_inv_date_row = (
@@ -722,7 +714,10 @@ class HierarchicalMetricsService:
                     func.sum(InvLevel.on_hand_qty * Product.unit_cost).label("inv_value"),
                     func.sum(InvLevel.on_hand_qty).label("total_units"),
                 )
-                .join(Product, InvLevel.product_id == Product.id)
+                .join(Product, and_(
+                    InvLevel.product_id == Product.id,
+                    InvLevel.config_id == Product.config_id,
+                ))
                 .filter(
                     InvLevel.config_id == config.id,
                     Product.unit_cost.isnot(None),
@@ -734,31 +729,15 @@ class HierarchicalMetricsService:
             today = date.today()
             year_end = date(today.year + 1, today.month, today.day)
 
-            # Annual demand (COGS basis)
-            # First try customer-scoped demand, then fall back to all demand
+            # Annual demand (COGS basis) — config-scoped product join
             demand_row = (
                 self.db.query(
                     func.sum(Forecast.forecast_p50 * Product.unit_cost).label("annual_cogs"),
-                )
-                .join(Product, Forecast.product_id == Product.id)
-                .join(Site, Forecast.site_id == Site.id)
-                .filter(
-                    Forecast.config_id == config.id,
-                    Forecast.is_active.in_(["true", "Y", "1"]),
-                    (Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"),
-                    Forecast.forecast_date >= today,
-                    Forecast.forecast_date < year_end,
-                    Product.unit_cost.isnot(None),
-                )
-                .first()
-            )
-            # Fallback: if no customer-scoped demand, use all forecasts
-            if not demand_row or not demand_row.annual_cogs:
-                demand_row = (
-                    self.db.query(
-                        func.sum(Forecast.forecast_p50 * Product.unit_cost).label("annual_cogs"),
                     )
-                    .join(Product, Forecast.product_id == Product.id)
+                    .join(Product, and_(
+                        Forecast.product_id == Product.id,
+                        Forecast.config_id == Product.config_id,
+                    ))
                     .filter(
                         Forecast.config_id == config.id,
                         Forecast.is_active.in_(["true", "Y", "1"]),

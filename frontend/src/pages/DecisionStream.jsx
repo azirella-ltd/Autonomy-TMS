@@ -48,7 +48,9 @@ const DecisionStream = () => {
   // - S&OP Director, MPS Manager, Analyst: Can override decisions at their level
   // - Tenant Admin: Inspect only (technical admin, not functional planner)
   const userDecisionLevel = user?.decision_level;
-  const OVERRIDE_LEVELS = ['S&OP_DIRECTOR', 'SOP_DIRECTOR', 'MPS_MANAGER', 'ANALYST'];
+  const OVERRIDE_LEVELS = ['S&OP_DIRECTOR', 'SOP_DIRECTOR', 'MPS_MANAGER', 'ANALYST',
+    'ATP_ANALYST', 'REBALANCING_ANALYST', 'PO_ANALYST', 'ORDER_TRACKING_ANALYST',
+    'ALLOCATION_MANAGER', 'ORDER_PROMISE_MANAGER', 'DEMO_ALL'];
   const canOverride = OVERRIDE_LEVELS.includes(userDecisionLevel);
   const canInspect = true;  // Everyone can Inspect — it's read-only
 
