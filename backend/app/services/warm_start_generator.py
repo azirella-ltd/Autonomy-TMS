@@ -66,6 +66,12 @@ class WarmStartGenerator:
         # Step 1: Clean up any previous warm start data
         self._cleanup_existing(config_id)
 
+        # Step 1b: Detect NPI products (in config but missing forecasts) and create
+        # initial forecasts based on category averages from existing products
+        npi_count = self._create_npi_forecasts(config_id, weeks)
+        if npi_count:
+            logger.info("WarmStart config=%d: created %d NPI forecast rows for products without forecasts", config_id, npi_count)
+
         # Step 2: Load existing forecast records (P10/P50/P90)
         forecast_rows = self._load_forecasts(config_id, weeks)
         if not forecast_rows:
@@ -100,6 +106,136 @@ class WarmStartGenerator:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _create_npi_forecasts(self, config_id: int, weeks: int) -> int:
+        """Detect NPI products (exist in config but have no forecast) and create
+        initial forecasts based on category averages from existing products.
+
+        This is what the forecast adjustment TRM would do: detect the gap and
+        generate a conservative initial forecast derived from similar products.
+        NPI forecasts use a ramp-up profile: 30% of category average in week 1,
+        ramping to 80% by week 12, to reflect typical NPI adoption curves.
+
+        Returns count of forecast rows created.
+        """
+        from app.models.sc_entities import Product
+        from sqlalchemy import text as sa_text
+
+        # Find all products in this config
+        all_products = (
+            self.db.query(Product)
+            .filter(Product.config_id == config_id)
+            .all()
+        )
+        if not all_products:
+            return 0
+
+        # Find products that already have forecasts
+        result = self.db.execute(
+            sa_text("SELECT DISTINCT product_id FROM forecast WHERE config_id = :c"),
+            {"c": config_id},
+        )
+        has_forecast = {r[0] for r in result.fetchall()}
+
+        # NPI = products without any forecast rows
+        npi_products = [p for p in all_products if p.id not in has_forecast]
+        if not npi_products:
+            return 0
+
+        logger.info(
+            "WarmStart config=%d: %d NPI products detected without forecasts: %s",
+            config_id, len(npi_products),
+            [p.id for p in npi_products],
+        )
+
+        # Compute category averages from existing forecasts
+        # Group existing products by category
+        cat_avgs = {}
+        for p in all_products:
+            if p.id in has_forecast:
+                cat = getattr(p, "category", None) or "DEFAULT"
+                cat_avgs.setdefault(cat, []).append(p.id)
+
+        # Get typical weekly P50 per category — median of per-product-site P50 values
+        # Uses PERCENTILE_CONT(0.5) to avoid P90 outlier inflation
+        cat_forecast_avgs = {}
+        for cat, pids in cat_avgs.items():
+            result = self.db.execute(
+                sa_text("""
+                    SELECT
+                        PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY forecast_p50) as p10,
+                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY forecast_p50) as p50,
+                        PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY forecast_p50) as p90
+                    FROM forecast
+                    WHERE config_id = :c AND product_id = ANY(:pids)
+                    AND forecast_p50 > 0
+                """),
+                {"c": config_id, "pids": pids},
+            )
+            row = result.fetchone()
+            if row and row[1]:
+                cat_forecast_avgs[cat] = {
+                    "p10": float(row[0] or 0),
+                    "p50": float(row[1] or 0),
+                    "p90": float(row[2] or 0),
+                }
+
+        # Global fallback if no category match
+        global_avg = None
+        if cat_forecast_avgs:
+            all_p50 = [v["p50"] for v in cat_forecast_avgs.values()]
+            global_avg = {
+                "p10": sum(v["p10"] for v in cat_forecast_avgs.values()) / len(cat_forecast_avgs),
+                "p50": sum(all_p50) / len(all_p50),
+                "p90": sum(v["p90"] for v in cat_forecast_avgs.values()) / len(cat_forecast_avgs),
+            }
+
+        if not global_avg:
+            logger.warning("WarmStart config=%d: no category averages available for NPI forecasts", config_id)
+            return 0
+
+        # Create forecast rows for each NPI product
+        count = 0
+        today = date.today()
+        # Generate future forecasts (NPI has no history — only forward-looking)
+        for p in npi_products:
+            cat = getattr(p, "category", None) or "DEFAULT"
+            base = cat_forecast_avgs.get(cat, global_avg)
+
+            for week_offset in range(weeks):
+                forecast_date = today + timedelta(weeks=week_offset)
+
+                # NPI ramp-up: 30% at launch → 80% by week 12 → 100% by week 24
+                if week_offset < 12:
+                    ramp = 0.30 + (0.50 * week_offset / 12)  # 30% → 80%
+                elif week_offset < 24:
+                    ramp = 0.80 + (0.20 * (week_offset - 12) / 12)  # 80% → 100%
+                else:
+                    ramp = 1.0
+
+                # Add uncertainty: wider P10/P90 for NPI (more uncertain)
+                npi_uncertainty = max(1.0, 2.0 - (week_offset / 24))  # 2x uncertainty at launch → 1x by week 24
+
+                p50 = round(base["p50"] * ramp, 2)
+                p10 = round(base["p10"] * ramp / npi_uncertainty, 2)
+                p90 = round(base["p90"] * ramp * npi_uncertainty, 2)
+
+                self.db.execute(
+                    sa_text("""
+                        INSERT INTO forecast (config_id, product_id, forecast_date,
+                            forecast_p10, forecast_p50, forecast_p90,
+                            forecast_quantity, forecast_type, forecast_method,
+                            is_active)
+                        VALUES (:c, :pid, :dt, :p10, :p50, :p90,
+                            :p50, 'npi_ramp', 'category_analog', true)
+                    """),
+                    {"c": config_id, "pid": p.id, "dt": forecast_date,
+                     "p10": p10, "p50": p50, "p90": p90},
+                )
+                count += 1
+
+        self.db.flush()
+        return count
 
     def _load_forecasts(self, config_id: int, weeks: int) -> List[Forecast]:
         """Load Forecast rows for this config covering the past `weeks` weeks."""
