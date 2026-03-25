@@ -1626,38 +1626,57 @@ class DecisionStreamService:
                     site_display = site_names.get(str(row.site_key), row.site_key)
 
                     if scope == "sop_policy":
-                        # Strategic policy — describe what's changing, not just SS multiplier
+                        # Strategic policy — describe what's changing
                         policy_action = proposed.get("action", "")
+                        policy_param = proposed.get("policy_parameter", "")
+                        proposed_val = proposed.get("proposed_value")
+                        current_val = proposed.get("current_value")
+                        change_pct = proposed.get("change_pct")
+                        ss_mult = proposed.get("safety_stock_multiplier", None)
+
                         if policy_action:
-                            # Use the action description if available (e.g., "protein_portfolio_rebalance")
                             action_desc = policy_action.replace("_", " ").title()
                             summary = f"Strategic Policy: {action_desc} at {site_display}"
-                            action = f"Review and approve: {action_desc}"
+                            action = f"Review: {action_desc}"
+                        elif policy_param and proposed_val is not None:
+                            param_label = policy_param.replace("_", " ").title()
+                            change_str = f" ({change_pct:+.1f}%)" if change_pct else ""
+                            summary = f"Strategic Policy: {param_label} → {proposed_val}{change_str}"
+                            action = f"Review {param_label} adjustment"
+                        elif ss_mult and ss_mult != 1.0:
+                            summary = f"Strategic Policy: Safety stock adjustment to {ss_mult:.2f}x at {site_display}"
+                            action = f"Review safety stock multiplier {ss_mult:.2f}x"
                         else:
-                            ss_mult = proposed.get("safety_stock_multiplier", None)
-                            if ss_mult and ss_mult != 1.0:
-                                summary = f"Strategic Policy: Safety stock adjustment to {ss_mult:.2f}x at {site_display}"
-                                action = f"Approve safety stock multiplier {ss_mult:.2f}x"
-                            else:
-                                summary = f"Strategic Policy Review at {site_display}"
-                                action = "Review strategic policy recommendation"
+                            summary = f"Strategic Policy Review at {site_display}"
+                            action = "Review strategic policy recommendation"
                     elif scope == "execution_directive":
                         # Tactical/operational — describe the directive meaningfully
+                        alloc_action = proposed.get("allocation_action", "")
+                        alloc_qty = proposed.get("quantity", 0)
+                        from_site = proposed.get("from_site", "")
+                        to_site = proposed.get("to_site", "")
+                        alloc_pid = proposed.get("product_id", "")
+                        alloc_pdesc = product_names.get(str(alloc_pid), alloc_pid) if alloc_pid else ""
                         order_rec = proposed.get("order_recommendation", 0)
                         demand_fcst = proposed.get("demand_forecast", None)
-                        exception_prob = proposed.get("exception_probability", None)
                         alloc = proposed.get("allocation", None)
+                        coord_action = proposed.get("coordination_action", "")
 
-                        if order_rec and order_rec > 0:
+                        if alloc_action and alloc_qty:
+                            action_label = alloc_action.replace("_", " ").title()
+                            summary = f"{action_label}: {int(alloc_qty)} units of {alloc_pdesc} {from_site}→{to_site}"
+                            action = f"{action_label} {int(alloc_qty)} units"
+                        elif coord_action:
+                            action_label = coord_action.replace("_", " ").title()
+                            summary = f"Site Coordination: {action_label} at {site_display}"
+                            action = f"Review: {action_label}"
+                        elif order_rec and order_rec > 0:
                             summary = f"Planning Directive: {order_rec:.0f} units at {site_display}"
-                            action = f"Approve {order_rec:.0f} unit order"
+                            action = f"Execute {order_rec:.0f} unit order"
                         elif demand_fcst:
                             fcst_val = demand_fcst if isinstance(demand_fcst, (int, float)) else "updated"
                             summary = f"Demand Forecast Update at {site_display}"
                             action = f"Review demand forecast: {fcst_val}"
-                        elif exception_prob:
-                            summary = f"Exception Alert at {site_display}"
-                            action = "Review exception and recommended action"
                         elif alloc:
                             summary = f"Allocation Directive at {site_display}"
                             action = "Review allocation adjustment"
