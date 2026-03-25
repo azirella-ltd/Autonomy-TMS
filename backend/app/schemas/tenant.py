@@ -59,6 +59,7 @@ class TenantUpdate(BaseModel):
     clock_mode: Optional[ClockModeEnum] = None
     round_duration_seconds: Optional[int] = None
     data_refresh_schedule: Optional[str] = None
+    is_demo: Optional[bool] = None
 
 
 class TenantResponse(BaseModel):
@@ -74,6 +75,7 @@ class TenantResponse(BaseModel):
     round_duration_seconds: Optional[int] = None
     data_refresh_schedule: Optional[str] = None
     last_data_import: Optional[datetime] = None
+    is_demo: bool = False
 
     class Config:
         orm_mode = True

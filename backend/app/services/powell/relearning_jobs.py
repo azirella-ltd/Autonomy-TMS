@@ -859,6 +859,7 @@ def _run_demo_date_shift() -> None:
 
     db = sync_session_factory()
     try:
+        from app.models.tenant import Tenant
         from app.services.demo_date_shift_service import DemoDateShiftService
 
         service = DemoDateShiftService(db)
@@ -868,10 +869,18 @@ def _run_demo_date_shift() -> None:
             logger.info("No demo date shift entries found — nothing to shift")
             return
 
+        # Only shift for tenants marked as demo
+        demo_tenant_ids = {
+            t.id for t in db.query(Tenant).filter(Tenant.is_demo == True).all()
+        }
+
         total_shifted = 0
         total_rows = 0
 
         for entry in tracked:
+            if entry["tenant_id"] not in demo_tenant_ids:
+                logger.info("Skipping tenant %s (not a demo tenant)", entry["tenant_id"])
+                continue
             try:
                 result = service.shift_demo_dates(
                     tenant_id=entry["tenant_id"],

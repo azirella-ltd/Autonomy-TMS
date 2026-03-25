@@ -155,6 +155,10 @@ class Tenant(Base):
         Integer, nullable=False, default=20,
         comment="Max decisions to seed per TRM type from simulation"
     )
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False,
+        comment="Demo tenant — dates auto-shifted daily to keep data fresh"
+    )
 
     def apply_industry_sim_defaults(self) -> None:
         """Set simulation parameters from industry benchmarks.
