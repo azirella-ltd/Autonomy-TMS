@@ -787,31 +787,20 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
     if pr is not None and hasattr(pr, "value"):
         pr = pr.value
 
-    # Load capabilities and roles from DB
+    # Load capabilities and roles from DB via RBACService
     capabilities = []
     role_names = []
     try:
         from app.db.session import sync_session_factory as _sync_sf
+        from app.services.rbac_service import RBACService
+        from app.models.user import User as _UserModel
         session = _sync_sf()
         try:
-            from sqlalchemy import text
-            rows = session.execute(text("""
-                SELECT DISTINCT p.name
-                FROM permissions p
-                JOIN role_permissions rp ON rp.permission_id = p.id
-                JOIN user_roles ur ON ur.role_id = rp.role_id
-                WHERE ur.user_id = :uid
-                ORDER BY p.name
-            """), {"uid": user["id"]}).fetchall()
-            capabilities = [r[0] for r in rows]
-
-            rrows = session.execute(text("""
-                SELECT r.name FROM roles r
-                JOIN user_roles ur ON ur.role_id = r.id
-                WHERE ur.user_id = :uid
-                ORDER BY r.name
-            """), {"uid": user["id"]}).fetchall()
-            role_names = [r[0] for r in rrows]
+            db_user = session.query(_UserModel).filter(_UserModel.id == user["id"]).first()
+            if db_user:
+                svc = RBACService(session)
+                capabilities = svc.get_user_capabilities(db_user)
+                role_names = [r.name for r in db_user.roles] if db_user.roles else []
         finally:
             session.close()
     except Exception:

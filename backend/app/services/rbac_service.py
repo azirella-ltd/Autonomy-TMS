@@ -340,6 +340,14 @@ class RBACService:
         if user.is_superuser or user.user_type == UserTypeEnum.SYSTEM_ADMIN:
             return [cap.value for cap in Capability]
 
+        # Tenant admins get only administration capabilities
+        if user.user_type == UserTypeEnum.TENANT_ADMIN:
+            return [
+                cap.value for cap in Capability
+                if cap.value.startswith(("manage_", "create_", "edit_", "view_users",
+                    "view_groups", "view_sc_configs", "view_tenant"))
+            ]
+
         # Collect unique capabilities from all roles
         capabilities = set()
 
