@@ -11,6 +11,7 @@ Registers CDC relearning loop jobs with APScheduler:
 - Daily at 03:00: GNN orchestration cycle (S&OP + Execution → directive broadcast)
 - Every 6h at :45: CDC-triggered retraining evaluation
 - Weekly Sunday 03:30: Data drift monitor (long-horizon distributional shift detection)
+- Daily at 04:00: Demo date shift (keep demo data dates fresh)
 
 Part of the Powell SDAM feedback loop:
   Decision → Wait → Observe outcome → Compute reward → Calibrate CDT → Retrain if warranted
@@ -227,6 +228,19 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
         misfire_grace_time=3600,
     )
     logger.info("Registered experiential knowledge detection job (daily at 03:15)")
+
+    # Daily at 04:00: Demo date shift — keep demo data dates fresh
+    # Shifts all date/timestamp columns forward by the number of elapsed days
+    # since the last shift. Only affects tenants with a demo_date_shift_log entry.
+    scheduler.add_job(
+        func=_run_demo_date_shift,
+        trigger=CronTrigger(hour=4, minute=0),
+        id="demo_date_shift_daily",
+        name="Demo: Date Shift (daily)",
+        replace_existing=True,
+        misfire_grace_time=7200,
+    )
+    logger.info("Registered demo date shift job (daily at 04:00)")
 
 
 # ---------------------------------------------------------------------------
@@ -833,5 +847,56 @@ def _run_experiential_knowledge_detection() -> None:
         )
     except Exception as e:
         logger.error("EK detection job failed: %s", e, exc_info=True)
+    finally:
+        db.close()
+
+
+def _run_demo_date_shift() -> None:
+    """Shift demo data dates forward for all tracked tenant/config pairs."""
+    from app.db.session import sync_session_factory
+
+    logger.info("Starting scheduled demo date shift")
+
+    db = sync_session_factory()
+    try:
+        from app.services.demo_date_shift_service import DemoDateShiftService
+
+        service = DemoDateShiftService(db)
+        tracked = service.get_all_tracked_configs()
+
+        if not tracked:
+            logger.info("No demo date shift entries found — nothing to shift")
+            return
+
+        total_shifted = 0
+        total_rows = 0
+
+        for entry in tracked:
+            try:
+                result = service.shift_demo_dates(
+                    tenant_id=entry["tenant_id"],
+                    config_id=entry["config_id"],
+                )
+                if result.get("shifted"):
+                    total_shifted += 1
+                    total_rows += result.get("rows_affected", 0)
+                    logger.info(
+                        "Demo date shift: tenant=%d config=%d days=%d rows=%d",
+                        entry["tenant_id"], entry["config_id"],
+                        result.get("days", 0), result.get("rows_affected", 0),
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Demo date shift failed for tenant=%d config=%d: %s",
+                    entry["tenant_id"], entry["config_id"], e,
+                )
+                continue
+
+        logger.info(
+            "Demo date shift completed: %d configs shifted, %d total rows across %d tracked configs",
+            total_shifted, total_rows, len(tracked),
+        )
+    except Exception as e:
+        logger.error("Demo date shift job failed: %s", e, exc_info=True)
     finally:
         db.close()

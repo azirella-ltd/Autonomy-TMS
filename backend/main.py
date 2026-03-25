@@ -6706,6 +6706,10 @@ api.include_router(scenario_events_router, tags=["scenario-events"])
 from app.api.endpoints.auth import router as auth_router
 api.include_router(auth_router, prefix="/auth", tags=["auth"])
 
+# Demo date shift API — manual trigger for shifting demo data dates forward
+from app.api.endpoints.demo_date_shift import router as demo_date_shift_router
+api.include_router(demo_date_shift_router, prefix="/demo", tags=["demo"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
