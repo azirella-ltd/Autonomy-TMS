@@ -122,7 +122,7 @@ async def get_decision_levels():
         cap_names = sorted([c.value for c in cap_set.capabilities])
         result[level] = {
             "name": desc.get("name", level.replace("_", " ").title()),
-            "planning_level": desc.get("powell_level", ""),
+            "planning_level": desc.get("level", desc.get("powell_level", "")),
             "description": desc.get("description", ""),
             "scope": desc.get("scope", ""),
             "capabilities": cap_names,
