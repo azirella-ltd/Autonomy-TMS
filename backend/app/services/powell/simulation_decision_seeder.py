@@ -95,22 +95,24 @@ class _Candidate:
 # ---------------------------------------------------------------------------
 
 def _load_product_descriptions(db: Session, config_id: int) -> Dict[str, str]:
-    """product_id -> description"""
+    """product_id -> description (config-scoped)"""
     from app.models.sc_entities import Product
-    from app.models.supply_chain_config import Site
 
-    # Get products linked to this config via sites/inv_policy/forecast
     rows = (
         db.query(Product.id, Product.description, Product.unit_cost)
+        .filter(Product.config_id == config_id)
         .all()
     )
     return {r.id: (r.description or r.id) for r in rows}
 
 
-def _load_product_costs(db: Session) -> Dict[str, float]:
-    """product_id -> unit_cost"""
+def _load_product_costs(db: Session, config_id: int = None) -> Dict[str, float]:
+    """product_id -> unit_cost (config-scoped)"""
     from app.models.sc_entities import Product
-    rows = db.query(Product.id, Product.unit_cost).all()
+    query = db.query(Product.id, Product.unit_cost)
+    if config_id:
+        query = query.filter(Product.config_id == config_id)
+    rows = query.all()
     return {r.id: float(r.unit_cost) if r.unit_cost else 5.0 for r in rows}
 
 
@@ -1533,7 +1535,7 @@ def seed_decisions_from_simulation(
 
     # Load reference data
     product_descs = _load_product_descriptions(db, config_id)
-    product_costs = _load_product_costs(db)
+    product_costs = _load_product_costs(db, config_id)
     vendor_names = _load_vendor_names(db, config_id)
 
     # Load products that have forecast records — forecast adjustment decisions

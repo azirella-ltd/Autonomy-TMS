@@ -43,10 +43,13 @@ const DecisionStream = () => {
   const { user, isTenantAdmin } = useAuth();
   const { hasCapability } = useCapabilities();
 
-  // Functional users (with decision_level) can override decisions at their level.
-  // Tenant admin = technical admin — can Inspect but NOT Override.
+  // Override permissions by decision level:
+  // - Executive/VP: Inspect only — they direct via Azirella, not override individual decisions
+  // - S&OP Director, MPS Manager, Analyst: Can override decisions at their level
+  // - Tenant Admin: Inspect only (technical admin, not functional planner)
   const userDecisionLevel = user?.decision_level;
-  const canOverride = !!userDecisionLevel;  // Any user with a Powell decision level can override
+  const OVERRIDE_LEVELS = ['S&OP_DIRECTOR', 'SOP_DIRECTOR', 'MPS_MANAGER', 'ANALYST'];
+  const canOverride = OVERRIDE_LEVELS.includes(userDecisionLevel);
   const canInspect = true;  // Everyone can Inspect — it's read-only
 
   // Digest state

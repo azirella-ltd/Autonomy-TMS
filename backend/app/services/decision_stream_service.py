@@ -1710,13 +1710,17 @@ class DecisionStreamService:
                     enriched_reasoning = " | ".join(reasoning_parts) if reasoning_parts else None
                     site_display = site_names.get(str(row.site_key), row.site_key)
 
+                    # Extract product_id from proposed_values for GNN directives
+                    gnn_pid = proposed.get("product_id")
+                    gnn_pname = product_names.get(str(gnn_pid)) if gnn_pid else None
+
                     all_decisions.append({
                         "id": row.id,
                         "decision_type": type_key,
                         "decision_level": level,
                         "summary": summary,
-                        "product_id": None,
-                        "product_name": None,
+                        "product_id": gnn_pid,
+                        "product_name": gnn_pname,
                         "site_id": row.site_key,
                         "site_name": site_display,
                         "urgency": _urgency_label(gnn_urgency),
