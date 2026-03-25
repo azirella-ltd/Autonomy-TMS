@@ -1841,7 +1841,7 @@ def _seed_gnn_directives(
             "decision_level": kwargs["decision_level"],
             "model_type": kwargs["model_type"],
             "model_confidence": kwargs["model_confidence"],
-            "status": kwargs.get("status", "PROPOSED"),
+            "status": kwargs.get("status", "ACTIONED"),
             "proposed_values": _json.dumps(kwargs["proposed_values"]),
             "proposed_reasoning": kwargs.get("proposed_reasoning"),
             "propagated_urgency": kwargs.get("propagated_urgency"),
@@ -1872,6 +1872,27 @@ def _seed_gnn_directives(
             # Operational urgency: amplified if multiple TRMs are stressed
             conflict_rate = min(1.0, len([u for u in site_trm_urgency if u > 0.6]) / max(len(site_trm_urgency), 1))
 
+            # Operational coordination — business language, no technology labels
+            coord_scenarios = [
+                (
+                    "Replenishment orders and fulfillment commitments are competing for "
+                    "the same inventory at {site}. Recommending priority rebalance: "
+                    "fulfill committed customer orders first, defer replenishment by 2 days."
+                ),
+                (
+                    "Multiple urgent actions flagged at {site}: incoming purchase orders, "
+                    "pending fulfillments, and inventory transfers all due within 48 hours. "
+                    "Sequencing recommendation: process customer orders first, then transfers, "
+                    "then PO receipts."
+                ),
+                (
+                    "Capacity conflict at {site}: warehouse receiving and outbound shipping "
+                    "scheduled simultaneously. Recommending staggered scheduling — "
+                    "prioritize outbound shipments to maintain delivery commitments."
+                ),
+            ]
+            scenario_text = rng.choice(coord_scenarios).format(site=site_cfg.site_name)
+
             _insert_directive(
                 config_id=config_id,
                 site_key=site_cfg.site_name,
@@ -1879,7 +1900,7 @@ def _seed_gnn_directives(
                 decision_level="operational",
                 model_type="site_tgnn",
                 model_confidence=round(rng.uniform(0.6, 0.85), 3),
-                status="PROPOSED",
+                status="ACTIONED",
                 proposed_values={
                     "urgency_adjustments": {
                         trm: round(rng.uniform(-0.15, 0.25), 3)
@@ -1891,12 +1912,7 @@ def _seed_gnn_directives(
                         "synchronize_mo_po", "rebalance_priorities",
                     ]),
                 },
-                proposed_reasoning=(
-                    f"Site tGNN coordination at {site_cfg.site_name}: "
-                    f"{'High' if conflict_rate > 0.4 else 'Moderate'} cross-TRM conflict detected "
-                    f"({len(site_trm_urgency)} active TRMs, avg urgency {avg_trm_urgency:.2f}). "
-                    f"Recommending priority rebalance to resolve competing resource demands."
-                ),
+                proposed_reasoning=scenario_text,
                 propagated_urgency=round(avg_trm_urgency * (1 + conflict_rate), 3),
                 source_signals=[
                     {"trm_type": "aggregate", "signal_type": "CROSS_TRM_CONFLICT",
@@ -1914,6 +1930,38 @@ def _seed_gnn_directives(
         pdesc = product_descs.get(pid, pid)
         alloc_qty = round(rng.uniform(50, 500), 0)
 
+        # Extract clean product name (strip bracketed codes)
+        pdesc_clean = pdesc.split("[")[0].strip() if "[" in pdesc else pdesc
+        action = rng.choice(["reallocate", "pre_position", "demand_shift"])
+        days_to_stockout = rng.randint(2, 8)
+        days_of_supply = rng.randint(15, 45)
+
+        # Business-language reasoning — no technology labels
+        if action == "reallocate":
+            reasoning = (
+                f"Reallocate {int(alloc_qty)} cases of {pdesc_clean} from "
+                f"{site_a.site_name} to {site_b.site_name}. "
+                f"{site_b.site_name} is projected to stockout in {days_to_stockout} days "
+                f"while {site_a.site_name} has {days_of_supply} days of supply. "
+                f"Transfer can be completed within 2 days via standard freight."
+            )
+        elif action == "pre_position":
+            reasoning = (
+                f"Pre-position {int(alloc_qty)} cases of {pdesc_clean} at "
+                f"{site_b.site_name} ahead of anticipated demand increase. "
+                f"Current inventory at {site_b.site_name} covers {days_to_stockout} days; "
+                f"{site_a.site_name} has sufficient surplus ({days_of_supply} days of supply) "
+                f"to support the transfer without impacting local service levels."
+            )
+        else:
+            reasoning = (
+                f"Shift {int(alloc_qty)} cases of {pdesc_clean} demand from "
+                f"{site_a.site_name} to {site_b.site_name}. Demand pattern analysis "
+                f"indicates {site_b.site_name} can absorb this volume while "
+                f"{site_a.site_name} is approaching capacity constraints. "
+                f"Expected service level improvement: +{rng.randint(2, 8)}% at {site_b.site_name}."
+            )
+
         _insert_directive(
             config_id=config_id,
             site_key=f"{site_a.site_name}→{site_b.site_name}",
@@ -1921,25 +1969,18 @@ def _seed_gnn_directives(
             decision_level="tactical",
             model_type="network_tgnn",
             model_confidence=round(rng.uniform(0.55, 0.80), 3),
-            status="PROPOSED",
+            status="ACTIONED",
             proposed_values={
-                "allocation_action": rng.choice(["reallocate", "pre_position", "demand_shift"]),
+                "allocation_action": action,
                 "from_site": site_a.site_name,
                 "to_site": site_b.site_name,
                 "product_id": pid,
                 "quantity": alloc_qty,
-                "exception_probability": [round(rng.uniform(0, 0.3), 2) for _ in range(3)],
             },
-            proposed_reasoning=(
-                f"Execution tGNN: Reallocate {int(alloc_qty)} units of {pdesc} "
-                f"from {site_a.site_name} to {site_b.site_name}. "
-                f"Demand imbalance detected: {site_b.site_name} projected to stockout in "
-                f"{rng.randint(2, 8)} days while {site_a.site_name} has {rng.randint(15, 45)} days of supply."
-            ),
+            proposed_reasoning=reasoning,
             propagated_urgency=round(rng.uniform(0.4, 0.85), 3),
             source_signals=[
-                {"trm_type": "inventory_buffer", "signal_type": "DOS_IMBALANCE",
-                 "site_key": site_b.site_name, "urgency": round(rng.uniform(0.5, 0.9), 3)},
+                {"site_key": site_b.site_name, "urgency": round(rng.uniform(0.5, 0.9), 3)},
             ],
             created_at=timestamps[count % len(timestamps)],
         )
@@ -1953,6 +1994,28 @@ def _seed_gnn_directives(
         current_val = round(rng.uniform(0.8, 1.2), 3)
         proposed_val = round(current_val * rng.uniform(0.85, 1.15), 3)
 
+        change_pct = round((proposed_val - current_val) / current_val * 100, 1)
+        direction = "increase" if proposed_val > current_val else "decrease"
+
+        # Business-language reasoning — no technology labels
+        POLICY_REASONING = {
+            "safety_stock_multiplier": (
+                f"Recommend {'increasing' if direction == 'increase' else 'reducing'} safety stock levels "
+                f"network-wide by {abs(change_pct):.0f}% (from {current_val:.2f}x to {proposed_val:.2f}x). "
+                f"{'Recent demand volatility and supplier lead time variability warrant higher buffers to protect service levels.' if direction == 'increase' else 'Current inventory levels exceed targets, and demand patterns have stabilized — reducing buffers will free working capital without impacting customer service.'}"
+            ),
+            "service_level_target": (
+                f"Recommend {'raising' if direction == 'increase' else 'lowering'} the network service level target "
+                f"by {abs(change_pct):.0f}% (from {current_val:.1%} to {proposed_val:.1%}). "
+                f"{'Key customer contracts require higher fill rates, and current performance is trending below target.' if direction == 'increase' else 'Over-servicing is driving excessive inventory costs. Adjusting targets to match actual contractual requirements.'}"
+            ),
+            "sourcing_ratio": (
+                f"Recommend adjusting the multi-sourcing ratio by {abs(change_pct):.0f}% "
+                f"(from {current_val:.2f} to {proposed_val:.2f}). "
+                f"{'Concentration risk is elevated — diversifying supply across additional vendors reduces disruption exposure.' if direction == 'increase' else 'Current supplier base is over-diversified, driving higher procurement costs without proportional risk reduction. Consolidating to preferred suppliers.'}"
+            ),
+        }
+
         _insert_directive(
             config_id=config_id,
             site_key="NETWORK",
@@ -1960,27 +2023,20 @@ def _seed_gnn_directives(
             decision_level="strategic",
             model_type="sop_graphsage",
             model_confidence=round(rng.uniform(0.65, 0.90), 3),
-            status="PROPOSED",
+            status="ACTIONED",
             proposed_values={
                 "policy_parameter": policy_type,
                 "current_value": current_val,
                 "proposed_value": proposed_val,
-                "change_pct": round((proposed_val - current_val) / current_val * 100, 1),
+                "change_pct": change_pct,
                 "bottleneck_risk": round(rng.uniform(0.1, 0.6), 3),
                 "concentration_risk": round(rng.uniform(0.05, 0.4), 3),
                 "resilience_score": round(rng.uniform(0.5, 0.9), 3),
             },
-            proposed_reasoning=(
-                f"S&OP GraphSAGE policy review: Recommend adjusting {policy_type} "
-                f"from {current_val:.3f} to {proposed_val:.3f} "
-                f"({'+' if proposed_val > current_val else ''}{(proposed_val - current_val) / current_val * 100:.1f}%). "
-                f"Network analysis shows {'elevated' if rng.random() > 0.5 else 'moderate'} "
-                f"bottleneck risk across the supply chain topology."
-            ),
+            proposed_reasoning=POLICY_REASONING.get(policy_type, f"Policy parameter {policy_type} adjusted by {change_pct:+.1f}%."),
             propagated_urgency=round(rng.uniform(0.3, 0.7), 3),
             source_signals=[
-                {"trm_type": "network", "signal_type": "POLICY_DRIFT",
-                 "site_key": "NETWORK", "urgency": round(rng.uniform(0.3, 0.6), 3)},
+                {"site_key": "NETWORK", "urgency": round(rng.uniform(0.3, 0.6), 3)},
             ],
             created_at=timestamps[count % len(timestamps)],
         )
