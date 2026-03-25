@@ -224,7 +224,6 @@ const EditableField = ({ field, value, onChange }) => {
 
 const DecisionCard = ({
   decision,
-  onAccept,
   onOverride,
   onAskWhy,
   compact = false,
@@ -244,6 +243,11 @@ const DecisionCard = ({
   const [showChart, setShowChart] = useState(false);
   const [chartData, setChartData] = useState(null);
   const [chartLoading, setChartLoading] = useState(false);
+
+  // Override reasoning follow-up questions (Azirella-style)
+  const [followupQuestions, setFollowupQuestions] = useState(null);
+  const [followupAnswers, setFollowupAnswers] = useState({});
+  const [followupLoading, setFollowupLoading] = useState(false);
 
   const loadChart = useCallback(async () => {
     if (chartData) { setShowChart((v) => !v); return; }
@@ -288,25 +292,62 @@ const DecisionCard = ({
     setReasonCode('');
     setReasonText('');
     setModifiedValues({});
+    setFollowupQuestions(null);
+    setFollowupAnswers({});
   };
 
-  const handleAccept = async () => {
-    setActing(true);
+  // Fetch follow-up questions when reason code changes
+  const loadFollowupQuestions = useCallback(async (code, mode) => {
+    if (!code) { setFollowupQuestions(null); setFollowupAnswers({}); return; }
+    setFollowupLoading(true);
     try {
-      await onAccept?.(decision);
+      const { decisionStreamApi } = await import('../../services/decisionStreamApi');
+      const data = await decisionStreamApi.analyzeOverrideReason({
+        reason_code: code,
+        decision_type: decision.decision_type,
+        product_name: decision.product_name || decision.product_id || '',
+        site_name: decision.site_name || decision.site_id || '',
+        override_mode: mode || 'modify',
+      });
+      setFollowupQuestions(data.followup_questions || []);
+      setFollowupAnswers({});
+    } catch {
+      setFollowupQuestions(null);
     } finally {
-      setActing(false);
+      setFollowupLoading(false);
     }
+  }, [decision]);
+
+  const handleReasonCodeChange = (code) => {
+    setReasonCode(code);
+    loadFollowupQuestions(code, overrideMode);
   };
+
+  // Check if all required follow-ups are answered
+  const requiredFollowups = (followupQuestions || []).filter((q) => q.required);
+  const answeredFollowups = requiredFollowups.filter(
+    (q) => followupAnswers[q.field]?.trim?.(),
+  );
+  const allFollowupsAnswered = !followupQuestions || requiredFollowups.length === 0 || answeredFollowups.length === requiredFollowups.length;
 
   const handleOverrideSubmit = async () => {
-    if (!reasonCode || !reasonText.trim()) return;
+    if (!reasonCode || !reasonText.trim() || !allFollowupsAnswered) return;
     setActing(true);
     try {
+      // Build enriched override text combining free-text + structured followups
+      let enrichedText = reasonText;
+      if (followupQuestions?.length && Object.keys(followupAnswers).length) {
+        const contextLines = followupQuestions
+          .filter((q) => followupAnswers[q.field]?.trim?.())
+          .map((q) => `[${q.field}] ${followupAnswers[q.field]}`);
+        if (contextLines.length) {
+          enrichedText += '\n---\n' + contextLines.join('\n');
+        }
+      }
       await onOverride?.(
         decision,
         reasonCode,
-        reasonText,
+        enrichedText,
         overrideMode,
         overrideMode === 'modify' ? modifiedValues : null,
       );
@@ -450,9 +491,9 @@ const DecisionCard = ({
           </div>
         )}
 
-        {/* Ask Why reasoning panel (collapsible) */}
+        {/* Ask Why reasoning panel (collapsible, scrollable after ~20 lines) */}
         {showReasoning && (
-          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-900 animate-in slide-in-from-top-1 duration-200">
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-900 animate-in slide-in-from-top-1 duration-200 max-h-[28rem] overflow-y-auto">
             {reasoningLoading ? (
               <div className="flex items-center gap-2 text-blue-600">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -583,11 +624,11 @@ const DecisionCard = ({
                 />
               ))}
             </div>
-            {/* Reason code + text (required) */}
+            {/* Reason code (triggers follow-up questions) */}
             <select
               className="w-full text-sm border rounded px-2 py-1 bg-background"
               value={reasonCode}
-              onChange={(e) => setReasonCode(e.target.value)}
+              onChange={(e) => handleReasonCodeChange(e.target.value)}
             >
               <option value="">Select reason for modification...</option>
               {REASON_CODES.map((rc) => (
@@ -597,17 +638,65 @@ const DecisionCard = ({
             <textarea
               className="w-full text-sm border rounded px-2 py-1 bg-background resize-none"
               rows={2}
-              placeholder="Explain your modification (required)..."
+              placeholder="Describe your reasoning — reference the specific product, site, and time frame..."
               value={reasonText}
               onChange={(e) => setReasonText(e.target.value)}
             />
+            {/* Structured follow-up questions (Azirella-style) */}
+            {followupLoading && (
+              <div className="flex items-center gap-2 text-amber-600 text-xs">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading follow-up questions...
+              </div>
+            )}
+            {followupQuestions?.length > 0 && (
+              <div className="space-y-2 p-2.5 bg-amber-100/50 border border-amber-200 rounded-md max-h-[20rem] overflow-y-auto">
+                <div className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide">
+                  Context questions ({answeredFollowups.length} of {requiredFollowups.length} answered)
+                </div>
+                {followupQuestions.map((q) => (
+                  <div key={q.field}>
+                    <label className="block text-xs font-medium text-foreground mb-0.5">
+                      {q.question} {q.required && <span className="text-red-500">*</span>}
+                    </label>
+                    {q.type === 'select' && q.options?.length ? (
+                      <select
+                        value={followupAnswers[q.field] || ''}
+                        onChange={(e) => setFollowupAnswers((p) => ({ ...p, [q.field]: e.target.value }))}
+                        className="w-full text-sm border rounded px-2 py-1 bg-background"
+                      >
+                        <option value="">Select...</option>
+                        {q.options.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : q.type === 'number' ? (
+                      <input
+                        type="number"
+                        value={followupAnswers[q.field] || ''}
+                        onChange={(e) => setFollowupAnswers((p) => ({ ...p, [q.field]: e.target.value }))}
+                        className="w-full text-sm border rounded px-2 py-1 bg-background"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={followupAnswers[q.field] || ''}
+                        onChange={(e) => setFollowupAnswers((p) => ({ ...p, [q.field]: e.target.value }))}
+                        placeholder="Type your answer..."
+                        className="w-full text-sm border rounded px-2 py-1 bg-background"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="default"
                 className="h-7 text-xs bg-amber-500 hover:bg-amber-600"
                 onClick={handleOverrideSubmit}
-                disabled={!reasonCode || !reasonText.trim() || acting}
+                disabled={!reasonCode || !reasonText.trim() || !allFollowupsAnswered || acting}
               >
                 {acting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
                 Submit Modification
@@ -631,7 +720,7 @@ const DecisionCard = ({
             <select
               className="w-full text-sm border rounded px-2 py-1 bg-background"
               value={reasonCode}
-              onChange={(e) => setReasonCode(e.target.value)}
+              onChange={(e) => handleReasonCodeChange(e.target.value)}
             >
               <option value="">Select reason for cancellation...</option>
               {REASON_CODES.map((rc) => (
@@ -641,17 +730,58 @@ const DecisionCard = ({
             <textarea
               className="w-full text-sm border rounded px-2 py-1 bg-background resize-none"
               rows={2}
-              placeholder="Explain why this action should not be taken (required)..."
+              placeholder="Explain why — reference the specific product, site, and time frame..."
               value={reasonText}
               onChange={(e) => setReasonText(e.target.value)}
             />
+            {/* Structured follow-up questions */}
+            {followupLoading && (
+              <div className="flex items-center gap-2 text-red-600 text-xs">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading follow-up questions...
+              </div>
+            )}
+            {followupQuestions?.length > 0 && (
+              <div className="space-y-2 p-2.5 bg-red-100/50 border border-red-200 rounded-md max-h-[20rem] overflow-y-auto">
+                <div className="text-[10px] font-semibold text-red-700 uppercase tracking-wide">
+                  Context questions ({answeredFollowups.length} of {requiredFollowups.length} answered)
+                </div>
+                {followupQuestions.map((q) => (
+                  <div key={q.field}>
+                    <label className="block text-xs font-medium text-foreground mb-0.5">
+                      {q.question} {q.required && <span className="text-red-500">*</span>}
+                    </label>
+                    {q.type === 'select' && q.options?.length ? (
+                      <select
+                        value={followupAnswers[q.field] || ''}
+                        onChange={(e) => setFollowupAnswers((p) => ({ ...p, [q.field]: e.target.value }))}
+                        className="w-full text-sm border rounded px-2 py-1 bg-background"
+                      >
+                        <option value="">Select...</option>
+                        {q.options.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={followupAnswers[q.field] || ''}
+                        onChange={(e) => setFollowupAnswers((p) => ({ ...p, [q.field]: e.target.value }))}
+                        placeholder="Type your answer..."
+                        className="w-full text-sm border rounded px-2 py-1 bg-background"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
                 variant="default"
                 className="h-7 text-xs bg-red-500 hover:bg-red-600 text-white"
                 onClick={handleOverrideSubmit}
-                disabled={!reasonCode || !reasonText.trim() || acting}
+                disabled={!reasonCode || !reasonText.trim() || !allFollowupsAnswered || acting}
               >
                 {acting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}
                 Confirm Cancellation

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.models.executive_briefing import (
     ExecutiveBriefing, BriefingFollowup, BriefingSchedule,
+    BriefingType, BriefingStatus,
 )
 from app.services.skills.claude_client import ClaudeClient
 
@@ -304,30 +305,70 @@ class BriefingDataCollector:
             return {"available": False, "error": str(e)}
 
     def _collect_recent_signals(self) -> dict:
-        """Recent external signals from signal_ingestion table."""
+        """Recent external signals from external_signals + signal_ingestion tables."""
         try:
             from sqlalchemy import text
             cutoff = datetime.utcnow() - timedelta(days=7)
-            result = self.db.execute(
-                text("""
-                    SELECT signal_type, status, COUNT(*) as cnt
-                    FROM signal_ingestion
-                    WHERE created_at >= :cutoff
-                    GROUP BY signal_type, status
-                    ORDER BY cnt DESC
-                    LIMIT 30
-                """),
-                {"cutoff": cutoff},
-            )
+
+            # External signals (FRED, EIA, GDELT, weather, etc.)
+            external = []
             try:
-                rows = result.fetchall()
+                result = self.db.execute(
+                    text("""
+                        SELECT title, category, signal_type, change_direction,
+                               change_pct, summary, signal_date, urgency_score
+                        FROM external_signals
+                        WHERE tenant_id = :tid AND is_active = true
+                          AND signal_date >= :cutoff
+                        ORDER BY urgency_score DESC NULLS LAST, signal_date DESC
+                        LIMIT 15
+                    """),
+                    {"tid": self.tenant_id, "cutoff": cutoff.date()},
+                )
+                for r in result.fetchall():
+                    external.append({
+                        "title": r[0],
+                        "category": r[1],
+                        "signal_type": r[2],
+                        "direction": r[3],
+                        "change_pct": float(r[4]) if r[4] else None,
+                        "summary": r[5][:200] if r[5] else None,
+                        "date": r[6].isoformat() if r[6] else None,
+                        "urgency": float(r[7]) if r[7] else None,
+                    })
             except Exception:
-                rows = []
-            signals = [
-                {"signal_type": r[0], "status": r[1], "count": r[2]}
-                for r in rows
-            ]
-            return {"available": True, "data": {"signals": signals, "total": sum(s["count"] for s in signals)}}
+                self._safe_rollback()
+
+            # Email-based signals (signal_ingestion)
+            email_signals = []
+            try:
+                result2 = self.db.execute(
+                    text("""
+                        SELECT signal_type, status, COUNT(*) as cnt
+                        FROM signal_ingestion
+                        WHERE created_at >= :cutoff
+                        GROUP BY signal_type, status
+                        ORDER BY cnt DESC
+                        LIMIT 15
+                    """),
+                    {"cutoff": cutoff},
+                )
+                email_signals = [
+                    {"signal_type": r[0], "status": r[1], "count": r[2]}
+                    for r in result2.fetchall()
+                ]
+            except Exception:
+                self._safe_rollback()
+
+            return {
+                "available": True,
+                "data": {
+                    "external_signals": external,
+                    "email_signals": email_signals,
+                    "total_external": len(external),
+                    "total_email": sum(s["count"] for s in email_signals),
+                },
+            }
         except Exception as e:
             self._safe_rollback()
             logger.warning("Failed to collect recent signals: %s", e)

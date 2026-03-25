@@ -850,6 +850,10 @@ class DecisionStreamService:
         # 2. Prioritize
         decisions = self._prioritize_decisions(decisions)
 
+        # 2b. Mark surfaced decisions as INFORMED (AIIO: agent acted, now human is notified)
+        # Only mark ACTIONED → INFORMED; don't regress INSPECTED/OVERRIDDEN
+        await self._mark_decisions_informed(decisions)
+
         # 3. Collect alerts (CDC triggers + condition monitor)
         alerts = await self._collect_alerts(config_id)
 
@@ -1493,10 +1497,15 @@ class DecisionStreamService:
                     customer_name = partner_names.get(str(raw_customer)) if raw_customer else None
                     vendor_name = partner_names.get(str(raw_vendor)) if raw_vendor else None
 
+                    # Use AIIO status from DB if available, else default
+                    row_status = getattr(row, "status", "ACTIONED") or "ACTIONED"
+                    row_level = getattr(row, "decision_level", None) or DECISION_LEVEL.get(type_key, "execution")
+
                     all_decisions.append({
                         "id": row.id,
                         "decision_type": type_key,
-                        "decision_level": DECISION_LEVEL.get(type_key, "execution"),
+                        "status": row_status,
+                        "decision_level": row_level,
                         "summary": _humanize_ids(
                             _build_decision_summary(
                                 row, type_key,
@@ -2006,6 +2015,51 @@ class DecisionStreamService:
 
         kept.sort(key=sort_key)
         return kept  # No artificial cap — return all decisions; LLM summary has its own limit
+
+    async def _mark_decisions_informed(self, decisions: List[Dict[str, Any]]) -> None:
+        """Mark surfaced decisions as INFORMED in the DB (AIIO state transition).
+
+        Only transitions ACTIONED → INFORMED. Does not regress INSPECTED or OVERRIDDEN.
+        This is fire-and-forget — errors are logged but don't fail the digest.
+        """
+        from sqlalchemy import text as sa_text
+
+        # Group decision IDs by their source table
+        by_table: Dict[str, List[int]] = {}
+        for dec in decisions:
+            if dec.get("status") != "ACTIONED":
+                continue  # Already INFORMED/INSPECTED/OVERRIDDEN — don't regress
+            dtype = dec.get("decision_type", "")
+            # Map decision_type back to table name
+            table = DECISION_TYPE_TABLE_MAP.get(dtype)
+            if table:
+                by_table.setdefault(table, []).append(dec["id"])
+
+        for table, ids in by_table.items():
+            if not ids:
+                continue
+            try:
+                # Batch update: ACTIONED → INFORMED
+                await self.db.execute(
+                    sa_text(f"""
+                        UPDATE {table}
+                        SET status = 'INFORMED'
+                        WHERE id = ANY(:ids) AND status = 'ACTIONED'
+                    """),
+                    {"ids": ids},
+                )
+                await self.db.commit()
+            except Exception as e:
+                logger.warning("Failed to mark %s decisions as INFORMED: %s", table, e)
+                try:
+                    await self.db.rollback()
+                except Exception:
+                    pass
+
+        # Also update the in-memory decision dicts so the response reflects the new status
+        for dec in decisions:
+            if dec.get("status") == "ACTIONED":
+                dec["status"] = "INFORMED"
 
     async def _collect_alerts(self, config_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Collect CDC triggers and condition alerts from the last 48 hours."""

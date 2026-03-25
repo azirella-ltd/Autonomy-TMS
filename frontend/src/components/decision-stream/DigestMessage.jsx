@@ -26,8 +26,7 @@ const AIAvatar = () => (
 const DigestMessage = ({
   digestText,
   decisions = [],
-  onAccept,
-  onOverride,
+    onOverride,
   onAskWhy,
 }) => {
   return (
@@ -48,7 +47,6 @@ const DigestMessage = ({
               <DecisionCard
                 key={`${decision.decision_type}-${decision.id}`}
                 decision={decision}
-                onAccept={onAccept}
                 onOverride={onOverride}
                 onAskWhy={onAskWhy}
                 compact

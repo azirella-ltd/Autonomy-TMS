@@ -40,16 +40,19 @@ class DecisionType(str, Enum):
 class DecisionStatus(str, Enum):
     """Status of the decision in the AIIO workflow.
 
-    AIIO Model:
-    - INFORMED: User was notified of the decision (awaiting action)
-    - ACTIONED: Decision was executed (user accepted, agent auto-executed, or time expired)
-    - INSPECTED: User reviewed, no action needed
-    - OVERRIDDEN: User rejected and provided an alternative
+    AIIO Model — The agent always acts and informs a prioritised list;
+    the human inspects selectively and only overrides if warranted.
+    No approval workflow. If the human does nothing, ACTIONED stands.
+
+    - ACTIONED: Agent executed the decision (default — born this way)
+    - INFORMED: Decision surfaced to a human via the Decision Stream
+    - INSPECTED: Human reviewed the reasoning, agent action stands
+    - OVERRIDDEN: Human rejected and provided an alternative with structured reasoning
     """
-    INFORMED = "INFORMED"         # User was notified, hasn't acted yet
-    ACTIONED = "ACTIONED"         # Decision executed (accepted, auto-executed, or expired)
-    INSPECTED = "INSPECTED"       # User reviewed, no action needed
-    OVERRIDDEN = "OVERRIDDEN"     # User rejected with alternative
+    ACTIONED = "ACTIONED"         # Agent executed (default — no approval needed)
+    INFORMED = "INFORMED"         # Surfaced to human in Decision Stream
+    INSPECTED = "INSPECTED"       # Human reviewed, agent action stands
+    OVERRIDDEN = "OVERRIDDEN"     # Human rejected with alternative + reasoning
 
 
 class DecisionUrgency(str, Enum):

@@ -101,6 +101,330 @@ async def refresh_digest(
     return result
 
 
+@router.post("/analyze-override-reason")
+async def analyze_override_reason(
+    request: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Generate context-specific follow-up questions for override reasoning.
+
+    Given a reason_code and decision context, returns follow-up questions
+    that capture the structured experiential knowledge needed for RL training.
+    The questions reference the decision's scope (product, site, time frame).
+    """
+    reason_code = request.get("reason_code", "")
+    decision_type = request.get("decision_type", "")
+    product_name = request.get("product_name", "")
+    site_name = request.get("site_name", "")
+    override_mode = request.get("override_mode", "modify")  # modify or cancel
+
+    # Context string for question framing
+    scope = []
+    if product_name:
+        scope.append(product_name)
+    if site_name:
+        scope.append(f"@ {site_name}")
+    scope_str = " ".join(scope) if scope else "this decision"
+
+    # Generate follow-up questions based on reason code + decision type
+    # Each question captures a dimension of experiential knowledge
+    followups = []
+
+    # Always ask about temporal scope — is this a one-time or recurring pattern?
+    followups.append({
+        "field": "temporal_scope",
+        "question": f"Is this override for {scope_str} a one-time adjustment or a recurring pattern?",
+        "type": "select",
+        "options": [
+            "One-time (this period only)",
+            "Short-term (next 2-4 weeks)",
+            "Seasonal (recurring each year)",
+            "Permanent (until further notice)",
+        ],
+        "required": True,
+    })
+
+    # Reason-specific questions
+    REASON_FOLLOWUPS = {
+        "MARKET_INTELLIGENCE": [
+            {
+                "field": "market_signal",
+                "question": f"What market signal is driving this change for {scope_str}?",
+                "type": "select",
+                "options": [
+                    "New competitor entry",
+                    "Competitor exit / supply gap",
+                    "Price change (commodity/input)",
+                    "Customer behavior shift",
+                    "Regulatory change",
+                    "Promotional activity",
+                    "Macroeconomic indicator",
+                    "Other external signal",
+                ],
+                "required": True,
+            },
+            {
+                "field": "signal_source",
+                "question": "Where did you learn this? (e.g., customer call, trade publication, field report)",
+                "type": "text",
+                "required": True,
+            },
+        ],
+        "CUSTOMER_COMMITMENT": [
+            {
+                "field": "customer_identity",
+                "question": f"Which customer or customer segment does this affect for {scope_str}?",
+                "type": "text",
+                "required": True,
+            },
+            {
+                "field": "commitment_type",
+                "question": "What type of commitment?",
+                "type": "select",
+                "options": [
+                    "Contractual SLA",
+                    "Verbal agreement",
+                    "Strategic account priority",
+                    "Emergency request",
+                    "New business opportunity",
+                ],
+                "required": True,
+            },
+        ],
+        "CAPACITY_CONSTRAINT": [
+            {
+                "field": "constraint_resource",
+                "question": f"What resource is constrained at {site_name or 'this site'}?",
+                "type": "select",
+                "options": [
+                    "Production line / work center",
+                    "Raw material availability",
+                    "Labor / shifts",
+                    "Storage / warehouse space",
+                    "Transportation / logistics",
+                    "Quality / testing capacity",
+                    "Supplier capacity",
+                ],
+                "required": True,
+            },
+            {
+                "field": "constraint_resolution",
+                "question": "When do you expect this constraint to be resolved?",
+                "type": "select",
+                "options": [
+                    "Within 1 week",
+                    "2-4 weeks",
+                    "1-3 months",
+                    "Unknown / indefinite",
+                ],
+                "required": True,
+            },
+        ],
+        "SUPPLIER_ISSUE": [
+            {
+                "field": "supplier_problem",
+                "question": "What is the supplier issue?",
+                "type": "select",
+                "options": [
+                    "Late delivery (current order)",
+                    "Quality problem",
+                    "Capacity reduction",
+                    "Price increase",
+                    "Financial distress / risk",
+                    "Force majeure / disruption",
+                    "Communication breakdown",
+                ],
+                "required": True,
+            },
+            {
+                "field": "alternate_source",
+                "question": "Is an alternate source available?",
+                "type": "select",
+                "options": [
+                    "Yes — already qualified",
+                    "Yes — needs qualification",
+                    "Partially — can cover some volume",
+                    "No — sole source",
+                ],
+                "required": True,
+            },
+        ],
+        "QUALITY_CONCERN": [
+            {
+                "field": "quality_type",
+                "question": f"What quality concern for {scope_str}?",
+                "type": "select",
+                "options": [
+                    "Incoming material quality",
+                    "In-process defect rate",
+                    "Customer complaint / return",
+                    "Regulatory / compliance risk",
+                    "Shelf life / expiration",
+                    "Specification change",
+                ],
+                "required": True,
+            },
+        ],
+        "COST_OPTIMIZATION": [
+            {
+                "field": "cost_driver",
+                "question": f"What cost factor is driving this override for {scope_str}?",
+                "type": "select",
+                "options": [
+                    "Holding cost reduction",
+                    "Transportation cost saving",
+                    "Volume discount opportunity",
+                    "Expedite cost avoidance",
+                    "Obsolescence risk reduction",
+                    "Budget constraint",
+                ],
+                "required": True,
+            },
+            {
+                "field": "estimated_impact",
+                "question": "Estimated dollar impact of this override?",
+                "type": "select",
+                "options": [
+                    "< $1,000",
+                    "$1,000 - $10,000",
+                    "$10,000 - $50,000",
+                    "$50,000 - $100,000",
+                    "> $100,000",
+                    "Don't know",
+                ],
+                "required": False,
+            },
+        ],
+        "DEMAND_CHANGE": [
+            {
+                "field": "demand_direction",
+                "question": f"How is demand changing for {scope_str}?",
+                "type": "select",
+                "options": [
+                    "Increase — confirmed orders",
+                    "Increase — expected (leading indicators)",
+                    "Decrease — cancellations",
+                    "Decrease — expected slowdown",
+                    "Shift — timing change (earlier/later)",
+                    "Mix change — different products",
+                ],
+                "required": True,
+            },
+            {
+                "field": "demand_magnitude",
+                "question": "Approximate magnitude of the change?",
+                "type": "select",
+                "options": [
+                    "< 10%",
+                    "10-25%",
+                    "25-50%",
+                    "> 50%",
+                ],
+                "required": True,
+            },
+        ],
+        "SERVICE_LEVEL": [
+            {
+                "field": "service_priority",
+                "question": f"Why does {scope_str} need a service level exception?",
+                "type": "select",
+                "options": [
+                    "Strategic account at risk",
+                    "Contractual SLA breach imminent",
+                    "New product launch commitment",
+                    "Competitive win/loss situation",
+                    "Seasonal peak — temporary",
+                ],
+                "required": True,
+            },
+        ],
+        "EXPEDITE_REQUIRED": [
+            {
+                "field": "expedite_reason",
+                "question": f"What triggered the expedite need for {scope_str}?",
+                "type": "select",
+                "options": [
+                    "Stockout imminent",
+                    "Customer escalation",
+                    "Supply disruption recovery",
+                    "Demand spike (unexpected)",
+                    "Quality reject — need replacement",
+                    "Planning error correction",
+                ],
+                "required": True,
+            },
+        ],
+        "RISK_MITIGATION": [
+            {
+                "field": "risk_type",
+                "question": f"What risk are you mitigating for {scope_str}?",
+                "type": "select",
+                "options": [
+                    "Supply continuity",
+                    "Demand uncertainty",
+                    "Price volatility",
+                    "Quality / compliance",
+                    "Geopolitical / trade",
+                    "Weather / natural disaster",
+                    "Currency / financial",
+                ],
+                "required": True,
+            },
+        ],
+        "INVENTORY_BUFFER": [
+            {
+                "field": "buffer_reason",
+                "question": f"Why adjust the inventory buffer for {scope_str}?",
+                "type": "select",
+                "options": [
+                    "Lead time variability increased",
+                    "Demand variability increased",
+                    "Supplier reliability degraded",
+                    "Seasonal build required",
+                    "Excess inventory — reduce buffer",
+                    "Service level target changed",
+                ],
+                "required": True,
+            },
+        ],
+    }
+
+    # Add reason-specific questions
+    reason_specific = REASON_FOLLOWUPS.get(reason_code, [])
+    followups.extend(reason_specific)
+
+    # Always ask about confidence — how sure is the planner?
+    followups.append({
+        "field": "override_confidence",
+        "question": "How confident are you that this override will improve the outcome?",
+        "type": "select",
+        "options": [
+            "Very confident — I've seen this pattern before",
+            "Fairly confident — strong signals",
+            "Moderate — judgment call",
+            "Low — but agent recommendation seems wrong",
+        ],
+        "required": True,
+    })
+
+    # For cancel mode, ask what should happen instead
+    if override_mode == "cancel":
+        followups.append({
+            "field": "alternative_action",
+            "question": f"What should happen instead for {scope_str}?",
+            "type": "text",
+            "required": True,
+        })
+
+    return {
+        "reason_code": reason_code,
+        "decision_type": decision_type,
+        "scope": scope_str,
+        "followup_questions": followups,
+    }
+
+
 @router.post("/action", response_model=DecisionActionResponse)
 async def act_on_decision(
     request: DecisionActionRequest,
@@ -186,18 +510,24 @@ async def get_decision_time_series(
     chart_type = "line"
     annotation = None
 
+    # Product IDs in forecast/inv_level use config-prefixed format (e.g. CFG22_BV001)
+    # Decision cards may pass unprefixed IDs — try both formats
+    pid_variants = [product_id] if product_id else []
+    if product_id and not product_id.startswith(f"CFG{cfg_id}_"):
+        pid_variants.append(f"CFG{cfg_id}_{product_id}")
+
     try:
         if decision_type in DEMAND_TYPES and product_id:
-            # Fetch forecast time series (P10/P50/P90)
+            # Fetch forecast time series (P10/P50/P90) — try both ID formats
             result = await db.execute(
                 text("""
                     SELECT forecast_date, p10_quantity, p50_quantity, p90_quantity
                     FROM forecast
-                    WHERE product_id = :pid AND config_id = :cfg
+                    WHERE product_id = ANY(:pids) AND config_id = :cfg
                     ORDER BY forecast_date
                     LIMIT 52
                 """),
-                {"pid": product_id, "cfg": cfg_id},
+                {"pids": pid_variants, "cfg": cfg_id},
             )
             rows = result.fetchall()
             for row in rows:
@@ -217,16 +547,16 @@ async def get_decision_time_series(
             annotation = f"Decision type: {decision_type.replace('_', ' ')}"
 
         elif decision_type in INVENTORY_TYPES and product_id:
-            # Fetch inventory levels over time
+            # Fetch inventory levels over time — try both ID formats
             result = await db.execute(
                 text("""
                     SELECT inventory_date, on_hand_qty, in_transit_qty
                     FROM inv_level
-                    WHERE product_id = :pid AND config_id = :cfg
+                    WHERE product_id = ANY(:pids) AND config_id = :cfg
                     ORDER BY inventory_date
                     LIMIT 52
                 """),
-                {"pid": product_id, "cfg": cfg_id},
+                {"pids": pid_variants, "cfg": cfg_id},
             )
             rows = result.fetchall()
             for row in rows:

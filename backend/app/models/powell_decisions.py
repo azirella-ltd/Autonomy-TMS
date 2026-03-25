@@ -27,6 +27,23 @@ class HiveSignalMixin:
 
     All columns are nullable so existing records are unaffected.
 
+    AIIO Status (Mar 2026)
+    ----------------------
+    The agent always acts and informs a prioritised list; the human inspects
+    selectively and only overrides if warranted. No approval workflow.
+
+    - ACTIONED: Agent executed the decision (default — born this way)
+    - INFORMED: Decision surfaced to a human via the Decision Stream
+    - INSPECTED: Human reviewed the reasoning, agent action stands
+    - OVERRIDDEN: Human rejected and provided an alternative with structured reasoning
+
+    Decision Level
+    --------------
+    Which Powell layer produced this decision:
+    - execution: TRM narrow decisions (<10ms, per-order/per-product)
+    - tactical: Site tGNN or Network tGNN (daily, multi-site)
+    - strategic: S&OP GraphSAGE (weekly/monthly, network-wide policy)
+
     Economic Impact Columns (Mar 2026)
     -----------------------------------
     Three-dimensional decision routing grounded in Kahneman & Tversky's
@@ -49,6 +66,18 @@ class HiveSignalMixin:
     Queue sort: urgency DESC (Kahneman loss aversion), then benefit DESC,
     then likelihood ASC (where human judgment adds most value).
     """
+    # ── AIIO status ───────────────────────────────────────────────────────
+    # Agent always acts. Human reacts (or doesn't).
+    # Default ACTIONED — the agent executed. No approval required.
+    status = Column(
+        String(20), nullable=False, default="ACTIONED", server_default="ACTIONED",
+        index=True, comment="AIIO: ACTIONED|INFORMED|INSPECTED|OVERRIDDEN",
+    )
+    decision_level = Column(
+        String(20), nullable=False, default="execution", server_default="execution",
+        index=True, comment="Powell layer: execution|tactical|strategic",
+    )
+
     signal_context = Column(JSON, nullable=True)        # Snapshot of signals read before decision
     urgency_at_time = Column(Float, nullable=True)       # Urgency vector value for this TRM at decision time
     triggered_by = Column(String(200), nullable=True)    # Comma-separated signal types that influenced decision
@@ -88,6 +117,8 @@ class HiveSignalMixin:
     def _signal_dict(self) -> dict:
         """Return signal fields for to_dict()."""
         return {
+            "status": self.status,
+            "decision_level": self.decision_level,
             "signal_context": self.signal_context,
             "urgency_at_time": self.urgency_at_time,
             "triggered_by": self.triggered_by,

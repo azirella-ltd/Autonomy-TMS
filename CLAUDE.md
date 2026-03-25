@@ -93,16 +93,17 @@ When implementing any entity:
 | PowellSSDecision | PowellBufferDecision | SQLAlchemy model |
 | SS_INCREASED / SS_DECREASED | BUFFER_INCREASED / BUFFER_DECREASED | HiveSignalType |
 | "safety_stock" (TRM type) | "inventory_buffer" | TRM type identifier |
-| PENDING (DecisionStatus) | INFORMED | AIIO: user notified, awaiting action |
-| ACCEPTED (DecisionStatus) | ACTIONED | AIIO: decision executed |
-| AUTO_EXECUTED (DecisionStatus) | ACTIONED | AIIO: agent auto-executed |
-| EXPIRED (DecisionStatus) | ACTIONED | AIIO: time expired, auto-resolved |
-| REJECTED (DecisionStatus) | OVERRIDDEN | AIIO: user rejected with alternative |
-| — | INSPECTED | AIIO: user reviewed, no action needed (new) |
+| PENDING (DecisionStatus) | ACTIONED | AIIO: agent executed (default — no approval needed) |
+| ACCEPTED (DecisionStatus) | ACTIONED | AIIO: agent executed |
+| AUTO_EXECUTED (DecisionStatus) | ACTIONED | AIIO: agent executed |
+| EXPIRED (DecisionStatus) | ACTIONED | AIIO: agent executed |
+| REJECTED (DecisionStatus) | OVERRIDDEN | AIIO: user rejected with alternative + structured reasoning |
+| — | INFORMED | AIIO: decision surfaced to user in Decision Stream |
+| — | INSPECTED | AIIO: user reviewed reasoning, agent action stands |
 | powell_role | decision_level | User model field, API field, enum |
 | PowellRoleEnum | DecisionLevelEnum | Enum class name |
 
-> **Terminology Note — AIIO Decision Status (Mar 2026)**: The `DecisionStatus` enum in `decision_tracking.py` (used by `agent_decisions` and `sop_worklist_items` tables) has been renamed to the **AIIO model**: **A**ctioned, **I**nformed, **I**nspected, **O**verridden. This applies only to the agent decision workflow — the planning decision workflow (`planning_decision.py`: PENDING/APPLIED/PENDING_APPROVAL/APPROVED/REJECTED/REVERTED/SUPERSEDED) and AAP ThreadStatus are unchanged. The `commit_status` enum (PROPOSED/REVIEWED/ACCEPTED/OVERRIDDEN/SUBMITTED) used in planning commit workflows also remains unchanged.
+> **Terminology Note — AIIO Decision Status (Mar 2026)**: The `DecisionStatus` enum in `decision_tracking.py` and the `status` column on all 11 `powell_*_decisions` tables follows the **AIIO model**. **The agent always acts and informs a prioritised list; the human inspects selectively and only overrides if warranted.** There is no approval workflow — no "pending" or "awaiting action" state. Every decision is born as **ACTIONED** — the agent executed it. The Decision Stream surfaces it to the appropriate human (filtered by scope, decision level, urgency, likelihood) → **INFORMED**. The human may click Inspect to review reasoning → **INSPECTED** (agent action stands). The human may Override with structured reasoning → **OVERRIDDEN** (the only case where the agent's action is replaced). If the human does nothing, ACTIONED stands — the agent's decision is the action of record. The planning decision workflow (`planning_decision.py`: PENDING/APPLIED/PENDING_APPROVAL/APPROVED/REJECTED/REVERTED/SUPERSEDED) and AAP ThreadStatus are unchanged. The `commit_status` enum (PROPOSED/REVIEWED/ACCEPTED/OVERRIDDEN/SUBMITTED) used in planning commit workflows also remains unchanged.
 
 > **Terminology Note — Decision Level (Mar 2026)**: The `powell_role` field on the User model and `PowellRoleEnum` have been renamed to `decision_level` and `DecisionLevelEnum`. This clarifies that the field represents the user's planning hierarchy level (VP/EXECUTIVE, S&OP_DIRECTOR, MPS_MANAGER, ANALYST), not a "role" in the RBAC sense. All API endpoints, serializers, and frontend references updated. The enum values themselves are unchanged.
 

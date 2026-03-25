@@ -62,6 +62,15 @@ export const decisionStreamApi = {
     api
       .get('/decision-stream/time-series', { params })
       .then((r) => r.data),
+
+  /**
+   * Analyze override reason and get context-specific follow-up questions.
+   * @param {Object} body - { reason_code, decision_type, product_name, site_name, override_mode }
+   */
+  analyzeOverrideReason: (body) =>
+    api
+      .post('/decision-stream/analyze-override-reason', body)
+      .then((r) => r.data),
 };
 
 export default decisionStreamApi;
