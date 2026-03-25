@@ -270,8 +270,46 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
     // Accumulate lead time for averaging
     const lt = lane.lead_time_days?.value ?? lane.lead_time_days?.avg ?? lane.lead_time_min ?? 0;
     linkMap[lk].totalLeadTime = (linkMap[lk].totalLeadTime || 0) + lt;
-    linkMap[lk].value += lane.capacity ?? lane.volume ?? lane.flow ?? 1;
+    // Use capacity for internal lanes; for virtual partner lanes (no capacity),
+    // estimate flow from connected internal lanes to maintain flow conservation.
+    // Partner lanes with no capacity get a placeholder that will be normalized below.
+    const laneFlow = lane.capacity ?? lane.volume ?? lane.flow ?? null;
+    if (laneFlow != null) {
+      linkMap[lk].value += laneFlow;
+      linkMap[lk]._hasRealValue = true;
+    } else {
+      linkMap[lk].value += 0; // Will be normalized after all lanes are processed
+      linkMap[lk]._needsEstimate = true;
+    }
     linkMap[lk].laneCount += 1;
+  });
+
+  // ── 3b. Normalize partner lane flows for flow conservation ──────
+  // Virtual partner lanes (vendor→DC, DC→customer) have no capacity data.
+  // Estimate their flow by distributing the connected internal lane total
+  // across the partner lanes proportionally. This ensures the Sankey arc
+  // widths are consistent: total inbound = total outbound at each node.
+  const internalFlowByNode = {};
+  Object.values(linkMap).forEach(l => {
+    if (l._hasRealValue) {
+      // Track total real flow entering and leaving each node
+      internalFlowByNode[l.source] = (internalFlowByNode[l.source] || 0) + l.value;
+      internalFlowByNode[l.target] = (internalFlowByNode[l.target] || 0) + l.value;
+    }
+  });
+
+  Object.values(linkMap).forEach(l => {
+    if (l._needsEstimate && l.value === 0) {
+      // Estimate: distribute the connected node's internal flow across partner lanes
+      const connectedFlow = internalFlowByNode[l.source] || internalFlowByNode[l.target] || 0;
+      // Count how many partner lanes connect to the same node
+      const partnerLaneCount = Object.values(linkMap).filter(
+        other => other._needsEstimate && (other.source === l.source || other.target === l.target)
+      ).length || 1;
+      l.value = connectedFlow > 0
+        ? connectedFlow / partnerLaneCount
+        : 1;  // absolute fallback
+    }
   });
 
   // ── 4. Convert to arrays with time scaling ─────────────────────

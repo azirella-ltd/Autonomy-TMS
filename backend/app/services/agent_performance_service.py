@@ -133,10 +133,13 @@ class AgentPerformanceService:
             from app.models.supply_chain_config import SupplyChainConfig, Site
             from app.models.sc_entities import Product, Forecast, Geography
 
-            # Get the first SC config for this tenant
+            # Get the active SC config for this tenant
             config = (
                 self.db.query(SupplyChainConfig)
-                .filter(SupplyChainConfig.tenant_id == tenant_id)
+                .filter(
+                    SupplyChainConfig.tenant_id == tenant_id,
+                    SupplyChainConfig.is_active == True,
+                )
                 .first()
             )
             if not config:
@@ -261,6 +264,7 @@ class AgentPerformanceService:
 
             # ── Path B: site_id → Site → Geography hierarchy (fallback) ──────
             if not rows:
+              try:
                 def _base_q(region_col):
                     return (
                         self.db.query(
@@ -336,6 +340,12 @@ class AgentPerformanceService:
                         .group_by(Product.category, Site.name)
                         .all()
                     )
+              except Exception as e:
+                logger.debug("Treemap Path B (site geography) failed: %s", e)
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
 
             # ── Path C: No geography at all — group by product category only ──
             # Works even when site_ids are stale or geography is unpopulated.
