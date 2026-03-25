@@ -200,11 +200,10 @@ const TreemapContent = (props) => {
           textAnchor="middle"
           fill="#fff"
           fontSize={fontSize}
-          fontWeight="700"
+          fontWeight="600"
           style={{
-            textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+            textShadow: '0 1px 2px rgba(0,0,0,0.35)',
             fontFamily: 'system-ui, -apple-system, sans-serif',
-            letterSpacing: '0.01em',
           }}
         >
           {line}
@@ -215,11 +214,11 @@ const TreemapContent = (props) => {
           x={x + width / 2}
           y={startY + nameLines.length * lineHeight}
           textAnchor="middle"
-          fill="#fff"
+          fill="rgba(255,255,255,0.9)"
           fontSize={fontSize - 1}
-          fontWeight="500"
+          fontWeight="400"
           style={{
-            textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+            textShadow: '0 1px 2px rgba(0,0,0,0.3)',
             fontFamily: 'system-ui, -apple-system, sans-serif',
           }}
         >
