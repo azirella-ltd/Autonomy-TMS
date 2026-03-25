@@ -500,7 +500,8 @@ async def get_decision_time_series(
         return {"series": [], "lines": [], "error": True}
 
     # Determine which data to fetch based on decision type
-    DEMAND_TYPES = {"forecast_adjustment", "atp", "po_creation"}
+    # Include GNN directive types — they also have product context
+    DEMAND_TYPES = {"forecast_adjustment", "atp", "po_creation", "execution_directive", "sop_policy", "site_coordination"}
     INVENTORY_TYPES = {"inventory_buffer", "rebalancing"}
 
     series = []
@@ -521,9 +522,10 @@ async def get_decision_time_series(
             # Fetch forecast time series (P10/P50/P90) — try both ID formats
             result = await db.execute(
                 text("""
-                    SELECT forecast_date, p10_quantity, p50_quantity, p90_quantity
+                    SELECT forecast_date, forecast_p10, forecast_p50, forecast_p90
                     FROM forecast
                     WHERE product_id = ANY(:pids) AND config_id = :cfg
+                    AND forecast_p50 IS NOT NULL AND forecast_p50 > 0
                     ORDER BY forecast_date
                     LIMIT 52
                 """),

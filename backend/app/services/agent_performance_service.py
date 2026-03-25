@@ -20,7 +20,7 @@ and demo data generation for demonstration purposes.
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session, aliased
-from sqlalchemy import func
+from sqlalchemy import func, and_, literal
 import random
 import math
 import logging
@@ -254,6 +254,10 @@ class AgentPerformanceService:
                     rows = [r for r in tp_rows if r.region_name]
             except Exception as e:
                 logger.debug("Treemap Path A (customer TradingPartner) failed: %s", e)
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
 
             # ── Path B: site_id → Site → Geography hierarchy (fallback) ──────
             if not rows:
@@ -332,6 +336,28 @@ class AgentPerformanceService:
                         .group_by(Product.category, Site.name)
                         .all()
                     )
+
+            # ── Path C: No geography at all — group by product category only ──
+            # Works even when site_ids are stale or geography is unpopulated.
+            if not rows:
+                try:
+                    rows = (
+                        self.db.query(
+                            Product.category.label("category"),
+                            literal("All Locations").label("region_name"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_price).label("revenue"),
+                            func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
+                        )
+                        .join(Product, and_(
+                            Forecast.product_id == Product.id,
+                            Forecast.config_id == Product.config_id,
+                        ))
+                        .filter(*base_filters)
+                        .group_by(Product.category)
+                        .all()
+                    )
+                except Exception as e:
+                    logger.debug("Treemap Path C (category-only) failed: %s", e)
 
             if not rows:
                 return None
