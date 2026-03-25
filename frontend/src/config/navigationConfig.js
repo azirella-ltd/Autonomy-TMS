@@ -1175,9 +1175,14 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmi
   const isExecutiveLevel = decisionLevel === 'EXECUTIVE' || decisionLevel === 'SC_VP';
 
   const allowedSections = (decisionLevel && DECISION_LEVEL_SECTIONS[decisionLevel]) || null;
-  // Tenant admins always see Administration
+
+  // Tenant admin (no decision_level) = Administration only.
+  // They manage the tenant — they don't plan, execute, or monitor.
   const sectionFilter = (sectionName) => {
-    if (!allowedSections) return true; // DEMO_ALL or null → show all
+    if (isTenantAdmin && !decisionLevel) {
+      return sectionName === 'Administration';
+    }
+    if (!allowedSections) return true; // DEMO_ALL → show all
     if (sectionName === 'Administration' && isTenantAdmin) return true;
     return allowedSections.includes(sectionName);
   };
