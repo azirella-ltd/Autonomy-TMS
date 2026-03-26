@@ -51,6 +51,14 @@ async function init() {
     console.log("API base resolved:", resolvedBase);
     const data = await simulationApi.health();
     console.log("API health:", data);
+
+    // Load platform config for subdomain routing (non-blocking)
+    try {
+      const { getPlatformConfig } = await import("./utils/subdomain");
+      const config = await getPlatformConfig();
+      if (config) console.log("Platform config:", config.SUBDOMAIN_ROUTING_ENABLED ? "subdomain routing ON" : "single-origin");
+    } catch (_) { /* non-critical */ }
+
     return true;
   } catch (err) {
     const status = err?.response?.status;

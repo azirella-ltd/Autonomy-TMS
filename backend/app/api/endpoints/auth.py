@@ -70,6 +70,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserPublic
+    tenant_subdomain: Optional[str] = None  # For subdomain redirect after login
 
 
 # Alias Token to TokenResponse for backward compatibility
@@ -372,8 +373,9 @@ async def login(
         key="refresh_token",
         value=tokens.refresh_token,
         httponly=True,
-        secure=not settings.DEBUG,
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
+        domain=settings.COOKIE_DOMAIN,  # .azirella.com in prod for cross-subdomain
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
     # Also set access token cookie so subsequent requests authenticate without JS-managed headers
@@ -384,11 +386,22 @@ async def login(
     # Attach tenant context for admins so frontend receives tenant assignments
     _normalize_tenant_admin_context(user)
 
+    # Resolve tenant subdomain for frontend redirect
+    _tenant_subdomain = None
+    _tenant_obj = getattr(user, "tenant", None)
+    if _tenant_obj:
+        _tenant_subdomain = getattr(_tenant_obj, "slug", None) or getattr(_tenant_obj, "subdomain", None)
+    if not _tenant_subdomain:
+        _admin_tenant = getattr(user, "admin_of_tenant", None)
+        if _admin_tenant:
+            _tenant_subdomain = getattr(_admin_tenant, "slug", None) or getattr(_admin_tenant, "subdomain", None)
+
     # Return access token and user info
     return TokenResponse(
         access_token=tokens.access_token,
         token_type="bearer",
         user=UserPublic.from_orm(user),
+        tenant_subdomain=_tenant_subdomain,
     )
 
 
@@ -631,8 +644,9 @@ async def refresh_token(
         key="refresh_token",
         value=tokens.refresh_token,
         httponly=True,
-        secure=not settings.DEBUG,
+        secure=settings.COOKIE_SECURE,
         samesite="lax",
+        domain=settings.COOKIE_DOMAIN,  # .azirella.com in prod for cross-subdomain
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
     # Update access token cookie too

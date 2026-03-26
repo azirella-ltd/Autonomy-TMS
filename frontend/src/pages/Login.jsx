@@ -144,6 +144,17 @@ const Login = () => {
       if (success) {
         setContactPrompt(null);
         setErrors({});
+
+        // Subdomain redirect: if enabled and login response includes tenant slug,
+        // redirect to {slug}.azirella.com before any local navigation
+        try {
+          const { redirectToTenantSubdomain } = await import('../utils/subdomain');
+          const tenantSub = loggedInUser?.tenant_subdomain;
+          if (tenantSub && redirectToTenantSubdomain(tenantSub, '/dashboard')) {
+            return; // Redirecting to vanity subdomain — stop here
+          }
+        } catch (_) { /* subdomain utils not available, continue normally */ }
+
         const redirectTo = searchParams.get('redirect');
         const destination = resolvePostLoginDestination(loggedInUser, redirectTo);
         if (isSystemAdmin(loggedInUser)) {

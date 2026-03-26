@@ -145,6 +145,17 @@ class Settings(BaseSettings):
     REFRESH_COOKIE_SAMESITE: str = "lax"  # 'lax' is correct when behind nginx proxy (same origin)
     REFRESH_COOKIE_SECURE: bool = False  # True only in production over HTTPS
     REFRESH_COOKIE_HTTPONLY: bool = True
+
+    # ── Subdomain routing (Option C: Hybrid) ──
+    # login.azirella.com → Login portal
+    # autonomy.azirella.com → Default app (all tenants via JWT)
+    # {slug}.azirella.com → Vanity subdomain (validated against JWT tenant)
+    APP_DOMAIN: str = "localhost"           # "azirella.com" in production
+    APP_SCHEME: str = "http"                # "https" in production
+    APP_PORT: Optional[int] = 8088          # None in production (standard ports)
+    LOGIN_SUBDOMAIN: str = "login"          # login.azirella.com
+    DEFAULT_SUBDOMAIN: str = "autonomy"     # autonomy.azirella.com
+    SUBDOMAIN_ROUTING_ENABLED: bool = False  # Off for local dev, True in prod
     
     # Database configuration
     SQLALCHEMY_DATABASE_URI: str = ""

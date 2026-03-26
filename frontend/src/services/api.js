@@ -13,6 +13,7 @@
 import axios from "axios";
 import { API_BASE_URL } from "../config/api";
 import { buildLoginRedirectPath } from "../utils/authUtils";
+import { isSubdomainRoutingEnabled, buildLoginUrl } from "../utils/subdomain";
 
 // Create a single axios instance for the app
 const http = axios.create({
@@ -67,11 +68,16 @@ http.interceptors.response.use(
       } catch (refreshError) {
         // If refresh fails, go to login only once
         if (window.location.pathname !== '/login') {
-          const loginPath = buildLoginRedirectPath({
-            pathname: window.location.pathname,
-            search: window.location.search,
-          });
-          window.location.replace(loginPath);
+          if (isSubdomainRoutingEnabled()) {
+            // Redirect to login.azirella.com with return URL
+            window.location.replace(buildLoginUrl(window.location.href));
+          } else {
+            const loginPath = buildLoginRedirectPath({
+              pathname: window.location.pathname,
+              search: window.location.search,
+            });
+            window.location.replace(loginPath);
+          }
         }
         return Promise.reject(refreshError);
       }

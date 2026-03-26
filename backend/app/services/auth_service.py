@@ -274,9 +274,24 @@ class AuthService:
 
         subject_identifier = user.email or str(user.id)
 
+        # Resolve tenant slug for subdomain routing (JWT claim)
+        tenant_id = getattr(user, "tenant_id", None)
+        tenant_slug = None
+        tenant_obj = getattr(user, "tenant", None)
+        if tenant_obj:
+            tenant_slug = getattr(tenant_obj, "slug", None)
+        if not tenant_slug and not tenant_id:
+            # System admin might administer a tenant
+            admin_tenant = getattr(user, "admin_of_tenant", None)
+            if admin_tenant:
+                tenant_id = admin_tenant.id
+                tenant_slug = getattr(admin_tenant, "slug", None)
+
         access_token = create_access_token(
             subject=subject_identifier,
             user_type=user_type_value,
+            tenant_id=tenant_id,
+            tenant_slug=tenant_slug,
             expires_delta=access_token_expires,
         )
 
@@ -333,9 +348,19 @@ class AuthService:
 
         subject_identifier = user.email if user else str(db_token.user_id)
 
+        # Resolve tenant slug for subdomain routing
+        tenant_id = getattr(user, "tenant_id", None) if user else None
+        tenant_slug = None
+        if user:
+            tenant_obj = getattr(user, "tenant", None)
+            if tenant_obj:
+                tenant_slug = getattr(tenant_obj, "slug", None)
+
         access_token = create_access_token(
             subject=subject_identifier,
             user_type=user_type_value,
+            tenant_id=tenant_id,
+            tenant_slug=tenant_slug,
             expires_delta=access_token_expires,
         )
         

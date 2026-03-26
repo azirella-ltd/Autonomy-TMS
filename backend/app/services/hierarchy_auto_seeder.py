@@ -49,11 +49,15 @@ def _seed_site_hierarchy(
         .count()
     )
     if existing > 0:
+        # Delete and recreate to handle partial/stale data from failed builds
         logger.info(
-            "Site hierarchy already exists for tenant %d (%d nodes), skipping",
+            "Site hierarchy exists for tenant %d (%d nodes) — clearing for fresh seed",
             tenant_id, existing,
         )
-        return {"created": False, "count": existing}
+        db.query(SiteHierarchyNode).filter(
+            SiteHierarchyNode.tenant_id == tenant_id
+        ).delete()
+        db.flush()
 
     config = db.query(SupplyChainConfig).filter(
         SupplyChainConfig.id == config_id
@@ -150,10 +154,13 @@ def _seed_product_hierarchy(
     )
     if existing > 0:
         logger.info(
-            "Product hierarchy already exists for tenant %d (%d nodes), skipping",
+            "Product hierarchy exists for tenant %d (%d nodes) — clearing for fresh seed",
             tenant_id, existing,
         )
-        return {"created": False, "count": existing}
+        db.query(ProductHierarchyNode).filter(
+            ProductHierarchyNode.tenant_id == tenant_id
+        ).delete()
+        db.flush()
 
     products = (
         db.query(Product)

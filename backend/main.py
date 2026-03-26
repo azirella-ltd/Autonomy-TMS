@@ -28,9 +28,11 @@ from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
-from sqlalchemy import or_, text, func
+from sqlalchemy import or_, text, func, select
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import flag_modified
+
+from app.core.config import settings
 
 from app.services.tenant_service import TenantService
 from app.services.bootstrap import build_default_tenant_payload, ensure_default_tenant_and_scenario
@@ -451,14 +453,26 @@ async def get_current_user(
 app = FastAPI(title="Autonomy API", version="1.0.0")
 
 # CORS (allow cookies/credentials from the frontend)
-origins = [o.strip() for o in FRONTEND_ORIGINS.split(",") if o.strip()]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# When subdomain routing is enabled, use regex to match *.azirella.com
+if settings.SUBDOMAIN_ROUTING_ENABLED:
+    import re as _re
+    _domain_escaped = _re.escape(settings.APP_DOMAIN)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=rf"^https?://([a-z0-9\-]+\.)?{_domain_escaped}(:\d+)?$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    origins = [o.strip() for o in FRONTEND_ORIGINS.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Correlation ID middleware for request tracing
 try:
@@ -729,6 +743,49 @@ api = APIRouter(prefix=API_PREFIX, tags=["api"])
 @app.get("/api/health")
 def health_alias():
     return {"status": "ok", "time": datetime.utcnow().isoformat() + "Z"}
+
+# ------------------------------------------------------------------------------
+# Client config — public, no auth required. Frontend fetches on app init.
+# Exposes only non-secret settings needed for subdomain routing & UI.
+# ------------------------------------------------------------------------------
+@api.get("/config/client", tags=["config"])
+def client_config():
+    """Public endpoint returning frontend configuration for subdomain routing."""
+    from app.core.config import settings as _s
+    port_suffix = f":{_s.APP_PORT}" if _s.APP_PORT else ""
+    return {
+        "APP_DOMAIN": _s.APP_DOMAIN,
+        "APP_SCHEME": _s.APP_SCHEME,
+        "APP_PORT": _s.APP_PORT,
+        "SUBDOMAIN_ROUTING_ENABLED": _s.SUBDOMAIN_ROUTING_ENABLED,
+        "LOGIN_SUBDOMAIN": _s.LOGIN_SUBDOMAIN,
+        "DEFAULT_SUBDOMAIN": _s.DEFAULT_SUBDOMAIN,
+        "LOGIN_URL": f"{_s.APP_SCHEME}://{_s.LOGIN_SUBDOMAIN}.{_s.APP_DOMAIN}{port_suffix}",
+        "DEFAULT_APP_URL": f"{_s.APP_SCHEME}://{_s.DEFAULT_SUBDOMAIN}.{_s.APP_DOMAIN}{port_suffix}",
+    }
+
+
+@api.get("/tenants/resolve/{slug}", tags=["tenants"])
+async def resolve_tenant_by_slug(slug: str):
+    """Public endpoint to resolve a tenant by slug. Used by login portal
+    to validate tenant existence and build redirect URL."""
+    from app.db.session import async_session_factory
+    from app.models.tenant import Tenant as TenantModel
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(TenantModel).where(TenantModel.slug == slug)
+        )
+        tenant = result.scalar_one_or_none()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        return {
+            "id": tenant.id,
+            "name": tenant.name,
+            "slug": tenant.slug,
+            "subdomain": tenant.subdomain,
+            "mode": tenant.mode.value if tenant.mode else "production",
+        }
+
 
 # ------------------------------------------------------------------------------
 # Auth

@@ -28,7 +28,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BACKUP_DIR="${PROJECT_ROOT}/backups"
 
 echo -e "${BLUE}=================================="
-echo "Beer Game Deployment Script"
+echo "Autonomy Platform Deployment"
 echo "==================================${NC}"
 echo ""
 echo "Environment: ${ENVIRONMENT}"
@@ -92,10 +92,10 @@ backup_deployment() {
     docker save autonomy_backend:latest -o "${BACKUP_DIR}/${BACKUP_NAME}/backend.tar" 2>/dev/null || true
     docker save autonomy_frontend:latest -o "${BACKUP_DIR}/${BACKUP_NAME}/frontend.tar" 2>/dev/null || true
 
-    # Backup database
+    # Backup database (PostgreSQL)
     log "Backing up database..."
-    docker compose exec -T db mysqldump -u root -p${MARIADB_ROOT_PASSWORD} autonomy \
-        > "${BACKUP_DIR}/${BACKUP_NAME}/database.sql" 2>/dev/null || true
+    docker compose exec -T db pg_dump -U autonomy_user -Fc autonomy \
+        > "${BACKUP_DIR}/${BACKUP_NAME}/database.dump" 2>/dev/null || true
 
     # Save backup version for rollback
     ROLLBACK_VERSION="${BACKUP_NAME}"
@@ -121,9 +121,8 @@ run_migrations() {
 pull_images() {
     log "${BLUE}Pulling images for version ${VERSION}...${NC}"
 
-    # In production, would pull from registry
-    # For now, rebuild locally
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+    # Rebuild images locally (or pull from ECR in production)
+    docker compose build
 
     log "${GREEN}✓ Images ready${NC}"
 }
@@ -137,11 +136,11 @@ deploy() {
 
     # Stop current containers
     log "Stopping current containers..."
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+    docker compose down
 
     # Start new containers
     log "Starting new containers..."
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+    docker compose up -d
 
     log "${GREEN}✓ Containers started${NC}"
 }
@@ -204,22 +203,22 @@ rollback() {
     fi
 
     # Stop current containers
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+    docker compose down
 
     # Load backup images
     log "Loading backup images..."
     docker load -i "${BACKUP_PATH}/backend.tar" 2>/dev/null || true
     docker load -i "${BACKUP_PATH}/frontend.tar" 2>/dev/null || true
 
-    # Restore database
+    # Restore database (PostgreSQL)
     log "Restoring database..."
     docker compose up -d db
     sleep 10
-    docker compose exec -T db mysql -u root -p${MARIADB_ROOT_PASSWORD} autonomy \
-        < "${BACKUP_PATH}/database.sql" 2>/dev/null || true
+    docker compose exec -T db pg_restore -U autonomy_user -d autonomy --clean \
+        < "${BACKUP_PATH}/database.dump" 2>/dev/null || true
 
     # Start containers
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+    docker compose up -d
 
     log "${GREEN}✓ Rollback completed${NC}"
 }

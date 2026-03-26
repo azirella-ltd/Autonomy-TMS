@@ -167,7 +167,7 @@ make llm-check             # Check LLM connectivity
 
 **User Role Hierarchy**:
 - **System Admin** (systemadmin@autonomy.com): No tenant. Manages tenants and tenant admins ONLY. No Decision Stream access.
-- **Tenant Admin** (admin@distdemo.com, SAP_admin@autonomy.com): Owns provisioning, config, user management for their tenant.
+- **Tenant Admin** (admin@distdemo.com, admin@sap_demo.com): Owns provisioning, config, user management for their tenant.
 - systemadmin NEVER has a `tenant_id` or `default_config_id`.
 
 ---

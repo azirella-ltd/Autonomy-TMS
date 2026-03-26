@@ -111,16 +111,20 @@ def get_password_hash(password: str) -> str:
 def create_access_token(
     subject: str,
     user_type: Optional[str] = None,
-    expires_delta: Optional[timedelta] = None
+    tenant_id: Optional[int] = None,
+    tenant_slug: Optional[str] = None,
+    expires_delta: Optional[timedelta] = None,
 ) -> str:
     """
     Create a JWT access token with standard claims.
-    
+
     Args:
         subject: The subject of the token (usually user ID or email)
         user_type: Serialized user type string
+        tenant_id: User's tenant ID (None for system admins)
+        tenant_slug: Tenant's URL slug for subdomain routing
         expires_delta: Optional timedelta for token expiration
-        
+
     Returns:
         str: Encoded JWT token
     """
@@ -128,7 +132,7 @@ def create_access_token(
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
     to_encode = {
         "sub": str(subject),
         "exp": expire,
@@ -136,6 +140,8 @@ def create_access_token(
         "jti": str(uuid.uuid4()),
         "type": "access",
         "user_type": user_type,
+        "tenant_id": tenant_id,
+        "tenant_slug": tenant_slug,
     }
     
     encoded_jwt = jwt.encode(
