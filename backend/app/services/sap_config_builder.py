@@ -2078,6 +2078,7 @@ class SAPConfigBuilder:
         country_nodes: Dict[str, SiteHierarchyNode] = {}
         region_nodes: Dict[Tuple[str, str], SiteHierarchyNode] = {}
 
+        _seen_site_codes: set = set()
         if not t001w.empty:
             for _, plant in t001w.iterrows():
                 werks = str(plant.get("WERKS", "")).strip()
@@ -2125,23 +2126,25 @@ class SAPConfigBuilder:
                     region_nodes[region_key] = rnode
                     site_count += 1
 
-                # Plant node — link to the Site entity
-                parent_node = region_nodes.get(region_key) or country_nodes.get(land1) or root
-                site_entity = self._sites.get(werks)
-                plant_name = str(plant.get("NAME1", "")).strip() or werks
+                # Plant node — link to the Site entity (skip duplicates)
                 pcode = f"SITE_{werks}"
-                pnode = SiteHierarchyNode(
-                    tenant_id=tenant_id,
-                    code=pcode,
-                    name=plant_name,
-                    hierarchy_level="SITE",
-                    hierarchy_path=f"{parent_node.hierarchy_path}/{pcode}",
-                    depth=parent_node.depth + 1,
-                    parent_id=parent_node.id,
-                    site_id=site_entity.id if site_entity else None,
-                )
-                self.db.add(pnode)
-                site_count += 1
+                if pcode not in _seen_site_codes:
+                    _seen_site_codes.add(pcode)
+                    parent_node = region_nodes.get(region_key) or country_nodes.get(land1) or root
+                    site_entity = self._sites.get(werks)
+                    plant_name = str(plant.get("NAME1", "")).strip() or werks
+                    pnode = SiteHierarchyNode(
+                        tenant_id=tenant_id,
+                        code=pcode,
+                        name=plant_name,
+                        hierarchy_level="SITE",
+                        hierarchy_path=f"{parent_node.hierarchy_path}/{pcode}",
+                        depth=parent_node.depth + 1,
+                        parent_id=parent_node.id,
+                        site_id=site_entity.id if site_entity else None,
+                    )
+                    self.db.add(pnode)
+                    site_count += 1
 
         await self.db.flush()
         logger.info(f"Created {site_count} site hierarchy nodes (Company→Country→Region→Plant)")
