@@ -243,7 +243,7 @@ class SiteHierarchyNode(Base):
     )
 
     # Node identification
-    code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -274,6 +274,7 @@ class SiteHierarchyNode(Base):
     tenant = relationship("Tenant")
 
     __table_args__ = (
+        UniqueConstraint('code', 'tenant_id', name='site_hierarchy_node_code_tenant_key'),
         Index('idx_site_hierarchy_path', 'hierarchy_path'),
         Index('idx_site_hierarchy_level', 'hierarchy_level', 'tenant_id'),
     )
@@ -310,7 +311,7 @@ class ProductHierarchyNode(Base):
     )
 
     # Node identification
-    code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -347,6 +348,7 @@ class ProductHierarchyNode(Base):
     tenant = relationship("Tenant")
 
     __table_args__ = (
+        UniqueConstraint('code', 'tenant_id', name='product_hierarchy_node_code_tenant_key'),
         Index('idx_product_hierarchy_path', 'hierarchy_path'),
         Index('idx_product_hierarchy_level', 'hierarchy_level', 'tenant_id'),
     )
@@ -442,7 +444,7 @@ class PlanningHorizonTemplate(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Template identification
-    code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
 
