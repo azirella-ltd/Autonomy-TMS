@@ -26,6 +26,7 @@ from app.models.sc_entities import (
     Reservation,
     InvLevel,
 )
+from app.models.site_planning_config import SitePlanningConfig
 from .planning_types import DemandEstimate, DemandEstimateDict
 
 logger = logging.getLogger(__name__)
@@ -84,29 +85,33 @@ class DemandProcessor:
         inv_levels = await self._load_inventory_levels(start_date, planning_horizon)
         print(f"  ✓ Loaded {len(inv_levels)} inventory level entries")
 
-        print(f"  Computing net demand...")
+        # Load consumption parameters per (product, site)
+        print(f"  Loading forecast consumption parameters...")
+        consumption_params = await self._load_consumption_params()
+        print(f"  ✓ Loaded consumption params for {len(consumption_params)} product-site combos")
 
-        # Consume forecast with actuals
-        all_keys = set(forecasts.keys()) | set(actual_orders.keys()) | set(reservations.keys())
+        print(f"  Computing net demand with forecast consumption...")
+
+        # Apply SAP-style forecast consumption (VRMOD/VINT1/VINT2)
+        consumed_forecasts = self._apply_forecast_consumption(
+            forecasts, actual_orders, consumption_params, start_date, planning_horizon,
+        )
+
+        all_keys = set(consumed_forecasts.keys()) | set(actual_orders.keys()) | set(reservations.keys())
 
         n_censored = 0
         for key in all_keys:
             product_id, site_id, demand_date = key
 
-            forecast_qty = forecasts.get(key, 0)
+            consumed_fcst = consumed_forecasts.get(key, 0)
             actual_qty = actual_orders.get(key, 0)
             reserved_qty = reservations.get(key, 0)
 
-            # Net demand calculation:
-            # If actuals exceed forecast, use actuals
-            # If forecast exceeds actuals, use remaining forecast + actuals
-            # Add reservations on top
-            if actual_qty > forecast_qty:
-                # Actuals exceeded forecast - use actuals
-                net_demand[key] = actual_qty + reserved_qty
-            else:
-                # Forecast covers actuals - use forecast
-                net_demand[key] = forecast_qty + reserved_qty
+            # Net demand = max(consumed_forecast, actuals) + reservations
+            # After consumption, forecast has already been reduced by actuals
+            # within the consumption window, so the max() picks the larger
+            # signal (actuals that exceeded forecast, or remaining forecast).
+            net_demand[key] = max(consumed_fcst, actual_qty) + reserved_qty
 
             # Censored demand detection: if inventory was zero or negative
             # during this period, observed demand is a lower bound of true
@@ -151,6 +156,119 @@ class DemandProcessor:
                 inv_dict[key] = float(lvl.on_hand_qty or 0)
 
             return inv_dict
+
+    async def _load_consumption_params(
+        self,
+    ) -> Dict[Tuple[str, str], Tuple[str, int, int]]:
+        """Load forecast consumption parameters from site_planning_config.
+
+        Returns dict mapping (product_id, site_id) →
+            (consumption_mode, fwd_days, bwd_days).
+
+        SAP VRMOD values:
+            '0' or '' = no consumption (default)
+            '1' = backward only (within VINT2 days)
+            '2' = forward only (within VINT1 days)
+            '3' = backward first, then forward (both windows)
+        """
+        async with SessionLocal() as db:
+            result = await db.execute(
+                select(SitePlanningConfig).filter(
+                    SitePlanningConfig.config_id == self.config_id,
+                    SitePlanningConfig.forecast_consumption_mode.isnot(None),
+                    SitePlanningConfig.forecast_consumption_mode != '',
+                    SitePlanningConfig.forecast_consumption_mode != '0',
+                )
+            )
+            rows = result.scalars().all()
+
+            params = {}
+            for r in rows:
+                key = (str(r.product_id), str(r.site_id))
+                params[key] = (
+                    r.forecast_consumption_mode or '0',
+                    r.forecast_consumption_fwd_days or 0,
+                    r.forecast_consumption_bwd_days or 0,
+                )
+            return params
+
+    def _apply_forecast_consumption(
+        self,
+        forecasts: Dict[Tuple[str, str, date], float],
+        actual_orders: Dict[Tuple[str, str, date], float],
+        consumption_params: Dict[Tuple[str, str], Tuple[str, int, int]],
+        start_date: date,
+        horizon: int,
+    ) -> Dict[Tuple[str, str, date], float]:
+        """Apply SAP-style forecast consumption — reduce forecasts by actuals
+        within the configured consumption window.
+
+        For each actual order on a given date, find the nearest forecast
+        bucket(s) within the consumption window and reduce them.
+
+        Consumption modes (SAP VRMOD):
+            1 = backward: consume forecast in [date - bwd_days, date]
+            2 = forward: consume forecast in [date, date + fwd_days]
+            3 = backward then forward: try backward first, remainder forward
+
+        Returns a new dict of consumed (reduced) forecast quantities.
+        """
+        consumed = dict(forecasts)  # shallow copy — values are floats
+
+        if not consumption_params:
+            return consumed
+
+        # Group actual orders by (product, site) for efficient processing
+        actuals_by_ps: Dict[Tuple[str, str], list] = defaultdict(list)
+        for (prod, site, d), qty in actual_orders.items():
+            actuals_by_ps[(prod, site)].append((d, qty))
+
+        for (prod, site), orders in actuals_by_ps.items():
+            params = consumption_params.get((prod, site))
+            if not params:
+                continue
+
+            mode, fwd_days, bwd_days = params
+
+            # Sort orders by date for deterministic consumption
+            for order_date, order_qty in sorted(orders, key=lambda x: x[0]):
+                remaining = order_qty
+
+                if remaining <= 0:
+                    continue
+
+                # Build consumption window based on mode
+                window_dates = []
+
+                if mode in ('1', '3'):
+                    # Backward: consume forecasts from [order_date - bwd_days, order_date]
+                    # Nearest first (order_date, then order_date-1, etc.)
+                    for offset in range(0, bwd_days + 1):
+                        window_dates.append(order_date - timedelta(days=offset))
+
+                if mode == '2':
+                    # Forward only: [order_date, order_date + fwd_days]
+                    for offset in range(0, fwd_days + 1):
+                        window_dates.append(order_date + timedelta(days=offset))
+
+                if mode == '3' and remaining > 0:
+                    # After backward, try forward for remainder
+                    for offset in range(1, fwd_days + 1):  # skip 0, already in backward
+                        window_dates.append(order_date + timedelta(days=offset))
+
+                # Consume forecast in window order
+                for consume_date in window_dates:
+                    if remaining <= 0:
+                        break
+                    fcst_key = (prod, site, consume_date)
+                    fcst_qty = consumed.get(fcst_key, 0)
+                    if fcst_qty <= 0:
+                        continue
+                    consume_amt = min(remaining, fcst_qty)
+                    consumed[fcst_key] = fcst_qty - consume_amt
+                    remaining -= consume_amt
+
+        return consumed
 
     async def load_forecasts(
         self, start_date: date, horizon: int

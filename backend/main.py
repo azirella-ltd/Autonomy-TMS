@@ -6488,17 +6488,23 @@ api.include_router(ek_router, tags=["experiential-knowledge"])
 
 # Hierarchy Tree — site/product hierarchy for user scope picker
 @api.get("/hierarchy/site-tree", tags=["hierarchy"])
-async def get_site_hierarchy_tree(tenant_id: int = None):
-    """Return site hierarchy tree for user scope assignment."""
+async def get_site_hierarchy_tree(
+    tenant_id: int = None,
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    """Return site hierarchy tree for user scope assignment.
+    Auto-resolves tenant from authenticated user if tenant_id not provided.
+    """
     from sqlalchemy import select as sa_select
     from app.db.session import async_session_factory
     from app.models.planning_hierarchy import SiteHierarchyNode
-    if not tenant_id:
+    resolved_tenant = tenant_id or (current_user.tenant_id if current_user else None)
+    if not resolved_tenant:
         return []
     async with async_session_factory() as db:
         result = await db.execute(
             sa_select(SiteHierarchyNode)
-            .where(SiteHierarchyNode.tenant_id == tenant_id)
+            .where(SiteHierarchyNode.tenant_id == resolved_tenant)
             .order_by(SiteHierarchyNode.hierarchy_path)
         )
         nodes = result.scalars().all()
@@ -6512,17 +6518,23 @@ async def get_site_hierarchy_tree(tenant_id: int = None):
         ]
 
 @api.get("/hierarchy/product-tree", tags=["hierarchy"])
-async def get_product_hierarchy_tree(tenant_id: int = None):
-    """Return product hierarchy tree for user scope assignment."""
+async def get_product_hierarchy_tree(
+    tenant_id: int = None,
+    current_user: UserModel = Depends(get_current_active_user),
+):
+    """Return product hierarchy tree for user scope assignment.
+    Auto-resolves tenant from authenticated user if tenant_id not provided.
+    """
     from sqlalchemy import select as sa_select
     from app.db.session import async_session_factory
     from app.models.planning_hierarchy import ProductHierarchyNode
-    if not tenant_id:
+    resolved_tenant = tenant_id or (current_user.tenant_id if current_user else None)
+    if not resolved_tenant:
         return []
     async with async_session_factory() as db:
         result = await db.execute(
             sa_select(ProductHierarchyNode)
-            .where(ProductHierarchyNode.tenant_id == tenant_id)
+            .where(ProductHierarchyNode.tenant_id == resolved_tenant)
             .order_by(ProductHierarchyNode.hierarchy_path)
         )
         nodes = result.scalars().all()

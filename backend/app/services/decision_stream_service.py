@@ -709,106 +709,11 @@ class DecisionStreamService:
     async def _resolve_user_scope(self) -> Tuple[Optional[set], Optional[set]]:
         """Resolve user's hierarchy scope keys to raw site names and product IDs.
 
-        Uses site_hierarchy_node and product_hierarchy_node to traverse the
-        hierarchy and find all leaf-level site names and product IDs that
-        fall within the user's scope.
-
-        Returns:
-            (allowed_site_names, allowed_product_ids) — None means full access.
+        Delegates to shared user_scope_service.resolve_user_scope().
+        Returns (allowed_site_names, allowed_product_ids) — None means full access.
         """
-        if not self.user:
-            return None, None
-
-        has_full_sites = getattr(self.user, "has_full_site_scope", True)
-        has_full_products = getattr(self.user, "has_full_product_scope", True)
-
-        if has_full_sites and has_full_products:
-            return None, None
-
-        allowed_sites = None
-        if not has_full_sites:
-            site_scope = getattr(self.user, "site_scope", None) or []
-            allowed_sites = set()
-            for scope_key in site_scope:
-                try:
-                    result = await self.db.execute(
-                        select(SiteHierarchyNode).where(SiteHierarchyNode.code == scope_key)
-                    )
-                    scope_node = result.scalar_one_or_none()
-                    if not scope_node:
-                        continue
-
-                    if scope_node.hierarchy_level == SiteHierarchyLevel.SITE:
-                        # Leaf node — get the site name directly via FK
-                        if scope_node.site_id:
-                            site_result = await self.db.execute(
-                                select(Site.name).where(Site.id == scope_node.site_id)
-                            )
-                            site_name = site_result.scalar_one_or_none()
-                            if site_name:
-                                allowed_sites.add(site_name)
-                    else:
-                        # Non-leaf — find ALL descendant SITE nodes via hierarchy_path prefix
-                        descendants = await self.db.execute(
-                            select(Site.name).join(
-                                SiteHierarchyNode, SiteHierarchyNode.site_id == Site.id
-                            ).where(
-                                SiteHierarchyNode.hierarchy_path.like(f"{scope_node.hierarchy_path}%"),
-                                SiteHierarchyNode.hierarchy_level == SiteHierarchyLevel.SITE,
-                                SiteHierarchyNode.site_id.isnot(None),
-                            )
-                        )
-                        for row in descendants.fetchall():
-                            allowed_sites.add(row[0])
-                except Exception as e:
-                    logger.warning(f"Failed to resolve site scope key {scope_key}: {e}")
-                    try:
-                        await self.db.rollback()
-                    except Exception:
-                        pass
-
-            if not allowed_sites:
-                allowed_sites = None  # No resolvable sites — don't filter (graceful degradation)
-
-        allowed_products = None
-        if not has_full_products:
-            product_scope = getattr(self.user, "product_scope", None) or []
-            allowed_products = set()
-            for scope_key in product_scope:
-                try:
-                    result = await self.db.execute(
-                        select(ProductHierarchyNode).where(ProductHierarchyNode.code == scope_key)
-                    )
-                    scope_node = result.scalar_one_or_none()
-                    if not scope_node:
-                        continue
-
-                    if scope_node.hierarchy_level == ProductHierarchyLevel.PRODUCT:
-                        if scope_node.product_id:
-                            allowed_products.add(scope_node.product_id)
-                    else:
-                        # Non-leaf — find ALL descendant PRODUCT nodes
-                        descendants = await self.db.execute(
-                            select(ProductHierarchyNode.product_id).where(
-                                ProductHierarchyNode.hierarchy_path.like(f"{scope_node.hierarchy_path}%"),
-                                ProductHierarchyNode.hierarchy_level == ProductHierarchyLevel.PRODUCT,
-                                ProductHierarchyNode.product_id.isnot(None),
-                            )
-                        )
-                        for row in descendants.fetchall():
-                            if row[0]:
-                                allowed_products.add(row[0])
-                except Exception as e:
-                    logger.warning(f"Failed to resolve product scope key {scope_key}: {e}")
-                    try:
-                        await self.db.rollback()
-                    except Exception:
-                        pass
-
-            if not allowed_products:
-                allowed_products = None  # Graceful degradation
-
-        return allowed_sites, allowed_products
+        from app.services.user_scope_service import resolve_user_scope
+        return await resolve_user_scope(self.db, self.user)
 
     async def get_decision_digest(
         self,
