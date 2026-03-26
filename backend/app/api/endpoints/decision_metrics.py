@@ -27,6 +27,7 @@ from app.services.agent_performance_service import AgentPerformanceService
 from app.services.override_effectiveness_service import (
     OverrideEffectivenessService, TIER_MAP,
 )
+from app.services.user_scope_service import resolve_user_scope_sync
 
 
 router = APIRouter()
@@ -370,11 +371,15 @@ async def get_override_effectiveness(
     now = datetime.utcnow()
     cutoff = now - timedelta(days=days)
 
-    # TODO: Filter SiteAgentDecision by tenant's sites once site_key→tenant mapping is available
+    # Resolve user scope — allowed_sites is a set of site names (matches site_key)
+    allowed_sites, _allowed_products = resolve_user_scope_sync(current_user)
+
     base_q = db.query(SiteAgentDecision).filter(
         SiteAgentDecision.is_overridden == True,
         SiteAgentDecision.timestamp > cutoff,
     )
+    if allowed_sites is not None:
+        base_q = base_q.filter(SiteAgentDecision.site_key.in_(allowed_sites))
 
     total_overrides = base_q.count()
 
@@ -387,14 +392,17 @@ async def get_override_effectiveness(
 
     effectiveness_rate = (beneficial / classified_total * 100) if classified_total > 0 else 0.0
 
-    net_delta = db.query(func.sum(SiteAgentDecision.override_delta)).filter(
+    net_delta_q = db.query(func.sum(SiteAgentDecision.override_delta)).filter(
         SiteAgentDecision.is_overridden == True,
         SiteAgentDecision.override_delta.isnot(None),
         SiteAgentDecision.timestamp > cutoff,
-    ).scalar() or 0.0
+    )
+    if allowed_sites is not None:
+        net_delta_q = net_delta_q.filter(SiteAgentDecision.site_key.in_(allowed_sites))
+    net_delta = net_delta_q.scalar() or 0.0
 
     # By TRM type
-    type_rows = db.query(
+    type_q = db.query(
         SiteAgentDecision.decision_type,
         func.count(SiteAgentDecision.id).label("count"),
         func.sum(case(
@@ -410,7 +418,10 @@ async def get_override_effectiveness(
     ).filter(
         SiteAgentDecision.is_overridden == True,
         SiteAgentDecision.timestamp > cutoff,
-    ).group_by(SiteAgentDecision.decision_type).all()
+    )
+    if allowed_sites is not None:
+        type_q = type_q.filter(SiteAgentDecision.site_key.in_(allowed_sites))
+    type_rows = type_q.group_by(SiteAgentDecision.decision_type).all()
 
     by_trm_type = {}
     for row in type_rows:
@@ -425,7 +436,7 @@ async def get_override_effectiveness(
         }
 
     # Weekly trend
-    trend_rows = db.query(
+    trend_q = db.query(
         func.date_trunc("week", SiteAgentDecision.timestamp).label("week"),
         func.count(SiteAgentDecision.id).label("count"),
         func.sum(case(
@@ -440,7 +451,10 @@ async def get_override_effectiveness(
     ).filter(
         SiteAgentDecision.is_overridden == True,
         SiteAgentDecision.timestamp > cutoff,
-    ).group_by("week").order_by("week").all()
+    )
+    if allowed_sites is not None:
+        trend_q = trend_q.filter(SiteAgentDecision.site_key.in_(allowed_sites))
+    trend_rows = trend_q.group_by("week").order_by("week").all()
 
     trend = []
     for row in trend_rows:
@@ -455,17 +469,23 @@ async def get_override_effectiveness(
         })
 
     # Recent overrides for the "examples" section
-    recent_beneficial = db.query(SiteAgentDecision).filter(
+    beneficial_q = db.query(SiteAgentDecision).filter(
         SiteAgentDecision.is_overridden == True,
         SiteAgentDecision.override_classification == "BENEFICIAL",
         SiteAgentDecision.timestamp > cutoff,
-    ).order_by(SiteAgentDecision.override_delta.desc()).limit(5).all()
+    )
+    if allowed_sites is not None:
+        beneficial_q = beneficial_q.filter(SiteAgentDecision.site_key.in_(allowed_sites))
+    recent_beneficial = beneficial_q.order_by(SiteAgentDecision.override_delta.desc()).limit(5).all()
 
-    recent_detrimental = db.query(SiteAgentDecision).filter(
+    detrimental_q = db.query(SiteAgentDecision).filter(
         SiteAgentDecision.is_overridden == True,
         SiteAgentDecision.override_classification == "DETRIMENTAL",
         SiteAgentDecision.timestamp > cutoff,
-    ).order_by(SiteAgentDecision.override_delta.asc()).limit(5).all()
+    )
+    if allowed_sites is not None:
+        detrimental_q = detrimental_q.filter(SiteAgentDecision.site_key.in_(allowed_sites))
+    recent_detrimental = detrimental_q.order_by(SiteAgentDecision.override_delta.asc()).limit(5).all()
 
     def _decision_summary(d):
         return {
@@ -520,9 +540,18 @@ async def get_override_posteriors(
     from app.models.override_effectiveness import OverrideEffectivenessPosterior
     from app.models.user import User as UserModel
 
+    # Resolve user scope — filter posteriors by site_key when user has site restrictions
+    allowed_sites, _allowed_products = resolve_user_scope_sync(current_user)
+
     query = db.query(OverrideEffectivenessPosterior)
     if trm_type:
         query = query.filter(OverrideEffectivenessPosterior.trm_type == trm_type)
+    if allowed_sites is not None:
+        # Include posteriors matching user's allowed sites, plus global posteriors (site_key=None)
+        query = query.filter(
+            (OverrideEffectivenessPosterior.site_key.in_(allowed_sites))
+            | (OverrideEffectivenessPosterior.site_key.is_(None))
+        )
 
     posteriors = query.order_by(
         OverrideEffectivenessPosterior.observation_count.desc(),

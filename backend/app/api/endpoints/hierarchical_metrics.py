@@ -23,6 +23,7 @@ from app.models.metrics_hierarchy import (
     GARTNER_METRICS, DEFAULT_DASHBOARD_METRICS, get_metric_config,
 )
 from app.services.hierarchical_metrics_service import HierarchicalMetricsService
+from app.services.user_scope_service import resolve_user_scope_sync
 
 
 router = APIRouter()
@@ -54,6 +55,10 @@ async def get_hierarchical_dashboard(
     tenant_id = current_user.tenant_id
     if not tenant_id:
         raise HTTPException(status_code=400, detail="User has no tenant assigned")
+
+    # Resolve user scope to restrict site/product drill-down
+    allowed_sites, allowed_products = resolve_user_scope_sync(current_user)
+
     service = HierarchicalMetricsService(db=db)
 
     data = service.get_dashboard_metrics(
@@ -65,6 +70,20 @@ async def get_hierarchical_dashboard(
         time_bucket=time_bucket,
         time_key=time_key,
     )
+
+    # Filter children lists to only include sites/products within user's scope
+    if data.get("children") and (allowed_sites is not None or allowed_products is not None):
+        children = data["children"]
+        if allowed_sites is not None and "site" in children:
+            children["site"] = [
+                c for c in children["site"]
+                if c.get("key") in allowed_sites or c.get("key") == "ALL"
+            ]
+        if allowed_products is not None and "product" in children:
+            children["product"] = [
+                c for c in children["product"]
+                if c.get("id") in allowed_products or c.get("key") == "ALL"
+            ]
 
     return {
         "success": True,
