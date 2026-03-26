@@ -2150,6 +2150,7 @@ class SAPConfigBuilder:
         logger.info(f"Created {site_count} site hierarchy nodes (Company→Country→Region→Plant)")
 
         # ── PRODUCT HIERARCHY ─────────────────────────────────────────────
+        _seen_product_codes: set = set()
         t179 = self._data.get("T179", pd.DataFrame())
         t179t = self._data.get("T179T", pd.DataFrame())
 
@@ -2231,6 +2232,9 @@ class SAPConfigBuilder:
                             # Find or create a leaf node for this product
                             parent_h = prodh_nodes[prdha]
                             pcode = f"PROD_{product_entity.id}_{tenant_id}"
+                            if pcode in _seen_product_codes:
+                                continue
+                            _seen_product_codes.add(pcode)
                             leaf = ProductHierarchyNode(
                                 tenant_id=tenant_id,
                                 code=pcode,
