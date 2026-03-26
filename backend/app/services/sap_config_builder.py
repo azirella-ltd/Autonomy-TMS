@@ -4199,6 +4199,68 @@ class SAPConfigBuilder:
                     header_map[key_val] = row
 
         if not header_map:
+            # Fallback: if BDZEI values were all empty, try direct MATNR-based matching
+            # This happens when HANA extraction returns null BDZEI but valid MATNR/WERKS
+            if not pbim.empty and "MATNR" in pbim.columns:
+                logger.info("PBIM header map empty (BDZEI null) — using direct MATNR matching")
+                # Build a synthetic header map keyed by row index
+                for idx, row in pbim.iterrows():
+                    matnr = str(row.get("MATNR", "")).strip()
+                    if matnr:
+                        header_map[str(idx)] = row
+                # For PBED, merge on row position or use PBIM's MATNR directly
+                if not header_map:
+                    logger.warning("PBIM has no valid MATNR values — no PIR forecasts")
+                    return 0
+                # Direct approach: merge PBIM and PBED, create forecasts from PBIM materials
+                count = 0
+                today = datetime.utcnow().date()
+                for _, prow in pbim.iterrows():
+                    matnr = str(prow.get("MATNR", "")).strip()
+                    werks = str(prow.get("WERKS", "")).strip()
+                    product_id = self._get_product_id(matnr)
+                    site = self._sites.get(werks)
+                    if not product_id or not site:
+                        continue
+                    # Find PBED rows with matching BDZEI (if available) or create from PBIM alone
+                    bdzei = str(prow.get(pir_key_col, "")).strip()
+                    if bdzei:
+                        matching_pbed = pbed[pbed[pbed_key_col].astype(str).str.strip() == bdzei]
+                    else:
+                        continue  # Can't link without BDZEI
+                    for _, pred in matching_pbed.iterrows():
+                        date_str = str(pred.get("PDATU", "")).strip()
+                        qty = float(pd.to_numeric(pred.get("PLNMG", 0), errors="coerce") or 0)
+                        if qty <= 0 or not date_str:
+                            continue
+                        fcst_date = self._parse_sap_date(date_str)
+                        if not fcst_date:
+                            continue
+                        # Date-shift
+                        if fcst_date.year < today.year - 1:
+                            offset = today.year - fcst_date.year
+                            try:
+                                fcst_date = fcst_date.replace(year=fcst_date.year + offset)
+                            except ValueError:
+                                fcst_date = fcst_date.replace(year=fcst_date.year + offset, day=28)
+                        from app.models.sc_entities import Forecast as ForecastModel
+                        f = ForecastModel(
+                            config_id=self._config.id,
+                            customer_id=str(self._config.tenant_id),
+                            product_id=product_id,
+                            site_id=site.id,
+                            forecast_date=fcst_date,
+                            forecast_quantity=qty,
+                            forecast_p50=qty,
+                            forecast_type="planned_independent",
+                            source="SAP_PIR",
+                            is_active="Y",
+                        )
+                        self.db.add(f)
+                        count += 1
+                await self.db.flush()
+                logger.info(f"Created {count} forecast records via direct MATNR matching")
+                return count
             logger.warning("PBIM header map is empty — no PIR forecasts can be created")
             return 0
 
