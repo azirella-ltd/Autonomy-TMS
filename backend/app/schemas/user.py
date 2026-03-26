@@ -30,6 +30,9 @@ class UserBase(BaseModel):
     full_name: Optional[str] = Field(None, max_length=100)
     tenant_id: Optional[int] = None
     user_type: UserTypeEnum = Field(default=UserTypeEnum.USER)
+    decision_level: Optional[str] = None
+    site_scope: Optional[List[str]] = None
+    product_scope: Optional[List[str]] = None
 
 class UserCreate(UserBase):
     """Schema for creating a new user."""
@@ -78,6 +81,9 @@ class UserUpdate(BaseModel):
     is_superuser: Optional[bool] = None
     tenant_id: Optional[int] = None
     user_type: Optional[UserTypeEnum] = None
+    decision_level: Optional[str] = None
+    site_scope: Optional[List[str]] = None
+    product_scope: Optional[List[str]] = None
 
     @validator('user_type', pre=True)
     def normalize_user_type(cls, value):
@@ -98,14 +104,22 @@ class UserUpdate(BaseModel):
             return mapping[token]
         raise ValueError('Invalid user type')
 
-class UserInDBBase(UserBase):
+class UserInDBBase(BaseModel):
     """Base schema for user data in the database."""
     id: int
+    username: Optional[str] = None
+    email: str
+    full_name: Optional[str] = None
+    tenant_id: Optional[int] = None
+    user_type: Optional[UserTypeEnum] = None
     is_active: bool
     is_superuser: bool
+    decision_level: Optional[str] = None
+    site_scope: Optional[List[str]] = None
+    product_scope: Optional[List[str]] = None
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         orm_mode = True
 

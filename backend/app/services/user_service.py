@@ -363,6 +363,9 @@ class UserService:
             is_superuser=is_superuser_flag,
             tenant_id=normalized_tenant_id,
             user_type=desired_type,
+            decision_level=user.decision_level,
+            site_scope=user.site_scope,
+            product_scope=user.product_scope,
         )
 
         try:
@@ -458,6 +461,13 @@ class UserService:
 
             if user_update.full_name is not None:
                 db_user.full_name = user_update.full_name
+
+            if user_update.decision_level is not None:
+                db_user.decision_level = user_update.decision_level
+            if user_update.site_scope is not None:
+                db_user.site_scope = user_update.site_scope
+            if user_update.product_scope is not None:
+                db_user.product_scope = user_update.product_scope
 
             if user_update.password:
                 db_user.hashed_password = get_password_hash(user_update.password)
@@ -592,6 +602,15 @@ class UserService:
 
         if user_update.password:
             db_user.hashed_password = get_password_hash(user_update.password)
+
+        # Scope fields — only admins can change (not self-edit)
+        if acting_is_superuser or is_tenant_admin_managing_user:
+            if user_update.decision_level is not None:
+                db_user.decision_level = user_update.decision_level
+            if user_update.site_scope is not None:
+                db_user.site_scope = user_update.site_scope
+            if user_update.product_scope is not None:
+                db_user.product_scope = user_update.product_scope
 
         if desired_type == UserTypeEnum.TENANT_ADMIN and tenant and (tenant.admin_id is None or tenant.admin_id == db_user.id):
             tenant.admin_id = db_user.id

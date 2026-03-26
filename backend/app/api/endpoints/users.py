@@ -180,21 +180,23 @@ async def read_user(
     if not allowed:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Build response with decision_level
-    dl = getattr(user, 'decision_level', None)
+    # Build response with decision_level and scopes
+    dl = user.decision_level
     if dl and hasattr(dl, 'value'):
         dl = dl.value
 
     return {
         "id": user.id,
         "email": user.email,
-        "username": getattr(user, 'username', None),
-        "full_name": getattr(user, 'full_name', None),
+        "username": user.username,
+        "full_name": user.full_name,
         "tenant_id": user.tenant_id,
         "user_type": user.user_type.value if hasattr(user.user_type, 'value') else str(user.user_type),
         "is_active": user.is_active,
         "decision_level": dl,
-        "default_config_id": getattr(user, 'default_config_id', None),
+        "default_config_id": user.default_config_id,
+        "site_scope": user.site_scope,
+        "product_scope": user.product_scope,
     }
 
 

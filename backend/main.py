@@ -6589,6 +6589,10 @@ api.include_router(capabilities_router)  # prefix="/capabilities" defined in rou
 from app.api.endpoints.users import router as users_crud_router
 api.include_router(users_crud_router, prefix="/users", tags=["users"])
 
+# Agent-Human Mapping (topology-based user recommendations)
+from app.api.endpoints.agent_human_mapping import router as agent_human_mapping_router
+api.include_router(agent_human_mapping_router, prefix="/agent-human-mapping", tags=["agent-human-mapping"])
+
 # Decision Metrics API (Agent Performance for Powell Framework Dashboards)
 from app.api.endpoints.decision_metrics import router as decision_metrics_router
 api.include_router(decision_metrics_router, prefix="/decision-metrics", tags=["decision-metrics", "powell"])
