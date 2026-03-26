@@ -44,12 +44,14 @@ import {
 import { toast } from 'react-toastify';
 import { api } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import { useCapabilities } from '../../hooks/useCapabilities';
 import UserEditor from '../../components/admin/UserEditor';
 
 const TenantAdminUserManagement = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { activeConfigId } = useActiveConfig();
   const { hasCapability, loading: capLoading } = useCapabilities();
 
   const [users, setUsers] = useState([]);
@@ -57,6 +59,8 @@ const TenantAdminUserManagement = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [recs, setRecs] = useState(null);
+  const [recsExpanded, setRecsExpanded] = useState(false);
 
   // Access allowed if user has manage_tenant_users capability or is admin
   const isSystemAdmin = user?.user_type === 'SYSTEM_ADMIN';
@@ -228,6 +232,78 @@ const TenantAdminUserManagement = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Topology-based recommendations banner */}
+      {activeConfigId && (
+        <Card className="mb-6 border-violet-200 dark:border-violet-800">
+          <CardContent className="py-3">
+            <button
+              className="w-full flex items-center gap-2 text-left"
+              onClick={async () => {
+                if (!recs && !recsExpanded) {
+                  try {
+                    const res = await api.get(`/agent-human-mapping/recommendations/${activeConfigId}`);
+                    setRecs(res.data);
+                  } catch { /* ignore */ }
+                }
+                setRecsExpanded(!recsExpanded);
+              }}
+            >
+              <Shield className="h-4 w-4 text-violet-500" />
+              <span className="text-sm font-medium text-violet-600 dark:text-violet-400">
+                Recommended User Roles
+              </span>
+              <span className="text-[11px] text-muted-foreground ml-1">
+                — based on your supply chain topology
+              </span>
+              <span className="ml-auto text-muted-foreground text-xs">
+                {recsExpanded ? '▲' : '▼'}
+              </span>
+            </button>
+            {recsExpanded && recs && (
+              <div className="mt-3 space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {recs.recommendations?.map((rec, i) => {
+                    const existing = users.some(u =>
+                      u.decision_level === rec.decision_level &&
+                      JSON.stringify(u.site_scope?.sort()) === JSON.stringify(rec.site_scope?.sort())
+                    );
+                    return (
+                      <div key={i} className="flex items-center gap-2 p-2 rounded-md bg-muted/30 border border-border/50">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-medium">{rec.decision_level?.replace(/_/g, ' ')}</span>
+                          {rec.site_scope?.length > 0 && (
+                            <span className="text-[10px] text-muted-foreground ml-1">
+                              @ {rec.site_scope.map(s => s.replace('SITE_', '')).join(', ')}
+                            </span>
+                          )}
+                        </div>
+                        {existing ? (
+                          <Badge variant="success" className="text-[9px]">Assigned</Badge>
+                        ) : (
+                          <button
+                            className="text-[10px] px-2 py-0.5 rounded bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 dark:text-violet-400 font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedUser(null);
+                              setEditorOpen(true);
+                            }}
+                          >
+                            Create
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  {recs.summary}. Roles with "Assigned" already have a matching user.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Users Table */}
       <Card>

@@ -307,6 +307,196 @@ const StatusSummary = ({ steps }) => {
   );
 };
 
+// ─── User Mapping Recommendations ───────────────────────────────────────────
+
+const DECISION_LEVEL_LABELS = {
+  SC_VP: 'VP Supply Chain',
+  SOP_DIRECTOR: 'S&OP Director',
+  MPS_MANAGER: 'MPS Manager',
+  ATP_ANALYST: 'ATP Analyst',
+  PO_ANALYST: 'PO Analyst',
+  REBALANCING_ANALYST: 'Rebalancing Analyst',
+  ORDER_TRACKING_ANALYST: 'Order Tracking Analyst',
+  ALLOCATION_MANAGER: 'Allocation Manager',
+};
+
+const ROLE_COLORS = {
+  hub: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  spoke: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  factory: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  standalone: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+};
+
+const UserMappingPanel = ({ configId }) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [creating, setCreating] = useState({});
+  const [created, setCreated] = useState({});
+
+  const fetchRecs = useCallback(async () => {
+    if (!configId || data) return;
+    setLoading(true);
+    try {
+      const res = await api.get(`/agent-human-mapping/recommendations/${configId}`);
+      setData(res.data);
+    } catch {
+      // Silently fail — panel just won't expand
+    } finally {
+      setLoading(false);
+    }
+  }, [configId, data]);
+
+  useEffect(() => {
+    if (expanded && !data && !loading) fetchRecs();
+  }, [expanded, data, loading, fetchRecs]);
+
+  const handleCreate = async (rec, idx) => {
+    setCreating(prev => ({ ...prev, [idx]: true }));
+    try {
+      const dl = rec.decision_level;
+      const label = DECISION_LEVEL_LABELS[dl] || dl;
+      const siteSuffix = rec.site_scope?.length === 1
+        ? rec.site_scope[0].replace('SITE_', '').toLowerCase()
+        : 'all';
+      const username = `${dl.toLowerCase().replace(/_/g, '-')}-${siteSuffix}`;
+      const email = `${username}@placeholder.local`;
+      await api.post('/users/', {
+        username,
+        email,
+        full_name: `${label} (${rec.site_names?.join(', ') || 'All Sites'})`,
+        password: 'Autonomy@2026',
+        decision_level: dl,
+        site_scope: rec.site_scope?.length ? rec.site_scope : null,
+      });
+      setCreated(prev => ({ ...prev, [idx]: true }));
+    } catch (err) {
+      const msg = err?.response?.data?.detail || 'Failed to create user';
+      alert(msg);
+    } finally {
+      setCreating(prev => ({ ...prev, [idx]: false }));
+    }
+  };
+
+  const recCount = data?.recommendations?.length || 0;
+  const siteCount = data?.site_analysis?.length || 0;
+
+  return (
+    <div className="rounded-lg border border-violet-200 dark:border-violet-800 overflow-hidden mt-1">
+      <button
+        className="w-full flex items-center gap-3 px-3 py-2.5 bg-violet-500/8 hover:bg-violet-500/12 transition-colors text-left"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="p-1.5 rounded-md bg-white/30 dark:bg-white/5">
+          <Users className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-semibold text-violet-600 dark:text-violet-400">
+            Recommended Users
+          </span>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Based on your supply chain topology — which roles should monitor which agents at which sites
+          </p>
+        </div>
+        {loading && <Loader2 className="h-4 w-4 animate-spin text-violet-500" />}
+        <ChevronDown className={cn(
+          'h-4 w-4 text-muted-foreground/40 transition-transform',
+          expanded && 'rotate-180',
+        )} />
+      </button>
+
+      {expanded && data && (
+        <div className="border-t border-violet-200/50 dark:border-violet-800/50">
+          {/* Site analysis */}
+          <div className="px-3 py-2 bg-muted/20">
+            <div className="text-[11px] font-medium text-muted-foreground mb-1.5">
+              Network Topology — {siteCount} internal sites
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {data.site_analysis.map(s => (
+                <span key={s.site_key} className={cn(
+                  'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium',
+                  ROLE_COLORS[s.role] || 'bg-muted text-muted-foreground',
+                )}>
+                  {s.site_name}
+                  <span className="opacity-60">({s.role})</span>
+                  <span className="opacity-40">{s.human_trm_count} roles</span>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Recommendations */}
+          <div className="divide-y divide-border/50">
+            {data.recommendations.map((rec, idx) => {
+              const dl = rec.decision_level;
+              const label = DECISION_LEVEL_LABELS[dl] || dl;
+              const isStrategic = ['SC_VP', 'SOP_DIRECTOR'].includes(dl);
+              const isCreating = creating[idx];
+              const isCreated = created[idx];
+
+              return (
+                <div key={idx} className="flex items-center gap-3 px-3 py-2 hover:bg-accent/20">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{label}</span>
+                      {isStrategic && (
+                        <Badge variant="secondary" className="text-[9px] py-0">All Sites</Badge>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {rec.rationale}
+                    </p>
+                    {rec.site_scope?.length > 0 && (
+                      <div className="flex gap-1 mt-1">
+                        {rec.site_scope.map(s => (
+                          <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                            {s.replace('SITE_', '')}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {rec.trm_types_covered?.length > 0 && (
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {rec.trm_types_covered.map(t => (
+                          <span key={t} className="text-[9px] px-1 py-0.5 rounded bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                            {t.replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {isCreated ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+                  ) : (
+                    <button
+                      onClick={() => handleCreate(rec, idx)}
+                      disabled={isCreating}
+                      className="flex-shrink-0 px-2.5 py-1 text-[11px] font-medium rounded-md bg-violet-500/10 hover:bg-violet-500/20 text-violet-600 dark:text-violet-400 disabled:opacity-50"
+                    >
+                      {isCreating ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        'Create'
+                      )}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Summary */}
+          <div className="px-3 py-2 bg-muted/20 text-[11px] text-muted-foreground">
+            {recCount} recommended roles. Created users get default password <code className="bg-muted px-1 rounded">Autonomy@2026</code>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ─── Individual step row ─────────────────────────────────────────────────────
 
 const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierColor, configId, startedAt }) => {
@@ -884,6 +1074,11 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
               );
             })}
           </div>
+
+          {/* User mapping recommendations — shown after provisioning completes */}
+          {overallStatus === 'completed' && configId && (
+            <UserMappingPanel configId={configId} />
+          )}
         </div>
       )}
     </Modal>
