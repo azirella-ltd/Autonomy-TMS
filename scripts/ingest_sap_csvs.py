@@ -87,8 +87,8 @@ def ingest(csv_dir: Path, tenant_id: int, dry_run: bool = False):
 
     Prerequisites (done by systemadmin via UI):
       1. Create tenant (e.g. "Autonomy SAP Demo") with mode=PRODUCTION
-      2. Create tenant admin (e.g. SAP_admin@autonomy.com)
-      3. SAP_admin logs in, downloads SAP CSVs, then runs this script
+      2. Create tenant admin (e.g. admin@sap_demo.com)
+      3. SAP tenant admin logs in, downloads SAP CSVs, then runs this script
     """
     print(f"\n{'='*60}")
     print(f"SAP IDES CSV Ingestion → Tenant {tenant_id}")

@@ -934,7 +934,7 @@ You should see JSON with product data. If you still get 401, check the user's `S
 | **HANA DB** | `AUTONOMY_EXTRACT` | 30215 | Schema=SAPHANADB |
 | **CSV** | (no user needed) | N/A | Manual export via SE16N |
 
-Configure in Autonomy: **Administration > SAP Data Management > Add Connection** (login as `SAP_admin@autonomy.com`).
+Configure in Autonomy: **Administration > SAP Data Management > Add Connection** (login as `admin@sap_demo.com`).
 
 #### ABAP Clients in the FAA
 

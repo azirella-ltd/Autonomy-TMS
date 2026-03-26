@@ -275,7 +275,7 @@ def main():
             if old_product_ids:
                 pid_list = ",".join(["%s"] * len(old_product_ids))
                 cur.execute(
-                    f"DELETE FROM product_bom WHERE parent_product_id IN ({pid_list}) OR child_product_id IN ({pid_list})",
+                    f"DELETE FROM product_bom WHERE product_id IN ({pid_list}) OR component_product_id IN ({pid_list})",
                     old_product_ids + old_product_ids,
                 )
 
@@ -484,7 +484,7 @@ def main():
                         INSERT INTO transportation_lane (config_id, from_partner_id, to_site_id,
                                                         supply_lead_time, capacity)
                         VALUES (:cid, :partner_id, :site_id,
-                                :lt::jsonb, 10000)
+                                CAST(:lt AS jsonb), 10000)
                     """),
                     {
                         "cid": config_id,
@@ -547,7 +547,7 @@ def main():
                     text("""
                         INSERT INTO transportation_lane (config_id, from_site_id, to_site_id,
                                                         supply_lead_time, capacity)
-                        VALUES (:cid, :from_id, :to_id, :lt::jsonb, 10000)
+                        VALUES (:cid, :from_id, :to_id, CAST(:lt AS jsonb), 10000)
                     """),
                     {
                         "cid": config_id,
@@ -585,8 +585,8 @@ def main():
 
             session.execute(
                 text("""
-                    INSERT INTO product_bom (config_id, parent_product_id, child_product_id,
-                                            quantity_per, scrap_rate)
+                    INSERT INTO product_bom (config_id, product_id, component_product_id,
+                                            component_quantity, scrap_percentage)
                     VALUES (:cid, :pid, :cpid, :qty, :scrap)
                 """),
                 {

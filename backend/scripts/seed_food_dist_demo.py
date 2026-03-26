@@ -57,6 +57,15 @@ from app.core.capabilities import (
     ORDER_PROMISE_MANAGER_CAPABILITIES,
 )
 from app.services.rbac_service import RBACService, seed_default_permissions
+from app.services.agent_human_mapping import (
+    recommend_users,
+    classify_site_roles,
+    SiteInfo,
+    LaneInfo,
+    SiteRole,
+    format_recommendations,
+    format_site_analysis,
+)
 
 
 # =============================================================================
@@ -67,12 +76,21 @@ FOOD_DIST_CUSTOMER_NAME = "Food Dist"
 FOOD_DIST_DESCRIPTION = "Food Dist - America's largest food redistributor. Powell Framework demo."
 DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")
 
-# User configurations (Powell-aligned)
-DEMO_USERS = [
+# Persona names for auto-generated users (keyed by decision_level)
+PERSONA_NAMES = {
+    "SC_VP": ("sc_vp", "scvp@distdemo.com", "Sarah Chen (VP Supply Chain)"),
+    "SOP_DIRECTOR": ("sop_director", "sopdir@distdemo.com", "Michael Torres (S&OP Director)"),
+    "MPS_MANAGER": ("mps_manager", "mpsmanager@distdemo.com", "Jennifer Park (MPS Manager)"),
+    "ATP_ANALYST": ("atp_analyst", "atp@distdemo.com", "David Kim (ATP Analyst)"),
+    "REBALANCING_ANALYST": ("rebalancing_analyst", "rebalancing@distdemo.com", "Maria Santos (Rebalancing Analyst)"),
+    "PO_ANALYST": ("po_analyst", "po@distdemo.com", "James Wilson (PO Analyst)"),
+    "ORDER_TRACKING_ANALYST": ("order_tracking_analyst", "ordertracking@distdemo.com", "Lisa Chen (Order Tracking Analyst)"),
+}
+
+# Fixed users always seeded (admin + executive + demo-all)
+FIXED_USERS = [
     # ==========================================================================
     # TENANT ADMIN: Full access within tenant + DEMO_ALL for executive landing
-    # Use this account for demos — lands on /executive-dashboard, can navigate
-    # to all Powell dashboards, Strategy Briefing, admin, and planning pages.
     # ==========================================================================
     {
         "username": "fd_tenant_admin",
@@ -80,13 +98,12 @@ DEMO_USERS = [
         "full_name": "Food Dist Admin",
         "user_type": UserTypeEnum.TENANT_ADMIN,
         "is_tenant_admin": True,
-        "decision_level": "DEMO_ALL",  # Lands on /executive-dashboard for demos
-        "site_scope": None,  # Full access
-        "product_scope": None,  # Full access
+        "decision_level": "DEMO_ALL",
+        "site_scope": None,
+        "product_scope": None,
     },
     # ==========================================================================
-    # EXECUTIVE (CEO): Read-only strategic view, lands on /strategy-briefing
-    # AI-generated briefings with follow-up Q&A, dashboards, recommendations
+    # EXECUTIVE (CEO): Read-only strategic view
     # ==========================================================================
     {
         "username": "exec",
@@ -95,88 +112,121 @@ DEMO_USERS = [
         "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
         "decision_level": "EXECUTIVE",
-        "site_scope": None,  # Full visibility
-        "product_scope": None,  # Full visibility
-    },
-    # ==========================================================================
-    # Individual role users (for testing role-specific flows)
-    # ==========================================================================
-    {
-        "username": "sc_vp",
-        "email": "scvp@distdemo.com",
-        "full_name": "Sarah Chen (VP Supply Chain)",
-        "user_type": UserTypeEnum.USER,
-        "is_tenant_admin": False,
-        "decision_level": "SC_VP",
-        "site_scope": None,  # Full access (strategic level)
-        "product_scope": None,  # Full access (strategic level)
-    },
-    {
-        "username": "sop_director",
-        "email": "sopdir@distdemo.com",
-        "full_name": "Michael Torres (S&OP Director)",
-        "user_type": UserTypeEnum.USER,
-        "is_tenant_admin": False,
-        "decision_level": "SOP_DIRECTOR",
-        "site_scope": None,  # Full access (for demo; production would restrict)
-        "product_scope": ["CATEGORY_Frozen", "CATEGORY_Refrigerated"],  # Product category scope
-    },
-    {
-        "username": "mps_manager",
-        "email": "mpsmanager@distdemo.com",
-        "full_name": "Jennifer Park (MPS Manager)",
-        "user_type": UserTypeEnum.USER,
-        "is_tenant_admin": False,
-        "decision_level": "MPS_MANAGER",
-        "site_scope": ["REGION_Central", "SITE_DC-Chicago", "SITE_DC-Indianapolis"],  # Site scope
-        "product_scope": None,  # Full product access within sites
-    },
-    # ==========================================================================
-    # TRM Specialist Users (subordinate to MPS Manager)
-    # Each specialist is the human counterpart of one narrow TRM agent.
-    # Overrides + reasons feed back into RL training via trm_replay_buffer.
-    # ==========================================================================
-    {
-        "username": "atp_analyst",
-        "email": "atp@distdemo.com",
-        "full_name": "David Kim (ATP Analyst)",
-        "user_type": UserTypeEnum.USER,
-        "is_tenant_admin": False,
-        "decision_level": "ATP_ANALYST",
-        "site_scope": ["REGION_Central", "SITE_DC-Chicago"],  # Assigned sites
-        "product_scope": None,  # All products at assigned sites
-    },
-    {
-        "username": "rebalancing_analyst",
-        "email": "rebalancing@distdemo.com",
-        "full_name": "Maria Santos (Rebalancing Analyst)",
-        "user_type": UserTypeEnum.USER,
-        "is_tenant_admin": False,
-        "decision_level": "REBALANCING_ANALYST",
-        "site_scope": ["REGION_Central", "SITE_DC-Chicago", "SITE_DC-Indianapolis"],  # Cross-site scope
-        "product_scope": None,  # All products for transfers
-    },
-    {
-        "username": "po_analyst",
-        "email": "po@distdemo.com",
-        "full_name": "James Wilson (PO Analyst)",
-        "user_type": UserTypeEnum.USER,
-        "is_tenant_admin": False,
-        "decision_level": "PO_ANALYST",
-        "site_scope": ["SITE_DC-Chicago"],  # Single site focus
-        "product_scope": ["CATEGORY_Frozen", "CATEGORY_Refrigerated"],  # Product category scope
-    },
-    {
-        "username": "order_tracking_analyst",
-        "email": "ordertracking@distdemo.com",
-        "full_name": "Lisa Chen (Order Tracking Analyst)",
-        "user_type": UserTypeEnum.USER,
-        "is_tenant_admin": False,
-        "decision_level": "ORDER_TRACKING_ANALYST",
-        "site_scope": None,  # All sites (exceptions can come from anywhere)
-        "product_scope": None,  # All products
+        "site_scope": None,
+        "product_scope": None,
     },
 ]
+
+
+def build_topology_aware_users(db: Session, tenant_id: int) -> list:
+    """Build user list from actual DAG topology using agent-human mapping.
+
+    Reads the config's sites and lanes, classifies site roles (hub/spoke/
+    factory/standalone), then generates one user per decision_level with
+    correct site_scope derived from the topology.
+
+    Falls back to fixed planning-level users if no config found.
+    """
+    from app.models.supply_chain_config import (
+        SupplyChainConfig,
+        Site,
+        TransportationLane,
+    )
+
+    # Find config for this tenant
+    config = (
+        db.query(SupplyChainConfig)
+        .filter(
+            SupplyChainConfig.tenant_id == tenant_id,
+            SupplyChainConfig.is_active == True,
+        )
+        .first()
+    )
+    if not config:
+        print("  Warning: no active config found — using planning-level users only")
+        return _fallback_planning_users()
+
+    # Load sites and lanes
+    db_sites = db.query(Site).filter(Site.config_id == config.id).all()
+    db_lanes = (
+        db.query(TransportationLane)
+        .filter(TransportationLane.config_id == config.id)
+        .all()
+    )
+
+    # Convert to mapping dataclasses
+    sites = []
+    for s in db_sites:
+        mt = (s.master_type or "inventory").lower()
+        is_ext = bool(getattr(s, "is_external", False))
+        tpt = getattr(s, "tpartner_type", None)
+        if tpt in ("vendor", "customer"):
+            is_ext = True
+            mt = tpt
+        site_key = f"SITE_{s.name}" if s.name else str(s.id)
+        sites.append(SiteInfo(
+            id=s.id, key=site_key, name=s.name or str(s.id),
+            master_type=mt,
+            sc_site_type=getattr(s, "type", None),
+            dag_type=getattr(s, "dag_type", None),
+            is_external=is_ext,
+        ))
+
+    lanes = []
+    for ln in db_lanes:
+        if ln.from_site_id and ln.to_site_id:
+            lanes.append(LaneInfo(
+                source_site_id=ln.from_site_id,
+                dest_site_id=ln.to_site_id,
+            ))
+
+    # Generate recommendations from topology
+    recs = recommend_users(sites, lanes)
+
+    # Print analysis
+    classify_site_roles(sites, lanes)
+    print(format_site_analysis(sites))
+    print(format_recommendations(recs))
+
+    # Convert recommendations to user dicts
+    users = []
+    for rec in recs:
+        persona = PERSONA_NAMES.get(rec.decision_level)
+        if not persona:
+            continue
+        username, email, full_name = persona
+        users.append({
+            "username": username,
+            "email": email,
+            "full_name": full_name,
+            "user_type": UserTypeEnum.USER,
+            "is_tenant_admin": False,
+            "decision_level": rec.decision_level,
+            "site_scope": rec.site_scope if rec.site_scope else None,
+            "product_scope": None,
+        })
+
+    return users
+
+
+def _fallback_planning_users() -> list:
+    """Minimal planning-level users when no config exists yet."""
+    users = []
+    for dl in ["SC_VP", "SOP_DIRECTOR", "MPS_MANAGER"]:
+        persona = PERSONA_NAMES.get(dl)
+        if persona:
+            username, email, full_name = persona
+            users.append({
+                "username": username,
+                "email": email,
+                "full_name": full_name,
+                "user_type": UserTypeEnum.USER,
+                "is_tenant_admin": False,
+                "decision_level": dl,
+                "site_scope": None,
+                "product_scope": None,
+            })
+    return users
 
 # Powell role to capability set mapping
 POWELL_ROLE_CAPABILITIES = {
@@ -451,10 +501,15 @@ def main():
 
         db.commit()
 
-        # Step 5: Create other users and assign roles
-        print("\n5. Creating Powell-aligned users...")
+        # Step 5: Build topology-aware user list from DAG analysis
+        print("\n5. Analyzing DAG topology for agent-human mapping...")
+        topology_users = build_topology_aware_users(db, tenant.id)
+        DEMO_USERS = FIXED_USERS + topology_users
+
+        # Step 6: Create users and assign roles
+        print("\n6. Creating Powell-aligned users...")
         for user_config in DEMO_USERS:
-            if user_config["is_tenant_admin"]:
+            if user_config.get("is_tenant_admin"):
                 continue  # Already created
 
             # Convert decision_level string to enum (if specified)
@@ -487,11 +542,11 @@ def main():
 
         db.commit()
 
-        # Step 6: Generate Food Dist SC config for this tenant (async)
-        print("\n6. Generating Food Dist supply chain config for tenant...")
+        # Step 7: Generate Food Dist SC config for this tenant (async)
+        print("\n7. Generating Food Dist supply chain config for tenant...")
         _generate_sc_config_for_group(tenant.id)
 
-        # Step 7: Print summary
+        # Step 8: Print summary
         print("\n" + "=" * 70)
         print("Food Dist Demo Setup Complete!")
         print("=" * 70)
