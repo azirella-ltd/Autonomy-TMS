@@ -6490,7 +6490,7 @@ api.include_router(ek_router, tags=["experiential-knowledge"])
 @api.get("/hierarchy/site-tree", tags=["hierarchy"])
 async def get_site_hierarchy_tree(
     tenant_id: int = None,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user = Depends(get_current_user),
 ):
     """Return site hierarchy tree for user scope assignment.
     Auto-resolves tenant from authenticated user if tenant_id not provided.
@@ -6498,7 +6498,7 @@ async def get_site_hierarchy_tree(
     from sqlalchemy import select as sa_select
     from app.db.session import async_session_factory
     from app.models.planning_hierarchy import SiteHierarchyNode
-    resolved_tenant = tenant_id or (current_user.tenant_id if current_user else None)
+    resolved_tenant = tenant_id or (current_user.get("tenant_id") if current_user else None)
     if not resolved_tenant:
         return []
     async with async_session_factory() as db:
@@ -6520,7 +6520,7 @@ async def get_site_hierarchy_tree(
 @api.get("/hierarchy/product-tree", tags=["hierarchy"])
 async def get_product_hierarchy_tree(
     tenant_id: int = None,
-    current_user: UserModel = Depends(get_current_active_user),
+    current_user = Depends(get_current_user),
 ):
     """Return product hierarchy tree for user scope assignment.
     Auto-resolves tenant from authenticated user if tenant_id not provided.
@@ -6528,7 +6528,7 @@ async def get_product_hierarchy_tree(
     from sqlalchemy import select as sa_select
     from app.db.session import async_session_factory
     from app.models.planning_hierarchy import ProductHierarchyNode
-    resolved_tenant = tenant_id or (current_user.tenant_id if current_user else None)
+    resolved_tenant = tenant_id or (current_user.get("tenant_id") if current_user else None)
     if not resolved_tenant:
         return []
     async with async_session_factory() as db:
