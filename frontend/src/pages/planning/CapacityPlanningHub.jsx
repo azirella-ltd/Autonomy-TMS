@@ -8,6 +8,7 @@
  *   Processes     — Work center and process configuration
  *   Workforce     — Shift planning, labor availability
  *   Maintenance   — PM scheduling, deferral decisions
+ *   Heatmap       — Sites x weeks capacity utilization grid
  */
 
 import React, { useState, useEffect, lazy, Suspense } from 'react';
@@ -19,7 +20,7 @@ import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   Gauge, AlertTriangle, Target, Factory,
-  Users, Wrench,
+  Users, Wrench, Grid3X3,
 } from 'lucide-react';
 
 const ResourceCapacity = lazy(() => import('./ResourceCapacity'));
@@ -28,6 +29,7 @@ const CapacityCheck = lazy(() => import('./CapacityCheck'));
 const ProductionProcesses = lazy(() => import('./ProductionProcesses'));
 const WorkforcePlanning = lazy(() => import('./WorkforcePlanning'));
 const MaintenanceWorklistPage = lazy(() => import('./MaintenanceWorklistPage'));
+const ResourceHeatmap = lazy(() => import('../../components/planning/ResourceHeatmap'));
 
 const TABS = [
   { key: 'utilization', label: 'Utilization', icon: Gauge },
@@ -36,6 +38,7 @@ const TABS = [
   { key: 'processes', label: 'Processes', icon: Factory },
   { key: 'workforce', label: 'Workforce', icon: Users },
   { key: 'maintenance', label: 'Maintenance', icon: Wrench },
+  { key: 'heatmap', label: 'Heatmap', icon: Grid3X3 },
 ];
 
 const TabLoading = () => (
@@ -80,6 +83,7 @@ export default function CapacityPlanningHub() {
           <TabsContent value="processes" className="mt-0 pt-4"><ProductionProcesses /></TabsContent>
           <TabsContent value="workforce" className="mt-0 pt-4"><WorkforcePlanning /></TabsContent>
           <TabsContent value="maintenance" className="mt-0 pt-4"><MaintenanceWorklistPage /></TabsContent>
+          <TabsContent value="heatmap" className="mt-0 pt-4"><ResourceHeatmap configId={effectiveConfigId} /></TabsContent>
         </Suspense>
       </Tabs>
     </div>

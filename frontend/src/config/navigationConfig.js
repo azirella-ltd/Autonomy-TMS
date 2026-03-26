@@ -315,7 +315,7 @@ export const NAVIGATION_CONFIG = [
         path: '/planning/capacity-planning',
         icon: AssessmentIcon,
         requiredCapability: 'view_capacity_planning',
-        description: 'Utilization, Bottleneck, Rough-Cut, Processes, Maintenance',
+        description: 'Utilization, Bottleneck, Rough-Cut, Processes, Maintenance, Heatmap',
       },
       {
         label: 'Forecast Analytics',

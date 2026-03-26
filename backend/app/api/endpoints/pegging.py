@@ -374,3 +374,35 @@ def get_pegging_gantt(
         include_conformal=include_conformal,
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Confidence Funnel
+# ---------------------------------------------------------------------------
+
+@router.get("/confidence-funnel/{config_id}/{product_id}/{site_id}")
+def get_confidence_funnel(
+    config_id: int,
+    product_id: str,
+    site_id: int,
+    horizon_days: int = Query(90, ge=1, le=365, description="Planning horizon in days"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Build Confidence Funnel data for supply orders at a product-site.
+
+    Returns nested probability intervals (P50/P80/P90/P95) for each
+    supply order showing when it will actually arrive, using conformal
+    prediction intervals where available.
+    """
+    from app.services.confidence_funnel_service import ConfidenceFunnelService
+
+    svc = ConfidenceFunnelService(db)
+    result = svc.build_funnel_data(
+        config_id=config_id,
+        product_id=product_id,
+        site_id=site_id,
+        horizon_days=horizon_days,
+    )
+    return result

@@ -38,11 +38,13 @@ import {
   ThumbsDown,
   ShieldCheck,
   GitBranch,
+  BarChart3,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import BranchPicker from '../../components/planning/BranchPicker';
 import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
+import ConfidenceFunnel from '../../components/planning/ConfidenceFunnel';
 
 const SupplyPlanGeneration = () => {
   const { effectiveConfigId, activeConfig, workingBranch } = useActiveConfig();
@@ -78,8 +80,10 @@ const SupplyPlanGeneration = () => {
   const [planResult, setPlanResult] = useState(null);
   const [statusPolling, setStatusPolling] = useState(null);
 
-  // Pegging
+  // Pegging & Confidence Funnel
   const [peggingTarget, setPeggingTarget] = useState(null);
+  const [funnelTarget, setFunnelTarget] = useState(null);
+  const [vizMode, setVizMode] = useState('pegging'); // 'pegging' or 'funnel'
 
   useEffect(() => {
     loadPlanRequests();
@@ -658,6 +662,8 @@ const SupplyPlanGeneration = () => {
                             size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
+                              setFunnelTarget(null);
+                              setVizMode('pegging');
                               setPeggingTarget({
                                 productId: plan.product_id,
                                 siteId: plan.site_id,
@@ -670,7 +676,30 @@ const SupplyPlanGeneration = () => {
                             <GitBranch className="h-4 w-4" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>View Pegging</TooltipContent>
+                        <TooltipContent>Pegging Tree</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPeggingTarget(null);
+                              setVizMode('funnel');
+                              setFunnelTarget({
+                                productId: plan.product_id,
+                                siteId: plan.site_id,
+                              });
+                            }}
+                            disabled={plan.status !== 'COMPLETED'}
+                          >
+                            <BarChart3 className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Confidence Funnel</TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
@@ -703,15 +732,67 @@ const SupplyPlanGeneration = () => {
       {renderPlanResult()}
       {renderPlanHistory()}
 
+      {/* Visualization mode toggle */}
+      {(peggingTarget || funnelTarget) && effectiveConfigId && (
+        <div className="flex items-center gap-2 mt-4 mb-2">
+          <span className="text-sm text-muted-foreground">View:</span>
+          <Button
+            variant={vizMode === 'pegging' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setVizMode('pegging');
+              if (!peggingTarget && funnelTarget) {
+                setPeggingTarget({
+                  productId: funnelTarget.productId,
+                  siteId: funnelTarget.siteId,
+                  demandDate: new Date().toISOString().split('T')[0],
+                  demandType: 'SUPPLY_PLAN',
+                });
+              }
+            }}
+          >
+            <GitBranch className="h-3.5 w-3.5 mr-1" />
+            Pegging Tree
+          </Button>
+          <Button
+            variant={vizMode === 'funnel' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => {
+              setVizMode('funnel');
+              if (!funnelTarget && peggingTarget) {
+                setFunnelTarget({
+                  productId: peggingTarget.productId,
+                  siteId: peggingTarget.siteId,
+                });
+              }
+            }}
+          >
+            <BarChart3 className="h-3.5 w-3.5 mr-1" />
+            Confidence Funnel
+          </Button>
+        </div>
+      )}
+
       {/* Level Pegging Gantt */}
-      {peggingTarget && effectiveConfigId && (
+      {vizMode === 'pegging' && peggingTarget && effectiveConfigId && (
         <LevelPeggingGantt
           configId={effectiveConfigId}
           productId={peggingTarget.productId}
           siteId={peggingTarget.siteId}
           demandDate={peggingTarget.demandDate}
           demandType={peggingTarget.demandType}
-          onClose={() => setPeggingTarget(null)}
+          onClose={() => { setPeggingTarget(null); setFunnelTarget(null); }}
+        />
+      )}
+
+      {/* Confidence Funnel */}
+      {vizMode === 'funnel' && funnelTarget && effectiveConfigId && (
+        <ConfidenceFunnel
+          configId={effectiveConfigId}
+          productId={funnelTarget.productId}
+          siteId={funnelTarget.siteId}
+          horizonDays={90}
+          onClose={() => { setFunnelTarget(null); setPeggingTarget(null); }}
         />
       )}
     </div>

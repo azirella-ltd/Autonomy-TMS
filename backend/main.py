@@ -6373,6 +6373,8 @@ api.include_router(production_orders_router, prefix="/production-orders", tags=[
 api.include_router(capacity_plans_router, prefix="/capacity-plans", tags=["capacity-plans"])
 from app.api.endpoints.rccp import router as rccp_router
 api.include_router(rccp_router, prefix="/rccp", tags=["rccp"])
+from app.api.endpoints.resource_heatmap import router as resource_heatmap_router
+api.include_router(resource_heatmap_router, prefix="/resource-heatmap", tags=["resource-heatmap", "capacity-plans"])
 api.include_router(suppliers_router, prefix="/suppliers", tags=["suppliers"])
 api.include_router(inventory_projection_router, prefix="/inventory-projection", tags=["inventory-projection"])
 api.include_router(lot_sizing_router, prefix="/lot-sizing", tags=["lot-sizing"])
