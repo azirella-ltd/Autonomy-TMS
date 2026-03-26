@@ -200,25 +200,25 @@ def main():
         mat_eisbe[mat] = safe_float(r.get("EISBE", "0"))
         mat_minbe[mat] = safe_float(r.get("MINBE", "0"))
         mat_marc_params[mat] = {
-            "DISMM": r.get("DISMM", "").strip(),
-            "DISLS": r.get("DISLS", "").strip(),
+            "DISMM": (r.get("DISMM", "") or "").strip(),
+            "DISLS": (r.get("DISLS", "") or "").strip(),
             "LOSGR": safe_float(r.get("LOSGR", "0")),
             "BSTMI": safe_float(r.get("BSTMI", "0")),
             "BSTMA": safe_float(r.get("BSTMA", "0")),
             "BSTRF": safe_float(r.get("BSTRF", "0")),
             "MABST": safe_float(r.get("MABST", "0")),
-            "VRMOD": r.get("VRMOD", "").strip(),
+            "VRMOD": (r.get("VRMOD", "") or "").strip(),
             "VINT1": int(safe_float(r.get("VINT1", "0"))),
             "VINT2": int(safe_float(r.get("VINT2", "0"))),
             "FXHOR": int(safe_float(r.get("FXHOR", "0"))),
-            "STRGR": r.get("STRGR", "").strip(),
-            "DISPO": r.get("DISPO", "").strip(),
-            "BESKZ": r.get("BESKZ", "").strip(),
+            "STRGR": (r.get("STRGR", "") or "").strip(),
+            "DISPO": (r.get("DISPO", "") or "").strip(),
+            "BESKZ": (r.get("BESKZ", "") or "").strip(),
             "SHZET": int(safe_float(r.get("SHZET", "0"))),
             "PLIFZ": int(safe_float(r.get("PLIFZ", "0"))),
             "DZEIT": int(safe_float(r.get("DZEIT", "0"))),
             "AUSSS": safe_float(r.get("AUSSS", "0")),
-            "RDPRF": r.get("RDPRF", "").strip(),
+            "RDPRF": (r.get("RDPRF", "") or "").strip(),
         }
 
     # Stock levels from MARD

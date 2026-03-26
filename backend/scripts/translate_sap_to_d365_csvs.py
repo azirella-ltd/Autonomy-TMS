@@ -534,7 +534,7 @@ def main():
         eisbe = safe_float(marc_r.get("EISBE", "0"))
         minbe = safe_float(marc_r.get("MINBE", "0"))
         mabst = safe_float(marc_r.get("MABST", "0"))
-        dismm = marc_r.get("DISMM", "").strip()
+        dismm = (marc_r.get("DISMM", "") or "").strip()
         losgr = safe_float(marc_r.get("LOSGR", "0"))
         bstmi = safe_float(marc_r.get("BSTMI", "0"))
         bstma = safe_float(marc_r.get("BSTMA", "0"))
@@ -557,8 +557,8 @@ def main():
             "MinimumOrderQuantity": bstmi,
             "MaximumOrderQuantity": bstma,
             "MultipleQuantity": bstrf,
-            "LeadTimePurchase": plifz if marc_r.get("BESKZ", "").strip() == "F" else 0,
-            "LeadTimeProduction": dzeit if marc_r.get("BESKZ", "").strip() in ("E", "X") else 0,
+            "LeadTimePurchase": plifz if (marc_r.get("BESKZ", "") or "").strip() == "F" else 0,
+            "LeadTimeProduction": dzeit if (marc_r.get("BESKZ", "") or "").strip() in ("E", "X") else 0,
             "LeadTimeTransfer": 0,  # No SAP equivalent for inter-plant transfer LT in MARC
             "CoverageTimeFence": fxhor if fxhor > 0 else 90,  # Default 90 days
             "LockingTimeFence": fxhor,  # SAP FXHOR ≈ D365 firming fence
