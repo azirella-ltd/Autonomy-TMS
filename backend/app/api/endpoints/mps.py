@@ -22,6 +22,7 @@ from app.models.supplier import VendorLeadTime
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from pydantic import BaseModel, Field
 import sqlalchemy as sa
+from app.services.user_scope_service import resolve_user_scope_sync, resolve_site_names_to_ids_sync
 
 
 # ============================================================================
@@ -694,9 +695,19 @@ async def list_mps_plan_items(
     # Verify plan exists
     get_mps_plan_or_404(db, plan_id)
 
-    items = db.execute(
-        select(MPSPlanItem).where(MPSPlanItem.plan_id == plan_id)
-    ).scalars().all()
+    query = select(MPSPlanItem).where(MPSPlanItem.plan_id == plan_id)
+
+    # User scope filtering — restrict to sites/products the user can access
+    allowed_sites, allowed_products = resolve_user_scope_sync(current_user)
+    plan = get_mps_plan_or_404(db, plan_id)
+    if allowed_sites is not None:
+        site_ids = resolve_site_names_to_ids_sync(db, allowed_sites, plan.supply_chain_config_id)
+        if site_ids:
+            query = query.where(MPSPlanItem.site_id.in_(site_ids))
+    if allowed_products is not None:
+        query = query.where(MPSPlanItem.product_id.in_(allowed_products))
+
+    items = db.execute(query).scalars().all()
 
     return items
 

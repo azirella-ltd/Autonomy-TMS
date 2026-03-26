@@ -18,7 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_current_user
+from app.models.user import User
 from app.services.pegging_service import PeggingService
 from app.services.multi_stage_ctp_service import MultiStageCTPService
 
@@ -60,6 +61,7 @@ def trace_demand_to_supply(
     demand_id: str,
     config_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Trace from demand to all supply backing it.
@@ -114,6 +116,7 @@ def trace_supply_to_demand(
     supply_id: str,
     config_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Trace from supply to all demand it backs.
@@ -153,6 +156,7 @@ def get_product_site_pegging(
     site_id: int,
     config_id: int = Query(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Pegging summary for a product at a site.
@@ -185,6 +189,7 @@ def get_product_site_pegging(
 def get_pegging_chain(
     chain_id: str,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Get a full end-to-end pegging chain by chain_id.
@@ -234,6 +239,7 @@ def get_pegging_chain(
 def calculate_multi_stage_ctp(
     req: MultiStageCTPRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Calculate multi-stage CTP for a product at a site.
@@ -269,6 +275,7 @@ def calculate_multi_stage_ctp(
 def promise_order(
     req: OrderPromiseRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Promise an order with full pegging chain creation.
@@ -313,6 +320,7 @@ def get_unpegged_demand(
     config_id: int,
     tenant_id: int = Query(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     List all unpegged demand for a config.
@@ -343,6 +351,7 @@ def get_pegging_gantt(
     demand_id: Optional[str] = Query(None),
     include_conformal: bool = Query(True),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Build Gantt chart data showing how demand at a specific time bucket

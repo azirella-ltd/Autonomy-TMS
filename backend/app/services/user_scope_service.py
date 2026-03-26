@@ -128,3 +128,61 @@ async def resolve_user_scope(
             allowed_products = None  # Graceful degradation
 
     return allowed_sites, allowed_products
+
+
+def resolve_user_scope_sync(
+    user,
+) -> Tuple[Optional[Set[str]], Optional[Set[int]]]:
+    """Sync wrapper for endpoints that use sync db sessions.
+
+    Opens a temporary async session to resolve hierarchy scope.
+    Returns (allowed_site_names, allowed_product_ids) — None = full access.
+    """
+    if not user:
+        return None, None
+
+    has_full_sites = user.has_full_site_scope
+    has_full_products = user.has_full_product_scope
+
+    if has_full_sites and has_full_products:
+        return None, None
+
+    import asyncio
+    from app.db.session import async_session_factory
+
+    async def _resolve():
+        async with async_session_factory() as db:
+            return await resolve_user_scope(db, user)
+
+    # Use existing event loop if available, otherwise create one
+    try:
+        loop = asyncio.get_running_loop()
+        # We're inside an async context — use nest_asyncio or thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(lambda: asyncio.run(_resolve())).result(timeout=10)
+    except RuntimeError:
+        # No running event loop — safe to call asyncio.run()
+        return asyncio.run(_resolve())
+
+
+def resolve_site_names_to_ids_sync(
+    db,
+    site_names: Optional[Set[str]],
+    config_id: int,
+) -> Optional[Set[int]]:
+    """Convert site names to site IDs for a given config. Sync version.
+
+    Returns None if site_names is None (full access).
+    """
+    if site_names is None:
+        return None
+
+    from app.models.supply_chain_config import Site
+    result = db.execute(
+        select(Site.id).where(
+            Site.config_id == config_id,
+            Site.name.in_(site_names),
+        )
+    )
+    return {row[0] for row in result.fetchall()}

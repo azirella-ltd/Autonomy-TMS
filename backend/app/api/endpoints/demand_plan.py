@@ -21,9 +21,22 @@ from app.core.capabilities import require_capabilities
 from app.db.session import get_sync_db
 from app.models.sc_entities import Forecast
 from app.models.user import User
+from app.services.user_scope_service import resolve_user_scope_sync, resolve_site_names_to_ids_sync
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _apply_scope_filters(query, db, current_user, config_id=None):
+    """Apply user scope filtering to a Forecast query."""
+    allowed_sites, allowed_products = resolve_user_scope_sync(current_user)
+    if allowed_sites is not None and config_id:
+        site_ids = resolve_site_names_to_ids_sync(db, allowed_sites, config_id)
+        if site_ids:
+            query = query.filter(Forecast.site_id.in_(site_ids))
+    if allowed_products is not None:
+        query = query.filter(Forecast.product_id.in_(allowed_products))
+    return query
 
 
 class ForecastItemSchema(BaseModel):
@@ -116,6 +129,10 @@ def get_current_demand_plan(
     limit: int = Query(1000, le=10000),
 ):
     query = db.query(Forecast).filter(_active_filter())
+
+    # User scope filtering — restrict to sites/products the user can access
+    config_id = current_user.default_config_id if current_user else None
+    query = _apply_scope_filters(query, db, current_user, config_id)
 
     if product_id:
         query = query.filter(Forecast.product_id == product_id)
