@@ -37,10 +37,12 @@ import {
   ThumbsUp,
   ThumbsDown,
   ShieldCheck,
+  GitBranch,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import BranchPicker from '../../components/planning/BranchPicker';
+import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
 
 const SupplyPlanGeneration = () => {
   const { effectiveConfigId, activeConfig, workingBranch } = useActiveConfig();
@@ -75,6 +77,9 @@ const SupplyPlanGeneration = () => {
   const [planStatus, setPlanStatus] = useState(null);
   const [planResult, setPlanResult] = useState(null);
   const [statusPolling, setStatusPolling] = useState(null);
+
+  // Pegging
+  const [peggingTarget, setPeggingTarget] = useState(null);
 
   useEffect(() => {
     loadPlanRequests();
@@ -629,21 +634,46 @@ const SupplyPlanGeneration = () => {
                 <TableCell>{new Date(plan.created_at).toLocaleString()}</TableCell>
                 <TableCell>{plan.completed_at ? new Date(plan.completed_at).toLocaleString() : 'N/A'}</TableCell>
                 <TableCell className="text-center">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewPlan(plan.id)}
-                          disabled={plan.status === 'PENDING'}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>View Details</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <div className="flex items-center justify-center gap-1">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewPlan(plan.id)}
+                            disabled={plan.status === 'PENDING'}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>View Details</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPeggingTarget({
+                                productId: plan.product_id,
+                                siteId: plan.site_id,
+                                demandDate: plan.planned_receipt_date,
+                                demandType: 'SUPPLY_PLAN',
+                              });
+                            }}
+                            disabled={plan.status !== 'COMPLETED'}
+                          >
+                            <GitBranch className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>View Pegging</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -672,6 +702,18 @@ const SupplyPlanGeneration = () => {
       {renderActiveStatus()}
       {renderPlanResult()}
       {renderPlanHistory()}
+
+      {/* Level Pegging Gantt */}
+      {peggingTarget && effectiveConfigId && (
+        <LevelPeggingGantt
+          configId={effectiveConfigId}
+          productId={peggingTarget.productId}
+          siteId={peggingTarget.siteId}
+          demandDate={peggingTarget.demandDate}
+          demandType={peggingTarget.demandType}
+          onClose={() => setPeggingTarget(null)}
+        />
+      )}
     </div>
   );
 };

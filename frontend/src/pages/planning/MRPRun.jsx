@@ -35,6 +35,12 @@ import {
 } from '../../components/common';
 import { Checkbox } from '../../components/ui/checkbox';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../components/ui/tooltip';
+import {
   Play,
   RefreshCw,
   AlertTriangle,
@@ -42,14 +48,18 @@ import {
   ClipboardList,
   ShoppingCart,
   XCircle,
+  GitBranch,
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCapabilities } from '../../hooks/useCapabilities';
 import { api } from '../../services/api';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
 
 const MRPRun = () => {
   const { formatSupplier } = useDisplayPreferences();
+  const { effectiveConfigId } = useActiveConfig();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { hasCapability } = useCapabilities();
@@ -67,6 +77,9 @@ const MRPRun = () => {
   // Results
   const [mrpResult, setMrpResult] = useState(null);
   const [showResultDialog, setShowResultDialog] = useState(false);
+
+  // Pegging
+  const [peggingTarget, setPeggingTarget] = useState(null);
 
   // Permissions
   const canManage = hasCapability('manage_mps');
@@ -372,12 +385,13 @@ const MRPRun = () => {
                         <TableHead className="text-right">Scheduled</TableHead>
                         <TableHead className="text-right">Net Req</TableHead>
                         <TableHead>Source Type</TableHead>
+                        <TableHead className="text-center">Pegging</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {mrpResult.requirements.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center py-6">
+                          <TableCell colSpan={9} className="text-center py-6">
                             <p className="text-muted-foreground">
                               No requirements found. Top-level items may not have BOMs defined.
                             </p>
@@ -397,6 +411,30 @@ const MRPRun = () => {
                               {req.source_type ? (
                                 <Badge variant="outline">{req.source_type}</Badge>
                               ) : '-'}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPeggingTarget({
+                                          productId: req.component_id,
+                                          siteId: req.site_id,
+                                          demandDate: req.period_date,
+                                          demandType: 'MRP_REQUIREMENT',
+                                        });
+                                      }}
+                                    >
+                                      <GitBranch className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>View Pegging</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             </TableCell>
                           </TableRow>
                         ))
@@ -421,12 +459,13 @@ const MRPRun = () => {
                         <TableHead>Receipt Date</TableHead>
                         <TableHead className="text-right">Lead Time</TableHead>
                         <TableHead className="text-right">Total Cost</TableHead>
+                        <TableHead className="text-center">Pegging</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {mrpResult.generated_orders.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center py-6">
+                          <TableCell colSpan={10} className="text-center py-6">
                             <p className="text-muted-foreground">
                               No orders generated. Check if net requirements are zero or sourcing rules are missing.
                             </p>
@@ -450,6 +489,30 @@ const MRPRun = () => {
                             <TableCell className="text-right">{order.lead_time_days} days</TableCell>
                             <TableCell className="text-right">
                               {order.total_cost ? `$${order.total_cost.toFixed(2)}` : '-'}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPeggingTarget({
+                                          productId: order.component_id,
+                                          siteId: order.destination_site_id,
+                                          demandDate: order.receipt_date,
+                                          demandType: 'MRP_REQUIREMENT',
+                                        });
+                                      }}
+                                    >
+                                      <GitBranch className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>View Pegging</TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                             </TableCell>
                           </TableRow>
                         ))
@@ -507,6 +570,18 @@ const MRPRun = () => {
           </Button>
         </div>
       </Modal>
+
+      {/* Level Pegging Gantt */}
+      {peggingTarget && effectiveConfigId && (
+        <LevelPeggingGantt
+          configId={effectiveConfigId}
+          productId={peggingTarget.productId}
+          siteId={peggingTarget.siteId}
+          demandDate={peggingTarget.demandDate}
+          demandType={peggingTarget.demandType}
+          onClose={() => setPeggingTarget(null)}
+        />
+      )}
     </div>
   );
 };

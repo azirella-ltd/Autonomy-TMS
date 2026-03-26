@@ -57,8 +57,11 @@ import {
   AutoAwesome as SparklesIcon,
   Shield as ShieldIcon,
 } from '@mui/icons-material';
+import { GitBranch } from 'lucide-react';
 import { api } from '../../services/api';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
 
 const STATUS_COLORS = {
   pending_review: 'warning',
@@ -148,6 +151,8 @@ const QuantityWithInterval = ({ quantity, lowerBound, upperBound, showInterval =
 
 const SupplyAgentWorklist = ({ configId, tenantId }) => {
   const { formatSupplier } = useDisplayPreferences();
+  const { effectiveConfigId } = useActiveConfig();
+  const [peggingTarget, setPeggingTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [worklistItems, setWorklistItems] = useState([]);
   const [selectedCommit, setSelectedCommit] = useState(null);
@@ -800,6 +805,7 @@ const SupplyAgentWorklist = ({ configId, tenantId }) => {
                       </TableCell>
                       <TableCell>Confidence</TableCell>
                       <TableCell>Rationale</TableCell>
+                      <TableCell align="center">Pegging</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -869,6 +875,24 @@ const SupplyAgentWorklist = ({ configId, tenantId }) => {
                           <TableCell>
                             <Typography variant="caption">{order.rationale}</Typography>
                           </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title="View Pegging">
+                              <IconButton
+                                size="small"
+                                onClick={() => {
+                                  setDetailDialogOpen(false);
+                                  setPeggingTarget({
+                                    productId: order.product_id || order.sku,
+                                    siteId: order.site_id || order.destination_site_id,
+                                    demandDate: order.expected_delivery || order.order_date,
+                                    demandType: 'SUPPLY_RECOMMENDATION',
+                                  });
+                                }}
+                              >
+                                <GitBranch size={16} />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
                         </TableRow>
                       );
                     })}
@@ -895,6 +919,18 @@ const SupplyAgentWorklist = ({ configId, tenantId }) => {
           <Button onClick={() => setDetailDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Level Pegging Gantt */}
+      {peggingTarget && effectiveConfigId && peggingTarget.productId && peggingTarget.siteId && (
+        <LevelPeggingGantt
+          configId={effectiveConfigId}
+          productId={peggingTarget.productId}
+          siteId={peggingTarget.siteId}
+          demandDate={peggingTarget.demandDate}
+          demandType={peggingTarget.demandType}
+          onClose={() => setPeggingTarget(null)}
+        />
+      )}
 
       {/* Review Dialog - Enhanced with Human Adjustment */}
       <Dialog open={reviewDialogOpen} onClose={() => setReviewDialogOpen(false)} maxWidth="md" fullWidth>

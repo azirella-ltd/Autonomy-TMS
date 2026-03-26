@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
 import {
   Card,
   CardContent,
@@ -25,6 +27,7 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  Tooltip,
 } from '../../components/common';
 import {
   Package,
@@ -36,12 +39,15 @@ import {
   RefreshCw,
   Calculator,
   Search,
+  GitBranch,
 } from 'lucide-react';
 import { Line, Bar } from 'react-chartjs-2';
 import { api } from '../../services/api';
 
 const InventoryProjection = () => {
   const { formatProduct, formatSite } = useDisplayPreferences();
+  const { effectiveConfigId } = useActiveConfig();
+  const [peggingTarget, setPeggingTarget] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('projections');
@@ -328,6 +334,7 @@ const InventoryProjection = () => {
                 <TableHead className="text-right">Closing Inv</TableHead>
                 <TableHead className="text-right">DOS</TableHead>
                 <TableHead className="text-center">Stockout Risk</TableHead>
+                <TableHead className="text-center">Pegging</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -354,6 +361,21 @@ const InventoryProjection = () => {
                     ) : (
                       'N/A'
                     )}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Tooltip content="View Pegging">
+                      <button
+                        className="inline-flex items-center justify-center rounded-md p-1.5 text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                        onClick={() => setPeggingTarget({
+                          productId: proj.product_id,
+                          siteId: proj.site_id,
+                          demandDate: proj.projection_date,
+                          demandType: 'INVENTORY_PROJECTION',
+                        })}
+                      >
+                        <GitBranch className="h-4 w-4" />
+                      </button>
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))}
@@ -636,6 +658,18 @@ const InventoryProjection = () => {
           </>
         )}
       </Tabs>
+
+      {/* Level Pegging Gantt */}
+      {peggingTarget && effectiveConfigId && peggingTarget.productId && peggingTarget.siteId && (
+        <LevelPeggingGantt
+          configId={effectiveConfigId}
+          productId={peggingTarget.productId}
+          siteId={peggingTarget.siteId}
+          demandDate={peggingTarget.demandDate}
+          demandType={peggingTarget.demandType}
+          onClose={() => setPeggingTarget(null)}
+        />
+      )}
 
       {/* Calculate ATP Dialog */}
       <Modal isOpen={calculateAtpDialogOpen} onClose={() => setCalculateAtpDialogOpen(false)} title="Calculate ATP">
