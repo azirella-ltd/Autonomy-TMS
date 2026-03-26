@@ -294,7 +294,7 @@ def _load_via_rpc(
         vals = {
             "name": row["name"],
             "default_code": code,
-            "type": "product",  # Odoo 18 uses 'type' (v17 used 'detailed_type')
+            "type": "consu",  # Odoo 18: 'consu' (Goods), v16/v17 used 'product'
             "sale_ok": row.get("sale_ok", True),
             "purchase_ok": row.get("purchase_ok", True),
             "uom_id": uom_id,
