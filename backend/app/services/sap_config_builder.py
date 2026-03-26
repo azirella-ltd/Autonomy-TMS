@@ -2337,6 +2337,9 @@ class SAPConfigBuilder:
                             parent_h = matkl_nodes.get(matkl, prod_root)
 
                         pcode = f"PROD_{product_entity.id}_{tenant_id}"
+                        if pcode in _seen_product_codes:
+                            continue
+                        _seen_product_codes.add(pcode)
                         leaf = ProductHierarchyNode(
                             tenant_id=tenant_id,
                             code=pcode,
