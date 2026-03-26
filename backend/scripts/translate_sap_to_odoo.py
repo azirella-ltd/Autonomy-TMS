@@ -197,31 +197,31 @@ def main():
     eina = read_csv(sap_dir, "EINA.csv")
 
     # ── Filter to plant ──────────────────────────────────────────────────
-    marc_plant = [r for r in marc if r.get("WERKS", "").strip() == plant]
-    mard_plant = [r for r in mard if r.get("WERKS", "").strip() == plant]
-    materials = set(r.get("MATNR", "").strip() for r in marc_plant)
+    marc_plant = [r for r in marc if (r.get("WERKS") or "").strip() == plant]
+    mard_plant = [r for r in mard if (r.get("WERKS") or "").strip() == plant]
+    materials = set((r.get("MATNR") or "").strip() for r in marc_plant)
 
     # Material descriptions
     desc_map = {}
     for r in makt:
-        mat = r.get("MATNR", "").strip()
-        lang = r.get("SPRAS", "").strip()
+        mat = (r.get("MATNR") or "").strip()
+        lang = (r.get("SPRAS", "") or "").strip()
         if lang in ("E", "EN", ""):
             desc_map[mat] = r.get("MAKTX", mat)
 
     # MARC params
-    marc_map = {r.get("MATNR", "").strip(): r for r in marc_plant}
+    marc_map = {(r.get("MATNR") or "").strip(): r for r in marc_plant}
 
     # Stock
     stock_map = defaultdict(float)
     for r in mard_plant:
-        stock_map[r.get("MATNR", "").strip()] += safe_float(r.get("LABST", "0"))
+        stock_map[(r.get("MATNR") or "").strip()] += safe_float(r.get("LABST", "0"))
 
     # Vendor-material links from EINA
     vendor_materials = defaultdict(set)
     for r in eina:
-        mat = r.get("MATNR", "").strip()
-        vendor = r.get("LIFNR", "").strip()
+        mat = (r.get("MATNR") or "").strip()
+        vendor = (r.get("LIFNR", "") or "").strip()
         if mat in materials and vendor:
             vendor_materials[vendor].add(mat)
 
@@ -236,7 +236,7 @@ def main():
     product_rows = []
     for mat in sorted(materials):
         marc_r = marc_map.get(mat, {})
-        beskz = marc_r.get("BESKZ", "").strip()
+        beskz = (marc_r.get("BESKZ", "") or "").strip()
         product_rows.append({
             "name": desc_map.get(mat, mat),
             "default_code": mat,
@@ -250,7 +250,7 @@ def main():
 
     # Vendors (res.partner)
     vendor_rows = []
-    vendor_names = {r.get("LIFNR", "").strip(): r.get("NAME1", "").strip() for r in lfa1}
+    vendor_names = {(r.get("LIFNR", "") or "").strip(): (r.get("NAME1", "") or "").strip() for r in lfa1}
     for vendor_id in sorted(vendor_materials.keys()):
         vendor_rows.append({
             "name": vendor_names.get(vendor_id, f"Vendor {vendor_id}"),
@@ -262,7 +262,7 @@ def main():
     # Customers (res.partner)
     customer_rows = []
     for r in kna1:
-        cust_id = r.get("KUNNR", "").strip()
+        cust_id = (r.get("KUNNR", "") or "").strip()
         if cust_id:
             customer_rows.append({
                 "name": r.get("NAME1", f"Customer {cust_id}").strip(),
@@ -292,9 +292,9 @@ def main():
     # BOM linkage: MAST maps material → STLNR (BOM number)
     mat_to_stlnr = {}
     for r in mast:
-        werks = r.get("WERKS", "").strip()
+        werks = (r.get("WERKS") or "").strip()
         if werks == plant or not werks:
-            mat_to_stlnr[r.get("MATNR", "").strip()] = r.get("STLNR", "").strip()
+            mat_to_stlnr[(r.get("MATNR") or "").strip()] = (r.get("STLNR") or "").strip()
     stlnr_to_mat = {v: k for k, v in mat_to_stlnr.items()}
     print(f"  BOM assignments (MAST): {len(mat_to_stlnr)}")
 
@@ -302,8 +302,8 @@ def main():
     bom_line_rows = []
     bom_parents = set()
     for r in stpo:
-        stlnr = r.get("STLNR", "").strip()
-        component = r.get("IDNRK", "").strip()
+        stlnr = (r.get("STLNR", "") or "").strip()
+        component = (r.get("IDNRK", "") or "").strip()
         qty = safe_float(r.get("MENGE", "1"))
         scrap = safe_float(r.get("AUSCH", "0"))
         if not stlnr or not component:
@@ -332,7 +332,7 @@ def main():
     orderpoint_rows = []
     for mat in sorted(materials):
         marc_r = marc_map.get(mat, {})
-        dismm = marc_r.get("DISMM", "").strip()
+        dismm = (marc_r.get("DISMM", "") or "").strip()
         eisbe = safe_float(marc_r.get("EISBE", "0"))
         minbe = safe_float(marc_r.get("MINBE", "0"))
         mabst = safe_float(marc_r.get("MABST", "0"))
@@ -355,9 +355,9 @@ def main():
             "trigger": trigger,
             # SAP source fields (for reference in CSV, not loaded into Odoo)
             "sap_dismm": dismm,
-            "sap_disls": marc_r.get("DISLS", "").strip(),
+            "sap_disls": (marc_r.get("DISLS", "") or "").strip(),
             "sap_losgr": losgr,
-            "sap_beskz": marc_r.get("BESKZ", "").strip(),
+            "sap_beskz": (marc_r.get("BESKZ", "") or "").strip(),
         })
 
     # Initial stock (stock.quant)

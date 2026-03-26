@@ -383,27 +383,35 @@ def main():
                             raw_conn.rollback()
                             cur = raw_conn.cursor()
 
-            # 4. Delete all config_id tables (except site and product — do last)
+            # 4. Delete all dependent tables, then core tables
+            # Order: product-dependent → config-scoped → product → site
+            all_tables_ordered = [
+                # Product-dependent tables (must be deleted before product)
+                "inv_level", "inv_policy", "inv_projection", "inventory_projection",
+                "forecast", "sourcing_rules", "supply_demand_pegging",
+                "aatp_consumption_record", "site_planning_config",
+                "atp_projection", "ctp_projection", "backorder",
+                "consensus_demand", "forecast_exception",
+                "monte_carlo_time_series", "monte_carlo_risk_alerts",
+                "mps_plan_items", "product_bom",
+            ]
+            # Add remaining config_id tables (skip site/product — they go last)
             for table in config_tables:
-                if table in ("site", "product"):
-                    continue
+                if table not in ("site", "product") and table not in all_tables_ordered:
+                    all_tables_ordered.append(table)
+            # Core tables last
+            all_tables_ordered.extend(["product", "site"])
+
+            for table in all_tables_ordered:
                 try:
+                    cur.execute(f"SAVEPOINT sp_{table}")
                     cur.execute(f"DELETE FROM {table} WHERE config_id = %s", (config_id,))
                     if cur.rowcount > 0:
                         print(f"    Deleted {cur.rowcount} rows from {table}")
+                    cur.execute(f"RELEASE SAVEPOINT sp_{table}")
                 except Exception:
-                    raw_conn.rollback()
-                    cur = raw_conn.cursor()
-
-            # 5. Delete product
-            cur.execute("DELETE FROM product WHERE config_id = %s", (config_id,))
-            if cur.rowcount > 0:
-                print(f"    Deleted {cur.rowcount} rows from product")
-
-            # 6. Delete site
-            cur.execute("DELETE FROM site WHERE config_id = %s", (config_id,))
-            if cur.rowcount > 0:
-                print(f"    Deleted {cur.rowcount} rows from site")
+                    cur.execute(f"ROLLBACK TO SAVEPOINT sp_{table}")
+                    cur.execute(f"RELEASE SAVEPOINT sp_{table}")
 
             # Update config name
             cur.execute("UPDATE supply_chain_configs SET name = %s WHERE id = %s", (new_name, config_id))
