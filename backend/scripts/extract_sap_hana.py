@@ -1119,13 +1119,29 @@ TRANSACTION_TABLES = [
 def get_plants_for_company(conn, company_code: str) -> List[str]:
     """Query T001W to get all plants belonging to a company code.
 
-    In S/4HANA, T001W does not have BUKRS directly — the company code
-    to plant mapping goes through T001K (valuation area = plant in S/4).
-    Falls back to extracting all plants if the join fails.
+    Tries three approaches in order:
+    1. Direct BUKRS column on T001W (standard in S/4HANA)
+    2. T001K valuation area join (classic ECC pattern)
+    3. Fallback: plants matching the company code prefix (e.g., 1710, 1711, 1712 for code 1710)
     """
     cursor = conn.cursor()
+
+    # Approach 1: Direct BUKRS on T001W (S/4HANA standard)
     try:
-        # S/4HANA: T001K maps BWKEY (= WERKS in standard config) to BUKRS
+        cursor.execute(
+            "SELECT DISTINCT WERKS FROM SAPHANADB.T001W WHERE BUKRS = ?",
+            (company_code,),
+        )
+        plants = [row[0] for row in cursor.fetchall()]
+        if plants:
+            cursor.close()
+            logger.info(f"Found {len(plants)} plants for company {company_code} via T001W.BUKRS: {plants}")
+            return plants
+    except Exception as e:
+        logger.debug(f"T001W.BUKRS query failed ({e}), trying T001K join")
+
+    # Approach 2: T001K valuation area join (ECC compatibility)
+    try:
         cursor.execute(
             "SELECT DISTINCT w.WERKS FROM SAPHANADB.T001W w "
             "INNER JOIN SAPHANADB.T001K k ON w.BWKEY = k.BWKEY "
@@ -1135,20 +1151,35 @@ def get_plants_for_company(conn, company_code: str) -> List[str]:
         plants = [row[0] for row in cursor.fetchall()]
         if plants:
             cursor.close()
-            logger.info(f"Found {len(plants)} plants for company code {company_code} via T001K: {plants}")
+            logger.info(f"Found {len(plants)} plants for company {company_code} via T001K: {plants}")
             return plants
     except Exception as e:
-        logger.warning(f"T001K join failed ({e}), falling back to all plants")
+        logger.debug(f"T001K join failed ({e}), trying prefix match")
 
-    # Fallback: extract all plants
+    # Approach 3: Prefix match — plants whose WERKS starts with company code prefix
+    # e.g., company 1710 → plants 1710, 1711, 1712, 1720
+    prefix = company_code[:2]  # First 2 digits
+    try:
+        cursor.execute(
+            "SELECT DISTINCT WERKS FROM SAPHANADB.T001W WHERE WERKS LIKE ?",
+            (f"{prefix}%",),
+        )
+        plants = [row[0] for row in cursor.fetchall()]
+        if plants:
+            cursor.close()
+            logger.info(f"Found {len(plants)} plants matching prefix '{prefix}%': {plants}")
+            return plants
+    except Exception:
+        pass
+
+    # Last resort: all plants
     try:
         cursor.execute("SELECT DISTINCT WERKS FROM SAPHANADB.T001W")
-        plants = [row[0] for row in cursor.fetchall()]
     except Exception:
         cursor.execute("SELECT DISTINCT WERKS FROM T001W")
-        plants = [row[0] for row in cursor.fetchall()]
+    plants = [row[0] for row in cursor.fetchall()]
     cursor.close()
-    logger.info(f"Using all {len(plants)} plants (company code filter unavailable): {plants}")
+    logger.warning(f"Using all {len(plants)} plants (no company filter matched): {plants}")
     return plants
 
 
