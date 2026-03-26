@@ -365,7 +365,7 @@ def _load_via_rpc(
         xmlid = f"bom_{code}"
         vals = {
             "product_tmpl_id": tmpl_id,
-            "product_qty": row.get("product_qty", 1),
+            "product_qty": max(float(row.get("product_qty", 1) or 1), 0.001),
             "type": "normal",
         }
         bom_id = _get_or_create_by_xmlid(odoo, "mrp.bom", xmlid, vals)
@@ -380,10 +380,11 @@ def _load_via_rpc(
                 continue
 
             line_xmlid = f"bomline_{code}_{comp_code}_{j}"
+            raw_qty = float(line.get("product_qty", 1) or 1)
             line_vals: Dict[str, Any] = {
                 "bom_id": bom_id,
                 "product_id": comp_pp_id,
-                "product_qty": line.get("product_qty", 1),
+                "product_qty": max(raw_qty, 0.001),  # Odoo 18 requires qty > 0
             }
             # Odoo >=17 may not have product_uom_id as required; set if available
             line_vals["product_uom_id"] = uom_id
