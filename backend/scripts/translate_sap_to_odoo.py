@@ -131,6 +131,12 @@ class OdooRPCClient:
             self.db, self.uid, self.password, model, "write", [ids, vals]
         )
 
+    def fields_get(self, model: str) -> Dict:
+        return self.models.execute_kw(
+            self.db, self.uid, self.password, model, "fields_get", [],
+            {"attributes": ["string", "type"]}
+        )
+
     def run_scheduler(self):
         """Run Odoo MRP/procurement scheduler."""
         print("  Running Odoo MRP scheduler...")
@@ -286,6 +292,8 @@ def _load_via_rpc(
 
     # -- 3. Products (product.template) ------------------------------------
     print(f"\n  [3/7] Loading {len(product_rows)} products...")
+    # Query valid fields to handle Odoo version differences
+    pt_fields = set(odoo.fields_get("product.template").keys())
     product_tmpl_map: Dict[str, int] = {}   # default_code → product.template id
     product_prod_map: Dict[str, int] = {}   # default_code → product.product id
     for i, row in enumerate(product_rows, 1):
@@ -300,8 +308,8 @@ def _load_via_rpc(
             "uom_id": uom_id,
             "uom_po_id": uom_id,
         }
-        # produce_delay only exists when mrp module is installed
-        if row.get("produce_delay"):
+        # Optional fields — only set if they exist in this Odoo version
+        if row.get("produce_delay") and "produce_delay" in pt_fields:
             vals["produce_delay"] = row["produce_delay"]
 
         tmpl_id = _get_or_create_by_xmlid(odoo, "product.template", xmlid, vals)
