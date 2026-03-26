@@ -813,7 +813,138 @@ def main():
         print(f"    Created {inv_count} inventory level records")
 
         # ---------------------------------------------------------------
-        # 4i. Commit
+        # 4i. Load SAP forecasts (PBIM/PBED → forecast table)
+        # ---------------------------------------------------------------
+        print(f"\n  Loading SAP forecasts (PBIM/PBED)...")
+        pbim = read_csv(csv_dir, "PBIM.csv")
+        pbed = read_csv(csv_dir, "PBED.csv")
+
+        # Build BDZEI → (material, plant) lookup from PBIM
+        bdzei_to_mat = {}
+        for r in pbim:
+            bdzei = (r.get("BDZEI") or "").strip()
+            mat = (r.get("MATNR") or "").strip()
+            werks = (r.get("WERKS") or "").strip()
+            if bdzei and mat and (werks == PRIMARY or not werks):
+                bdzei_to_mat[bdzei] = mat
+
+        fcst_count = 0
+        today = date.today()
+        for r in pbed:
+            bdzei = (r.get("BDZEI") or "").strip()
+            mat = bdzei_to_mat.get(bdzei)
+            if not mat or mat not in materials:
+                continue
+            qty = float(r.get("PLNMG") or 0)
+            if qty <= 0:
+                continue
+            raw_date = (r.get("PDATU") or "").strip()
+            if not raw_date or len(raw_date) < 8:
+                continue
+            try:
+                fcst_date = date(int(raw_date[:4]), int(raw_date[4:6]), int(raw_date[6:8]))
+            except (ValueError, IndexError):
+                continue
+            # Date-shift: move historical dates to current year range
+            year_offset = today.year - fcst_date.year
+            try:
+                fcst_date = fcst_date.replace(year=fcst_date.year + year_offset)
+            except ValueError:
+                fcst_date = fcst_date.replace(year=fcst_date.year + year_offset, day=28)
+
+            prod_id = f"CFG{config_id}_{mat}"
+            session.execute(
+                text("""
+                    INSERT INTO forecast (config_id, customer_id, product_id, site_id,
+                                          forecast_date, forecast_quantity, forecast_p50,
+                                          forecast_type, source, is_active)
+                    VALUES (:cid, :tid, :pid, :sid, :dt, :qty, :qty, 'statistical', 'SAP_PBED', 'Y')
+                    ON CONFLICT DO NOTHING
+                """),
+                {
+                    "cid": config_id,
+                    "tid": str(tenant_id),
+                    "pid": prod_id,
+                    "sid": plant_site_id,
+                    "dt": fcst_date,
+                    "qty": qty,
+                },
+            )
+            fcst_count += 1
+
+        session.flush()
+        print(f"    Created {fcst_count} forecast records from SAP PBED")
+
+        # ---------------------------------------------------------------
+        # 4j. Load SAP sales orders (VBAK/VBAP → outbound_order/line)
+        # ---------------------------------------------------------------
+        print(f"  Loading SAP sales orders (VBAK/VBAP)...")
+        vbak = read_csv(csv_dir, "VBAK.csv")
+        vbap = read_csv(csv_dir, "VBAP.csv")
+
+        # Build order header lookup
+        vbak_map = {}
+        for r in vbak:
+            vbeln = (r.get("VBELN") or "").strip()
+            if vbeln:
+                vbak_map[vbeln] = r
+
+        so_count = 0
+        sol_count = 0
+        for r in vbap:
+            vbeln = (r.get("VBELN") or "").strip()
+            mat = (r.get("MATNR") or "").strip()
+            werks = (r.get("WERKS") or "").strip()
+            if werks != PRIMARY or mat not in materials:
+                continue
+            qty = float(r.get("KWMENG") or r.get("ZMENG") or 0)
+            if qty <= 0:
+                continue
+
+            header = vbak_map.get(vbeln, {})
+            raw_date = (r.get("EDATU") or header.get("ERDAT") or "").strip()
+            if not raw_date or len(raw_date) < 8:
+                continue
+            try:
+                order_date = date(int(raw_date[:4]), int(raw_date[4:6]), int(raw_date[6:8]))
+            except (ValueError, IndexError):
+                continue
+            # Date-shift
+            year_offset = today.year - order_date.year
+            try:
+                order_date = order_date.replace(year=order_date.year + year_offset)
+            except ValueError:
+                order_date = order_date.replace(year=order_date.year + year_offset, day=28)
+
+            prod_id = f"CFG{config_id}_{mat}"
+            customer_id = (r.get("KUNNR") or header.get("KUNNR") or "").strip()
+
+            posnr = (r.get("POSNR") or str(sol_count + 1)).strip()
+            session.execute(
+                text("""
+                    INSERT INTO outbound_order_line (config_id, product_id, site_id,
+                                                     ordered_quantity, requested_delivery_date,
+                                                     order_id, order_date, line_number)
+                    VALUES (:cid, :pid, :sid, :qty, :dt, :oid, :dt, :ln)
+                    ON CONFLICT DO NOTHING
+                """),
+                {
+                    "cid": config_id,
+                    "pid": prod_id,
+                    "sid": plant_site_id,
+                    "qty": qty,
+                    "dt": order_date,
+                    "oid": vbeln,
+                    "ln": posnr,
+                },
+            )
+            sol_count += 1
+
+        session.flush()
+        print(f"    Created {sol_count} sales order lines from SAP VBAP")
+
+        # ---------------------------------------------------------------
+        # 4k. Commit
         # ---------------------------------------------------------------
         session.commit()
         print(f"\n{'='*70}")
