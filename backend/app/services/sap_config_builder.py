@@ -2159,8 +2159,11 @@ class SAPConfigBuilder:
             for _, r in t179t.iterrows():
                 prodh_text[str(r.get("PRODH", "")).strip()] = str(r.get("VTEXT", "")).strip()
 
-        if not t179.empty:
-            # Root node
+        # Check if T179 has usable data (non-empty with PRODH column)
+        has_t179 = not t179.empty and "PRODH" in t179.columns
+
+        if has_t179 or self._products:
+            # Root node (always created if we have products)
             prod_root_code = f"PRODUCTS_{tenant_id}"
             prod_root = ProductHierarchyNode(
                 tenant_id=tenant_id,
@@ -2174,58 +2177,161 @@ class SAPConfigBuilder:
             await self.db.flush()
             product_count += 1
 
-            # T179 rows have PRODH (hierarchy code) and STUFE (level: 1, 2, 3)
-            # PRODH codes are hierarchical: "00001" (level 1), "0000100001" (level 2),
-            # "000010000100000001" (level 3). Parent is determined by prefix.
             prodh_nodes: Dict[str, ProductHierarchyNode] = {"": prod_root}
-            level_map = {"CATEGORY": 0, "FAMILY": 1, "GROUP": 2, "PRODUCT": 3}
-            level_names = {0: "CATEGORY", 1: "FAMILY", 2: "GROUP", 3: "PRODUCT"}
 
-            # Sort by PRODH length so parents are created before children
-            t179_sorted = t179.sort_values(by="PRODH", key=lambda s: s.str.len())
+            if has_t179:
+                # T179 rows have PRODH (hierarchy code) and STUFE (level: 1, 2, 3)
+                # PRODH codes are hierarchical: "00001" (level 1), "0000100001" (level 2),
+                # "000010000100000001" (level 3). Parent is determined by prefix.
+                level_names = {0: "CATEGORY", 1: "FAMILY", 2: "GROUP", 3: "PRODUCT"}
 
-            for _, r in t179_sorted.iterrows():
-                prodh = str(r.get("PRODH", "")).strip()
-                stufe = int(r.get("STUFE", 0)) if pd.notna(r.get("STUFE")) else 0
-                if not prodh or stufe == 0:
-                    continue  # root or empty
+                # Sort by PRODH length so parents are created before children
+                t179_sorted = t179.sort_values(by="PRODH", key=lambda s: s.str.len())
 
-                # Find parent by progressively shortening PRODH
-                parent = prod_root
-                for candidate_len in range(len(prodh) - 1, 0, -1):
-                    candidate = prodh[:candidate_len]
-                    if candidate in prodh_nodes:
-                        parent = prodh_nodes[candidate]
-                        break
+                for _, r in t179_sorted.iterrows():
+                    prodh = str(r.get("PRODH", "")).strip()
+                    stufe = int(r.get("STUFE", 0)) if pd.notna(r.get("STUFE")) else 0
+                    if not prodh or stufe == 0:
+                        continue  # root or empty
 
-                text = prodh_text.get(prodh, f"Category {prodh}")
-                hlevel = level_names.get(stufe, "GROUP")
-                hcode = f"PRODH_{prodh}"
-                node = ProductHierarchyNode(
-                    tenant_id=tenant_id,
-                    code=hcode,
-                    name=text,
-                    hierarchy_level=hlevel,
-                    hierarchy_path=f"{parent.hierarchy_path}/{hcode}",
-                    depth=parent.depth + 1,
-                    parent_id=parent.id,
-                )
-                self.db.add(node)
-                await self.db.flush()
-                prodh_nodes[prodh] = node
-                product_count += 1
+                    # Find parent by progressively shortening PRODH
+                    parent = prod_root
+                    for candidate_len in range(len(prodh) - 1, 0, -1):
+                        candidate = prodh[:candidate_len]
+                        if candidate in prodh_nodes:
+                            parent = prodh_nodes[candidate]
+                            break
 
-            # Link products to hierarchy nodes via MARA.PRDHA
-            mara = self._data.get("MARA", pd.DataFrame())
-            if not mara.empty:
+                    text = prodh_text.get(prodh, f"Category {prodh}")
+                    hlevel = level_names.get(stufe, "GROUP")
+                    hcode = f"PRODH_{prodh}"
+                    node = ProductHierarchyNode(
+                        tenant_id=tenant_id,
+                        code=hcode,
+                        name=text,
+                        hierarchy_level=hlevel,
+                        hierarchy_path=f"{parent.hierarchy_path}/{hcode}",
+                        depth=parent.depth + 1,
+                        parent_id=parent.id,
+                    )
+                    self.db.add(node)
+                    await self.db.flush()
+                    prodh_nodes[prodh] = node
+                    product_count += 1
+
+                # Link products to hierarchy nodes via MARA.PRDHA
+                mara = self._data.get("MARA", pd.DataFrame())
+                if not mara.empty:
+                    linked = 0
+                    for _, r in mara.iterrows():
+                        prdha = str(r.get("PRDHA", "")).strip()
+                        matnr = str(r.get("MATNR", "")).strip()
+                        if prdha and prdha in prodh_nodes and matnr in self._products:
+                            product_entity = self._products[matnr]
+                            # Find or create a leaf node for this product
+                            parent_h = prodh_nodes[prdha]
+                            pcode = f"PROD_{product_entity.id}_{tenant_id}"
+                            leaf = ProductHierarchyNode(
+                                tenant_id=tenant_id,
+                                code=pcode,
+                                name=product_entity.description or matnr,
+                                hierarchy_level="PRODUCT",
+                                hierarchy_path=f"{parent_h.hierarchy_path}/{pcode}",
+                                depth=parent_h.depth + 1,
+                                parent_id=parent_h.id,
+                                product_id=product_entity.id,
+                            )
+                            self.db.add(leaf)
+                            product_count += 1
+                            linked += 1
+                    await self.db.flush()
+                    logger.info(f"Linked {linked} products to T179 hierarchy nodes")
+
+            else:
+                # Fallback: T179 is empty — build hierarchy from MARA.MATKL (material group)
+                # and MARA.PRDHA (product hierarchy code, may also be empty)
+                logger.info("T179 is empty — building product hierarchy from MARA.MATKL (material group)")
+                mara = self._data.get("MARA", pd.DataFrame())
+                matkl_nodes: Dict[str, ProductHierarchyNode] = {}
+
+                # First pass: collect unique MATKL groups and PRDHA level-1 codes
+                prdha_level1: Dict[str, str] = {}
+                if not mara.empty and "PRDHA" in mara.columns:
+                    for _, r in mara.iterrows():
+                        prdha = str(r.get("PRDHA", "")).strip()
+                        matkl = str(r.get("MATKL", "")).strip()
+                        if prdha and len(prdha) >= 5:
+                            # Level 1 is typically first 5 chars of PRDHA
+                            l1 = prdha[:5]
+                            if l1 not in prdha_level1:
+                                prdha_level1[l1] = prodh_text.get(l1, f"Category {l1}")
+
+                # Use PRDHA level-1 if available, otherwise fall back to MATKL
+                use_prdha = len(prdha_level1) > 0
+
+                if use_prdha:
+                    # Create group nodes from PRDHA level-1 codes
+                    for l1_code, l1_name in sorted(prdha_level1.items()):
+                        gcode = f"PRODH_{l1_code}"
+                        gnode = ProductHierarchyNode(
+                            tenant_id=tenant_id,
+                            code=gcode,
+                            name=l1_name,
+                            hierarchy_level="FAMILY",
+                            hierarchy_path=f"{prod_root_code}/{gcode}",
+                            depth=1,
+                            parent_id=prod_root.id,
+                        )
+                        self.db.add(gnode)
+                        await self.db.flush()
+                        prodh_nodes[l1_code] = gnode
+                        product_count += 1
+
+                # Create MATKL group nodes for products not covered by PRDHA
+                if not mara.empty and "MATKL" in mara.columns:
+                    for _, r in mara.iterrows():
+                        matkl = str(r.get("MATKL", "")).strip()
+                        if not matkl:
+                            matkl = "UNCATEGORIZED"
+                        if matkl not in matkl_nodes:
+                            gcode = f"MATKL_{matkl}"
+                            gnode = ProductHierarchyNode(
+                                tenant_id=tenant_id,
+                                code=gcode,
+                                name=f"Material Group {matkl}",
+                                hierarchy_level="GROUP",
+                                hierarchy_path=f"{prod_root_code}/{gcode}",
+                                depth=1,
+                                parent_id=prod_root.id,
+                            )
+                            self.db.add(gnode)
+                            await self.db.flush()
+                            matkl_nodes[matkl] = gnode
+                            product_count += 1
+
+                # Link products to PRDHA or MATKL nodes
                 linked = 0
-                for _, r in mara.iterrows():
-                    prdha = str(r.get("PRDHA", "")).strip()
-                    matnr = str(r.get("MATNR", "")).strip()
-                    if prdha and prdha in prodh_nodes and matnr in self._products:
+                if not mara.empty:
+                    for _, r in mara.iterrows():
+                        matnr = str(r.get("MATNR", "")).strip()
+                        if matnr not in self._products:
+                            continue
                         product_entity = self._products[matnr]
-                        # Find or create a leaf node for this product
-                        parent_h = prodh_nodes[prdha]
+
+                        # Try PRDHA first (level-1 prefix match)
+                        parent_h = None
+                        prdha = str(r.get("PRDHA", "")).strip() if "PRDHA" in r.index else ""
+                        if prdha and len(prdha) >= 5:
+                            l1 = prdha[:5]
+                            parent_h = prodh_nodes.get(l1)
+
+                        # Fall back to MATKL
+                        if parent_h is None:
+                            matkl = str(r.get("MATKL", "")).strip() if "MATKL" in r.index else ""
+                            if not matkl:
+                                matkl = "UNCATEGORIZED"
+                            parent_h = matkl_nodes.get(matkl, prod_root)
+
                         pcode = f"PROD_{product_entity.id}_{tenant_id}"
                         leaf = ProductHierarchyNode(
                             tenant_id=tenant_id,
@@ -2240,8 +2346,8 @@ class SAPConfigBuilder:
                         self.db.add(leaf)
                         product_count += 1
                         linked += 1
-                await self.db.flush()
-                logger.info(f"Linked {linked} products to T179 hierarchy nodes")
+                    await self.db.flush()
+                    logger.info(f"Linked {linked} products to MATKL/PRDHA hierarchy nodes (T179 fallback)")
 
         logger.info(f"Created {product_count} product hierarchy nodes total")
         return {"site_nodes": site_count, "product_nodes": product_count}
@@ -3346,11 +3452,22 @@ class SAPConfigBuilder:
         return result
 
     def _get_product_id(self, matnr: str) -> Optional[str]:
-        """Resolve SAP MATNR to our Product.id (with config prefix)."""
-        mat_key = str(matnr).strip().lstrip("0") or "0"
-        if mat_key in self._products:
-            return self._products[mat_key].id
-        # Try with leading-zero stripped key
+        """Resolve SAP MATNR to our Product.id (with config prefix).
+
+        Tries exact match first, then leading-zero-stripped match.
+        PLNBEZ in AFKO may have different zero-padding than MATNR in MARA.
+        """
+        raw_key = str(matnr).strip()
+        if raw_key in self._products:
+            return self._products[raw_key].id
+        # Try with leading zeros stripped (PLNBEZ often has extra padding)
+        stripped = raw_key.lstrip("0") or "0"
+        if stripped != raw_key and stripped in self._products:
+            return self._products[stripped].id
+        # Try matching against stripped versions of product keys
+        for pkey, product in self._products.items():
+            if pkey.lstrip("0") == stripped:
+                return product.id
         return None
 
     def _get_site_id(self, plant_code: str) -> Optional[int]:
@@ -3621,23 +3738,40 @@ class SAPConfigBuilder:
         resb = self._data.get("RESB", pd.DataFrame())
         jest_map = self._build_jest_status_map()
 
+        # Pre-build AFPO material lookup for fallback product resolution
+        afpo_by_aufnr: Dict[str, pd.DataFrame] = {}
+        if not afpo.empty and "AUFNR" in afpo.columns:
+            for aufnr_val, group in afpo.groupby(afpo["AUFNR"].astype(str).str.strip()):
+                afpo_by_aufnr[aufnr_val] = group
+
+        skipped_no_product = 0
         count = 0
         for _, po in afko.iterrows():
             aufnr = str(po.get("AUFNR", "")).strip()
             plnbez = str(po.get("PLNBEZ", "")).strip()
 
+            # Try to resolve product: first from AFKO.PLNBEZ, then from AFPO.MATNR
             product_id = self._get_product_id(plnbez)
+            if not product_id and aufnr in afpo_by_aufnr:
+                # Fallback: use MATNR from AFPO line item
+                afpo_matnr = str(afpo_by_aufnr[aufnr].iloc[0].get("MATNR", "")).strip()
+                if afpo_matnr:
+                    product_id = self._get_product_id(afpo_matnr)
             if not product_id:
+                skipped_no_product += 1
                 continue
 
-            # Find plant from AFPO or data
+            # Find plant from AFPO — check PWERK (canonical), DESSION (HANA variant), WERKS
             site_id = None
-            if not afpo.empty and "AUFNR" in afpo.columns:
-                afpo_rows = afpo[afpo["AUFNR"].astype(str).str.strip() == aufnr]
-                if not afpo_rows.empty:
-                    werks = str(afpo_rows.iloc[0].get("DESSION", afpo_rows.iloc[0].get("WERKS", ""))).strip()
-                    if werks:
-                        site_id = self._get_site_id(werks)
+            if aufnr in afpo_by_aufnr:
+                afpo_row = afpo_by_aufnr[aufnr].iloc[0]
+                for plant_col in ("PWERK", "DESSION", "WERKS"):
+                    if plant_col in afpo_row.index:
+                        werks = str(afpo_row.get(plant_col, "")).strip()
+                        if werks:
+                            site_id = self._get_site_id(werks)
+                            if site_id:
+                                break
             if not site_id:
                 site_id = self._get_first_plant_site_id()
             if not site_id:
@@ -3651,15 +3785,14 @@ class SAPConfigBuilder:
             # Quantities
             planned_qty = float(pd.to_numeric(po.get("GAMNG", 1), errors="coerce") or 1)
             actual_qty = None
-            if not afpo.empty and "AUFNR" in afpo.columns:
-                afpo_match = afpo[afpo["AUFNR"].astype(str).str.strip() == aufnr]
-                if not afpo_match.empty:
-                    wemng = float(pd.to_numeric(afpo_match.iloc[0].get("WEMNG", 0), errors="coerce") or 0)
-                    if wemng > 0:
-                        actual_qty = int(wemng)
-                    pq = float(pd.to_numeric(afpo_match.iloc[0].get("PSMNG", 0), errors="coerce") or 0)
-                    if pq > 0:
-                        planned_qty = pq
+            if aufnr in afpo_by_aufnr:
+                afpo_match = afpo_by_aufnr[aufnr]
+                wemng = float(pd.to_numeric(afpo_match.iloc[0].get("WEMNG", 0), errors="coerce") or 0)
+                if wemng > 0:
+                    actual_qty = int(wemng)
+                pq = float(pd.to_numeric(afpo_match.iloc[0].get("PSMNG", 0), errors="coerce") or 0)
+                if pq > 0:
+                    planned_qty = pq
 
             # Dates
             start_date = self._parse_sap_date(str(po.get("GSTRS", "")).strip()) or \
@@ -3709,6 +3842,8 @@ class SAPConfigBuilder:
                     self.db.add(comp)
 
         await self.db.flush()
+        if skipped_no_product > 0:
+            logger.info(f"Skipped {skipped_no_product} production orders (material not in products)")
         logger.info(f"Created {count} production orders (status from JEST)")
         return count
 
@@ -4017,24 +4152,57 @@ class SAPConfigBuilder:
         """Create Forecast records from SAP Planned Independent Requirements (PBIM/PBED).
 
         Falls back to this when APO SNP data is not available.
+        Handles both canonical column name (BDZEI) and HANA-extracted variant (BESSION).
         """
         pbim = self._data.get("PBIM", pd.DataFrame())
         pbed = self._data.get("PBED", pd.DataFrame())
         if pbed.empty:
             return 0
 
-        # Build PIR header map: BDZEI → {MATNR, WERKS}
+        # Resolve the PIR key column — canonical SAP name is BDZEI, but
+        # some HANA extracts produce BESSION instead.
+        pir_key_col = "BDZEI"
+        if not pbim.empty:
+            if "BDZEI" in pbim.columns:
+                pir_key_col = "BDZEI"
+            elif "BESSION" in pbim.columns:
+                pir_key_col = "BESSION"
+                logger.info("PBIM uses BESSION column (HANA variant) instead of BDZEI")
+            else:
+                logger.warning(f"PBIM has no BDZEI or BESSION column — columns: {list(pbim.columns)}")
+                return 0
+
+        # Resolve key column in PBED too
+        pbed_key_col = pir_key_col  # should match PBIM
+        if pir_key_col not in pbed.columns:
+            # Try the other variant
+            alt = "BESSION" if pir_key_col == "BDZEI" else "BDZEI"
+            if alt in pbed.columns:
+                pbed_key_col = alt
+            else:
+                logger.warning(f"PBED has no BDZEI or BESSION column — columns: {list(pbed.columns)}")
+                return 0
+
+        # Build PIR header map: key → {MATNR, WERKS}
         header_map: Dict[str, pd.Series] = {}
-        if not pbim.empty and "BDZEI" in pbim.columns:
+        if not pbim.empty:
             for _, row in pbim.iterrows():
-                bdzei = str(row.get("BDZEI", "")).strip()
-                if bdzei:
-                    header_map[bdzei] = row
+                key_val = str(row.get(pir_key_col, "")).strip()
+                if key_val:
+                    header_map[key_val] = row
+
+        if not header_map:
+            logger.warning("PBIM header map is empty — no PIR forecasts can be created")
+            return 0
+
+        # Date-shift: IDES data has 2017-era dates; shift forward to current year
+        today = datetime.utcnow().date()
+        year_offset = 0  # will be computed from first valid date
 
         count = 0
         for _, sched in pbed.iterrows():
-            bdzei = str(sched.get("BDZEI", "")).strip()
-            header = header_map.get(bdzei)
+            key_val = str(sched.get(pbed_key_col, "")).strip()
+            header = header_map.get(key_val)
             if header is None:
                 continue
 
@@ -4049,6 +4217,19 @@ class SAPConfigBuilder:
             qty = float(pd.to_numeric(sched.get("PLNMG", 0), errors="coerce") or 0)
             if not fc_date or qty <= 0:
                 continue
+
+            # Auto-detect year offset on first valid date (IDES dates are typically 2017-era)
+            if year_offset == 0 and fc_date.year < today.year - 1:
+                year_offset = today.year - fc_date.year
+                logger.info(f"PIR date-shift: detected {fc_date.year}-era data, shifting +{year_offset} years to {today.year}")
+
+            # Apply date shift
+            if year_offset > 0:
+                try:
+                    fc_date = fc_date.replace(year=fc_date.year + year_offset)
+                except ValueError:
+                    # Handle Feb 29 in non-leap year
+                    fc_date = fc_date.replace(month=2, day=28, year=fc_date.year + year_offset)
 
             # PIR provides planned quantity; estimate P10/P90 at ±20% CV
             std = max(qty * 0.2, 1.0)

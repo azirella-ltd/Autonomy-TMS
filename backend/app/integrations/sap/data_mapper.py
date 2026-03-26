@@ -1615,9 +1615,11 @@ class SupplyChainMapper:
         if pbed_df.empty:
             return pd.DataFrame()
         if not pbim_df.empty:
-            hcols = [c for c in ["BESSION", "MATNR", "WERKS", "KDAUF"] if c in pbim_df.columns]
-            if "BESSION" in pbim_df.columns and "BESSION" in pbed_df.columns:
-                merged = pbed_df.merge(pbim_df[hcols].drop_duplicates(), on="BESSION", how="left")
+            # Handle both canonical SAP column name (BDZEI) and HANA variant (BESSION)
+            pir_key = "BDZEI" if "BDZEI" in pbim_df.columns else ("BESSION" if "BESSION" in pbim_df.columns else None)
+            hcols = [c for c in [pir_key, "MATNR", "WERKS", "KDAUF"] if c and c in pbim_df.columns]
+            if pir_key and pir_key in pbim_df.columns and pir_key in pbed_df.columns:
+                merged = pbed_df.merge(pbim_df[hcols].drop_duplicates(), on=pir_key, how="left")
             else:
                 merged = pbed_df.copy()
         else:

@@ -200,11 +200,11 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     ),
     # Demand
     "PBIM": (
-        ["BESSION", "MATNR", "WERKS", "BEDAE", "VERSB", "KDAUF"],
+        ["BDZEI", "MATNR", "WERKS", "BEDAE", "VERSB", "KDAUF"],
         "WERKS IN ({werks})",
     ),
     "PBED": (
-        ["BESSION", "PDATU", "PLNMG"],
+        ["BDZEI", "PDATU", "PLNMG"],
         "",
     ),
     "PLAF": (
@@ -265,7 +265,7 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     "AFPO": (
         ["AUFNR", "POSNR", "MATNR", "PWERK", "DESSION", "PSMNG", "AMESSION",
          "WEMNG"],
-        "PWERK IN ({werks})",
+        "",  # No direct filter — scoped via AFPO-specific filter below (PWERK may be null)
     ),
     "RESB": (
         ["RSNUM", "RSPOS", "MATNR", "WERKS", "LGORT", "BDMNG", "MEINS",
@@ -1291,7 +1291,7 @@ def extract_table(
     if table_name == "PBED" and plants:
         placeholders = ",".join(["?"] * len(plants))
         where_parts.append(
-            f'"BESSION" IN (SELECT DISTINCT "BESSION" FROM "PBIM" WHERE "WERKS" IN ({placeholders}))'
+            f'"BDZEI" IN (SELECT DISTINCT "BDZEI" FROM "PBIM" WHERE "WERKS" IN ({placeholders}))'
         )
         params.extend(plants)
 
@@ -1319,12 +1319,26 @@ def extract_table(
         )
         params.extend(plants)
 
-    # Filter AFKO by production orders for our plants
+    # Filter AFKO by production orders for our plants.
+    # Primary: AFPO.PWERK plant filter.  Fallback: PLNBEZ in MARC materials
+    # (PWERK may be null in some HANA systems, leaving AFPO empty).
     if table_name == "AFKO" and plants:
         placeholders = ",".join(["?"] * len(plants))
         where_parts.append(
-            f'"AUFNR" IN (SELECT DISTINCT "AUFNR" FROM "AFPO" WHERE "PWERK" IN ({placeholders}))'
+            f'("AUFNR" IN (SELECT DISTINCT "AUFNR" FROM "AFPO" WHERE "PWERK" IN ({placeholders}))'
+            f' OR "PLNBEZ" IN (SELECT DISTINCT "MATNR" FROM "MARC" WHERE "WERKS" IN ({placeholders})))'
         )
+        params.extend(plants)
+        params.extend(plants)
+
+    # Filter AFPO by plant OR by materials in scope (PWERK may be null in some HANA systems)
+    if table_name == "AFPO" and plants:
+        placeholders = ",".join(["?"] * len(plants))
+        where_parts.append(
+            f'("PWERK" IN ({placeholders})'
+            f' OR "MATNR" IN (SELECT DISTINCT "MATNR" FROM "MARC" WHERE "WERKS" IN ({placeholders})))'
+        )
+        params.extend(plants)
         params.extend(plants)
 
     # Build SQL

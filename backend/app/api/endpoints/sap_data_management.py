@@ -2925,7 +2925,7 @@ async def _load_sap_data(
                 "CDPOS": f'"OBJECTID" IN (SELECT "OBJECTID" FROM {s}."CDHDR" WHERE "UDATE" >= ADD_DAYS(CURRENT_DATE, -365))',
                 "MAKT": '"SPRAS" = \'E\'',
                 "TJ02T": '"SPRAS" = \'E\'',
-                "PBED": f'"BESSION" IN (SELECT DISTINCT "BESSION" FROM {s}."PBIM" WHERE "WERKS" IN ({plant_list}))',
+                "PBED": f'"BDZEI" IN (SELECT DISTINCT "BDZEI" FROM {s}."PBIM" WHERE "WERKS" IN ({plant_list}))',
             }
 
             # Step 2: Extract remaining tables with smart filters
