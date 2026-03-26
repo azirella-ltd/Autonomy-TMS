@@ -104,6 +104,7 @@ def _seed_site_hierarchy(
         "MANUFACTURER": "Manufacturing Sites",
     }
 
+    _seen_codes: set = set()
     for mt, site_list in sorted(by_type.items()):
         region_code = f"REGION_{mt}_{tenant_id}"
         region_label = _REGION_LABELS.get(mt, mt.replace("_", " ").title())
@@ -122,6 +123,9 @@ def _seed_site_hierarchy(
 
         for s in site_list:
             site_code = f"SITE_{s.name}_{tenant_id}"
+            if site_code in _seen_codes:
+                continue  # Skip duplicate site names
+            _seen_codes.add(site_code)
             node = SiteHierarchyNode(
                 tenant_id=tenant_id,
                 code=site_code,
