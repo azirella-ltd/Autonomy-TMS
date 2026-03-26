@@ -3472,7 +3472,7 @@ class SAPConfigBuilder:
             order_date_str = str(so.get("ERDAT", "")).strip() if not so.empty else ""
             delivery_date_str = str(so.get("VDATU", "")).strip() if not so.empty else ""
             order_date = self._parse_sap_date(order_date_str)
-            delivery_date = self._parse_sap_date(delivery_date_str) or order_date
+            delivery_date = self._parse_sap_date(delivery_date_str) or order_date or datetime.utcnow().date()
 
             qty = float(pd.to_numeric(item.get("KWMENG", 0), errors="coerce") or 0)
             net_value = float(pd.to_numeric(item.get("NETWR", 0), errors="coerce") or 0)
