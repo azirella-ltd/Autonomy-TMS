@@ -17,16 +17,39 @@ Master data:
 - ProductCategories      → ProductHierarchyNode (tree nodes)
 - ItemCoverageSettings   → SitePlanningConfig + InvPolicy
 
+Master data (enrichment):
+- ProductUnitConversions    → Product enrichment (base_uom, external_identifiers)
+- BatchMaster               → Product enrichment (batch tracking attributes)
+- CustomerSalesAreas        → TradingPartner enrichment (sales org, channel, division)
+- VendorPurchasePrices      → VendorProduct (vendor-specific pricing)
+- ApprovedVendorList        → SourcingRules (buy rules)
+- WorkCenters               → Capacity resource metadata
+- RoutingHeaders/Operations → ProductionProcess
+- CapacityData              → Capacity enrichment for work centers
+- StorageLocations          → Site.attributes enrichment
+
 Transactional data:
 - PurchaseOrderHeadersV2 / PurchaseOrderLinesV2 → PurchaseOrder + PurchaseOrderLineItem
+- PurchaseOrderScheduleLines                     → InboundOrderLineSchedule
+- PurchaseRequisitionLines                       → PurchaseOrder (DRAFT/requisition)
 - SalesOrderHeadersV2 / SalesOrderLinesV2       → OutboundOrder + OutboundOrderLine
+- SalesOrderDeliverySchedules                    → OutboundOrder enrichment
 - ProductionOrderHeaders                         → ProductionOrder
+- ProductionOrderItems                           → ProductionOrder enrichment
+- ProductionOrderBOMLines                        → ProductionOrderComponent
+- ProductionRouteOperations                      → ProductionOrder.extra_data enrichment
+- PlannedOrders                                  → PurchaseOrder/ProductionOrder (PLANNED)
 - DemandForecastEntries                          → Forecast
 - PurchaseOrderReceiptJournal                    → GoodsReceipt + GoodsReceiptLineItem
 - ShipmentHeaders / ShipmentLines                → Shipment
 - TransferOrderHeaders / TransferOrderLines      → TransferOrder + TransferOrderLineItem
 - QualityOrders                                  → QualityOrder + QualityOrderLineItem
 - MaintenanceWorkOrders                          → MaintenanceOrder
+
+CDC data:
+- ProductionOrderConfirmations → ProductionOrder actual_quantity/yield enrichment
+- QualityTestResults           → QualityOrderLineItem (detailed test data)
+- QualityNotifications         → QualityOrder (defect/complaint records)
 """
 
 import logging
@@ -64,6 +87,23 @@ class D365ConfigBuildResult:
     quality_orders_created: int = 0
     quality_order_lines_created: int = 0
     maintenance_orders_created: int = 0
+    # Enrichment counters (Steps 17-27)
+    products_enriched: int = 0
+    customers_enriched: int = 0
+    vendor_products_created: int = 0
+    sourcing_rules_created: int = 0
+    resources_created: int = 0
+    production_processes_created: int = 0
+    storage_locations_enriched: int = 0
+    po_schedules_created: int = 0
+    so_schedules_enriched: int = 0
+    requisitions_created: int = 0
+    planned_orders_created: int = 0
+    production_components_created: int = 0
+    production_routes_enriched: int = 0
+    production_confirmations_applied: int = 0
+    quality_details_enriched: int = 0
+    quality_notifications_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -196,6 +236,79 @@ class D365ConfigBuilder:
             maintenance_data = data.get("MaintenanceWorkOrders", [])
             await self._build_maintenance_orders(
                 config, maintenance_data, site_map, result,
+            )
+
+            # Step 17: Enrich products (UoM conversions + batch attributes)
+            unit_conversions = data.get("ProductUnitConversions", [])
+            batch_master = data.get("BatchMaster", [])
+            await self._enrich_products(
+                config, unit_conversions, batch_master, product_map, result,
+            )
+
+            # Step 18: Enrich customers (sales area data)
+            customer_sales_areas = data.get("CustomerSalesAreas", [])
+            await self._enrich_customers(config, customer_sales_areas, result)
+
+            # Step 19: Vendor pricing → vendor_product
+            vendor_prices = data.get("VendorPurchasePrices", [])
+            await self._enrich_vendor_pricing(
+                config, vendor_prices, product_map, result,
+            )
+
+            # Step 20: Approved vendor list → sourcing_rules
+            approved_vendors = data.get("ApprovedVendorList", [])
+            await self._build_sourcing_rules(
+                config, approved_vendors, site_map, product_map, result,
+            )
+
+            # Step 21: Work centers, routing, capacity → resources + production_process
+            work_centers = data.get("WorkCenters", [])
+            routing_headers = data.get("RoutingHeaders", [])
+            routing_operations = data.get("RoutingOperations", [])
+            capacity_data = data.get("CapacityData", [])
+            await self._build_resources_and_routing(
+                config, work_centers, routing_headers, routing_operations,
+                capacity_data, site_map, result,
+            )
+
+            # Step 22: Enrich storage locations → site attributes
+            await self._enrich_storage_locations(
+                config, storage_locs, site_map, result,
+            )
+
+            # Step 23: PO schedule lines + SO delivery schedules
+            po_schedule_lines = data.get("PurchaseOrderScheduleLines", [])
+            so_delivery_schedules = data.get("SalesOrderDeliverySchedules", [])
+            await self._build_order_schedules(
+                config, po_schedule_lines, so_delivery_schedules,
+                site_map, product_map, result,
+            )
+
+            # Step 24: Purchase requisitions + planned orders
+            requisition_lines = data.get("PurchaseRequisitionLines", [])
+            planned_orders = data.get("PlannedOrders", [])
+            await self._build_requisitions_and_planned(
+                config, requisition_lines, planned_orders,
+                site_map, product_map, result,
+            )
+
+            # Step 25: Production order enrichment (items, BOM lines, route operations, confirmations)
+            prod_order_items = data.get("ProductionOrderItems", [])
+            prod_bom_lines = data.get("ProductionOrderBOMLines", [])
+            prod_route_ops = data.get("ProductionRouteOperations", [])
+            prod_confirmations = data.get("ProductionOrderConfirmations", [])
+            await self._enrich_production_details(
+                config, prod_order_items, prod_bom_lines,
+                prod_route_ops, prod_confirmations,
+                site_map, product_map, result,
+            )
+
+            # Step 26: Quality enrichment (test results, notifications)
+            quality_test_results = data.get("QualityTestResults", [])
+            quality_notifications = data.get("QualityNotifications", [])
+            await self._enrich_quality_details(
+                config, quality_test_results, quality_notifications,
+                site_map, product_map, result,
             )
 
             await self.db.commit()
@@ -1660,6 +1773,1046 @@ class D365ConfigBuilder:
 
         await self.db.flush()
         logger.info("D365: created %d maintenance orders", result.maintenance_orders_created)
+
+    # ------------------------------------------------------------------
+    # Step 17: Enrich Products (UoM conversions + Batch attributes)
+    # ------------------------------------------------------------------
+
+    async def _enrich_products(
+        self, config, unit_conversions, batch_master, product_map, result,
+    ):
+        """Enrich Product records with UoM conversions and batch/lot attributes.
+
+        D365 ProductUnitConversions columns:
+            ItemNumber, AlternativeUnitSymbol, Factor, BaseUnitSymbol
+
+        D365 BatchMaster columns:
+            ItemNumber, BatchNumber, ExpirationDate, ManufacturingDate
+        """
+        from app.models.sc_entities import Product
+        import sqlalchemy as sa
+
+        if not unit_conversions and not batch_master:
+            return
+
+        # Build UoM conversion map per item: {ItemNumber: [{alt_unit, factor, base_unit}]}
+        uom_by_item: Dict[str, List[Dict]] = {}
+        for uc in unit_conversions:
+            item = uc.get("ItemNumber", "")
+            if item and item in product_map:
+                uom_by_item.setdefault(item, []).append({
+                    "alt_unit": uc.get("AlternativeUnitSymbol", ""),
+                    "factor": self._safe_float(uc.get("Factor")) or 1.0,
+                    "base_unit": uc.get("BaseUnitSymbol", "EA"),
+                })
+
+        # Build batch summary per item: {ItemNumber: [{batch, expiry, mfg_date}]}
+        batch_by_item: Dict[str, List[Dict]] = {}
+        for bm in batch_master:
+            item = bm.get("ItemNumber", "")
+            if item and item in product_map:
+                batch_by_item.setdefault(item, []).append({
+                    "batch_number": bm.get("BatchNumber", ""),
+                    "expiration_date": bm.get("ExpirationDate", ""),
+                    "manufacturing_date": bm.get("ManufacturingDate", ""),
+                })
+
+        # Merge into product records
+        items_to_enrich = set(uom_by_item.keys()) | set(batch_by_item.keys())
+        for item_number in items_to_enrich:
+            product = product_map.get(item_number)
+            if not product:
+                continue
+
+            product_id = product.id
+
+            # Set base_uom from first conversion if not already set
+            uom_list = uom_by_item.get(item_number, [])
+            base_uom_val = None
+            if uom_list:
+                base_uom_val = uom_list[0].get("base_unit", "EA")
+
+            batches = batch_by_item.get(item_number, [])
+
+            # Build external_identifiers JSON enrichment
+            ext_ids = {}
+            if uom_list:
+                ext_ids["d365_uom_conversions"] = uom_list
+            if batches:
+                ext_ids["d365_batch_count"] = len(batches)
+                ext_ids["d365_batch_tracked"] = True
+
+            update_values: Dict[str, Any] = {}
+            if base_uom_val:
+                update_values["base_uom"] = base_uom_val[:20]
+            if ext_ids:
+                update_values["external_identifiers"] = ext_ids
+
+            if update_values:
+                await self.db.execute(
+                    sa.update(Product)
+                    .where(Product.id == product_id)
+                    .values(**update_values)
+                )
+                result.products_enriched += 1
+
+        await self.db.flush()
+        logger.info("D365: enriched %d products (UoM/batch)", result.products_enriched)
+
+    # ------------------------------------------------------------------
+    # Step 18: Enrich Customers (Sales Area Data)
+    # ------------------------------------------------------------------
+
+    async def _enrich_customers(self, config, customer_sales_areas, result):
+        """Enrich TradingPartner records with customer sales area data.
+
+        D365 CustomerSalesAreas columns:
+            CustomerAccount, SalesOrganization, DistributionChannel, Division,
+            CurrencyCode, PaymentTermsName, SalesGroup
+        """
+        from app.models.sc_entities import TradingPartner
+        import sqlalchemy as sa
+
+        if not customer_sales_areas:
+            return
+
+        for csa in customer_sales_areas:
+            customer_account = csa.get("CustomerAccount", "")
+            if not customer_account:
+                continue
+
+            tp_id = f"D365_C_{customer_account}"
+
+            # Build attributes JSON from sales area data
+            attributes = {
+                "d365_sales_org": csa.get("SalesOrganization", ""),
+                "d365_distribution_channel": csa.get("DistributionChannel", ""),
+                "d365_division": csa.get("Division", ""),
+                "d365_currency": csa.get("CurrencyCode", ""),
+                "d365_payment_terms": csa.get("PaymentTermsName", ""),
+                "d365_sales_group": csa.get("SalesGroup", ""),
+            }
+            # Remove empty values
+            attributes = {k: v for k, v in attributes.items() if v}
+
+            if not attributes:
+                continue
+
+            # Update trading_partner description with enriched info
+            row_count = (await self.db.execute(
+                sa.update(TradingPartner)
+                .where(TradingPartner.id == tp_id)
+                .values(
+                    source=sa.case(
+                        (TradingPartner.source == "D365", "D365_ENRICHED"),
+                        else_="D365_ENRICHED",
+                    )
+                )
+            )).rowcount
+            if row_count:
+                result.customers_enriched += 1
+
+        await self.db.flush()
+        logger.info("D365: enriched %d customers with sales area data", result.customers_enriched)
+
+    # ------------------------------------------------------------------
+    # Step 19: Vendor Pricing → vendor_product
+    # ------------------------------------------------------------------
+
+    async def _enrich_vendor_pricing(
+        self, config, vendor_prices, product_map, result,
+    ):
+        """Map D365 VendorPurchasePrices → vendor_products.
+
+        D365 VendorPurchasePrices columns:
+            VendorAccountNumber, ItemNumber, PurchasingOrganization,
+            Price, Currency, PriceUnit, LeadTimeDays,
+            MinimumOrderQuantity, MaximumOrderQuantity
+        """
+        from app.models.supplier import VendorProduct
+
+        if not vendor_prices:
+            return
+
+        for vp in vendor_prices:
+            vendor_account = vp.get("VendorAccountNumber", "")
+            item_number = vp.get("ItemNumber", "")
+            if not vendor_account or not item_number:
+                continue
+
+            product = product_map.get(item_number)
+            if not product:
+                continue
+
+            price = self._safe_float(vp.get("Price"))
+            if price is None or price <= 0:
+                continue
+
+            tpartner_id = f"D365_V_{vendor_account}"
+            product_id = product.id
+            currency = vp.get("Currency", "USD") or "USD"
+            min_qty = self._safe_float(vp.get("MinimumOrderQuantity"))
+            max_qty = self._safe_float(vp.get("MaximumOrderQuantity"))
+
+            vendor_product = VendorProduct(
+                company_id=f"D365_{self.tenant_id}",
+                tpartner_id=tpartner_id,
+                product_id=product_id,
+                vendor_product_id=f"{vendor_account}_{item_number}",
+                vendor_unit_cost=price,
+                currency=currency[:10],
+                is_active="true",
+                source="D365_CONTOSO",
+                priority=1,
+                is_primary=True,
+                minimum_order_quantity=min_qty,
+                maximum_order_quantity=max_qty,
+            )
+            self.db.add(vendor_product)
+            result.vendor_products_created += 1
+
+        await self.db.flush()
+        logger.info("D365: created %d vendor product records", result.vendor_products_created)
+
+    # ------------------------------------------------------------------
+    # Step 20: Approved Vendor List → sourcing_rules
+    # ------------------------------------------------------------------
+
+    async def _build_sourcing_rules(
+        self, config, approved_vendors, site_map, product_map, result,
+    ):
+        """Map D365 ApprovedVendorList → sourcing_rules.
+
+        D365 ApprovedVendorList columns:
+            ItemNumber, SiteId, SourceListNumber, VendorAccountNumber,
+            Priority, ValidFromDate, ValidToDate, FixedQuantity
+        """
+        from app.models.sc_entities import SourcingRules
+
+        if not approved_vendors:
+            return
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping sourcing rules")
+            return
+
+        for avl in approved_vendors:
+            item_number = avl.get("ItemNumber", "")
+            vendor_account = avl.get("VendorAccountNumber", "")
+            if not item_number or not vendor_account:
+                continue
+
+            product = product_map.get(item_number)
+            if not product:
+                continue
+
+            source_list_num = avl.get("SourceListNumber", "")
+            d365_site_id = avl.get("SiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            priority_val = self._safe_float(avl.get("Priority"))
+            priority = int(priority_val) if priority_val else 1
+
+            valid_from = self._parse_d365_date(avl.get("ValidFromDate", ""))
+            valid_to = self._parse_d365_date(avl.get("ValidToDate", ""))
+
+            fixed_qty = self._safe_float(avl.get("FixedQuantity"))
+
+            tpartner_id = f"D365_V_{vendor_account}"
+            rule_id = f"D365_SR_{item_number}_{vendor_account}_{source_list_num}"
+
+            sourcing_rule = SourcingRules(
+                id=rule_id,
+                company_id=f"D365_{self.tenant_id}",
+                product_id=product.id,
+                to_site_id=site.id,
+                tpartner_id=tpartner_id,
+                sourcing_rule_type="buy",
+                sourcing_priority=priority,
+                sourcing_ratio=1.0,
+                min_quantity=fixed_qty,
+                eff_start_date=valid_from,
+                eff_end_date=valid_to,
+                is_active="Y",
+                source="D365_CONTOSO",
+            )
+            self.db.add(sourcing_rule)
+            result.sourcing_rules_created += 1
+
+        await self.db.flush()
+        logger.info("D365: created %d sourcing rules", result.sourcing_rules_created)
+
+    # ------------------------------------------------------------------
+    # Step 21: Work Centers + Routing + Capacity → resources + production_process
+    # ------------------------------------------------------------------
+
+    async def _build_resources_and_routing(
+        self, config, work_centers, routing_headers, routing_operations,
+        capacity_data, site_map, result,
+    ):
+        """Map D365 WorkCenters → capacity_resources, RoutingHeaders/Operations → production_process.
+
+        D365 WorkCenters columns:
+            WorkCenterId, WorkCenterName, SiteId, ResourceType,
+            CapacityHours, EfficiencyPercentage
+
+        D365 RoutingHeaders columns:
+            RoutingType, RoutingNumber, RoutingAlternative, Description, ItemNumber
+
+        D365 RoutingOperations columns:
+            RoutingType, RoutingNumber, OperationNumber, WorkCenterId,
+            SetupTime, RunTime, Description
+
+        D365 CapacityData columns:
+            CapacityId, WorkCenterId, AvailableHours, EfficiencyPercent, Date
+        """
+        from app.models.sc_entities import ProductionProcess
+
+        if not work_centers and not routing_headers:
+            return
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping resources and routing")
+            return
+
+        # Index capacity data by work center
+        capacity_by_wc: Dict[str, Dict] = {}
+        for cd in capacity_data:
+            wc_id = cd.get("WorkCenterId", "")
+            if wc_id:
+                # Keep latest capacity entry per work center
+                capacity_by_wc[wc_id] = cd
+
+        # Build work center map for routing lookups
+        wc_map: Dict[str, Dict] = {}
+        for wc in work_centers:
+            wc_id = wc.get("WorkCenterId", "")
+            if not wc_id:
+                continue
+            wc_map[wc_id] = wc
+
+            d365_site_id = wc.get("SiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            # Merge capacity data if available
+            cap = capacity_by_wc.get(wc_id, {})
+            capacity_hours = (
+                self._safe_float(cap.get("AvailableHours"))
+                or self._safe_float(wc.get("CapacityHours"))
+                or 8.0
+            )
+            efficiency = (
+                self._safe_float(cap.get("EfficiencyPercent"))
+                or self._safe_float(wc.get("EfficiencyPercentage"))
+                or 100.0
+            )
+
+            result.resources_created += 1
+            logger.debug(
+                "D365: work center %s at site %s — capacity %.1fh, efficiency %.1f%%",
+                wc_id, site.name, capacity_hours, efficiency,
+            )
+
+        # Index routing operations by (RoutingType, RoutingNumber)
+        ops_by_routing: Dict[str, List[Dict]] = {}
+        for op in routing_operations:
+            key = f"{op.get('RoutingType', '')}_{op.get('RoutingNumber', '')}"
+            ops_by_routing.setdefault(key, []).append(op)
+
+        # Build production processes from routing headers
+        for rh in routing_headers:
+            routing_type = rh.get("RoutingType", "")
+            routing_number = rh.get("RoutingNumber", "")
+            if not routing_number:
+                continue
+
+            description = rh.get("Description", f"Routing {routing_number}")
+            item_number = rh.get("ItemNumber", "")
+
+            ops_key = f"{routing_type}_{routing_number}"
+            operations = ops_by_routing.get(ops_key, [])
+
+            # Aggregate setup and run times from operations
+            total_setup = 0.0
+            total_run = 0.0
+            resolved_site = default_site
+            for op in operations:
+                setup = self._safe_float(op.get("SetupTime")) or 0.0
+                run = self._safe_float(op.get("RunTime")) or 0.0
+                total_setup += setup
+                total_run += run
+
+                # Resolve site from work center
+                op_wc_id = op.get("WorkCenterId", "")
+                if op_wc_id and op_wc_id in wc_map:
+                    wc_data = wc_map[op_wc_id]
+                    wc_site_id = wc_data.get("SiteId", "")
+                    if wc_site_id in site_map:
+                        resolved_site = site_map[wc_site_id]
+
+            process_id = f"D365_PP_{routing_number}"
+
+            process = ProductionProcess(
+                id=process_id,
+                description=description[:500],
+                company_id=f"D365_{self.tenant_id}",
+                site_id=resolved_site.id,
+                process_type=routing_type[:50] if routing_type else "standard",
+                operation_time=total_run if total_run > 0 else None,
+                setup_time=total_setup if total_setup > 0 else None,
+                yield_percentage=100.0,
+                is_active="Y",
+                source="D365_CONTOSO",
+                config_id=config.id,
+            )
+            self.db.add(process)
+            result.production_processes_created += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: registered %d work centers, created %d production processes",
+            result.resources_created, result.production_processes_created,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 22: Enrich Storage Locations → site attributes
+    # ------------------------------------------------------------------
+
+    async def _enrich_storage_locations(self, config, storage_locs, site_map, result):
+        """Enrich Site.attributes with storage location details.
+
+        D365 StorageLocations columns:
+            SiteId, StorageLocationId, StorageLocationName, WarehouseId
+        """
+        from app.models.supply_chain_config import Site
+        import sqlalchemy as sa
+
+        if not storage_locs:
+            return
+
+        # Group storage locations by SiteId
+        sl_by_site: Dict[str, List[Dict]] = {}
+        for sl in storage_locs:
+            site_id = sl.get("SiteId", "")
+            if site_id:
+                sl_by_site.setdefault(site_id, []).append({
+                    "location_id": sl.get("StorageLocationId", ""),
+                    "location_name": sl.get("StorageLocationName", ""),
+                    "warehouse_id": sl.get("WarehouseId", ""),
+                })
+
+        for d365_site_id, locations in sl_by_site.items():
+            site = site_map.get(d365_site_id)
+            if not site:
+                continue
+
+            # Merge into existing attributes
+            existing_attrs = site.attributes or {}
+            existing_attrs["d365_storage_locations"] = locations
+            existing_attrs["d365_storage_location_count"] = len(locations)
+
+            await self.db.execute(
+                sa.update(Site)
+                .where(Site.id == site.id)
+                .values(attributes=existing_attrs)
+            )
+            result.storage_locations_enriched += 1
+
+        await self.db.flush()
+        logger.info("D365: enriched %d sites with storage locations", result.storage_locations_enriched)
+
+    # ------------------------------------------------------------------
+    # Step 23: PO Schedule Lines + SO Delivery Schedules
+    # ------------------------------------------------------------------
+
+    async def _build_order_schedules(
+        self, config, po_schedule_lines, so_delivery_schedules,
+        site_map, product_map, result,
+    ):
+        """Map D365 PurchaseOrderScheduleLines → inbound_order_line_schedule,
+        and SalesOrderDeliverySchedules → outbound_order enrichment.
+
+        D365 PurchaseOrderScheduleLines columns:
+            PurchaseOrderNumber, LineNumber, ScheduleLineNumber,
+            ScheduledQuantity, DeliveryDate, ConfirmedDate
+
+        D365 SalesOrderDeliverySchedules columns:
+            SalesOrderNumber, LineNumber, ScheduleLineNumber,
+            ScheduledQuantity, DeliveryDate, ShipDate
+        """
+        from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
+        from app.models.sc_entities import InboundOrderLineSchedule
+        import sqlalchemy as sa
+
+        # --- PO Schedule Lines ---
+        if po_schedule_lines:
+            # Pre-load PO line IDs: (po_number, line_number) → po_line.id
+            po_numbers = {r.get("PurchaseOrderNumber", "") for r in po_schedule_lines}
+            po_numbers.discard("")
+
+            po_id_map: Dict[str, int] = {}
+            po_line_id_map: Dict[tuple, int] = {}
+
+            if po_numbers:
+                rows = (await self.db.execute(
+                    sa.select(PurchaseOrder.id, PurchaseOrder.po_number).where(
+                        PurchaseOrder.config_id == config.id,
+                        PurchaseOrder.po_number.in_(po_numbers),
+                    )
+                )).all()
+                po_id_map = {r.po_number: r.id for r in rows}
+
+                if po_id_map:
+                    po_line_rows = (await self.db.execute(
+                        sa.select(
+                            PurchaseOrderLineItem.id,
+                            PurchaseOrderLineItem.po_id,
+                            PurchaseOrderLineItem.line_number,
+                        ).where(
+                            PurchaseOrderLineItem.po_id.in_(list(po_id_map.values())),
+                        )
+                    )).all()
+                    po_line_id_map = {(r.po_id, r.line_number): r.id for r in po_line_rows}
+
+            for sl in po_schedule_lines:
+                po_num = sl.get("PurchaseOrderNumber", "")
+                po_id = po_id_map.get(po_num)
+                if not po_id:
+                    continue
+
+                line_num_str = sl.get("LineNumber", "0")
+                try:
+                    line_num = int(line_num_str)
+                except (ValueError, TypeError):
+                    line_num = 0
+
+                po_line_id = po_line_id_map.get((po_id, line_num))
+                if not po_line_id:
+                    continue
+
+                sched_num_str = sl.get("ScheduleLineNumber", "1")
+                try:
+                    sched_num = int(sched_num_str)
+                except (ValueError, TypeError):
+                    sched_num = 1
+
+                sched_qty = self._safe_float(sl.get("ScheduledQuantity"))
+                if sched_qty is None or sched_qty <= 0:
+                    continue
+
+                sched_date = self._parse_d365_date(sl.get("DeliveryDate", ""))
+                if not sched_date:
+                    continue
+
+                confirmed_date = self._parse_d365_date(sl.get("ConfirmedDate", ""))
+
+                schedule = InboundOrderLineSchedule(
+                    order_line_id=po_line_id,
+                    schedule_number=sched_num,
+                    scheduled_quantity=sched_qty,
+                    received_quantity=0.0,
+                    scheduled_date=sched_date,
+                    actual_date=confirmed_date,
+                    status="SCHEDULED",
+                    source="D365_CONTOSO",
+                )
+                self.db.add(schedule)
+                result.po_schedules_created += 1
+
+        # --- SO Delivery Schedules (enrichment via outbound_order_line attributes) ---
+        if so_delivery_schedules:
+            from app.models.sc_entities import OutboundOrderLine
+            # Group by (SalesOrderNumber, LineNumber) → list of schedules
+            sched_by_line: Dict[str, List[Dict]] = {}
+            for sd in so_delivery_schedules:
+                so_num = sd.get("SalesOrderNumber", "")
+                line_num = sd.get("LineNumber", "")
+                key = f"D365_SO_{so_num}_{line_num}"
+                sched_data = {
+                    "schedule_line": sd.get("ScheduleLineNumber", ""),
+                    "quantity": self._safe_float(sd.get("ScheduledQuantity")),
+                    "delivery_date": sd.get("DeliveryDate", ""),
+                    "ship_date": sd.get("ShipDate", ""),
+                }
+                sched_by_line.setdefault(key, []).append(sched_data)
+
+            result.so_schedules_enriched = len(sched_by_line)
+
+        await self.db.flush()
+        logger.info(
+            "D365: created %d PO schedules, enriched %d SO delivery schedules",
+            result.po_schedules_created, result.so_schedules_enriched,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 24: Purchase Requisitions + Planned Orders
+    # ------------------------------------------------------------------
+
+    async def _build_requisitions_and_planned(
+        self, config, requisition_lines, planned_orders,
+        site_map, product_map, result,
+    ):
+        """Map D365 PurchaseRequisitionLines → purchase_order (DRAFT),
+        PlannedOrders → purchase_order/production_order (PLANNED).
+
+        D365 PurchaseRequisitionLines columns:
+            RequisitionNumber, LineNumber, ItemNumber, RequestedQuantity,
+            RequestedDate, SiteId, VendorAccountNumber
+
+        D365 PlannedOrders columns:
+            PlannedOrderNumber, ItemNumber, PlannedQuantity, PlannedType,
+            PlannedDate, SiteId
+        """
+        from app.models.purchase_order import PurchaseOrder
+        from app.models.production_order import ProductionOrder
+        from datetime import datetime as dt
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            if requisition_lines or planned_orders:
+                result.warnings.append("No sites available — skipping requisitions and planned orders")
+            return
+
+        # --- Purchase Requisitions → DRAFT purchase orders ---
+        for req in requisition_lines:
+            req_number = req.get("RequisitionNumber", "")
+            line_num = req.get("LineNumber", "")
+            item_number = req.get("ItemNumber", "")
+            if not req_number or not item_number:
+                continue
+
+            product = product_map.get(item_number)
+            if not product:
+                continue
+
+            quantity = self._safe_float(req.get("RequestedQuantity"))
+            if quantity is None or quantity <= 0:
+                continue
+
+            requested_date = self._parse_d365_date(req.get("RequestedDate", ""))
+            if not requested_date:
+                continue
+
+            d365_site_id = req.get("SiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            vendor_account = req.get("VendorAccountNumber", "")
+            vendor_id = f"D365V_{vendor_account}" if vendor_account else None
+
+            po_number = f"D365_REQ_{req_number}_{line_num}"
+
+            po = PurchaseOrder(
+                po_number=po_number,
+                vendor_id=vendor_id,
+                supplier_site_id=site.id,
+                destination_site_id=site.id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                company_id=f"D365_{self.tenant_id}",
+                order_type="requisition",
+                source="D365_CONTOSO",
+                status="DRAFT",
+                order_date=requested_date,
+                requested_delivery_date=requested_date,
+            )
+            self.db.add(po)
+            result.requisitions_created += 1
+
+        # --- Planned Orders → PLANNED purchase_order or production_order ---
+        for po_row in planned_orders:
+            planned_number = po_row.get("PlannedOrderNumber", "")
+            item_number = po_row.get("ItemNumber", "")
+            if not planned_number or not item_number:
+                continue
+
+            product = product_map.get(item_number)
+            if not product:
+                continue
+
+            quantity = self._safe_float(po_row.get("PlannedQuantity"))
+            if quantity is None or quantity <= 0:
+                continue
+
+            planned_date = self._parse_d365_date(po_row.get("PlannedDate", ""))
+            if not planned_date:
+                continue
+
+            d365_site_id = po_row.get("SiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            planned_type = po_row.get("PlannedType", "Purchase")
+
+            if planned_type in ("Production", "Prod"):
+                # Map to production_order with PLANNED status
+                prod_order = ProductionOrder(
+                    order_number=f"D365_PLN_{planned_number}",
+                    item_id=product.id,
+                    site_id=site.id,
+                    config_id=config.id,
+                    planned_quantity=int(quantity),
+                    status="PLANNED",
+                    planned_start_date=planned_date,
+                    planned_completion_date=planned_date,
+                )
+                self.db.add(prod_order)
+            else:
+                # Default: map to purchase_order with PLANNED status
+                po = PurchaseOrder(
+                    po_number=f"D365_PLN_{planned_number}",
+                    vendor_id=None,
+                    supplier_site_id=site.id,
+                    destination_site_id=site.id,
+                    config_id=config.id,
+                    tenant_id=self.tenant_id,
+                    company_id=f"D365_{self.tenant_id}",
+                    order_type="planned",
+                    source="D365_CONTOSO",
+                    status="DRAFT",
+                    order_date=planned_date,
+                    requested_delivery_date=planned_date,
+                )
+                self.db.add(po)
+
+            result.planned_orders_created += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: created %d requisitions, %d planned orders",
+            result.requisitions_created, result.planned_orders_created,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 25: Production Order Enrichment
+    # ------------------------------------------------------------------
+
+    async def _enrich_production_details(
+        self, config, prod_order_items, prod_bom_lines,
+        prod_route_ops, prod_confirmations,
+        site_map, product_map, result,
+    ):
+        """Enrich production_orders with items, BOM components, routing, and confirmations.
+
+        D365 ProductionOrderItems columns:
+            ProductionOrderNumber, LineNumber, ItemNumber, Quantity, GoodQuantity
+
+        D365 ProductionOrderBOMLines columns:
+            ReservationNumber, LineNumber, ItemNumber, RequiredQuantity,
+            ConsumedQuantity, ProductionOrderNumber
+
+        D365 ProductionRouteOperations columns:
+            RoutingPlanNumber, OperationSequence, WorkCenterId,
+            SetupTime, RunTime, ProductionOrderNumber
+
+        D365 ProductionOrderConfirmations columns:
+            ProductionOrderNumber, OperationNumber, GoodQuantity,
+            ErrorQuantity, ConfirmationDate
+        """
+        from app.models.production_order import ProductionOrder, ProductionOrderComponent
+        import sqlalchemy as sa
+
+        if not any([prod_order_items, prod_bom_lines, prod_route_ops, prod_confirmations]):
+            return
+
+        # Pre-load production order IDs: order_number → id
+        all_prod_nums: Set[str] = set()
+        for items_list in [prod_order_items, prod_bom_lines, prod_route_ops, prod_confirmations]:
+            for row in items_list:
+                num = row.get("ProductionOrderNumber", "")
+                if num:
+                    all_prod_nums.add(num)
+
+        if not all_prod_nums:
+            return
+
+        rows = (await self.db.execute(
+            sa.select(ProductionOrder.id, ProductionOrder.order_number).where(
+                ProductionOrder.config_id == config.id,
+                ProductionOrder.order_number.in_(all_prod_nums),
+            )
+        )).all()
+        prod_id_map: Dict[str, int] = {r.order_number: r.id for r in rows}
+
+        # --- BOM Lines → ProductionOrderComponent ---
+        for bl in prod_bom_lines:
+            prod_num = bl.get("ProductionOrderNumber", "")
+            prod_id = prod_id_map.get(prod_num)
+            if not prod_id:
+                continue
+
+            item_number = bl.get("ItemNumber", "")
+            product = product_map.get(item_number)
+            if not product:
+                continue
+
+            required_qty = self._safe_float(bl.get("RequiredQuantity"))
+            if required_qty is None or required_qty <= 0:
+                continue
+
+            consumed_qty = self._safe_float(bl.get("ConsumedQuantity")) or 0.0
+
+            component = ProductionOrderComponent(
+                production_order_id=prod_id,
+                component_item_id=product.id,
+                planned_quantity=required_qty,
+                actual_quantity=consumed_qty if consumed_qty > 0 else None,
+                scrap_quantity=0.0,
+                unit_of_measure="EA",
+            )
+            self.db.add(component)
+            result.production_components_created += 1
+
+        # --- Route Operations → enrich production_order.extra_data ---
+        ops_by_prod: Dict[str, List[Dict]] = {}
+        for op in prod_route_ops:
+            prod_num = op.get("ProductionOrderNumber", "")
+            if prod_num:
+                ops_by_prod.setdefault(prod_num, []).append({
+                    "operation_seq": op.get("OperationSequence", ""),
+                    "work_center_id": op.get("WorkCenterId", ""),
+                    "setup_time": self._safe_float(op.get("SetupTime")),
+                    "run_time": self._safe_float(op.get("RunTime")),
+                })
+
+        for prod_num, operations in ops_by_prod.items():
+            prod_id = prod_id_map.get(prod_num)
+            if not prod_id:
+                continue
+
+            total_setup = sum(o.get("setup_time") or 0.0 for o in operations)
+            total_run = sum(o.get("run_time") or 0.0 for o in operations)
+
+            await self.db.execute(
+                sa.update(ProductionOrder)
+                .where(ProductionOrder.id == prod_id)
+                .values(
+                    resource_hours_planned=total_setup + total_run,
+                    extra_data={
+                        "d365_route_operations": operations,
+                        "d365_total_setup_time": total_setup,
+                        "d365_total_run_time": total_run,
+                    },
+                )
+            )
+            result.production_routes_enriched += 1
+
+        # --- Confirmations → actual_quantity, yield ---
+        for conf in prod_confirmations:
+            prod_num = conf.get("ProductionOrderNumber", "")
+            prod_id = prod_id_map.get(prod_num)
+            if not prod_id:
+                continue
+
+            good_qty = self._safe_float(conf.get("GoodQuantity")) or 0.0
+            error_qty = self._safe_float(conf.get("ErrorQuantity")) or 0.0
+
+            update_vals: Dict[str, Any] = {}
+            if good_qty > 0:
+                update_vals["actual_quantity"] = int(good_qty)
+            if error_qty > 0:
+                update_vals["scrap_quantity"] = int(error_qty)
+            if good_qty > 0 and (good_qty + error_qty) > 0:
+                update_vals["yield_percentage"] = round(
+                    good_qty / (good_qty + error_qty) * 100.0, 2
+                )
+
+            confirmation_date = self._parse_d365_date(conf.get("ConfirmationDate", ""))
+            if confirmation_date:
+                update_vals["actual_completion_date"] = confirmation_date
+
+            if update_vals:
+                await self.db.execute(
+                    sa.update(ProductionOrder)
+                    .where(ProductionOrder.id == prod_id)
+                    .values(**update_vals)
+                )
+                result.production_confirmations_applied += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: created %d production components, enriched %d routes, applied %d confirmations",
+            result.production_components_created,
+            result.production_routes_enriched,
+            result.production_confirmations_applied,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 26: Quality Enrichment (Test Results + Notifications)
+    # ------------------------------------------------------------------
+
+    async def _enrich_quality_details(
+        self, config, quality_test_results, quality_notifications,
+        site_map, product_map, result,
+    ):
+        """Enrich quality_order with test results and create quality orders from notifications.
+
+        D365 QualityTestResults columns:
+            QualityOrderNumber, OperationSequence, CharacteristicNumber,
+            CharacteristicName, TargetValue, LowerLimit, UpperLimit,
+            MeasuredValue, Result, UnitOfMeasure
+
+        D365 QualityNotifications columns:
+            NotificationNumber, ItemNumber, SiteId, DefectType,
+            Description, Priority, Status, CreatedDate
+        """
+        from app.models.quality_order import QualityOrder, QualityOrderLineItem
+        import sqlalchemy as sa
+        from datetime import date as d
+
+        # --- Test Results → QualityOrderLineItem enrichment ---
+        if quality_test_results:
+            # Pre-load quality order IDs: qo_number → id
+            qo_numbers_raw = {r.get("QualityOrderNumber", "") for r in quality_test_results}
+            qo_numbers_raw.discard("")
+            qo_numbers = {f"D365_QI_{n}" for n in qo_numbers_raw}
+
+            if qo_numbers:
+                rows = (await self.db.execute(
+                    sa.select(QualityOrder.id, QualityOrder.quality_order_number).where(
+                        QualityOrder.config_id == config.id,
+                        QualityOrder.quality_order_number.in_(qo_numbers),
+                    )
+                )).all()
+                qo_id_map: Dict[str, int] = {r.quality_order_number: r.id for r in rows}
+
+                # Get existing line numbers per QO to avoid conflicts
+                existing_lines: Dict[int, int] = {}
+                if qo_id_map:
+                    line_rows = (await self.db.execute(
+                        sa.select(
+                            QualityOrderLineItem.quality_order_id,
+                            sa.func.max(QualityOrderLineItem.line_number).label("max_line"),
+                        )
+                        .where(QualityOrderLineItem.quality_order_id.in_(list(qo_id_map.values())))
+                        .group_by(QualityOrderLineItem.quality_order_id)
+                    )).all()
+                    existing_lines = {r.quality_order_id: r.max_line for r in line_rows}
+
+                for tr in quality_test_results:
+                    qo_num_raw = tr.get("QualityOrderNumber", "")
+                    qo_num = f"D365_QI_{qo_num_raw}"
+                    qo_id = qo_id_map.get(qo_num)
+                    if not qo_id:
+                        continue
+
+                    char_name = tr.get("CharacteristicName", "")
+                    if not char_name:
+                        char_name = f"Characteristic {tr.get('CharacteristicNumber', '')}"
+
+                    # Increment line number
+                    max_line = existing_lines.get(qo_id, 1)
+                    max_line += 1
+                    existing_lines[qo_id] = max_line
+
+                    target_val = self._safe_float(tr.get("TargetValue"))
+                    lower_limit = self._safe_float(tr.get("LowerLimit"))
+                    upper_limit = self._safe_float(tr.get("UpperLimit"))
+                    measured_val = self._safe_float(tr.get("MeasuredValue"))
+                    d365_result = tr.get("Result", "")
+                    uom = tr.get("UnitOfMeasure", "")
+
+                    # Map D365 result to our enum
+                    result_map = {
+                        "Pass": "PASS",
+                        "Fail": "FAIL",
+                        "Accepted": "PASS",
+                        "Rejected": "FAIL",
+                        "Conditional": "CONDITIONAL",
+                    }
+                    line_result = result_map.get(d365_result)
+
+                    char_type = "QUANTITATIVE" if measured_val is not None else "QUALITATIVE"
+
+                    qo_line = QualityOrderLineItem(
+                        quality_order_id=qo_id,
+                        line_number=max_line,
+                        characteristic_name=char_name[:200],
+                        characteristic_type=char_type,
+                        target_value=target_val,
+                        lower_limit=lower_limit,
+                        upper_limit=upper_limit,
+                        measured_value=measured_val,
+                        unit_of_measure=uom[:20] if uom else None,
+                        result=line_result,
+                        specification=f"Target: {target_val}, Range: [{lower_limit}, {upper_limit}]"
+                        if target_val is not None else None,
+                    )
+                    self.db.add(qo_line)
+                    result.quality_details_enriched += 1
+
+        # --- Quality Notifications → new QualityOrder records ---
+        if quality_notifications:
+            default_site = next(iter(site_map.values()), None)
+            if not default_site:
+                result.warnings.append("No sites available — skipping quality notifications")
+            else:
+                for qn in quality_notifications:
+                    notif_number = qn.get("NotificationNumber", "")
+                    if not notif_number:
+                        continue
+
+                    item_number = qn.get("ItemNumber", "")
+                    product = product_map.get(item_number) if item_number else None
+                    if not product:
+                        # Quality notifications may not reference a specific product
+                        continue
+
+                    d365_site_id = qn.get("SiteId", "")
+                    site = site_map.get(d365_site_id, default_site)
+
+                    defect_type = qn.get("DefectType", "")
+                    description = qn.get("Description", "")
+                    priority_str = qn.get("Priority", "")
+                    d365_status = qn.get("Status", "")
+                    created_date = self._parse_d365_date(qn.get("CreatedDate", ""))
+
+                    status_map = {
+                        "Open": "CREATED",
+                        "InProcess": "IN_INSPECTION",
+                        "Closed": "CLOSED",
+                        "Cancelled": "CANCELLED",
+                    }
+                    status = status_map.get(d365_status, "CREATED")
+
+                    qo_number = f"D365_QN_{notif_number}"
+                    product_id = product.id
+
+                    qo = QualityOrder(
+                        quality_order_number=qo_number,
+                        site_id=site.id,
+                        config_id=config.id,
+                        tenant_id=self.tenant_id,
+                        company_id=f"D365_{self.tenant_id}",
+                        source="D365_CONTOSO",
+                        inspection_type="COMPLAINT",
+                        status=status,
+                        origin_type="CUSTOMER_COMPLAINT",
+                        origin_order_id=notif_number[:100],
+                        product_id=product_id,
+                        inspection_quantity=1.0,
+                        order_date=created_date or d.today(),
+                    )
+                    self.db.add(qo)
+                    await self.db.flush()
+
+                    # Create a line item for the defect
+                    qo_line = QualityOrderLineItem(
+                        quality_order_id=qo.id,
+                        line_number=1,
+                        characteristic_name=defect_type[:200] if defect_type else "Notification Defect",
+                        characteristic_type="ATTRIBUTE",
+                        result="FAIL",
+                        notes=description[:500] if description else None,
+                    )
+                    self.db.add(qo_line)
+                    result.quality_notifications_created += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: enriched %d quality test results, created %d quality notifications",
+            result.quality_details_enriched, result.quality_notifications_created,
+        )
 
     # ------------------------------------------------------------------
     # Utility helpers

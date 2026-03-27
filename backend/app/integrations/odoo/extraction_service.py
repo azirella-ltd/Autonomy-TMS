@@ -67,6 +67,23 @@ MASTER_DATA_MODELS = {
         "id", "name", "capacity", "time_efficiency", "oee_target",
         "costs_hour", "company_id", "active",
     ],
+    "mrp.routing.workcenter": [
+        "id", "bom_id", "workcenter_id", "name", "sequence",
+        "time_cycle_manual", "time_cycle", "time_mode", "time_mode_batch",
+        "worksheet_type", "company_id",
+    ],
+    # Tier 5b: Product templates & UoMs
+    "product.template": [
+        "id", "name", "default_code", "type", "categ_id",
+        "uom_id", "weight", "volume", "tracking",
+        "sale_ok", "purchase_ok", "active",
+    ],
+    "uom.uom": [
+        "id", "name", "category_id", "uom_type", "factor", "rounding", "active",
+    ],
+    "uom.category": [
+        "id", "name",
+    ],
     # Tier 6: Inventory levels & policies
     "stock.quant": [
         "id", "product_id", "location_id", "quantity", "reserved_quantity",
@@ -113,6 +130,31 @@ TRANSACTION_MODELS = {
     "stock.move": [
         "id", "picking_id", "product_id", "product_uom_qty", "quantity",
         "location_id", "location_dest_id", "state",
+    ],
+    "stock.move.line": [
+        "id", "move_id", "picking_id", "product_id", "lot_id",
+        "quantity", "quantity_done", "location_id", "location_dest_id", "state",
+    ],
+    "stock.lot": [
+        "id", "name", "product_id", "company_id", "create_date",
+    ],
+    # Quality (Enterprise only — graceful skip if module not installed)
+    "quality.check": [
+        "id", "name", "product_id", "point_id", "quality_state",
+        "measure", "picking_id", "lot_id", "team_id",
+    ],
+    "quality.alert": [
+        "id", "name", "product_id", "product_tmpl_id", "lot_id",
+        "team_id", "stage_id", "priority", "description", "reason",
+    ],
+    # Maintenance
+    "maintenance.request": [
+        "id", "name", "equipment_id", "maintenance_type", "priority",
+        "schedule_date", "stage_id", "request_date", "close_date",
+    ],
+    "maintenance.equipment": [
+        "id", "name", "category_id", "serial_no", "partner_id",
+        "technician_user_id", "location", "company_id", "active",
     ],
 }
 

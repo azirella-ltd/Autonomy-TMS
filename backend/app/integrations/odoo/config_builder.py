@@ -49,7 +49,13 @@ class OdooConfigBuildResult:
     shipments_created: int = 0
     transfer_orders_created: int = 0
     quality_checks_created: int = 0
+    quality_alerts_created: int = 0
     maintenance_requests_created: int = 0
+    routing_operations_created: int = 0
+    products_enriched_template: int = 0
+    products_enriched_uom: int = 0
+    products_enriched_lots: int = 0
+    maintenance_enriched_equipment: int = 0
     forecasts_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
@@ -72,7 +78,13 @@ class OdooConfigBuildResult:
             "shipments_created": self.shipments_created,
             "transfer_orders_created": self.transfer_orders_created,
             "quality_checks_created": self.quality_checks_created,
+            "quality_alerts_created": self.quality_alerts_created,
             "maintenance_requests_created": self.maintenance_requests_created,
+            "routing_operations_created": self.routing_operations_created,
+            "products_enriched_template": self.products_enriched_template,
+            "products_enriched_uom": self.products_enriched_uom,
+            "products_enriched_lots": self.products_enriched_lots,
+            "maintenance_enriched_equipment": self.maintenance_enriched_equipment,
             "forecasts_created": self.forecasts_created,
             "warnings": self.warnings,
             "errors": self.errors,
@@ -206,6 +218,42 @@ class OdooConfigBuilder:
 
             # Step 11: Forecasts — derive weekly demand history from sale order lines
             await self._build_forecasts(config, sale_lines, site_map, product_map, result)
+
+            # Step 12: Enrichment from previously-unused Odoo models
+            # 12a: product.template → product attribute enrichment
+            templates = data.get("product.template", [])
+            await self._enrich_products_with_templates(
+                products, templates, product_map, result,
+            )
+
+            # 12b: uom.uom + uom.category → product.base_uom enrichment
+            uom_records = data.get("uom.uom", [])
+            uom_categories = data.get("uom.category", [])
+            await self._enrich_products_with_uom(
+                products, uom_records, uom_categories, product_map, result,
+            )
+
+            # 12c: stock.lot → product lot/serial tracking flags
+            lots = data.get("stock.lot", [])
+            await self._enrich_products_with_lots(lots, product_map, result)
+
+            # 12d: mrp.routing.workcenter → production_process records
+            routing_operations = data.get("mrp.routing.workcenter", [])
+            await self._build_routing(
+                config, routing_operations, boms, workcenters, site_map, product_map, result,
+            )
+
+            # 12e: maintenance.equipment → maintenance_order asset enrichment
+            equipment_records = data.get("maintenance.equipment", [])
+            await self._enrich_maintenance_with_equipment(
+                config, equipment_records, result,
+            )
+
+            # 12f: quality.alert → additional quality_order records
+            quality_alerts = data.get("quality.alert", [])
+            await self._enrich_quality_with_alerts(
+                config, quality_alerts, site_map, product_map, result,
+            )
 
             await self.db.commit()
             logger.info("Odoo config build complete: config_id=%d", config.id)
@@ -1941,6 +1989,545 @@ class OdooConfigBuilder:
         await self.db.flush()
         result.forecasts_created = count
         logger.info("Odoo: created %d forecast records from sale.order.line demand history", count)
+
+    # ── Step 12a: Product enrichment from product.template ────────────
+
+    async def _enrich_products_with_templates(
+        self, products, templates, product_map, result,
+    ):
+        """Enrich Product records with attributes from product.template.
+
+        Odoo ``product.product`` inherits from ``product.template``.  The
+        template carries weight, volume, and category information that may
+        not be present on the variant record.
+
+        Fields used from ``product.template``:
+            id, weight, volume, categ_id, type (consu/service/product),
+            tracking (none/lot/serial).
+
+        For each product.product whose ``product_tmpl_id`` matches a
+        template, we back-fill ``weight``, ``volume``, ``product_type``,
+        and ``category`` if they are not already set.
+        """
+        if not templates or not product_map:
+            return
+
+        # Build template lookup: template_id → template dict
+        tmpl_by_id: Dict[int, dict] = {t["id"]: t for t in templates}
+
+        count = 0
+        for prod_rec in products:
+            odoo_id = prod_rec.get("id")
+            product = product_map.get(odoo_id)
+            if not product:
+                continue
+
+            tmpl_id = self._resolve_odoo_id(prod_rec.get("product_tmpl_id"))
+            tmpl = tmpl_by_id.get(tmpl_id) if tmpl_id else None
+            if not tmpl:
+                continue
+
+            changed = False
+
+            # Weight
+            tmpl_weight = tmpl.get("weight")
+            if tmpl_weight and not product.weight:
+                try:
+                    product.weight = float(tmpl_weight)
+                    product.weight_uom = "kg"
+                    changed = True
+                except (TypeError, ValueError):
+                    pass
+
+            # Volume
+            tmpl_volume = tmpl.get("volume")
+            if tmpl_volume and not product.volume:
+                try:
+                    product.volume = float(tmpl_volume)
+                    product.volume_uom = "m3"
+                    changed = True
+                except (TypeError, ValueError):
+                    pass
+
+            # Product type from template type field
+            tmpl_type = tmpl.get("type")
+            if tmpl_type and not product.product_type:
+                type_map = {
+                    "consu": "consumable",
+                    "product": "stockable",
+                    "service": "service",
+                }
+                mapped = type_map.get(str(tmpl_type).strip().lower())
+                if mapped:
+                    product.product_type = mapped
+                    changed = True
+
+            # Category enrichment from template categ_id
+            tmpl_categ = tmpl.get("categ_id")
+            if isinstance(tmpl_categ, (list, tuple)) and len(tmpl_categ) >= 2:
+                categ_name = str(tmpl_categ[1])
+                if categ_name and not product.category:
+                    product.category = categ_name[:100]
+                    changed = True
+
+            if changed:
+                count += 1
+
+        if count:
+            await self.db.flush()
+        result.products_enriched_template = count
+        logger.info("Odoo: enriched %d products from product.template", count)
+
+    # ── Step 12b: Product UoM enrichment from uom.uom + uom.category ─
+
+    async def _enrich_products_with_uom(
+        self, products, uom_records, uom_categories, product_map, result,
+    ):
+        """Enrich Product.base_uom from Odoo uom.uom definitions.
+
+        Odoo ``product.product`` has a ``uom_id`` Many2one pointing to
+        ``uom.uom``.  The UoM record carries the standard name (e.g.
+        "Units", "kg", "Liters") and belongs to a ``uom.category``
+        (e.g. "Unit", "Weight", "Volume").
+
+        Fields used from ``uom.uom``: id, name, category_id, uom_type.
+        Fields used from ``uom.category``: id, name.
+        """
+        if not uom_records or not product_map:
+            return
+
+        # Build UoM lookup
+        uom_by_id: Dict[int, dict] = {u["id"]: u for u in uom_records}
+
+        # Build category lookup for context
+        cat_by_id: Dict[int, str] = {}
+        for cat in (uom_categories or []):
+            cat_by_id[cat["id"]] = str(cat.get("name", ""))
+
+        # Standard Odoo UoM name → short code mapping
+        uom_short: Dict[str, str] = {
+            "units": "EA", "unit": "EA", "unit(s)": "EA",
+            "dozen": "DZ", "dozen(s)": "DZ",
+            "kg": "KG", "kilogram": "KG",
+            "g": "G", "gram": "G",
+            "lb": "LB", "lbs": "LB", "pound": "LB",
+            "oz": "OZ", "ounce": "OZ",
+            "t": "MT", "ton": "MT", "tonne": "MT",
+            "l": "L", "liter": "L", "litre": "L",
+            "ml": "ML", "milliliter": "ML",
+            "gal": "GAL", "gallon": "GAL",
+            "m": "M", "meter": "M", "metre": "M",
+            "cm": "CM", "centimeter": "CM",
+            "mm": "MM", "millimeter": "MM",
+            "in": "IN", "inch": "IN",
+            "ft": "FT", "foot": "FT",
+            "m2": "M2", "m3": "M3",
+            "hour": "HR", "hours": "HR",
+            "day": "DAY", "days": "DAY",
+            "pair": "PR",
+            "box": "BX", "case": "CS", "pallet": "PAL",
+            "pack": "PK",
+        }
+
+        count = 0
+        for prod_rec in products:
+            odoo_id = prod_rec.get("id")
+            product = product_map.get(odoo_id)
+            if not product:
+                continue
+
+            # Already has base_uom — skip
+            if product.base_uom:
+                continue
+
+            uom_id = self._resolve_odoo_id(prod_rec.get("uom_id"))
+            uom = uom_by_id.get(uom_id) if uom_id else None
+            if not uom:
+                continue
+
+            uom_name = str(uom.get("name", "")).strip()
+            short = uom_short.get(uom_name.lower())
+            if short:
+                product.base_uom = short
+            elif uom_name:
+                # Use first 20 chars of the raw name as fallback
+                product.base_uom = uom_name[:20]
+            else:
+                continue
+
+            count += 1
+
+        if count:
+            await self.db.flush()
+        result.products_enriched_uom = count
+        logger.info("Odoo: enriched %d products with UoM from uom.uom", count)
+
+    # ── Step 12c: Product lot tracking from stock.lot ─────────────────
+
+    async def _enrich_products_with_lots(self, lots, product_map, result):
+        """Flag products that have lot/serial tracking from stock.lot records.
+
+        If a product appears in ``stock.lot``, it uses lot or serial
+        tracking.  We set ``item_type`` to ``"lot_tracked"`` (if not
+        already set) so downstream systems know to expect lot-level
+        inventory.
+
+        Fields used from ``stock.lot``:
+            product_id — the product variant using lot/serial tracking.
+        """
+        if not lots or not product_map:
+            return
+
+        # Collect product IDs that have lot records
+        lot_product_ids: Set[int] = set()
+        for lot in lots:
+            pid = self._resolve_odoo_id(lot.get("product_id"))
+            if pid is not None:
+                lot_product_ids.add(pid)
+
+        count = 0
+        for odoo_pid in lot_product_ids:
+            product = product_map.get(odoo_pid)
+            if not product:
+                continue
+            if product.item_type:
+                continue  # already classified
+
+            product.item_type = "lot_tracked"
+            count += 1
+
+        if count:
+            await self.db.flush()
+        result.products_enriched_lots = count
+        logger.info("Odoo: flagged %d products as lot-tracked from stock.lot", count)
+
+    # ── Step 12d: Routing operations → production_process ─────────────
+
+    async def _build_routing(
+        self, config, routing_operations, boms, workcenters,
+        site_map, product_map, result,
+    ):
+        """Build ProductionProcess records from mrp.routing.workcenter.
+
+        Odoo ``mrp.routing.workcenter`` defines individual routing
+        operations (steps) in a manufacturing process.  Each operation
+        links to a BOM (via ``bom_id``) and a work centre (via
+        ``workcenter_id``), carrying operation time, setup time, and
+        sequence.
+
+        Fields used from ``mrp.routing.workcenter``:
+            id, bom_id, workcenter_id, name, sequence, time_cycle_manual,
+            time_mode ('auto'/'manual'), time_mode_batch, worksheet_type.
+
+        Fields used from ``mrp.workcenter`` (already extracted):
+            id, name, capacity, time_efficiency, oee_target.
+        """
+        from app.models.sc_entities import ProductionProcess
+
+        if not routing_operations:
+            return
+
+        # Work centre lookup: wc_id → wc record
+        wc_by_id: Dict[int, dict] = {}
+        for wc in (workcenters or []):
+            wc_by_id[wc["id"]] = wc
+
+        # BOM → product template mapping (reuse from _build_manufacturing)
+        bom_product_map: Dict[int, int] = {}
+        for bom in (boms or []):
+            tmpl_id = bom.get("product_tmpl_id")
+            if isinstance(tmpl_id, (list, tuple)):
+                tmpl_id = tmpl_id[0]
+            bom_product_map[bom["id"]] = tmpl_id
+
+        # Fallback site for production processes
+        fallback_site_id = self._get_first_site_id(site_map)
+        if not fallback_site_id:
+            result.warnings.append("No site available for routing operations — skipped")
+            return
+
+        count = 0
+        for op in routing_operations:
+            odoo_op_id = op.get("id")
+            op_name = str(op.get("name") or f"Operation {odoo_op_id}")[:200]
+
+            bom_id = self._resolve_odoo_id(op.get("bom_id"))
+            wc_id = self._resolve_odoo_id(op.get("workcenter_id"))
+            wc = wc_by_id.get(wc_id) if wc_id else None
+
+            # Resolve work centre capacity for description
+            wc_name = ""
+            if wc:
+                wc_name = str(wc.get("name", ""))
+
+            # Operation time in minutes → convert to hours for ProductionProcess
+            time_cycle = 0.0
+            try:
+                time_cycle = float(op.get("time_cycle_manual") or op.get("time_cycle") or 0)
+            except (TypeError, ValueError):
+                pass
+            operation_time_hours = round(time_cycle / 60.0, 4) if time_cycle else None
+
+            # Setup time is not a standard field on mrp.routing.workcenter,
+            # but some Odoo installations add it.  Fall back to the work
+            # centre's default setup time if present.
+            setup_time_raw = op.get("setup_time") or (wc.get("setup_time") if wc else None)
+            setup_time_hours = None
+            if setup_time_raw:
+                try:
+                    setup_time_hours = round(float(setup_time_raw) / 60.0, 4)
+                except (TypeError, ValueError):
+                    pass
+
+            # Yield from work centre efficiency (percentage → fraction)
+            yield_pct = None
+            if wc:
+                eff = wc.get("time_efficiency")
+                if eff:
+                    try:
+                        yield_pct = float(eff)  # Odoo stores as 100.0 = 100%
+                    except (TypeError, ValueError):
+                        pass
+
+            # Lot size from batch mode
+            lot_size = None
+            try:
+                batch = op.get("time_mode_batch")
+                if batch:
+                    lot_size = float(batch)
+            except (TypeError, ValueError):
+                pass
+
+            sequence = op.get("sequence", 0)
+            process_id = f"ODOO_RTE_{odoo_op_id}"
+
+            pp = ProductionProcess(
+                id=process_id,
+                description=f"{op_name} @ {wc_name}".strip()[:500],
+                company_id=f"ODOO_{self.tenant_id}",
+                site_id=fallback_site_id,
+                config_id=config.id,
+                process_type=f"routing_step_{sequence}",
+                operation_time=operation_time_hours,
+                setup_time=setup_time_hours,
+                lot_size=lot_size,
+                yield_percentage=yield_pct,
+                is_active="true",
+                source="ODOO",
+                source_event_id=f"RTE-{odoo_op_id}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(pp)
+            count += 1
+
+        await self.db.flush()
+        result.routing_operations_created = count
+        logger.info("Odoo: created %d production_process records from mrp.routing.workcenter", count)
+
+    # ── Step 12e: Maintenance equipment enrichment ────────────────────
+
+    async def _enrich_maintenance_with_equipment(
+        self, config, equipment_records, result,
+    ):
+        """Enrich MaintenanceOrder records with asset details from maintenance.equipment.
+
+        Odoo ``maintenance.equipment`` carries the asset master (name,
+        category, serial, partner, technician).  Existing maintenance
+        orders reference equipment via ``equipment_id`` Many2one.  This
+        method back-fills ``asset_type`` and ``asset_name`` on
+        MaintenanceOrder records that were created in
+        ``_build_maintenance_requests()``.
+
+        Fields used from ``maintenance.equipment``:
+            id, name, category_id (→ equipment type), serial_no,
+            partner_id (vendor), technician_user_id, location.
+        """
+        from app.models.maintenance_order import MaintenanceOrder
+        from sqlalchemy import select as sa_select
+
+        if not equipment_records:
+            return
+
+        # Build equipment lookup: "ODOO_EQ_{id}" → equipment dict
+        eq_by_key: Dict[str, dict] = {}
+        for eq in equipment_records:
+            eq_id = eq.get("id")
+            eq_by_key[f"ODOO_EQ_{eq_id}"] = eq
+
+        if not eq_by_key:
+            return
+
+        # Load existing maintenance orders for this config
+        stmt = sa_select(MaintenanceOrder).where(
+            MaintenanceOrder.config_id == config.id,
+            MaintenanceOrder.source == "ODOO",
+        )
+        existing_orders = (await self.db.execute(stmt)).scalars().all()
+
+        count = 0
+        for mo in existing_orders:
+            eq_key = mo.equipment_id
+            if not eq_key or eq_key not in eq_by_key:
+                continue
+
+            eq = eq_by_key[eq_key]
+            changed = False
+
+            # Asset type from equipment category
+            categ = eq.get("category_id")
+            if isinstance(categ, (list, tuple)) and len(categ) >= 2:
+                categ_name = str(categ[1])[:100]
+                if categ_name and not mo.asset_type:
+                    mo.asset_type = categ_name
+                    changed = True
+
+            # Asset name from equipment name (if not already set or generic)
+            eq_name = eq.get("name")
+            if eq_name and (not mo.asset_name or mo.asset_name == mo.equipment_id):
+                mo.asset_name = str(eq_name)[:200]
+                changed = True
+
+            # Serial number enrichment via extra_data (no dedicated column)
+            serial_no = eq.get("serial_no")
+            location = eq.get("location")
+            if serial_no or location:
+                extra = {}
+                if serial_no:
+                    extra["equipment_serial"] = str(serial_no)[:100]
+                if location:
+                    extra["equipment_location"] = str(location)[:200]
+                # Merge into existing notes if available
+                if mo.work_description and extra:
+                    # Append equipment context to notes
+                    suffix_parts = []
+                    if serial_no:
+                        suffix_parts.append(f"S/N: {serial_no}")
+                    if location:
+                        suffix_parts.append(f"Location: {location}")
+                    suffix = " | ".join(suffix_parts)
+                    if suffix not in (mo.work_description or ""):
+                        mo.work_description = f"{mo.work_description} [{suffix}]"[:500]
+                        changed = True
+
+            if changed:
+                count += 1
+
+        if count:
+            await self.db.flush()
+        result.maintenance_enriched_equipment = count
+        logger.info("Odoo: enriched %d maintenance orders from maintenance.equipment", count)
+
+    # ── Step 12f: Quality alerts → quality_order records ──────────────
+
+    async def _enrich_quality_with_alerts(
+        self, config, quality_alerts, site_map, product_map, result,
+    ):
+        """Create additional QualityOrder records from Odoo quality.alert.
+
+        Odoo Enterprise has two quality models:
+        - ``quality.check`` — individual inspection checks (handled in Step 10d)
+        - ``quality.alert`` — escalated quality issues requiring disposition
+
+        Alerts represent a higher severity than routine checks and map
+        to QualityOrder records with ``inspection_type='COMPLAINT'`` or
+        ``'RETURNS'``.
+
+        Fields used from ``quality.alert``:
+            id, name, product_id, product_tmpl_id, lot_id, team_id,
+            stage_id (kanban stage), priority, description, reason.
+        """
+        from app.models.quality_order import QualityOrder
+
+        if not quality_alerts:
+            return
+
+        fallback_site_id = self._get_first_site_id(site_map)
+        if not fallback_site_id:
+            result.warnings.append("No site available for quality alerts — skipped")
+            return
+
+        count = 0
+        for alert in quality_alerts:
+            odoo_alert_id = alert.get("id")
+            alert_name = str(alert.get("name") or f"Quality Alert {odoo_alert_id}")[:100]
+            qo_number = f"ODOO_QA_{odoo_alert_id}"
+
+            # Product resolution: try product_id first, then product_tmpl_id
+            prod_odoo_id = self._resolve_odoo_id(alert.get("product_id"))
+            product = product_map.get(prod_odoo_id) if prod_odoo_id else None
+            if not product:
+                tmpl_id = self._resolve_odoo_id(alert.get("product_tmpl_id"))
+                if tmpl_id:
+                    product = product_map.get(tmpl_id)
+            if not product:
+                result.warnings.append(f"Skipped QA {qo_number}: product not resolved")
+                continue
+
+            # Stage → status mapping
+            stage_raw = alert.get("stage_id")
+            stage_name = ""
+            if isinstance(stage_raw, (list, tuple)) and len(stage_raw) >= 2:
+                stage_name = str(stage_raw[1]).strip().lower()
+
+            if "done" in stage_name or "closed" in stage_name:
+                status = "CLOSED"
+                disposition = "ACCEPT"
+            elif "progress" in stage_name:
+                status = "DISPOSITION_DECIDED"
+                disposition = "REWORK"
+            else:
+                status = "INSPECTION_PENDING"
+                disposition = None
+
+            # Priority mapping: Odoo alerts use '0' (normal) to '3' (very urgent)
+            odoo_priority = str(alert.get("priority", "0")).strip()
+            # Invert: higher number = more urgent in Odoo alerts
+            priority_map = {
+                "0": "STANDARD",
+                "1": "HIGH",
+                "2": "URGENT",
+                "3": "CRITICAL",
+            }
+            # Not used directly on QualityOrder, but noted in the reason field
+
+            # Lot/batch
+            lot_raw = alert.get("lot_id")
+            lot_name = None
+            if isinstance(lot_raw, (list, tuple)) and len(lot_raw) >= 2:
+                lot_name = str(lot_raw[1])[:100]
+
+            # Reason / description
+            reason = str(alert.get("reason") or alert.get("description") or "")[:500]
+            alert_priority = priority_map.get(odoo_priority, "STANDARD")
+            today = datetime.utcnow().date()
+
+            qo_rec = QualityOrder(
+                quality_order_number=qo_number,
+                company_id=f"ODOO_{self.tenant_id}",
+                site_id=fallback_site_id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                source="ODOO",
+                source_event_id=f"QA-{odoo_alert_id}",
+                source_update_dttm=datetime.utcnow(),
+                inspection_type="COMPLAINT",
+                status=status,
+                origin_type="CUSTOMER_COMPLAINT",
+                product_id=product.id,
+                lot_number=lot_name,
+                inspection_quantity=1.0,
+                accepted_quantity=1.0 if disposition == "ACCEPT" else 0.0,
+                rejected_quantity=1.0 if disposition not in ("ACCEPT", "REWORK", None) else 0.0,
+                disposition=disposition,
+                order_date=today,
+                notes=f"[{alert_priority}] {reason}".strip()[:500] if reason else None,
+            )
+            self.db.add(qo_rec)
+            count += 1
+
+        await self.db.flush()
+        result.quality_alerts_created = count
+        logger.info("Odoo: created %d quality orders from quality.alert", count)
 
 
 class OdooIngestionMonitor:

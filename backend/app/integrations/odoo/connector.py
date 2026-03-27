@@ -172,8 +172,8 @@ class OdooConnector:
             "product.product", "product.template", "product.category",
             "mrp.bom", "mrp.bom.line", "mrp.workcenter", "mrp.routing.workcenter",
             "mrp.production", "mrp.workorder",
-            "stock.warehouse", "stock.location", "stock.quant",
-            "stock.picking", "stock.move", "stock.picking.type",
+            "stock.warehouse", "stock.location", "stock.quant", "stock.lot",
+            "stock.picking", "stock.move", "stock.move.line", "stock.picking.type",
             "purchase.order", "purchase.order.line",
             "sale.order", "sale.order.line",
             "res.partner", "res.company",
@@ -181,6 +181,8 @@ class OdooConnector:
             "product.supplierinfo",
             "stock.warehouse.orderpoint",
             "uom.uom", "uom.category",
+            "quality.check", "quality.alert",
+            "maintenance.request", "maintenance.equipment",
         ]
         results = []
         for model in SC_MODELS:
