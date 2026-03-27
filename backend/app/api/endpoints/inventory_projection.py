@@ -188,7 +188,7 @@ async def get_projection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get single inventory projection"""
+    """Get single inventory projection — tenant-scoped"""
     result = await db.execute(
         select(InvProjection).where(InvProjection.id == projection_id)
     )
@@ -196,6 +196,11 @@ async def get_projection(
 
     if not projection:
         raise HTTPException(status_code=404, detail="Projection not found")
+
+    # SOC II: Verify projection belongs to current user's tenant
+    if hasattr(projection, 'tenant_id') and projection.tenant_id and current_user.tenant_id:
+        if projection.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=404, detail="Projection not found")
 
     return projection
 
@@ -207,7 +212,7 @@ async def update_projection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update inventory projection"""
+    """Update inventory projection — tenant-scoped"""
     result = await db.execute(
         select(InvProjection).where(InvProjection.id == projection_id)
     )
@@ -215,6 +220,11 @@ async def update_projection(
 
     if not projection:
         raise HTTPException(status_code=404, detail="Projection not found")
+
+    # SOC II: Verify projection belongs to current user's tenant
+    if hasattr(projection, 'tenant_id') and projection.tenant_id and current_user.tenant_id:
+        if projection.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=404, detail="Projection not found")
 
     # Update fields
     for field, value in projection_update.model_dump(exclude_unset=True).items():
@@ -234,7 +244,7 @@ async def delete_projection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete inventory projection"""
+    """Delete inventory projection — tenant-scoped"""
     result = await db.execute(
         select(InvProjection).where(InvProjection.id == projection_id)
     )
@@ -242,6 +252,11 @@ async def delete_projection(
 
     if not projection:
         raise HTTPException(status_code=404, detail="Projection not found")
+
+    # SOC II: Verify projection belongs to current user's tenant
+    if hasattr(projection, 'tenant_id') and projection.tenant_id and current_user.tenant_id:
+        if projection.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=404, detail="Projection not found")
 
     await db.delete(projection)
     await db.commit()
@@ -265,28 +280,36 @@ async def calculate_atp(
     - Period N: ATP = Previous ATP + Supply - Demand
     - Cumulative ATP = Sum of all ATP through time
     """
-    # Get current inventory
+    # SOC II: Scope by user's config
+    user_config_id = current_user.default_config_id if current_user else None
+
+    # Get current inventory — config-scoped
+    inv_filters = [
+        InvLevel.product_id == request.product_id,
+        InvLevel.site_id == request.site_id,
+    ]
+    if user_config_id:
+        inv_filters.append(InvLevel.config_id == user_config_id)
     inv_result = await db.execute(
         select(InvLevel)
-        .where(and_(
-            InvLevel.product_id == request.product_id,
-            InvLevel.site_id == request.site_id
-        ))
+        .where(and_(*inv_filters))
         .order_by(desc(InvLevel.inventory_date))
         .limit(1)
     )
     current_inv = inv_result.scalar_one_or_none()
     opening_balance = current_inv.on_hand_qty - current_inv.allocated_qty if current_inv else 0.0
 
-    # Get supply plans (planned receipts)
+    # Get supply plans (planned receipts) — config-scoped
+    sp_filters = [
+        SupplyPlan.product_id == request.product_id,
+        SupplyPlan.site_id == request.site_id,
+        SupplyPlan.plan_date >= request.start_date,
+        SupplyPlan.plan_date <= request.end_date,
+    ]
+    if user_config_id:
+        sp_filters.append(SupplyPlan.config_id == user_config_id)
     supply_result = await db.execute(
-        select(SupplyPlan)
-        .where(and_(
-            SupplyPlan.product_id == request.product_id,
-            SupplyPlan.site_id == request.site_id,
-            SupplyPlan.plan_date >= request.start_date,
-            SupplyPlan.plan_date <= request.end_date
-        ))
+        select(SupplyPlan).where(and_(*sp_filters))
     )
     supply_plans = supply_result.scalars().all()
 

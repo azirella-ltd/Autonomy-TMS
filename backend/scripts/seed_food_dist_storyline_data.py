@@ -50,44 +50,49 @@ SessionLocal = sessionmaker(bind=sync_engine)
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 
-CONFIG_ID = 22
-TENANT_ID = 3
+# Dynamic lookup — no hardcoded IDs
+from scripts.food_dist_lookup import resolve_food_dist_ids as _resolve
+_fd = _resolve()
+CONFIG_ID = _fd["config_id"]
+TENANT_ID = _fd["tenant_id"]
 BATCH_ID = "STORY_DATA_2026"
-COMPANY_ID = "UF_CORP_13"  # existing company_id in forecast table
+COMPANY_ID = _fd["company_id"] or f"UF_CORP_{_fd['tenant_id']}"
+_PREFIX = f"CFG{CONFIG_ID}_"
+_SITES = _fd["site_ids"]
 
-# Site IDs (from seed_food_dist_demo.py)
-DC = 256          # CDC_WEST (West Valley City, UT)
-TYSON_SITE = 257
-KRAFT_SITE = 258
-GENMILLS_SITE = 259
-NESTLE_SITE = 260
-TROP_SITE = 261
-SYSCOMEAT_SITE = 262
-LANDOLAKES_SITE = 263
-CONAGRA_SITE = 264
-RICHPROD_SITE = 265
-COCACOLA_SITE = 266
+# Site IDs (resolved dynamically)
+DC = _SITES.get("CDC_WEST", 0)
+TYSON_SITE = _SITES.get("TYSON", 0)
+KRAFT_SITE = _SITES.get("KRAFT", 0)
+GENMILLS_SITE = _SITES.get("GENMILLS", 0)
+NESTLE_SITE = _SITES.get("NESTLE", 0)
+TROP_SITE = _SITES.get("TROP", 0)
+SYSCOMEAT_SITE = _SITES.get("SYSCOMEAT", 0)
+LANDOLAKES_SITE = _SITES.get("LANDOLAKES", 0)
+CONAGRA_SITE = _SITES.get("CONAGRA", 0)
+RICHPROD_SITE = _SITES.get("RICHPROD", 0)
+COCACOLA_SITE = _SITES.get("COCACOLA", 0)
 
-# Customer site IDs (Phoenix area for Story 5)
-CUST_PHX = 277
-CUST_TUS = 278
-CUST_MES = 279
-CUST_LAX = 273
-CUST_SEA = 270
+# Customer site IDs
+CUST_PHX = _SITES.get("CUST_PHX", 0)
+CUST_TUS = _SITES.get("CUST_TUS", 0)
+CUST_MES = _SITES.get("CUST_MES", 0)
+CUST_LAX = _SITES.get("CUST_LAX", 0)
+CUST_SEA = _SITES.get("CUST_SEA", 0)
 
-# Product IDs (string, AWS SC format)
-FP001 = "CFG22_FP001"  # Chicken Breast IQF 10lb
-FP002 = "CFG22_FP002"  # Beef Patties 80/20
-FP003 = "CFG22_FP003"  # Pork Chops Bone-In
-FP004 = "CFG22_FP004"  # Turkey Breast Deli 8lb
-FP005 = "CFG22_FP005"  # Seafood Mix Premium
-RD001 = "CFG22_RD001"  # Cheddar Block Sharp 5lb
-RD002 = "CFG22_RD002"  # Mozzarella Block
-RD003 = "CFG22_RD003"  # Cream Cheese Block 3lb
-RD004 = "CFG22_RD004"  # Greek Yogurt Plain 32oz
-RD005 = "CFG22_RD005"  # Butter Salted Grade AA
-FD001 = "CFG22_FD001"  # Ice Cream Vanilla Premium
-FD002 = "CFG22_FD002"  # Sorbet Mango
+# Product IDs (string, AWS SC format — config-prefixed)
+FP001 = f"{_PREFIX}FP001"  # Chicken Breast IQF 10lb
+FP002 = f"{_PREFIX}FP002"  # Beef Patties 80/20
+FP003 = f"{_PREFIX}FP003"  # Pork Chops Bone-In
+FP004 = f"{_PREFIX}FP004"  # Turkey Breast Deli 8lb
+FP005 = f"{_PREFIX}FP005"  # Seafood Mix Premium
+RD001 = f"{_PREFIX}RD001"  # Cheddar Block Sharp 5lb
+RD002 = f"{_PREFIX}RD002"  # Mozzarella Block
+RD003 = f"{_PREFIX}RD003"  # Cream Cheese Block 3lb
+RD004 = f"{_PREFIX}RD004"  # Greek Yogurt Plain 32oz
+RD005 = f"{_PREFIX}RD005"  # Butter Salted Grade AA
+FD001 = f"{_PREFIX}FD001"  # Ice Cream Vanilla Premium
+FD002 = f"{_PREFIX}FD002"  # Sorbet Mango
 
 # Unit costs (from product table)
 UNIT_COSTS = {
@@ -98,26 +103,19 @@ UNIT_COSTS = {
 
 # Baseline weekly demand at DC (units/week) — derived from avg of last 4 weeks of daily data
 BASELINE_WEEKLY = {
-    FP001: 56000,  # ~8k/day
-    FP002: 28000,  # ~4k/day
-    FP003: 20000,
-    FP004: 18000,
-    FP005: 10000,
-    RD001: 42000,
-    RD002: 38000,
-    RD003: 32000,
-    RD004: 45000,
-    RD005: 8500,
-    FD001: 22000,
-    FD002: 18000,
-    "CFG22_BV001": 35000, "CFG22_BV002": 30000, "CFG22_BV003": 25000,
-    "CFG22_BV004": 22000, "CFG22_BV005": 12000,
-    "CFG22_DP001": 28000, "CFG22_DP002": 22000, "CFG22_DP003": 18000,
-    "CFG22_DP004": 16000, "CFG22_DP005": 8000,
-    "CFG22_FD003": 15000, "CFG22_FD004": 12000, "CFG22_FD005": 8000,
+    FP001: 56000,  FP002: 28000,  FP003: 20000,
+    FP004: 18000,  FP005: 10000,
+    RD001: 42000,  RD002: 38000,  RD003: 32000,
+    RD004: 45000,  RD005: 8500,
+    FD001: 22000,  FD002: 18000,
+    f"{_PREFIX}BV001": 35000, f"{_PREFIX}BV002": 30000, f"{_PREFIX}BV003": 25000,
+    f"{_PREFIX}BV004": 22000, f"{_PREFIX}BV005": 12000,
+    f"{_PREFIX}DP001": 28000, f"{_PREFIX}DP002": 22000, f"{_PREFIX}DP003": 18000,
+    f"{_PREFIX}DP004": 16000, f"{_PREFIX}DP005": 8000,
+    f"{_PREFIX}FD003": 15000, f"{_PREFIX}FD004": 12000, f"{_PREFIX}FD005": 8000,
 }
 
-# All 25 products
+# All products
 ALL_PRODUCTS = list(BASELINE_WEEKLY.keys())
 
 # Demo timeline
@@ -127,11 +125,20 @@ WED = date(2026, 2, 26)
 THU = date(2026, 2, 27)
 FRI = date(2026, 2, 28)
 
-# User IDs (from seed_food_dist_demo.py)
-ADMIN_USER = 57
-SOP_USER = 63
-MPS_USER = 64
-ATP_USER = 67
+# User IDs (resolved from tenant admin + known decision levels)
+ADMIN_USER = _fd["admin_user_id"] or 57
+# SOP/MPS/ATP users looked up at runtime if needed
+from app.db.session import sync_session_factory as _ssf
+from sqlalchemy import text as _text
+_udb = _ssf()
+_user_rows = _udb.execute(_text(
+    "SELECT id, decision_level FROM users WHERE tenant_id = :tid AND decision_level IS NOT NULL"
+), {"tid": TENANT_ID}).fetchall()
+_user_map = {r[1]: r[0] for r in _user_rows}
+SOP_USER = _user_map.get("SOP_DIRECTOR", ADMIN_USER)
+MPS_USER = _user_map.get("MPS_MANAGER", ADMIN_USER)
+ATP_USER = _user_map.get("ATP_ANALYST", ADMIN_USER)
+_udb.close()
 
 # Supplier names for PO vendor_id field
 SUPPLIER_NAMES = {

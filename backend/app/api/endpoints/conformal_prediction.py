@@ -409,8 +409,15 @@ async def auto_calibrate(
     service = get_conformal_service()
     calibrated = []
 
+    # SOC II: Scope by config_id — conformal calibration must be tenant-scoped
+    config_filter = []
+    if hasattr(request, 'config_id') and request.config_id:
+        config_filter.append(Forecast.config_id == request.config_id)
+
     # Query forecasts with error data (these have historical actuals)
     query = select(Forecast).where(Forecast.forecast_error.isnot(None))
+    for cf in config_filter:
+        query = query.where(cf)
 
     if request.product_id:
         query = query.where(Forecast.product_id == request.product_id)
@@ -424,6 +431,8 @@ async def auto_calibrate(
         .group_by(Forecast.product_id, Forecast.site_id)
         .having(func.count() >= 10)
     )
+    for cf in config_filter:
+        group_query = group_query.where(cf)
     if request.product_id:
         group_query = group_query.where(Forecast.product_id == request.product_id)
     if request.site_id:
@@ -443,6 +452,8 @@ async def auto_calibrate(
             ))
             .order_by(Forecast.forecast_date)
         )
+        for cf in config_filter:
+            data_query = data_query.where(cf)
         data_result = await db.execute(data_query)
         forecasts = data_result.scalars().all()
 

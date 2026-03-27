@@ -56,10 +56,13 @@ logger = logging.getLogger("warm_start")
 # Constants
 # ---------------------------------------------------------------------------
 
-FOOD_DIST_CONFIG_ID = 22
-FOOD_DIST_TENANT_ID = 3
+# Dynamic lookup — no hardcoded IDs
+from scripts.food_dist_lookup import resolve_food_dist_ids as _resolve
+_fd = _resolve()
+FOOD_DIST_CONFIG_ID = _fd["config_id"]
+FOOD_DIST_TENANT_ID = _fd["tenant_id"]
 FOOD_DIST_SITE_KEY = "CDC_WEST"
-FOOD_DIST_SITE_ID = 256
+FOOD_DIST_SITE_ID = _fd["dc_site_id"]
 
 # TRMs active at an INVENTORY-type DC (7 of 11)
 DC_ACTIVE_TRMS = frozenset([

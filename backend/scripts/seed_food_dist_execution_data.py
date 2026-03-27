@@ -27,41 +27,24 @@ from app.db.session import db_url
 
 engine = create_engine(db_url)
 
-# ─── Constants ───────────────────────────────────────────────────────────────
-CONFIG_ID = 22
-DC_SITE_ID = 256
+# ─── Constants (resolved dynamically) ────────────────────────────────────────
+from scripts.food_dist_lookup import resolve_food_dist_ids as _resolve
+_fd = _resolve(engine=engine)
+CONFIG_ID = _fd["config_id"]
+DC_SITE_ID = _fd["dc_site_id"]
+TENANT_ID = _fd["tenant_id"]
+USER_ID = _fd["admin_user_id"] or 60
+_SITES = _fd["site_ids"]
 
-# Look up tenant, company, and user IDs dynamically from config
+# Find the company record for this tenant
 with engine.connect() as _conn:
-    _row = _conn.execute(text(
-        "SELECT sc.tenant_id, t.admin_id "
-        "FROM supply_chain_configs sc JOIN tenants t ON t.id = sc.tenant_id "
-        "WHERE sc.id = :cid"
-    ), {"cid": CONFIG_ID}).fetchone()
-    if not _row:
-        print(f"ERROR: Config {CONFIG_ID} or its tenant not found.")
-        sys.exit(1)
-    TENANT_ID = _row[0]
-    USER_ID = _row[1] or 60
-    # Find the company record for this tenant
     _comp = _conn.execute(text(
         "SELECT id FROM company WHERE id LIKE :pat LIMIT 1"
     ), {"pat": f"%CORP_{TENANT_ID}"}).fetchone()
-    COMPANY_ID = _comp[0] if _comp else f"UF_CORP_{TENANT_ID}"
+    COMPANY_ID = _comp[0] if _comp else _fd["company_id"] or f"UF_CORP_{TENANT_ID}"
 
-SUPPLIER_SITES = [
-    (257, "TYSON"), (258, "KRAFT"), (259, "GENMILLS"), (260, "NESTLE"),
-    (261, "TROP"), (262, "SYSCOMEAT"), (263, "LANDOLAKES"), (264, "CONAGRA"),
-    (265, "RICHPROD"), (266, "COCACOLA"),
-]
-
-CUSTOMER_SITES = [
-    (267, "CUST_PDX"), (268, "CUST_EUG"), (269, "CUST_SAL"),
-    (270, "CUST_SEA"), (271, "CUST_TAC"), (272, "CUST_SPO"),
-    (273, "CUST_LAX"), (274, "CUST_SFO"), (275, "CUST_SDG"),
-    (276, "CUST_SAC"), (277, "CUST_PHX"), (278, "CUST_TUS"),
-    (279, "CUST_MES"),
-]
+SUPPLIER_SITES = _fd["supplier_sites"]
+CUSTOMER_SITES = _fd["customer_sites"]
 
 PRODUCTS = [f"CFG22_{cat}{str(i).zfill(3)}" for cat in ["FP", "DP", "BV", "FD", "RD"] for i in range(1, 6)]
 

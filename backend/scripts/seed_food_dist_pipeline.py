@@ -20,10 +20,13 @@ from app.db.session import sync_session_factory
 from app.models.forecast_pipeline import ForecastPipelineConfig, ForecastPipelineRun
 from app.services.forecast_pipeline_service import ForecastPipelineService
 
-CONFIG_ID = 22
-TENANT_ID = 3
+# Dynamic lookup — no hardcoded config IDs
+from scripts.food_dist_lookup import resolve_food_dist_ids as _resolve
+_fd = _resolve()
+CONFIG_ID = _fd["config_id"]
+TENANT_ID = _fd["tenant_id"]
+ADMIN_USER_ID = _fd["admin_user_id"] or 57
 PIPELINE_NAME = "Food Dist - Default Pipeline"
-ADMIN_USER_ID = 57  # admin@distdemo.com
 
 
 def main() -> None:

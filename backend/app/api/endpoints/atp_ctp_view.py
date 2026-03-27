@@ -139,7 +139,8 @@ async def calculate_atp_ctp(
     site_id: str,
     projection_date: date,
     planning_horizon_weeks: int,
-    include_capacity: bool = True
+    include_capacity: bool = True,
+    config_id: int = None,
 ) -> List[InvProjection]:
     """
     Calculate ATP/CTP for a product-site combination
@@ -151,13 +152,11 @@ async def calculate_atp_ctp(
     """
     projections = []
 
-    # Get current inventory level
-    inv_level_stmt = select(InvLevel).where(
-        and_(
-            InvLevel.product_id == product_id,
-            InvLevel.site_id == site_id
-        )
-    )
+    # Get current inventory level — SOC II: config-scoped
+    inv_filters = [InvLevel.product_id == product_id, InvLevel.site_id == site_id]
+    if config_id:
+        inv_filters.append(InvLevel.config_id == config_id)
+    inv_level_stmt = select(InvLevel).where(and_(*inv_filters))
     result = await db.execute(inv_level_stmt)
     inv_level = result.scalar_one_or_none()
 
@@ -173,29 +172,31 @@ async def calculate_atp_ctp(
     for week in range(planning_horizon_weeks):
         week_date = projection_date + timedelta(weeks=week)
 
-        # Get scheduled receipts for this week (supply plans)
-        receipts_stmt = select(func.sum(SupplyPlan.planned_order_quantity)).where(
-            and_(
-                SupplyPlan.product_id == product_id,
-                SupplyPlan.site_id == site_id,
-                SupplyPlan.planned_receipt_date >= week_date,
-                SupplyPlan.planned_receipt_date < week_date + timedelta(weeks=1),
-                SupplyPlan.is_approved == "Y"
-            )
-        )
+        # Get scheduled receipts for this week (supply plans) — config-scoped
+        sp_filters = [
+            SupplyPlan.product_id == product_id,
+            SupplyPlan.site_id == site_id,
+            SupplyPlan.planned_receipt_date >= week_date,
+            SupplyPlan.planned_receipt_date < week_date + timedelta(weeks=1),
+            SupplyPlan.is_approved == "Y",
+        ]
+        if config_id:
+            sp_filters.append(SupplyPlan.config_id == config_id)
+        receipts_stmt = select(func.sum(SupplyPlan.planned_order_quantity)).where(and_(*sp_filters))
         result = await db.execute(receipts_stmt)
         scheduled_receipts = float(result.scalar() or 0.0)
 
-        # Get demand forecast for this week
-        forecast_stmt = select(Forecast.quantity_p50).where(
-            and_(
-                Forecast.product_id == product_id,
-                Forecast.site_id == site_id,
-                Forecast.forecast_date >= week_date,
-                Forecast.forecast_date < week_date + timedelta(weeks=1),
-                Forecast.is_active == "Y"
-            )
-        )
+        # Get demand forecast for this week — config-scoped
+        fc_filters = [
+            Forecast.product_id == product_id,
+            Forecast.site_id == site_id,
+            Forecast.forecast_date >= week_date,
+            Forecast.forecast_date < week_date + timedelta(weeks=1),
+            Forecast.is_active == "Y",
+        ]
+        if config_id:
+            fc_filters.append(Forecast.config_id == config_id)
+        forecast_stmt = select(Forecast.quantity_p50).where(and_(*fc_filters))
         result = await db.execute(forecast_stmt)
         forecast_rows = result.scalars().all()
         forecasted_demand = sum(float(f) for f in forecast_rows) if forecast_rows else 0.0
@@ -323,7 +324,8 @@ async def calculate_atp_ctp_endpoint(
     if not site:
         raise HTTPException(status_code=404, detail=f"Site {request.site_id} not found")
 
-    # Calculate ATP/CTP
+    # Calculate ATP/CTP — SOC II: pass user's config for tenant scoping
+    user_config_id = current_user.default_config_id if current_user else None
     projections = await calculate_atp_ctp(
         db,
         company_id,
@@ -331,7 +333,8 @@ async def calculate_atp_ctp_endpoint(
         request.site_id,
         request.projection_date,
         request.planning_horizon_weeks,
-        request.include_capacity
+        request.include_capacity,
+        config_id=user_config_id,
     )
 
     # Delete existing projections for this product-site-date range
@@ -393,6 +396,7 @@ async def bulk_calculate_atp_ctp(
     for product_id in request.product_ids:
         for site_id in request.site_ids:
             try:
+                user_config_id = current_user.default_config_id if current_user else None
                 projections = await calculate_atp_ctp(
                     db,
                     company_id,
@@ -400,7 +404,8 @@ async def bulk_calculate_atp_ctp(
                     site_id,
                     request.start_date,
                     request.planning_horizon_weeks,
-                    request.include_capacity
+                    request.include_capacity,
+                    config_id=user_config_id,
                 )
 
                 # Delete existing projections

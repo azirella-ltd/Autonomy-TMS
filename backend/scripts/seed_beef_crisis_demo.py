@@ -31,9 +31,11 @@ from app.db.session import sync_session_factory
 def main():
     db = sync_session_factory()
 
-    TENANT_ID = 3        # Food Dist
-    CONFIG_ID = 22        # Food Dist config
-    ADMIN_USER_ID = None  # Will look up
+    from scripts.food_dist_lookup import resolve_food_dist_ids
+    _fd = resolve_food_dist_ids(db=db)
+    TENANT_ID = _fd["tenant_id"]
+    CONFIG_ID = _fd["config_id"]
+    ADMIN_USER_ID = None  # Will look up below
 
     try:
         # ── Find tenant admin user ───────────────────────────────────────

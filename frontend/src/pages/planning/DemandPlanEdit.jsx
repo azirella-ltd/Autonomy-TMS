@@ -880,7 +880,7 @@ const DemandPlanEdit = () => {
   const [configsLoading, setConfigsLoading] = useState(true);
   const [configsError, setConfigsError] = useState(null);
 
-  // Load supply chain configs on mount
+  // Load supply chain configs on mount and auto-select user's default
   useEffect(() => {
     const loadConfigs = async () => {
       setConfigsLoading(true);
@@ -888,6 +888,10 @@ const DemandPlanEdit = () => {
       try {
         const configs = await getSupplyChainConfigs();
         setSupplyChainConfigs(configs);
+        // Auto-select the first config if none selected
+        if (!selectedConfig && configs.length > 0) {
+          setSelectedConfig(configs[0].id.toString());
+        }
       } catch (err) {
         console.error('Failed to load supply chain configs:', err);
         setConfigsError('Failed to load supply chain configurations');
@@ -896,7 +900,7 @@ const DemandPlanEdit = () => {
       }
     };
     loadConfigs();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load display name lookups when config changes
   useEffect(() => {

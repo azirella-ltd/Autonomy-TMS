@@ -402,11 +402,15 @@ def generate_planned_orders(
         # Get current inventory from inv_level table
         from app.models.sc_entities import InvLevel
 
+        # SOC II: Scope by MPS plan's config_id
+        _mrp_config_id = mps_plan.supply_chain_config_id
+
         inv_level = db.execute(
             select(InvLevel).where(
                 and_(
                     InvLevel.site_id == site_id,
-                    InvLevel.product_id == component_id
+                    InvLevel.product_id == component_id,
+                    InvLevel.config_id == _mrp_config_id,
                 )
             )
         ).scalar_one_or_none()
@@ -424,7 +428,8 @@ def generate_planned_orders(
                     SupplyPlan.product_id == component_id,
                     SupplyPlan.planned_receipt_date >= period_start,
                     SupplyPlan.planned_receipt_date < period_end,
-                    SupplyPlan.status.in_(['APPROVED', 'RELEASED'])
+                    SupplyPlan.status.in_(['APPROVED', 'RELEASED']),
+                    SupplyPlan.config_id == _mrp_config_id,
                 )
             )
         ).scalar()

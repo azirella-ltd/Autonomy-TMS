@@ -284,8 +284,13 @@ async def list_supply_plans(
     Returns paginated list of supply plans matching filter criteria.
     """
     try:
+        # SOC II: Also scope by user's config_id to prevent cross-tenant access via company_id
+        user_config_id = current_user.default_config_id if current_user else None
+
         # Build query
         stmt = select(SupplyPlan).where(SupplyPlan.company_id == company_id)
+        if user_config_id:
+            stmt = stmt.where(SupplyPlan.config_id == user_config_id)
 
         if product_id:
             stmt = stmt.where(SupplyPlan.product_id == product_id)

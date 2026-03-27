@@ -1373,13 +1373,11 @@ def _detect_inventory_risks(db: Session, config_id: Optional[int]) -> List[Inven
         for inv, site, product in inventory_rows:
             available = float(inv.available_qty or inv.on_hand_qty or 0)
 
-            # Look up inventory policy for this product-site
-            policy = db.query(InvPolicy).filter(
-                and_(
-                    InvPolicy.product_id == product.id,
-                    InvPolicy.site_id == site.id,
-                )
-            ).first()
+            # Look up inventory policy for this product-site — SOC II: config-scoped
+            policy_filters = [InvPolicy.product_id == product.id, InvPolicy.site_id == site.id]
+            if hasattr(inv, 'config_id') and inv.config_id:
+                policy_filters.append(InvPolicy.config_id == inv.config_id)
+            policy = db.query(InvPolicy).filter(and_(*policy_filters)).first()
 
             # Determine thresholds
             min_qty = 0

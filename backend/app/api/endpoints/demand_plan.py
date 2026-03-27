@@ -126,13 +126,20 @@ def get_current_demand_plan(
     site_id: Optional[str] = None,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
+    config_id: Optional[int] = None,
     limit: int = Query(1000, le=10000),
 ):
     query = db.query(Forecast).filter(_active_filter())
 
+    # Config scope — use explicit param, fall back to user's default
+    # SOC II: NEVER return unscoped data — if no config, return empty
+    effective_config_id = config_id or (current_user.default_config_id if current_user else None)
+    if not effective_config_id:
+        return []
+    query = query.filter(Forecast.config_id == effective_config_id)
+
     # User scope filtering — restrict to sites/products the user can access
-    config_id = current_user.default_config_id if current_user else None
-    query = _apply_scope_filters(query, db, current_user, config_id)
+    query = _apply_scope_filters(query, db, current_user, effective_config_id)
 
     if product_id:
         query = query.filter(Forecast.product_id == product_id)
@@ -169,7 +176,13 @@ def get_demand_plan_versions(
     *,
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_user),
+    config_id: Optional[int] = None,
 ):
+    effective_config_id = config_id or (current_user.default_config_id if current_user else None)
+    base_filter = _active_filter()
+    if effective_config_id:
+        base_filter = and_(base_filter, Forecast.config_id == effective_config_id)
+
     rows = (
         db.query(
             Forecast.source_event_id.label("version_id"),
@@ -178,7 +191,7 @@ def get_demand_plan_versions(
             func.max(Forecast.created_by).label("created_by"),
             func.count(Forecast.id).label("forecast_count"),
         )
-        .filter(_active_filter())
+        .filter(base_filter)
         .group_by(Forecast.source_event_id)
         .order_by(func.max(Forecast.source_update_dttm).desc(), func.max(Forecast.created_dttm).desc())
         .limit(20)
@@ -212,10 +225,15 @@ def get_demand_plan_delta(
     version2: str = Query(...),
     product_id: Optional[str] = None,
     site_id: Optional[str] = None,
+    config_id: Optional[int] = None,
     min_delta_pct: float = Query(0.0),
 ):
+    effective_config_id = config_id or (current_user.default_config_id if current_user else None)
     q1 = db.query(Forecast).filter(Forecast.source_event_id == version1)
     q2 = db.query(Forecast).filter(Forecast.source_event_id == version2)
+    if effective_config_id:
+        q1 = q1.filter(Forecast.config_id == effective_config_id)
+        q2 = q2.filter(Forecast.config_id == effective_config_id)
     if product_id:
         q1 = q1.filter(Forecast.product_id == product_id)
         q2 = q2.filter(Forecast.product_id == product_id)
@@ -347,20 +365,29 @@ def get_demand_plan_summary(
     *,
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_user),
+    config_id: Optional[int] = None,
 ):
-    total_forecasts = db.query(func.count(Forecast.id)).filter(_active_filter()).scalar() or 0
-    product_count = db.query(func.count(distinct(Forecast.product_id))).filter(_active_filter()).scalar() or 0
-    site_count = db.query(func.count(distinct(Forecast.site_id))).filter(_active_filter()).scalar() or 0
-    start_date, end_date = db.query(func.min(Forecast.forecast_date), func.max(Forecast.forecast_date)).filter(_active_filter()).first()
+    effective_config_id = config_id or (current_user.default_config_id if current_user else None)
+
+    def _base():
+        f = _active_filter()
+        if effective_config_id:
+            return and_(f, Forecast.config_id == effective_config_id)
+        return f
+
+    total_forecasts = db.query(func.count(Forecast.id)).filter(_base()).scalar() or 0
+    product_count = db.query(func.count(distinct(Forecast.product_id))).filter(_base()).scalar() or 0
+    site_count = db.query(func.count(distinct(Forecast.site_id))).filter(_base()).scalar() or 0
+    start_date, end_date = db.query(func.min(Forecast.forecast_date), func.max(Forecast.forecast_date)).filter(_base()).first()
 
     # Compute average demand per forecast period (meaningful metric)
-    avg_demand = db.query(func.avg(Forecast.forecast_p50)).filter(_active_filter()).scalar() or 0.0
-    avg_demand_median = db.query(func.avg(Forecast.forecast_median)).filter(_active_filter()).scalar()
+    avg_demand = db.query(func.avg(Forecast.forecast_p50)).filter(_base()).scalar() or 0.0
+    avg_demand_median = db.query(func.avg(Forecast.forecast_median)).filter(_base()).scalar()
     if not avg_demand_median:
         avg_demand_median = avg_demand
 
     # Count distinct forecast periods (weeks) for context
-    period_count = db.query(func.count(distinct(Forecast.forecast_date))).filter(_active_filter()).scalar() or 0
+    period_count = db.query(func.count(distinct(Forecast.forecast_date))).filter(_base()).scalar() or 0
 
     return {
         "total_forecasts": int(total_forecasts),

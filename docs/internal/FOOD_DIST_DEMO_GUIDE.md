@@ -83,11 +83,11 @@ Food Dist operates a hub-and-spoke distribution network:
 10 Suppliers                    CDC_WEST                    10 Customers
  (Tyson, Kraft,     ────────►  West Valley City, UT  ────────►  (QUICKSERV, Metro
   Rich Products,                    │                             Grocery, Restaurant
-  Nestle, etc.)               25 products                        Supply, etc.)
+  Nestle, etc.)               26 products                        Supply, etc.)
                            5 temperature categories
 ```
 
-**25 products** across 5 categories: Frozen Proteins (FP), Refrigerated Dairy (RD), Dry Pantry (DP), Frozen Desserts (FD), Beverages (BV).
+**26 products** across 5 categories: Frozen Proteins (FP), Refrigerated Dairy (RD), Dry Pantry (DP), Frozen Desserts (FD), Beverages (BV).
 
 **To visualize the network**: Navigate to **Administration > Supply Chain Configs** (`/admin/tenant/supply-chain-configs`), select "Food Dist Distribution Network", and click the **Network** tab to see the interactive D3-Sankey diagram showing all suppliers → DC → customer flows.
 
@@ -594,6 +594,356 @@ Layer 4   — S&OP GraphSAGE                      weekly  (strategic policy para
 
 **Where to show this**: Navigate to **AI & Agents > Hive Dashboard** (`/admin/hive-dashboard`) to see urgency vector evolution, signal bus activity, and the Site tGNN adjustment magnitudes per TRM.
 
+---
+
+## Technical Reference: Network, Data Model, and History Generation
+
+This section documents the Food Distribution demo's data architecture — the supply chain network topology, all seeded entity types, demand model characteristics, and operational statistics. It is the technical companion to the demo walkthrough above.
+
+**Source files**:
+- Config generator: `backend/app/services/food_dist_config_generator.py`
+- History generator: `backend/app/services/food_dist_history_generator.py`
+- Seed script: `backend/scripts/seed_food_dist_demo.py`
+- Warm-start pipeline: `backend/scripts/warm_start_food_dist.py`
+
+---
+
+### Network Topology
+
+**Type**: Hub-and-spoke distribution network (no manufacturing)
+
+```
+10 Suppliers ──► CDC_WEST (Central DC) ──┬──► RDC_NW ──► 7 NW Customers
+                West Valley City, UT     └──► RDC_SW ──► 7 SW Customers
+```
+
+#### Internal Sites (3)
+
+| Site Code | Type | Location | Master Type | Capacity |
+|-----------|------|----------|-------------|----------|
+| CDC_WEST | Central DC | West Valley City, UT | INVENTORY | 650K cases (150K frozen, 200K refrig, 300K dry) |
+| RDC_NW | Regional DC | Seattle, WA | INVENTORY | 100K cases |
+| RDC_SW | Regional DC | Riverside, CA | INVENTORY | 100K cases |
+
+#### Suppliers (10 external trading partners)
+
+| Code | Name | Products | Lead Time | Variability | Reliability | Min Order |
+|------|------|----------|-----------|-------------|-------------|-----------|
+| TYSON | Tyson Foods | FP001, FP002 | 7 days | 20% | 95% | $2,000 |
+| KRAFT | Kraft Heinz | FD001, FD003 | 10 days | 15% | 97% | $1,500 |
+| GENMILLS | General Mills | DP003, DP004 | 8 days | 18% | 96% | $1,200 |
+| NESTLE | Nestle USA | FD002, DP005 | 12 days | 22% | 94% | $2,500 |
+| TROP | Tropicana | BV001, BV003 | 5 days | 15% | 98% | $1,000 |
+| SYSCOMEAT | Sysco Meat Co | FP003, FP005 | 9 days | 20% | 94% | $3,000 |
+| LANDOLAKES | Land O'Lakes | RD004, RD005 | 6 days | 12% | 97% | $1,500 |
+| CONAGRA | ConAgra Brands | RD001, DP001 | 8 days | 18% | 95% | $1,800 |
+| RICHPROD | Rich Products | RD002, RD003 | 10 days | 20% | 95% | $2,000 |
+| COCACOLA | Coca-Cola Co | BV004, BV005 | 4 days | 10% | 99% | $1,200 |
+
+#### Customers (14 external trading partners)
+
+| Code | Name | Segment | Size | Region | Demand Mult | Order Freq |
+|------|------|---------|------|--------|-------------|------------|
+| CUST_PDX | Portland Restaurant Supply | Restaurant Supply | large | NW | 1.5x | weekly |
+| CUST_EUG | Eugene Organic Cooperative | Natural/Specialty | medium | NW | 1.2x | weekly |
+| CUST_SAL | Salem School District | Institutional | small | NW | 1.0x | weekly |
+| CUST_SEA | Seattle Metro Grocery | Retail Chain | large | NW | 0.6x | bi-weekly |
+| CUST_TAC | Tacoma Fresh Foods | Retail | medium | NW | 1.1x | weekly |
+| CUST_SPO | Spokane Hospitality Group | Hotel/Hospitality | medium | NW | 0.8x | weekly |
+| CUST_RNO | Reno Fresh Markets | Natural/Specialty | small | NW | 0.75x | weekly |
+| CUST_LAX | QUICKSERV SoCal | Quick Service Restaurant | large | SW | 2.0x | weekly |
+| CUST_SFO | Bay Area Bistro Group | Fine Dining | medium | SW | 0.9x | weekly |
+| CUST_SDG | San Diego Catering Co | Catering/Events | large | SW | 1.4x | weekly |
+| CUST_SAC | Sacramento Valley Foods | Distributor | medium | SW | 1.0x | weekly |
+| CUST_PHX | Phoenix QUICKSERV | Quick Service Restaurant | large | SW | 1.8x | weekly |
+| CUST_TUS | Green Valley Markets | Natural/Specialty | small | SW | 0.7x | bi-weekly |
+| CUST_MES | Mesa Convention Services | Convention/Events | medium | SW | 1.1x | weekly |
+
+> **Customer Churn**: CUST_SAL (Salem) is lost at month 8, CUST_TUS (Tucson) at month 14. CUST_RNO (Reno) is gained at month 10. This creates realistic demand volatility that isn't visible in the static customer list.
+
+---
+
+### Products (25 SKUs across 5 categories)
+
+| Group Code | Category | Temperature | SKUs | Weekly Demand Range | Shelf Life Range |
+|------------|----------|-------------|------|--------------------|-----------------|
+| FRZ_PROTEIN | Frozen Proteins | FROZEN | FP001-FP006 | 25-150 cases | 180-365 days |
+| REF_DAIRY | Refrigerated Dairy | REFRIGERATED | RD001-RD005 | 100-300 cases | 45-180 days |
+| DRY_PANTRY | Dry Pantry | AMBIENT | DP001-DP005 | 120-200 cases | 365-1,095 days |
+| FRZ_DESSERT | Frozen Desserts | FROZEN | FD001-FD005 | 35-80 cases | 270-365 days |
+| BEV | Beverages | CHILLED | BV001-BV005 | 60-220 cases | 45-90 days |
+
+**Demand coefficient of variation**: 0.20 (butter, coffee) to 0.60 (Wagyu Beef NPI) — higher CV products are harder to forecast and have more safety stock requirements. The Wagyu Beef NPI (FP006) has the highest CV at 0.60 due to new product demand uncertainty.
+
+---
+
+### 2-Year Transactional History (16 Entity Types)
+
+The history generator creates 730 days of realistic transactional data. All records have `source="HISTORY_GEN"` for traceability.
+
+#### Entity Record Counts (approximate)
+
+| Entity | Records | Purpose |
+|--------|---------|---------|
+| **OutboundOrderLine** | ~12,000 | Customer demand (with ~180 cancelled) |
+| **FulfillmentOrder** | ~11,800 | Warehouse pick/pack/ship |
+| **Shipment** (outbound) | ~2,500 | Material movement to customers |
+| **ShipmentLot** | ~30,000 | Food lot traceability (batch, expiry) |
+| **Backorder** | ~350 | Unfulfilled demand |
+| **InboundOrder** | ~1,200 | Supplier POs + inter-DC transfers |
+| **InboundOrderLine** | ~4,500 | PO/transfer line items |
+| **InboundOrderLineSchedule** | ~2,500 | Split delivery schedules (promised vs actual) |
+| **PurchaseOrder** | ~1,000 | Typed PO records (FK base for GR) |
+| **PurchaseOrderLineItem** | ~2,500 | PO line items with pricing |
+| **GoodsReceipt** | ~1,000 | Supplier receipt with inspection |
+| **GoodsReceiptLineItem** | ~2,500 | Receipt lines: accepted/rejected/variance |
+| **QualityOrder** | ~300 | Incoming quality inspection lots |
+| **QualityOrderLineItem** | ~900 | Inspection characteristics (temp, visual, weight, micro) |
+| **TransferOrder** | ~500 | CDC→RDC inter-DC transfers |
+| **TransferOrderLineItem** | ~2,000 | Transfer lines with damage tracking |
+| **MaintenanceOrder** | ~150 | Cold chain equipment PM/corrective/emergency |
+| **InvLevel** | ~55,000 | Daily inventory snapshots (3 sites x 25 SKUs x 730 days) |
+| **Forecast** | ~38,000 | Daily P10/P50/P90 forecasts |
+| **ConsensusDemand** | ~1,800 | Monthly S&OP consensus |
+| **SupplementaryTimeSeries** | ~600 | External signals (promos, weather, market) |
+| **InventoryProjection** | ~7,800 | Weekly ATP/CTP with stochastic bands |
+
+**Total**: ~175,000+ records
+
+---
+
+### Demand Model
+
+The demand model produces realistic customer ordering patterns with multiple signal components:
+
+#### Base Demand Formula
+
+```
+demand = base × season × trend × holiday × promo × noise
+```
+
+| Component | Description |
+|-----------|-------------|
+| **Base** | `weekly_demand_mean / 5 × demand_multiplier` (normalized across all customers) |
+| **Seasonality** | Monthly profile per product group (e.g., frozen desserts: 0.70 in Jan → 1.40 in Jul → 1.00 in Dec) |
+| **Trend** | 2% annual growth: `1.0 + 0.02 × (day_offset / 365)` |
+| **Holiday spikes** | 8 holidays with category-specific multipliers and lead-in ramp windows |
+| **Promotional lifts** | 3% daily probability, 15-40% lift for 5-10 days, correlated with SupplementaryTimeSeries |
+| **Noise** | Log-normal (right-skewed): `lognormvariate(μ, σ)` where `σ = demand_cv × 0.4` |
+
+#### Day-of-Week Weights
+
+| Mon | Tue | Wed | Thu | Fri |
+|-----|-----|-----|-----|-----|
+| 1.30 | 1.15 | 1.05 | 0.95 | 0.55 |
+
+#### Holiday Spike Calendar
+
+| Holiday | Month/Day | Affected Groups | Multiplier | Lead-in Window |
+|---------|-----------|----------------|------------|----------------|
+| Thanksgiving | Nov 22 | FRZ_PROTEIN, REF_DAIRY, DRY_PANTRY, FRZ_DESSERT | 1.45x | 14 days |
+| Christmas | Dec 25 | All 5 groups | 1.40x | 14 days |
+| July 4th | Jul 4 | FRZ_PROTEIN, BEV, FRZ_DESSERT | 1.35x | 10 days |
+| Super Bowl | Feb 9 | FRZ_PROTEIN, BEV, FRZ_DESSERT, REF_DAIRY | 1.30x | 7 days |
+| Back-to-School | Aug 20 | DRY_PANTRY, REF_DAIRY, BEV | 1.25x | 14 days |
+| Memorial Day | May 27 | FRZ_PROTEIN, BEV | 1.25x | 7 days |
+| Easter | Apr 13 | REF_DAIRY, FRZ_DESSERT, FRZ_PROTEIN | 1.20x | 10 days |
+| Labor Day | Sep 1 | FRZ_PROTEIN, BEV, FRZ_DESSERT | 1.20x | 7 days |
+
+#### Basket Correlations
+
+When one product is in a customer order, its basket partner has a pull-in probability:
+
+| Product A | Product B | Pull-in Probability |
+|-----------|-----------|-------------------|
+| Chicken IQF (FP001) | Cheddar (RD001) | 60% |
+| Ice Cream (FD001) | Gelato (FD003) | 70% |
+| Flour (DP003) | Sugar (DP004) | 60% |
+| Beef Patties (FP002) | Mozzarella (RD002) | 50% |
+| OJ (BV001) | Lemonade (BV003) | 50% |
+| Pasta (DP001) | Cream Cheese (RD003) | 40% |
+| Pork Chops (FP003) | Rice (DP002) | 35% |
+| Chicken IQF (FP001) | Iced Tea (BV004) | 30% |
+
+#### New Product Introduction (NPI): Wagyu Beef Strips A5 (FP006)
+
+The Frozen Proteins group includes one NPI product — **Wagyu Beef Strips A5** — launched 3 weeks before the end of the 2-year history window. This demonstrates realistic cold-start demand patterns that the TRMs and forecast models must handle.
+
+| Attribute | Value |
+|-----------|-------|
+| **SKU** | FP006 |
+| **Name** | Wagyu Beef Strips A5 |
+| **Description** | Premium Japanese A5 Wagyu beef strips, frozen |
+| **Unit Size** | 5 lb case |
+| **Unit Cost / Price** | $125.00 / $169.99 (highest-margin protein) |
+| **Shelf Life** | 180 days |
+| **Steady-State Demand** | 25 cases/week (low volume, premium niche) |
+| **Demand CV** | 0.60 (highest variability — new product uncertainty) |
+| **Supplier** | SYSCOMEAT (Sysco Protein Solutions) |
+| **Launch** | Day 709 of 730-day history (~3 weeks before end) |
+
+**Ramp-up behavior**:
+- **Days 1-709**: Zero demand (product does not exist)
+- **Days 709-723** (2-week ramp): S-curve (smoothstep) from 0% to 100% of base demand
+- **Initial stocking multiplier**: 2.5x during ramp (pipeline fill for DCs and customers)
+- **Noise during ramp**: 50% higher CV than steady-state (NPI demand uncertainty)
+- **Days 723-730**: Full steady-state demand at 25 cases/week base
+
+**Basket correlation**: Wagyu has a 25% pull-in probability when Chicken IQF (FP001) is ordered — premium protein upsell opportunity.
+
+**Why this matters for the platform**: NPI products have no forecast history, so the TRM forecast adjustment agent must rely on analogous product data and the conformal prediction bands will be wider. The initial stocking multiplier creates a demand spike that differs from steady-state, testing the inventory buffer TRM's ability to distinguish launch fills from run-rate orders.
+
+#### Order Cancellations
+
+1.5% of outbound order lines are cancelled — these appear with `status=CANCELLED` and zero shipped/promised quantities. Cancelled lines skip fulfillment and shipment generation.
+
+---
+
+### Supplier Lead Time Model
+
+Lead times use **log-normal distributions** instead of Gaussian, producing realistic right-skewed behavior:
+
+```python
+σ = supplier.lead_time_variability
+μ = ln(lead_time_days) - 0.5 × σ²
+lt_actual = lognormvariate(μ, σ)
+```
+
+**Additional effects**:
+- **Q4 freight slowdown** (Oct-Dec): 5-15% multiplier on all lead times
+- **Extreme outlier events** (3% probability): 1.5-3.0x delay (weather, port congestion, carrier failure)
+
+This produces lead time distributions with realistic fat tails — most deliveries are on time, but a meaningful minority have significant delays.
+
+---
+
+### Goods Receipt & Quality Inspection Pipeline
+
+The GR pipeline models real-world receiving dock operations:
+
+```
+PurchaseOrder → GoodsReceipt(s) → GoodsReceiptLineItem(s) → QualityOrder(s) → QualityOrderLineItem(s)
+```
+
+#### Goods Receipt Split Deliveries
+
+| Delivery Pattern | Probability | Split |
+|-----------------|-------------|-------|
+| Single delivery | 70% | 100% |
+| 2-split | 25% | 60/40 |
+| 3-split | 5% | 50/30/20 |
+
+#### Inspection Outcomes (on 30% of lines requiring inspection)
+
+| Status | Rate | Outcome |
+|--------|------|---------|
+| PASSED | 85% | Full acceptance |
+| PARTIAL | 7% | 2-8% rejection (QUALITY or DAMAGED) |
+| FAILED | 8% | 10-30% rejection (QUALITY, DAMAGED, or WRONG_ITEM) |
+
+#### Quality Order Characteristics
+
+Each QO has 2-4 inspection characteristics:
+
+| Check | Type | When | Pass Criteria |
+|-------|------|------|--------------|
+| Temperature | QUANTITATIVE | Frozen/Refrigerated products | Within ±5°F of target |
+| Visual Inspection | QUALITATIVE | All products | No visible damage |
+| Weight Verification | QUANTITATIVE | All products | Within ±3% of target |
+| Microbiological | QUANTITATIVE | Perishables (50% sample) | < 10,000 CFU/g |
+
+#### Quality Disposition Decisions
+
+| Disposition | For PASSED | For PARTIAL | For FAILED |
+|-------------|-----------|-------------|------------|
+| ACCEPT | 100% | 33% | — |
+| CONDITIONAL_ACCEPT | — | 33% | — |
+| USE_AS_IS | — | 33% | — |
+| REJECT | — | — | 40% |
+| RETURN_TO_VENDOR | — | — | 30% |
+| REWORK | — | — | 20% |
+| SCRAP | — | — | 10% |
+
+---
+
+### Transfer Orders (Inter-DC Movement)
+
+Weekly CDC_WEST → RDC_NW and CDC_WEST → RDC_SW transfers with:
+
+- **Log-normal transit time**: 1.5-day base, Q4 slowdown
+- **2% damage rate**: Cold chain transit damage (1-5% of line quantity)
+- **Status distribution**: 95% RECEIVED, 3% SHIPPED (in-transit), 2% CANCELLED
+
+---
+
+### Cold Chain Maintenance
+
+10 equipment assets across 3 sites with realistic maintenance patterns:
+
+| Equipment Type | Sites | PM Frequency | Corrective Rate | Emergency Rate |
+|---------------|-------|-------------|----------------|---------------|
+| Walk-in Freezer | CDC, NW, SW | 90 days | 4%/month | 20% of corrective |
+| Compressor | CDC, NW, SW | 60 days | 4%/month | 20% of corrective |
+| Dock Equipment | CDC | 120 days | 2%/month | 20% of corrective |
+| Conveyor | CDC | 45 days | 2%/month | 20% of corrective |
+
+**Downtime characteristics**:
+- Preventive: 2-4 hours (log-normal variance)
+- Corrective: 4-16 hours
+- Emergency: can exceed 24 hours (cold chain product at risk)
+
+**Cost ranges**:
+- Preventive: $200-$500
+- Corrective: $500-$5,000
+- Emergency: $1,000-$15,000+
+
+---
+
+### Seasonality Profiles
+
+Monthly demand multipliers by product group (1.0 = average):
+
+| Month | FRZ_PROTEIN | REF_DAIRY | DRY_PANTRY | FRZ_DESSERT | BEV |
+|-------|-------------|-----------|------------|-------------|-----|
+| Jan | 0.85 | 1.05 | 0.90 | 0.70 | 0.75 |
+| Feb | 0.85 | 1.00 | 0.90 | 0.75 | 0.80 |
+| Mar | 0.90 | 0.95 | 0.95 | 0.85 | 0.90 |
+| Apr | 0.95 | 0.95 | 0.95 | 0.95 | 1.00 |
+| May | 1.05 | 1.00 | 1.00 | 1.10 | 1.15 |
+| Jun | 1.15 | 1.00 | 1.00 | 1.30 | 1.30 |
+| Jul | 1.25 | 1.00 | 1.00 | 1.40 | 1.40 |
+| Aug | 1.15 | 1.00 | 1.00 | 1.30 | 1.35 |
+| Sep | 1.00 | 0.95 | 1.00 | 1.05 | 1.10 |
+| Oct | 0.90 | 0.95 | 1.05 | 0.85 | 0.90 |
+| Nov | 1.10 | 1.05 | 1.10 | 0.90 | 0.80 |
+| Dec | 1.20 | 1.10 | 1.15 | 1.00 | 0.75 |
+
+Key patterns: Frozen desserts and beverages peak in summer (Jul: 1.40x). Frozen proteins peak at Thanksgiving/Christmas. Dairy is relatively stable year-round. Dry pantry ramps in Q4 (holiday baking).
+
+---
+
+### Comparison: Food Dist vs SAP Demo Data
+
+| Dimension | Food Dist (Synthetic) | SAP Demo (Real S/4HANA) |
+|-----------|-----------------------|------------------------|
+| **Network** | 3 internal sites, 10 suppliers, 14 customers | ~50 plants, 500+ vendors, 300+ customers |
+| **Products** | 25 SKUs, 5 categories | 1,100+ materials |
+| **BOMs/Routings** | None (distributor) | 50+ BOMs, 30+ routings |
+| **Production** | None | 1,124 orders, 1,657 confirmations |
+| **Demand history** | ~12K orders (synthetic, with holidays/churn/promos) | 8,551 SO lines (real) |
+| **Lead time model** | Log-normal from config params | Empirical from 17,976 goods receipts |
+| **Quality inspection** | ~300 QOs with 4 characteristic types | 251 QALS lots |
+| **Goods receipts** | ~1,000 GRs with inspection | 17,976 EKBE records |
+| **Maintenance** | 150 cold chain orders | QMEL notifications (MTBF/MTTR) |
+| **Transfers** | ~500 CDC→RDC | Inferred from EKPO/LIKP |
+| **Forecasts** | 38K with P10/P50/P90, error, bias | PBIM/PBED (quantity only) |
+| **Inventory snapshots** | 55K daily | MARD current only |
+| **External signals** | 600 (promo, weather, market, econ) | None |
+
+**Food Dist strengths**: Richer forecast data (probabilistic), daily inventory history, external signals, complete lot traceability, food-safety-specific quality checks (temperature, microbiological).
+
+**SAP strengths**: Real operational data with natural variability, manufacturing/BOM depth, larger network scale, empirical (not parametric) lead time distributions.
+
 **Demo talking point**: "Layer 1 signals are reactive — one TRM tells another 'I just did X'. Layer 1.5 is predictive — the graph network learns that when ATP fulfills aggressively for 3 cycles, MO capacity gets starved on cycle 4. It adjusts urgency *before* the problem manifests."
 
 ---
@@ -607,7 +957,7 @@ For a concise demo, follow this path:
 | Step | Duration | Page | What to Show |
 |------|----------|------|-------------|
 | 0 | 2 min | Decision Stream (`/decision-stream`) | **Start here.** Scroll through decision cards, click Ask Why on a PO decision, show pre-computed reasoning |
-| 1 | 1 min | Network Topology (`/admin/tenant/supply-chain-configs`) | Orient: hub-and-spoke, 25 products, 10 suppliers, 10 customers |
+| 1 | 1 min | Network Topology (`/admin/tenant/supply-chain-configs`) | Orient: hub-and-spoke, 26 products, 10 suppliers, 10 customers |
 | 2 | 2 min | Executive Dashboard (`/executive-dashboard`) | KPIs: service level 94.2%, agent score 72, override rate 18% |
 | 3 | 3 min | Strategy Briefing (`/strategy-briefing`) | Weekly narrative, 5 recommendations, Q&A drill-down |
 | 4 | 3 min | S&OP Worklist (`/sop-worklist`) | 6 strategic items, accepted/pending/auto-executed statuses |

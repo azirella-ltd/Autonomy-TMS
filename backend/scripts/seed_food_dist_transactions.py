@@ -52,7 +52,10 @@ from app.models.sc_entities import (
 # Constants for realistic Food Dist data
 # ============================================================================
 
-FOOD_DIST_CONFIG_ID = 22
+# Dynamic lookup — no hardcoded config IDs
+from scripts.food_dist_lookup import resolve_food_dist_ids as _resolve
+_fd = _resolve()
+FOOD_DIST_CONFIG_ID = _fd["config_id"]
 FORECAST_HISTORY_WEEKS = 104
 FORECAST_FUTURE_WEEKS = 52
 

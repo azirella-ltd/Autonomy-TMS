@@ -420,8 +420,17 @@ async def list_mps_plans(
     """
     check_mps_permission(current_user, "view", db)
 
+    # SOC II: Always scope by tenant's config — never return cross-tenant plans
+    effective_config_id = config_id or (current_user.default_config_id if current_user else None)
+
     # Build query
     query = select(MPSPlan)
+
+    if effective_config_id:
+        query = query.where(MPSPlan.supply_chain_config_id == effective_config_id)
+    else:
+        # No config scope available — return empty rather than all
+        return []
 
     if status_filter:
         try:
@@ -432,9 +441,6 @@ async def list_mps_plans(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid status: {status_filter}"
             )
-
-    if config_id:
-        query = query.where(MPSPlan.supply_chain_config_id == config_id)
 
     # Order by most recent first
     query = query.order_by(MPSPlan.created_at.desc())

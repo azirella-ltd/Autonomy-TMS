@@ -27,9 +27,11 @@ from app.models.agent_config import AgentConfig
 from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product
 
-# Food Dist constants
-TENANT_ID = 3
-CONFIG_ID = 22
+# Dynamic lookup — no hardcoded IDs
+from scripts.food_dist_lookup import resolve_food_dist_ids as _resolve
+_fd = _resolve()
+TENANT_ID = _fd["tenant_id"]
+CONFIG_ID = _fd["config_id"]
 
 DEMO_SCENARIOS = [
     {

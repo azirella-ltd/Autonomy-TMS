@@ -89,7 +89,9 @@ const DemandPlanView = () => {
   // Fetch demand plan summary
   const fetchSummary = async () => {
     try {
-      const response = await api.get('/demand-plan/summary');
+      const params = {};
+      if (effectiveConfigId) params.config_id = effectiveConfigId;
+      const response = await api.get('/demand-plan/summary', { params });
       setSummary(response.data);
     } catch (error) {
       console.error('Failed to fetch summary:', error);
@@ -108,6 +110,7 @@ const DemandPlanView = () => {
         end_date: endDate || undefined,
         limit: 1000,
       };
+      if (effectiveConfigId) params.config_id = effectiveConfigId;
       const response = await api.get('/demand-plan/current', { params });
       setForecasts(response.data);
 
