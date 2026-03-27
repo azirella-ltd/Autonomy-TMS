@@ -14,6 +14,7 @@ Transforms extracted B1 entities into the canonical AWS SC data model:
   DeliveryNotes           → Shipment
   StockTransfers          → TransferOrder + TransferOrderLineItem
   QualityTests            → QualityOrder
+  ServiceCalls            → MaintenanceOrder
 
 Usage:
     builder = B1ConfigBuilder(db, tenant_id=28)
@@ -152,6 +153,8 @@ class B1ConfigBuildResult:
     shipments_created: int = 0
     transfer_orders_created: int = 0
     quality_orders_created: int = 0
+    maintenance_orders_created: int = 0
+    forecasts_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -185,10 +188,11 @@ class B1ConfigBuilder:
         data: Dict[str, List[Dict]] = {}
         for entity in [
             "Warehouses", "BusinessPartners", "Items", "ItemGroups",
-            "ProductTrees", "ItemWarehouseInfoCollection",
+            "ProductTrees", "ProductTreeLines", "ItemWarehouseInfoCollection",
             "Orders", "PurchaseOrders", "ProductionOrders",
             "PurchaseDeliveryNotes", "DeliveryNotes",
-            "StockTransfers", "QualityTests",
+            "StockTransfers", "QualityTests", "ServiceCalls",
+            "ForecastReport",
         ]:
             try:
                 data[entity] = await connector.extract_entity(entity)
@@ -211,10 +215,11 @@ class B1ConfigBuilder:
         data: Dict[str, List[Dict]] = {}
         for entity in [
             "Warehouses", "BusinessPartners", "Items", "ItemGroups",
-            "ProductTrees", "ItemWarehouseInfoCollection",
+            "ProductTrees", "ProductTreeLines", "ItemWarehouseInfoCollection",
             "Orders", "PurchaseOrders", "ProductionOrders",
             "PurchaseDeliveryNotes", "DeliveryNotes",
-            "StockTransfers", "QualityTests",
+            "StockTransfers", "QualityTests", "ServiceCalls",
+            "ForecastReport",
         ]:
             data[entity] = connector.extract_from_csv(entity)
 
@@ -238,6 +243,7 @@ class B1ConfigBuilder:
         items = data.get("Items", [])
         item_groups = data.get("ItemGroups", [])
         product_trees = data.get("ProductTrees", [])
+        product_tree_lines = data.get("ProductTreeLines", [])
         item_wh_info = data.get("ItemWarehouseInfoCollection", [])
 
         if not items:
@@ -317,6 +323,17 @@ class B1ConfigBuilder:
             if quality_tests:
                 qo_count = await self._build_quality_orders(quality_tests)
                 result.quality_orders_created = qo_count
+
+            service_calls = data.get("ServiceCalls", [])
+            if service_calls:
+                mo_count = await self._build_maintenance_orders(service_calls)
+                result.maintenance_orders_created = mo_count
+
+            # Forecasts — from ForecastReport (OFCT) or fallback to Orders
+            forecast_data = data.get("ForecastReport", [])
+            orders = data.get("Orders", [])
+            fc_count = await self._build_forecasts(forecast_data, orders)
+            result.forecasts_created = fc_count
 
         return result
 
@@ -1539,4 +1556,342 @@ class B1ConfigBuilder:
         if skipped_count:
             logger.info("Skipped %d quality orders (missing required fields)", skipped_count)
         logger.info("Created %d quality orders from B1 QualityTests", created_count)
+        return created_count
+
+    # ------------------------------------------------------------------
+    # Transactional: Service Calls → maintenance_order
+    # ------------------------------------------------------------------
+
+    async def _build_maintenance_orders(self, service_calls: List[Dict]) -> int:
+        """Map B1 ServiceCalls (OSCL) → maintenance_order.
+
+        B1 ServiceCall fields:
+          ServiceCallID   — unique key
+          CustomerCode    — business partner code (equipment owner)
+          ItemCode        — serviced item/equipment code
+          Subject         — short description of the service call
+          Status          — open / closed
+          Priority        — 1=High, 2=Medium, 3=Low
+          StartDate       — service call start date
+          EndDate         — service call end/resolution date
+          TechnicianCode  — assigned technician code
+          Resolution      — resolution description text
+
+        Service calls are reactive (corrective) maintenance activities.
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        first_site_id = self._get_first_site_id()
+        if not first_site_id:
+            logger.warning("No sites found — cannot create maintenance orders")
+            return 0
+
+        created_count = 0
+        skipped_count = 0
+
+        for sc in service_calls:
+            sc_id = sc.get("ServiceCallID")
+            if sc_id is None:
+                skipped_count += 1
+                continue
+
+            # Resolve asset / product from ItemCode
+            item_code = str(sc.get("ItemCode", "")).strip()
+            asset_id = item_code or f"SC-{sc_id}"
+
+            # Start date is required for order_date
+            start_date = _parse_b1_date(sc.get("StartDate"))
+            if not start_date:
+                skipped_count += 1
+                continue
+
+            end_date = _parse_b1_date(sc.get("EndDate"))
+
+            # Resolve site — use first site as default (B1 service calls
+            # don't carry a warehouse; equipment is at the customer site)
+            site_id = first_site_id
+
+            # Subject / work description
+            subject = sc.get("Subject") or ""
+            resolution = sc.get("Resolution") or ""
+            work_description = str(subject).strip() or f"Service Call {sc_id}"
+
+            # Status mapping: B1 open/closed → maintenance_order status
+            raw_status = str(sc.get("Status", "")).strip().lower()
+            if raw_status in ("closed", "c"):
+                status = "COMPLETED"
+            else:
+                status = "IN_PROGRESS"
+
+            # Priority mapping: B1 1=High, 2=Medium, 3=Low → maintenance_order priority
+            raw_priority = _safe_int(sc.get("Priority"), 2)
+            priority_map = {
+                1: "HIGH",
+                2: "NORMAL",
+                3: "LOW",
+            }
+            priority = priority_map.get(raw_priority, "NORMAL")
+
+            mo_number = f"B1-SC-{sc_id}"
+
+            await self.db.execute(
+                text("""
+                    INSERT INTO maintenance_order
+                        (maintenance_order_number, asset_id, asset_name,
+                         site_id, config_id, tenant_id,
+                         company_id, order_type, source, source_event_id,
+                         source_update_dttm,
+                         maintenance_type, status, priority,
+                         order_date, scheduled_start_date,
+                         scheduled_completion_date, actual_completion_date,
+                         work_description, failure_description,
+                         corrective_actions, notes)
+                    VALUES
+                        (:mo_number, :asset_id, :asset_name,
+                         :site_id, :config_id, :tenant_id,
+                         :company_id, 'maintenance', 'SAP_B1', :source_event_id,
+                         :now,
+                         'CORRECTIVE', :status, :priority,
+                         :order_date, :scheduled_start,
+                         :scheduled_end, :actual_completion,
+                         :work_description, :failure_description,
+                         :corrective_actions, :notes)
+                    ON CONFLICT (maintenance_order_number) DO NOTHING
+                """),
+                {
+                    "mo_number": mo_number,
+                    "asset_id": asset_id,
+                    "asset_name": item_code if item_code else None,
+                    "site_id": site_id,
+                    "config_id": config_id,
+                    "tenant_id": self.tenant_id,
+                    "company_id": f"B1_{config_id}",
+                    "source_event_id": f"OSCL-{sc_id}",
+                    "now": datetime.utcnow(),
+                    "status": status,
+                    "priority": priority,
+                    "order_date": start_date,
+                    "scheduled_start": datetime.combine(start_date, datetime.min.time()),
+                    "scheduled_end": datetime.combine(end_date, datetime.min.time()) if end_date else None,
+                    "actual_completion": datetime.combine(end_date, datetime.min.time()) if end_date and status == "COMPLETED" else None,
+                    "work_description": work_description[:500],
+                    "failure_description": str(subject)[:500] if subject else None,
+                    "corrective_actions": str(resolution)[:500] if resolution else None,
+                    "notes": str(resolution)[:500] if resolution else None,
+                },
+            )
+            created_count += 1
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d maintenance orders (missing required fields)", skipped_count)
+        logger.info("Created %d maintenance orders from B1 ServiceCalls", created_count)
+        return created_count
+
+    # ------------------------------------------------------------------
+    # Transactional: Forecasts → forecast
+    # ------------------------------------------------------------------
+
+    async def _build_forecasts(
+        self, forecast_data: List[Dict], orders: List[Dict],
+    ) -> int:
+        """Map B1 ForecastReport (OFCT) → forecast table.
+
+        If ForecastReport data is available, each row maps directly.
+        If empty, falls back to deriving weekly demand from Orders (ORDR),
+        grouping SO lines by product-week — same approach as Odoo.
+
+        B1 ForecastReport fields:
+          AbsEntry       — unique key
+          ItemCode       — product code
+          Warehouse      — warehouse code
+          ForecastDate   — forecast period date
+          Quantity       — forecasted quantity
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        first_site_id = self._get_first_site_id()
+        if not first_site_id:
+            logger.warning("No sites found — cannot create forecasts")
+            return 0
+
+        created_count = 0
+
+        if forecast_data:
+            # Primary path: use ForecastReport data
+            created_count = await self._build_forecasts_from_report(
+                forecast_data, config_id, first_site_id,
+            )
+        else:
+            # Fallback: derive from Orders (SO lines by product-week)
+            if orders:
+                logger.info("No ForecastReport data — deriving forecasts from Orders")
+                created_count = await self._build_forecasts_from_orders(
+                    orders, config_id, first_site_id,
+                )
+            else:
+                logger.info("No ForecastReport or Orders data — skipping forecast generation")
+
+        logger.info("Created %d forecast records from B1 data", created_count)
+        return created_count
+
+    async def _build_forecasts_from_report(
+        self, forecast_data: List[Dict], config_id: int, fallback_site_id: int,
+    ) -> int:
+        """Build forecasts from B1 ForecastReport (OFCT) rows."""
+        created_count = 0
+        skipped_count = 0
+
+        for row in forecast_data:
+            item_code = str(row.get("ItemCode", "")).strip()
+            if not item_code:
+                skipped_count += 1
+                continue
+
+            product_id = self._get_product_id(item_code)
+            if not product_id:
+                skipped_count += 1
+                continue
+
+            p50 = _safe_float(row.get("Quantity"))
+            if p50 <= 0:
+                skipped_count += 1
+                continue
+
+            forecast_date = _parse_b1_date(row.get("ForecastDate"))
+            if not forecast_date:
+                skipped_count += 1
+                continue
+
+            # Resolve site from Warehouse field
+            wh_code = str(row.get("Warehouse", "")).strip()
+            site_id = self._get_site_id(wh_code) if wh_code else fallback_site_id
+            if not site_id:
+                site_id = fallback_site_id
+
+            p10 = round(p50 * 0.8, 4)
+            p90 = round(p50 * 1.2, 4)
+            abs_entry = row.get("AbsEntry", "")
+
+            await self.db.execute(
+                text("""
+                    INSERT INTO forecast
+                        (config_id, company_id, product_id, site_id,
+                         forecast_date, forecast_type, forecast_level,
+                         forecast_method, forecast_quantity,
+                         forecast_p10, forecast_p50, forecast_median, forecast_p90,
+                         is_active, source, source_event_id, source_update_dttm)
+                    VALUES
+                        (:config_id, :company_id, :product_id, :site_id,
+                         :forecast_date, 'statistical', 'product',
+                         'erp_forecast', :p50,
+                         :p10, :p50, :p50, :p90,
+                         'true', 'SAP_B1', :source_event_id, :now)
+                    ON CONFLICT DO NOTHING
+                """),
+                {
+                    "config_id": config_id,
+                    "company_id": f"B1_{config_id}",
+                    "product_id": product_id,
+                    "site_id": site_id,
+                    "forecast_date": forecast_date,
+                    "p50": p50,
+                    "p10": p10,
+                    "p90": p90,
+                    "source_event_id": f"OFCT-{abs_entry}",
+                    "now": datetime.utcnow(),
+                },
+            )
+            created_count += 1
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d forecast rows (missing product/qty/date)", skipped_count)
+        return created_count
+
+    async def _build_forecasts_from_orders(
+        self, orders: List[Dict], config_id: int, fallback_site_id: int,
+    ) -> int:
+        """Derive weekly demand forecasts from B1 Orders (ORDR) line items.
+
+        Groups DocumentLines by (ItemCode, ISO week) and sums quantities.
+        """
+        # Accumulate weekly demand: (item_code, iso_year, iso_week) → total_qty
+        weekly_demand: Dict[Tuple[str, int, int], float] = {}
+        week_dates: Dict[Tuple[str, int, int], date] = {}
+
+        for order in orders:
+            order_date = _parse_b1_date(order.get("DocDate"))
+            if not order_date:
+                continue
+
+            lines = order.get("DocumentLines", [])
+            for line in lines:
+                item_code = str(line.get("ItemCode", "")).strip()
+                if not item_code:
+                    continue
+
+                product_id = self._get_product_id(item_code)
+                if not product_id:
+                    continue
+
+                qty = _safe_float(line.get("Quantity"))
+                if qty <= 0:
+                    continue
+
+                iso_year, iso_week, _ = order_date.isocalendar()
+                key = (item_code, iso_year, iso_week)
+                weekly_demand[key] = weekly_demand.get(key, 0.0) + qty
+
+                if key not in week_dates:
+                    monday = order_date - timedelta(days=order_date.weekday())
+                    week_dates[key] = monday
+
+        created_count = 0
+        for (item_code, iso_year, iso_week), total_qty in weekly_demand.items():
+            product_id = self._get_product_id(item_code)
+            if not product_id:
+                continue
+
+            p50 = total_qty
+            p10 = round(p50 * 0.8, 4)
+            p90 = round(p50 * 1.2, 4)
+            forecast_date = week_dates[(item_code, iso_year, iso_week)]
+
+            await self.db.execute(
+                text("""
+                    INSERT INTO forecast
+                        (config_id, company_id, product_id, site_id,
+                         forecast_date, forecast_type, forecast_level,
+                         forecast_method, forecast_quantity,
+                         forecast_p10, forecast_p50, forecast_median, forecast_p90,
+                         is_active, source, source_event_id, source_update_dttm)
+                    VALUES
+                        (:config_id, :company_id, :product_id, :site_id,
+                         :forecast_date, 'statistical', 'product',
+                         'demand_history', :p50,
+                         :p10, :p50, :p50, :p90,
+                         'true', 'SAP_B1', :source_event_id, :now)
+                    ON CONFLICT DO NOTHING
+                """),
+                {
+                    "config_id": config_id,
+                    "company_id": f"B1_{config_id}",
+                    "product_id": product_id,
+                    "site_id": fallback_site_id,
+                    "forecast_date": forecast_date,
+                    "p50": p50,
+                    "p10": p10,
+                    "p90": p90,
+                    "source_event_id": f"SO-W{iso_year}{iso_week:02d}-{item_code}",
+                    "now": datetime.utcnow(),
+                },
+            )
+            created_count += 1
+
+        await self.db.flush()
         return created_count

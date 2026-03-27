@@ -44,6 +44,8 @@ from app.models.sc_entities import (
 )
 from app.models.production_order import ProductionOrder, ProductionOrderComponent
 from app.models.quality_order import QualityOrder
+from app.models.transfer_order import TransferOrder, TransferOrderLineItem
+from app.models.maintenance_order import MaintenanceOrder
 from app.models.supplier import VendorProduct, VendorLeadTime
 from app.models.tenant import Tenant
 
@@ -3537,6 +3539,11 @@ class SAPConfigBuilder:
         if opts.get("include_quality_orders", True):
             counts["quality_orders"] = await self._create_quality_orders()
 
+        if opts.get("include_transfer_orders", True):
+            counts["transfer_orders"] = await self._create_transfer_orders()
+        if opts.get("include_maintenance_orders", True):
+            counts["maintenance_orders"] = await self._create_maintenance_orders()
+
         # Goods movements → Shipment records + InvLevel in-transit updates
         if opts.get("include_goods_movements", True):
             gm_counts = await self._create_goods_movements()
@@ -3919,6 +3926,191 @@ class SAPConfigBuilder:
 
         await self.db.flush()
         logger.info(f"Created {count} quality orders")
+        return count
+
+    async def _create_transfer_orders(self) -> int:
+        """Create TransferOrder + TransferOrderLineItem from SAP transfer orders (LTAK/LTAP).
+
+        LTAK: Transfer order headers
+          - TESSION (TO number), LGNUM (warehouse number), BWLVS (movement type)
+        LTAP: Transfer order items
+          - TESSION, TAESSION (item number), MATNR (material), VSOLM (source qty),
+            WERKS (plant), LGORT (storage location)
+        """
+        ltak = self._data.get("LTAK", pd.DataFrame())
+        ltap = self._data.get("LTAP", pd.DataFrame())
+        if ltak.empty and ltap.empty:
+            return 0
+
+        # Build LTAP lookup by TO number
+        ltap_by_to: Dict[str, pd.DataFrame] = {}
+        if not ltap.empty and "TESSION" in ltap.columns:
+            for to_num, group in ltap.groupby(ltap["TESSION"].astype(str).str.strip()):
+                ltap_by_to[to_num] = group
+
+        # If we only have LTAP (no headers), synthesize header iteration from LTAP keys
+        if ltak.empty and not ltap.empty:
+            ltak = pd.DataFrame({"TESSION": list(ltap_by_to.keys())})
+
+        count = 0
+        today = datetime.utcnow().date()
+        for _, hdr in ltak.iterrows():
+            tession = str(hdr.get("TESSION", "")).strip()
+            if not tession:
+                continue
+
+            # Resolve source/destination sites from LTAP items
+            items = ltap_by_to.get(tession, pd.DataFrame())
+            if items.empty:
+                continue
+
+            # Use first item row to resolve the site
+            first_item = items.iloc[0]
+            werks = str(first_item.get("WERKS", "")).strip()
+            site_id = self._get_site_id(werks) if werks else None
+            if not site_id:
+                site_id = self._get_first_plant_site_id()
+            if not site_id:
+                continue
+
+            # For transfer orders, source and destination may be same site
+            # (SLoc-to-SLoc) or different; use the same site for both since
+            # LTAK/LTAP don't always distinguish source vs destination plant.
+            source_site_id = site_id
+            dest_site_id = site_id
+
+            # Warehouse number from header
+            lgnum = str(hdr.get("LGNUM", "")).strip() if "LGNUM" in hdr.index else ""
+            bwlvs = str(hdr.get("BWLVS", "")).strip() if "BWLVS" in hdr.index else ""
+
+            to_clean = tession.lstrip("0") or "0"
+            to = TransferOrder(
+                to_number=f"SAP-TO-{to_clean}",
+                source_site_id=source_site_id,
+                destination_site_id=dest_site_id,
+                config_id=self._config.id,
+                tenant_id=self.tenant_id,
+                company_id=self._company_code,
+                order_type="transfer",
+                source="SAP_IMPORT",
+                source_event_id=f"LTAK-{tession}",
+                source_update_dttm=datetime.utcnow(),
+                status="RELEASED",
+                shipment_date=today,
+                estimated_delivery_date=today + timedelta(days=1),
+                transportation_mode="truck",
+                notes=f"WH: {lgnum}, MvType: {bwlvs}" if lgnum or bwlvs else None,
+            )
+            self.db.add(to)
+            await self.db.flush()
+            count += 1
+
+            # Create line items from LTAP
+            for line_idx, (_, item_row) in enumerate(items.iterrows(), start=1):
+                matnr = str(item_row.get("MATNR", "")).strip()
+                product_id = self._get_product_id(matnr) if matnr else None
+                if not product_id:
+                    continue
+
+                vsolm = float(pd.to_numeric(item_row.get("VSOLM", 0), errors="coerce") or 0)
+                if vsolm <= 0:
+                    vsolm = 1.0
+
+                line = TransferOrderLineItem(
+                    to_id=to.id,
+                    line_number=line_idx,
+                    product_id=product_id,
+                    quantity=vsolm,
+                    requested_ship_date=today,
+                    requested_delivery_date=today + timedelta(days=1),
+                )
+                self.db.add(line)
+
+        await self.db.flush()
+        logger.info(f"Created {count} transfer orders from LTAK/LTAP")
+        return count
+
+    async def _create_maintenance_orders(self) -> int:
+        """Create MaintenanceOrder records from SAP equipment master (EQUI).
+
+        EQUI fields:
+          - EQUNR (equipment number), EQKTX (description), EQTYP (equipment type),
+            HERST (manufacturer), GEWRK (plant maintenance planning plant),
+            INGRP (planner group)
+
+        If no PM order tables (e.g. AUFK with order type PM01/PM02) are staged,
+        we create preventive maintenance order records from EQUI with synthetic
+        schedule dates.
+        """
+        equi = self._data.get("EQUI", pd.DataFrame())
+        if equi.empty:
+            return 0
+
+        # Check if the maintenance_order table exists
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'maintenance_order' LIMIT 1"
+        ))
+        if not result.scalar():
+            logger.info("maintenance_order table does not exist, skipping maintenance order creation")
+            return 0
+
+        count = 0
+        today = datetime.utcnow().date()
+        for _, eq in equi.iterrows():
+            equnr = str(eq.get("EQUNR", "")).strip()
+            if not equnr:
+                continue
+
+            # Resolve site from GEWRK (PM planning plant) or SESSION (plant in HANA)
+            site_id = None
+            for plant_col in ("GEWRK", "SWERK", "SESSION"):
+                if plant_col in eq.index:
+                    plant_code = str(eq.get(plant_col, "")).strip()
+                    if plant_code:
+                        site_id = self._get_site_id(plant_code)
+                        if site_id:
+                            break
+            if not site_id:
+                site_id = self._get_first_plant_site_id()
+            if not site_id:
+                continue
+
+            eqktx = str(eq.get("EQKTX", "")).strip()
+            eqtyp = str(eq.get("EQTYP", "")).strip()
+            herst = str(eq.get("HERST", "")).strip()
+            ingrp = str(eq.get("INGRP", "")).strip()
+
+            equnr_clean = equnr.lstrip("0") or "0"
+            mo = MaintenanceOrder(
+                maintenance_order_number=f"SAP-PM-{equnr_clean}",
+                asset_id=equnr,
+                asset_name=eqktx or f"Equipment {equnr_clean}",
+                asset_type=eqtyp or None,
+                equipment_id=equnr,
+                site_id=site_id,
+                config_id=self._config.id,
+                tenant_id=self.tenant_id,
+                company_id=self._company_code,
+                order_type="maintenance",
+                source="SAP_IMPORT",
+                source_event_id=f"EQUI-{equnr}",
+                source_update_dttm=datetime.utcnow(),
+                maintenance_type="PREVENTIVE",
+                status="PLANNED",
+                order_date=today,
+                scheduled_start_date=datetime.combine(today + timedelta(days=30), datetime.min.time()),
+                scheduled_completion_date=datetime.combine(today + timedelta(days=31), datetime.min.time()),
+                next_maintenance_due=today + timedelta(days=30),
+                maintenance_frequency_days=90,
+                priority="NORMAL",
+                work_description=f"Preventive maintenance for {eqktx or equnr_clean}",
+                notes=f"Manufacturer: {herst}, Planner group: {ingrp}" if herst or ingrp else None,
+            )
+            self.db.add(mo)
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} maintenance orders from EQUI")
         return count
 
     async def _create_goods_movements(self) -> Dict[str, int]:

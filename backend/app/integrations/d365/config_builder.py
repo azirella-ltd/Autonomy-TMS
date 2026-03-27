@@ -102,7 +102,8 @@ class D365ConfigBuilder:
             result.config_id = config.id
 
             # Step 2: Sites from OperationalSites + Warehouses
-            sites_data = data.get("OperationalSites", [])
+            # D365 OData uses "OperationalSites", CSV exports use "Sites"
+            sites_data = data.get("OperationalSites", data.get("Sites", []))
             warehouses_data = data.get("Warehouses", [])
             site_map = await self._build_sites(config, sites_data, warehouses_data, result)
 

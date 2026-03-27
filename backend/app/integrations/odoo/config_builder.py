@@ -50,6 +50,7 @@ class OdooConfigBuildResult:
     transfer_orders_created: int = 0
     quality_checks_created: int = 0
     maintenance_requests_created: int = 0
+    forecasts_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -72,6 +73,7 @@ class OdooConfigBuildResult:
             "transfer_orders_created": self.transfer_orders_created,
             "quality_checks_created": self.quality_checks_created,
             "maintenance_requests_created": self.maintenance_requests_created,
+            "forecasts_created": self.forecasts_created,
             "warnings": self.warnings,
             "errors": self.errors,
         }
@@ -201,6 +203,9 @@ class OdooConfigBuilder:
             await self._build_maintenance_requests(
                 config, data.get("maintenance.request", []), site_map, result,
             )
+
+            # Step 11: Forecasts — derive weekly demand history from sale order lines
+            await self._build_forecasts(config, sale_lines, site_map, product_map, result)
 
             await self.db.commit()
             logger.info("Odoo config build complete: config_id=%d", config.id)
@@ -1839,6 +1844,103 @@ class OdooConfigBuilder:
         await self.db.flush()
         result.maintenance_requests_created = count
         logger.info("Odoo: created %d maintenance orders from maintenance.request", count)
+
+    # ── Step 11: Forecasts (from sale order line demand history) ─────────
+
+    async def _build_forecasts(self, config, sale_lines, site_map, product_map, result):
+        """Build Forecast records from Odoo sale.order.line demand history.
+
+        Odoo Community doesn't have a dedicated forecast module, so we derive
+        weekly demand history from ``sale.order.line`` records.  Each
+        product-week bucket becomes a forecast row with simple P10/P50/P90
+        spread.
+
+        Fields used from ``sale.order.line``:
+            product_id, product_uom_qty, order_id (→ sale.order.date_order via
+            inline ``date_order`` if flattened, otherwise we fall back to today).
+        """
+        from app.models.sc_entities import Forecast
+
+        if not sale_lines:
+            logger.info("Odoo: no sale.order.line records — skipping forecast generation")
+            return
+
+        fallback_site_id = self._get_first_site_id(site_map)
+        if fallback_site_id is None:
+            result.warnings.append("No internal site available for forecast assignment")
+            return
+
+        # Group sale lines by (product_id, iso_week) → sum quantities
+        # week_key = (product_odoo_id, year, iso_week)
+        weekly_demand: Dict[tuple, float] = {}
+        week_dates: Dict[tuple, date] = {}  # track Monday of each week
+
+        for line in sale_lines:
+            prod_odoo_id = self._resolve_odoo_id(line.get("product_id"))
+            if prod_odoo_id is None:
+                continue
+
+            product = product_map.get(prod_odoo_id)
+            if not product:
+                continue
+
+            qty = 0.0
+            try:
+                qty = float(line.get("product_uom_qty") or 0)
+            except (TypeError, ValueError):
+                continue
+            if qty <= 0:
+                continue
+
+            # Determine order date — flattened extracts may include date_order
+            order_date = self._parse_odoo_date(line.get("date_order"))
+            if not order_date:
+                order_date = datetime.utcnow().date()
+
+            iso_year, iso_week, _ = order_date.isocalendar()
+            key = (prod_odoo_id, iso_year, iso_week)
+            weekly_demand[key] = weekly_demand.get(key, 0.0) + qty
+
+            # Store the Monday of this ISO week for the forecast_date
+            if key not in week_dates:
+                monday = order_date - timedelta(days=order_date.weekday())
+                week_dates[key] = monday
+
+        count = 0
+        for (prod_odoo_id, iso_year, iso_week), total_qty in weekly_demand.items():
+            product = product_map.get(prod_odoo_id)
+            if not product:
+                continue
+
+            p50 = total_qty
+            p10 = round(p50 * 0.8, 4)
+            p90 = round(p50 * 1.2, 4)
+            forecast_date = week_dates[(prod_odoo_id, iso_year, iso_week)]
+
+            fcst = Forecast(
+                config_id=config.id,
+                company_id=str(self.tenant_id),
+                product_id=product.id,
+                site_id=fallback_site_id,
+                forecast_date=forecast_date,
+                forecast_type="statistical",
+                forecast_level="product",
+                forecast_method="demand_history",
+                forecast_quantity=p50,
+                forecast_p10=p10,
+                forecast_p50=p50,
+                forecast_median=p50,
+                forecast_p90=p90,
+                is_active="true",
+                source="ODOO",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(fcst)
+            count += 1
+
+        await self.db.flush()
+        result.forecasts_created = count
+        logger.info("Odoo: created %d forecast records from sale.order.line demand history", count)
 
 
 class OdooIngestionMonitor:

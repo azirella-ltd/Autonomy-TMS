@@ -51,7 +51,7 @@ class D365SourceMethod(str, PyEnum):
 D365_ENTITY_REGISTRY: Dict[str, Dict] = {
     # --- MASTER DATA ---
     "LegalEntities":                {"category": "master", "keys": ["DataArea"], "description": "Company Codes / Legal Entities"},
-    "Sites":                        {"category": "master", "keys": ["SiteId"], "description": "Operational Sites"},
+    "OperationalSites":             {"category": "master", "keys": ["SiteId"], "description": "Operational Sites (D365 entity: OperationalSites, CSV: Sites.csv)"},
     "Warehouses":                   {"category": "master", "keys": ["WarehouseId", "SiteId"], "description": "Warehouses"},
     "StorageLocations":             {"category": "master", "keys": ["SiteId", "StorageLocationId"], "description": "Storage Locations within Warehouses"},
     "ReleasedProductsV2":           {"category": "master", "keys": ["ItemNumber"], "description": "Released Products (Items)"},

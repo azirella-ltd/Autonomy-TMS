@@ -97,6 +97,13 @@ class SAPStagingRepository:
         category = get_table_category(sap_table)
         key_fields = get_table_keys(sap_table)
 
+        if not category:
+            logger.warning(
+                "Table '%s' not found in SAP_TABLE_REGISTRY — staging with empty category. "
+                "Add it to backend/app/models/sap_staging.py to enable proper categorization.",
+                sap_table,
+            )
+
         # Build rows for bulk insert
         rows_to_insert = []
         for _, row in df.iterrows():
