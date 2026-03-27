@@ -577,6 +577,12 @@ class SupplyPlan(Base):
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
 
+    # Extension: SAP PLAF fields
+    sap_planned_order_id = Column(String(50), nullable=True)  # SAP PLAF.PLNUM
+    uom = Column(String(20), nullable=True)  # Unit of measure
+    planning_strategy = Column(String(50), nullable=True)  # SAP planning strategy (e.g., MTS, MTO)
+    routing_type = Column(String(50), nullable=True)  # Routing/recipe type
+
     # Conformal prediction metadata — interval bounds used to generate this plan
     demand_lower = Column(Double, nullable=True)       # Lower demand bound
     demand_upper = Column(Double, nullable=True)       # Upper demand bound
@@ -1028,6 +1034,11 @@ class InboundOrderLineSchedule(Base):
     status = Column(String(30), server_default=text("'SCHEDULED'"))
     # SCHEDULED, IN_TRANSIT, RECEIVED, DELAYED, CANCELLED
 
+    # Extension: SAP EKET fields
+    movement_type = Column(String(10), nullable=True)  # SAP EKET.BWART (e.g., 101=GR, 122=return)
+    valuation_type = Column(String(20), nullable=True)  # SAP EKET.BWTAR
+    amount = Column(Float, nullable=True)  # SAP EKET.WEMNG — value/amount for this schedule line
+
     # Metadata
     source = Column(String(100))
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
@@ -1336,6 +1347,12 @@ class ProcessOperation(Base):
 
     is_subcontracted = Column(Boolean, server_default=text("false"))
     vendor_id = Column(String(100))
+
+    # Extension: SAP AFVC fields
+    cost_center_id = Column(String(50), nullable=True)  # SAP AFVC.KOSTL
+    activity_type = Column(String(50), nullable=True)  # SAP AFVC.LSTAR
+    cost_rate = Column(Float, nullable=True)  # Activity price rate
+    currency = Column(String(3), nullable=True)  # SAP AFVC.WAERS
 
     # Metadata
     source = Column(String(100))

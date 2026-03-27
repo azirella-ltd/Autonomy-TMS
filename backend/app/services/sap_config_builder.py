@@ -3615,6 +3615,88 @@ class SAPConfigBuilder:
             if sloc_count > 0:
                 counts["sites_storage_enriched"] = sloc_count
 
+        # ------------------------------------------------------------------
+        # SAP enrichment pass 2 — 15 additional tables
+        # ------------------------------------------------------------------
+
+        # AFVC → production order operations
+        if opts.get("include_production_operations", True):
+            afvc_count = await self._enrich_production_operations()
+            if afvc_count > 0:
+                counts["production_operations"] = afvc_count
+
+        # AUFK → production order master enrichment
+        if opts.get("include_production_order_master", True):
+            aufk_count = await self._enrich_production_order_master()
+            if aufk_count > 0:
+                counts["production_orders_enriched"] = aufk_count
+
+        # CRHD → work center master records
+        if opts.get("include_work_centers", True):
+            wc_count = await self._create_work_centers()
+            if wc_count > 0:
+                counts["work_centers"] = wc_count
+
+        # CRCO → work center cost rates
+        if opts.get("include_work_center_costs", True):
+            wcc_count = await self._enrich_work_center_costs()
+            if wcc_count > 0:
+                counts["work_centers_cost_enriched"] = wcc_count
+
+        # EKBE → PO receipt history
+        if opts.get("include_po_receipt_history", True):
+            ekbe_count = await self._create_po_receipt_history()
+            if ekbe_count > 0:
+                counts["po_receipt_history"] = ekbe_count
+
+        # KAKO → capacity resources
+        if opts.get("include_capacity_resources", True):
+            kako_count = await self._create_capacity_resources()
+            if kako_count > 0:
+                counts["capacity_resources"] = kako_count
+
+        # MARM → UoM conversions
+        if opts.get("include_uom_conversions", True):
+            marm_count = await self._create_uom_conversions()
+            if marm_count > 0:
+                counts["uom_conversions"] = marm_count
+
+        # MBEW → material valuations
+        if opts.get("include_material_valuations", True):
+            mbew_count = await self._create_material_valuations()
+            if mbew_count > 0:
+                counts["material_valuations"] = mbew_count
+
+        # PLAF → MRP planned orders
+        if opts.get("include_planned_orders", True):
+            plaf_count = await self._create_planned_orders()
+            if plaf_count > 0:
+                counts["planned_orders"] = plaf_count
+
+        # VBEP → SO schedule lines
+        if opts.get("include_outbound_schedules", True):
+            vbep_count = await self._create_outbound_schedules()
+            if vbep_count > 0:
+                counts["outbound_schedule_lines"] = vbep_count
+
+        # VBUK → SO header status
+        if opts.get("include_outbound_order_status", True):
+            vbuk_count = await self._enrich_outbound_order_status()
+            if vbuk_count > 0:
+                counts["outbound_orders_status_enriched"] = vbuk_count
+
+        # VBUP → SO item status
+        if opts.get("include_outbound_line_status", True):
+            vbup_count = await self._enrich_outbound_line_status()
+            if vbup_count > 0:
+                counts["outbound_lines_status_enriched"] = vbup_count
+
+        # CDHDR/CDPOS → change documents
+        if opts.get("include_change_log", True):
+            cdlog_count = await self._create_change_log()
+            if cdlog_count > 0:
+                counts["change_log_entries"] = cdlog_count
+
         return counts
 
     async def _create_outbound_orders(self, max_records: int = 5000) -> int:
@@ -5215,6 +5297,1152 @@ class SAPConfigBuilder:
 
         await self.db.flush()
         logger.info(f"Enriched {count} sites with storage locations from T001L")
+        return count
+
+    # ------------------------------------------------------------------
+    # SAP Enrichment Methods — Pass 2 (15 additional tables)
+    # ------------------------------------------------------------------
+
+    async def _enrich_production_operations(self) -> int:
+        """Map AFVC (Production Order Operations) to process_operation records.
+
+        AFVC contains operation-level detail for production orders.
+        Links via AUFPL (routing number) to AFKO.AUFPL, then AFKO.AUFNR
+        gives us the production order number.
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'process_operation' LIMIT 1"
+        ))
+        if not result.scalar():
+            logger.info("process_operation table does not exist, skipping production operations")
+            return 0
+
+        afvc = self._data.get("AFVC", pd.DataFrame())
+        if afvc.empty:
+            return 0
+
+        if "AUFPL" not in afvc.columns:
+            logger.warning("AFVC missing AUFPL column — skipping production operations")
+            return 0
+
+        # Build AUFPL → AUFNR lookup from AFKO
+        afko = self._data.get("AFKO", pd.DataFrame())
+        aufpl_to_aufnr: Dict[str, str] = {}
+        if not afko.empty and "AUFPL" in afko.columns and "AUFNR" in afko.columns:
+            for _, row in afko.iterrows():
+                aufpl = str(row.get("AUFPL", "")).strip()
+                aufnr = str(row.get("AUFNR", "")).strip()
+                if aufpl and aufnr:
+                    aufpl_to_aufnr[aufpl] = aufnr
+
+        # We also need a process_header to attach operations to.
+        # Check if any process_header exists for this config; if not, create a catch-all.
+        result = await self.db.execute(sql_text(
+            "SELECT id FROM process_header WHERE source = 'SAP_IMPORT' LIMIT 1"
+        ))
+        header_row = result.fetchone()
+        if header_row:
+            default_header_id = header_row[0]
+        else:
+            # Create a catch-all process header for SAP-imported operations
+            await self.db.execute(sql_text(
+                "INSERT INTO process_header (id, description, status, source) "
+                "VALUES (:hid, :desc, 'ACTIVE', 'SAP_IMPORT')"
+            ), {"hid": f"SAP-ROUTING-{self._config.id}", "desc": "SAP imported routing operations"})
+            await self.db.flush()
+            default_header_id = f"SAP-ROUTING-{self._config.id}"
+
+        count = 0
+        for _, row in afvc.iterrows():
+            aufpl = str(row.get("AUFPL", "")).strip()
+            vornr = str(row.get("VORNR", "")).strip()
+            arbid = str(row.get("ARBID", "")).strip()
+            ltxa1 = str(row.get("LTXA1", "")).strip()
+            steus = str(row.get("STEUS", "")).strip()
+
+            if not aufpl or not vornr:
+                continue
+
+            aufnr = aufpl_to_aufnr.get(aufpl, "")
+
+            # Parse operation number
+            op_num = int(pd.to_numeric(vornr, errors="coerce") or 10)
+
+            # Parse times (SAP stores in minutes, convert to hours)
+            setup_time = float(pd.to_numeric(row.get("RUEST", 0), errors="coerce") or 0) / 60.0
+            run_time = float(pd.to_numeric(row.get("BEARZ", 0), errors="coerce") or 0) / 60.0
+            if run_time <= 0:
+                run_time = 0.01  # process_operation.run_time_per_unit is NOT NULL
+
+            await self.db.execute(sql_text(
+                "INSERT INTO process_operation "
+                "(header_id, operation_number, operation_name, work_center_id, "
+                " setup_time, run_time_per_unit, source) "
+                "VALUES (:hid, :opnum, :opname, :wcid, :setup, :runtime, 'SAP_IMPORT') "
+                "ON CONFLICT DO NOTHING"
+            ), {
+                "hid": default_header_id,
+                "opnum": op_num,
+                "opname": ltxa1 or f"Operation {vornr}",
+                "wcid": arbid or None,
+                "setup": setup_time,
+                "runtime": run_time if run_time > 0 else 0.01,
+            })
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} process operations from AFVC")
+        return count
+
+    async def _enrich_production_order_master(self) -> int:
+        """Enrich existing production orders with AUFK (Order Master) data.
+
+        AUFK provides AUART (order type) and WAERS (currency) that AFKO
+        does not carry. We match via AUFNR and store in extra_data JSON.
+        """
+        aufk = self._data.get("AUFK", pd.DataFrame())
+        if aufk.empty:
+            return 0
+
+        if "AUFNR" not in aufk.columns:
+            logger.warning("AUFK missing AUFNR column — skipping production order master enrichment")
+            return 0
+
+        count = 0
+        for _, row in aufk.iterrows():
+            aufnr = str(row.get("AUFNR", "")).strip()
+            if not aufnr:
+                continue
+
+            auart = str(row.get("AUART", "")).strip()
+            waers = str(row.get("WAERS", "")).strip()
+
+            aufnr_clean = aufnr.lstrip("0") or "0"
+            order_number = f"SAP-MO-{aufnr_clean}"
+
+            # Update extra_data on existing production order
+            result = await self.db.execute(sql_text(
+                "SELECT id, extra_data FROM production_orders "
+                "WHERE order_number = :onum AND config_id = :cid LIMIT 1"
+            ), {"onum": order_number, "cid": self._config.id})
+            mo_row = result.fetchone()
+            if not mo_row:
+                continue
+
+            existing_extra = mo_row[1] or {}
+            if isinstance(existing_extra, str):
+                import json as _json
+                try:
+                    existing_extra = _json.loads(existing_extra)
+                except (ValueError, TypeError):
+                    existing_extra = {}
+
+            if auart and auart != "nan":
+                existing_extra["sap_order_type"] = auart
+            if waers and waers != "nan":
+                existing_extra["sap_currency"] = waers
+
+            await self.db.execute(sql_text(
+                "UPDATE production_orders SET extra_data = :ed WHERE id = :mid"
+            ), {"ed": json.dumps(existing_extra), "mid": mo_row[0]})
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} production orders with AUFK master data")
+        return count
+
+    async def _create_work_centers(self) -> int:
+        """Create work_center_master records from CRHD (Work Center Master).
+
+        Fields: OBJID (object ID), ARBPL (work center name), WERKS (plant),
+        VERWE (usage: 1=production, 3=plant maintenance, 9=all).
+
+        Since work_center_master may not exist as a dedicated table, we store
+        as process_operation work center references or as site attributes.
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'work_center_master' LIMIT 1"
+        ))
+        table_exists = result.scalar()
+
+        crhd = self._data.get("CRHD", pd.DataFrame())
+        if crhd.empty:
+            return 0
+
+        if "OBJID" not in crhd.columns:
+            logger.warning("CRHD missing OBJID column — skipping work centers")
+            return 0
+
+        count = 0
+        if table_exists:
+            # Insert into dedicated work_center_master table
+            for _, row in crhd.iterrows():
+                objid = str(row.get("OBJID", "")).strip()
+                arbpl = str(row.get("ARBPL", "")).strip()
+                werks = str(row.get("WERKS", "")).strip()
+                verwe = str(row.get("VERWE", "")).strip()
+
+                if not objid:
+                    continue
+
+                site_id = self._get_site_id(werks) if werks else None
+
+                await self.db.execute(sql_text(
+                    "INSERT INTO work_center_master "
+                    "(object_id, work_center_name, site_id, usage_type, source, config_id, tenant_id) "
+                    "VALUES (:oid, :name, :sid, :usage, 'SAP_IMPORT', :cid, :tid) "
+                    "ON CONFLICT DO NOTHING"
+                ), {
+                    "oid": objid,
+                    "name": arbpl or objid,
+                    "sid": site_id,
+                    "usage": verwe or None,
+                    "cid": self._config.id,
+                    "tid": self.tenant_id,
+                })
+                count += 1
+        else:
+            # Fallback: store work centers in site attributes
+            wc_by_plant: Dict[str, List[Dict[str, str]]] = {}
+            for _, row in crhd.iterrows():
+                objid = str(row.get("OBJID", "")).strip()
+                arbpl = str(row.get("ARBPL", "")).strip()
+                werks = str(row.get("WERKS", "")).strip()
+                verwe = str(row.get("VERWE", "")).strip()
+                if not objid or not werks:
+                    continue
+
+                wc_entry = {"object_id": objid, "name": arbpl or objid}
+                if verwe and verwe != "nan":
+                    wc_entry["usage"] = verwe
+                wc_by_plant.setdefault(werks, []).append(wc_entry)
+
+            for werks, wcs in wc_by_plant.items():
+                site_id = self._get_site_id(werks)
+                if not site_id:
+                    continue
+                for s in self._sites.values():
+                    if s.id == site_id:
+                        attrs = s.attributes or {}
+                        attrs["work_centers"] = wcs
+                        s.attributes = attrs
+                        count += len(wcs)
+                        break
+
+        await self.db.flush()
+        logger.info(f"Created {count} work center records from CRHD")
+        return count
+
+    async def _enrich_work_center_costs(self) -> int:
+        """Enrich work centers or process operations with CRCO cost data.
+
+        CRCO: OBJID (object ID), KOSTL (cost center), LSTAR (activity type),
+        WERKS (plant). Enriches work_center_master if available, else stores
+        in site attributes alongside CRHD data.
+        """
+        crco = self._data.get("CRCO", pd.DataFrame())
+        if crco.empty:
+            return 0
+
+        if "OBJID" not in crco.columns:
+            logger.warning("CRCO missing OBJID column — skipping work center costs")
+            return 0
+
+        # Check if work_center_master table exists
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'work_center_master' LIMIT 1"
+        ))
+        table_exists = result.scalar()
+
+        count = 0
+        if table_exists:
+            for _, row in crco.iterrows():
+                objid = str(row.get("OBJID", "")).strip()
+                kostl = str(row.get("KOSTL", "")).strip()
+                lstar = str(row.get("LSTAR", "")).strip()
+                if not objid:
+                    continue
+
+                sap_params = {}
+                if kostl and kostl != "nan":
+                    sap_params["cost_center"] = kostl
+                if lstar and lstar != "nan":
+                    sap_params["activity_type"] = lstar
+
+                if sap_params:
+                    await self.db.execute(sql_text(
+                        "UPDATE work_center_master SET sap_params = :sp "
+                        "WHERE object_id = :oid AND config_id = :cid"
+                    ), {"sp": json.dumps(sap_params), "oid": objid, "cid": self._config.id})
+                    count += 1
+        else:
+            # Fallback: update site attributes with cost info
+            cost_by_objid: Dict[str, Dict[str, str]] = {}
+            for _, row in crco.iterrows():
+                objid = str(row.get("OBJID", "")).strip()
+                kostl = str(row.get("KOSTL", "")).strip()
+                lstar = str(row.get("LSTAR", "")).strip()
+                if not objid:
+                    continue
+                entry = {}
+                if kostl and kostl != "nan":
+                    entry["cost_center"] = kostl
+                if lstar and lstar != "nan":
+                    entry["activity_type"] = lstar
+                if entry:
+                    cost_by_objid[objid] = entry
+
+            # Merge into existing site work_centers attributes
+            for site in self._sites.values():
+                attrs = site.attributes or {}
+                wcs = attrs.get("work_centers", [])
+                for wc in wcs:
+                    objid = wc.get("object_id", "")
+                    if objid in cost_by_objid:
+                        wc.update(cost_by_objid[objid])
+                        count += 1
+                if wcs:
+                    attrs["work_centers"] = wcs
+                    site.attributes = attrs
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} work center cost records from CRCO")
+        return count
+
+    async def _create_po_receipt_history(self) -> int:
+        """Create receipt/enrichment records from EKBE (PO History).
+
+        EKBE movement type 101 = goods receipt. We enrich existing
+        InboundOrderLineSchedule records with actual receipt data, or
+        update InboundOrderLine received quantities.
+
+        Fields: EBELN (PO#), EBELP (line#), MENGE (qty), BUDAT (posting date),
+        VGABE (transaction type: 1=GR, 2=IR, 3=returns).
+        """
+        ekbe = self._data.get("EKBE", pd.DataFrame())
+        if ekbe.empty:
+            return 0
+
+        if "EBELN" not in ekbe.columns or "EBELP" not in ekbe.columns:
+            logger.warning("EKBE missing EBELN or EBELP columns — skipping PO receipt history")
+            return 0
+
+        count = 0
+        for _, row in ekbe.iterrows():
+            ebeln = str(row.get("EBELN", "")).strip()
+            ebelp = str(row.get("EBELP", "")).strip()
+            vgabe = str(row.get("VGABE", "")).strip()
+            bwart = str(row.get("BWART", "")).strip()
+
+            # Only process goods receipts (VGABE=1 or BWART=101)
+            if vgabe not in ("1",) and bwart not in ("101",):
+                continue
+
+            if not ebeln or not ebelp:
+                continue
+
+            menge = float(pd.to_numeric(row.get("MENGE", 0), errors="coerce") or 0)
+            if menge <= 0:
+                continue
+
+            budat = self._parse_sap_date(str(row.get("BUDAT", "")).strip())
+
+            ebeln_clean = ebeln.lstrip("0") or "0"
+            order_id = f"SAP-PO-{ebeln_clean}"
+            line_num = int(pd.to_numeric(ebelp, errors="coerce") or 10)
+
+            # Try to find and update the matching inbound order line
+            result = await self.db.execute(sql_text(
+                "SELECT id, quantity_submitted FROM inbound_order_line "
+                "WHERE order_id = :oid AND line_number = :lnum AND config_id = :cid LIMIT 1"
+            ), {"oid": order_id, "lnum": line_num, "cid": self._config.id})
+            ib_line = result.fetchone()
+            if not ib_line:
+                continue
+
+            # Update with receipt data — store in sap_params JSON
+            await self.db.execute(sql_text(
+                "UPDATE inbound_order_line SET status = 'RECEIVED' "
+                "WHERE id = :lid"
+            ), {"lid": ib_line[0]})
+
+            # Also try to update schedule line actual date
+            if budat:
+                await self.db.execute(sql_text(
+                    "UPDATE inbound_order_line_schedule "
+                    "SET actual_date = :adate, received_quantity = received_quantity + :qty, "
+                    "    status = 'RECEIVED' "
+                    "WHERE order_line_id = :lid AND status != 'RECEIVED'"
+                ), {"adate": budat, "qty": menge, "lid": ib_line[0]})
+
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Processed {count} PO receipt records from EKBE")
+        return count
+
+    async def _create_capacity_resources(self) -> int:
+        """Create capacity_resources records from KAKO (Capacity Header).
+
+        KAKO provides capacity data for work centers. We need a capacity_plan
+        to attach resources to. If none exists, we create a default plan.
+
+        Key fields: OBJID, WERKS (plant), BEGDA/ENDDA (validity dates),
+        KAPA1-KAPA7 (shift capacities per weekday).
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'capacity_resources' LIMIT 1"
+        ))
+        if not result.scalar():
+            logger.info("capacity_resources table does not exist, skipping capacity resources")
+            return 0
+
+        kako = self._data.get("KAKO", pd.DataFrame())
+        if kako.empty:
+            return 0
+
+        # Ensure a capacity_plan exists for this config
+        result = await self.db.execute(sql_text(
+            "SELECT id FROM capacity_plans WHERE config_id = :cid LIMIT 1"
+        ), {"cid": self._config.id})
+        plan_row = result.fetchone()
+        if plan_row:
+            plan_id = plan_row[0]
+        else:
+            # Check if capacity_plans table exists
+            result = await self.db.execute(sql_text(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = 'capacity_plans' LIMIT 1"
+            ))
+            if not result.scalar():
+                logger.info("capacity_plans table does not exist, skipping capacity resources")
+                return 0
+
+            await self.db.execute(sql_text(
+                "INSERT INTO capacity_plans (name, config_id, status) "
+                "VALUES (:name, :cid, 'ACTIVE') RETURNING id"
+            ), {"name": f"SAP Capacity Plan - Config {self._config.id}", "cid": self._config.id})
+            await self.db.flush()
+            result = await self.db.execute(sql_text(
+                "SELECT id FROM capacity_plans WHERE config_id = :cid ORDER BY id DESC LIMIT 1"
+            ), {"cid": self._config.id})
+            plan_row = result.fetchone()
+            if not plan_row:
+                return 0
+            plan_id = plan_row[0]
+
+        count = 0
+        for _, row in kako.iterrows():
+            objid = str(row.get("OBJID", "")).strip()
+            werks = str(row.get("WERKS", "")).strip()
+            if not objid:
+                continue
+
+            site_id = self._get_site_id(werks) if werks else self._get_first_plant_site_id()
+            if not site_id:
+                continue
+
+            # Calculate average daily capacity from KAPA1-KAPA7 (seconds → hours)
+            total_secs = 0.0
+            day_count = 0
+            for i in range(1, 8):
+                kapa = float(pd.to_numeric(row.get(f"KAPA{i}", 0), errors="coerce") or 0)
+                if kapa > 0:
+                    total_secs += kapa
+                    day_count += 1
+
+            if day_count > 0:
+                avg_hours = (total_secs / day_count) / 3600.0
+            else:
+                avg_hours = 8.0  # default 8h if no KAPA data
+
+            await self.db.execute(sql_text(
+                "INSERT INTO capacity_resources "
+                "(plan_id, resource_name, resource_code, resource_type, site_id, "
+                " available_capacity, capacity_unit, efficiency_percent) "
+                "VALUES (:pid, :rname, :rcode, 'MACHINE', :sid, :cap, 'hours', 100.0)"
+            ), {
+                "pid": plan_id,
+                "rname": f"WC-{objid}",
+                "rcode": objid,
+                "sid": site_id,
+                "cap": round(avg_hours, 2),
+            })
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} capacity resources from KAKO")
+        return count
+
+    async def _create_uom_conversions(self) -> int:
+        """Create product UoM conversion records from MARM (Material UoM).
+
+        MARM: MATNR (material), MEINH (alt UoM), UMREZ (numerator),
+        UMREN (denominator) → conversion factor = UMREZ/UMREN.
+
+        Since product_uom_conversion may not exist, we store in
+        Product.sap_params["uom_conversions"] as a list of dicts.
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'product_uom_conversion' LIMIT 1"
+        ))
+        table_exists = result.scalar()
+
+        marm = self._data.get("MARM", pd.DataFrame())
+        if marm.empty:
+            return 0
+
+        if "MATNR" not in marm.columns or "MEINH" not in marm.columns:
+            logger.warning("MARM missing MATNR or MEINH columns — skipping UoM conversions")
+            return 0
+
+        count = 0
+        if table_exists:
+            for _, row in marm.iterrows():
+                matnr = str(row.get("MATNR", "")).strip()
+                meinh = str(row.get("MEINH", "")).strip()
+                if not matnr or not meinh:
+                    continue
+
+                product_id = self._get_product_id(matnr)
+                if not product_id:
+                    continue
+
+                umrez = float(pd.to_numeric(row.get("UMREZ", 1), errors="coerce") or 1)
+                umren = float(pd.to_numeric(row.get("UMREN", 1), errors="coerce") or 1)
+                conversion_factor = umrez / umren if umren != 0 else 1.0
+
+                brgew = float(pd.to_numeric(row.get("BRGEW", 0), errors="coerce") or 0)
+                volum = float(pd.to_numeric(row.get("VOLUM", 0), errors="coerce") or 0)
+
+                sap_params = {}
+                if brgew > 0:
+                    sap_params["gross_weight"] = brgew
+                if volum > 0:
+                    sap_params["volume"] = volum
+
+                await self.db.execute(sql_text(
+                    "INSERT INTO product_uom_conversion "
+                    "(product_id, alt_uom, conversion_factor, sap_params, source, config_id, tenant_id) "
+                    "VALUES (:pid, :uom, :cf, :sp, 'SAP_IMPORT', :cid, :tid) "
+                    "ON CONFLICT DO NOTHING"
+                ), {
+                    "pid": product_id,
+                    "uom": meinh,
+                    "cf": round(conversion_factor, 6),
+                    "sp": json.dumps(sap_params) if sap_params else None,
+                    "cid": self._config.id,
+                    "tid": self.tenant_id,
+                })
+                count += 1
+        else:
+            # Fallback: store UoM conversions in Product sap_params
+            uom_by_matnr: Dict[str, List[Dict[str, Any]]] = {}
+            for _, row in marm.iterrows():
+                matnr = str(row.get("MATNR", "")).strip()
+                meinh = str(row.get("MEINH", "")).strip()
+                if not matnr or not meinh:
+                    continue
+
+                umrez = float(pd.to_numeric(row.get("UMREZ", 1), errors="coerce") or 1)
+                umren = float(pd.to_numeric(row.get("UMREN", 1), errors="coerce") or 1)
+                conversion_factor = umrez / umren if umren != 0 else 1.0
+
+                entry: Dict[str, Any] = {"uom": meinh, "factor": round(conversion_factor, 6)}
+                brgew = float(pd.to_numeric(row.get("BRGEW", 0), errors="coerce") or 0)
+                volum = float(pd.to_numeric(row.get("VOLUM", 0), errors="coerce") or 0)
+                if brgew > 0:
+                    entry["gross_weight"] = brgew
+                if volum > 0:
+                    entry["volume"] = volum
+
+                uom_by_matnr.setdefault(matnr, []).append(entry)
+
+            for matnr, conversions in uom_by_matnr.items():
+                product = self._products.get(matnr)
+                if not product:
+                    stripped = matnr.lstrip("0") or "0"
+                    product = self._products.get(stripped)
+                if not product:
+                    continue
+
+                sap_params = product.sap_params or {}
+                if isinstance(sap_params, str):
+                    try:
+                        sap_params = json.loads(sap_params)
+                    except (ValueError, TypeError):
+                        sap_params = {}
+                sap_params["uom_conversions"] = conversions
+                product.sap_params = sap_params
+                count += len(conversions)
+
+        await self.db.flush()
+        logger.info(f"Created {count} UoM conversion records from MARM")
+        return count
+
+    async def _create_material_valuations(self) -> int:
+        """Create material valuation records from MBEW (Material Valuation).
+
+        MBEW: MATNR (material), BWKEY (valuation area = plant), VPRSV
+        (price control: S=standard, V=moving avg), VERPR (moving avg price),
+        STPRS (standard price), PEINH (price unit), LBKUM (total stock value qty).
+
+        Since material_valuation may not exist, we update Product.unit_cost
+        and store full valuation in Product.sap_params.
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'material_valuation' LIMIT 1"
+        ))
+        table_exists = result.scalar()
+
+        mbew = self._data.get("MBEW", pd.DataFrame())
+        if mbew.empty:
+            return 0
+
+        if "MATNR" not in mbew.columns:
+            logger.warning("MBEW missing MATNR column — skipping material valuations")
+            return 0
+
+        count = 0
+        for _, row in mbew.iterrows():
+            matnr = str(row.get("MATNR", "")).strip()
+            if not matnr:
+                continue
+
+            bwkey = str(row.get("BWKEY", "")).strip()
+            vprsv = str(row.get("VPRSV", "")).strip()
+            verpr = float(pd.to_numeric(row.get("VERPR", 0), errors="coerce") or 0)
+            stprs = float(pd.to_numeric(row.get("STPRS", 0), errors="coerce") or 0)
+            peinh = float(pd.to_numeric(row.get("PEINH", 1), errors="coerce") or 1)
+            lbkum = float(pd.to_numeric(row.get("LBKUM", 0), errors="coerce") or 0)
+
+            # Determine effective price
+            if vprsv == "V" and verpr > 0:
+                effective_price = verpr / peinh if peinh > 0 else verpr
+            elif stprs > 0:
+                effective_price = stprs / peinh if peinh > 0 else stprs
+            elif verpr > 0:
+                effective_price = verpr / peinh if peinh > 0 else verpr
+            else:
+                continue
+
+            product_id = self._get_product_id(matnr)
+            if not product_id:
+                continue
+
+            if table_exists:
+                site_id = self._get_site_id(bwkey) if bwkey else None
+                await self.db.execute(sql_text(
+                    "INSERT INTO material_valuation "
+                    "(product_id, site_id, price_control, moving_avg_price, standard_price, "
+                    " price_unit, total_stock_qty, effective_unit_cost, "
+                    " source, config_id, tenant_id) "
+                    "VALUES (:pid, :sid, :pc, :map, :sp, :pu, :tsq, :euc, "
+                    " 'SAP_IMPORT', :cid, :tid) "
+                    "ON CONFLICT DO NOTHING"
+                ), {
+                    "pid": product_id,
+                    "sid": self._get_site_id(bwkey) if bwkey else None,
+                    "pc": vprsv or None,
+                    "map": verpr if verpr > 0 else None,
+                    "sp": stprs if stprs > 0 else None,
+                    "pu": peinh,
+                    "tsq": lbkum if lbkum > 0 else None,
+                    "euc": round(effective_price, 4),
+                    "cid": self._config.id,
+                    "tid": self.tenant_id,
+                })
+            else:
+                # Store valuation in Product.sap_params
+                product = self._products.get(matnr)
+                if not product:
+                    stripped = matnr.lstrip("0") or "0"
+                    product = self._products.get(stripped)
+                if product:
+                    sap_params = product.sap_params or {}
+                    if isinstance(sap_params, str):
+                        try:
+                            sap_params = json.loads(sap_params)
+                        except (ValueError, TypeError):
+                            sap_params = {}
+                    valuation = {"price_control": vprsv, "price_unit": peinh}
+                    if verpr > 0:
+                        valuation["moving_avg_price"] = verpr
+                    if stprs > 0:
+                        valuation["standard_price"] = stprs
+                    if lbkum > 0:
+                        valuation["total_stock_qty"] = lbkum
+                    sap_params["valuation"] = valuation
+                    product.sap_params = sap_params
+
+            # Also update Product.unit_cost if not already set
+            product = self._products.get(matnr)
+            if not product:
+                stripped = matnr.lstrip("0") or "0"
+                product = self._products.get(stripped)
+            if product and not product.unit_cost:
+                product.unit_cost = round(effective_price, 4)
+
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} material valuations from MBEW")
+        return count
+
+    async def _create_planned_orders(self) -> int:
+        """Create supply_plan records from PLAF (MRP Planned Orders).
+
+        PLAF: PLNUM (planned order #), MATNR (material), PLWRK (plant),
+        GSMNG (planned qty), PEDTR (planned end date), PSTTR (planned start date),
+        BESKZ (procurement type: E=external/purchase, F=internal/production).
+        """
+        plaf = self._data.get("PLAF", pd.DataFrame())
+        if plaf.empty:
+            return 0
+
+        if "PLNUM" not in plaf.columns or "MATNR" not in plaf.columns:
+            logger.warning("PLAF missing PLNUM or MATNR columns — skipping planned orders")
+            return 0
+
+        count = 0
+        for _, row in plaf.iterrows():
+            plnum = str(row.get("PLNUM", "")).strip()
+            matnr = str(row.get("MATNR", "")).strip()
+            plwrk = str(row.get("PLWRK", "")).strip()
+
+            if not plnum or not matnr:
+                continue
+
+            product_id = self._get_product_id(matnr)
+            site_id = self._get_site_id(plwrk) if plwrk else self._get_first_plant_site_id()
+            if not product_id or not site_id:
+                continue
+
+            gsmng = float(pd.to_numeric(row.get("GSMNG", 0), errors="coerce") or 0)
+            if gsmng <= 0:
+                continue
+
+            pedtr = self._parse_sap_date(str(row.get("PEDTR", "")).strip())
+            psttr = self._parse_sap_date(str(row.get("PSTTR", "")).strip())
+            today = datetime.utcnow().date()
+            if not pedtr:
+                pedtr = today + timedelta(days=14)
+            if not psttr:
+                psttr = pedtr - timedelta(days=7)
+
+            # Procurement type determines plan_type
+            beskz = str(row.get("BESKZ", "")).strip()
+            if beskz == "F":
+                plan_type = "mo_request"
+            else:
+                plan_type = "po_request"
+
+            from app.models.sc_entities import SupplyPlan
+            sp = SupplyPlan(
+                product_id=product_id,
+                site_id=site_id,
+                plan_type=plan_type,
+                planned_order_quantity=gsmng,
+                planned_order_date=psttr,
+                planned_receipt_date=pedtr,
+                plan_date=today,
+                sap_planned_order_id=plnum,
+                config_id=self._config.id,
+                source="SAP_IMPORT",
+                source_event_id=f"PLAF-{plnum}",
+                created_dttm=datetime.utcnow(),
+            )
+            self.db.add(sp)
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} planned orders from PLAF")
+        return count
+
+    async def _create_outbound_schedules(self) -> int:
+        """Create outbound_order_line_schedule records from VBEP (SO Schedule Lines).
+
+        VBEP: VBELN (SO#), POSNR (item#), ETENR (schedule line#),
+        EDATU (delivery date), WMENG (ordered qty), BMENG (confirmed qty),
+        LMENG (delivered qty).
+
+        Since outbound_order_line_schedule may not exist, we store in
+        OutboundOrderLine sap_params or in a dedicated table.
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'outbound_order_line_schedule' LIMIT 1"
+        ))
+        table_exists = result.scalar()
+
+        vbep = self._data.get("VBEP", pd.DataFrame())
+        if vbep.empty:
+            return 0
+
+        if "VBELN" not in vbep.columns or "POSNR" not in vbep.columns:
+            logger.warning("VBEP missing VBELN or POSNR columns — skipping outbound schedules")
+            return 0
+
+        count = 0
+        if table_exists:
+            for _, row in vbep.iterrows():
+                vbeln = str(row.get("VBELN", "")).strip()
+                posnr = str(row.get("POSNR", "")).strip()
+                etenr = str(row.get("ETENR", "")).strip()
+                if not vbeln or not posnr:
+                    continue
+
+                vbeln_clean = vbeln.lstrip("0") or "0"
+                order_id = f"SAP-SO-{vbeln_clean}"
+                line_num = int(pd.to_numeric(posnr, errors="coerce") or 10)
+                sched_num = int(pd.to_numeric(etenr, errors="coerce") or 1)
+
+                # Find the outbound_order_line
+                result_ol = await self.db.execute(sql_text(
+                    "SELECT id FROM outbound_order_line "
+                    "WHERE order_id = :oid AND line_number = :lnum AND config_id = :cid LIMIT 1"
+                ), {"oid": order_id, "lnum": line_num, "cid": self._config.id})
+                ol_row = result_ol.fetchone()
+                if not ol_row:
+                    continue
+
+                edatu = self._parse_sap_date(str(row.get("EDATU", "")).strip())
+                wmeng = float(pd.to_numeric(row.get("WMENG", 0), errors="coerce") or 0)
+                bmeng = float(pd.to_numeric(row.get("BMENG", 0), errors="coerce") or 0)
+                lmeng = float(pd.to_numeric(row.get("LMENG", 0), errors="coerce") or 0)
+
+                await self.db.execute(sql_text(
+                    "INSERT INTO outbound_order_line_schedule "
+                    "(order_line_id, schedule_number, scheduled_date, ordered_qty, "
+                    " confirmed_qty, delivered_qty, source, config_id, tenant_id) "
+                    "VALUES (:olid, :snum, :sdate, :oqty, :cqty, :dqty, "
+                    " 'SAP_IMPORT', :cid, :tid) "
+                    "ON CONFLICT DO NOTHING"
+                ), {
+                    "olid": ol_row[0],
+                    "snum": sched_num,
+                    "sdate": edatu or datetime.utcnow().date(),
+                    "oqty": wmeng,
+                    "cqty": bmeng,
+                    "dqty": lmeng,
+                    "cid": self._config.id,
+                    "tid": self.tenant_id,
+                })
+                count += 1
+        else:
+            # Fallback: store schedule lines in OutboundOrder sap_params
+            sched_by_order: Dict[str, List[Dict[str, Any]]] = {}
+            for _, row in vbep.iterrows():
+                vbeln = str(row.get("VBELN", "")).strip()
+                posnr = str(row.get("POSNR", "")).strip()
+                etenr = str(row.get("ETENR", "")).strip()
+                if not vbeln or not posnr:
+                    continue
+
+                edatu = self._parse_sap_date(str(row.get("EDATU", "")).strip())
+                wmeng = float(pd.to_numeric(row.get("WMENG", 0), errors="coerce") or 0)
+                bmeng = float(pd.to_numeric(row.get("BMENG", 0), errors="coerce") or 0)
+                lmeng = float(pd.to_numeric(row.get("LMENG", 0), errors="coerce") or 0)
+
+                vbeln_clean = vbeln.lstrip("0") or "0"
+                order_id = f"SAP-SO-{vbeln_clean}"
+                entry = {
+                    "line": int(pd.to_numeric(posnr, errors="coerce") or 10),
+                    "schedule": int(pd.to_numeric(etenr, errors="coerce") or 1),
+                    "date": edatu.isoformat() if edatu else None,
+                    "ordered_qty": wmeng,
+                    "confirmed_qty": bmeng,
+                    "delivered_qty": lmeng,
+                }
+                sched_by_order.setdefault(order_id, []).append(entry)
+
+            # Update outbound_order with schedule data
+            for order_id, schedules in sched_by_order.items():
+                result_o = await self.db.execute(sql_text(
+                    "SELECT id FROM outbound_order WHERE id = :oid AND config_id = :cid LIMIT 1"
+                ), {"oid": order_id, "cid": self._config.id})
+                if result_o.fetchone():
+                    await self.db.execute(sql_text(
+                        "UPDATE outbound_order SET reference_number = "
+                        "COALESCE(reference_number, '') || :info "
+                        "WHERE id = :oid AND config_id = :cid"
+                    ), {
+                        "info": f" [VBEP:{len(schedules)} sched lines]",
+                        "oid": order_id,
+                        "cid": self._config.id,
+                    })
+                    count += len(schedules)
+
+        await self.db.flush()
+        logger.info(f"Created {count} outbound schedule line records from VBEP")
+        return count
+
+    async def _enrich_outbound_order_status(self) -> int:
+        """Enrich outbound orders with VBUK (SO Header Status).
+
+        VBUK: VBELN (SO#), LFSTK (delivery status), WBSTK (goods movement status),
+        FKSTK (billing status), GBSTK (overall status), ABSTK (rejection status),
+        KOSTK (overall credit status).
+
+        Since outbound_order_status table may not exist, we update
+        OutboundOrder.status and store full status in reference_number or
+        a dedicated table.
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'outbound_order_status' LIMIT 1"
+        ))
+        table_exists = result.scalar()
+
+        vbuk = self._data.get("VBUK", pd.DataFrame())
+        if vbuk.empty:
+            return 0
+
+        if "VBELN" not in vbuk.columns:
+            logger.warning("VBUK missing VBELN column — skipping outbound order status")
+            return 0
+
+        # SAP status code mappings
+        SAP_STATUS_MAP = {
+            "A": "DRAFT",       # Not yet processed
+            "B": "CONFIRMED",   # Partially processed
+            "C": "FULFILLED",   # Completely processed
+        }
+
+        count = 0
+        for _, row in vbuk.iterrows():
+            vbeln = str(row.get("VBELN", "")).strip()
+            if not vbeln:
+                continue
+
+            vbeln_clean = vbeln.lstrip("0") or "0"
+            order_id = f"SAP-SO-{vbeln_clean}"
+
+            gbstk = str(row.get("GBSTK", "")).strip()
+            lfstk = str(row.get("LFSTK", "")).strip()
+            wbstk = str(row.get("WBSTK", "")).strip()
+            fkstk = str(row.get("FKSTK", "")).strip()
+            abstk = str(row.get("ABSTK", "")).strip()
+            kostk = str(row.get("KOSTK", "")).strip()
+
+            # Determine order status from overall status
+            new_status = SAP_STATUS_MAP.get(gbstk, None)
+            if gbstk == "B":
+                new_status = "PARTIALLY_FULFILLED"
+
+            if table_exists:
+                # Find outbound order
+                result_o = await self.db.execute(sql_text(
+                    "SELECT id FROM outbound_order WHERE id = :oid AND config_id = :cid LIMIT 1"
+                ), {"oid": order_id, "cid": self._config.id})
+                oo_row = result_o.fetchone()
+                if not oo_row:
+                    continue
+
+                await self.db.execute(sql_text(
+                    "INSERT INTO outbound_order_status "
+                    "(order_id, delivery_status, goods_movement_status, billing_status, "
+                    " overall_status, rejection_status, credit_status, "
+                    " source, config_id, tenant_id) "
+                    "VALUES (:oid, :lfstk, :wbstk, :fkstk, :gbstk, :abstk, :kostk, "
+                    " 'SAP_IMPORT', :cid, :tid) "
+                    "ON CONFLICT DO NOTHING"
+                ), {
+                    "oid": order_id,
+                    "lfstk": lfstk or None,
+                    "wbstk": wbstk or None,
+                    "fkstk": fkstk or None,
+                    "gbstk": gbstk or None,
+                    "abstk": abstk or None,
+                    "kostk": kostk or None,
+                    "cid": self._config.id,
+                    "tid": self.tenant_id,
+                })
+                count += 1
+            else:
+                # Fallback: update order status directly
+                if new_status:
+                    await self.db.execute(sql_text(
+                        "UPDATE outbound_order SET status = :st "
+                        "WHERE id = :oid AND config_id = :cid AND status = 'DRAFT'"
+                    ), {"st": new_status, "oid": order_id, "cid": self._config.id})
+                    count += 1
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} outbound order statuses from VBUK")
+        return count
+
+    async def _enrich_outbound_line_status(self) -> int:
+        """Enrich outbound order lines with VBUP (SO Item Status).
+
+        VBUP: VBELN (SO#), POSNR (item#), LFSTA (delivery status),
+        WBSTA (goods movement), FKSTA (billing), GBSTA (overall).
+
+        Since outbound_order_line_status may not exist, we update
+        OutboundOrderLine.status directly.
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'outbound_order_line_status' LIMIT 1"
+        ))
+        table_exists = result.scalar()
+
+        vbup = self._data.get("VBUP", pd.DataFrame())
+        if vbup.empty:
+            return 0
+
+        if "VBELN" not in vbup.columns or "POSNR" not in vbup.columns:
+            logger.warning("VBUP missing VBELN or POSNR columns — skipping outbound line status")
+            return 0
+
+        SAP_LINE_STATUS_MAP = {
+            "A": "DRAFT",
+            "B": "PARTIALLY_FULFILLED",
+            "C": "FULFILLED",
+        }
+
+        count = 0
+        for _, row in vbup.iterrows():
+            vbeln = str(row.get("VBELN", "")).strip()
+            posnr = str(row.get("POSNR", "")).strip()
+            if not vbeln or not posnr:
+                continue
+
+            vbeln_clean = vbeln.lstrip("0") or "0"
+            order_id = f"SAP-SO-{vbeln_clean}"
+            line_num = int(pd.to_numeric(posnr, errors="coerce") or 10)
+
+            gbsta = str(row.get("GBSTA", "")).strip()
+            lfsta = str(row.get("LFSTA", "")).strip()
+            wbsta = str(row.get("WBSTA", "")).strip()
+            fksta = str(row.get("FKSTA", "")).strip()
+
+            if table_exists:
+                # Find outbound order line
+                result_ol = await self.db.execute(sql_text(
+                    "SELECT id FROM outbound_order_line "
+                    "WHERE order_id = :oid AND line_number = :lnum AND config_id = :cid LIMIT 1"
+                ), {"oid": order_id, "lnum": line_num, "cid": self._config.id})
+                ol_row = result_ol.fetchone()
+                if not ol_row:
+                    continue
+
+                await self.db.execute(sql_text(
+                    "INSERT INTO outbound_order_line_status "
+                    "(order_line_id, delivery_status, goods_movement_status, "
+                    " billing_status, overall_status, source, config_id, tenant_id) "
+                    "VALUES (:olid, :lfsta, :wbsta, :fksta, :gbsta, "
+                    " 'SAP_IMPORT', :cid, :tid) "
+                    "ON CONFLICT DO NOTHING"
+                ), {
+                    "olid": ol_row[0],
+                    "lfsta": lfsta or None,
+                    "wbsta": wbsta or None,
+                    "fksta": fksta or None,
+                    "gbsta": gbsta or None,
+                    "cid": self._config.id,
+                    "tid": self.tenant_id,
+                })
+                count += 1
+            else:
+                # Fallback: update line status directly
+                new_status = SAP_LINE_STATUS_MAP.get(gbsta, None)
+                if new_status:
+                    await self.db.execute(sql_text(
+                        "UPDATE outbound_order_line SET status = :st "
+                        "WHERE order_id = :oid AND line_number = :lnum "
+                        "AND config_id = :cid AND status = 'DRAFT'"
+                    ), {"st": new_status, "oid": order_id, "lnum": line_num, "cid": self._config.id})
+                    count += 1
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} outbound line statuses from VBUP")
+        return count
+
+    async def _create_change_log(self) -> int:
+        """Create change log records from CDHDR/CDPOS (Change Documents).
+
+        CDHDR (header): OBJECTCLAS, OBJECTID, CHANGENR, USERNAME, UDATE, UTIME, TCODE
+        CDPOS (detail): OBJECTCLAS, OBJECTID, CHANGENR, TABNAME, FNAME,
+                        CHNGIND (U=update, I=insert, D=delete, J=initial),
+                        VALUE_NEW, VALUE_OLD
+
+        Since sap_change_log/sap_change_log_detail may not exist, we store
+        as JSON in a dedicated table or skip gracefully.
+        """
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'sap_change_log' LIMIT 1"
+        ))
+        table_exists = result.scalar()
+
+        cdhdr = self._data.get("CDHDR", pd.DataFrame())
+        cdpos = self._data.get("CDPOS", pd.DataFrame())
+
+        if cdhdr.empty and cdpos.empty:
+            return 0
+
+        if not table_exists:
+            logger.info("sap_change_log table does not exist, skipping change log creation")
+            return 0
+
+        if cdhdr.empty:
+            logger.warning("CDHDR empty — skipping change log (need headers)")
+            return 0
+
+        if "CHANGENR" not in cdhdr.columns:
+            logger.warning("CDHDR missing CHANGENR column — skipping change log")
+            return 0
+
+        # Build CDPOS lookup: CHANGENR → list of detail rows
+        cdpos_by_changenr: Dict[str, List[Dict[str, str]]] = {}
+        if not cdpos.empty and "CHANGENR" in cdpos.columns:
+            for _, row in cdpos.iterrows():
+                changenr = str(row.get("CHANGENR", "")).strip()
+                if not changenr:
+                    continue
+                detail = {
+                    "tabname": str(row.get("TABNAME", "")).strip(),
+                    "fname": str(row.get("FNAME", "")).strip(),
+                    "chngind": str(row.get("CHNGIND", "")).strip(),
+                    "value_new": str(row.get("VALUE_NEW", "")).strip(),
+                    "value_old": str(row.get("VALUE_OLD", "")).strip(),
+                }
+                cdpos_by_changenr.setdefault(changenr, []).append(detail)
+
+        count = 0
+        for _, row in cdhdr.iterrows():
+            changenr = str(row.get("CHANGENR", "")).strip()
+            objectclas = str(row.get("OBJECTCLAS", "")).strip()
+            objectid = str(row.get("OBJECTID", "")).strip()
+            username = str(row.get("USERNAME", "")).strip()
+            udate = self._parse_sap_date(str(row.get("UDATE", "")).strip())
+            tcode = str(row.get("TCODE", "")).strip()
+
+            if not changenr:
+                continue
+
+            details = cdpos_by_changenr.get(changenr, [])
+
+            await self.db.execute(sql_text(
+                "INSERT INTO sap_change_log "
+                "(change_number, object_class, object_id, username, change_date, "
+                " transaction_code, detail_count, details_json, "
+                " source, config_id, tenant_id) "
+                "VALUES (:cnum, :ocls, :oid, :user, :cdate, :tcode, :dcnt, :djson, "
+                " 'SAP_IMPORT', :cid, :tid) "
+                "ON CONFLICT DO NOTHING"
+            ), {
+                "cnum": changenr,
+                "ocls": objectclas or None,
+                "oid": objectid or None,
+                "user": username or None,
+                "cdate": udate,
+                "tcode": tcode or None,
+                "dcnt": len(details),
+                "djson": json.dumps(details) if details else None,
+                "cid": self._config.id,
+                "tid": self.tenant_id,
+            })
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} change log entries from CDHDR/CDPOS")
         return count
 
     def _detect_transactional_anomalies(self) -> List[Dict[str, Any]]:

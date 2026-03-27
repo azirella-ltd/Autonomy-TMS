@@ -86,6 +86,7 @@ SAP_TABLE_REGISTRY: Dict[str, Dict] = {
     "PBED":  {"category": "master", "keys": ["BDZEI", "PDATU"], "description": "PIR Schedule Lines"},
     "PLAF":  {"category": "master", "keys": ["PLNUM"], "description": "Planned Orders"},
     "T179":  {"category": "master", "keys": ["PRODH"], "description": "Product Hierarchy"},
+    "T179T": {"category": "master", "keys": ["PRODH", "SPRAS"], "description": "Product Hierarchy Text"},
     "KAKO":  {"category": "master", "keys": ["KAPID"], "description": "Capacity Headers"},
     # --- TRANSACTION DATA ---
     "VBAK":  {"category": "transaction", "keys": ["VBELN"], "description": "Sales Order Headers"},

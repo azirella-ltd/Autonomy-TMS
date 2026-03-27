@@ -73,6 +73,12 @@ class ProductionOrder(Base):
     unit_cost = Column(Float, default=0.0)
     total_cost = Column(Float, default=0.0)
 
+    # Extension: SAP AFKO/AUFK fields
+    order_type = Column(String(50), nullable=True)  # SAP AUFK.AUART (e.g., PP01, PP02)
+    logical_type = Column(String(50), nullable=True)  # SAP AUFK.AUTYP (10=production, 30=maintenance)
+    currency = Column(String(3), nullable=True)  # SAP AUFK.WAERS
+    sap_objnr = Column(String(50), nullable=True)  # SAP object number for status management
+
     # Additional Metadata
     notes = Column(String(500), nullable=True)
     extra_data = Column(JSON, nullable=True)  # Flexible field for additional data (renamed from 'metadata' to avoid SQLAlchemy reserved word)

@@ -370,6 +370,13 @@ from .agent_stochastic_param import AgentStochasticParam
 # 32. Scenario Engine — Machine-speed what-if planning (agent scenario branches)
 from .agent_scenario import AgentScenario, AgentScenarioAction, ScenarioTemplate
 
+# 33. SC Data Model Extensions — SAP VBEP, MARM, CRHD, MBEW, KAKO, VBUK, VBUP, CDHDR, CDPOS
+from .sc_extensions import (
+    OutboundOrderLineSchedule, ProductUomConversion, WorkCenterMaster,
+    MaterialValuation, CapacityResourceDetail, OutboundOrderStatus,
+    OutboundOrderLineStatus, SAPChangeLog, SAPChangeLogDetail,
+)
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -654,6 +661,16 @@ __all__ = [
     'RCCPRunStatus',
     # Agent Stochastic Parameters
     'AgentStochasticParam',
+    # SC Data Model Extensions (SAP unprocessed tables)
+    'OutboundOrderLineSchedule',
+    'ProductUomConversion',
+    'WorkCenterMaster',
+    'MaterialValuation',
+    'CapacityResourceDetail',
+    'OutboundOrderStatus',
+    'OutboundOrderLineStatus',
+    'SAPChangeLog',
+    'SAPChangeLogDetail',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.
