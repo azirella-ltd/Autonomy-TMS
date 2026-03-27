@@ -22,6 +22,11 @@ Transactional data:
 - SalesOrderHeadersV2 / SalesOrderLinesV2       → OutboundOrder + OutboundOrderLine
 - ProductionOrderHeaders                         → ProductionOrder
 - DemandForecastEntries                          → Forecast
+- PurchaseOrderReceiptJournal                    → GoodsReceipt + GoodsReceiptLineItem
+- ShipmentHeaders / ShipmentLines                → Shipment
+- TransferOrderHeaders / TransferOrderLines      → TransferOrder + TransferOrderLineItem
+- QualityOrders                                  → QualityOrder + QualityOrderLineItem
+- MaintenanceWorkOrders                          → MaintenanceOrder
 """
 
 import logging
@@ -51,6 +56,14 @@ class D365ConfigBuildResult:
     outbound_order_lines_created: int = 0
     production_orders_created: int = 0
     forecasts_created: int = 0
+    goods_receipts_created: int = 0
+    goods_receipt_lines_created: int = 0
+    shipments_created: int = 0
+    transfer_orders_created: int = 0
+    transfer_order_lines_created: int = 0
+    quality_orders_created: int = 0
+    quality_order_lines_created: int = 0
+    maintenance_orders_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -150,6 +163,38 @@ class D365ConfigBuilder:
             forecast_entries = data.get("DemandForecastEntries", [])
             await self._build_forecasts(
                 config, forecast_entries, site_map, product_map, result,
+            )
+
+            # Step 12: Goods receipts
+            gr_data = data.get("PurchaseOrderReceiptJournal", [])
+            await self._build_goods_receipts(
+                config, gr_data, site_map, product_map, result,
+            )
+
+            # Step 13: Shipments
+            shipment_headers = data.get("ShipmentHeaders", [])
+            shipment_lines = data.get("ShipmentLines", [])
+            await self._build_shipments(
+                config, shipment_headers, shipment_lines, site_map, product_map, result,
+            )
+
+            # Step 14: Transfer orders
+            to_headers = data.get("TransferOrderHeaders", [])
+            to_lines = data.get("TransferOrderLines", [])
+            await self._build_transfer_orders(
+                config, to_headers, to_lines, site_map, product_map, result,
+            )
+
+            # Step 15: Quality orders
+            quality_data = data.get("QualityOrders", [])
+            await self._build_quality_orders(
+                config, quality_data, site_map, product_map, result,
+            )
+
+            # Step 16: Maintenance orders
+            maintenance_data = data.get("MaintenanceWorkOrders", [])
+            await self._build_maintenance_orders(
+                config, maintenance_data, site_map, result,
             )
 
             await self.db.commit()
@@ -960,6 +1005,660 @@ class D365ConfigBuilder:
 
         await self.db.flush()
         logger.info("D365: created %d forecasts", result.forecasts_created)
+
+    # ------------------------------------------------------------------
+    # Step 12: Goods Receipts
+    # ------------------------------------------------------------------
+
+    async def _build_goods_receipts(
+        self, config, gr_data, site_map, product_map, result,
+    ):
+        """Map D365 PurchaseOrderReceiptJournal → goods_receipt + goods_receipt_line_item.
+
+        D365 CSV columns:
+            PurchaseOrderNumber, LineNumber, PostingDate, ReceiptQuantity,
+            ProductNumber, InventSiteId, PackingSlipId, dataAreaId
+
+        GR number format: D365_GR_{PurchaseOrderNumber}_{PostingDate}
+        Links to purchase_order via po_number matching.
+        """
+        from app.models.goods_receipt import GoodsReceipt, GoodsReceiptLineItem
+        from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
+        import sqlalchemy as sa
+
+        if not gr_data:
+            return
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping goods receipts")
+            return
+
+        # Pre-load PO id lookup: po_number → PurchaseOrder.id
+        po_numbers = {r.get("PurchaseOrderNumber", "") for r in gr_data if r.get("PurchaseOrderNumber")}
+        po_id_map: Dict[str, int] = {}
+        if po_numbers:
+            rows = (await self.db.execute(
+                sa.select(PurchaseOrder.id, PurchaseOrder.po_number).where(
+                    PurchaseOrder.config_id == config.id,
+                    PurchaseOrder.po_number.in_(po_numbers),
+                )
+            )).all()
+            po_id_map = {r.po_number: r.id for r in rows}
+
+        # Pre-load PO line id lookup: (po_id, line_number) → PurchaseOrderLineItem.id
+        po_line_id_map: Dict[tuple, int] = {}
+        if po_id_map:
+            po_line_rows = (await self.db.execute(
+                sa.select(
+                    PurchaseOrderLineItem.id,
+                    PurchaseOrderLineItem.po_id,
+                    PurchaseOrderLineItem.line_number,
+                ).where(
+                    PurchaseOrderLineItem.po_id.in_(list(po_id_map.values())),
+                )
+            )).all()
+            po_line_id_map = {(r.po_id, r.line_number): r.id for r in po_line_rows}
+
+        # Group receipt lines by (PurchaseOrderNumber, PostingDate) to form GR headers
+        gr_groups: Dict[str, List[Dict]] = {}
+        for row in gr_data:
+            po_num = row.get("PurchaseOrderNumber", "")
+            posting_date_str = row.get("PostingDate", "")
+            if not po_num or not posting_date_str:
+                continue
+            gr_key = f"{po_num}_{posting_date_str}"
+            gr_groups.setdefault(gr_key, []).append(row)
+
+        for gr_key, lines in gr_groups.items():
+            first = lines[0]
+            po_num = first.get("PurchaseOrderNumber", "")
+            posting_date_str = first.get("PostingDate", "")
+            posting_date = self._parse_d365_date(posting_date_str)
+            if not posting_date:
+                result.warnings.append(f"GR {gr_key}: invalid PostingDate '{posting_date_str}' — skipped")
+                continue
+
+            po_id = po_id_map.get(po_num)
+            if not po_id:
+                result.warnings.append(f"GR {gr_key}: PO '{po_num}' not found in config — skipped")
+                continue
+
+            gr_number = f"D365_GR_{po_num}_{posting_date_str}"
+            packing_slip = first.get("PackingSlipId", "")
+
+            # Resolve receiving site
+            d365_site_id = first.get("InventSiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            total_received = sum(self._safe_float(l.get("ReceiptQuantity")) or 0.0 for l in lines)
+
+            gr = GoodsReceipt(
+                gr_number=gr_number,
+                po_id=po_id,
+                receipt_date=posting_date,
+                delivery_note_number=packing_slip[:100] if packing_slip else None,
+                status="COMPLETED",
+                receiving_site_id=site.id,
+                total_received_qty=total_received,
+                total_accepted_qty=total_received,
+            )
+            self.db.add(gr)
+            await self.db.flush()
+            result.goods_receipts_created += 1
+
+            # Build line items
+            for idx, line in enumerate(lines, start=1):
+                item_number = line.get("ProductNumber", "")
+                product = product_map.get(item_number)
+                if not product:
+                    result.warnings.append(
+                        f"GR {gr_number} line: ProductNumber '{item_number}' not in product map — skipped"
+                    )
+                    continue
+
+                receipt_qty = self._safe_float(line.get("ReceiptQuantity"))
+                if receipt_qty is None or receipt_qty <= 0:
+                    continue
+
+                line_number_str = line.get("LineNumber", "0")
+                try:
+                    line_number = int(line_number_str)
+                except (ValueError, TypeError):
+                    line_number = idx
+
+                product_id = f"CFG{config.id}_{item_number}"
+
+                # Resolve PO line id for cross-reference
+                po_line_id = po_line_id_map.get((po_id, line_number))
+                if not po_line_id:
+                    # Try first PO line as fallback only if there's exactly one line
+                    matching = [v for k, v in po_line_id_map.items() if k[0] == po_id]
+                    if len(matching) == 1:
+                        po_line_id = matching[0]
+                    else:
+                        result.warnings.append(
+                            f"GR {gr_number} line {line_number}: no matching PO line — skipped"
+                        )
+                        continue
+
+                gr_line = GoodsReceiptLineItem(
+                    gr_id=gr.id,
+                    po_line_id=po_line_id,
+                    line_number=line_number,
+                    product_id=product_id,
+                    expected_qty=receipt_qty,
+                    received_qty=receipt_qty,
+                    accepted_qty=receipt_qty,
+                    variance_qty=0.0,
+                    variance_type="EXACT",
+                )
+                self.db.add(gr_line)
+                result.goods_receipt_lines_created += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: created %d goods receipts, %d line items",
+            result.goods_receipts_created, result.goods_receipt_lines_created,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 13: Shipments
+    # ------------------------------------------------------------------
+
+    async def _build_shipments(
+        self, config, shipment_headers, shipment_lines, site_map, product_map, result,
+    ):
+        """Map D365 ShipmentHeaders + ShipmentLines → shipment.
+
+        D365 CSV columns (headers):
+            ShipmentNumber, ShipDate, CarrierName, TrackingNumber,
+            ShipFromSite, ShipToCustomer, ShipmentStatus, dataAreaId
+
+        D365 CSV columns (lines):
+            ShipmentNumber, ItemNumber, ShippedQuantity, LineNumber, dataAreaId
+
+        Shipment ID format: D365_SH_{ShipmentNumber}
+        """
+        from app.models.sc_entities import Shipment
+
+        if not shipment_headers:
+            return
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping shipments")
+            return
+
+        # Index lines by shipment number
+        lines_by_sh: Dict[str, List[Dict]] = {}
+        for line in shipment_lines:
+            sh_num = line.get("ShipmentNumber", "")
+            if sh_num:
+                lines_by_sh.setdefault(sh_num, []).append(line)
+
+        _SH_STATUS_MAP: Dict[str, str] = {
+            "Shipped": "in_transit",
+            "Delivered": "delivered",
+            "Cancelled": "cancelled",
+            "Open": "planned",
+            "InTransit": "in_transit",
+            "": "planned",
+        }
+
+        for header in shipment_headers:
+            sh_number = header.get("ShipmentNumber", "")
+            if not sh_number:
+                continue
+
+            ship_date_str = header.get("ShipDate", "")
+            ship_date = self._parse_d365_date(ship_date_str)
+
+            # Resolve from-site
+            d365_from_site = header.get("ShipFromSite", "")
+            from_site = site_map.get(d365_from_site, default_site)
+
+            # To-site: try ShipToSite first, fall back to default
+            d365_to_site = header.get("ShipToSite", "")
+            to_site = site_map.get(d365_to_site, default_site)
+
+            carrier_name = header.get("CarrierName", "")
+            tracking_number = header.get("TrackingNumber", "")
+            d365_status = header.get("ShipmentStatus", "")
+            status = _SH_STATUS_MAP.get(d365_status, "planned")
+
+            shipment_id = f"D365_SH_{sh_number}"
+
+            # Determine product and quantity from lines
+            sh_lines = lines_by_sh.get(sh_number, [])
+
+            if sh_lines:
+                # Create one shipment record per line (each has distinct product)
+                for line in sh_lines:
+                    item_number = line.get("ItemNumber", "")
+                    product = product_map.get(item_number)
+                    if not product:
+                        continue
+
+                    shipped_qty = self._safe_float(line.get("ShippedQuantity"))
+                    if shipped_qty is None or shipped_qty <= 0:
+                        continue
+
+                    product_id = f"CFG{config.id}_{item_number}"
+                    line_num = line.get("LineNumber", "1")
+                    line_shipment_id = f"{shipment_id}_{line_num}"
+
+                    shipment = Shipment(
+                        id=line_shipment_id,
+                        company_id=f"D365_{self.tenant_id}",
+                        order_id=sh_number,
+                        order_line_number=int(line_num) if str(line_num).isdigit() else 1,
+                        product_id=product_id,
+                        quantity=shipped_qty,
+                        from_site_id=from_site.id,
+                        to_site_id=to_site.id,
+                        carrier_name=carrier_name[:200] if carrier_name else None,
+                        tracking_number=tracking_number[:100] if tracking_number else None,
+                        status=status,
+                        ship_date=ship_date,
+                        config_id=config.id,
+                        tenant_id=self.tenant_id,
+                        source="D365_CONTOSO",
+                    )
+                    self.db.add(shipment)
+                    result.shipments_created += 1
+            else:
+                # Header-only shipment (no lines) — create a placeholder
+                # Need a product_id — skip if we can't determine one
+                result.warnings.append(
+                    f"Shipment {sh_number}: no ShipmentLines found — skipped"
+                )
+
+        await self.db.flush()
+        logger.info("D365: created %d shipments", result.shipments_created)
+
+    # ------------------------------------------------------------------
+    # Step 14: Transfer Orders
+    # ------------------------------------------------------------------
+
+    _TO_STATUS_MAP: Dict[str, str] = {
+        "Created": "DRAFT",
+        "Shipped": "SHIPPED",
+        "Received": "RECEIVED",
+        "Cancelled": "CANCELLED",
+        "": "DRAFT",
+    }
+
+    async def _build_transfer_orders(
+        self, config, to_headers, to_lines, site_map, product_map, result,
+    ):
+        """Map D365 TransferOrderHeaders + TransferOrderLines → transfer_order + transfer_order_line_item.
+
+        D365 CSV columns (headers):
+            TransferNumber, FromWarehouse, ToWarehouse, TransferDate,
+            TransferStatus, dataAreaId
+
+        D365 CSV columns (lines):
+            TransferNumber, ItemNumber, Quantity, LineNumber,
+            ShippedQuantity, ReceivedQuantity, dataAreaId
+
+        TO ID format: D365_TO_{TransferNumber}
+        """
+        from app.models.transfer_order import TransferOrder, TransferOrderLineItem
+
+        if not to_headers:
+            return
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping transfer orders")
+            return
+
+        # Index lines by transfer number
+        lines_by_to: Dict[str, List[Dict]] = {}
+        for line in to_lines:
+            to_num = line.get("TransferNumber", "")
+            if to_num:
+                lines_by_to.setdefault(to_num, []).append(line)
+
+        for header in to_headers:
+            transfer_number = header.get("TransferNumber", "")
+            if not transfer_number:
+                continue
+
+            transfer_date_str = header.get("TransferDate", "")
+            transfer_date = self._parse_d365_date(transfer_date_str)
+            if not transfer_date:
+                result.warnings.append(
+                    f"TO {transfer_number}: invalid TransferDate '{transfer_date_str}' — skipped"
+                )
+                continue
+
+            # Resolve source and destination sites from warehouse IDs
+            from_wh = header.get("FromWarehouse", "")
+            to_wh = header.get("ToWarehouse", "")
+            source_site = site_map.get(from_wh, default_site)
+            dest_site = site_map.get(to_wh, default_site)
+
+            d365_status = header.get("TransferStatus", "")
+            status = self._TO_STATUS_MAP.get(d365_status, "DRAFT")
+
+            to_number = f"D365_TO_{transfer_number}"
+
+            to_order = TransferOrder(
+                to_number=to_number,
+                source_site_id=source_site.id,
+                destination_site_id=dest_site.id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                company_id=f"D365_{self.tenant_id}",
+                order_type="transfer",
+                source="D365_CONTOSO",
+                status=status,
+                order_date=transfer_date,
+                shipment_date=transfer_date,
+                estimated_delivery_date=transfer_date,  # D365 may not provide separate delivery date
+            )
+            self.db.add(to_order)
+            await self.db.flush()
+            result.transfer_orders_created += 1
+
+            # Build line items
+            for line in lines_by_to.get(transfer_number, []):
+                item_number = line.get("ItemNumber", "")
+                product = product_map.get(item_number)
+                if not product:
+                    result.warnings.append(
+                        f"TO {to_number} line: ItemNumber '{item_number}' not in product map — skipped"
+                    )
+                    continue
+
+                quantity = self._safe_float(line.get("Quantity"))
+                if quantity is None or quantity <= 0:
+                    continue
+
+                line_number_str = line.get("LineNumber", "0")
+                try:
+                    line_number = int(line_number_str)
+                except (ValueError, TypeError):
+                    line_number = 0
+
+                product_id = f"CFG{config.id}_{item_number}"
+                shipped_qty = self._safe_float(line.get("ShippedQuantity")) or 0.0
+                received_qty = self._safe_float(line.get("ReceivedQuantity")) or 0.0
+
+                to_line = TransferOrderLineItem(
+                    to_id=to_order.id,
+                    line_number=line_number,
+                    product_id=product_id,
+                    quantity=quantity,
+                    shipped_quantity=shipped_qty,
+                    received_quantity=received_qty,
+                    requested_ship_date=transfer_date,
+                    requested_delivery_date=transfer_date,
+                )
+                self.db.add(to_line)
+                result.transfer_order_lines_created += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: created %d transfer orders, %d line items",
+            result.transfer_orders_created, result.transfer_order_lines_created,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 15: Quality Orders
+    # ------------------------------------------------------------------
+
+    _QO_STATUS_MAP: Dict[str, str] = {
+        "Open": "CREATED",
+        "InProgress": "IN_INSPECTION",
+        "Validated": "DISPOSITION_DECIDED",
+        "Closed": "CLOSED",
+        "Cancelled": "CANCELLED",
+        "": "CREATED",
+    }
+
+    _QO_DISPOSITION_MAP: Dict[str, str] = {
+        "Accept": "ACCEPT",
+        "Reject": "REJECT",
+        "Rework": "REWORK",
+        "Scrap": "SCRAP",
+        "": None,
+    }
+
+    async def _build_quality_orders(
+        self, config, quality_data, site_map, product_map, result,
+    ):
+        """Map D365 QualityOrders → quality_order + quality_order_line_item.
+
+        D365 CSV columns:
+            QualityOrderNumber, ItemNumber, InspectionQuantity, AcceptedQuantity,
+            RejectedQuantity, Status, SiteId, DispositionCode, OriginType,
+            OriginOrderNumber, TestGroupId, dataAreaId
+
+        QO number format: D365_QI_{QualityOrderNumber}
+        """
+        from app.models.quality_order import QualityOrder, QualityOrderLineItem
+        from datetime import date as d
+
+        if not quality_data:
+            return
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping quality orders")
+            return
+
+        for row in quality_data:
+            qo_number_raw = row.get("QualityOrderNumber", "")
+            if not qo_number_raw:
+                continue
+
+            item_number = row.get("ItemNumber", "")
+            product = product_map.get(item_number)
+            if not product:
+                result.warnings.append(
+                    f"QO {qo_number_raw}: ItemNumber '{item_number}' not in product map — skipped"
+                )
+                continue
+
+            inspection_qty = self._safe_float(row.get("InspectionQuantity"))
+            if inspection_qty is None or inspection_qty <= 0:
+                result.warnings.append(
+                    f"QO {qo_number_raw}: invalid InspectionQuantity — skipped"
+                )
+                continue
+
+            product_id = f"CFG{config.id}_{item_number}"
+            qo_number = f"D365_QI_{qo_number_raw}"
+
+            # Resolve site
+            d365_site_id = row.get("SiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            d365_status = row.get("Status", "")
+            status = self._QO_STATUS_MAP.get(d365_status, "CREATED")
+
+            accepted_qty = self._safe_float(row.get("AcceptedQuantity")) or 0.0
+            rejected_qty = self._safe_float(row.get("RejectedQuantity")) or 0.0
+
+            disposition_code = row.get("DispositionCode", "")
+            disposition = self._QO_DISPOSITION_MAP.get(disposition_code)
+
+            origin_type_raw = row.get("OriginType", "GOODS_RECEIPT")
+            origin_order = row.get("OriginOrderNumber", "")
+
+            # Map D365 origin type to our enum
+            origin_map = {
+                "Purchase": "GOODS_RECEIPT",
+                "Production": "PRODUCTION_ORDER",
+                "Transfer": "TRANSFER_RECEIPT",
+                "Customer": "CUSTOMER_COMPLAINT",
+            }
+            origin_type = origin_map.get(origin_type_raw, "GOODS_RECEIPT")
+
+            order_date_str = row.get("OrderDate", "")
+            order_date = self._parse_d365_date(order_date_str) or d.today()
+
+            qo = QualityOrder(
+                quality_order_number=qo_number,
+                site_id=site.id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                company_id=f"D365_{self.tenant_id}",
+                source="D365_CONTOSO",
+                inspection_type="INCOMING",
+                status=status,
+                origin_type=origin_type,
+                origin_order_id=origin_order[:100] if origin_order else None,
+                product_id=product_id,
+                inspection_quantity=inspection_qty,
+                accepted_quantity=accepted_qty,
+                rejected_quantity=rejected_qty,
+                disposition=disposition,
+                order_date=order_date,
+            )
+            self.db.add(qo)
+            await self.db.flush()
+            result.quality_orders_created += 1
+
+            # Create a single summary line item per quality order
+            test_group = row.get("TestGroupId", "")
+            qo_line = QualityOrderLineItem(
+                quality_order_id=qo.id,
+                line_number=1,
+                characteristic_name=test_group[:200] if test_group else "General Inspection",
+                characteristic_type="ATTRIBUTE",
+                result="PASS" if rejected_qty == 0.0 and accepted_qty > 0 else (
+                    "FAIL" if rejected_qty > 0 else None
+                ),
+                defect_count=int(rejected_qty) if rejected_qty > 0 else 0,
+            )
+            self.db.add(qo_line)
+            result.quality_order_lines_created += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: created %d quality orders, %d line items",
+            result.quality_orders_created, result.quality_order_lines_created,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 16: Maintenance Orders
+    # ------------------------------------------------------------------
+
+    _MAINT_STATUS_MAP: Dict[str, str] = {
+        "Created": "PLANNED",
+        "Scheduled": "SCHEDULED",
+        "InProgress": "IN_PROGRESS",
+        "Completed": "COMPLETED",
+        "Cancelled": "CANCELLED",
+        "": "PLANNED",
+    }
+
+    _MAINT_TYPE_MAP: Dict[str, str] = {
+        "Preventive": "PREVENTIVE",
+        "Corrective": "CORRECTIVE",
+        "Predictive": "PREDICTIVE",
+        "Emergency": "EMERGENCY",
+        "Routine": "ROUTINE",
+        "": "CORRECTIVE",
+    }
+
+    _MAINT_PRIORITY_MAP: Dict[str, str] = {
+        "1": "CRITICAL",
+        "2": "HIGH",
+        "3": "NORMAL",
+        "4": "LOW",
+        "5": "LOW",
+        "Critical": "CRITICAL",
+        "High": "HIGH",
+        "Normal": "NORMAL",
+        "Low": "LOW",
+        "": "NORMAL",
+    }
+
+    async def _build_maintenance_orders(
+        self, config, maintenance_data, site_map, result,
+    ):
+        """Map D365 MaintenanceWorkOrders → maintenance_order.
+
+        D365 CSV columns:
+            WorkOrderNumber, EquipmentNumber, MaintenanceType, Priority,
+            ScheduledDate, Status, SiteId, Description, EquipmentName,
+            EstimatedHours, dataAreaId
+
+        MO number format: D365_MO_{WorkOrderNumber}
+        """
+        from app.models.maintenance_order import MaintenanceOrder
+        from datetime import date as d
+
+        if not maintenance_data:
+            return
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping maintenance orders")
+            return
+
+        for row in maintenance_data:
+            wo_number = row.get("WorkOrderNumber", "")
+            if not wo_number:
+                continue
+
+            equipment_id = row.get("EquipmentNumber", "")
+            if not equipment_id:
+                result.warnings.append(f"MaintOrder {wo_number}: missing EquipmentNumber — skipped")
+                continue
+
+            # Resolve site
+            d365_site_id = row.get("SiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            d365_type = row.get("MaintenanceType", "")
+            maintenance_type = self._MAINT_TYPE_MAP.get(d365_type, "CORRECTIVE")
+
+            d365_status = row.get("Status", "")
+            status = self._MAINT_STATUS_MAP.get(d365_status, "PLANNED")
+
+            d365_priority = row.get("Priority", "")
+            priority = self._MAINT_PRIORITY_MAP.get(str(d365_priority), "NORMAL")
+
+            scheduled_date_str = row.get("ScheduledDate", "")
+            scheduled_date = self._parse_d365_date(scheduled_date_str)
+
+            order_date = scheduled_date or d.today()
+
+            description = row.get("Description", "")
+            equipment_name = row.get("EquipmentName", "")
+            estimated_hours = self._safe_float(row.get("EstimatedHours"))
+
+            mo_number = f"D365_MO_{wo_number}"
+
+            maint_order = MaintenanceOrder(
+                maintenance_order_number=mo_number,
+                asset_id=equipment_id[:40],
+                asset_name=equipment_name[:200] if equipment_name else None,
+                equipment_id=equipment_id[:100],
+                site_id=site.id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                company_id=f"D365_{self.tenant_id}",
+                source="D365_CONTOSO",
+                maintenance_type=maintenance_type,
+                status=status,
+                priority=priority,
+                order_date=order_date,
+                scheduled_start_date=scheduled_date,
+                work_description=description[:2000] if description else f"Maintenance for {equipment_id}",
+                estimated_labor_hours=estimated_hours,
+            )
+            self.db.add(maint_order)
+            result.maintenance_orders_created += 1
+
+        await self.db.flush()
+        logger.info("D365: created %d maintenance orders", result.maintenance_orders_created)
 
     # ------------------------------------------------------------------
     # Utility helpers

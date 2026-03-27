@@ -88,12 +88,15 @@ D365_ENTITY_REGISTRY: Dict[str, Dict] = {
     "PlannedOrders":                {"category": "transaction", "keys": ["PlannedOrderNumber"], "description": "MRP Planned Orders"},
     "ShipmentHeaders":              {"category": "transaction", "keys": ["ShipmentNumber"], "description": "Delivery / Shipment Headers"},
     "ShipmentLines":                {"category": "transaction", "keys": ["ShipmentNumber", "LineNumber"], "description": "Delivery / Shipment Lines"},
+    "TransferOrderHeaders":         {"category": "transaction", "keys": ["TransferNumber"], "description": "Inventory Transfer Order Headers"},
+    "TransferOrderLines":           {"category": "transaction", "keys": ["TransferNumber", "LineNumber"], "description": "Inventory Transfer Order Lines"},
     # --- CDC (Change Data Capture) ---
     "PurchaseOrderReceiptJournal":  {"category": "cdc", "keys": ["PurchaseOrderNumber", "LineNumber", "PostingDate"], "description": "Goods Receipt History"},
     "ProductionOrderConfirmations": {"category": "cdc", "keys": ["ProductionOrderNumber", "OperationNumber"], "description": "Production Confirmations (Yield/Scrap)"},
     "QualityOrders":                {"category": "cdc", "keys": ["QualityOrderNumber"], "description": "Quality Inspection Lots"},
     "QualityTestResults":           {"category": "cdc", "keys": ["QualityOrderNumber", "OperationSequence", "CharacteristicNumber"], "description": "Quality Test Results"},
     "QualityNotifications":         {"category": "cdc", "keys": ["NotificationNumber"], "description": "Quality Notifications / Defects"},
+    "MaintenanceWorkOrders":        {"category": "cdc", "keys": ["WorkOrderNumber"], "description": "Maintenance Work Orders"},
     "MaintenanceAssets":            {"category": "cdc", "keys": ["EquipmentNumber"], "description": "Equipment / Maintenance Assets"},
     "ObjectStatusHistory":          {"category": "cdc", "keys": ["ObjectNumber", "StatusCode"], "description": "System Status Changes"},
 }

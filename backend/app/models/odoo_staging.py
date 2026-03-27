@@ -79,6 +79,10 @@ ODOO_MODEL_REGISTRY: Dict[str, Dict] = {
     "stock.quant":                  {"category": "cdc", "keys": ["id"], "description": "Inventory On-Hand (real-time)"},
     "stock.lot":                    {"category": "cdc", "keys": ["id"], "description": "Lot / Serial Numbers"},
     "stock.move.line":              {"category": "cdc", "keys": ["id"], "description": "Detailed Stock Movements"},
+    "quality.check":                {"category": "cdc", "keys": ["id"], "description": "Quality Checks (Enterprise module)"},
+    "quality.alert":                {"category": "cdc", "keys": ["id"], "description": "Quality Alerts (Enterprise module)"},
+    "maintenance.request":          {"category": "cdc", "keys": ["id"], "description": "Maintenance Requests"},
+    "maintenance.equipment":        {"category": "cdc", "keys": ["id"], "description": "Equipment / Assets"},
 }
 
 

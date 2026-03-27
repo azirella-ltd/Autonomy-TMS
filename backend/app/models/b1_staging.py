@@ -287,6 +287,12 @@ B1_ENTITY_REGISTRY: Dict[str, Dict] = {
         "description": "Quality Control tests (if QC module active)",
         "db_table": "OQCN",
     },
+    "ServiceCalls": {
+        "category": "cdc",
+        "keys": ["ServiceCallID"],
+        "description": "Service Calls (maintenance/field service requests)",
+        "db_table": "OSCL",
+    },
 }
 
 # Convenience lookups

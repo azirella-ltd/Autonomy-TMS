@@ -45,6 +45,11 @@ class OdooConfigBuildResult:
     purchase_orders_created: int = 0
     outbound_orders_created: int = 0
     production_orders_created: int = 0
+    goods_receipts_created: int = 0
+    shipments_created: int = 0
+    transfer_orders_created: int = 0
+    quality_checks_created: int = 0
+    maintenance_requests_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -62,6 +67,11 @@ class OdooConfigBuildResult:
             "purchase_orders_created": self.purchase_orders_created,
             "outbound_orders_created": self.outbound_orders_created,
             "production_orders_created": self.production_orders_created,
+            "goods_receipts_created": self.goods_receipts_created,
+            "shipments_created": self.shipments_created,
+            "transfer_orders_created": self.transfer_orders_created,
+            "quality_checks_created": self.quality_checks_created,
+            "maintenance_requests_created": self.maintenance_requests_created,
             "warnings": self.warnings,
             "errors": self.errors,
         }
@@ -163,6 +173,33 @@ class OdooConfigBuilder:
             production_order_records = data.get("mrp.production", [])
             await self._build_production_orders(
                 config, production_order_records, site_map, product_map, result,
+            )
+
+            # Step 10: Additional transactional data — receipts, shipments,
+            # transfers, quality checks, maintenance requests.
+            # All stock.picking records are polymorphic — picking_type_code
+            # determines receipt (incoming), shipment (outgoing), or transfer
+            # (internal).
+            all_pickings = data.get("stock.picking", [])
+            stock_moves = data.get("stock.move", [])
+            stock_move_lines = data.get("stock.move.line", [])
+
+            await self._build_goods_receipts(
+                config, all_pickings, stock_moves, stock_move_lines,
+                site_map, product_map, partner_map, result,
+            )
+            await self._build_shipments(
+                config, all_pickings, site_map, product_map, partner_map, result,
+            )
+            await self._build_transfer_orders(
+                config, all_pickings, stock_moves, stock_move_lines,
+                site_map, product_map, result,
+            )
+            await self._build_quality_checks(
+                config, data.get("quality.check", []), site_map, product_map, result,
+            )
+            await self._build_maintenance_requests(
+                config, data.get("maintenance.request", []), site_map, result,
             )
 
             await self.db.commit()
@@ -1167,6 +1204,641 @@ class OdooConfigBuilder:
         await self.db.flush()
         result.production_orders_created = count
         logger.info("Odoo: created %d production orders", count)
+
+
+    # ── Step 10a: Goods Receipts ────────────────────────────────────────
+
+    async def _build_goods_receipts(
+        self, config, all_pickings, stock_moves, stock_move_lines,
+        site_map, product_map, partner_map, result,
+    ):
+        """Build GoodsReceipt + GoodsReceiptLineItem from Odoo stock.picking (incoming).
+
+        Odoo ``stock.picking`` with ``picking_type_code='incoming'`` represents
+        goods receipts.  Fields used:
+            name (picking ref), partner_id (vendor), scheduled_date,
+            date_done, state, origin (PO reference e.g. "PO00001"),
+            move_ids / move_line_ids (via stock.move / stock.move.line).
+
+        Odoo ``stock.move`` fields: picking_id, product_id, product_uom_qty
+            (expected), quantity_done (received).
+        """
+        from app.models.goods_receipt import GoodsReceipt, GoodsReceiptLineItem
+        from app.models.purchase_order import PurchaseOrder
+        from sqlalchemy import select as sa_select
+
+        incoming = [p for p in all_pickings
+                    if str(p.get("picking_type_code", "")).strip().lower() == "incoming"]
+        if not incoming:
+            return
+
+        # Build move lookup: picking_id → [move_dicts]
+        moves_by_picking: Dict[int, List[Dict]] = {}
+        for mv in stock_moves:
+            pk_id = self._resolve_odoo_id(mv.get("picking_id"))
+            if pk_id is not None:
+                moves_by_picking.setdefault(pk_id, []).append(mv)
+
+        fallback_site_id = self._get_first_site_id(site_map)
+
+        # Pre-load PO numbers → PO ids for origin linking
+        po_lookup: Dict[str, int] = {}
+        existing_pos = (await self.db.execute(
+            sa_select(PurchaseOrder.po_number, PurchaseOrder.id).where(
+                PurchaseOrder.config_id == config.id
+            )
+        )).all()
+        for po_num, po_id in existing_pos:
+            po_lookup[po_num] = po_id
+
+        count = 0
+        for picking in incoming:
+            odoo_pk_id = picking.get("id")
+            pk_name = str(picking.get("name") or f"ODOO-GR-{odoo_pk_id}")[:100]
+
+            receipt_date = self._parse_odoo_date(picking.get("date_done")) or self._parse_odoo_date(picking.get("scheduled_date"))
+            if not receipt_date:
+                receipt_date = datetime.utcnow().date()
+            receipt_datetime = datetime.combine(receipt_date, datetime.min.time())
+
+            # Resolve PO via origin field (e.g. "PO00001")
+            origin = str(picking.get("origin") or "").strip()
+            po_id = po_lookup.get(origin)
+            if not po_id:
+                # Try partial match — origin may contain extra text
+                for po_num, pid in po_lookup.items():
+                    if po_num in origin:
+                        po_id = pid
+                        break
+            if not po_id:
+                result.warnings.append(f"Skipped GR {pk_name}: cannot resolve PO from origin '{origin}'")
+                continue
+
+            # Status mapping
+            odoo_state = str(picking.get("state", "")).strip().lower()
+            status_map = {
+                "draft": "PENDING",
+                "waiting": "PENDING",
+                "confirmed": "PENDING",
+                "assigned": "PENDING",
+                "done": "COMPLETED",
+                "cancel": "REJECTED",
+            }
+            status = status_map.get(odoo_state, "PENDING")
+
+            receiving_site_id = fallback_site_id
+
+            # Compute totals from moves
+            moves = moves_by_picking.get(odoo_pk_id, [])
+            total_received = 0.0
+            total_accepted = 0.0
+
+            gr_rec = GoodsReceipt(
+                gr_number=pk_name,
+                po_id=po_id,
+                receipt_date=receipt_datetime,
+                status=status,
+                receiving_site_id=receiving_site_id,
+                total_received_qty=0.0,
+                total_accepted_qty=0.0,
+                total_rejected_qty=0.0,
+            )
+            self.db.add(gr_rec)
+            await self.db.flush()
+
+            # --- Line items from stock.move ---
+            line_num = 0
+            for mv in moves:
+                prod_odoo_id = self._resolve_odoo_id(mv.get("product_id"))
+                product = product_map.get(prod_odoo_id) if prod_odoo_id else None
+                if not product:
+                    continue
+
+                expected_qty = 0.0
+                try:
+                    expected_qty = float(mv.get("product_uom_qty") or 0)
+                except (TypeError, ValueError):
+                    pass
+                received_qty = 0.0
+                try:
+                    received_qty = float(mv.get("quantity_done") or mv.get("quantity") or 0)
+                except (TypeError, ValueError):
+                    pass
+
+                if expected_qty <= 0 and received_qty <= 0:
+                    continue
+
+                # We need a po_line_id FK — look up from the PO.
+                # Without explicit PO line mapping from Odoo, skip creating
+                # line items that cannot satisfy the NOT NULL FK constraint.
+                # Instead, we only create the GR header.
+                # However, if the system has PO lines, attempt a match.
+                from app.models.purchase_order import PurchaseOrderLineItem
+                po_line = (await self.db.execute(
+                    sa_select(PurchaseOrderLineItem).where(
+                        PurchaseOrderLineItem.po_id == po_id,
+                        PurchaseOrderLineItem.product_id == product.id,
+                    ).limit(1)
+                )).scalar_one_or_none()
+                if not po_line:
+                    continue
+
+                line_num += 1
+                variance = received_qty - expected_qty
+                if variance > 0:
+                    variance_type = "OVER"
+                elif variance < 0:
+                    variance_type = "UNDER"
+                else:
+                    variance_type = "EXACT"
+
+                gr_line = GoodsReceiptLineItem(
+                    gr_id=gr_rec.id,
+                    po_line_id=po_line.id,
+                    line_number=line_num,
+                    product_id=product.id,
+                    expected_qty=expected_qty,
+                    received_qty=received_qty,
+                    accepted_qty=received_qty if status == "COMPLETED" else 0.0,
+                    variance_qty=variance,
+                    variance_type=variance_type,
+                )
+                self.db.add(gr_line)
+                total_received += received_qty
+                total_accepted += (received_qty if status == "COMPLETED" else 0.0)
+
+            # Update header totals
+            gr_rec.total_received_qty = total_received
+            gr_rec.total_accepted_qty = total_accepted
+            gr_rec.has_variance = any(
+                (float(mv.get("quantity_done") or 0) != float(mv.get("product_uom_qty") or 0))
+                for mv in moves
+                if mv.get("quantity_done") is not None
+            )
+            count += 1
+
+        await self.db.flush()
+        result.goods_receipts_created = count
+        logger.info("Odoo: created %d goods receipts", count)
+
+    # ── Step 10b: Shipments ──────────────────────────────────────────────
+
+    async def _build_shipments(
+        self, config, all_pickings, site_map, product_map, partner_map, result,
+    ):
+        """Build Shipment from Odoo stock.picking (outgoing).
+
+        Odoo ``stock.picking`` with ``picking_type_code='outgoing'`` represents
+        outbound shipments.  Fields used:
+            name (picking ref), partner_id (customer), scheduled_date,
+            date_done, state, carrier_id, carrier_tracking_ref, origin
+            (SO reference).
+        """
+        from app.models.sc_entities import Shipment
+
+        outgoing = [p for p in all_pickings
+                    if str(p.get("picking_type_code", "")).strip().lower() == "outgoing"]
+        if not outgoing:
+            return
+
+        fallback_site_id = self._get_first_site_id(site_map)
+
+        count = 0
+        for picking in outgoing:
+            odoo_pk_id = picking.get("id")
+            pk_name = str(picking.get("name") or f"ODOO-SHIP-{odoo_pk_id}")[:100]
+
+            # Status mapping
+            odoo_state = str(picking.get("state", "")).strip().lower()
+            status_map = {
+                "draft": "planned",
+                "waiting": "planned",
+                "confirmed": "planned",
+                "assigned": "planned",
+                "done": "delivered",
+                "cancel": "cancelled",
+            }
+            status = status_map.get(odoo_state, "planned")
+
+            # Dates
+            ship_date = self._parse_odoo_date(picking.get("date_done"))
+            expected_delivery = self._parse_odoo_date(picking.get("scheduled_date"))
+            if not expected_delivery:
+                expected_delivery = datetime.utcnow().date()
+
+            ship_datetime = datetime.combine(ship_date, datetime.min.time()) if ship_date else None
+            expected_datetime = datetime.combine(expected_delivery, datetime.min.time())
+            actual_delivery_datetime = ship_datetime if status == "delivered" else None
+
+            # Carrier info
+            carrier_raw = picking.get("carrier_id")
+            carrier_name = None
+            if isinstance(carrier_raw, (list, tuple)) and len(carrier_raw) >= 2:
+                carrier_name = str(carrier_raw[1])[:200]
+            tracking_ref = picking.get("carrier_tracking_ref")
+            if tracking_ref:
+                tracking_ref = str(tracking_ref)[:100]
+
+            # Origin → link to outbound order
+            origin = str(picking.get("origin") or "").strip()
+            order_id = ""
+            if origin:
+                # Odoo origin for SO deliveries is typically the SO name
+                order_id = origin[:100]
+
+            # Resolve customer partner
+            customer_odoo_id = self._resolve_odoo_id(picking.get("partner_id"))
+
+            # Source site
+            from_site_id = fallback_site_id
+            if not from_site_id:
+                result.warnings.append(f"Skipped shipment {pk_name}: no site available")
+                continue
+
+            # Destination site: for outbound shipments there is typically no
+            # internal destination site — use the same fallback.
+            to_site_id = fallback_site_id
+
+            shipment_id = f"ODOO-SHIP-{odoo_pk_id}"
+
+            shipment = Shipment(
+                id=shipment_id,
+                description=f"Odoo delivery {pk_name}",
+                order_id=order_id if order_id else shipment_id,
+                product_id="MIXED",  # Picking may contain multiple products
+                quantity=0.0,  # Will be aggregate if needed
+                from_site_id=from_site_id,
+                to_site_id=to_site_id,
+                carrier_name=carrier_name,
+                tracking_number=tracking_ref,
+                status=status,
+                ship_date=ship_datetime,
+                expected_delivery_date=expected_datetime,
+                actual_delivery_date=actual_delivery_datetime,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                source="ODOO",
+                source_event_id=f"PICK-{odoo_pk_id}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(shipment)
+            count += 1
+
+        await self.db.flush()
+        result.shipments_created = count
+        logger.info("Odoo: created %d shipments", count)
+
+    # ── Step 10c: Transfer Orders ────────────────────────────────────────
+
+    async def _build_transfer_orders(
+        self, config, all_pickings, stock_moves, stock_move_lines,
+        site_map, product_map, result,
+    ):
+        """Build TransferOrder + TransferOrderLineItem from Odoo stock.picking (internal).
+
+        Odoo ``stock.picking`` with ``picking_type_code='internal'`` represents
+        inter-warehouse transfers.  Fields used:
+            name (picking ref), location_id (from), location_dest_id (to),
+            scheduled_date, date_done, state.
+        """
+        from app.models.transfer_order import TransferOrder, TransferOrderLineItem
+
+        internal = [p for p in all_pickings
+                    if str(p.get("picking_type_code", "")).strip().lower() == "internal"]
+        if not internal:
+            return
+
+        # Build move lookup: picking_id → [move_dicts]
+        moves_by_picking: Dict[int, List[Dict]] = {}
+        for mv in stock_moves:
+            pk_id = self._resolve_odoo_id(mv.get("picking_id"))
+            if pk_id is not None:
+                moves_by_picking.setdefault(pk_id, []).append(mv)
+
+        # Build Odoo location_id → site mapping.
+        # Odoo stock.location belongs to a warehouse; we map via warehouse_id
+        # in the site_map. Without full location data, fall back to first site.
+        fallback_site_id = self._get_first_site_id(site_map)
+
+        count = 0
+        for picking in internal:
+            odoo_pk_id = picking.get("id")
+            pk_name = str(picking.get("name") or f"ODOO-TO-{odoo_pk_id}")[:100]
+
+            # Status mapping
+            odoo_state = str(picking.get("state", "")).strip().lower()
+            status_map = {
+                "draft": "DRAFT",
+                "waiting": "DRAFT",
+                "confirmed": "RELEASED",
+                "assigned": "RELEASED",
+                "done": "RECEIVED",
+                "cancel": "CANCELLED",
+            }
+            status = status_map.get(odoo_state, "DRAFT")
+
+            # Dates
+            shipment_date = self._parse_odoo_date(picking.get("scheduled_date"))
+            if not shipment_date:
+                shipment_date = datetime.utcnow().date()
+            actual_delivery = self._parse_odoo_date(picking.get("date_done"))
+
+            # Source and destination sites: try to resolve from location warehouse
+            source_site_id = fallback_site_id
+            dest_site_id = fallback_site_id
+
+            # Attempt to resolve via location_id warehouse references
+            loc_src_wh = self._resolve_odoo_id(picking.get("location_id"))
+            loc_dest_wh = self._resolve_odoo_id(picking.get("location_dest_id"))
+            # These are stock.location IDs, not warehouse IDs directly.
+            # Without the full location→warehouse mapping, use fallback.
+            # If we have multiple warehouses, try to differentiate.
+            wh_sites = [(k, s) for k, s in site_map.items() if isinstance(k, int)]
+            if len(wh_sites) >= 2:
+                source_site_id = wh_sites[0][1].id
+                dest_site_id = wh_sites[1][1].id
+
+            if not source_site_id or not dest_site_id:
+                result.warnings.append(f"Skipped TO {pk_name}: no sites available")
+                continue
+
+            # Estimated delivery: shipment date + 2 days default
+            est_delivery = actual_delivery or (shipment_date + timedelta(days=2))
+
+            to_rec = TransferOrder(
+                to_number=pk_name,
+                source_site_id=source_site_id,
+                destination_site_id=dest_site_id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                company_id=f"ODOO_{self.tenant_id}",
+                order_type="transfer",
+                status=status,
+                shipment_date=shipment_date,
+                estimated_delivery_date=est_delivery,
+                actual_delivery_date=actual_delivery,
+                source="ODOO",
+                source_event_id=f"PICK-{odoo_pk_id}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(to_rec)
+            await self.db.flush()
+
+            # --- Line items from stock.move ---
+            moves = moves_by_picking.get(odoo_pk_id, [])
+            line_num = 0
+            for mv in moves:
+                prod_odoo_id = self._resolve_odoo_id(mv.get("product_id"))
+                product = product_map.get(prod_odoo_id) if prod_odoo_id else None
+                if not product:
+                    continue
+
+                qty = 0.0
+                try:
+                    qty = float(mv.get("product_uom_qty") or 0)
+                except (TypeError, ValueError):
+                    pass
+                if qty <= 0:
+                    continue
+
+                received_qty = 0.0
+                try:
+                    received_qty = float(mv.get("quantity_done") or mv.get("quantity") or 0)
+                except (TypeError, ValueError):
+                    pass
+
+                line_num += 1
+                to_line = TransferOrderLineItem(
+                    to_id=to_rec.id,
+                    line_number=line_num,
+                    product_id=product.id,
+                    quantity=qty,
+                    received_quantity=received_qty,
+                    requested_ship_date=shipment_date,
+                    requested_delivery_date=est_delivery,
+                    actual_delivery_date=actual_delivery,
+                )
+                self.db.add(to_line)
+
+            count += 1
+
+        await self.db.flush()
+        result.transfer_orders_created = count
+        logger.info("Odoo: created %d transfer orders", count)
+
+    # ── Step 10d: Quality Checks ─────────────────────────────────────────
+
+    async def _build_quality_checks(
+        self, config, quality_checks, site_map, product_map, result,
+    ):
+        """Build QualityOrder from Odoo quality.check records.
+
+        Odoo ``quality.check`` is an Enterprise-only model.  Fields used:
+            name, product_id, point_id, quality_state (pass/fail/none),
+            measure, picking_id, lot_id, team_id.
+
+        If the Odoo instance is Community edition, ``quality.check`` will not
+        be in the extracted data — this method handles empty input gracefully.
+        """
+        from app.models.quality_order import QualityOrder
+
+        if not quality_checks:
+            return
+
+        fallback_site_id = self._get_first_site_id(site_map)
+        if not fallback_site_id:
+            result.warnings.append("No site available for quality checks — skipped")
+            return
+
+        count = 0
+        for qc in quality_checks:
+            odoo_qc_id = qc.get("id")
+            qc_name = str(qc.get("name") or f"Quality Check {odoo_qc_id}")[:100]
+            qo_number = f"ODOO_QC_{odoo_qc_id}"
+
+            # Product resolution
+            prod_odoo_id = self._resolve_odoo_id(qc.get("product_id"))
+            product = product_map.get(prod_odoo_id) if prod_odoo_id else None
+            if not product:
+                result.warnings.append(f"Skipped QC {qo_number}: product not resolved")
+                continue
+
+            # Quality state → status + disposition
+            quality_state = str(qc.get("quality_state", "none")).strip().lower()
+            if quality_state == "pass":
+                status = "CLOSED"
+                disposition = "ACCEPT"
+            elif quality_state == "fail":
+                status = "DISPOSITION_DECIDED"
+                disposition = "REJECT"
+            else:
+                status = "INSPECTION_PENDING"
+                disposition = None
+
+            # Quantity: Odoo quality.check has a 'measure' field for measured value
+            inspection_qty = 1.0
+            try:
+                inspection_qty = float(qc.get("qty_inspected") or qc.get("measure") or 1.0)
+            except (TypeError, ValueError):
+                pass
+
+            accepted_qty = inspection_qty if disposition == "ACCEPT" else 0.0
+            rejected_qty = inspection_qty if disposition == "REJECT" else 0.0
+
+            # Inspection type: infer from picking presence
+            picking_id = self._resolve_odoo_id(qc.get("picking_id"))
+            inspection_type = "INCOMING" if picking_id else "SAMPLING"
+
+            # Origin
+            origin_type = "GOODS_RECEIPT" if picking_id else "PREVENTIVE_SAMPLE"
+            origin_order_id = str(picking_id) if picking_id else None
+
+            # Lot/batch
+            lot_raw = qc.get("lot_id")
+            lot_name = None
+            if isinstance(lot_raw, (list, tuple)) and len(lot_raw) >= 2:
+                lot_name = str(lot_raw[1])[:100]
+
+            today = datetime.utcnow().date()
+
+            qo_rec = QualityOrder(
+                quality_order_number=qo_number,
+                company_id=f"ODOO_{self.tenant_id}",
+                site_id=fallback_site_id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                source="ODOO",
+                source_event_id=f"QC-{odoo_qc_id}",
+                source_update_dttm=datetime.utcnow(),
+                inspection_type=inspection_type,
+                status=status,
+                origin_type=origin_type,
+                origin_order_id=origin_order_id,
+                product_id=product.id,
+                lot_number=lot_name,
+                inspection_quantity=inspection_qty,
+                accepted_quantity=accepted_qty,
+                rejected_quantity=rejected_qty,
+                disposition=disposition,
+                order_date=today,
+            )
+            self.db.add(qo_rec)
+            count += 1
+
+        await self.db.flush()
+        result.quality_checks_created = count
+        logger.info("Odoo: created %d quality orders from quality.check", count)
+
+    # ── Step 10e: Maintenance Requests ───────────────────────────────────
+
+    async def _build_maintenance_requests(
+        self, config, maintenance_requests, site_map, result,
+    ):
+        """Build MaintenanceOrder from Odoo maintenance.request records.
+
+        Odoo ``maintenance.request`` fields used:
+            name, equipment_id, maintenance_type (corrective/preventive),
+            priority ('0'-'3'), schedule_date, stage_id, request_date.
+        """
+        from app.models.maintenance_order import MaintenanceOrder
+
+        if not maintenance_requests:
+            return
+
+        fallback_site_id = self._get_first_site_id(site_map)
+        if not fallback_site_id:
+            result.warnings.append("No site available for maintenance requests — skipped")
+            return
+
+        count = 0
+        for mr in maintenance_requests:
+            odoo_mr_id = mr.get("id")
+            mr_name = str(mr.get("name") or f"Maintenance Request {odoo_mr_id}")[:200]
+            mo_number = f"ODOO_MR_{odoo_mr_id}"
+
+            # Equipment
+            equipment_raw = mr.get("equipment_id")
+            equipment_name = None
+            equipment_id_str = f"ODOO_EQ_{odoo_mr_id}"
+            if isinstance(equipment_raw, (list, tuple)) and len(equipment_raw) >= 2:
+                equipment_id_str = f"ODOO_EQ_{equipment_raw[0]}"
+                equipment_name = str(equipment_raw[1])[:200]
+
+            # Maintenance type mapping
+            odoo_mtype = str(mr.get("maintenance_type", "corrective")).strip().lower()
+            mtype_map = {
+                "corrective": "CORRECTIVE",
+                "preventive": "PREVENTIVE",
+            }
+            maintenance_type = mtype_map.get(odoo_mtype, "CORRECTIVE")
+
+            # Priority mapping: Odoo uses '0' (very urgent) to '3' (normal)
+            odoo_priority = str(mr.get("priority", "1")).strip()
+            priority_map = {
+                "0": "EMERGENCY",
+                "1": "HIGH",
+                "2": "NORMAL",
+                "3": "LOW",
+            }
+            priority = priority_map.get(odoo_priority, "NORMAL")
+
+            # Status: infer from stage_id if available, else from kanban_state
+            stage_raw = mr.get("stage_id")
+            stage_name = ""
+            if isinstance(stage_raw, (list, tuple)) and len(stage_raw) >= 2:
+                stage_name = str(stage_raw[1]).strip().lower()
+
+            # Map common Odoo maintenance stage names
+            if "done" in stage_name or "closed" in stage_name or "repaired" in stage_name:
+                status = "COMPLETED"
+            elif "progress" in stage_name or "in progress" in stage_name:
+                status = "IN_PROGRESS"
+            elif "scrap" in stage_name or "cancel" in stage_name:
+                status = "CANCELLED"
+            else:
+                status = "PLANNED"
+
+            # Dates
+            request_date = self._parse_odoo_date(mr.get("request_date"))
+            schedule_date = self._parse_odoo_date(mr.get("schedule_date"))
+            close_date = self._parse_odoo_date(mr.get("close_date"))
+            today = datetime.utcnow().date()
+            order_date = request_date or today
+
+            scheduled_start = None
+            if schedule_date:
+                scheduled_start = datetime.combine(schedule_date, datetime.min.time())
+
+            actual_completion = None
+            if close_date:
+                actual_completion = datetime.combine(close_date, datetime.min.time())
+
+            mo_rec = MaintenanceOrder(
+                maintenance_order_number=mo_number,
+                asset_id=equipment_id_str[:40],
+                asset_name=equipment_name,
+                equipment_id=equipment_id_str[:100],
+                site_id=fallback_site_id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                company_id=f"ODOO_{self.tenant_id}",
+                source="ODOO",
+                source_event_id=f"MR-{odoo_mr_id}",
+                source_update_dttm=datetime.utcnow(),
+                maintenance_type=maintenance_type,
+                status=status,
+                order_date=order_date,
+                scheduled_start_date=scheduled_start,
+                actual_completion_date=actual_completion,
+                priority=priority,
+                work_description=mr_name,
+            )
+            self.db.add(mo_rec)
+            count += 1
+
+        await self.db.flush()
+        result.maintenance_requests_created = count
+        logger.info("Odoo: created %d maintenance orders from maintenance.request", count)
 
 
 class OdooIngestionMonitor:

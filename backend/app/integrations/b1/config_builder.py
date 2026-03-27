@@ -2,14 +2,18 @@
 SAP Business One Config Builder — Staged B1 data → SupplyChainConfig
 
 Transforms extracted B1 entities into the canonical AWS SC data model:
-  Warehouses        → Site (INVENTORY / MANUFACTURER)
-  BusinessPartners  → TradingPartner (vendor / customer)
-  Items             → Product
-  ProductTrees      → ProductBOM
-  ItemWarehouseInfo → InvLevel + InvPolicy
-  PurchaseOrders    → PurchaseOrder + PurchaseOrderLineItem
-  Orders            → OutboundOrder + OutboundOrderLine
-  ProductionOrders  → ProductionOrder
+  Warehouses              → Site (INVENTORY / MANUFACTURER)
+  BusinessPartners        → TradingPartner (vendor / customer)
+  Items                   → Product
+  ProductTrees            → ProductBOM
+  ItemWarehouseInfo       → InvLevel + InvPolicy
+  PurchaseOrders          → PurchaseOrder + PurchaseOrderLineItem
+  Orders                  → OutboundOrder + OutboundOrderLine
+  ProductionOrders        → ProductionOrder
+  PurchaseDeliveryNotes   → GoodsReceipt + GoodsReceiptLineItem
+  DeliveryNotes           → Shipment
+  StockTransfers          → TransferOrder + TransferOrderLineItem
+  QualityTests            → QualityOrder
 
 Usage:
     builder = B1ConfigBuilder(db, tenant_id=28)
@@ -144,6 +148,10 @@ class B1ConfigBuildResult:
     purchase_orders_created: int = 0
     outbound_orders_created: int = 0
     production_orders_created: int = 0
+    goods_receipts_created: int = 0
+    shipments_created: int = 0
+    transfer_orders_created: int = 0
+    quality_orders_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -179,6 +187,8 @@ class B1ConfigBuilder:
             "Warehouses", "BusinessPartners", "Items", "ItemGroups",
             "ProductTrees", "ItemWarehouseInfoCollection",
             "Orders", "PurchaseOrders", "ProductionOrders",
+            "PurchaseDeliveryNotes", "DeliveryNotes",
+            "StockTransfers", "QualityTests",
         ]:
             try:
                 data[entity] = await connector.extract_entity(entity)
@@ -203,6 +213,8 @@ class B1ConfigBuilder:
             "Warehouses", "BusinessPartners", "Items", "ItemGroups",
             "ProductTrees", "ItemWarehouseInfoCollection",
             "Orders", "PurchaseOrders", "ProductionOrders",
+            "PurchaseDeliveryNotes", "DeliveryNotes",
+            "StockTransfers", "QualityTests",
         ]:
             data[entity] = connector.extract_from_csv(entity)
 
@@ -285,6 +297,26 @@ class B1ConfigBuilder:
             if production_orders:
                 mo_count = await self._build_production_orders(production_orders)
                 result.production_orders_created = mo_count
+
+            purchase_delivery_notes = data.get("PurchaseDeliveryNotes", [])
+            if purchase_delivery_notes:
+                gr_count = await self._build_goods_receipts(purchase_delivery_notes)
+                result.goods_receipts_created = gr_count
+
+            delivery_notes = data.get("DeliveryNotes", [])
+            if delivery_notes:
+                sh_count = await self._build_shipments(delivery_notes)
+                result.shipments_created = sh_count
+
+            stock_transfers = data.get("StockTransfers", [])
+            if stock_transfers:
+                to_count = await self._build_transfer_orders(stock_transfers)
+                result.transfer_orders_created = to_count
+
+            quality_tests = data.get("QualityTests", [])
+            if quality_tests:
+                qo_count = await self._build_quality_orders(quality_tests)
+                result.quality_orders_created = qo_count
 
         return result
 
@@ -858,4 +890,653 @@ class B1ConfigBuilder:
         if skipped_count:
             logger.info("Skipped %d production orders (missing required fields)", skipped_count)
         logger.info("Created %d production orders from B1 ProductionOrders", created_count)
+        return created_count
+
+    # ------------------------------------------------------------------
+    # Transactional: PurchaseDeliveryNotes → goods_receipt + goods_receipt_line_item
+    # ------------------------------------------------------------------
+
+    async def _build_goods_receipts(self, delivery_notes: List[Dict]) -> int:
+        """Map B1 PurchaseDeliveryNotes (OPDN) → goods_receipt + goods_receipt_line_item.
+
+        B1 PurchaseDeliveryNotes header fields:
+          DocEntry       — internal unique key
+          DocNum         — display document number
+          CardCode       — vendor business partner code
+          DocDate        — receipt date
+          DocumentStatus — bost_Open / bost_Close
+          Comments       — free text notes
+
+        B1 DocumentLines (sub-entity):
+          ItemCode       — product code
+          Quantity       — received quantity
+          Price          — unit price
+          WarehouseCode  — receiving warehouse
+          LineNum        — line number (0-based)
+          BaseEntry      — linked PO DocEntry
+          BaseLine       — linked PO line number
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        first_site_id = self._get_first_site_id()
+        if not first_site_id:
+            logger.warning("No sites found — cannot create goods receipts")
+            return 0
+
+        created_count = 0
+        skipped_count = 0
+
+        for gr in delivery_notes:
+            doc_entry = gr.get("DocEntry")
+            doc_num = gr.get("DocNum", doc_entry)
+            if doc_entry is None and doc_num is None:
+                skipped_count += 1
+                continue
+
+            receipt_date = _parse_b1_date(gr.get("DocDate"))
+            if not receipt_date:
+                skipped_count += 1
+                continue
+
+            gr_number = f"B1-GR-{doc_num}"
+            notes = gr.get("Comments")
+            doc_status = str(gr.get("DocumentStatus", "O")).strip().upper()
+            status = "COMPLETED" if doc_status in ("C", "BOST_CLOSE") else "PENDING"
+
+            lines = gr.get("DocumentLines", [])
+
+            # Determine receiving site from first line's WarehouseCode
+            receiving_site_id = first_site_id
+            if lines:
+                first_wh = str(lines[0].get("WarehouseCode", "")).strip()
+                if first_wh and self._get_site_id(first_wh):
+                    receiving_site_id = self._get_site_id(first_wh)
+
+            # Compute total received qty from lines
+            total_received_qty = sum(
+                _safe_float(ln.get("Quantity")) for ln in lines
+            ) if lines else 0.0
+
+            # Try to resolve linked PO via BaseEntry on first line, or via CardCode
+            po_id = None
+            if lines:
+                base_entry = lines[0].get("BaseEntry")
+                if base_entry is not None:
+                    po_number_candidate = f"B1-PO-{base_entry}"
+                    row = await self.db.execute(
+                        text("SELECT id FROM purchase_order WHERE po_number = :pn"),
+                        {"pn": po_number_candidate},
+                    )
+                    po_row = row.fetchone()
+                    if po_row:
+                        po_id = po_row[0]
+
+            # Fallback: resolve PO via CardCode (vendor) — take most recent
+            if po_id is None:
+                card_code = str(gr.get("CardCode", "")).strip()
+                if card_code:
+                    vendor_tid = f"B1V_{card_code}"
+                    row = await self.db.execute(
+                        text(
+                            "SELECT id FROM purchase_order "
+                            "WHERE vendor_id = :vid AND config_id = :cid "
+                            "ORDER BY order_date DESC LIMIT 1"
+                        ),
+                        {"vid": vendor_tid, "cid": config_id},
+                    )
+                    po_row = row.fetchone()
+                    if po_row:
+                        po_id = po_row[0]
+
+            if po_id is None:
+                skipped_count += 1
+                continue
+
+            # Insert goods_receipt header
+            await self.db.execute(
+                text("""
+                    INSERT INTO goods_receipt
+                        (gr_number, po_id, receipt_date, status,
+                         receiving_site_id, total_received_qty,
+                         total_accepted_qty, notes)
+                    VALUES
+                        (:gr_number, :po_id, :receipt_date, :status,
+                         :receiving_site_id, :total_received_qty,
+                         :total_received_qty, :notes)
+                    ON CONFLICT (gr_number) DO NOTHING
+                """),
+                {
+                    "gr_number": gr_number,
+                    "po_id": po_id,
+                    "receipt_date": datetime.combine(receipt_date, datetime.min.time()),
+                    "status": status,
+                    "receiving_site_id": receiving_site_id,
+                    "total_received_qty": total_received_qty,
+                    "notes": str(notes)[:500] if notes else None,
+                },
+            )
+
+            # Fetch the GR id for line items
+            row = await self.db.execute(
+                text("SELECT id FROM goods_receipt WHERE gr_number = :gn"),
+                {"gn": gr_number},
+            )
+            gr_row = row.fetchone()
+            if not gr_row:
+                skipped_count += 1
+                continue
+            gr_id = gr_row[0]
+
+            # Insert line items
+            line_count = 0
+            for line in lines:
+                item_code = str(line.get("ItemCode", "")).strip()
+                if not item_code:
+                    continue
+                product_id = self._get_product_id(item_code)
+                if not product_id:
+                    continue
+
+                qty = _safe_float(line.get("Quantity"))
+                if qty <= 0:
+                    continue
+
+                line_num = _safe_int(line.get("LineNum"), line_count)
+
+                # Resolve linked PO line item via BaseLine
+                po_line_id = None
+                base_line = line.get("BaseLine")
+                base_entry = line.get("BaseEntry")
+                if base_entry is not None and base_line is not None:
+                    po_number_candidate = f"B1-PO-{base_entry}"
+                    row = await self.db.execute(
+                        text(
+                            "SELECT pli.id FROM purchase_order_line_item pli "
+                            "JOIN purchase_order po ON po.id = pli.po_id "
+                            "WHERE po.po_number = :pn AND pli.line_number = :ln"
+                        ),
+                        {"pn": po_number_candidate, "ln": _safe_int(base_line) + 1},
+                    )
+                    pli_row = row.fetchone()
+                    if pli_row:
+                        po_line_id = pli_row[0]
+
+                # Fallback: match PO line by product_id on the same PO
+                if po_line_id is None:
+                    row = await self.db.execute(
+                        text(
+                            "SELECT id FROM purchase_order_line_item "
+                            "WHERE po_id = :po_id AND product_id = :pid "
+                            "ORDER BY line_number LIMIT 1"
+                        ),
+                        {"po_id": po_id, "pid": product_id},
+                    )
+                    pli_row = row.fetchone()
+                    if pli_row:
+                        po_line_id = pli_row[0]
+
+                if po_line_id is None:
+                    continue
+
+                await self.db.execute(
+                    text("""
+                        INSERT INTO goods_receipt_line_item
+                            (gr_id, po_line_id, line_number, product_id,
+                             expected_qty, received_qty, accepted_qty)
+                        VALUES
+                            (:gr_id, :po_line_id, :line_number, :product_id,
+                             :qty, :qty, :qty)
+                    """),
+                    {
+                        "gr_id": gr_id,
+                        "po_line_id": po_line_id,
+                        "line_number": line_num + 1,
+                        "product_id": product_id,
+                        "qty": qty,
+                    },
+                )
+                line_count += 1
+
+            if line_count > 0 or not lines:
+                created_count += 1
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d goods receipts (missing required fields or PO link)", skipped_count)
+        logger.info("Created %d goods receipts from B1 PurchaseDeliveryNotes", created_count)
+        return created_count
+
+    # ------------------------------------------------------------------
+    # Transactional: DeliveryNotes → shipment
+    # ------------------------------------------------------------------
+
+    async def _build_shipments(self, delivery_notes: List[Dict]) -> int:
+        """Map B1 DeliveryNotes (ODLN) → shipment.
+
+        B1 DeliveryNotes header fields:
+          DocEntry       — internal unique key
+          DocNum         — display document number
+          CardCode       — customer business partner code
+          DocDate        — shipment date
+          DocumentStatus — bost_Open / bost_Close
+          Comments       — free text notes
+
+        B1 DocumentLines (sub-entity):
+          ItemCode       — product code
+          Quantity       — shipped quantity
+          Price          — unit price
+          WarehouseCode  — ship-from warehouse
+          LineNum        — line number (0-based)
+          BaseEntry      — linked Sales Order DocEntry
+          BaseLine       — linked SO line number
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        first_site_id = self._get_first_site_id()
+        if not first_site_id:
+            logger.warning("No sites found — cannot create shipments")
+            return 0
+
+        created_count = 0
+        skipped_count = 0
+
+        for sh in delivery_notes:
+            doc_entry = sh.get("DocEntry")
+            doc_num = sh.get("DocNum", doc_entry)
+            if doc_entry is None and doc_num is None:
+                skipped_count += 1
+                continue
+
+            ship_date = _parse_b1_date(sh.get("DocDate"))
+            if not ship_date:
+                skipped_count += 1
+                continue
+
+            card_code = str(sh.get("CardCode", "")).strip()
+            doc_status = str(sh.get("DocumentStatus", "O")).strip().upper()
+            status = "delivered" if doc_status in ("C", "BOST_CLOSE") else "in_transit"
+
+            lines = sh.get("DocumentLines", [])
+
+            # Determine ship-from site from first line's WarehouseCode
+            from_site_id = first_site_id
+            if lines:
+                first_wh = str(lines[0].get("WarehouseCode", "")).strip()
+                if first_wh and self._get_site_id(first_wh):
+                    from_site_id = self._get_site_id(first_wh)
+
+            # Resolve customer to destination site
+            to_site_id = self._customer_pks.get(card_code) if card_code else None
+            if not to_site_id:
+                to_site_id = first_site_id
+
+            # Resolve linked outbound order via BaseEntry on first line
+            order_id = None
+            if lines:
+                base_entry = lines[0].get("BaseEntry")
+                if base_entry is not None:
+                    order_id = f"B1-SO-{base_entry}"
+
+            if not order_id:
+                # Fallback: use the delivery note number as the order reference
+                order_id = f"B1-SO-{doc_num}"
+
+            # Use the first line to get product and quantity for the shipment header
+            # (Shipment table is one row per shipment — we use the primary product)
+            first_product_id = None
+            total_qty = 0.0
+            for line in lines:
+                item_code = str(line.get("ItemCode", "")).strip()
+                if not item_code:
+                    continue
+                pid = self._get_product_id(item_code)
+                if pid:
+                    if first_product_id is None:
+                        first_product_id = pid
+                    total_qty += _safe_float(line.get("Quantity"))
+
+            if not first_product_id:
+                skipped_count += 1
+                continue
+
+            shipment_id = f"B1-SH-{doc_num}"
+            ship_datetime = datetime.combine(ship_date, datetime.min.time())
+
+            await self.db.execute(
+                text("""
+                    INSERT INTO shipment
+                        (id, order_id, product_id, quantity,
+                         from_site_id, to_site_id,
+                         status, ship_date, expected_delivery_date,
+                         config_id, tenant_id, source, source_event_id,
+                         source_update_dttm)
+                    VALUES
+                        (:id, :order_id, :product_id, :quantity,
+                         :from_site_id, :to_site_id,
+                         :status, :ship_date, :expected_delivery_date,
+                         :config_id, :tenant_id, 'SAP_B1', :source_event_id,
+                         :now)
+                    ON CONFLICT (id) DO NOTHING
+                """),
+                {
+                    "id": shipment_id,
+                    "order_id": order_id,
+                    "product_id": first_product_id,
+                    "quantity": total_qty,
+                    "from_site_id": from_site_id,
+                    "to_site_id": to_site_id,
+                    "status": status,
+                    "ship_date": ship_datetime,
+                    "expected_delivery_date": ship_datetime + timedelta(days=3),
+                    "config_id": config_id,
+                    "tenant_id": self.tenant_id,
+                    "source_event_id": f"ODLN-{doc_num}",
+                    "now": datetime.utcnow(),
+                },
+            )
+            created_count += 1
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d shipments (missing required fields)", skipped_count)
+        logger.info("Created %d shipments from B1 DeliveryNotes", created_count)
+        return created_count
+
+    # ------------------------------------------------------------------
+    # Transactional: StockTransfers → transfer_order + transfer_order_line_item
+    # ------------------------------------------------------------------
+
+    async def _build_transfer_orders(self, stock_transfers: List[Dict]) -> int:
+        """Map B1 StockTransfers (OWTR) → transfer_order + transfer_order_line_item.
+
+        B1 StockTransfers header fields:
+          DocEntry       — internal unique key
+          DocNum         — display document number
+          DocDate        — transfer date
+          DocumentStatus — bost_Open / bost_Close
+          Comments       — free text notes
+
+        B1 StockTransferLines (DocumentLines sub-entity):
+          FromWarehouse  — source warehouse code
+          ToWarehouse    — destination warehouse code (B1 StockTransfer lines carry both)
+          ItemCode       — product code
+          Quantity       — transfer quantity
+          LineNum        — line number (0-based)
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        first_site_id = self._get_first_site_id()
+        if not first_site_id:
+            logger.warning("No sites found — cannot create transfer orders")
+            return 0
+
+        created_count = 0
+        skipped_count = 0
+
+        for tr in stock_transfers:
+            doc_entry = tr.get("DocEntry")
+            doc_num = tr.get("DocNum", doc_entry)
+            if doc_entry is None and doc_num is None:
+                skipped_count += 1
+                continue
+
+            transfer_date = _parse_b1_date(tr.get("DocDate"))
+            if not transfer_date:
+                skipped_count += 1
+                continue
+
+            lines = tr.get("DocumentLines", tr.get("StockTransferLines", []))
+            if not lines:
+                skipped_count += 1
+                continue
+
+            doc_status = str(tr.get("DocumentStatus", "O")).strip().upper()
+            status = "RECEIVED" if doc_status in ("C", "BOST_CLOSE") else "RELEASED"
+            notes = tr.get("Comments")
+
+            # Determine source and destination from first line
+            first_from_wh = str(lines[0].get("FromWarehouse", "")).strip()
+            first_to_wh = str(lines[0].get("ToWarehouse", lines[0].get("WarehouseCode", ""))).strip()
+
+            source_site_id = self._get_site_id(first_from_wh) if first_from_wh else first_site_id
+            dest_site_id = self._get_site_id(first_to_wh) if first_to_wh else first_site_id
+            if not source_site_id:
+                source_site_id = first_site_id
+            if not dest_site_id:
+                dest_site_id = first_site_id
+
+            to_number = f"B1-TO-{doc_num}"
+            ship_date = transfer_date
+            est_delivery = transfer_date + timedelta(days=2)
+
+            # Insert transfer_order header
+            await self.db.execute(
+                text("""
+                    INSERT INTO transfer_order
+                        (to_number, source_site_id, destination_site_id,
+                         config_id, tenant_id, company_id,
+                         order_type, source, source_event_id, source_update_dttm,
+                         status, order_date, shipment_date, estimated_delivery_date,
+                         notes)
+                    VALUES
+                        (:to_number, :source_site_id, :dest_site_id,
+                         :config_id, :tenant_id, :company_id,
+                         'transfer', 'SAP_B1', :source_event_id, :now,
+                         :status, :order_date, :shipment_date, :est_delivery,
+                         :notes)
+                    ON CONFLICT (to_number) DO NOTHING
+                """),
+                {
+                    "to_number": to_number,
+                    "source_site_id": source_site_id,
+                    "dest_site_id": dest_site_id,
+                    "config_id": config_id,
+                    "tenant_id": self.tenant_id,
+                    "company_id": f"B1_{config_id}",
+                    "source_event_id": f"OWTR-{doc_num}",
+                    "now": datetime.utcnow(),
+                    "status": status,
+                    "order_date": transfer_date,
+                    "shipment_date": ship_date,
+                    "est_delivery": est_delivery,
+                    "notes": str(notes)[:500] if notes else None,
+                },
+            )
+
+            # Fetch the TO id for line items
+            row = await self.db.execute(
+                text("SELECT id FROM transfer_order WHERE to_number = :tn"),
+                {"tn": to_number},
+            )
+            to_row = row.fetchone()
+            if not to_row:
+                skipped_count += 1
+                continue
+            to_id = to_row[0]
+
+            # Insert line items
+            line_count = 0
+            for line in lines:
+                item_code = str(line.get("ItemCode", "")).strip()
+                if not item_code:
+                    continue
+                product_id = self._get_product_id(item_code)
+                if not product_id:
+                    continue
+
+                qty = _safe_float(line.get("Quantity"))
+                if qty <= 0:
+                    continue
+
+                line_num = _safe_int(line.get("LineNum"), line_count)
+
+                await self.db.execute(
+                    text("""
+                        INSERT INTO transfer_order_line_item
+                            (to_id, line_number, product_id, quantity,
+                             requested_ship_date, requested_delivery_date)
+                        VALUES
+                            (:to_id, :line_number, :product_id, :quantity,
+                             :ship_date, :delivery_date)
+                    """),
+                    {
+                        "to_id": to_id,
+                        "line_number": line_num + 1,
+                        "product_id": product_id,
+                        "quantity": qty,
+                        "ship_date": ship_date,
+                        "delivery_date": est_delivery,
+                    },
+                )
+                line_count += 1
+
+            if line_count > 0:
+                created_count += 1
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d transfer orders (missing required fields)", skipped_count)
+        logger.info("Created %d transfer orders from B1 StockTransfers", created_count)
+        return created_count
+
+    # ------------------------------------------------------------------
+    # Transactional: QualityTests → quality_order
+    # ------------------------------------------------------------------
+
+    async def _build_quality_orders(self, quality_tests: List[Dict]) -> int:
+        """Map B1 QualityTests (OQCN) → quality_order.
+
+        B1 QualityTests fields:
+          AbsEntry       — unique key
+          ItemCode       — inspected product code
+          TestDate       — inspection date
+          Status         — test status (P=Pending, C=Closed, A=Accepted, R=Rejected)
+          Quantity       — inspected quantity
+          AcceptedQty    — quantity accepted
+          RejectedQty    — quantity rejected
+          Warehouse      — warehouse code (may be present)
+          Remarks        — free text notes
+          U_DefectRate   — user-defined defect rate (optional)
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        first_site_id = self._get_first_site_id()
+        if not first_site_id:
+            logger.warning("No sites found — cannot create quality orders")
+            return 0
+
+        created_count = 0
+        skipped_count = 0
+
+        for qt in quality_tests:
+            abs_entry = qt.get("AbsEntry")
+            if abs_entry is None:
+                skipped_count += 1
+                continue
+
+            item_code = str(qt.get("ItemCode", "")).strip()
+            if not item_code:
+                skipped_count += 1
+                continue
+
+            product_id = self._get_product_id(item_code)
+            if not product_id:
+                skipped_count += 1
+                continue
+
+            test_date = _parse_b1_date(qt.get("TestDate"))
+            if not test_date:
+                skipped_count += 1
+                continue
+
+            # Resolve site
+            wh_code = str(qt.get("Warehouse", "")).strip()
+            site_id = self._get_site_id(wh_code) if wh_code else first_site_id
+            if not site_id:
+                site_id = first_site_id
+
+            # Quantities
+            inspection_qty = _safe_float(qt.get("Quantity"), 1.0)
+            if inspection_qty <= 0:
+                inspection_qty = 1.0
+            accepted_qty = _safe_float(qt.get("AcceptedQty"))
+            rejected_qty = _safe_float(qt.get("RejectedQty"))
+
+            # Status mapping
+            raw_status = str(qt.get("Status", "P")).strip().upper()
+            status_map = {
+                "P": "INSPECTION_PENDING",
+                "C": "CLOSED",
+                "A": "DISPOSITION_DECIDED",
+                "R": "DISPOSITION_DECIDED",
+            }
+            status = status_map.get(raw_status, "INSPECTION_PENDING")
+
+            # Disposition
+            disposition = None
+            if raw_status == "A":
+                disposition = "ACCEPT"
+            elif raw_status == "R":
+                disposition = "REJECT"
+            elif raw_status == "C":
+                disposition = "ACCEPT" if accepted_qty >= inspection_qty else "REJECT"
+
+            quality_order_number = f"B1-QI-{abs_entry}"
+            remarks = qt.get("Remarks")
+            defect_rate = _safe_float(qt.get("U_DefectRate")) or None
+
+            await self.db.execute(
+                text("""
+                    INSERT INTO quality_order
+                        (quality_order_number, site_id, config_id, tenant_id,
+                         company_id, source, source_event_id, source_update_dttm,
+                         inspection_type, status, origin_type,
+                         product_id, inspection_quantity,
+                         accepted_quantity, rejected_quantity,
+                         disposition, disposition_reason, defect_rate,
+                         order_date, notes)
+                    VALUES
+                        (:qo_number, :site_id, :config_id, :tenant_id,
+                         :company_id, 'SAP_B1', :source_event_id, :now,
+                         'INCOMING', :status, 'GOODS_RECEIPT',
+                         :product_id, :inspection_qty,
+                         :accepted_qty, :rejected_qty,
+                         :disposition, :disposition_reason, :defect_rate,
+                         :order_date, :notes)
+                    ON CONFLICT (quality_order_number) DO NOTHING
+                """),
+                {
+                    "qo_number": quality_order_number,
+                    "site_id": site_id,
+                    "config_id": config_id,
+                    "tenant_id": self.tenant_id,
+                    "company_id": f"B1_{config_id}",
+                    "source_event_id": f"OQCN-{abs_entry}",
+                    "now": datetime.utcnow(),
+                    "status": status,
+                    "product_id": product_id,
+                    "inspection_qty": inspection_qty,
+                    "accepted_qty": accepted_qty,
+                    "rejected_qty": rejected_qty,
+                    "disposition": disposition,
+                    "disposition_reason": str(remarks)[:500] if remarks and disposition else None,
+                    "defect_rate": defect_rate,
+                    "order_date": test_date,
+                    "notes": str(remarks)[:500] if remarks else None,
+                },
+            )
+            created_count += 1
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d quality orders (missing required fields)", skipped_count)
+        logger.info("Created %d quality orders from B1 QualityTests", created_count)
         return created_count
