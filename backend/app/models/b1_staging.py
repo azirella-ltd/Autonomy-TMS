@@ -199,6 +199,12 @@ B1_ENTITY_REGISTRY: Dict[str, Dict] = {
         "description": "Purchase Orders",
         "db_table": "OPOR",
     },
+    "GoodsReturns": {
+        "category": "transaction",
+        "keys": ["DocEntry"],
+        "description": "Purchase Returns (goods returned to vendor)",
+        "db_table": "ORPD",
+    },
     "PurchaseDeliveryNotes": {
         "category": "transaction",
         "keys": ["DocEntry"],
@@ -240,12 +246,28 @@ B1_ENTITY_REGISTRY: Dict[str, Dict] = {
         "db_table": "OWTR",
     },
 
+    # --- Blanket Agreements ---
+    "BlanketAgreements": {
+        "category": "master",
+        "keys": ["AgreementNo"],
+        "description": "Blanket/Framework Agreements (long-term vendor/customer contracts)",
+        "db_table": "OAGL",
+    },
+
     # --- Forecasting ---
     "ForecastReport": {
         "category": "transaction",
         "keys": ["AbsEntry"],
         "description": "Demand Forecast (MRP forecast data)",
         "db_table": "OFCT",
+    },
+
+    # --- MRP Results ---
+    "MRPResults": {
+        "category": "transaction",
+        "keys": ["AbsEntry"],
+        "description": "MRP Run Results (planned orders from MRP wizard)",
+        "db_table": "OMRP",
     },
 
     # =========================================================================

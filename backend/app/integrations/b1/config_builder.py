@@ -21,6 +21,9 @@ Transforms extracted B1 entities into the canonical AWS SC data model:
   Resources + Capacities    → CapacityPlan + CapacityResource
   PurchaseRequests          → PurchaseOrder (DRAFT)
   InventoryTransferRequests → TransferOrder (PLANNED)
+  GoodsReturns              → InboundOrder (RETURN)
+  BlanketAgreements         → SourcingRules (buy, vendor agreements only)
+  MRPResults                → PurchaseOrder/ProductionOrder/TransferOrder (PLANNED)
   InventoryGenEntries/Exits → InvLevel adjustments (delta)
   StockTakings              → InvLevel corrections (absolute)
 
@@ -185,6 +188,9 @@ class B1ConfigBuildResult:
     purchase_requests_created: int = 0
     transfer_requests_created: int = 0
     inv_movements_applied: int = 0
+    goods_returns_created: int = 0
+    blanket_agreements_created: int = 0
+    mrp_results_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -232,6 +238,7 @@ class B1ConfigBuilder:
             "PurchaseRequests", "InventoryTransferRequests",
             "StockTransfers", "QualityTests", "ServiceCalls",
             "ForecastReport",
+            "GoodsReturns", "BlanketAgreements", "MRPResults",
             # CDC
             "InventoryGenEntries", "InventoryGenExits", "StockTakings",
             "BatchNumberDetails", "SerialNumberDetails",
@@ -271,6 +278,7 @@ class B1ConfigBuilder:
             "PurchaseRequests", "InventoryTransferRequests",
             "StockTransfers", "QualityTests", "ServiceCalls",
             "ForecastReport",
+            "GoodsReturns", "BlanketAgreements", "MRPResults",
             # CDC
             "InventoryGenEntries", "InventoryGenExits", "StockTakings",
             "BatchNumberDetails", "SerialNumberDetails",
@@ -471,6 +479,24 @@ class B1ConfigBuilder:
                     inv_entries, inv_exits, stock_takings,
                 )
                 result.inv_movements_applied = inv_count
+
+            # --- Goods Returns → inbound_order (RETURN) ---
+            goods_returns = data.get("GoodsReturns", [])
+            if goods_returns:
+                gr_count = await self._build_goods_returns(goods_returns)
+                result.goods_returns_created = gr_count
+
+            # --- Blanket Agreements → sourcing_rules ---
+            blanket_agreements = data.get("BlanketAgreements", [])
+            if blanket_agreements:
+                ba_count = await self._build_blanket_agreements(blanket_agreements)
+                result.blanket_agreements_created = ba_count
+
+            # --- MRP Results → purchase_order / production_orders / transfer_order (PLANNED) ---
+            mrp_results = data.get("MRPResults", [])
+            if mrp_results:
+                mrp_count = await self._build_mrp_results(mrp_results)
+                result.mrp_results_created = mrp_count
 
         return result
 
@@ -3288,3 +3314,489 @@ class B1ConfigBuilder:
                 enriched_count, len(batch_details), len(serial_details),
             )
         return enriched_count
+
+    # ------------------------------------------------------------------
+    # Transactional: GoodsReturns (ORPD) → inbound_order (RETURN)
+    # ------------------------------------------------------------------
+
+    async def _build_goods_returns(self, goods_returns: List[Dict]) -> int:
+        """Map B1 GoodsReturns (ORPD) → inbound_order with order_type='RETURN'.
+
+        B1 GoodsReturns header fields:
+          DocEntry       — internal unique key
+          DocNum         — display document number
+          CardCode       — vendor business partner code
+          DocDate        — document date
+          DocDueDate     — due date
+          DocTotal       — total amount
+          DocCur         — document currency
+          DocumentStatus — bost_Open / bost_Close
+
+        B1 DocumentLines (sub-entity):
+          ItemCode       — product code
+          Quantity       — returned quantity
+          Price          — unit price
+          WarehouseCode  — originating warehouse
+          LineNum        — line number (0-based)
+
+        These are PURCHASE returns — goods returned TO a vendor.
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        first_site_id = self._get_first_site_id()
+        if not first_site_id:
+            logger.warning("No sites found — cannot create goods returns")
+            return 0
+
+        created_count = 0
+        skipped_count = 0
+
+        for ret in goods_returns:
+            doc_entry = ret.get("DocEntry")
+            doc_num = ret.get("DocNum", doc_entry)
+            if doc_entry is None and doc_num is None:
+                skipped_count += 1
+                continue
+
+            card_code = str(ret.get("CardCode", "")).strip()
+            if not card_code:
+                skipped_count += 1
+                continue
+
+            order_date = _parse_b1_date(ret.get("DocDate"))
+            if not order_date:
+                skipped_count += 1
+                continue
+
+            delivery_date = _parse_b1_date(ret.get("DocDueDate")) or order_date
+            doc_total = _safe_float(ret.get("DocTotal"))
+            currency = str(ret.get("DocCur", ret.get("DocCurrency", "USD"))).strip() or "USD"
+            doc_status = str(ret.get("DocumentStatus", "O")).strip().upper()
+
+            # Closed returns → RECEIVED, open → APPROVED
+            if doc_status in ("C", "BOST_CLOSE"):
+                status = "RECEIVED"
+            else:
+                status = "APPROVED"
+
+            return_id = f"B1-RET-{doc_num}"
+            vendor_tid = f"B1V_{card_code}"
+
+            # Determine ship-from site (warehouse the goods leave from)
+            lines = ret.get("DocumentLines", [])
+            ship_from_site_id = first_site_id
+            if lines:
+                first_wh = str(lines[0].get("WarehouseCode", "")).strip()
+                if first_wh and self._get_site_id(first_wh):
+                    ship_from_site_id = self._get_site_id(first_wh)
+
+            total_qty = sum(
+                _safe_float(ln.get("Quantity")) for ln in lines
+            ) if lines else 0.0
+
+            # Insert inbound_order with order_type='RETURN'
+            await self.db.execute(
+                text("""
+                    INSERT INTO inbound_order
+                        (id, company_id, order_type, supplier_id,
+                         ship_from_site_id, ship_to_site_id,
+                         status, order_date, requested_delivery_date,
+                         total_ordered_qty, total_value, currency,
+                         reference_number, config_id,
+                         source, source_event_id, source_update_dttm)
+                    VALUES
+                        (:id, :company_id, 'RETURN', :vendor_id,
+                         :ship_from_site_id, :ship_from_site_id,
+                         :status, :order_date, :delivery_date,
+                         :total_qty, :total_value, :currency,
+                         :ref_number, :config_id,
+                         'SAP_B1', :source_event_id, :now)
+                    ON CONFLICT (id) DO NOTHING
+                """),
+                {
+                    "id": return_id,
+                    "company_id": f"B1_{config_id}",
+                    "vendor_id": vendor_tid,
+                    "ship_from_site_id": ship_from_site_id,
+                    "status": status,
+                    "order_date": order_date,
+                    "delivery_date": delivery_date,
+                    "total_qty": total_qty,
+                    "total_value": doc_total,
+                    "currency": currency,
+                    "ref_number": str(doc_num),
+                    "config_id": config_id,
+                    "source_event_id": f"B1_ORPD_{doc_entry}",
+                    "now": datetime.utcnow(),
+                },
+            )
+            created_count += 1
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d goods returns (missing required fields)", skipped_count)
+        logger.info("Created %d inbound_order (RETURN) from B1 GoodsReturns", created_count)
+        return created_count
+
+    # ------------------------------------------------------------------
+    # Master: BlanketAgreements (OAGL) → sourcing_rules
+    # ------------------------------------------------------------------
+
+    async def _build_blanket_agreements(self, blanket_agreements: List[Dict]) -> int:
+        """Map B1 BlanketAgreements (OAGL) → sourcing_rules for vendor agreements.
+
+        B1 BlanketAgreements header fields:
+          AgreementNo    — unique agreement number
+          BPCode         — business partner code (vendor or customer)
+          AgreementType  — 'V' / 'asVendor' (vendor) or 'C' / 'asCustomer' (customer)
+          StartDate      — agreement effective start
+          EndDate        — agreement effective end
+          Status         — 'A' (active), 'T' (terminated), 'D' (draft)
+
+        BlanketAgreements_Lines (sub-entity):
+          ItemNo         — product code
+          PlannedQuantity — agreed quantity
+          UnitPrice      — agreed price
+
+        Only vendor-type agreements are mapped to sourcing_rules (rule_type='buy').
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        created_count = 0
+        skipped_count = 0
+
+        for agr in blanket_agreements:
+            agreement_no = agr.get("AgreementNo")
+            if agreement_no is None:
+                skipped_count += 1
+                continue
+
+            bp_code = str(agr.get("BPCode", "")).strip()
+            if not bp_code:
+                skipped_count += 1
+                continue
+
+            # Only map vendor-type agreements
+            agr_type = str(agr.get("AgreementType", "")).strip()
+            if agr_type not in ("V", "asVendor"):
+                continue
+
+            agr_status = str(agr.get("Status", "")).strip().upper()
+            is_active = "true" if agr_status in ("A", "ACTIVE", "") else "false"
+
+            start_date = _parse_b1_date(agr.get("StartDate"))
+            end_date = _parse_b1_date(agr.get("EndDate"))
+
+            vendor_tid = f"B1V_{bp_code}"
+
+            # Process agreement lines — one sourcing_rule per item line
+            lines = agr.get("BlanketAgreements_Lines", agr.get("Lines", []))
+            if not lines:
+                # Create a single rule without product specificity
+                rule_id = f"B1-BA-{agreement_no}"
+                first_site_id = self._get_first_site_id()
+                if not first_site_id:
+                    skipped_count += 1
+                    continue
+
+                await self.db.execute(
+                    text("""
+                        INSERT INTO sourcing_rules
+                            (id, company_id, product_id, from_site_id, to_site_id,
+                             tpartner_id, sourcing_rule_type, sourcing_priority,
+                             eff_start_date, eff_end_date, is_active,
+                             source, source_event_id, source_update_dttm,
+                             config_id)
+                        VALUES
+                            (:id, :company_id, NULL, :from_site, :to_site,
+                             :tpartner_id, 'buy', 5,
+                             :start_date, :end_date, :is_active,
+                             'SAP_B1', :source_event_id, :now,
+                             :config_id)
+                        ON CONFLICT (id) DO NOTHING
+                    """),
+                    {
+                        "id": rule_id,
+                        "company_id": f"B1_{config_id}",
+                        "from_site": first_site_id,
+                        "to_site": first_site_id,
+                        "tpartner_id": vendor_tid,
+                        "start_date": datetime.combine(start_date, datetime.min.time()) if start_date else None,
+                        "end_date": datetime.combine(end_date, datetime.min.time()) if end_date else None,
+                        "is_active": is_active,
+                        "source_event_id": f"B1_OAGL_{agreement_no}",
+                        "now": datetime.utcnow(),
+                        "config_id": config_id,
+                    },
+                )
+                created_count += 1
+                continue
+
+            for idx, line in enumerate(lines):
+                item_code = str(line.get("ItemNo", line.get("ItemCode", ""))).strip()
+                if not item_code:
+                    continue
+
+                product_id = self._get_product_id(item_code)
+                if not product_id:
+                    continue
+
+                # Determine a destination site — use first known site
+                first_site_id = self._get_first_site_id()
+                if not first_site_id:
+                    continue
+
+                planned_qty = _safe_float(line.get("PlannedQuantity"))
+
+                rule_id = f"B1-BA-{agreement_no}-{idx}"
+
+                await self.db.execute(
+                    text("""
+                        INSERT INTO sourcing_rules
+                            (id, company_id, product_id, from_site_id, to_site_id,
+                             tpartner_id, sourcing_rule_type, sourcing_priority,
+                             max_quantity,
+                             eff_start_date, eff_end_date, is_active,
+                             source, source_event_id, source_update_dttm,
+                             config_id)
+                        VALUES
+                            (:id, :company_id, :product_id, :from_site, :to_site,
+                             :tpartner_id, 'buy', 5,
+                             :max_qty,
+                             :start_date, :end_date, :is_active,
+                             'SAP_B1', :source_event_id, :now,
+                             :config_id)
+                        ON CONFLICT (id) DO NOTHING
+                    """),
+                    {
+                        "id": rule_id,
+                        "company_id": f"B1_{config_id}",
+                        "product_id": product_id,
+                        "from_site": first_site_id,
+                        "to_site": first_site_id,
+                        "tpartner_id": vendor_tid,
+                        "max_qty": planned_qty if planned_qty > 0 else None,
+                        "start_date": datetime.combine(start_date, datetime.min.time()) if start_date else None,
+                        "end_date": datetime.combine(end_date, datetime.min.time()) if end_date else None,
+                        "is_active": is_active,
+                        "source_event_id": f"B1_OAGL_{agreement_no}",
+                        "now": datetime.utcnow(),
+                        "config_id": config_id,
+                    },
+                )
+                created_count += 1
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d blanket agreements (missing required fields)", skipped_count)
+        logger.info("Created %d sourcing_rules from B1 BlanketAgreements", created_count)
+        return created_count
+
+    # ------------------------------------------------------------------
+    # Transactional: MRPResults (OMRP) → purchase_order / production_orders / transfer_order (PLANNED)
+    # ------------------------------------------------------------------
+
+    async def _build_mrp_results(self, mrp_results: List[Dict]) -> int:
+        """Map B1 MRPResults (OMRP) → planned orders.
+
+        B1 MRPResults fields:
+          AbsEntry             — unique key
+          ItemNo               — product code
+          Warehouse            — warehouse code
+          RecommendationType   — 'purchase' / 'production' / 'transfer'
+          RecommendedQuantity  — recommended order quantity
+          RecommendedDate      — recommended order/due date
+          DueDate              — alternative due date field
+          Vendor               — vendor code (for purchase recommendations)
+          FromWarehouse        — source warehouse (for transfer recommendations)
+
+        Mapping:
+          purchase   → purchase_order with status='PLANNED'
+          production → production_orders with status='PLANNED'
+          transfer   → transfer_order with status='PLANNED'
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        first_site_id = self._get_first_site_id()
+        if not first_site_id:
+            logger.warning("No sites found — cannot create MRP results")
+            return 0
+
+        created_count = 0
+        skipped_count = 0
+
+        for mrp in mrp_results:
+            abs_entry = mrp.get("AbsEntry")
+            if abs_entry is None:
+                skipped_count += 1
+                continue
+
+            item_code = str(mrp.get("ItemNo", mrp.get("ItemCode", ""))).strip()
+            if not item_code:
+                skipped_count += 1
+                continue
+
+            product_id = self._get_product_id(item_code)
+            if not product_id:
+                skipped_count += 1
+                continue
+
+            rec_qty = _safe_float(mrp.get("RecommendedQuantity"))
+            if rec_qty <= 0:
+                skipped_count += 1
+                continue
+
+            rec_date = _parse_b1_date(
+                mrp.get("RecommendedDate") or mrp.get("DueDate")
+            )
+            if not rec_date:
+                skipped_count += 1
+                continue
+
+            wh_code = str(mrp.get("Warehouse", "")).strip()
+            site_id = self._get_site_id(wh_code) if wh_code else first_site_id
+            if not site_id:
+                site_id = first_site_id
+
+            rec_type = str(mrp.get("RecommendationType", "")).strip().lower()
+
+            if rec_type == "purchase":
+                po_number = f"B1-MRP-PO-{abs_entry}"
+                vendor_code = str(mrp.get("Vendor", "")).strip()
+                vendor_tid = f"B1V_{vendor_code}" if vendor_code else None
+
+                await self.db.execute(
+                    text("""
+                        INSERT INTO purchase_order
+                            (po_number, vendor_id, supplier_site_id, destination_site_id,
+                             config_id, tenant_id, company_id, order_type, source,
+                             status, order_date, requested_delivery_date,
+                             total_amount, notes)
+                        VALUES
+                            (:po_number, :vendor_id, :site_id, :site_id,
+                             :config_id, :tenant_id, :company_id, 'po', 'SAP_B1',
+                             'PLANNED', :order_date, :delivery_date,
+                             :total_amount, :notes)
+                        ON CONFLICT (po_number) DO NOTHING
+                    """),
+                    {
+                        "po_number": po_number,
+                        "vendor_id": vendor_tid,
+                        "site_id": site_id,
+                        "config_id": config_id,
+                        "tenant_id": self.tenant_id,
+                        "company_id": f"B1_{config_id}",
+                        "order_date": rec_date,
+                        "delivery_date": rec_date,
+                        "total_amount": rec_qty,
+                        "notes": f"MRP recommendation (AbsEntry={abs_entry})",
+                    },
+                )
+                created_count += 1
+
+            elif rec_type == "production":
+                order_number = f"B1-MRP-MO-{abs_entry}"
+                start_date = rec_date - timedelta(days=7)
+
+                await self.db.execute(
+                    text("""
+                        INSERT INTO production_orders
+                            (order_number, item_id, site_id, config_id,
+                             planned_quantity, status,
+                             planned_start_date, planned_completion_date,
+                             lead_time_planned, priority, notes, extra_data)
+                        VALUES
+                            (:order_number, :item_id, :site_id, :config_id,
+                             :planned_qty, 'PLANNED',
+                             :start_date, :end_date,
+                             7, 5, :notes, :extra)
+                        ON CONFLICT (order_number) DO NOTHING
+                    """),
+                    {
+                        "order_number": order_number,
+                        "item_id": product_id,
+                        "site_id": site_id,
+                        "config_id": config_id,
+                        "planned_qty": rec_qty,
+                        "start_date": datetime.combine(start_date, datetime.min.time()),
+                        "end_date": datetime.combine(rec_date, datetime.min.time()),
+                        "notes": f"MRP recommendation (AbsEntry={abs_entry})",
+                        "extra": f'{{"b1_mrp_abs_entry": {abs_entry}}}',
+                    },
+                )
+                created_count += 1
+
+            elif rec_type == "transfer":
+                to_number = f"B1-MRP-TO-{abs_entry}"
+                from_wh = str(mrp.get("FromWarehouse", "")).strip()
+                source_site_id = self._get_site_id(from_wh) if from_wh else first_site_id
+                if not source_site_id:
+                    source_site_id = first_site_id
+
+                await self.db.execute(
+                    text("""
+                        INSERT INTO transfer_order
+                            (to_number, source_site_id, destination_site_id,
+                             config_id, tenant_id, company_id,
+                             order_type, source, source_event_id, source_update_dttm,
+                             status, order_date, notes)
+                        VALUES
+                            (:to_number, :source_site_id, :dest_site_id,
+                             :config_id, :tenant_id, :company_id,
+                             'transfer', 'SAP_B1', :source_event_id, :now,
+                             'PLANNED', :order_date, :notes)
+                        ON CONFLICT (to_number) DO NOTHING
+                    """),
+                    {
+                        "to_number": to_number,
+                        "source_site_id": source_site_id,
+                        "dest_site_id": site_id,
+                        "config_id": config_id,
+                        "tenant_id": self.tenant_id,
+                        "company_id": f"B1_{config_id}",
+                        "source_event_id": f"B1_OMRP_{abs_entry}",
+                        "now": datetime.utcnow(),
+                        "order_date": rec_date,
+                        "notes": f"MRP recommendation (AbsEntry={abs_entry})",
+                    },
+                )
+
+                # Insert a single line item for the transfer
+                row = await self.db.execute(
+                    text("SELECT id FROM transfer_order WHERE to_number = :tn"),
+                    {"tn": to_number},
+                )
+                to_row = row.fetchone()
+                if to_row:
+                    to_id = to_row[0]
+                    await self.db.execute(
+                        text("""
+                            INSERT INTO transfer_order_line_item
+                                (to_id, line_number, product_id, quantity)
+                            VALUES
+                                (:to_id, 1, :product_id, :quantity)
+                        """),
+                        {
+                            "to_id": to_id,
+                            "product_id": product_id,
+                            "quantity": rec_qty,
+                        },
+                    )
+
+                created_count += 1
+            else:
+                # Unknown recommendation type — skip
+                skipped_count += 1
+                continue
+
+        await self.db.flush()
+        if skipped_count:
+            logger.info("Skipped %d MRP results (missing fields or unknown type)", skipped_count)
+        logger.info("Created %d planned orders from B1 MRPResults", created_count)
+        return created_count
