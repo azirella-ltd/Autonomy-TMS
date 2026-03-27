@@ -74,8 +74,8 @@ class TransferOrder(Base):
     planning_run_id = Column(String(100))
     source_po_id = Column(Integer, ForeignKey("purchase_order.id", ondelete="SET NULL"))  # Link TO to originating PO
 
-    # DAG Sequential Execution - Bidirectional link to ParticipantRound (Phase 1)
-    source_participant_round_id = Column(Integer, ForeignKey("participant_rounds.id", ondelete="SET NULL"), nullable=True)
+    # DAG Sequential Execution - Bidirectional link to ScenarioUserPeriod
+    source_participant_round_id = Column(Integer, ForeignKey("scenario_user_periods.id", ondelete="SET NULL"), nullable=True)
 
     # Audit
     created_by_id = Column(Integer, ForeignKey("users.id"))

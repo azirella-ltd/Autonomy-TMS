@@ -25,7 +25,7 @@ Master type inference for Odoo:
 import logging
 from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,9 @@ class OdooConfigBuildResult:
     trading_partners_created: int = 0
     inv_levels_created: int = 0
     inv_policies_created: int = 0
+    purchase_orders_created: int = 0
+    outbound_orders_created: int = 0
+    production_orders_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -56,6 +59,9 @@ class OdooConfigBuildResult:
             "trading_partners_created": self.trading_partners_created,
             "inv_levels_created": self.inv_levels_created,
             "inv_policies_created": self.inv_policies_created,
+            "purchase_orders_created": self.purchase_orders_created,
+            "outbound_orders_created": self.outbound_orders_created,
+            "production_orders_created": self.production_orders_created,
             "warnings": self.warnings,
             "errors": self.errors,
         }
@@ -140,6 +146,24 @@ class OdooConfigBuilder:
             quants = data.get("stock.quant", [])
             orderpoints = data.get("stock.warehouse.orderpoint", [])
             await self._build_inventory(config, quants, orderpoints, site_map, product_map, result)
+
+            # Step 9: Transactional data — purchase orders, sales orders, production orders
+            purchase_orders = data.get("purchase.order", [])
+            purchase_lines = data.get("purchase.order.line", [])
+            await self._build_purchase_orders(
+                config, purchase_orders, purchase_lines, site_map, product_map, partner_map, result,
+            )
+
+            sale_orders = data.get("sale.order", [])
+            sale_lines = data.get("sale.order.line", [])
+            await self._build_outbound_orders(
+                config, sale_orders, sale_lines, site_map, product_map, partner_map, result,
+            )
+
+            production_order_records = data.get("mrp.production", [])
+            await self._build_production_orders(
+                config, production_order_records, site_map, product_map, result,
+            )
 
             await self.db.commit()
             logger.info("Odoo config build complete: config_id=%d", config.id)
@@ -681,6 +705,468 @@ class OdooConfigBuilder:
         if spc_count:
             await self.db.flush()
             logger.info(f"Created {spc_count} site_planning_config records from Odoo orderpoints")
+
+
+    # ── Transactional data helpers ─────────────────────────────────────
+
+    def _resolve_odoo_id(self, val) -> Optional[int]:
+        """Extract integer ID from an Odoo Many2one field value.
+
+        Odoo JSON-RPC returns Many2one fields as ``[id, display_name]``
+        tuples; CSV imports may pass plain ints or strings.
+        """
+        if isinstance(val, (list, tuple)):
+            return int(val[0]) if val else None
+        if val is None or val is False:
+            return None
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return None
+
+    def _parse_odoo_date(self, val) -> Optional[date]:
+        """Parse an Odoo date / datetime string to a :class:`date`.
+
+        Handles ``'2025-03-15'``, ``'2025-03-15 10:30:00'``, already-parsed
+        :class:`date`/:class:`datetime`, and ``False``/``None``.
+        """
+        if isinstance(val, datetime):
+            return val.date()
+        if isinstance(val, date):
+            return val
+        if not val or val is False:
+            return None
+        raw = str(val).strip()
+        if not raw:
+            return None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def _odoo_state_to_po_status(self, state: str) -> str:
+        """Map Odoo purchase.order ``state`` to PurchaseOrder ``status``.
+
+        Odoo states: draft, sent, purchase, done, cancel.
+        """
+        mapping = {
+            "draft": "DRAFT",
+            "sent": "SENT",
+            "purchase": "APPROVED",
+            "done": "RECEIVED",
+            "cancel": "CANCELLED",
+        }
+        return mapping.get(str(state).strip().lower(), "DRAFT")
+
+    def _odoo_state_to_so_status(self, state: str) -> str:
+        """Map Odoo sale.order ``state`` to OutboundOrder ``status``.
+
+        Odoo states: draft, sent, sale, done, cancel.
+        """
+        mapping = {
+            "draft": "DRAFT",
+            "sent": "CONFIRMED",
+            "sale": "CONFIRMED",
+            "done": "FULFILLED",
+            "cancel": "CANCELLED",
+        }
+        return mapping.get(str(state).strip().lower(), "DRAFT")
+
+    def _odoo_state_to_mo_status(self, state: str) -> str:
+        """Map Odoo mrp.production ``state`` to ProductionOrder ``status``.
+
+        Odoo states: draft, confirmed, progress, to_close, done, cancel.
+        """
+        mapping = {
+            "draft": "PLANNED",
+            "confirmed": "RELEASED",
+            "progress": "IN_PROGRESS",
+            "to_close": "COMPLETED",
+            "done": "CLOSED",
+            "cancel": "CANCELLED",
+        }
+        return mapping.get(str(state).strip().lower(), "PLANNED")
+
+    def _get_first_site_id(self, site_map: Dict[int, Any]) -> Optional[int]:
+        """Return the ``id`` of the first internal site in *site_map*."""
+        for _key, site in site_map.items():
+            if isinstance(_key, int):
+                return site.id
+        return None
+
+    # ── Step 9a: Purchase Orders ────────────────────────────────────────
+
+    async def _build_purchase_orders(
+        self, config, purchase_orders, purchase_lines,
+        site_map, product_map, partner_map, result,
+    ):
+        """Build PurchaseOrder + PurchaseOrderLineItem from Odoo purchase.order data.
+
+        Odoo ``purchase.order`` fields used:
+            name (PO number), partner_id (vendor), date_order, state,
+            amount_total, currency_id, order_line (One2many IDs).
+
+        Odoo ``purchase.order.line`` fields used:
+            order_id, product_id, product_qty, price_unit, date_planned,
+            price_subtotal, product_uom.
+        """
+        from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
+
+        if not purchase_orders:
+            return
+
+        # Build line lookup: odoo_order_id → [line_dicts]
+        lines_by_order: Dict[int, List[Dict]] = {}
+        for line in purchase_lines:
+            oid = self._resolve_odoo_id(line.get("order_id"))
+            if oid is not None:
+                lines_by_order.setdefault(oid, []).append(line)
+
+        # Fallback site for destination when warehouse cannot be determined
+        fallback_site_id = self._get_first_site_id(site_map)
+
+        count = 0
+        for po in purchase_orders:
+            odoo_po_id = po.get("id")
+            po_name = str(po.get("name") or f"ODOO-PO-{odoo_po_id}")[:100]
+
+            vendor_odoo_id = self._resolve_odoo_id(po.get("partner_id"))
+
+            order_date = self._parse_odoo_date(po.get("date_order"))
+            if not order_date:
+                order_date = datetime.utcnow().date()
+
+            status = self._odoo_state_to_po_status(po.get("state", "draft"))
+
+            amount_total = None
+            try:
+                amount_total = float(po.get("amount_total") or 0)
+            except (TypeError, ValueError):
+                pass
+
+            currency_raw = po.get("currency_id")
+            if isinstance(currency_raw, (list, tuple)) and len(currency_raw) >= 2:
+                currency = str(currency_raw[1])[:3]
+            elif isinstance(currency_raw, str):
+                currency = currency_raw[:3]
+            else:
+                currency = "USD"
+
+            # Resolve vendor TradingPartner id string (e.g. "ODOOV_42")
+            vendor_tp_id = None
+            if vendor_odoo_id is not None:
+                vendor_key = f"V_{vendor_odoo_id}"
+                if vendor_key in partner_map:
+                    vendor_tp_id = f"ODOO_V_{vendor_odoo_id}"
+
+            # Destination site: use the first warehouse (receiving site)
+            dest_site_id = fallback_site_id
+            # Supplier site: also use fallback (external vendor sites are not
+            # modelled as Site records in the Odoo builder; the vendor is
+            # tracked via vendor_id on the PO header)
+            supplier_site_id = fallback_site_id
+            if not dest_site_id or not supplier_site_id:
+                result.warnings.append(f"Skipped PO {po_name}: no site available")
+                continue
+
+            po_rec = PurchaseOrder(
+                po_number=po_name,
+                vendor_id=vendor_tp_id,
+                supplier_site_id=supplier_site_id,
+                destination_site_id=dest_site_id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                company_id=f"ODOO_{self.tenant_id}",
+                order_type="po",
+                status=status,
+                order_date=order_date,
+                total_amount=amount_total,
+                currency=currency,
+                source="ODOO",
+                source_event_id=f"PO-{odoo_po_id}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(po_rec)
+            await self.db.flush()  # get po_rec.id for line items
+
+            # --- Line items ---
+            order_lines = lines_by_order.get(odoo_po_id, [])
+            # If no separate line records were extracted, try the embedded
+            # ``order_line`` field (list of IDs — without full data we
+            # cannot build lines, so skip gracefully).
+            line_num = 0
+            for line in order_lines:
+                prod_odoo_id = self._resolve_odoo_id(line.get("product_id"))
+                product = product_map.get(prod_odoo_id) if prod_odoo_id else None
+                if not product:
+                    continue
+
+                qty = 0.0
+                try:
+                    qty = float(line.get("product_qty") or line.get("product_uom_qty") or 0)
+                except (TypeError, ValueError):
+                    pass
+                if qty <= 0:
+                    continue
+
+                unit_price = None
+                try:
+                    unit_price = float(line.get("price_unit") or 0)
+                except (TypeError, ValueError):
+                    pass
+
+                line_total = None
+                try:
+                    line_total = float(line.get("price_subtotal") or 0)
+                except (TypeError, ValueError):
+                    pass
+
+                delivery_date = self._parse_odoo_date(line.get("date_planned")) or order_date
+
+                line_num += 1
+                po_line = PurchaseOrderLineItem(
+                    po_id=po_rec.id,
+                    line_number=line_num,
+                    product_id=product.id,
+                    quantity=qty,
+                    unit_price=unit_price,
+                    line_total=line_total,
+                    requested_delivery_date=delivery_date,
+                )
+                self.db.add(po_line)
+
+            count += 1
+
+        await self.db.flush()
+        result.purchase_orders_created = count
+        logger.info("Odoo: created %d purchase orders", count)
+
+    # ── Step 9b: Outbound (Sales) Orders ────────────────────────────────
+
+    async def _build_outbound_orders(
+        self, config, sale_orders, sale_lines,
+        site_map, product_map, partner_map, result,
+    ):
+        """Build OutboundOrder + OutboundOrderLine from Odoo sale.order data.
+
+        Odoo ``sale.order`` fields used:
+            name (SO number), partner_id (customer), date_order, state,
+            amount_total, currency_id, order_line (One2many IDs).
+
+        Odoo ``sale.order.line`` fields used:
+            order_id, product_id, product_uom_qty, price_unit, price_subtotal.
+        """
+        from app.models.sc_entities import OutboundOrder, OutboundOrderLine
+
+        if not sale_orders:
+            return
+
+        # Build line lookup: odoo_order_id → [line_dicts]
+        lines_by_order: Dict[int, List[Dict]] = {}
+        for line in sale_lines:
+            oid = self._resolve_odoo_id(line.get("order_id"))
+            if oid is not None:
+                lines_by_order.setdefault(oid, []).append(line)
+
+        fallback_site_id = self._get_first_site_id(site_map)
+
+        count = 0
+        for so in sale_orders:
+            odoo_so_id = so.get("id")
+            so_name = str(so.get("name") or f"ODOO-SO-{odoo_so_id}")[:100]
+
+            customer_odoo_id = self._resolve_odoo_id(so.get("partner_id"))
+
+            order_date = self._parse_odoo_date(so.get("date_order"))
+            if not order_date:
+                order_date = datetime.utcnow().date()
+
+            status = self._odoo_state_to_so_status(so.get("state", "draft"))
+
+            amount_total = None
+            try:
+                amount_total = float(so.get("amount_total") or 0)
+            except (TypeError, ValueError):
+                pass
+
+            currency_raw = so.get("currency_id")
+            if isinstance(currency_raw, (list, tuple)) and len(currency_raw) >= 2:
+                currency = str(currency_raw[1])[:3]
+            elif isinstance(currency_raw, str):
+                currency = currency_raw[:3]
+            else:
+                currency = "USD"
+
+            # Resolve customer TradingPartner business key
+            customer_tp_id = None
+            if customer_odoo_id is not None:
+                customer_key = f"C_{customer_odoo_id}"
+                if customer_key in partner_map:
+                    customer_tp_id = f"ODOO_C_{customer_odoo_id}"
+
+            ship_from_site_id = fallback_site_id
+
+            # Delivery date: try commitment_date, then date_order
+            delivery_date = (
+                self._parse_odoo_date(so.get("commitment_date"))
+                or self._parse_odoo_date(so.get("expected_date"))
+                or order_date
+            )
+
+            order_id = f"ODOO-SO-{odoo_so_id}"
+
+            ob_header = OutboundOrder(
+                id=order_id,
+                order_type="SALES",
+                customer_id=customer_tp_id,
+                ship_from_site_id=ship_from_site_id,
+                status=status,
+                order_date=order_date,
+                requested_delivery_date=delivery_date,
+                total_value=amount_total,
+                currency=currency,
+                priority="STANDARD",
+                config_id=config.id,
+                source="ODOO",
+                source_event_id=f"SO-{odoo_so_id}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(ob_header)
+
+            # --- Line items ---
+            order_lines = lines_by_order.get(odoo_so_id, [])
+            line_num = 0
+            total_qty = 0.0
+            for line in order_lines:
+                prod_odoo_id = self._resolve_odoo_id(line.get("product_id"))
+                product = product_map.get(prod_odoo_id) if prod_odoo_id else None
+                if not product:
+                    continue
+
+                qty = 0.0
+                try:
+                    qty = float(line.get("product_uom_qty") or line.get("product_qty") or 0)
+                except (TypeError, ValueError):
+                    pass
+                if qty <= 0:
+                    continue
+
+                total_qty += qty
+
+                line_delivery = self._parse_odoo_date(line.get("date_planned")) or delivery_date
+
+                line_num += 1
+                ob_line = OutboundOrderLine(
+                    order_id=order_id,
+                    line_number=line_num,
+                    product_id=product.id,
+                    site_id=ship_from_site_id,
+                    ordered_quantity=qty,
+                    requested_delivery_date=line_delivery,
+                    order_date=order_date,
+                    config_id=config.id,
+                    status=status,
+                    priority_code="STANDARD",
+                )
+                self.db.add(ob_line)
+
+            # Update header totals
+            ob_header.total_ordered_qty = total_qty
+            count += 1
+
+        await self.db.flush()
+        result.outbound_orders_created = count
+        logger.info("Odoo: created %d outbound orders", count)
+
+    # ── Step 9c: Production (Manufacturing) Orders ──────────────────────
+
+    async def _build_production_orders(
+        self, config, production_records, site_map, product_map, result,
+    ):
+        """Build ProductionOrder from Odoo mrp.production data.
+
+        Odoo ``mrp.production`` fields used:
+            name (MO number), product_id, product_qty, date_start,
+            date_finished, state, product_uom_id, origin, lot_producing_id.
+        """
+        from app.models.production_order import ProductionOrder
+
+        if not production_records:
+            return
+
+        fallback_site_id = self._get_first_site_id(site_map)
+        if not fallback_site_id:
+            result.warnings.append("No site available for production orders — skipped")
+            return
+
+        count = 0
+        for mo in production_records:
+            odoo_mo_id = mo.get("id")
+            mo_name = str(mo.get("name") or f"ODOO-MO-{odoo_mo_id}")[:100]
+
+            prod_odoo_id = self._resolve_odoo_id(mo.get("product_id"))
+            product = product_map.get(prod_odoo_id) if prod_odoo_id else None
+            if not product:
+                result.warnings.append(f"Skipped MO {mo_name}: product not resolved")
+                continue
+
+            qty = 1.0
+            try:
+                qty = float(mo.get("product_qty") or mo.get("qty_producing") or 1)
+            except (TypeError, ValueError):
+                pass
+
+            status = self._odoo_state_to_mo_status(mo.get("state", "draft"))
+
+            # Dates
+            start_date = self._parse_odoo_date(mo.get("date_start"))
+            end_date = self._parse_odoo_date(mo.get("date_finished")) or self._parse_odoo_date(mo.get("date_deadline"))
+            today = datetime.utcnow().date()
+            if not start_date:
+                start_date = today
+            if not end_date:
+                end_date = start_date + timedelta(days=7)
+
+            # Actual quantity — only meaningful for done/to_close
+            actual_qty = None
+            if status in ("COMPLETED", "CLOSED"):
+                try:
+                    actual_qty = int(float(mo.get("qty_produced") or mo.get("qty_producing") or qty))
+                except (TypeError, ValueError):
+                    actual_qty = int(qty)
+
+            # Site: try to resolve from picking_type_id warehouse, fall back
+            site_id = fallback_site_id
+            wh_id = self._resolve_odoo_id(mo.get("picking_type_id"))
+            # picking_type_id is a stock.picking.type, not a warehouse directly,
+            # so we cannot reliably map it without extra data. Use fallback.
+
+            mo_rec = ProductionOrder(
+                order_number=mo_name,
+                item_id=product.id,
+                site_id=site_id,
+                config_id=config.id,
+                planned_quantity=int(qty),
+                actual_quantity=actual_qty,
+                status=status,
+                planned_start_date=datetime.combine(start_date, datetime.min.time()),
+                planned_completion_date=datetime.combine(end_date, datetime.min.time()),
+                lead_time_planned=max(1, (end_date - start_date).days),
+                priority=5,
+                notes=f"Odoo state: {mo.get('state', '')}",
+                extra_data={
+                    "odoo_id": odoo_mo_id,
+                    "origin": mo.get("origin") or None,
+                },
+            )
+            self.db.add(mo_rec)
+            count += 1
+
+        await self.db.flush()
+        result.production_orders_created = count
+        logger.info("Odoo: created %d production orders", count)
 
 
 class OdooIngestionMonitor:

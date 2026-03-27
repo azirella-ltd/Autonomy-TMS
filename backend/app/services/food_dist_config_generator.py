@@ -185,6 +185,12 @@ FROZEN_PROTEINS = ProductGroupDefinition(
             unit_size="5 lb case", cases_per_pallet=120, temperature=TemperatureCategory.FROZEN,
             shelf_life_days=365, unit_cost=55.00, unit_price=69.99, weekly_demand_mean=40, demand_cv=0.50, min_order_qty=5
         ),
+        # NPI: Launched ~3 weeks before end of 2-year history window
+        ProductDefinition(
+            sku="FP006", name="Wagyu Beef Strips A5", description="Premium Japanese A5 Wagyu beef strips, frozen",
+            unit_size="5 lb case", cases_per_pallet=100, temperature=TemperatureCategory.FROZEN,
+            shelf_life_days=180, unit_cost=125.00, unit_price=169.99, weekly_demand_mean=25, demand_cv=0.60, min_order_qty=4
+        ),
     ]
 )
 
@@ -372,7 +378,7 @@ SUPPLIERS = [
     SupplierDefinition(
         code="SYSCOMEAT", name="Sysco Protein Solutions", description="Full-line protein supplier",
         location="Houston, TX", lead_time_days=9, lead_time_variability=0.20,
-        reliability=0.94, min_order_value=3000.00, product_skus=["FP002", "FP003", "FP005"],
+        reliability=0.94, min_order_value=3000.00, product_skus=["FP002", "FP003", "FP005", "FP006"],
         latitude=29.7437, longitude=-95.3643,
     ),
     SupplierDefinition(
@@ -507,6 +513,13 @@ CUSTOMERS = [
         size="medium", delivery_frequency="weekly", order_lead_time_days=3,
         credit_limit=35000.00, avg_order_value=6000.00, demand_multiplier=1.1,
         latitude=33.4152, longitude=-111.8315, city="Mesa", state="AZ", region="SW",
+    ),
+    # Churn model: customer gained at ~month 10 of 2-year history
+    CustomerDefinition(
+        code="CUST_RNO", name="Reno Fresh Markets", segment="Natural/Specialty Retail",
+        size="small", delivery_frequency="weekly", order_lead_time_days=3,
+        credit_limit=22000.00, avg_order_value=3800.00, demand_multiplier=0.75,
+        latitude=39.5296, longitude=-119.8138, city="Reno", state="NV", region="NW",
     ),
 ]
 
@@ -780,6 +793,7 @@ class FoodDistConfigGenerator:
             type="Central Distribution Center",  # Human-readable type
             dag_type="CDC",  # DAG identity
             master_type="INVENTORY",  # Master processing type
+            company_id="USFOODS",  # AWS SC company reference
             attributes={
                 "initial_inventory": 50000,
                 "capacity": DC_CONFIG.frozen_capacity + DC_CONFIG.refrigerated_capacity + DC_CONFIG.dry_capacity,
@@ -808,6 +822,7 @@ class FoodDistConfigGenerator:
                 dag_type="RDC",
                 master_type="INVENTORY",
                 is_external=False,
+                company_id="USFOODS",
                 attributes={
                     "initial_inventory": 20000,
                     "capacity": rdc_def.capacity,
@@ -909,7 +924,7 @@ class FoodDistConfigGenerator:
         prefix = f"CFG{self.sc_config.id}_"
 
         STATE_TO_REGION = {
-            "OR": "NW", "WA": "NW",
+            "OR": "NW", "WA": "NW", "NV": "NW",
             "AZ": "SW", "CA": "SW", "UT": "SW",
             "IL": "CENTRAL", "MN": "CENTRAL", "TX": "CENTRAL", "AR": "CENTRAL",
             "PA": "NE", "NY": "NE",
@@ -920,7 +935,8 @@ class FoodDistConfigGenerator:
             "NE": "Northeast", "SE": "Southeast",
         }
         STATE_NAMES = {
-            "OR": "Oregon", "WA": "Washington", "AZ": "Arizona", "CA": "California",
+            "OR": "Oregon", "WA": "Washington", "NV": "Nevada",
+            "AZ": "Arizona", "CA": "California",
             "UT": "Utah", "IL": "Illinois", "MN": "Minnesota", "TX": "Texas",
             "AR": "Arkansas", "PA": "Pennsylvania", "NY": "New York", "GA": "Georgia",
         }
@@ -1166,8 +1182,14 @@ class FoodDistConfigGenerator:
             )
             self.db.add(tp)
             trading_partners[supplier_def.code] = tp
-            # Link the site node to its trading partner
-            supplier_node.trading_partner_id = tp_id
+
+        await self.db.flush()
+
+        # Link site nodes to their trading partners (use _id after flush)
+        for supplier_def, supplier_node in zip(SUPPLIERS, supplier_nodes):
+            tp = trading_partners.get(supplier_def.code)
+            if tp:
+                supplier_node.trading_partner_id = tp._id
 
         await self.db.flush()
         logger.info(f"Created {len(trading_partners)} supplier trading partners")
@@ -1191,8 +1213,14 @@ class FoodDistConfigGenerator:
             )
             self.db.add(tp)
             trading_partners[customer_def.code] = tp
-            # Link the site node to its trading partner
-            customer_node.trading_partner_id = tp_id
+
+        await self.db.flush()
+
+        # Link site nodes to their trading partners (use _id after flush)
+        for customer_def, customer_node in zip(CUSTOMERS, customer_nodes):
+            tp = trading_partners.get(customer_def.code)
+            if tp:
+                customer_node.trading_partner_id = tp._id
 
         await self.db.flush()
         logger.info(f"Created {len(trading_partners)} customer trading partners")
@@ -1283,7 +1311,7 @@ class FoodDistConfigGenerator:
         }
 
         STATE_TO_REGION = {
-            "OR": "NW", "WA": "NW",
+            "OR": "NW", "WA": "NW", "NV": "NW",
             "AZ": "SW", "CA": "SW", "UT": "SW",
             "IL": "CENTRAL", "MN": "CENTRAL", "TX": "CENTRAL", "AR": "CENTRAL",
             "PA": "NE", "NY": "NE",
@@ -1291,7 +1319,8 @@ class FoodDistConfigGenerator:
         }
 
         STATE_NAMES = {
-            "OR": "Oregon", "WA": "Washington", "AZ": "Arizona", "CA": "California",
+            "OR": "Oregon", "WA": "Washington", "NV": "Nevada",
+            "AZ": "Arizona", "CA": "California",
             "UT": "Utah", "IL": "Illinois", "MN": "Minnesota", "TX": "Texas",
             "AR": "Arkansas", "PA": "Pennsylvania", "NY": "New York", "GA": "Georgia",
         }

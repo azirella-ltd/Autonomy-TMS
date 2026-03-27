@@ -6,6 +6,8 @@ Follows the same pipeline pattern as ``sap_config_builder.py`` and
 ``odoo/config_builder.py``.
 
 Key D365 entities → Autonomy mapping:
+
+Master data:
 - LegalEntities          → Tenant/Company
 - OperationalSites       → Site (INVENTORY/MANUFACTURER)
 - Warehouses             → Site attributes
@@ -14,6 +16,12 @@ Key D365 entities → Autonomy mapping:
 - ProductCategoryHierarchies → ProductHierarchyNode (tree containers)
 - ProductCategories      → ProductHierarchyNode (tree nodes)
 - ItemCoverageSettings   → SitePlanningConfig + InvPolicy
+
+Transactional data:
+- PurchaseOrderHeadersV2 / PurchaseOrderLinesV2 → PurchaseOrder + PurchaseOrderLineItem
+- SalesOrderHeadersV2 / SalesOrderLinesV2       → OutboundOrder + OutboundOrderLine
+- ProductionOrderHeaders                         → ProductionOrder
+- DemandForecastEntries                          → Forecast
 """
 
 import logging
@@ -37,6 +45,12 @@ class D365ConfigBuildResult:
     trading_partners_created: int = 0
     inv_levels_created: int = 0
     inv_policies_created: int = 0
+    purchase_orders_created: int = 0
+    purchase_order_lines_created: int = 0
+    outbound_orders_created: int = 0
+    outbound_order_lines_created: int = 0
+    production_orders_created: int = 0
+    forecasts_created: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -110,6 +124,32 @@ class D365ConfigBuilder:
             await self._build_inventory(
                 config, inv_onhand, coverage, order_setups,
                 site_map, product_map, result,
+            )
+
+            # Step 8: Purchase orders (inbound)
+            po_headers = data.get("PurchaseOrderHeadersV2", [])
+            po_lines = data.get("PurchaseOrderLinesV2", [])
+            await self._build_purchase_orders(
+                config, po_headers, po_lines, site_map, product_map, result,
+            )
+
+            # Step 9: Outbound orders (sales)
+            so_headers = data.get("SalesOrderHeadersV2", [])
+            so_lines = data.get("SalesOrderLinesV2", [])
+            await self._build_outbound_orders(
+                config, so_headers, so_lines, site_map, product_map, result,
+            )
+
+            # Step 10: Production orders
+            prod_order_headers = data.get("ProductionOrderHeaders", [])
+            await self._build_production_orders(
+                config, prod_order_headers, site_map, product_map, result,
+            )
+
+            # Step 11: Forecasts
+            forecast_entries = data.get("DemandForecastEntries", [])
+            await self._build_forecasts(
+                config, forecast_entries, site_map, product_map, result,
             )
 
             await self.db.commit()
@@ -470,3 +510,497 @@ class D365ConfigBuilder:
             result.inv_policies_created += 1
 
         await self.db.flush()
+
+    # ------------------------------------------------------------------
+    # Step 8: Purchase Orders
+    # ------------------------------------------------------------------
+
+    # D365 PurchaseOrderStatus → AWS SC purchase_order.status mapping
+    _PO_STATUS_MAP: Dict[str, str] = {
+        "Confirmed": "APPROVED",
+        "Received": "RECEIVED",
+        "Invoiced": "RECEIVED",
+        "Canceled": "CANCELLED",
+        "Draft": "DRAFT",
+        "InExternalReview": "SENT",
+        "": "DRAFT",
+    }
+
+    async def _build_purchase_orders(
+        self, config, po_headers, po_lines, site_map, product_map, result,
+    ):
+        """Map D365 PurchaseOrderHeadersV2 + PurchaseOrderLinesV2 → purchase_order + purchase_order_line_item.
+
+        D365 CSV columns (headers):
+            PurchaseOrderNumber, VendorAccountNumber, OrderDate, DeliveryDate,
+            PurchaseOrderStatus, CurrencyCode, TotalOrderAmount, dataAreaId
+
+        D365 CSV columns (lines):
+            PurchaseOrderNumber, LineNumber, ItemNumber, PurchasedQuantity,
+            ReceivedQuantity, PurchasePrice, DeliveryDate, dataAreaId
+        """
+        from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
+
+        # Index lines by PO number for efficient lookup
+        lines_by_po: Dict[str, List[Dict]] = {}
+        for line in po_lines:
+            po_num = line.get("PurchaseOrderNumber", "")
+            if po_num:
+                lines_by_po.setdefault(po_num, []).append(line)
+
+        # We need at least one site for supplier/destination references.
+        # Use the first site from site_map as the default destination.
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping purchase orders")
+            return
+
+        for header in po_headers:
+            po_number = header.get("PurchaseOrderNumber", "")
+            if not po_number:
+                continue
+
+            vendor_account = header.get("VendorAccountNumber", "")
+            if not vendor_account:
+                result.warnings.append(f"PO {po_number}: missing VendorAccountNumber — skipped")
+                continue
+
+            order_date_str = header.get("OrderDate", "")
+            order_date = self._parse_d365_date(order_date_str)
+            if not order_date:
+                result.warnings.append(f"PO {po_number}: invalid OrderDate '{order_date_str}' — skipped")
+                continue
+
+            delivery_date_str = header.get("DeliveryDate", "")
+            delivery_date = self._parse_d365_date(delivery_date_str)
+
+            d365_status = header.get("PurchaseOrderStatus", "")
+            status = self._PO_STATUS_MAP.get(d365_status, "DRAFT")
+
+            currency = header.get("CurrencyCode", "USD") or "USD"
+            total_amount = self._safe_float(header.get("TotalOrderAmount"))
+
+            vendor_tp_id = f"D365V_{vendor_account}"
+
+            po = PurchaseOrder(
+                po_number=po_number,
+                vendor_id=vendor_tp_id,
+                supplier_site_id=default_site.id,  # Vendor site — resolved to first config site
+                destination_site_id=default_site.id,
+                config_id=config.id,
+                tenant_id=self.tenant_id,
+                company_id=f"D365_{self.tenant_id}",
+                order_type="po",
+                source="D365_CONTOSO",
+                status=status,
+                order_date=order_date,
+                requested_delivery_date=delivery_date,
+                total_amount=total_amount,
+                currency=currency[:3] if currency else "USD",
+            )
+            self.db.add(po)
+            await self.db.flush()  # Get auto-generated po.id
+            result.purchase_orders_created += 1
+
+            # Build line items for this PO
+            for line in lines_by_po.get(po_number, []):
+                item_number = line.get("ItemNumber", "")
+                product_id = f"CFG{config.id}_{item_number}"
+                product = product_map.get(item_number)
+                if not product:
+                    result.warnings.append(
+                        f"PO {po_number} line: ItemNumber '{item_number}' not in product map — skipped"
+                    )
+                    continue
+
+                line_number_str = line.get("LineNumber", "0")
+                # D365 line numbers can be padded: "00001"
+                try:
+                    line_number = int(line_number_str)
+                except (ValueError, TypeError):
+                    line_number = 0
+
+                quantity = self._safe_float(line.get("PurchasedQuantity"))
+                if quantity is None or quantity <= 0:
+                    continue
+
+                received_qty = self._safe_float(line.get("ReceivedQuantity")) or 0.0
+                unit_price = self._safe_float(line.get("PurchasePrice"))
+
+                line_delivery_str = line.get("DeliveryDate", "")
+                line_delivery = self._parse_d365_date(line_delivery_str) or delivery_date or order_date
+
+                po_line = PurchaseOrderLineItem(
+                    po_id=po.id,
+                    line_number=line_number,
+                    product_id=product_id,
+                    quantity=quantity,
+                    received_quantity=received_qty,
+                    unit_price=unit_price,
+                    line_total=(unit_price * quantity) if unit_price else None,
+                    requested_delivery_date=line_delivery,
+                )
+                self.db.add(po_line)
+                result.purchase_order_lines_created += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: created %d purchase orders, %d line items",
+            result.purchase_orders_created, result.purchase_order_lines_created,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 9: Outbound Orders (Sales Orders)
+    # ------------------------------------------------------------------
+
+    # D365 SalesOrderStatus → AWS SC outbound_order.status mapping
+    _SO_STATUS_MAP: Dict[str, str] = {
+        "Confirmed": "CONFIRMED",
+        "Delivered": "FULFILLED",
+        "Invoiced": "FULFILLED",
+        "Canceled": "CANCELLED",
+        "Open": "DRAFT",
+        "": "DRAFT",
+    }
+
+    async def _build_outbound_orders(
+        self, config, so_headers, so_lines, site_map, product_map, result,
+    ):
+        """Map D365 SalesOrderHeadersV2 + SalesOrderLinesV2 → outbound_order + outbound_order_line.
+
+        D365 CSV columns (headers):
+            SalesOrderNumber, CustomerAccountNumber, OrderDate, RequestedShipDate,
+            SalesOrderStatus, CurrencyCode, TotalOrderAmount, dataAreaId
+
+        D365 CSV columns (lines):
+            SalesOrderNumber, LineNumber, ItemNumber, OrderedSalesQuantity,
+            DeliveredQuantity, SalesPrice, dataAreaId
+        """
+        from app.models.sc_entities import OutboundOrder, OutboundOrderLine
+
+        # Index lines by SO number
+        lines_by_so: Dict[str, List[Dict]] = {}
+        for line in so_lines:
+            so_num = line.get("SalesOrderNumber", "")
+            if so_num:
+                lines_by_so.setdefault(so_num, []).append(line)
+
+        # Default ship-from site
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping outbound orders")
+            return
+
+        for header in so_headers:
+            so_number = header.get("SalesOrderNumber", "")
+            if not so_number:
+                continue
+
+            customer_account = header.get("CustomerAccountNumber", "")
+            if not customer_account:
+                result.warnings.append(f"SO {so_number}: missing CustomerAccountNumber — skipped")
+                continue
+
+            order_date_str = header.get("OrderDate", "")
+            order_date = self._parse_d365_date(order_date_str)
+            if not order_date:
+                result.warnings.append(f"SO {so_number}: invalid OrderDate '{order_date_str}' — skipped")
+                continue
+
+            requested_ship_str = header.get("RequestedShipDate", "")
+            requested_ship_date = self._parse_d365_date(requested_ship_str)
+
+            d365_status = header.get("SalesOrderStatus", "")
+            status = self._SO_STATUS_MAP.get(d365_status, "DRAFT")
+
+            currency = header.get("CurrencyCode", "USD") or "USD"
+            total_amount = self._safe_float(header.get("TotalOrderAmount"))
+
+            customer_tp_id = f"D365C_{customer_account}"
+            order_id = f"D365_SO_{so_number}"
+
+            # Compute totals from lines
+            so_line_data = lines_by_so.get(so_number, [])
+            total_ordered = sum(
+                self._safe_float(l.get("OrderedSalesQuantity")) or 0.0
+                for l in so_line_data
+            )
+            total_delivered = sum(
+                self._safe_float(l.get("DeliveredQuantity")) or 0.0
+                for l in so_line_data
+            )
+
+            order = OutboundOrder(
+                id=order_id,
+                company_id=f"D365_{self.tenant_id}",
+                order_type="SALES",
+                customer_id=customer_tp_id,
+                ship_from_site_id=default_site.id,
+                status=status,
+                order_date=order_date,
+                requested_delivery_date=requested_ship_date,
+                total_ordered_qty=total_ordered,
+                total_fulfilled_qty=total_delivered,
+                total_value=total_amount,
+                currency=currency[:10] if currency else "USD",
+                config_id=config.id,
+                source="D365_CONTOSO",
+            )
+            self.db.add(order)
+            result.outbound_orders_created += 1
+
+            # Build order lines
+            for line in so_line_data:
+                item_number = line.get("ItemNumber", "")
+                product_id = f"CFG{config.id}_{item_number}"
+                product = product_map.get(item_number)
+                if not product:
+                    result.warnings.append(
+                        f"SO {so_number} line: ItemNumber '{item_number}' not in product map — skipped"
+                    )
+                    continue
+
+                line_number_str = line.get("LineNumber", "0")
+                # D365 LineNumber can be like "000010" — parse as int
+                try:
+                    line_number = int(line_number_str)
+                except (ValueError, TypeError):
+                    line_number = 0
+
+                ordered_qty = self._safe_float(line.get("OrderedSalesQuantity"))
+                if ordered_qty is None or ordered_qty <= 0:
+                    continue
+
+                delivered_qty = self._safe_float(line.get("DeliveredQuantity")) or 0.0
+
+                # Determine line status from quantities
+                if delivered_qty >= ordered_qty:
+                    line_status = "FULFILLED"
+                elif delivered_qty > 0:
+                    line_status = "PARTIALLY_FULFILLED"
+                else:
+                    line_status = status  # Inherit from header
+
+                order_line = OutboundOrderLine(
+                    order_id=order_id,
+                    line_number=line_number,
+                    product_id=product_id,
+                    site_id=default_site.id,
+                    ordered_quantity=ordered_qty,
+                    shipped_quantity=delivered_qty,
+                    backlog_quantity=max(0.0, ordered_qty - delivered_qty),
+                    requested_delivery_date=requested_ship_date or order_date,
+                    order_date=order_date,
+                    config_id=config.id,
+                    status=line_status,
+                )
+                self.db.add(order_line)
+                result.outbound_order_lines_created += 1
+
+        await self.db.flush()
+        logger.info(
+            "D365: created %d outbound orders, %d line items",
+            result.outbound_orders_created, result.outbound_order_lines_created,
+        )
+
+    # ------------------------------------------------------------------
+    # Step 10: Production Orders
+    # ------------------------------------------------------------------
+
+    # D365 ProductionStatus → AWS SC production_orders.status mapping
+    _PROD_STATUS_MAP: Dict[str, str] = {
+        "Created": "PLANNED",
+        "Estimated": "PLANNED",
+        "Scheduled": "PLANNED",
+        "Released": "RELEASED",
+        "Started": "IN_PROGRESS",
+        "ReportedAsFinished": "COMPLETED",
+        "Ended": "CLOSED",
+        "": "PLANNED",
+    }
+
+    async def _build_production_orders(
+        self, config, prod_headers, site_map, product_map, result,
+    ):
+        """Map D365 ProductionOrderHeaders → production_orders.
+
+        D365 CSV columns:
+            ProductionOrderNumber, ItemNumber, ProductionQuantity,
+            ProductionStatus, ScheduledStartDate, ScheduledEndDate,
+            SiteId, dataAreaId
+        """
+        from app.models.production_order import ProductionOrder
+        from datetime import datetime as dt
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping production orders")
+            return
+
+        for header in prod_headers:
+            prod_order_num = header.get("ProductionOrderNumber", "")
+            if not prod_order_num:
+                continue
+
+            item_number = header.get("ItemNumber", "")
+            product_id = f"CFG{config.id}_{item_number}"
+            product = product_map.get(item_number)
+            if not product:
+                result.warnings.append(
+                    f"ProdOrder {prod_order_num}: ItemNumber '{item_number}' not in product map — skipped"
+                )
+                continue
+
+            quantity = self._safe_float(header.get("ProductionQuantity"))
+            if quantity is None or quantity <= 0:
+                result.warnings.append(
+                    f"ProdOrder {prod_order_num}: invalid ProductionQuantity — skipped"
+                )
+                continue
+
+            d365_status = header.get("ProductionStatus", "")
+            status = self._PROD_STATUS_MAP.get(d365_status, "PLANNED")
+
+            # Resolve site from D365 SiteId
+            d365_site_id = header.get("SiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            # Parse scheduled dates — D365 uses YYYYMMDD format, "00000000" means not set
+            start_date_str = header.get("ScheduledStartDate", "")
+            end_date_str = header.get("ScheduledEndDate", "")
+            planned_start = self._parse_d365_date(start_date_str)
+            planned_end = self._parse_d365_date(end_date_str)
+
+            # Both dates are required by the model — use fallback from each other or today
+            now = dt.utcnow()
+            if not planned_start:
+                planned_start = planned_end or now
+            if not planned_end:
+                planned_end = planned_start or now
+            # Ensure start <= end
+            if planned_start > planned_end:
+                planned_start, planned_end = planned_end, planned_start
+
+            prod_order = ProductionOrder(
+                order_number=prod_order_num,
+                item_id=product_id,
+                site_id=site.id,
+                config_id=config.id,
+                planned_quantity=int(quantity),
+                status=status,
+                planned_start_date=planned_start,
+                planned_completion_date=planned_end,
+            )
+            self.db.add(prod_order)
+            result.production_orders_created += 1
+
+        await self.db.flush()
+        logger.info("D365: created %d production orders", result.production_orders_created)
+
+    # ------------------------------------------------------------------
+    # Step 11: Forecasts
+    # ------------------------------------------------------------------
+
+    async def _build_forecasts(
+        self, config, forecast_entries, site_map, product_map, result,
+    ):
+        """Map D365 DemandForecastEntries → forecast.
+
+        D365 CSV columns:
+            ItemNumber, SiteId, WarehouseId, ForecastQuantity,
+            ForecastDate, ForecastModel, dataAreaId
+        """
+        from app.models.sc_entities import Forecast
+
+        default_site = next(iter(site_map.values()), None)
+        if not default_site:
+            result.warnings.append("No sites available — skipping forecasts")
+            return
+
+        for entry in forecast_entries:
+            item_number = entry.get("ItemNumber", "")
+            product_id = f"CFG{config.id}_{item_number}"
+            product = product_map.get(item_number)
+            if not product:
+                # Skip silently — many forecast entries reference items not in product master
+                continue
+
+            forecast_date_str = entry.get("ForecastDate", "")
+            forecast_date = self._parse_d365_date(forecast_date_str)
+            if not forecast_date:
+                continue
+
+            quantity = self._safe_float(entry.get("ForecastQuantity"))
+            if quantity is None:
+                continue
+            # Allow zero-quantity forecasts (explicit zero demand)
+
+            # Resolve site from D365 SiteId
+            d365_site_id = entry.get("SiteId", "")
+            site = site_map.get(d365_site_id, default_site)
+
+            forecast_model = entry.get("ForecastModel", "")
+
+            forecast = Forecast(
+                product_id=product_id,
+                site_id=site.id,
+                company_id=f"D365_{self.tenant_id}",
+                forecast_date=forecast_date,
+                forecast_quantity=quantity,
+                forecast_p50=quantity,
+                forecast_type="statistical",
+                forecast_level="product",
+                forecast_method=forecast_model[:50] if forecast_model else "erp_import",
+                is_active="Y",
+                config_id=config.id,
+                source="D365_CONTOSO",
+            )
+            self.db.add(forecast)
+            result.forecasts_created += 1
+
+        await self.db.flush()
+        logger.info("D365: created %d forecasts", result.forecasts_created)
+
+    # ------------------------------------------------------------------
+    # Utility helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_d365_date(date_str: str):
+        """Parse D365 date strings in YYYYMMDD or YYYY-MM-DD format.
+
+        Returns a ``date`` object or ``None`` if the string is empty,
+        all-zeros, or otherwise unparseable.
+        """
+        from datetime import date as d, datetime as dt
+
+        if not date_str or date_str.strip() in ("", "00000000", "0"):
+            return None
+
+        date_str = date_str.strip()
+
+        # YYYYMMDD (common D365 export format)
+        if len(date_str) == 8 and date_str.isdigit():
+            try:
+                return d(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
+            except ValueError:
+                return None
+
+        # YYYY-MM-DD (ISO format)
+        if len(date_str) >= 10 and date_str[4] == "-":
+            try:
+                return dt.strptime(date_str[:10], "%Y-%m-%d").date()
+            except ValueError:
+                return None
+
+        return None
+
+    @staticmethod
+    def _safe_float(value) -> Optional[float]:
+        """Convert a value to float, returning ``None`` on failure."""
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
