@@ -282,6 +282,7 @@ def main():
                         bom_mats.add(sp["IDNRK"])
         top_materials = sorted((set(ranked[:args.max_products]) | bom_mats))
 
+    top_materials_set = set(top_materials)
     print(f"  Materials: {len(top_materials)} (of {len(materials)} total)")
     print(f"  Vendors: {len(active_vendors)}")
     print(f"  Customers: {len(active_customers)}")
@@ -411,63 +412,93 @@ def main():
             count += 1
     print(f"    {count} new customers (of {len(customer_id_map)} total)")
 
-    # ── Create products ──────────────────────────────────────────────────
+    # ── Create products (batch) ───────────────────────────────────────────
     print("\n  Creating products...")
     product_id_map: Dict[str, int] = {}
     tmpl_id_map: Dict[str, int] = {}
-    count = 0
+
+    # Check which products already exist
+    existing_prods = odoo.search_read(
+        "product.product",
+        [["company_id", "in", [company_id, False]], ["default_code", "!=", False]],
+        ["id", "default_code", "product_tmpl_id"],
+    )
+    for ep in existing_prods:
+        code = ep.get("default_code")
+        if code and code in top_materials_set:
+            product_id_map[code] = ep["id"]
+            tmpl_id_map[code] = ep["product_tmpl_id"][0] if ep.get("product_tmpl_id") else None
+
+    # Batch create missing products
+    to_create = []
+    to_create_mats = []
     for mat in top_materials:
+        if mat in product_id_map:
+            continue
         desc = makt_map.get(mat, mat)
         mara_r = mara_map.get(mat, {})
         mbew_r = mbew_map.get(mat, {})
-        marc_r = marc_map.get(mat, {})
 
         std_cost = safe_float(mbew_r.get("STPRS", "0"))
         mvg_price = safe_float(mbew_r.get("VERPR", "0"))
         cost = std_cost if std_cost > 0 else (mvg_price if mvg_price > 0 else 10.0)
-        sale_price = cost * 1.4  # 40% margin as default
+        sale_price = cost * 1.4
 
-        categ_id = cat_id_map.get(mara_r.get("MATKL", ""), 1)  # 1 = "All" default
-        uom = mara_r.get("MEINS", "EA")
+        categ_id = cat_id_map.get(mara_r.get("MATKL", ""), 1)
         weight = safe_float(mara_r.get("NTGEW", "0"))
 
-        # Check if product exists by default_code
-        existing = odoo.search("product.product", [
-            ["default_code", "=", mat], ["company_id", "in", [company_id, False]]
-        ], limit=1)
-        if existing:
-            product_id_map[mat] = existing[0]
-            tmpl = odoo.search_read("product.product", [["id", "=", existing[0]]], ["product_tmpl_id"])
-            if tmpl:
-                tmpl_id_map[mat] = tmpl[0]["product_tmpl_id"][0]
-        else:
-            prod_id = odoo.create("product.product", {
-                "name": desc[:128],
-                "default_code": mat,
-                "type": "consu",  # Odoo 18: "Goods" (storable products)
-                "categ_id": categ_id,
-                "standard_price": cost,
-                "list_price": sale_price,
-                "weight": weight,
-                "sale_ok": True,
-                "purchase_ok": True,
-                "company_id": company_id,
-            })
-            product_id_map[mat] = prod_id
-            # Get template ID
-            tmpl = odoo.search_read("product.product", [["id", "=", prod_id]], ["product_tmpl_id"])
-            if tmpl:
-                tmpl_id_map[mat] = tmpl[0]["product_tmpl_id"][0]
-            count += 1
+        to_create.append({
+            "name": desc[:128],
+            "default_code": mat,
+            "type": "consu",
+            "categ_id": categ_id,
+            "standard_price": cost,
+            "list_price": sale_price,
+            "weight": weight,
+            "sale_ok": True,
+            "purchase_ok": True,
+            "company_id": company_id,
+        })
+        to_create_mats.append(mat)
 
-        if count % 50 == 0 and count > 0:
-            print(f"    ... {count} products created")
+    if to_create:
+        # Batch create in chunks of 100 (Odoo can handle ~200 but be conservative)
+        CHUNK = 100
+        for i in range(0, len(to_create), CHUNK):
+            chunk_vals = to_create[i:i + CHUNK]
+            chunk_mats = to_create_mats[i:i + CHUNK]
+            new_ids = odoo.create_batch("product.product", chunk_vals)
+            for mat, pid in zip(chunk_mats, new_ids):
+                product_id_map[mat] = pid
+            print(f"    ... {min(i + CHUNK, len(to_create))}/{len(to_create)} products created")
 
-    print(f"    {count} new products (of {len(product_id_map)} total)")
+        # Batch fetch template IDs for new products
+        new_prod_ids = [product_id_map[m] for m in to_create_mats if m in product_id_map]
+        if new_prod_ids:
+            tmpl_data = odoo.search_read(
+                "product.product",
+                [["id", "in", new_prod_ids]],
+                ["id", "default_code", "product_tmpl_id"],
+            )
+            for td in tmpl_data:
+                code = td.get("default_code")
+                if code and td.get("product_tmpl_id"):
+                    tmpl_id_map[code] = td["product_tmpl_id"][0]
 
-    # ── Create vendor pricelists (product.supplierinfo) ──────────────────
+    print(f"    {len(to_create)} new products (of {len(product_id_map)} total)")
+
+    # ── Create vendor pricelists (batch) ──────────────────────────────────
     print("\n  Creating vendor pricelists...")
-    count = 0
+    # Check existing
+    existing_si = odoo.search_read(
+        "product.supplierinfo",
+        [["company_id", "=", company_id]],
+        ["product_tmpl_id", "partner_id"],
+    )
+    existing_si_keys = {(r["product_tmpl_id"][0] if r.get("product_tmpl_id") else 0,
+                         r["partner_id"][0] if r.get("partner_id") else 0) for r in existing_si}
+
+    si_batch = []
     for mat in top_materials:
         tmpl_id = tmpl_id_map.get(mat)
         if not tmpl_id:
@@ -476,21 +507,20 @@ def main():
             vendor_odoo_id = vendor_id_map.get(info["vendor"])
             if not vendor_odoo_id:
                 continue
-            existing = odoo.search("product.supplierinfo", [
-                ["product_tmpl_id", "=", tmpl_id],
-                ["partner_id", "=", vendor_odoo_id],
-            ], limit=1)
-            if not existing:
-                odoo.create("product.supplierinfo", {
-                    "partner_id": vendor_odoo_id,
-                    "product_tmpl_id": tmpl_id,
-                    "min_qty": info["min_qty"],
-                    "price": info["price"],
-                    "delay": int(info["lead_days"]) if info["lead_days"] else 7,
-                    "company_id": company_id,
-                })
-                count += 1
-    print(f"    {count} vendor pricelists")
+            if (tmpl_id, vendor_odoo_id) in existing_si_keys:
+                continue
+            si_batch.append({
+                "partner_id": vendor_odoo_id,
+                "product_tmpl_id": tmpl_id,
+                "min_qty": info["min_qty"],
+                "price": info["price"],
+                "delay": int(info["lead_days"]) if info["lead_days"] else 7,
+                "company_id": company_id,
+            })
+    if si_batch:
+        for i in range(0, len(si_batch), 100):
+            odoo.create_batch("product.supplierinfo", si_batch[i:i + 100])
+    print(f"    {len(si_batch)} vendor pricelists")
 
     # ── Create BOMs ──────────────────────────────────────────────────────
     print("\n  Creating BOMs...")
@@ -556,9 +586,16 @@ def main():
 
     print(f"    {bom_count} BOMs created")
 
-    # ── Create reordering rules ──────────────────────────────────────────
+    # ── Create reordering rules (batch) ──────────────────────────────────
     print("\n  Creating reordering rules...")
-    rop_count = 0
+    existing_ops = odoo.search_read(
+        "stock.warehouse.orderpoint",
+        [["warehouse_id", "=", wh_id]],
+        ["product_id"],
+    )
+    existing_op_products = {r["product_id"][0] for r in existing_ops if r.get("product_id")}
+
+    op_batch = []
     for mat in top_materials:
         marc_r = marc_map.get(mat, {})
         eisbe = safe_float(marc_r.get("EISBE", "0"))
@@ -566,32 +603,28 @@ def main():
         mabst = safe_float(marc_r.get("MABST", "0"))
 
         prod_id = product_id_map.get(mat)
-        if not prod_id:
+        if not prod_id or prod_id in existing_op_products:
             continue
 
         min_qty = minbe if minbe > 0 else eisbe
         max_qty = mabst if mabst > 0 else min_qty * 3
 
         if min_qty <= 0:
-            continue  # Skip if no safety stock defined
+            continue
 
-        existing = odoo.search("stock.warehouse.orderpoint", [
-            ["product_id", "=", prod_id],
-            ["warehouse_id", "=", wh_id],
-        ], limit=1)
+        op_batch.append({
+            "product_id": prod_id,
+            "warehouse_id": wh_id,
+            "product_min_qty": min_qty,
+            "product_max_qty": max_qty,
+            "qty_multiple": 1.0,
+            "company_id": company_id,
+        })
 
-        if not existing:
-            odoo.create("stock.warehouse.orderpoint", {
-                "product_id": prod_id,
-                "warehouse_id": wh_id,
-                "product_min_qty": min_qty,
-                "product_max_qty": max_qty,
-                "qty_multiple": 1.0,
-                "company_id": company_id,
-            })
-            rop_count += 1
-
-    print(f"    {rop_count} reordering rules")
+    if op_batch:
+        for i in range(0, len(op_batch), 100):
+            odoo.create_batch("stock.warehouse.orderpoint", op_batch[i:i + 100])
+    print(f"    {len(op_batch)} reordering rules")
 
     # ── Create work centers (CRHD) ──────────────────────────────────────
     print("\n  Creating work centers...")
@@ -877,7 +910,7 @@ def main():
     print(f"    Pricelists:   {count}")
     print(f"    BOMs:         {bom_count}")
     print(f"    Work centers: {wc_count}")
-    print(f"    Reorder rules:{rop_count}")
+    print(f"    Reorder rules:{len(op_batch) if 'op_batch' in dir() else 0}")
     print(f"")
     print(f"  Transaction Data:")
     print(f"    Purchase orders: {po_count} ({po_line_count} lines)")

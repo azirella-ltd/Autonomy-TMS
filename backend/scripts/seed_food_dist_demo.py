@@ -339,6 +339,8 @@ def create_or_get_tenant(db: Session, admin_user: User) -> Tenant:
         or_(
             Tenant.name == FOOD_DIST_CUSTOMER_NAME,
             Tenant.name.ilike("Food Dist%"),
+            Tenant.name.ilike("%Food%Dist%"),
+            Tenant.slug == "food-dist",
         )
     ).first()
     if existing:
@@ -471,7 +473,7 @@ def main():
 
         # Step 2: Create tenant admin user first (needed for tenant creation)
         print("\n2. Creating tenant admin user...")
-        admin_config = next(u for u in DEMO_USERS if u["is_tenant_admin"])
+        admin_config = next(u for u in FIXED_USERS if u["is_tenant_admin"])
         admin_user = create_or_get_user(
             db=db,
             username=admin_config["username"],
