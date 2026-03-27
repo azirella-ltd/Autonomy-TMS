@@ -40,10 +40,11 @@ from app.models.sc_entities import (
     TradingPartner, Geography,
     SourcingRules, ProductBom, ProductionProcess,
     OutboundOrder, OutboundOrderLine, InboundOrder, InboundOrderLine,
+    InboundOrderLineSchedule,
     Shipment,
 )
 from app.models.production_order import ProductionOrder, ProductionOrderComponent
-from app.models.quality_order import QualityOrder
+from app.models.quality_order import QualityOrder, QualityOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.maintenance_order import MaintenanceOrder
 from app.models.supplier import VendorProduct, VendorLeadTime
@@ -182,10 +183,10 @@ STEP_ENTITY_TYPES = {
 # Known standard SAP table names (for Z-table detection)
 KNOWN_SAP_TABLES = {
     "MARA", "MARC", "MARD", "MARM", "MVKE",
-    "T001W", "T001", "ADRC",
+    "T001W", "T001", "T001L", "ADRC",
     "LFA1", "KNA1", "KNVV",
     "STPO", "STKO",
-    "EKKO", "EKPO", "EKET",
+    "EKKO", "EKPO", "EKET", "EBAN",
     "VBAK", "VBAP",
     "LIKP", "LIPS",
     "AFKO", "AFPO",
@@ -193,6 +194,9 @@ KNOWN_SAP_TABLES = {
     "EINA", "EINE", "EORD",
     "PLKO", "PLPO",
     "CRHD", "KAKO",
+    "KONV", "MCH1", "MCHA",
+    "QALS", "QASE", "QMEL",
+    "TJ02T",
     "/SAPAPO/LOC", "/SAPAPO/SNPFC", "/SAPAPO/MATLOC",
     "/SAPAPO/TRLANE", "/SAPAPO/PDS", "/SAPAPO/SNPBV",
 }
@@ -253,6 +257,7 @@ class SAPConfigBuilder:
         self._products: Dict[str, Product] = {}
         self._trading_partners: Dict[str, Any] = {}
         self._partner_ids: Dict[str, int] = {}  # business_key → TradingPartner._id (populated after upsert)
+        self._status_text_map: Dict[str, str] = {}  # TJ02T: ISTAT → status text (loaded in enrichment pass)
 
     # ------------------------------------------------------------------
     # Public API
@@ -3561,6 +3566,55 @@ class SAPConfigBuilder:
             if pir_count > 0:
                 counts["pir_forecasts"] = pir_count
 
+        # ------------------------------------------------------------------
+        # SAP enrichment pass — additional tables that augment existing entities
+        # ------------------------------------------------------------------
+
+        # Build TJ02T status text lookup (used by other enrichment methods)
+        self._status_text_map = self._build_status_text_map()
+
+        # EBAN → purchase requisitions as DRAFT inbound orders
+        if opts.get("include_requisitions", True):
+            req_count = await self._enrich_with_requisitions()
+            if req_count > 0:
+                counts["purchase_requisitions"] = req_count
+
+        # EKET → PO schedule lines
+        if opts.get("include_po_schedules", True):
+            sched_count = await self._enrich_po_schedules()
+            if sched_count > 0:
+                counts["po_schedule_lines"] = sched_count
+
+        # KNVV → customer sales area enrichment
+        if opts.get("include_customer_enrichment", True):
+            cust_count = await self._enrich_customers()
+            if cust_count > 0:
+                counts["customers_enriched"] = cust_count
+
+        # KONV → pricing condition enrichment on products
+        if opts.get("include_pricing", True):
+            price_count = await self._enrich_pricing()
+            if price_count > 0:
+                counts["products_priced"] = price_count
+
+        # MCH1 + MCHA → batch tracking attributes on products
+        if opts.get("include_batch_tracking", True):
+            batch_count = await self._enrich_batch_tracking()
+            if batch_count > 0:
+                counts["products_batch_enriched"] = batch_count
+
+        # QASE + QMEL → quality inspection results & notifications
+        if opts.get("include_quality_enrichment", True):
+            qual_count = await self._enrich_quality_results()
+            if qual_count > 0:
+                counts["quality_enriched"] = qual_count
+
+        # T001L → storage location enrichment on sites
+        if opts.get("include_storage_locations", True):
+            sloc_count = await self._enrich_storage_locations()
+            if sloc_count > 0:
+                counts["sites_storage_enriched"] = sloc_count
+
         return counts
 
     async def _create_outbound_orders(self, max_records: int = 5000) -> int:
@@ -4524,6 +4578,644 @@ class SAPConfigBuilder:
             return datetime.strptime(val[:8], "%Y%m%d").date()
         except (ValueError, TypeError):
             return None
+
+    # ------------------------------------------------------------------
+    # SAP Enrichment Methods (10 additional tables)
+    # ------------------------------------------------------------------
+
+    def _build_status_text_map(self) -> Dict[str, str]:
+        """Build ISTAT → status text lookup from TJ02T (System Status Texts).
+
+        Used to enrich human-readable status descriptions on orders and
+        production orders. Only loads English (SPRAS='E') or first available
+        language. This is a lookup dict — no DB writes.
+        """
+        tj02t = self._data.get("TJ02T", pd.DataFrame())
+        if tj02t.empty:
+            return {}
+
+        result: Dict[str, str] = {}
+        for _, row in tj02t.iterrows():
+            istat = str(row.get("ISTAT", "")).strip()
+            spras = str(row.get("SPRAS", "")).strip().upper()
+            txt30 = str(row.get("TXT30", "")).strip()
+            txt04 = str(row.get("TXT04", "")).strip()
+            if not istat:
+                continue
+            # Prefer English; skip if we already have an English entry
+            if istat in result and spras != "E":
+                continue
+            text_val = txt30 if txt30 and txt30 != "nan" else txt04
+            if text_val and text_val != "nan":
+                result[istat] = text_val
+
+        logger.info(f"Loaded {len(result)} status texts from TJ02T")
+        return result
+
+    async def _enrich_with_requisitions(self) -> int:
+        """Map EBAN (Purchase Requisitions) to InboundOrder with status=DRAFT.
+
+        Purchase requisitions that are already linked to a PO (EBELN not empty)
+        are skipped — they will already appear via EKKO/EKPO.
+        Released requisitions (FRGKZ='X' or FRGDT populated) map to APPROVED.
+        """
+        eban = self._data.get("EBAN", pd.DataFrame())
+        if eban.empty:
+            return 0
+
+        # Group by BANFN (requisition number) to create one order per req
+        if "BANFN" not in eban.columns:
+            logger.warning("EBAN missing BANFN column — skipping requisitions")
+            return 0
+
+        first_plant_id = self._get_first_plant_site_id()
+        count = 0
+        seen_reqs: Set[str] = set()
+
+        for _, row in eban.iterrows():
+            banfn = str(row.get("BANFN", "")).strip()
+            if not banfn:
+                continue
+
+            # Skip if already linked to a PO
+            ebeln = str(row.get("EBELN", "")).strip()
+            if ebeln and ebeln != "nan":
+                continue
+
+            matnr = str(row.get("MATNR", "")).strip()
+            werks = str(row.get("WERKS", "")).strip()
+            product_id = self._get_product_id(matnr)
+            site_id = self._get_site_id(werks) or first_plant_id
+            if not product_id or not site_id:
+                continue
+
+            qty = float(pd.to_numeric(row.get("MENGE", 0), errors="coerce") or 0)
+            if qty <= 0:
+                continue
+
+            # Determine status from release indicator
+            frgkz = str(row.get("FRGKZ", "")).strip()
+            frgdt = str(row.get("FRGDT", "")).strip()
+            if frgkz == "X" or (frgdt and frgdt != "nan" and frgdt != "00000000"):
+                ib_status = "APPROVED"
+            else:
+                ib_status = "DRAFT"
+
+            req_date = self._parse_sap_date(str(row.get("BADAT", "")).strip())
+            bnfpo = str(row.get("BNFPO", "10")).strip()
+            order_id = f"SAP-REQ-{banfn}"
+
+            # Create header only once per requisition
+            if banfn not in seen_reqs:
+                seen_reqs.add(banfn)
+                ib_order = InboundOrder(
+                    id=order_id,
+                    order_type="PURCHASE",
+                    ship_to_site_id=site_id,
+                    status=ib_status,
+                    order_date=req_date or datetime.utcnow().date(),
+                    total_ordered_qty=0,  # accumulated below
+                    config_id=self._config.id,
+                    source="SAP_IMPORT",
+                    source_event_id=f"EBAN-{banfn}",
+                    source_update_dttm=datetime.utcnow(),
+                )
+                self.db.add(ib_order)
+
+            # Create line item
+            ib_line = InboundOrderLine(
+                order_id=order_id,
+                line_number=int(pd.to_numeric(bnfpo, errors="coerce") or 10),
+                product_id=product_id,
+                to_site_id=site_id,
+                order_type="PURCHASE",
+                quantity_submitted=qty,
+                status=ib_status,
+                config_id=self._config.id,
+                tenant_id=self.tenant_id,
+            )
+            self.db.add(ib_line)
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} purchase requisition line items from EBAN ({len(seen_reqs)} orders)")
+        return count
+
+    async def _enrich_po_schedules(self) -> int:
+        """Map EKET (PO Schedule Lines) to InboundOrderLineSchedule records.
+
+        Each EKET row is a delivery schedule line for an existing PO line item
+        (EKPO). We look up the corresponding InboundOrderLine by order_id and
+        line_number, then create schedule records.
+        """
+        eket = self._data.get("EKET", pd.DataFrame())
+        if eket.empty:
+            return 0
+
+        required_cols = {"EBELN", "EBELP", "EINDT", "MENGE"}
+        if not required_cols.issubset(set(eket.columns)):
+            missing = required_cols - set(eket.columns)
+            logger.warning(f"EKET missing columns {missing} — skipping PO schedules")
+            return 0
+
+        count = 0
+        for _, row in eket.iterrows():
+            ebeln = str(row.get("EBELN", "")).strip()
+            ebelp = str(row.get("EBELP", "")).strip()
+            if not ebeln or not ebelp:
+                continue
+
+            order_id = f"SAP-PO-{ebeln}"
+            line_number = int(pd.to_numeric(ebelp, errors="coerce") or 0)
+            if line_number == 0:
+                continue
+
+            eindt = self._parse_sap_date(str(row.get("EINDT", "")).strip())
+            if not eindt:
+                continue
+
+            sched_qty = float(pd.to_numeric(row.get("MENGE", 0), errors="coerce") or 0)
+            if sched_qty <= 0:
+                continue
+
+            recv_qty = float(pd.to_numeric(row.get("WEMNG", 0), errors="coerce") or 0)
+
+            # Determine schedule status
+            if recv_qty >= sched_qty:
+                sched_status = "RECEIVED"
+            elif recv_qty > 0:
+                sched_status = "IN_TRANSIT"
+            else:
+                sched_status = "SCHEDULED"
+
+            # Find the matching InboundOrderLine
+            result = await self.db.execute(
+                select(InboundOrderLine.id).where(
+                    InboundOrderLine.order_id == order_id,
+                    InboundOrderLine.line_number == line_number,
+                )
+            )
+            line_id = result.scalar()
+            if not line_id:
+                continue
+
+            # Determine schedule_number for this line
+            existing_count_result = await self.db.execute(
+                select(InboundOrderLineSchedule.id).where(
+                    InboundOrderLineSchedule.order_line_id == line_id,
+                )
+            )
+            existing = len(existing_count_result.all())
+
+            schedule = InboundOrderLineSchedule(
+                order_line_id=line_id,
+                schedule_number=existing + 1,
+                scheduled_quantity=sched_qty,
+                received_quantity=recv_qty,
+                scheduled_date=eindt,
+                status=sched_status,
+                source="SAP_IMPORT",
+            )
+            self.db.add(schedule)
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} PO schedule lines from EKET")
+        return count
+
+    async def _enrich_customers(self) -> int:
+        """Enrich TradingPartner records with KNVV (Customer Sales Area Data).
+
+        Updates existing customer trading partners with sales org, distribution
+        channel, currency, and incoterms from KNVV.
+        """
+        knvv = self._data.get("KNVV", pd.DataFrame())
+        if knvv.empty:
+            return 0
+
+        if "KUNNR" not in knvv.columns:
+            logger.warning("KNVV missing KUNNR column — skipping customer enrichment")
+            return 0
+
+        count = 0
+        for _, row in knvv.iterrows():
+            kunnr = str(row.get("KUNNR", "")).strip().lstrip("0") or "0"
+            if not kunnr:
+                continue
+
+            # Look up existing trading partner by business key patterns
+            tp_key = None
+            for key in [f"CUST-{kunnr}", f"SAP-CUST-{kunnr}", kunnr]:
+                if key in self._trading_partners:
+                    tp_key = key
+                    break
+
+            if not tp_key:
+                continue
+
+            # Build enrichment data
+            vkorg = str(row.get("VKORG", "")).strip()
+            vtweg = str(row.get("VTWEG", "")).strip()
+            spart = str(row.get("SPART", "")).strip()
+            waerk = str(row.get("WAERK", "")).strip()
+            inco1 = str(row.get("INCO1", "")).strip()
+
+            sales_area_info = {}
+            if vkorg and vkorg != "nan":
+                sales_area_info["sales_org"] = vkorg
+            if vtweg and vtweg != "nan":
+                sales_area_info["distribution_channel"] = vtweg
+            if spart and spart != "nan":
+                sales_area_info["division"] = spart
+            if inco1 and inco1 != "nan":
+                sales_area_info["incoterms"] = inco1
+
+            if not sales_area_info:
+                continue
+
+            # Update via DB — find the partner and enrich external_identifiers
+            partner_id = self._partner_ids.get(tp_key)
+            if not partner_id:
+                continue
+
+            result = await self.db.execute(
+                select(TradingPartner).where(TradingPartner._id == partner_id)
+            )
+            tp = result.scalar()
+            if not tp:
+                continue
+
+            ext_ids = tp.external_identifiers or {}
+            ext_ids["sap_sales_area"] = sales_area_info
+            if waerk and waerk != "nan":
+                ext_ids["currency"] = waerk
+            tp.external_identifiers = ext_ids
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} customer trading partners from KNVV")
+        return count
+
+    async def _enrich_pricing(self) -> int:
+        """Enrich Product.unit_cost and unit_price from KONV (Pricing Conditions).
+
+        Uses condition types:
+        - PR00 (net price) → unit_price
+        - PBXX (gross price) → unit_price if PR00 missing
+        - PB00 (purchase price) → unit_cost
+
+        Only updates products that currently lack pricing data.
+        """
+        konv = self._data.get("KONV", pd.DataFrame())
+        if konv.empty:
+            return 0
+
+        if "KSCHL" not in konv.columns or "KBETR" not in konv.columns:
+            logger.warning("KONV missing KSCHL or KBETR columns — skipping pricing")
+            return 0
+
+        # Build per-condition-doc pricing: {kposn → {condition_type → rate}}
+        # KONV is linked to sales/purchase docs via KNUMV; KPOSN is the item number.
+        # We need to join with VBAP or EKPO to map to MATNR. For now, use
+        # KPOSN as a hint for line-level pricing and build a material-level aggregate.
+        price_map: Dict[str, Dict[str, float]] = {}  # condition_type → {rate}
+
+        # Try to resolve KONV to products via doc number cross-reference
+        # KONV.KNUMV links to VBAK.KNUMV (sales) or EKKO.KNUMV (purchase)
+        vbak = self._data.get("VBAK", pd.DataFrame())
+        vbap = self._data.get("VBAP", pd.DataFrame())
+        ekko = self._data.get("EKKO", pd.DataFrame())
+        ekpo = self._data.get("EKPO", pd.DataFrame())
+
+        # Build KNUMV → list of MATNRs from sales orders
+        knumv_to_matnrs: Dict[str, List[str]] = {}
+        if not vbak.empty and "KNUMV" in vbak.columns and not vbap.empty:
+            for _, vb_row in vbak.iterrows():
+                knumv = str(vb_row.get("KNUMV", "")).strip()
+                vbeln = str(vb_row.get("VBELN", "")).strip()
+                if not knumv or not vbeln:
+                    continue
+                items = vbap[vbap["VBELN"].astype(str).str.strip() == vbeln] if "VBELN" in vbap.columns else pd.DataFrame()
+                matnrs = []
+                for _, it in items.iterrows():
+                    m = str(it.get("MATNR", "")).strip()
+                    if m and m != "nan":
+                        matnrs.append(m)
+                if matnrs:
+                    knumv_to_matnrs[knumv] = matnrs
+
+        # Build KNUMV → list of MATNRs from purchase orders
+        if not ekko.empty and "KNUMV" in ekko.columns and not ekpo.empty:
+            for _, ek_row in ekko.iterrows():
+                knumv = str(ek_row.get("KNUMV", "")).strip()
+                ebeln = str(ek_row.get("EBELN", "")).strip()
+                if not knumv or not ebeln:
+                    continue
+                items = ekpo[ekpo["EBELN"].astype(str).str.strip() == ebeln] if "EBELN" in ekpo.columns else pd.DataFrame()
+                matnrs = []
+                for _, it in items.iterrows():
+                    m = str(it.get("MATNR", "")).strip()
+                    if m and m != "nan":
+                        matnrs.append(m)
+                if matnrs:
+                    knumv_to_matnrs.setdefault(knumv, []).extend(matnrs)
+
+        # Aggregate best pricing per material
+        # {matnr → {"unit_price": float, "unit_cost": float}}
+        material_pricing: Dict[str, Dict[str, float]] = {}
+
+        for _, row in konv.iterrows():
+            kschl = str(row.get("KSCHL", "")).strip()
+            kbetr = float(pd.to_numeric(row.get("KBETR", 0), errors="coerce") or 0)
+            knumv = str(row.get("KNUMV", "")).strip()
+            if not kschl or kbetr <= 0 or not knumv:
+                continue
+
+            matnrs = knumv_to_matnrs.get(knumv, [])
+            if not matnrs:
+                continue
+
+            # SAP stores KBETR in internal format (often ×10 for certain condition types)
+            # PR00/PBXX are typically per-unit prices
+            for matnr in matnrs:
+                mp = material_pricing.setdefault(matnr, {})
+                if kschl in ("PR00", "VKP0"):
+                    mp["unit_price"] = kbetr
+                elif kschl in ("PBXX",) and "unit_price" not in mp:
+                    mp["unit_price"] = kbetr
+                elif kschl in ("PB00", "PBXX") and "unit_cost" not in mp:
+                    mp["unit_cost"] = kbetr
+
+        # Apply to products
+        count = 0
+        for matnr, pricing in material_pricing.items():
+            product_id = self._get_product_id(matnr)
+            if not product_id:
+                continue
+
+            product = self._products.get(matnr)
+            if not product:
+                # Try stripped key
+                stripped = matnr.lstrip("0") or "0"
+                product = self._products.get(stripped)
+            if not product:
+                continue
+
+            updated = False
+            if "unit_price" in pricing and not product.unit_price:
+                product.unit_price = pricing["unit_price"]
+                updated = True
+            if "unit_cost" in pricing and not product.unit_cost:
+                product.unit_cost = pricing["unit_cost"]
+                updated = True
+            if updated:
+                count += 1
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} products with pricing from KONV")
+        return count
+
+    async def _enrich_batch_tracking(self) -> int:
+        """Enrich products with batch management info from MCH1 + MCHA.
+
+        MCH1 (Batch Master Header): MATNR, CHARG, HSDAT (production date), VFDAT (expiry)
+        MCHA (Batch Attributes): MATNR, CHARG, WERKS, LICHA (vendor batch)
+
+        Sets batch_managed=true in product.external_identifiers and adds
+        sample batch metadata (earliest/latest expiry) for planning context.
+        """
+        mch1 = self._data.get("MCH1", pd.DataFrame())
+        mcha = self._data.get("MCHA", pd.DataFrame())
+        if mch1.empty and mcha.empty:
+            return 0
+
+        # Collect batch-managed materials from MCH1
+        batch_materials: Dict[str, Dict[str, Any]] = {}  # matnr → batch info
+        if not mch1.empty and "MATNR" in mch1.columns:
+            for _, row in mch1.iterrows():
+                matnr = str(row.get("MATNR", "")).strip()
+                if not matnr or matnr == "nan":
+                    continue
+
+                info = batch_materials.setdefault(matnr, {
+                    "batch_managed": True,
+                    "batch_count": 0,
+                    "has_expiry": False,
+                })
+                info["batch_count"] += 1
+
+                vfdat = self._parse_sap_date(str(row.get("VFDAT", "")).strip())
+                if vfdat:
+                    info["has_expiry"] = True
+                    if "earliest_expiry" not in info or vfdat < info["earliest_expiry"]:
+                        info["earliest_expiry"] = vfdat.isoformat()
+                    if "latest_expiry" not in info or vfdat > info["latest_expiry"]:
+                        info["latest_expiry"] = vfdat.isoformat()
+
+        # Also mark materials from MCHA if MCH1 didn't cover them
+        if not mcha.empty and "MATNR" in mcha.columns:
+            for _, row in mcha.iterrows():
+                matnr = str(row.get("MATNR", "")).strip()
+                if not matnr or matnr == "nan":
+                    continue
+                if matnr not in batch_materials:
+                    batch_materials[matnr] = {
+                        "batch_managed": True,
+                        "batch_count": 1,
+                    }
+
+        # Apply to products
+        count = 0
+        for matnr, batch_info in batch_materials.items():
+            product_id = self._get_product_id(matnr)
+            if not product_id:
+                continue
+
+            product = self._products.get(matnr)
+            if not product:
+                stripped = matnr.lstrip("0") or "0"
+                product = self._products.get(stripped)
+            if not product:
+                continue
+
+            ext_ids = product.external_identifiers or {}
+            ext_ids["batch_managed"] = True
+            ext_ids["batch_count"] = batch_info.get("batch_count", 0)
+            if batch_info.get("has_expiry"):
+                ext_ids["has_shelf_life"] = True
+                ext_ids["earliest_expiry"] = batch_info.get("earliest_expiry")
+                ext_ids["latest_expiry"] = batch_info.get("latest_expiry")
+            product.external_identifiers = ext_ids
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} products with batch tracking from MCH1/MCHA")
+        return count
+
+    async def _enrich_quality_results(self) -> int:
+        """Enrich quality orders from QASE (Inspection Results) + QMEL (Quality Notifications).
+
+        QASE: Adds QualityOrderLineItem records to existing QualityOrders (from QALS).
+        QMEL: Creates new QualityOrder records for quality notifications (separate from
+        inspection lots in QALS).
+        """
+        total = 0
+
+        # --- QASE: inspection results → quality_order_line_item ---
+        qase = self._data.get("QASE", pd.DataFrame())
+        if not qase.empty and "PRUEFLOS" in qase.columns:
+            line_count = 0
+            for _, row in qase.iterrows():
+                prueflos = str(row.get("PRUEFLOS", "")).strip()
+                if not prueflos:
+                    continue
+
+                lot_clean = prueflos.lstrip("0") or "0"
+                qo_number = f"SAP-QI-{lot_clean}"
+
+                # Find the parent QualityOrder
+                result = await self.db.execute(
+                    select(QualityOrder.id).where(
+                        QualityOrder.quality_order_number == qo_number,
+                    )
+                )
+                qo_id = result.scalar()
+                if not qo_id:
+                    continue
+
+                vession = str(row.get("VESSION", "")).strip()
+                mbession = str(row.get("MBESSION", "")).strip()
+                eression = str(row.get("ERESSION", "")).strip()
+
+                line_num = int(pd.to_numeric(vession, errors="coerce") or 1)
+                measured = float(pd.to_numeric(eression, errors="coerce")) if eression and eression != "nan" else None
+
+                char_name = f"MIC-{mbession}" if mbession and mbession != "nan" else f"Step-{vession}"
+
+                qo_line = QualityOrderLineItem(
+                    quality_order_id=qo_id,
+                    line_number=line_num,
+                    characteristic_name=char_name,
+                    characteristic_type="QUANTITATIVE" if measured is not None else "QUALITATIVE",
+                    measured_value=measured,
+                )
+                self.db.add(qo_line)
+                line_count += 1
+
+            await self.db.flush()
+            logger.info(f"Created {line_count} quality inspection result lines from QASE")
+            total += line_count
+
+        # --- QMEL: quality notifications → new quality_order records ---
+        qmel = self._data.get("QMEL", pd.DataFrame())
+        if not qmel.empty and "QMNUM" in qmel.columns:
+            notif_count = 0
+            for _, row in qmel.iterrows():
+                qmnum = str(row.get("QMNUM", "")).strip()
+                if not qmnum:
+                    continue
+
+                matnr = str(row.get("MATNR", "")).strip()
+                werks = str(row.get("WERKS", "")).strip()
+                product_id = self._get_product_id(matnr)
+                site_id = self._get_site_id(werks)
+                if not product_id or not site_id:
+                    continue
+
+                qmart = str(row.get("QMART", "")).strip()
+                # SAP notification types: Q1=customer complaint, Q2=vendor complaint,
+                # Q3=internal, M1=plant maintenance
+                type_map = {
+                    "Q1": ("RETURNS", "CUSTOMER_COMPLAINT"),
+                    "Q2": ("INCOMING", "GOODS_RECEIPT"),
+                    "Q3": ("IN_PROCESS", "PRODUCTION_ORDER"),
+                    "M1": ("SAMPLING", "PREVENTIVE_SAMPLE"),
+                }
+                insp_type, origin_type = type_map.get(qmart, ("INCOMING", "GOODS_RECEIPT"))
+
+                qm_date = self._parse_sap_date(str(row.get("QMDAT", "")).strip())
+                qmtxt = str(row.get("QMTXT", "")).strip()
+
+                qm_clean = qmnum.lstrip("0") or "0"
+                qo = QualityOrder(
+                    quality_order_number=f"SAP-QN-{qm_clean}",
+                    site_id=site_id,
+                    config_id=self._config.id,
+                    tenant_id=self.tenant_id,
+                    inspection_type=insp_type,
+                    status="CREATED",
+                    origin_type=origin_type,
+                    product_id=product_id,
+                    inspection_quantity=0,
+                    order_date=qm_date or datetime.utcnow().date(),
+                    notes=qmtxt if qmtxt and qmtxt != "nan" else None,
+                    source="SAP_IMPORT",
+                    source_event_id=f"QMEL-{qmnum}",
+                    source_update_dttm=datetime.utcnow(),
+                )
+                self.db.add(qo)
+                notif_count += 1
+
+            await self.db.flush()
+            logger.info(f"Created {notif_count} quality notification orders from QMEL")
+            total += notif_count
+
+        return total
+
+    async def _enrich_storage_locations(self) -> int:
+        """Enrich Site records with storage location details from T001L.
+
+        T001L: WERKS (plant), LGORT (storage location), LGOBE (description)
+
+        Stores storage locations in site.attributes["storage_locations"] as a
+        list of {code, description} dicts.
+        """
+        t001l = self._data.get("T001L", pd.DataFrame())
+        if t001l.empty:
+            return 0
+
+        if "WERKS" not in t001l.columns or "LGORT" not in t001l.columns:
+            logger.warning("T001L missing WERKS or LGORT columns — skipping storage locations")
+            return 0
+
+        # Group storage locations by plant
+        plant_slocs: Dict[str, List[Dict[str, str]]] = {}
+        for _, row in t001l.iterrows():
+            werks = str(row.get("WERKS", "")).strip()
+            lgort = str(row.get("LGORT", "")).strip()
+            lgobe = str(row.get("LGOBE", "")).strip()
+            if not werks or not lgort:
+                continue
+
+            sloc_entry = {"code": lgort}
+            if lgobe and lgobe != "nan":
+                sloc_entry["description"] = lgobe
+            plant_slocs.setdefault(werks, []).append(sloc_entry)
+
+        # Apply to sites
+        count = 0
+        for werks, slocs in plant_slocs.items():
+            site_id = self._get_site_id(werks)
+            if not site_id:
+                continue
+
+            # Find the site object
+            site = None
+            for s in self._sites.values():
+                if s.id == site_id:
+                    site = s
+                    break
+            if not site:
+                continue
+
+            attrs = site.attributes or {}
+            attrs["storage_locations"] = slocs
+            site.attributes = attrs
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Enriched {count} sites with storage locations from T001L")
+        return count
 
     def _detect_transactional_anomalies(self) -> List[Dict[str, Any]]:
         """Detect anomalies in transactional data."""
