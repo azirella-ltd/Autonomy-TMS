@@ -486,7 +486,7 @@ const AppContent = () => {
             />
             <Route
               path="/admin/sap-data"
-              element={<SAPDataManagement />}
+              element={<Navigate to="/admin/erp-data" replace />}
             />
             <Route
               path="/admin/erp-data"
@@ -1362,7 +1362,7 @@ const AppContent = () => {
             />
 
             <Route path="/" element={<LandingRedirect />} />
-            <Route path="*" element={<Navigate to="/scenarios" replace />} />
+            <Route path="*" element={<Navigate to="/executive-dashboard" replace />} />
           </Route>
         </Route>
       </Routes>

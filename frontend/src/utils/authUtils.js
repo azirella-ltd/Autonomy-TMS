@@ -81,21 +81,27 @@ export const isTenantAdmin = (user) => {
 };
 
 export const getDefaultLandingPath = (user) => {
-  // Check UI mode preference — Decision Stream is the default for all users
-  const uiMode = typeof localStorage !== 'undefined'
-    ? localStorage.getItem('ui:mode') || 'stream'
-    : 'stream';
-
   if (isSystemAdmin(user)) {
     // System admins only manage tenants and tenant admins — no operational pages
     return "/admin/tenants";
   }
 
-  // ALL users land on Decision Stream — the primary interface for the
-  // agentic operating model. The tenant admin sees it too — they need
-  // to see what agents are doing. Admin capabilities are accessed via
-  // the Administration tab in the hierarchical navigation.
-  return "/";
+  // Route by decision level for role-specific landing pages
+  const level = user?.decision_level;
+  if (level === 'SOP_DIRECTOR') {
+    return "/sop-worklist";
+  }
+  if (level === 'MPS_MANAGER') {
+    return "/insights/actions";
+  }
+  if (level === 'ATP_ANALYST' || level === 'PO_ANALYST' ||
+      level === 'REBALANCING_ANALYST' || level === 'ORDER_TRACKING_ANALYST') {
+    return "/insights/actions";
+  }
+
+  // Tenant admins, executives, DEMO_ALL, and all other users
+  // land on Executive Dashboard — the operational overview
+  return "/executive-dashboard";
 };
 
 const parseRedirectTarget = (target) => {
