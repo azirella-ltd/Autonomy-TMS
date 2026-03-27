@@ -128,8 +128,19 @@ async def get_field_mapping(erp_type: str, body: FieldMappingRequest):
             "entity": body.model_or_entity,
             "mappings": [r.to_dict() for r in results],
         }
+    elif erp_type == "sap_b1":
+        from app.integrations.b1.field_mapping import B1_FIELD_MAPPINGS
+        entity_map = B1_FIELD_MAPPINGS.get(body.model_or_entity, {})
+        return {
+            "erp_type": "sap_b1",
+            "entity": body.model_or_entity,
+            "mappings": [
+                {"erp_field": k, "aws_entity": v[0], "aws_field": v[1], "confidence": 1.0}
+                for k, v in entity_map.items()
+            ],
+        }
     else:
-        raise HTTPException(400, f"Unsupported ERP type: {erp_type}. Supported: odoo, d365, sap")
+        raise HTTPException(400, f"Unsupported ERP type: {erp_type}. Supported: odoo, d365, sap, sap_b1")
 
 
 @router.get("/field-mapping/{erp_type}/summary")
@@ -204,6 +215,17 @@ async def list_supported_erps():
                 "sc_entities": 21,
             },
             {
+                "type": "sap_b1",
+                "name": "SAP Business One",
+                "connection_methods": ["service_layer", "csv"],
+                "auth_types": ["session"],
+                "has_sandbox": True,
+                "sandbox_name": "OEC Computers (partner demo)",
+                "sandbox_cost": "Free (14-day cloud trial via Cloudiax)",
+                "status": "production",
+                "sc_entities": 37,
+            },
+            {
                 "type": "netsuite",
                 "name": "Oracle NetSuite",
                 "connection_methods": ["rest_api", "suiteql", "csv"],
@@ -223,6 +245,29 @@ async def list_supported_erps():
                 "sc_entities": 0,
             },
         ]
+    }
+
+
+# ── B1-specific helpers ──────────────────────────────────────────────────────
+
+@router.get("/b1/entities")
+async def list_b1_entities():
+    """List all SAP Business One entities mapped to AWS SC entities."""
+    from app.models.b1_staging import B1_ENTITY_REGISTRY
+    from app.integrations.b1.field_mapping import B1_FIELD_MAPPINGS
+    return {
+        "entities": [
+            {
+                "entity": entity,
+                "category": meta["category"],
+                "db_table": meta.get("db_table", entity),
+                "keys": meta["keys"],
+                "description": meta["description"],
+                "mapped_fields": len(B1_FIELD_MAPPINGS.get(entity, {})),
+            }
+            for entity, meta in B1_ENTITY_REGISTRY.items()
+        ],
+        "total_entities": len(B1_ENTITY_REGISTRY),
     }
 
 

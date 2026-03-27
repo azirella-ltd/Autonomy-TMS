@@ -43,6 +43,14 @@ const ERP_CONFIGS = {
     status: 'production',
     methods: ['OData v4', 'DMF', 'CSV'],
   },
+  sap_b1: {
+    name: 'SAP Business One',
+    color: '#0070C0',
+    icon: '🔶',
+    sandbox: 'OEC Computers demo — Free (14-day via Cloudiax)',
+    status: 'production',
+    methods: ['Service Layer (OData v4)', 'CSV'],
+  },
   netsuite: {
     name: 'Oracle NetSuite',
     color: '#1B3A5C',
@@ -74,6 +82,7 @@ export default function ERPDataManagement() {
   const [supportedErps, setSupportedErps] = useState([]);
   const [odooModels, setOdooModels] = useState(null);
   const [d365Entities, setD365Entities] = useState(null);
+  const [b1Entities, setB1Entities] = useState(null);
   const [odooPlan, setOdooPlan] = useState(null);
   const [d365Plan, setD365Plan] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -81,16 +90,18 @@ export default function ERPDataManagement() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [erps, odooM, d365E, odooP, d365P] = await Promise.all([
+        const [erps, odooM, d365E, b1E, odooP, d365P] = await Promise.all([
           api.get('/erp/supported-erps').catch(() => ({ data: { erps: [] } })),
           api.get('/erp/odoo/models').catch(() => ({ data: null })),
           api.get('/erp/d365/entities').catch(() => ({ data: null })),
+          api.get('/erp/b1/entities').catch(() => ({ data: null })),
           api.get('/erp/odoo/extraction-plan').catch(() => ({ data: null })),
           api.get('/erp/d365/extraction-plan').catch(() => ({ data: null })),
         ]);
         setSupportedErps(erps.data?.erps || []);
         setOdooModels(odooM.data);
         setD365Entities(d365E.data);
+        setB1Entities(b1E.data);
         setOdooPlan(odooP.data);
         setD365Plan(d365P.data);
       } catch (err) {
@@ -115,7 +126,8 @@ export default function ERPDataManagement() {
         <Tab label="Supported ERPs" />
         <Tab label="Odoo Integration" />
         <Tab label="D365 Integration" />
-        <Tab label="SAP Integration" />
+        <Tab label="SAP S/4HANA" />
+        <Tab label="SAP Business One" />
         <Tab label="Field Mapping" />
       </Tabs>
 
@@ -307,8 +319,108 @@ export default function ERPDataManagement() {
             </Button>
           </TabPanel>
 
-          {/* Tab 4: Field Mapping */}
+          {/* Tab 4: SAP Business One */}
           <TabPanel value={tab} index={4}>
+            <Typography variant="h6" gutterBottom>SAP Business One — Service Layer Integration</Typography>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Connects via the B1 Service Layer REST API (OData v4). Supports session-based
+              authentication, automatic pagination, and CSV fallback for offline extraction.
+            </Alert>
+
+            {b1Entities ? (
+              <>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  {b1Entities.total_entities} entities registered across master, transaction, and CDC categories
+                </Typography>
+                <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 500 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Entity</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>DB Table</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Category</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Keys</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Description</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }} align="right">Mapped Fields</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {b1Entities.entities?.map((e) => (
+                        <TableRow key={e.entity} hover>
+                          <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{e.entity}</TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'text.secondary' }}>{e.db_table}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={e.category}
+                              size="small"
+                              color={e.category === 'master' ? 'primary' : e.category === 'transaction' ? 'warning' : 'error'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '0.8rem' }}>{e.keys?.join(', ')}</TableCell>
+                          <TableCell sx={{ fontSize: '0.85rem' }}>{e.description}</TableCell>
+                          <TableCell align="right">
+                            {e.mapped_fields > 0 ? (
+                              <Chip label={e.mapped_fields} size="small" color="success" />
+                            ) : (
+                              <Chip label="0" size="small" variant="outlined" />
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+
+                <Grid container spacing={2} sx={{ mt: 2 }}>
+                  <Grid item xs={12} md={4}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2">Connection</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Service Layer URL: https://&lt;server&gt;:50000/b1s/v2
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Auth: Session-based (POST /Login)
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2">Demo Data</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          OEC Computers (SBODemoUS)
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          ~4,000 items, ~500 BPs, ~30 BOMs
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle2">Sandbox</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Cloudiax: 14-day free trial on HANA
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          Partner: OEC Computers demo DB download
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                </Grid>
+              </>
+            ) : (
+              <Alert severity="warning">B1 entity registry not loaded. Backend may need rebuild.</Alert>
+            )}
+          </TabPanel>
+
+          {/* Tab 5: Field Mapping */}
+          <TabPanel value={tab} index={5}>
             <Typography variant="body2" gutterBottom>
               All ERP integrations use the same 3-tier field mapping strategy:
             </Typography>
