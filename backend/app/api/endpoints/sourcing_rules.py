@@ -12,6 +12,7 @@ from datetime import datetime
 from app.api import deps
 from app.models.user import User
 from app.models.sc_entities import SourcingRules
+from app.services.user_scope_service import resolve_user_scope_sync, resolve_site_names_to_ids_sync
 from pydantic import BaseModel, Field
 
 
@@ -112,6 +113,20 @@ def list_sourcing_rules(
 
     if rule_type:
         query = query.filter(SourcingRules.sourcing_rule_type == rule_type)
+
+    # User scope filtering — restrict to sites/products the user can access
+    allowed_sites, allowed_products = resolve_user_scope_sync(current_user)
+    if allowed_sites is not None and current_user.default_config_id:
+        scope_site_ids = resolve_site_names_to_ids_sync(db, allowed_sites, current_user.default_config_id)
+        if scope_site_ids:
+            query = query.filter(
+                (SourcingRules.from_site_id.in_(scope_site_ids)) |
+                (SourcingRules.to_site_id.in_(scope_site_ids))
+            )
+        else:
+            return []
+    if allowed_products is not None:
+        query = query.filter(SourcingRules.product_id.in_(allowed_products))
 
     # Order by priority (ascending) then by id
     query = query.order_by(
@@ -309,11 +324,27 @@ def get_product_sourcing_rules(
     """
     Get all sourcing rules for a specific product, ordered by priority.
     """
-    rules = db.query(SourcingRules).filter(
+    query = db.query(SourcingRules).filter(
         SourcingRules.product_id == product_id,
         SourcingRules.is_active == "Y",
         SourcingRules.is_deleted != "Y"
-    ).order_by(
+    )
+
+    # User scope filtering — restrict to sites/products the user can access
+    allowed_sites, allowed_products = resolve_user_scope_sync(current_user)
+    if allowed_sites is not None and current_user.default_config_id:
+        scope_site_ids = resolve_site_names_to_ids_sync(db, allowed_sites, current_user.default_config_id)
+        if scope_site_ids:
+            query = query.filter(
+                (SourcingRules.from_site_id.in_(scope_site_ids)) |
+                (SourcingRules.to_site_id.in_(scope_site_ids))
+            )
+        else:
+            return []
+    if allowed_products is not None:
+        query = query.filter(SourcingRules.product_id.in_(allowed_products))
+
+    rules = query.order_by(
         SourcingRules.sourcing_priority,
         SourcingRules.id
     ).all()

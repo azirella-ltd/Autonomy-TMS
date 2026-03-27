@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
+from app.services.user_scope_service import resolve_user_scope_sync, resolve_site_names_to_ids_sync
 from app.models.capacity_plan import (
     CapacityPlan,
     CapacityResource,
@@ -479,6 +480,15 @@ async def list_capacity_resources(
         query = query.filter(CapacityResource.site_id == site_id)
     if resource_type:
         query = query.filter(CapacityResource.resource_type == resource_type)
+
+    # User scope filtering — restrict to sites the user can access
+    allowed_sites, _allowed_products = resolve_user_scope_sync(current_user)
+    if allowed_sites is not None:
+        site_ids = resolve_site_names_to_ids_sync(db, allowed_sites, plan.supply_chain_config_id)
+        if site_ids:
+            query = query.filter(CapacityResource.site_id.in_(site_ids))
+        else:
+            return []
 
     resources = query.options(joinedload(CapacityResource.site)).all()
     return resources

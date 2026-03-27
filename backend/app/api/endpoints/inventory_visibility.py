@@ -17,6 +17,7 @@ from app.models.supply_chain_config import Site, SupplyChainConfig
 from app.models.user import User
 from app.api.deps import get_current_user
 from app.core.permissions import RequirePermission
+from app.services.user_scope_service import resolve_user_scope
 
 router = APIRouter()
 
@@ -142,6 +143,16 @@ async def get_inventory_snapshot(
 
     site_ids = list(sites.keys())
 
+    # User scope filtering — restrict to sites/products the user can access
+    allowed_sites, allowed_products = await resolve_user_scope(db, current_user)
+    if allowed_sites is not None:
+        # Convert site names to IDs within this config
+        allowed_site_ids = {sid for sid, s in sites.items() if s.name in allowed_sites}
+        site_ids = [sid for sid in site_ids if sid in allowed_site_ids]
+        sites = {sid: s for sid, s in sites.items() if sid in allowed_site_ids}
+        if not site_ids:
+            return []
+
     # 2. Get latest inventory date for these sites
     latest_date_q = (
         select(func.max(InvLevel.inventory_date))
@@ -165,6 +176,8 @@ async def get_inventory_snapshot(
         inv_q = inv_q.where(InvLevel.site_id == site_id)
     if product_id is not None:
         inv_q = inv_q.where(InvLevel.product_id == product_id)
+    if allowed_products is not None:
+        inv_q = inv_q.where(InvLevel.product_id.in_(allowed_products))
 
     inv_result = await db.execute(inv_q)
     inv_rows = inv_result.scalars().all()
