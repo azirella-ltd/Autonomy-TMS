@@ -139,7 +139,8 @@ class UserPublic(UserBase):
     updated_at: datetime
     is_superuser: bool = False
     last_login: Optional[datetime] = None
-    
+    tenant_logo: Optional[str] = None
+
     class Config:
         from_attributes = True
         json_encoders = {

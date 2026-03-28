@@ -578,6 +578,10 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
     if pr is not None:
         user_dict["decision_level"] = pr.value if hasattr(pr, "value") else str(pr)
 
+    # Include tenant logo for frontend branding
+    tenant = getattr(current_user, "tenant", None)
+    user_dict["tenant_logo"] = getattr(tenant, "logo", None) if tenant else None
+
     return user_dict
 
 

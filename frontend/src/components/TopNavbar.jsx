@@ -727,6 +727,13 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
               className="h-7 w-auto"
             />
           </Link>
+          {user?.tenant_logo && (
+            <img
+              src={user.tenant_logo}
+              alt=""
+              className="h-7 w-7 rounded object-contain"
+            />
+          )}
 
           {shouldShowContext && (
             <span className="hidden lg:block text-sm text-muted-foreground">
@@ -879,9 +886,17 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
               onClick={() => setMenuOpen(!menuOpen)}
               className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-accent transition-colors"
             >
-              <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
-                {getInitials(user?.name || '')}
-              </div>
+              {user?.tenant_logo ? (
+                <img
+                  src={user.tenant_logo}
+                  alt="Tenant"
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+              ) : (
+                <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                  {getInitials(user?.name || '')}
+                </div>
+              )}
               <div className="hidden sm:block text-left mr-1">
                 <p className="text-sm font-medium text-foreground">{user?.name || user?.full_name || 'User'}</p>
                 <p className="text-xs text-muted-foreground">
