@@ -883,18 +883,11 @@ export const NAVIGATION_CONFIG = [
         description: 'Outside-in planning signals: weather, economics, energy, geopolitical, sentiment, regulatory',
       },
       {
-        label: 'SAP Data Management',
-        path: '/admin/sap-data',
-        icon: DatabaseIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'SAP connections, field mapping, and data ingestion',
-      },
-      {
         label: 'ERP Data Management',
         path: '/admin/erp-data',
         icon: DatabaseIcon,
         requiredCapability: 'manage_tenant_users',
-        description: 'Odoo, D365, and other ERP connections and data extraction',
+        description: 'SAP, Odoo, D365, B1 connections and data ingestion',
       },
       {
         label: 'Stochastic Parameters',

@@ -2331,12 +2331,12 @@ class B1ConfigBuilder:
                 text("""
                     UPDATE trading_partners
                     SET description = CASE
-                        WHEN description IS NULL OR description = '' THEN :group_name
-                        WHEN description NOT LIKE '%' || :group_name || '%'
-                            THEN description || ' [' || :group_name || ']'
+                        WHEN description IS NULL OR description = '' THEN CAST(:group_name AS VARCHAR)
+                        WHEN description NOT LIKE '%' || CAST(:group_name AS VARCHAR) || '%'
+                            THEN description || ' [' || CAST(:group_name AS VARCHAR) || ']'
                         ELSE description
                     END
-                    WHERE id = :tp_id
+                    WHERE id = CAST(:tp_id AS VARCHAR)
                 """),
                 {"tp_id": tp_id, "group_name": group_name},
             )

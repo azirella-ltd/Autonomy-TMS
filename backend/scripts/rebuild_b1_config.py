@@ -143,6 +143,8 @@ def extract_from_csv(csv_dir: str) -> Dict[str, List[Dict]]:
     }
 
     for entity, filenames in entity_map.items():
+        found = False
+        # Try CSV first
         for fn in filenames:
             path = csv_path / fn
             if path.exists():
@@ -150,8 +152,20 @@ def extract_from_csv(csv_dir: str) -> Dict[str, List[Dict]]:
                     rows = list(csv.DictReader(f))
                 print(f"  READ {fn}: {len(rows)} rows")
                 data[entity] = rows
+                found = True
                 break
-        if entity not in data:
+        # Then try JSON (Service Layer format)
+        if not found:
+            json_path = csv_path / f"{entity}.json"
+            if json_path.exists():
+                with open(json_path, encoding="utf-8-sig") as f:
+                    rows = json.load(f)
+                if isinstance(rows, dict):
+                    rows = rows.get("value", [rows])
+                print(f"  READ {entity}.json: {len(rows)} rows")
+                data[entity] = rows
+                found = True
+        if not found:
             print(f"  SKIP {filenames[0]} (not found)")
             data[entity] = []
 
@@ -492,12 +506,17 @@ def _parse_b1_date(val) -> Optional[date]:
     s = str(val).strip()
     if not s or s.lower() in ("", "none", "null", "nan"):
         return None
+    # Try ISO format first (most common from Service Layer JSON)
     for fmt in ("%Y-%m-%d", "%Y%m%d", "%Y-%m-%dT%H:%M:%S", "%m/%d/%Y"):
         try:
-            return datetime.strptime(s[:len(fmt.replace("%", "x"))], fmt).date()
+            return datetime.strptime(s, fmt).date()
         except (ValueError, IndexError):
             continue
-    return None
+    # Fallback: try just the first 10 chars for ISO dates with extra suffix
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except (ValueError, IndexError):
+        return None
 
 
 def _b1_doc_status_to_po_status(doc_status: str) -> str:
@@ -565,12 +584,12 @@ def _build_purchase_orders(
                     (po_number, vendor_id, supplier_site_id, destination_site_id,
                      config_id, tenant_id, company_id, order_type, source,
                      status, order_date, requested_delivery_date,
-                     total_amount, currency, notes)
+                     total_amount, currency, notes, created_at)
                 VALUES
                     (:po_number, :vendor_id, :supplier_site_id, :dest_site_id,
                      :config_id, :tenant_id, :company_id, 'po', 'SAP_B1',
                      :status, :order_date, :delivery_date,
-                     :total_amount, :currency, :notes)
+                     :total_amount, :currency, :notes, NOW())
                 ON CONFLICT (po_number) DO NOTHING
             """),
             {"po_number": po_number, "vendor_id": vendor_tid,

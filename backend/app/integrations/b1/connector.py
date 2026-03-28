@@ -22,6 +22,7 @@ Usage:
 """
 
 import csv
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -276,26 +277,40 @@ class B1Connector:
     # ── CSV Extraction ───────────────────────────────────────────────────
 
     def extract_from_csv(self, entity: str) -> List[Dict]:
-        """Load entity data from a CSV file (offline extraction).
+        """Load entity data from a CSV or JSON file (offline extraction).
 
-        Expects CSV files named after the Service Layer entity:
-            {csv_directory}/{entity}.csv
+        Expects files named after the Service Layer entity:
+            {csv_directory}/{entity}.csv   — CSV with header row
+            {csv_directory}/{entity}.json  — JSON array of objects
+        Also tries DB table name as fallback (e.g., OITM.csv for Items).
         """
         if not self.config.csv_directory:
             return []
 
-        csv_path = Path(self.config.csv_directory) / f"{entity}.csv"
-        if not csv_path.exists():
-            # Try DB table name
-            from app.models.b1_staging import B1_ENTITY_TO_TABLE
-            db_table = B1_ENTITY_TO_TABLE.get(entity, "")
-            csv_path = Path(self.config.csv_directory) / f"{db_table}.csv"
+        from app.models.b1_staging import B1_ENTITY_TO_TABLE
+        db_table = B1_ENTITY_TO_TABLE.get(entity, "")
+        base_dir = Path(self.config.csv_directory)
 
-        if not csv_path.exists():
-            return []
+        # Try JSON first (Service Layer extraction format), then CSV
+        for name in [entity, db_table]:
+            if not name:
+                continue
+            json_path = base_dir / f"{name}.json"
+            if json_path.exists():
+                with open(json_path, encoding="utf-8-sig") as f:
+                    data = json.load(f)
+                rows = data if isinstance(data, list) else data.get("value", [data])
+                logger.info("  JSON %s: %d records", json_path.name, len(rows))
+                return rows
 
-        with open(csv_path, encoding="utf-8-sig") as f:
-            rows = list(csv.DictReader(f))
+        for name in [entity, db_table]:
+            if not name:
+                continue
+            csv_path = base_dir / f"{name}.csv"
+            if csv_path.exists():
+                with open(csv_path, encoding="utf-8-sig") as f:
+                    rows = list(csv.DictReader(f))
+                logger.info("  CSV %s: %d records", csv_path.name, len(rows))
+                return rows
 
-        logger.info("  CSV %s: %d records", csv_path.name, len(rows))
-        return rows
+        return []
