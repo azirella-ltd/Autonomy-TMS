@@ -22,6 +22,8 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
   const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [provisioningStatus, setProvisioningStatus] = useState(null);
+  const [provisioningStep, setProvisioningStep] = useState(null);
   
   const logoutTimer = useRef(null);
   const warningTimer = useRef(null);
@@ -39,6 +41,8 @@ export function AuthProvider({ children }) {
       setUser(null);
       setIsAuthenticated(false);
       setShowTimeoutWarning(false);
+      setProvisioningStatus(null);
+      setProvisioningStep(null);
       setLoading(false);
       localStorage.removeItem('authState');
     }
@@ -172,6 +176,10 @@ export function AuthProvider({ children }) {
         }
         setIsAuthenticated(true);
 
+        // Store provisioning status from login response
+        setProvisioningStatus(result.provisioning_status || null);
+        setProvisioningStep(result.provisioning_step || null);
+
         // Reset timers after successful login
         resetTimers();
         return { success: true, user: nextUser };
@@ -255,6 +263,10 @@ export function AuthProvider({ children }) {
     return isTenantAdminUtil(user);
   }, [user]);
 
+  const dismissProvisioningBanner = useCallback(() => {
+    setProvisioningStatus('dismissed');
+  }, []);
+
   const value = useMemo(() => ({
     isAuthenticated,
     user,
@@ -271,7 +283,11 @@ export function AuthProvider({ children }) {
     showTimeoutWarning,
     timeLeft,
     resetTimers,
-  }), [isAuthenticated, user, loading, error, login, logout, refreshUser, hasRole, hasAnyRole, hasAllRoles, isTenantAdmin, showTimeoutWarning, timeLeft, resetTimers]);
+    // provisioning status
+    provisioningStatus,
+    provisioningStep,
+    dismissProvisioningBanner,
+  }), [isAuthenticated, user, loading, error, login, logout, refreshUser, hasRole, hasAnyRole, hasAllRoles, isTenantAdmin, showTimeoutWarning, timeLeft, resetTimers, provisioningStatus, provisioningStep, dismissProvisioningBanner]);
 
   return (
     <AuthContext.Provider value={value}>

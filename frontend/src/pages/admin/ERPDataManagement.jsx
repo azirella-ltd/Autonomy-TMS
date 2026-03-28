@@ -1,451 +1,262 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { cn } from '../../lib/utils/cn';
 import {
-  Box, Typography, Paper, Grid, Tabs, Tab,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Chip, Button, Alert, CircularProgress, Card, CardContent,
-  Accordion, AccordionSummary, AccordionDetails,
-  LinearProgress, Tooltip, IconButton
-} from '@mui/material';
-import {
-  CloudSync as SyncIcon,
-  Storage as StorageIcon,
-  CheckCircle as CheckIcon,
-  Warning as WarningIcon,
-  ExpandMore as ExpandMoreIcon,
-  PlayArrow as PlayIcon,
-  Download as DownloadIcon,
-  Info as InfoIcon,
-} from '@mui/icons-material';
-import api from '../../services/api';
+  Server, Database, Zap, Users, Activity, ChevronDown, ChevronRight,
+  CheckCircle, Clock, Lock, Play, AlertTriangle, Upload, RefreshCw,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, Button, Alert, AlertDescription, Badge } from '../../components/common';
+import SAPDataManagement from './SAPDataManagement';
 
-const ERP_CONFIGS = {
-  sap: {
-    name: 'SAP S/4HANA / ECC',
-    color: '#0070C0',
-    icon: '🏭',
-    sandbox: 'SAP FAA (IDES) — $1-3/hr compute via cal.sap.com',
-    status: 'production',
-    methods: ['RFC', 'OData', 'CSV', 'HANA DB', 'IDoc'],
-  },
-  odoo: {
-    name: 'Odoo Community / Enterprise',
-    color: '#714B67',
-    icon: '🟣',
-    sandbox: 'Docker self-hosted — Free ($0)',
-    status: 'production',
-    methods: ['JSON-RPC', 'XML-RPC', 'CSV'],
-  },
-  d365: {
-    name: 'Microsoft Dynamics 365 F&O',
-    color: '#0078D4',
-    icon: '🔷',
-    sandbox: 'Contoso demo (30-day trial) — Free ($0)',
-    status: 'production',
-    methods: ['OData v4', 'DMF', 'CSV'],
-  },
-  sap_b1: {
-    name: 'SAP Business One',
-    color: '#0070C0',
-    icon: '🔶',
-    sandbox: 'OEC Computers demo — Free (14-day via Cloudiax)',
-    status: 'production',
-    methods: ['Service Layer (OData v4)', 'CSV'],
-  },
-  netsuite: {
-    name: 'Oracle NetSuite',
-    color: '#1B3A5C',
-    icon: '☁️',
-    sandbox: 'SDN Developer — $3K-$10K/yr',
-    status: 'planned',
-    methods: ['REST', 'SuiteQL', 'CSV'],
-  },
-  epicor: {
-    name: 'Epicor Kinetic',
-    color: '#E4002B',
-    icon: '⚙️',
-    sandbox: 'Partner-only',
-    status: 'planned',
-    methods: ['REST v2', 'OData', 'CSV'],
-  },
+// ---------------------------------------------------------------------------
+// ERP type definitions
+// ---------------------------------------------------------------------------
+
+const ERP_TYPES = [
+  { key: 'sap', label: 'SAP S/4HANA', color: '#0070C0', status: 'production' },
+  { key: 'odoo', label: 'Odoo', color: '#714B67', status: 'production' },
+  { key: 'd365', label: 'Dynamics 365', color: '#0078D4', status: 'production' },
+  { key: 'sap_b1', label: 'SAP Business One', color: '#F0AB00', status: 'production' },
+  { key: 'netsuite', label: 'NetSuite', color: '#1B3A5C', status: 'planned' },
+  { key: 'epicor', label: 'Epicor', color: '#E4002B', status: 'planned' },
+];
+
+const ERP_PIPELINE_STEPS = {
+  odoo: [
+    { key: 'connect', label: 'Connect', description: 'Configure Odoo JSON-RPC connection', icon: Server, detail: 'Set up a connection to your Odoo instance via JSON-RPC or XML-RPC. Provide the server URL, database name, username, and API key.' },
+    { key: 'master_data', label: 'Master Data', description: 'Import products, warehouses, BOMs, and partners', icon: Database, detail: 'Extract res.partner, product.product, stock.warehouse, mrp.bom and other master data models. Creates sites, products, trading partners, and inventory levels.' },
+    { key: 'user_import', label: 'User Import', description: 'Provision SC-relevant users', icon: Users, detail: 'Map Odoo user roles to Autonomy decision levels. Import warehouse managers, procurement officers, and planners.' },
+    { key: 'transaction_data', label: 'Transaction Data', description: 'Import orders, shipments, and operations', icon: Activity, detail: 'Extract sale.order, purchase.order, mrp.production, stock.picking and other transaction models. Builds demand history and supply chain activity.' },
+    { key: 'warm_start', label: 'Warm Start', description: 'Provision AI models and generate plans', icon: Zap, detail: 'Run the 16-step provisioning pipeline: warm start simulation, agent training, supply plan generation, decision seeding, and conformal calibration.' },
+  ],
+  d365: [
+    { key: 'connect', label: 'Connect', description: 'Configure D365 OData connection', icon: Server, detail: 'Set up OAuth2 client credentials for D365 F&O. Provide the Azure AD tenant ID, client ID, client secret, and environment URL.' },
+    { key: 'master_data', label: 'Master Data', description: 'Import items, warehouses, vendors, and BOMs', icon: Database, detail: 'Extract ReleasedProducts, Warehouses, Vendors, BillOfMaterialHeaders, and other master entities via OData v4. Creates the supply chain topology.' },
+    { key: 'user_import', label: 'User Import', description: 'Provision SC-relevant users', icon: Users, detail: 'Map D365 security roles to Autonomy decision levels. Import users from SystemUsers entity filtered by SC-relevant roles.' },
+    { key: 'transaction_data', label: 'Transaction Data', description: 'Import orders, receipts, and production', icon: Activity, detail: 'Extract SalesOrderHeaders, PurchaseOrderHeaders, ProductionOrders, and transfer orders. Builds operational history for agent training.' },
+    { key: 'warm_start', label: 'Warm Start', description: 'Provision AI models and generate plans', icon: Zap, detail: 'Run the 16-step provisioning pipeline: warm start simulation, agent training, supply plan generation, decision seeding, and conformal calibration.' },
+  ],
+  sap_b1: [
+    { key: 'connect', label: 'Connect', description: 'Configure B1 Service Layer connection', icon: Server, detail: 'Set up a connection to SAP Business One via the Service Layer REST API (OData v4). Provide the server URL, company database, username, and password. CSV import also supported.' },
+    { key: 'master_data', label: 'Master Data', description: 'Import items, warehouses, BPs, and BOMs', icon: Database, detail: 'Extract Warehouses, Items, BusinessPartners, ProductTrees, and ItemWarehouseInfo. Creates sites, products, trading partners, BOMs, and inventory levels.' },
+    { key: 'user_import', label: 'User Import', description: 'Provision SC-relevant users', icon: Users, detail: 'Map B1 user authorizations to Autonomy decision levels. Import users with relevant warehouse and purchasing permissions.' },
+    { key: 'transaction_data', label: 'Transaction Data', description: 'Import orders, deliveries, and production', icon: Activity, detail: 'Extract Orders, PurchaseOrders, ProductionOrders, DeliveryNotes, StockTransfers, and 20+ other transaction entities. Builds complete operational history.' },
+    { key: 'warm_start', label: 'Warm Start', description: 'Provision AI models and generate plans', icon: Zap, detail: 'Run the 16-step provisioning pipeline: warm start simulation, agent training, supply plan generation, decision seeding, and conformal calibration.' },
+  ],
 };
 
-function TabPanel({ children, value, index, ...other }) {
+// ---------------------------------------------------------------------------
+// Generic ERP Guided Pipeline
+// ---------------------------------------------------------------------------
+
+function ERPGuidedPipeline({ erpType, erpLabel }) {
+  const steps = ERP_PIPELINE_STEPS[erpType] || [];
+  const [expandedStep, setExpandedStep] = useState('connect');
+
+  // For now, all steps start as "ready" (connect) or "locked" (rest)
+  const getStepStatus = (stepKey, idx) => {
+    if (idx === 0) return 'ready';
+    return 'locked';
+  };
+
+  const statusConfig = {
+    complete: { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50 border-green-200', label: 'Complete' },
+    running: { icon: RefreshCw, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', label: 'Running' },
+    ready: { icon: Play, color: 'text-blue-600', bg: 'bg-white border-blue-300', label: 'Ready' },
+    locked: { icon: Lock, color: 'text-gray-400', bg: 'bg-gray-50 border-gray-200', label: 'Waiting' },
+    error: { icon: AlertTriangle, color: 'text-red-600', bg: 'bg-red-50 border-red-200', label: 'Error' },
+  };
+
   return (
-    <div role="tabpanel" hidden={value !== index} {...other}>
-      {value === index && <Box sx={{ pt: 2 }}>{children}</Box>}
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5 text-blue-600" />
+            {erpLabel} Ingestion Pipeline
+          </CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Follow these steps in order to deploy your {erpLabel} data into the platform.
+            Each step depends on the previous one completing successfully.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {steps.map((step, idx) => {
+              const status = getStepStatus(step.key, idx);
+              const cfg = statusConfig[status];
+              const isExpanded = expandedStep === step.key;
+              const StepIcon = step.icon;
+              const StatusIcon = cfg.icon;
+
+              return (
+                <div key={step.key}>
+                  <div
+                    className={cn(
+                      "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                      cfg.bg,
+                      status !== 'locked' && "hover:shadow-sm",
+                    )}
+                    onClick={() => status !== 'locked' && setExpandedStep(isExpanded ? null : step.key)}
+                  >
+                    <div className={cn(
+                      "flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
+                      status === 'complete' ? "bg-green-100 text-green-700" :
+                      status === 'ready' ? "bg-blue-100 text-blue-700" :
+                      "bg-gray-100 text-gray-400"
+                    )}>
+                      {idx + 1}
+                    </div>
+
+                    <StepIcon className={cn("h-5 w-5", cfg.color)} />
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("font-medium", status === 'locked' ? "text-gray-400" : "text-gray-900")}>
+                          {step.label}
+                        </span>
+                        {status !== 'ready' && (
+                          <Badge variant={status === 'complete' ? 'success' : status === 'locked' ? 'secondary' : 'default'}>
+                            {cfg.label}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className={cn("text-sm", status === 'locked' ? "text-gray-300" : "text-gray-500")}>
+                        {step.description}
+                      </p>
+                    </div>
+
+                    {status !== 'locked' && (
+                      isExpanded
+                        ? <ChevronDown className="h-5 w-5 text-gray-400" />
+                        : <ChevronRight className="h-5 w-5 text-gray-400" />
+                    )}
+                    {status === 'locked' && <Clock className="h-5 w-5 text-gray-300" />}
+                  </div>
+
+                  {isExpanded && status !== 'locked' && (
+                    <div className="ml-11 mt-2 p-4 bg-white border border-gray-200 rounded-lg space-y-3">
+                      <p className="text-sm text-gray-600">{step.detail}</p>
+
+                      {step.key === 'connect' && (
+                        <div className="flex gap-2">
+                          <Button size="sm" className="gap-1">
+                            <Upload className="h-4 w-4" />
+                            Add Connection
+                          </Button>
+                          <span className="text-sm text-orange-600 flex items-center gap-1">
+                            <AlertTriangle className="h-4 w-4" />
+                            No connections configured yet.
+                          </span>
+                        </div>
+                      )}
+
+                      {step.key !== 'connect' && (
+                        <Button size="sm" variant="outline" disabled className="gap-1">
+                          <Play className="h-4 w-4" />
+                          Run {step.label}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {idx < steps.length - 1 && (
+                    <div className="flex justify-start ml-[1.75rem]">
+                      <div className={cn(
+                        "w-0.5 h-3",
+                        getStepStatus(steps[idx + 1].key, idx + 1) === 'locked' ? "bg-gray-200" : "bg-blue-300"
+                      )} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Alert>
+        <Zap className="h-4 w-4" />
+        <AlertDescription>
+          <strong>How the phases work:</strong> Each phase uses the same {erpLabel} connection but processes different table categories.
+          <ul className="list-disc ml-5 mt-1 text-sm">
+            <li><strong>Master Data</strong> creates your supply chain topology (sites, products, lanes, BOMs) — run once at initial setup.</li>
+            <li><strong>Transaction Data</strong> imports historical orders, shipments, and operations — run periodically for updates.</li>
+            <li><strong>Warm Start</strong> provisions AI models, generates demand forecasts, and seeds the decision stream.</li>
+          </ul>
+        </AlertDescription>
+      </Alert>
     </div>
   );
 }
 
-export default function ERPDataManagement() {
-  const [tab, setTab] = useState(0);
-  const [supportedErps, setSupportedErps] = useState([]);
-  const [odooModels, setOdooModels] = useState(null);
-  const [d365Entities, setD365Entities] = useState(null);
-  const [b1Entities, setB1Entities] = useState(null);
-  const [odooPlan, setOdooPlan] = useState(null);
-  const [d365Plan, setD365Plan] = useState(null);
-  const [loading, setLoading] = useState(true);
+// ---------------------------------------------------------------------------
+// Planned ERP placeholder
+// ---------------------------------------------------------------------------
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [erps, odooM, d365E, b1E, odooP, d365P] = await Promise.all([
-          api.get('/erp/supported-erps').catch(() => ({ data: { erps: [] } })),
-          api.get('/erp/odoo/models').catch(() => ({ data: null })),
-          api.get('/erp/d365/entities').catch(() => ({ data: null })),
-          api.get('/erp/b1/entities').catch(() => ({ data: null })),
-          api.get('/erp/odoo/extraction-plan').catch(() => ({ data: null })),
-          api.get('/erp/d365/extraction-plan').catch(() => ({ data: null })),
-        ]);
-        setSupportedErps(erps.data?.erps || []);
-        setOdooModels(odooM.data);
-        setD365Entities(d365E.data);
-        setB1Entities(b1E.data);
-        setOdooPlan(odooP.data);
-        setD365Plan(d365P.data);
-      } catch (err) {
-        console.error('Failed to load ERP data:', err);
-      }
-      setLoading(false);
-    };
-    fetchData();
-  }, []);
+function PlannedERPView({ erpLabel }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <Database className="h-16 w-16 text-gray-300 mb-4" />
+      <h3 className="text-lg font-medium text-gray-600 mb-2">{erpLabel} Integration</h3>
+      <p className="text-sm text-gray-400 max-w-md">
+        This integration is planned for a future release.
+        Contact support if you need early access.
+      </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export default function ERPDataManagement() {
+  const [selectedERP, setSelectedERP] = useState('sap');
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h5" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <SyncIcon /> ERP Data Management
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Manage connections to external ERP systems. Extract master data, transaction data,
-        and change data — mapped to the AWS Supply Chain data model.
-      </Typography>
+    <div className="p-6 space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold flex items-center gap-2">
+          <Database className="h-6 w-6" />
+          ERP Data Management
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Configure connections to external ERP systems. Extract master data, transaction data,
+          and change data — mapped to the AWS Supply Chain data model.
+        </p>
+      </div>
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-        <Tab label="Supported ERPs" />
-        <Tab label="Odoo Integration" />
-        <Tab label="D365 Integration" />
-        <Tab label="SAP S/4HANA" />
-        <Tab label="SAP Business One" />
-        <Tab label="Field Mapping" />
-      </Tabs>
-
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <>
-          {/* Tab 0: Supported ERPs */}
-          <TabPanel value={tab} index={0}>
-            <Grid container spacing={2}>
-              {Object.entries(ERP_CONFIGS).map(([key, cfg]) => (
-                <Grid item xs={12} md={6} lg={4} key={key}>
-                  <Card
-                    variant="outlined"
-                    sx={{
-                      borderColor: cfg.status === 'production' ? cfg.color : '#ccc',
-                      borderWidth: cfg.status === 'production' ? 2 : 1,
-                      opacity: cfg.status === 'planned' ? 0.7 : 1,
-                    }}
-                  >
-                    <CardContent>
-                      <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <span>{cfg.icon}</span>
-                        {cfg.name}
-                        <Chip
-                          label={cfg.status}
-                          size="small"
-                          color={cfg.status === 'production' ? 'success' : 'default'}
-                          sx={{ ml: 'auto' }}
-                        />
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                        <strong>Sandbox:</strong> {cfg.sandbox}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        <strong>Methods:</strong> {cfg.methods.join(', ')}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
-
-            <Alert severity="info" sx={{ mt: 3 }}>
-              <strong>Integration Architecture:</strong> All ERPs follow the same 3-phase extraction pipeline
-              (Master Data → CDC → Transaction) with data mapped to the AWS Supply Chain data model.
-              The field mapping service uses exact → pattern → fuzzy → AI matching tiers.
-            </Alert>
-          </TabPanel>
-
-          {/* Tab 1: Odoo Integration */}
-          <TabPanel value={tab} index={1}>
-            <Alert severity="success" sx={{ mb: 2 }}>
-              <strong>Odoo</strong> is fully supported via JSON-RPC. Self-host with Docker for $0 development cost.
-              {odooModels && ` ${odooModels.total_models} supply chain models mapped.`}
-            </Alert>
-
-            {odooPlan && (
-              <Grid container spacing={2} sx={{ mb: 3 }}>
-                <Grid item xs={6}>
-                  <Paper sx={{ p: 2 }}>
-                    <Typography variant="subtitle2">Master Data Models</Typography>
-                    <Typography variant="h4">{odooPlan.master_data?.models?.length || 0}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {odooPlan.master_data?.total_fields || 0} fields
-                    </Typography>
-                  </Paper>
-                </Grid>
-                <Grid item xs={6}>
-                  <Paper sx={{ p: 2 }}>
-                    <Typography variant="subtitle2">Transaction Models</Typography>
-                    <Typography variant="h4">{odooPlan.transaction?.models?.length || 0}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {odooPlan.transaction?.total_fields || 0} fields
-                    </Typography>
-                  </Paper>
-                </Grid>
-              </Grid>
+      {/* ERP type selector tabs */}
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+        {ERP_TYPES.map((erp) => (
+          <button
+            key={erp.key}
+            onClick={() => erp.status === 'production' && setSelectedERP(erp.key)}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors",
+              selectedERP === erp.key
+                ? "border-blue-600 text-blue-600"
+                : erp.status === 'planned'
+                  ? "border-transparent text-gray-300 cursor-not-allowed"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 cursor-pointer",
             )}
-
-            {odooModels && (
-              <TableContainer component={Paper}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Odoo Model</TableCell>
-                      <TableCell align="right">Mapped Fields</TableCell>
-                      <TableCell>Sample Fields</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {odooModels.models?.map((m) => (
-                      <TableRow key={m.model} hover>
-                        <TableCell>
-                          <code style={{ fontSize: '0.85em' }}>{m.model}</code>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Chip label={m.mapped_fields} size="small" color="primary" />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="caption" color="text.secondary">
-                            {m.fields?.slice(0, 5).join(', ')}{m.fields?.length > 5 ? '...' : ''}
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+            disabled={erp.status === 'planned'}
+          >
+            {erp.label}
+            {erp.status === 'planned' && (
+              <span className="ml-1.5 text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded">PLANNED</span>
             )}
-          </TabPanel>
+          </button>
+        ))}
+      </div>
 
-          {/* Tab 2: D365 Integration */}
-          <TabPanel value={tab} index={2}>
-            <Alert severity="success" sx={{ mb: 2 }}>
-              <strong>Dynamics 365 F&O</strong> is fully supported via OData v4 + Azure AD OAuth.
-              30-day free trial with Contoso demo data (USMF).
-              {d365Entities && ` ${d365Entities.total_entities} supply chain entities mapped.`}
-            </Alert>
-
-            {d365Plan && (
-              <Grid container spacing={2} sx={{ mb: 3 }}>
-                <Grid item xs={6}>
-                  <Paper sx={{ p: 2 }}>
-                    <Typography variant="subtitle2">Master Data Entities</Typography>
-                    <Typography variant="h4">{d365Plan.master_data?.entities?.length || 0}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {d365Plan.master_data?.total_fields || 0} fields
-                    </Typography>
-                  </Paper>
-                </Grid>
-                <Grid item xs={6}>
-                  <Paper sx={{ p: 2 }}>
-                    <Typography variant="subtitle2">Transaction Entities</Typography>
-                    <Typography variant="h4">{d365Plan.transaction?.entities?.length || 0}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {d365Plan.transaction?.total_fields || 0} fields
-                    </Typography>
-                  </Paper>
-                </Grid>
-              </Grid>
-            )}
-
-            {d365Entities && (
-              <TableContainer component={Paper}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>D365 Entity</TableCell>
-                      <TableCell align="right">Select Fields</TableCell>
-                      <TableCell>Sample Fields</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {d365Entities.entities?.map((e) => (
-                      <TableRow key={e.entity} hover>
-                        <TableCell>
-                          <code style={{ fontSize: '0.85em' }}>{e.entity}</code>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Chip label={e.select_fields} size="small" color="primary" />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="caption" color="text.secondary">
-                            {e.fields?.slice(0, 5).join(', ')}{e.fields?.length > 5 ? '...' : ''}
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-          </TabPanel>
-
-          {/* Tab 3: SAP Integration */}
-          <TabPanel value={tab} index={3}>
-            <Alert severity="info" sx={{ mb: 2 }}>
-              SAP integration is managed via the dedicated{' '}
-              <a href="/admin/sap-data" style={{ color: 'inherit', fontWeight: 'bold' }}>
-                SAP Data Management
-              </a>{' '}
-              page. It supports RFC, OData, CSV, HANA DB, and IDoc connections.
-            </Alert>
-            <Button variant="outlined" href="/admin/sap-data">
-              Go to SAP Data Management
-            </Button>
-          </TabPanel>
-
-          {/* Tab 4: SAP Business One */}
-          <TabPanel value={tab} index={4}>
-            <Typography variant="h6" gutterBottom>SAP Business One — Service Layer Integration</Typography>
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Connects via the B1 Service Layer REST API (OData v4). Supports session-based
-              authentication, automatic pagination, and CSV fallback for offline extraction.
-            </Alert>
-
-            {b1Entities ? (
-              <>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  {b1Entities.total_entities} entities registered across master, transaction, and CDC categories
-                </Typography>
-                <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 500 }}>
-                  <Table size="small" stickyHeader>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 'bold' }}>Entity</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }}>DB Table</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }}>Category</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }}>Keys</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }}>Description</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold' }} align="right">Mapped Fields</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {b1Entities.entities?.map((e) => (
-                        <TableRow key={e.entity} hover>
-                          <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{e.entity}</TableCell>
-                          <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'text.secondary' }}>{e.db_table}</TableCell>
-                          <TableCell>
-                            <Chip
-                              label={e.category}
-                              size="small"
-                              color={e.category === 'master' ? 'primary' : e.category === 'transaction' ? 'warning' : 'error'}
-                              variant="outlined"
-                            />
-                          </TableCell>
-                          <TableCell sx={{ fontSize: '0.8rem' }}>{e.keys?.join(', ')}</TableCell>
-                          <TableCell sx={{ fontSize: '0.85rem' }}>{e.description}</TableCell>
-                          <TableCell align="right">
-                            {e.mapped_fields > 0 ? (
-                              <Chip label={e.mapped_fields} size="small" color="success" />
-                            ) : (
-                              <Chip label="0" size="small" variant="outlined" />
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-
-                <Grid container spacing={2} sx={{ mt: 2 }}>
-                  <Grid item xs={12} md={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="subtitle2">Connection</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Service Layer URL: https://&lt;server&gt;:50000/b1s/v2
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Auth: Session-based (POST /Login)
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="subtitle2">Demo Data</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          OEC Computers (SBODemoUS)
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          ~4,000 items, ~500 BPs, ~30 BOMs
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Card variant="outlined">
-                      <CardContent>
-                        <Typography variant="subtitle2">Sandbox</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Cloudiax: 14-day free trial on HANA
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Partner: OEC Computers demo DB download
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                </Grid>
-              </>
-            ) : (
-              <Alert severity="warning">B1 entity registry not loaded. Backend may need rebuild.</Alert>
-            )}
-          </TabPanel>
-
-          {/* Tab 5: Field Mapping */}
-          <TabPanel value={tab} index={5}>
-            <Typography variant="body2" gutterBottom>
-              All ERP integrations use the same 3-tier field mapping strategy:
-            </Typography>
-            <Grid container spacing={2} sx={{ mt: 1 }}>
-              {[
-                { tier: 'Tier 1: Exact', desc: 'Table-specific field → AWS SC entity mapping. Highest confidence (100%).', color: '#4caf50' },
-                { tier: 'Tier 2: Pattern', desc: 'Regex patterns for common naming conventions (e.g. *_qty → quantity). Confidence 75%.', color: '#ff9800' },
-                { tier: 'Tier 3: Fuzzy / AI', desc: 'String similarity + Claude AI for ambiguous or custom fields. Confidence varies.', color: '#f44336' },
-              ].map((t) => (
-                <Grid item xs={12} md={4} key={t.tier}>
-                  <Paper sx={{ p: 2, borderLeft: `4px solid ${t.color}` }}>
-                    <Typography variant="subtitle2">{t.tier}</Typography>
-                    <Typography variant="body2" color="text.secondary">{t.desc}</Typography>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
-
-            <Alert severity="info" sx={{ mt: 3 }}>
-              All mappings target the <strong>AWS Supply Chain data model</strong> (35 entities).
-              This ensures data model consistency regardless of source ERP system.
-            </Alert>
-          </TabPanel>
-        </>
-      )}
-    </Box>
+      {/* Per-ERP content */}
+      {selectedERP === 'sap' && <SAPDataManagement />}
+      {selectedERP === 'odoo' && <ERPGuidedPipeline erpType="odoo" erpLabel="Odoo" />}
+      {selectedERP === 'd365' && <ERPGuidedPipeline erpType="d365" erpLabel="Dynamics 365" />}
+      {selectedERP === 'sap_b1' && <ERPGuidedPipeline erpType="sap_b1" erpLabel="SAP Business One" />}
+      {selectedERP === 'netsuite' && <PlannedERPView erpLabel="Oracle NetSuite" />}
+      {selectedERP === 'epicor' && <PlannedERPView erpLabel="Epicor Kinetic" />}
+    </div>
   );
 }

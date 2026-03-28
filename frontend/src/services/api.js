@@ -293,7 +293,12 @@ export const simulationApi = {
       });
 
       if (data?.access_token) {
-        return { success: true, user: data.user };
+        return {
+          success: true,
+          user: data.user,
+          provisioning_status: data.provisioning_status || null,
+          provisioning_step: data.provisioning_step || null,
+        };
       }
 
       const detail = data?.detail;

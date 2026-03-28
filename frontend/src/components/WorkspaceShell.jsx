@@ -22,6 +22,7 @@ import CapabilityAwareSidebar from './CapabilityAwareSidebar';
 import useTabStore from '../stores/useTabStore';
 import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
+import ProvisioningBanner from './ProvisioningBanner';
 import { cn } from '../lib/utils/cn';
 import { Send, Loader2, Mic, MicOff } from 'lucide-react';
 import Markdown from 'react-markdown';
@@ -308,6 +309,14 @@ const WorkspaceShell = () => {
       </div>
 
       {/* Sidebar removed — all navigation through tabs via "+" palette */}
+
+      {/* Provisioning status banner */}
+      <div
+        className="ml-0 transition-all duration-200 ease-in-out"
+        style={{ marginRight: panelWidth }}
+      >
+        <ProvisioningBanner />
+      </div>
 
       {/* Tab content area */}
       <div

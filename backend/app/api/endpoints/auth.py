@@ -50,6 +50,7 @@ from app.models.agent_config import AgentConfig
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.services.supply_chain_config_service import SupplyChainConfigService
 from app.services.tenant_service import DEFAULT_SITE_TYPE_DEFINITIONS
+from app.models.user_directive import ConfigProvisioningStatus
 
 router = APIRouter()
 
@@ -71,6 +72,9 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: UserPublic
     tenant_subdomain: Optional[str] = None  # For subdomain redirect after login
+    # Provisioning status for frontend banner
+    provisioning_status: Optional[str] = None  # "complete", "in_progress", "not_started", "failed", None (no config)
+    provisioning_step: Optional[str] = None    # current/failed step name if not complete
 
 
 # Alias Token to TokenResponse for backward compatibility
@@ -317,6 +321,68 @@ async def ensure_default_setup(db: Session, user: User) -> None:
         _ensure_default_setup_sync(db, user)
 
 
+def _check_provisioning_status_sync(db: Session, user: User) -> tuple:
+    """Check provisioning status for the user's tenant. Returns (status, step).
+
+    Lightweight: single query to config_provisioning_status via the tenant's active config.
+    Returns (None, None) for system admins or users without a tenant.
+    """
+    tenant_id = getattr(user, "tenant_id", None)
+    if not tenant_id:
+        return (None, None)
+
+    # Find active config for this tenant
+    config = (
+        db.query(SupplyChainConfig)
+        .filter(
+            SupplyChainConfig.tenant_id == tenant_id,
+            SupplyChainConfig.is_active.is_(True),
+        )
+        .first()
+    )
+    if not config:
+        return (None, None)  # No config exists
+
+    # Check provisioning status for this config
+    prov = (
+        db.query(ConfigProvisioningStatus)
+        .filter(ConfigProvisioningStatus.config_id == config.id)
+        .first()
+    )
+    if not prov:
+        return ("not_started", None)
+
+    overall = prov.overall_status or "not_started"
+    if overall == "completed":
+        return ("complete", None)
+
+    # Find the first step that is running or failed
+    problem_step = None
+    for step_key in ConfigProvisioningStatus.STEPS:
+        step_status = getattr(prov, f"{step_key}_status", "pending")
+        if step_status == "failed":
+            return ("failed", ConfigProvisioningStatus.STEP_LABELS.get(step_key, step_key))
+        if step_status == "running":
+            problem_step = ConfigProvisioningStatus.STEP_LABELS.get(step_key, step_key)
+
+    if overall == "in_progress" or problem_step:
+        return ("in_progress", problem_step)
+
+    return ("not_started", None)
+
+
+async def _check_provisioning_status(db: Session, user: User) -> tuple:
+    """Async wrapper for provisioning status check."""
+    try:
+        if isinstance(db, AsyncSession):
+            return await db.run_sync(lambda sync_db: _check_provisioning_status_sync(sync_db, user))
+        else:
+            return _check_provisioning_status_sync(db, user)
+    except Exception:
+        # Never let provisioning check break login
+        return (None, None)
+
+
 @router.post("/login", response_model=Token)
 async def login(
     request: Request,
@@ -396,12 +462,17 @@ async def login(
         if _admin_tenant:
             _tenant_subdomain = getattr(_admin_tenant, "slug", None) or getattr(_admin_tenant, "subdomain", None)
 
+    # Check provisioning status (lightweight, non-blocking)
+    _prov_status, _prov_step = await _check_provisioning_status(db, user)
+
     # Return access token and user info
     return TokenResponse(
         access_token=tokens.access_token,
         token_type="bearer",
         user=UserPublic.from_orm(user),
         tenant_subdomain=_tenant_subdomain,
+        provisioning_status=_prov_status,
+        provisioning_step=_prov_step,
     )
 
 
