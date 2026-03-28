@@ -727,13 +727,6 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
               className="h-7 w-auto"
             />
           </Link>
-          {user?.tenant_logo && (
-            <img
-              src={user.tenant_logo}
-              alt=""
-              className="h-7 w-7 rounded object-contain"
-            />
-          )}
 
           {shouldShowContext && (
             <span className="hidden lg:block text-sm text-muted-foreground">
