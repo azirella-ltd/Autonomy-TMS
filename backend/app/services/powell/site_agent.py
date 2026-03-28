@@ -306,6 +306,12 @@ class SiteAgent:
         self._state_cache: Optional[torch.Tensor] = None
         self._state_cache_time: Optional[datetime] = None
 
+        # DM extension data cache — populated once per decision cycle, shared
+        # across all TRM state builders to avoid redundant queries.
+        # Keyed by (product_id, site_id) or just relevant key per table.
+        self._dm_cache: Dict[str, Any] = {}
+        self._dm_cache_time: Optional[datetime] = None
+
         trm_count = len(self.active_trms)
         logger.info(f"SiteAgent initialized for {config.site_key}"
                      f" [{trm_count}/11 TRMs active]"
@@ -1777,6 +1783,669 @@ class SiteAgent:
         if self.authorization_service is None:
             return []
         return self.authorization_service.get_pending(site_key=self.site_key)
+
+    # ---- DM extension data fetching for heuristic state enrichment ----------
+
+    def _refresh_dm_cache(self, config_id: int) -> None:
+        """Refresh the DM extension data cache if stale (>5 min) or empty.
+
+        Fetches data from extension tables (material_valuation,
+        outbound_order_status, work_center_master, capacity_resource_detail,
+        outbound_order_line_schedule) in batch and caches for the decision
+        cycle.  Each query is wrapped in try/except so missing tables
+        (pre-migration) do not break the agent.
+        """
+        now = datetime.utcnow()
+        if (
+            self._dm_cache_time is not None
+            and (now - self._dm_cache_time).total_seconds() < 300
+            and self._dm_cache
+        ):
+            return  # cache still fresh
+
+        if self.db is None:
+            return
+
+        cache: Dict[str, Any] = {}
+
+        # --- material_valuation keyed by (product_id, site_id) ---
+        try:
+            from app.models.sc_extensions import MaterialValuation
+            from sqlalchemy import select
+            rows = self.db.execute(
+                select(MaterialValuation).where(
+                    MaterialValuation.config_id == config_id
+                )
+            ).scalars().all()
+            mv: Dict[tuple, Any] = {}
+            for r in rows:
+                mv[(str(r.product_id), r.site_id)] = r
+            cache["material_valuation"] = mv
+        except Exception as exc:
+            logger.debug("DM cache: material_valuation unavailable: %s", exc)
+            cache["material_valuation"] = {}
+
+        # --- outbound_order_status keyed by order_id ---
+        try:
+            from app.models.sc_extensions import OutboundOrderStatus
+            from sqlalchemy import select
+            rows = self.db.execute(
+                select(OutboundOrderStatus).where(
+                    OutboundOrderStatus.config_id == config_id
+                )
+            ).scalars().all()
+            oos: Dict[str, Any] = {}
+            for r in rows:
+                oos[str(r.order_id)] = r
+            cache["outbound_order_status"] = oos
+        except Exception as exc:
+            logger.debug("DM cache: outbound_order_status unavailable: %s", exc)
+            cache["outbound_order_status"] = {}
+
+        # --- work_center_master keyed by (site_id, work_center_code) ---
+        try:
+            from app.models.sc_extensions import WorkCenterMaster
+            from sqlalchemy import select
+            rows = self.db.execute(
+                select(WorkCenterMaster).where(
+                    WorkCenterMaster.config_id == config_id
+                )
+            ).scalars().all()
+            wcm: Dict[tuple, Any] = {}
+            for r in rows:
+                wcm[(r.site_id, r.work_center_code)] = r
+            cache["work_center_master"] = wcm
+        except Exception as exc:
+            logger.debug("DM cache: work_center_master unavailable: %s", exc)
+            cache["work_center_master"] = {}
+
+        # --- capacity_resource_detail keyed by work_center_id ---
+        try:
+            from app.models.sc_extensions import CapacityResourceDetail
+            from sqlalchemy import select
+            rows = self.db.execute(
+                select(CapacityResourceDetail).where(
+                    CapacityResourceDetail.config_id == config_id
+                )
+            ).scalars().all()
+            crd: Dict[int, Any] = {}
+            for r in rows:
+                if r.work_center_id is not None:
+                    crd[r.work_center_id] = r
+            cache["capacity_resource_detail"] = crd
+        except Exception as exc:
+            logger.debug("DM cache: capacity_resource_detail unavailable: %s", exc)
+            cache["capacity_resource_detail"] = {}
+
+        # --- outbound_order_line_schedule: committed qty by (order_id, date) ---
+        try:
+            from app.models.sc_extensions import OutboundOrderLineSchedule
+            from sqlalchemy import select, func as sa_func
+            rows = self.db.execute(
+                select(
+                    OutboundOrderLineSchedule.order_id,
+                    OutboundOrderLineSchedule.requested_date,
+                    sa_func.coalesce(sa_func.sum(OutboundOrderLineSchedule.confirmed_qty), 0.0).label("total_confirmed"),
+                ).where(
+                    OutboundOrderLineSchedule.config_id == config_id
+                ).group_by(
+                    OutboundOrderLineSchedule.order_id,
+                    OutboundOrderLineSchedule.requested_date,
+                )
+            ).all()
+            ols: Dict[str, float] = {}
+            for r in rows:
+                key = f"{r.order_id}|{r.requested_date}"
+                ols[key] = float(r.total_confirmed)
+            cache["order_schedule_committed"] = ols
+        except Exception as exc:
+            logger.debug("DM cache: outbound_order_line_schedule unavailable: %s", exc)
+            cache["order_schedule_committed"] = {}
+
+        # --- supply_plan: existing planned qty by (product_id, site_id) ---
+        try:
+            from app.models.sc_entities import SupplyPlan
+            from sqlalchemy import select, func as sa_func
+            rows = self.db.execute(
+                select(
+                    SupplyPlan.product_id,
+                    SupplyPlan.site_id,
+                    sa_func.coalesce(
+                        sa_func.sum(SupplyPlan.planned_order_quantity), 0.0
+                    ).label("total_planned"),
+                ).where(
+                    SupplyPlan.config_id == config_id,
+                    SupplyPlan.planned_order_quantity > 0,
+                ).group_by(
+                    SupplyPlan.product_id,
+                    SupplyPlan.site_id,
+                )
+            ).all()
+            sp: Dict[tuple, float] = {}
+            for r in rows:
+                sp[(str(r.product_id), r.site_id)] = float(r.total_planned)
+            cache["supply_plan_planned_qty"] = sp
+        except Exception as exc:
+            logger.debug("DM cache: supply_plan planned qty unavailable: %s", exc)
+            cache["supply_plan_planned_qty"] = {}
+
+        # --- vendor_product: external pricing keyed by product_id ---
+        # VendorProduct uses company_id (not config_id); fetch all active
+        # and take primary/lowest-priority vendor price per product.
+        try:
+            from app.models.supplier import VendorProduct
+            from sqlalchemy import select
+            rows = self.db.execute(
+                select(VendorProduct).where(
+                    VendorProduct.is_active == "true",
+                ).order_by(
+                    VendorProduct.priority.asc(),
+                )
+            ).scalars().all()
+            vp: Dict[str, float] = {}
+            for r in rows:
+                pid = str(r.product_id)
+                if pid not in vp:
+                    vp[pid] = float(r.vendor_unit_cost or 0.0)
+            cache["vendor_product_price"] = vp
+        except Exception as exc:
+            logger.debug("DM cache: vendor_product unavailable: %s", exc)
+            cache["vendor_product_price"] = {}
+
+        self._dm_cache = cache
+        self._dm_cache_time = now
+        logger.debug(
+            "DM extension cache refreshed: %s",
+            {k: len(v) if isinstance(v, dict) else "?" for k, v in cache.items()},
+        )
+
+    def _get_material_valuation(
+        self, product_id: str, site_id: Optional[int] = None,
+    ) -> Dict[str, float]:
+        """Get material valuation data from DM cache.
+
+        Returns dict with ``unit_cost`` (standard or moving avg) and
+        ``cost_trend`` (0.0 placeholder — requires historical snapshots).
+        """
+        mv_cache = self._dm_cache.get("material_valuation", {})
+        row = mv_cache.get((product_id, site_id))
+        if row is None:
+            return {"unit_cost": 0.0, "cost_trend": 0.0}
+        price = row.standard_price or row.moving_avg_price or 0.0
+        # cost_trend requires comparing against previous period — not yet
+        # available in a single-snapshot cache. Return 0.0 as neutral.
+        return {"unit_cost": float(price), "cost_trend": 0.0}
+
+    def _get_order_status(self, order_id: str) -> Dict[str, str]:
+        """Get outbound order status fields from DM cache."""
+        oos_cache = self._dm_cache.get("outbound_order_status", {})
+        row = oos_cache.get(order_id)
+        if row is None:
+            return {
+                "delivery_status": "",
+                "billing_status": "",
+                "goods_issue_status": "",
+            }
+        return {
+            "delivery_status": row.delivery_status or "",
+            "billing_status": row.billing_status or "",
+            "goods_issue_status": row.goods_issue_status or "",
+        }
+
+    def _derive_customer_urgency(self, order_id: str) -> float:
+        """Derive a 0-1 urgency score from outbound order status.
+
+        Simple heuristic: partially delivered or goods-issued orders are
+        more urgent (customer is expecting delivery).  Fully billed orders
+        are less urgent.  Default 0.5 when no status data exists.
+        """
+        status = self._get_order_status(order_id)
+        delivery = status["delivery_status"].upper()
+        gi = status["goods_issue_status"].upper()
+
+        if not delivery and not gi:
+            return 0.5
+
+        urgency = 0.5
+        # Partially delivered = high urgency (customer waiting for rest)
+        if delivery in ("B",):  # SAP B = partially delivered
+            urgency = 0.8
+        elif delivery in ("C",):  # SAP C = fully delivered
+            urgency = 0.3
+        # Goods issue started but not complete
+        if gi in ("B",):
+            urgency = max(urgency, 0.7)
+        elif gi in ("C",):
+            urgency = min(urgency, 0.3)
+
+        return urgency
+
+    def _get_schedule_committed_qty(
+        self, order_id: str, date_str: str = "",
+    ) -> float:
+        """Get total confirmed qty from outbound_order_line_schedule cache."""
+        ols_cache = self._dm_cache.get("order_schedule_committed", {})
+        key = f"{order_id}|{date_str}"
+        return ols_cache.get(key, 0.0)
+
+    def _get_work_center_details(
+        self, site_id: Optional[int], work_center_code: str = "",
+    ) -> Dict[str, Any]:
+        """Get work center capacity details from DM cache.
+
+        Resolves work_center_master → capacity_resource_detail chain.
+        Returns capacity_hours, queue_depth (placeholder), and parallel_ops.
+        """
+        wcm_cache = self._dm_cache.get("work_center_master", {})
+        crd_cache = self._dm_cache.get("capacity_resource_detail", {})
+
+        wc_row = wcm_cache.get((site_id, work_center_code))
+        result = {
+            "work_center_capacity_hours": 8.0,
+            "work_center_queue_depth": 0,
+            "work_center_parallel_ops": 1,
+            "work_center_queue_hours": 0.0,
+        }
+
+        if wc_row is not None:
+            # Look up capacity detail via work_center_master.id
+            crd_row = crd_cache.get(wc_row.id)
+            if crd_row is not None:
+                if crd_row.base_net_time is not None:
+                    result["work_center_capacity_hours"] = float(crd_row.base_net_time)
+                if crd_row.standard_parallel_ops is not None:
+                    result["work_center_parallel_ops"] = int(crd_row.standard_parallel_ops)
+
+        return result
+
+    def _get_existing_planned_qty(
+        self, product_id: str, site_id: Optional[int] = None,
+    ) -> float:
+        """Get existing planned supply qty from DM cache."""
+        sp_cache = self._dm_cache.get("supply_plan_planned_qty", {})
+        return sp_cache.get((product_id, site_id), 0.0)
+
+    def _get_vendor_product_price(self, product_id: str) -> float:
+        """Get external vendor unit price from DM cache."""
+        vp_cache = self._dm_cache.get("vendor_product_price", {})
+        return vp_cache.get(product_id, 0.0)
+
+    def _get_order_velocity_trend(self, config_id: int) -> float:
+        """Compute a simple order velocity trend from schedule data.
+
+        Returns a normalized trend value (positive = accelerating orders).
+        This is a rough proxy using total committed qty vs schedule count.
+        Full implementation would compare rolling windows of order frequency.
+        """
+        ols_cache = self._dm_cache.get("order_schedule_committed", {})
+        if not ols_cache:
+            return 0.0
+        # Placeholder: return 0.0 (neutral).  A full implementation would
+        # compare recent-week committed qty against prior-week.
+        return 0.0
+
+    # ---- Heuristic state builders (enriched with DM extension data) --------
+
+    def build_replenishment_state(
+        self,
+        config_id: int,
+        product_id: str,
+        site_id: Optional[int],
+        *,
+        inventory_position: float,
+        on_hand: float,
+        backlog: float,
+        pipeline_qty: float,
+        avg_daily_demand: float,
+        demand_cv: float,
+        lead_time_days: float,
+        forecast_daily: float,
+        day_of_week: int,
+        day_of_month: int,
+    ) -> "ReplenishmentState":
+        """Build an enriched ReplenishmentState with DM extension data.
+
+        Callers pass the core fields; this method enriches with
+        material_valuation and supply_plan data from the DM cache.
+        """
+        from .heuristic_library.base import ReplenishmentState
+
+        self._refresh_dm_cache(config_id)
+        mv = self._get_material_valuation(product_id, site_id)
+        planned = self._get_existing_planned_qty(product_id, site_id)
+
+        return ReplenishmentState(
+            inventory_position=inventory_position,
+            on_hand=on_hand,
+            backlog=backlog,
+            pipeline_qty=pipeline_qty,
+            avg_daily_demand=avg_daily_demand,
+            demand_cv=demand_cv,
+            lead_time_days=lead_time_days,
+            forecast_daily=forecast_daily,
+            day_of_week=day_of_week,
+            day_of_month=day_of_month,
+            cost_trend=mv["cost_trend"],
+            existing_planned_qty=planned,
+            unit_cost=mv["unit_cost"],
+        )
+
+    def build_atp_state(
+        self,
+        config_id: int,
+        *,
+        order_qty: float,
+        order_priority: int,
+        product_id: str,
+        site_id: str,
+        available_inventory: float,
+        allocated_inventory: float,
+        pipeline_qty: float,
+        forecast_remaining: float,
+        confirmed_orders: float,
+        delivery_date_requested: Optional[str] = None,
+        order_id: str = "",
+    ) -> "ATPState":
+        """Build an enriched ATPState with DM extension data."""
+        from .heuristic_library.base import ATPState
+
+        self._refresh_dm_cache(config_id)
+        committed = self._get_schedule_committed_qty(
+            order_id, delivery_date_requested or ""
+        )
+        status = self._get_order_status(order_id)
+        urgency = self._derive_customer_urgency(order_id)
+
+        return ATPState(
+            order_qty=order_qty,
+            order_priority=order_priority,
+            product_id=product_id,
+            site_id=site_id,
+            available_inventory=available_inventory,
+            allocated_inventory=allocated_inventory,
+            pipeline_qty=pipeline_qty,
+            forecast_remaining=forecast_remaining,
+            confirmed_orders=confirmed_orders,
+            delivery_date_requested=delivery_date_requested,
+            schedule_committed_qty=committed,
+            order_delivery_status=status["delivery_status"],
+            customer_urgency=urgency,
+        )
+
+    def build_order_tracking_state(
+        self,
+        config_id: int,
+        *,
+        order_id: str,
+        order_type: str,
+        expected_date: str,
+        current_status: str,
+        quantity_ordered: float,
+        quantity_received: float,
+        days_overdue: float,
+        supplier_on_time_rate: float,
+        is_critical: bool = False,
+    ) -> "OrderTrackingState":
+        """Build an enriched OrderTrackingState with DM extension data."""
+        from .heuristic_library.base import OrderTrackingState
+
+        self._refresh_dm_cache(config_id)
+        status = self._get_order_status(order_id)
+
+        return OrderTrackingState(
+            order_id=order_id,
+            order_type=order_type,
+            expected_date=expected_date,
+            current_status=current_status,
+            quantity_ordered=quantity_ordered,
+            quantity_received=quantity_received,
+            days_overdue=days_overdue,
+            supplier_on_time_rate=supplier_on_time_rate,
+            is_critical=is_critical,
+            delivery_status=status["delivery_status"],
+            billing_status=status["billing_status"],
+            goods_issue_status=status["goods_issue_status"],
+        )
+
+    def build_mo_execution_state(
+        self,
+        config_id: int,
+        site_id_int: Optional[int],
+        *,
+        mo_id: str,
+        product_id: str,
+        site_id: str,
+        quantity: float,
+        priority: int,
+        due_date: str,
+        setup_time_hours: float,
+        run_time_hours: float,
+        available_capacity_hours: float,
+        current_wip: float,
+        product_family: str = "",
+        glenday_category: str = "",
+        last_product_run: str = "",
+        oee: float = 0.85,
+        work_center_code: str = "",
+    ) -> "MOExecutionState":
+        """Build an enriched MOExecutionState with DM extension data."""
+        from .heuristic_library.base import MOExecutionState
+
+        self._refresh_dm_cache(config_id)
+        wc = self._get_work_center_details(site_id_int, work_center_code)
+
+        return MOExecutionState(
+            mo_id=mo_id,
+            product_id=product_id,
+            site_id=site_id,
+            quantity=quantity,
+            priority=priority,
+            due_date=due_date,
+            setup_time_hours=setup_time_hours,
+            run_time_hours=run_time_hours,
+            available_capacity_hours=available_capacity_hours,
+            current_wip=current_wip,
+            product_family=product_family,
+            glenday_category=glenday_category,
+            last_product_run=last_product_run,
+            oee=oee,
+            work_center_capacity_hours=wc["work_center_capacity_hours"],
+            work_center_queue_depth=wc["work_center_queue_depth"],
+            work_center_parallel_ops=wc["work_center_parallel_ops"],
+        )
+
+    def build_quality_state(
+        self,
+        config_id: int,
+        *,
+        lot_id: str,
+        product_id: str,
+        defect_type: str,
+        defect_severity: str,
+        quantity: float,
+        unit_cost: float,
+        rework_cost_per_unit: float,
+        scrap_value_per_unit: float,
+        customer_impact: bool = False,
+        order_id: str = "",
+    ) -> "QualityState":
+        """Build an enriched QualityState with DM extension data."""
+        from .heuristic_library.base import QualityState
+
+        self._refresh_dm_cache(config_id)
+        urgency = self._derive_customer_urgency(order_id) if order_id else 0.5
+
+        return QualityState(
+            lot_id=lot_id,
+            product_id=product_id,
+            defect_type=defect_type,
+            defect_severity=defect_severity,
+            quantity=quantity,
+            unit_cost=unit_cost,
+            rework_cost_per_unit=rework_cost_per_unit,
+            scrap_value_per_unit=scrap_value_per_unit,
+            customer_impact=customer_impact,
+            customer_urgency=urgency,
+        )
+
+    def build_maintenance_state(
+        self,
+        config_id: int,
+        site_id_int: Optional[int],
+        *,
+        asset_id: str,
+        site_id: str,
+        last_maintenance_date: str,
+        mtbf_days: float,
+        mttr_hours: float,
+        current_operating_hours: float,
+        hours_since_last_pm: float,
+        criticality: str,
+        upcoming_production_load: float,
+        maintenance_cost: float = 0.0,
+        work_center_code: str = "",
+        production_gap_hours: float = 0.0,
+    ) -> "MaintenanceState":
+        """Build an enriched MaintenanceState with DM extension data."""
+        from .heuristic_library.base import MaintenanceState
+
+        self._refresh_dm_cache(config_id)
+        wc = self._get_work_center_details(site_id_int, work_center_code)
+
+        return MaintenanceState(
+            asset_id=asset_id,
+            site_id=site_id,
+            last_maintenance_date=last_maintenance_date,
+            mtbf_days=mtbf_days,
+            mttr_hours=mttr_hours,
+            current_operating_hours=current_operating_hours,
+            hours_since_last_pm=hours_since_last_pm,
+            criticality=criticality,
+            upcoming_production_load=upcoming_production_load,
+            maintenance_cost=maintenance_cost,
+            work_center_queue_hours=wc["work_center_queue_hours"],
+            production_gap_hours=production_gap_hours,
+        )
+
+    def build_subcontracting_state(
+        self,
+        config_id: int,
+        site_id_int: Optional[int],
+        *,
+        product_id: str,
+        site_id: str,
+        quantity_needed: float,
+        internal_capacity_available: float,
+        internal_cost_per_unit: float,
+        external_cost_per_unit: float,
+        external_lead_time_days: float,
+        internal_lead_time_days: float,
+        quality_risk_external: float,
+        due_date: str = "",
+    ) -> "SubcontractingState":
+        """Build an enriched SubcontractingState with DM extension data."""
+        from .heuristic_library.base import SubcontractingState
+
+        self._refresh_dm_cache(config_id)
+        mv = self._get_material_valuation(product_id, site_id_int)
+        vp_price = self._get_vendor_product_price(product_id)
+
+        # Use DM data if caller passed zero (unset) values
+        internal = internal_cost_per_unit if internal_cost_per_unit > 0 else mv["unit_cost"]
+        external = external_cost_per_unit if external_cost_per_unit > 0 else vp_price
+
+        return SubcontractingState(
+            product_id=product_id,
+            site_id=site_id,
+            quantity_needed=quantity_needed,
+            internal_capacity_available=internal_capacity_available,
+            internal_cost_per_unit=internal_cost_per_unit,
+            external_cost_per_unit=external_cost_per_unit,
+            external_lead_time_days=external_lead_time_days,
+            internal_lead_time_days=internal_lead_time_days,
+            quality_risk_external=quality_risk_external,
+            due_date=due_date,
+            internal_unit_cost=internal,
+            external_unit_cost=external,
+        )
+
+    def build_forecast_adjustment_state(
+        self,
+        config_id: int,
+        *,
+        product_id: str,
+        site_id: str,
+        current_forecast: float,
+        signal_type: str,
+        signal_direction: str,
+        signal_magnitude_pct: float,
+        signal_confidence: float,
+        forecast_error_recent: float,
+        demand_cv: float = 0.0,
+    ) -> "ForecastAdjustmentState":
+        """Build an enriched ForecastAdjustmentState with DM extension data."""
+        from .heuristic_library.base import ForecastAdjustmentState
+
+        self._refresh_dm_cache(config_id)
+        velocity = self._get_order_velocity_trend(config_id)
+
+        return ForecastAdjustmentState(
+            product_id=product_id,
+            site_id=site_id,
+            current_forecast=current_forecast,
+            signal_type=signal_type,
+            signal_direction=signal_direction,
+            signal_magnitude_pct=signal_magnitude_pct,
+            signal_confidence=signal_confidence,
+            forecast_error_recent=forecast_error_recent,
+            demand_cv=demand_cv,
+            order_velocity_trend=velocity,
+        )
+
+    def build_inventory_buffer_state(
+        self,
+        config_id: int,
+        site_id_int: Optional[int],
+        *,
+        product_id: str,
+        site_id: str,
+        current_safety_stock: float,
+        avg_daily_demand: float,
+        demand_cv: float,
+        lead_time_days: float,
+        lead_time_cv: float,
+        service_level_target: float,
+        recent_stockout_count: int,
+        recent_excess_days: int,
+        holding_cost_per_unit: float = 0.0,
+        stockout_cost_per_unit: float = 0.0,
+    ) -> "InventoryBufferState":
+        """Build an enriched InventoryBufferState with DM extension data."""
+        from .heuristic_library.base import InventoryBufferState
+
+        self._refresh_dm_cache(config_id)
+        mv = self._get_material_valuation(product_id, site_id_int)
+
+        return InventoryBufferState(
+            product_id=product_id,
+            site_id=site_id,
+            current_safety_stock=current_safety_stock,
+            avg_daily_demand=avg_daily_demand,
+            demand_cv=demand_cv,
+            lead_time_days=lead_time_days,
+            lead_time_cv=lead_time_cv,
+            service_level_target=service_level_target,
+            recent_stockout_count=recent_stockout_count,
+            recent_excess_days=recent_excess_days,
+            holding_cost_per_unit=holding_cost_per_unit,
+            stockout_cost_per_unit=stockout_cost_per_unit,
+            cost_trend=mv["cost_trend"],
+        )
+
+    def invalidate_dm_cache(self) -> None:
+        """Force DM extension cache to refresh on next access."""
+        self._dm_cache = {}
+        self._dm_cache_time = None
 
     def get_status(self) -> Dict[str, Any]:
         """Get agent status summary"""

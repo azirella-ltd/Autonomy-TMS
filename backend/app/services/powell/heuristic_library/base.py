@@ -58,6 +58,13 @@ class ReplenishmentState:
     day_of_week: int              # 0=Mon ... 6=Sun
     day_of_month: int             # 1-31
 
+    # Extension: from material_valuation — price change % (current vs previous)
+    cost_trend: float = 0.0
+    # Extension: from supply_plan — already-planned qty for this product-site
+    existing_planned_qty: float = 0.0
+    # Extension: from material_valuation — current standard/moving-avg cost
+    unit_cost: float = 0.0
+
 
 @dataclass(frozen=True)
 class ATPState:
@@ -73,6 +80,13 @@ class ATPState:
     forecast_remaining: float     # unconsumed forecast in horizon
     confirmed_orders: float       # already confirmed customer orders
     delivery_date_requested: Optional[str] = None
+
+    # Extension: from outbound_order_line_schedule — qty already promised for this date
+    schedule_committed_qty: float = 0.0
+    # Extension: from outbound_order_status — delivery status code
+    order_delivery_status: str = ""
+    # Extension: derived from outbound_order_status — urgency factor (0-1)
+    customer_urgency: float = 0.5
 
 
 @dataclass(frozen=True)
@@ -105,6 +119,11 @@ class OrderTrackingState:
     supplier_on_time_rate: float  # 0.0-1.0 historical
     is_critical: bool = False
 
+    # Extension: from outbound_order_status — granular status fields
+    delivery_status: str = ""
+    billing_status: str = ""
+    goods_issue_status: str = ""
+
 
 @dataclass(frozen=True)
 class MOExecutionState:
@@ -124,6 +143,11 @@ class MOExecutionState:
     glenday_category: str = ""    # green/yellow/blue/red
     last_product_run: str = ""    # for changeover minimization
     oee: float = 0.85
+
+    # Extension: from capacity_resource_detail / work_center_master
+    work_center_capacity_hours: float = 8.0
+    work_center_queue_depth: int = 0     # production orders waiting at this WC
+    work_center_parallel_ops: int = 1    # from capacity_resource_detail.standard_parallel_ops
 
 
 @dataclass(frozen=True)
@@ -157,6 +181,9 @@ class QualityState:
     scrap_value_per_unit: float
     customer_impact: bool = False
 
+    # Extension: from outbound_order_status — urgency from downstream order status
+    customer_urgency: float = 0.5
+
 
 @dataclass(frozen=True)
 class MaintenanceState:
@@ -172,6 +199,11 @@ class MaintenanceState:
     criticality: str              # A, B, C (A=highest)
     upcoming_production_load: float  # 0.0-1.0 capacity utilization
     maintenance_cost: float = 0.0
+
+    # Extension: from capacity_resource_detail — queue hours at this work center
+    work_center_queue_hours: float = 0.0
+    # Extension: gap in production schedule (hours available for maintenance)
+    production_gap_hours: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -189,6 +221,11 @@ class SubcontractingState:
     quality_risk_external: float  # 0.0-1.0 probability of quality issue
     due_date: str = ""
 
+    # Extension: from material_valuation — internal cost for make-vs-buy comparison
+    internal_unit_cost: float = 0.0
+    # Extension: from vendor_product — external vendor pricing
+    external_unit_cost: float = 0.0
+
 
 @dataclass(frozen=True)
 class ForecastAdjustmentState:
@@ -203,6 +240,9 @@ class ForecastAdjustmentState:
     signal_confidence: float      # 0.0-1.0
     forecast_error_recent: float  # recent MAPE or bias
     demand_cv: float = 0.0
+
+    # Extension: from outbound_order_line_schedule — order velocity trend
+    order_velocity_trend: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -221,6 +261,9 @@ class InventoryBufferState:
     recent_excess_days: int
     holding_cost_per_unit: float = 0.0
     stockout_cost_per_unit: float = 0.0
+
+    # Extension: from material_valuation — price change % for buffer sizing
+    cost_trend: float = 0.0
 
 
 # ---------------------------------------------------------------------------
