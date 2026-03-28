@@ -255,6 +255,13 @@ class InforConfigBuilder:
             result.inv_policies_created = await _safe("InvPolicies", self._build_inv_policies(
                 data.get("ItemWarehouse", [])))
 
+            # Commit master + inventory before attempting transactional data
+            # so that failures in PO/SO/shipment don't roll back the core topology
+            await self.db.commit()
+            logger.info("Phase 2+3 committed: sites=%d products=%d partners=%d lanes=%d boms=%d",
+                        result.sites_created, result.products_created,
+                        result.trading_partners_created, result.lanes_created, result.boms_created)
+
             # Phase 4: Transactional Data
             result.purchase_orders_created = await _safe("POs", self._build_purchase_orders(
                 data.get("PurchaseOrder", []), data.get("PurchaseOrderLine", [])))
