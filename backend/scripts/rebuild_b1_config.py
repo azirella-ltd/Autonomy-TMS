@@ -531,8 +531,78 @@ def build_config(config_id: int, data: Dict[str, List[Dict]], dry_run: bool = Fa
             data.get("BlanketAgreements", []),
             product_id_map, site_ids,
         )
+        # Commit transactional data before quality/maintenance
+        session.commit()
+
+        # Quality Orders from QualityTests
+        qo_count = 0
+        for qt in data.get("QualityTests", []):
+            abs_entry = qt.get("AbsEntry")
+            item_code = str(qt.get("ItemCode", "")).strip()
+            if not abs_entry or not item_code:
+                continue
+            pid = product_id_map.get(item_code)
+            first_site = next(iter(site_ids.values()), None)
+            if not pid or not first_site:
+                continue
+            test_date = qt.get("TestDate")
+            status_val = str(qt.get("Status", "O")).strip().upper()
+            status = "COMPLETED" if status_val == "C" else "REJECTED" if status_val == "R" else "PENDING"
+            disposition = "ACCEPT" if status_val == "C" else "REJECT" if status_val == "R" else "PENDING"
+            qty = safe_float(qt.get("Quantity", "0"))
+            accepted = safe_float(qt.get("AcceptedQty", "0"))
+            rejected = safe_float(qt.get("RejectedQty", "0"))
+            try:
+                from datetime import datetime as _dt
+                session.execute(text("""
+                    INSERT INTO quality_order (quality_order_number, product_id, site_id, config_id,
+                        status, inspection_type, origin_type, source, inspection_quantity,
+                        order_date, created_at, updated_at)
+                    VALUES (:qon, :pid, :sid, :cid, :status, 'INCOMING', 'GOODS_RECEIPT', 'SAP_B1', :qty,
+                        :odate, :now, :now)
+                """), {"qon": f"B1-QI-{abs_entry}", "pid": pid, "sid": first_site,
+                       "cid": config_id, "status": status, "qty": qty,
+                       "odate": test_date, "now": _dt.utcnow()})
+                qo_count += 1
+            except Exception as e:
+                if qo_count == 0:
+                    print(f"    QO error: {e}")
+                    session.rollback()
+
+        # Maintenance Orders from ServiceCalls
+        mo_maint_count = 0
+        for sc in data.get("ServiceCalls", []):
+            sc_id = sc.get("ServiceCallID")
+            if not sc_id:
+                continue
+            first_site = next(iter(site_ids.values()), None)
+            if not first_site:
+                continue
+            status_val = str(sc.get("Status", "open")).strip().lower()
+            status = "COMPLETED" if status_val == "closed" else "IN_PROGRESS"
+            priority_val = safe_int(sc.get("Priority", "2"), 2)
+            priority_map = {1: "HIGH", 2: "NORMAL", 3: "LOW"}
+            try:
+                session.execute(text("""
+                    INSERT INTO maintenance_order (maintenance_order_number, site_id, config_id, tenant_id,
+                        maintenance_type, status, priority, work_description, asset_id,
+                        order_date, scheduled_start_date, source, source_event_id)
+                    VALUES (:mon, :sid, :cid, :tid, 'CORRECTIVE', :status, :priority, :desc, :asset,
+                        :odate, :sdate, 'SAP_B1', :seid)
+                """), {"mon": f"B1-SC-{sc_id}", "sid": first_site, "cid": config_id,
+                       "tid": tenant_id, "status": status,
+                       "priority": priority_map.get(priority_val, "NORMAL"),
+                       "desc": sc.get("Subject"), "asset": sc.get("ItemCode"),
+                       "odate": sc.get("StartDate"), "sdate": sc.get("StartDate"),
+                       "seid": f"OSCL-{sc_id}"})
+                mo_maint_count += 1
+            except Exception as e:
+                if mo_maint_count == 0:
+                    print(f"    MO maint error: {e}")
+
         print(f"  Created {gr_count} goods receipts, {ship_count} shipments, {to_count} transfer orders")
         print(f"  Created {ib_count} inbound orders, {sr_count} sourcing rules")
+        print(f"  Created {qo_count} quality orders, {mo_maint_count} maintenance orders")
 
         session.commit()
         print(f"\n  SUCCESS — Config {config_id} built from SAP Business One")
