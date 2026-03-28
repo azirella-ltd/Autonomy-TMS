@@ -151,9 +151,13 @@ class InforConfigBuilder:
         # Populated during _build() for use by transactional methods
         self._config_id: Optional[int] = None
         self._product_id_map: Dict[str, str] = {}   # M3 ITNO → product.id
-        self._site_ids: Set[str] = set()             # M3 WHLO → site.id
+        self._site_ids: Set[str] = set()             # M3 WHLO codes of internal sites
+        self._site_name_map: Dict[str, str] = {}     # M3 WHLO → site.name (descriptive)
+        self._site_master_types: Dict[str, str] = {} # M3 WHLO → master_type
         self._vendor_pks: Dict[str, int] = {}        # M3 SUNO → trading_partner._id
+        self._vendor_names: Dict[str, str] = {}      # M3 SUNO → vendor display name
         self._customer_pks: Dict[str, int] = {}      # M3 CUNO → trading_partner._id
+        self._customer_names: Dict[str, str] = {}    # M3 CUNO → customer display name
         self._bom_products: Set[str] = set()         # ITNOs with BOMs (manufactured)
 
     # ── Public Entry Points ──────────────────────────────────────────────
@@ -317,14 +321,20 @@ class InforConfigBuilder:
     # ── Phase 2: Master Data Builders ────────────────────────────────────
 
     async def _build_sites(self, warehouses: List[Dict]) -> int:
-        """Warehouse → Site. Classifies as MANUFACTURER if it has BOM products."""
+        """Warehouse → Site (internal, is_external=False).
+
+        Uses the warehouse description (WHNM/ITDS) as the site name for Sankey
+        readability, not the raw M3 warehouse code.
+        """
         count = 0
         for wh in warehouses:
             whlo = str(wh.get("WHLO", "")).strip()
             if not whlo:
                 continue
 
-            whnm = wh.get("WHNM", wh.get("WarehouseName", whlo))
+            # Descriptive name: prefer WHNM, fall back to WHDC, then code
+            whnm = (wh.get("WHNM") or wh.get("WarehouseName") or
+                    wh.get("WHDC") or whlo).strip()
             whty = str(wh.get("WHTY", "1")).strip()
             master_type = map_warehouse_type(whty)
 
@@ -344,36 +354,39 @@ class InforConfigBuilder:
                 dag_type = "inventory"
 
             self._site_ids.add(whlo)
+            self._site_name_map[whlo] = whnm
+            self._site_master_types[whlo] = master_type
 
             # Check if site already exists for this config with this name
             existing = await self.db.execute(text(
                 "SELECT id FROM site WHERE config_id = :cid AND name = :name"
-            ), {"cid": self._config_id, "name": whlo})
+            ), {"cid": self._config_id, "name": whnm})
             row = existing.fetchone()
 
             if row:
                 await self.db.execute(text("""
-                    UPDATE site SET master_type = :master_type, type = :type, dag_type = :dag_type
+                    UPDATE site SET master_type = :master_type, type = :type,
+                        dag_type = :dag_type, is_external = false
                     WHERE id = :id
                 """), {"id": row[0], "master_type": master_type, "type": site_type, "dag_type": dag_type})
             else:
                 await self.db.execute(text("""
                     INSERT INTO site (config_id, name, type, dag_type, master_type, order_aging,
-                        company_id, geo_id)
+                        company_id, geo_id, is_external)
                     VALUES (:config_id, :name, :type, :dag_type, :master_type, 0,
-                        :company_id, :geo_id)
+                        :company_id, :geo_id, false)
                 """), {
                     "config_id": self._config_id,
-                    "name": whlo,
+                    "name": whnm,
                     "type": site_type,
                     "dag_type": dag_type,
                     "master_type": master_type,
-                    "company_id": whnm,
+                    "company_id": "MIDWEST_IND",
                     "geo_id": wh.get("TOWN", ""),
                 })
             count += 1
 
-        logger.info("  Sites: %d created/updated", count)
+        logger.info("  Sites: %d internal created/updated", count)
         return count
 
     async def _build_products(self, items: List[Dict]) -> int:
@@ -436,25 +449,35 @@ class InforConfigBuilder:
         suppliers: List[Dict],
         customers: List[Dict],
     ) -> int:
-        """Supplier/Customer → TradingPartner."""
+        """Supplier/Customer → TradingPartner + external Site nodes.
+
+        For each vendor/customer, creates:
+        1. A TradingPartner record (the business entity)
+        2. An external Site node (is_external=True, trading_partner_id=tp._id)
+           so the Sankey diagram can render vendor/customer endpoints.
+        """
         count = 0
 
+        # ── Vendors ──
         for sup in suppliers:
             suno = str(sup.get("SUNO", "")).strip()
             if not suno:
                 continue
 
+            sunm = (sup.get("SUNM") or sup.get("SupplierName") or suno).strip()
             tp_id = f"INF_V_{suno}"
             result = await self.db.execute(text("""
-                INSERT INTO trading_partners (id, tpartner_type,
+                INSERT INTO trading_partners (id, tpartner_type, description,
                     city, country, phone_number, is_active)
-                VALUES (:id, 'vendor',
+                VALUES (:id, 'vendor', :desc,
                     :city, :country, :phone, :active)
                 ON CONFLICT (id) DO UPDATE SET
-                    city = EXCLUDED.city, country = EXCLUDED.country
+                    city = EXCLUDED.city, country = EXCLUDED.country,
+                    description = EXCLUDED.description
                 RETURNING _id
             """), {
                 "id": tp_id,
+                "desc": sunm,
                 "city": sup.get("TOWN", ""),
                 "country": sup.get("CSCD", ""),
                 "phone": sup.get("PHNO", ""),
@@ -463,24 +486,48 @@ class InforConfigBuilder:
             row = result.fetchone()
             if row:
                 self._vendor_pks[suno] = row[0]
+                self._vendor_names[suno] = sunm
             count += 1
 
+        # Flush to get TradingPartner._id values before creating external Site nodes
+        await self.db.flush()
+
+        # Create external Site nodes for vendors
+        for suno, tp_pk in self._vendor_pks.items():
+            sunm = self._vendor_names.get(suno, suno)
+            site_name = f"Vendor - {sunm}"
+            await self.db.execute(text("""
+                INSERT INTO site (config_id, name, type, dag_type, master_type,
+                    is_external, tpartner_type, trading_partner_id, order_aging, geo_id)
+                VALUES (:config_id, :name, 'market_supply', 'market_supply', 'VENDOR',
+                    true, 'vendor', :tp_id, 0, '')
+                ON CONFLICT DO NOTHING
+            """), {
+                "config_id": self._config_id,
+                "name": site_name,
+                "tp_id": tp_pk,
+            })
+
+        # ── Customers ──
         for cust in customers:
             cuno = str(cust.get("CUNO", "")).strip()
             if not cuno:
                 continue
 
+            cunm = (cust.get("CUNM") or cust.get("CustomerName") or cuno).strip()
             tp_id = f"INF_C_{cuno}"
             result = await self.db.execute(text("""
-                INSERT INTO trading_partners (id, tpartner_type,
+                INSERT INTO trading_partners (id, tpartner_type, description,
                     city, country, phone_number, is_active)
-                VALUES (:id, 'customer',
+                VALUES (:id, 'customer', :desc,
                     :city, :country, :phone, :active)
                 ON CONFLICT (id) DO UPDATE SET
-                    city = EXCLUDED.city, country = EXCLUDED.country
+                    city = EXCLUDED.city, country = EXCLUDED.country,
+                    description = EXCLUDED.description
                 RETURNING _id
             """), {
                 "id": tp_id,
+                "desc": cunm,
                 "city": cust.get("TOWN", ""),
                 "country": cust.get("CSCD", ""),
                 "phone": cust.get("PHNO", ""),
@@ -489,41 +536,169 @@ class InforConfigBuilder:
             row = result.fetchone()
             if row:
                 self._customer_pks[cuno] = row[0]
+                self._customer_names[cuno] = cunm
             count += 1
 
-        logger.info("  Trading Partners: %d (vendors=%d, customers=%d)",
+        # Flush to get TradingPartner._id values before creating external Site nodes
+        await self.db.flush()
+
+        # Create external Site nodes for customers
+        for cuno, tp_pk in self._customer_pks.items():
+            cunm = self._customer_names.get(cuno, cuno)
+            site_name = f"Customer - {cunm}"
+            await self.db.execute(text("""
+                INSERT INTO site (config_id, name, type, dag_type, master_type,
+                    is_external, tpartner_type, trading_partner_id, order_aging, geo_id)
+                VALUES (:config_id, :name, 'market_demand', 'market_demand', 'CUSTOMER',
+                    true, 'customer', :tp_id, 0, '')
+                ON CONFLICT DO NOTHING
+            """), {
+                "config_id": self._config_id,
+                "name": site_name,
+                "tp_id": tp_pk,
+            })
+
+        logger.info("  Trading Partners: %d (vendors=%d, customers=%d) + external Site nodes",
                      count, len(self._vendor_pks), len(self._customer_pks))
         return count
 
     async def _build_transportation_lanes(self) -> int:
         """Auto-generate transportation lanes from site topology.
 
-        Creates lanes: vendor→site, site→site, site→customer based on
-        warehouse types and trading partner relationships.
+        Creates three types of lanes for Sankey-renderable topology:
+        1. Vendor → internal site: from_partner_id + to_site_id
+        2. Internal → internal: from_site_id + to_site_id
+        3. Internal site → Customer: from_site_id + to_partner_id
         """
         count = 0
-        site_list = sorted(self._site_ids)
 
-        # Inter-site lanes (all pairs)
-        for i, from_site in enumerate(site_list):
-            for to_site in site_list[i + 1:]:
+        # Helper: get internal site id by descriptive name
+        async def _site_id_by_name(name: str) -> Optional[int]:
+            r = await self.db.execute(text(
+                "SELECT id FROM site WHERE config_id = :cid AND name = :name LIMIT 1"
+            ), {"cid": self._config_id, "name": name})
+            row = r.fetchone()
+            return row[0] if row else None
+
+        lead_time_json = '{"type": "normal", "mean": 3, "stddev": 1}'
+
+        # ── 1. Vendor → internal manufacturing/raw-material sites ──
+        # Vendors supply to MANUFACTURER and raw-material-store INVENTORY sites
+        target_whlos = [
+            whlo for whlo in self._site_ids
+            if self._site_master_types.get(whlo) == "MANUFACTURER"
+            or "raw material" in self._site_name_map.get(whlo, "").lower()
+        ]
+        if not target_whlos:
+            # Fallback: supply to first available internal site
+            target_whlos = list(self._site_ids)[:1]
+
+        for suno, tp_pk in self._vendor_pks.items():
+            for whlo in target_whlos:
+                to_name = self._site_name_map.get(whlo)
+                if not to_name:
+                    continue
+                to_site_id = await _site_id_by_name(to_name)
+                if not to_site_id:
+                    continue
                 await self.db.execute(text("""
-                    INSERT INTO transportation_lane (config_id, from_site_id, to_site_id,
+                    INSERT INTO transportation_lane (config_id, from_partner_id, to_site_id,
                         capacity, supply_lead_time)
-                    SELECT :config_id, f.id, t.id, 9999,
-                        '{"type": "normal", "mean": 3, "stddev": 1}'::json
-                    FROM site f, site t
-                    WHERE f.config_id = :config_id AND f.name = :from_site
-                      AND t.config_id = :config_id AND t.name = :to_site
+                    VALUES (:config_id, :from_partner_id, :to_site_id, 9999,
+                        CAST(:lead_time AS json))
                     ON CONFLICT DO NOTHING
                 """), {
                     "config_id": self._config_id,
-                    "from_site": from_site,
-                    "to_site": to_site,
+                    "from_partner_id": tp_pk,
+                    "to_site_id": to_site_id,
+                    "lead_time": lead_time_json,
                 })
                 count += 1
 
-        logger.info("  Transportation Lanes: %d created", count)
+        # ── 2. Internal → internal lanes (topology-aware) ──
+        # Build directional lanes based on master types:
+        #   Raw material stores → Manufacturers
+        #   Manufacturers → Distribution centers (INVENTORY non-RM)
+        #   Distribution → Distribution (cross-docking)
+        manufacturers = [w for w in self._site_ids if self._site_master_types.get(w) == "MANUFACTURER"]
+        rm_stores = [w for w in self._site_ids
+                     if self._site_master_types.get(w) == "INVENTORY"
+                     and "raw material" in self._site_name_map.get(w, "").lower()]
+        dist_centers = [w for w in self._site_ids
+                        if self._site_master_types.get(w) == "INVENTORY"
+                        and w not in rm_stores]
+
+        # RM store → Manufacturer
+        for rm in rm_stores:
+            for mfg in manufacturers:
+                from_id = await _site_id_by_name(self._site_name_map[rm])
+                to_id = await _site_id_by_name(self._site_name_map[mfg])
+                if from_id and to_id:
+                    await self.db.execute(text("""
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_site_id,
+                            capacity, supply_lead_time)
+                        VALUES (:config_id, :from_id, :to_id, 9999, CAST(:lead_time AS json))
+                        ON CONFLICT DO NOTHING
+                    """), {"config_id": self._config_id, "from_id": from_id,
+                           "to_id": to_id, "lead_time": lead_time_json})
+                    count += 1
+
+        # Manufacturer → Distribution center
+        for mfg in manufacturers:
+            for dc in dist_centers:
+                from_id = await _site_id_by_name(self._site_name_map[mfg])
+                to_id = await _site_id_by_name(self._site_name_map[dc])
+                if from_id and to_id:
+                    await self.db.execute(text("""
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_site_id,
+                            capacity, supply_lead_time)
+                        VALUES (:config_id, :from_id, :to_id, 9999, CAST(:lead_time AS json))
+                        ON CONFLICT DO NOTHING
+                    """), {"config_id": self._config_id, "from_id": from_id,
+                           "to_id": to_id, "lead_time": lead_time_json})
+                    count += 1
+
+        # Cross-docking between distribution centers
+        for i, dc_a in enumerate(dist_centers):
+            for dc_b in dist_centers[i + 1:]:
+                from_id = await _site_id_by_name(self._site_name_map[dc_a])
+                to_id = await _site_id_by_name(self._site_name_map[dc_b])
+                if from_id and to_id:
+                    await self.db.execute(text("""
+                        INSERT INTO transportation_lane (config_id, from_site_id, to_site_id,
+                            capacity, supply_lead_time)
+                        VALUES (:config_id, :from_id, :to_id, 9999, CAST(:lead_time AS json))
+                        ON CONFLICT DO NOTHING
+                    """), {"config_id": self._config_id, "from_id": from_id,
+                           "to_id": to_id, "lead_time": lead_time_json})
+                    count += 1
+
+        # ── 3. Internal distribution/manufacturing sites → Customer ──
+        # Ship from DCs to customers; if no DCs, ship from manufacturers
+        ship_from_whlos = dist_centers if dist_centers else manufacturers
+        for cuno, tp_pk in self._customer_pks.items():
+            for whlo in ship_from_whlos:
+                from_name = self._site_name_map.get(whlo)
+                if not from_name:
+                    continue
+                from_site_id = await _site_id_by_name(from_name)
+                if not from_site_id:
+                    continue
+                await self.db.execute(text("""
+                    INSERT INTO transportation_lane (config_id, from_site_id, to_partner_id,
+                        capacity, supply_lead_time)
+                    VALUES (:config_id, :from_site_id, :to_partner_id, 9999,
+                        CAST(:lead_time AS json))
+                    ON CONFLICT DO NOTHING
+                """), {
+                    "config_id": self._config_id,
+                    "from_site_id": from_site_id,
+                    "to_partner_id": tp_pk,
+                    "lead_time": lead_time_json,
+                })
+                count += 1
+
+        logger.info("  Transportation Lanes: %d created (vendor→site + internal + site→customer)", count)
         return count
 
     async def _build_boms(self, bom_lines: List[Dict]) -> int:
@@ -597,7 +772,7 @@ class InforConfigBuilder:
             """), {
                 "config_id": self._config_id,
                 "product_id": product_id,
-                "whlo": whlo,
+                "whlo": self._site_name_map.get(whlo, whlo),
                 "inv_date": today,
                 "on_hand": _safe_float(rec.get("STQT", rec.get("OnHand"))),
                 "in_transit": _safe_float(rec.get("TRQT", rec.get("InTransit"))),
@@ -644,7 +819,7 @@ class InforConfigBuilder:
             """), {
                 "config_id": self._config_id,
                 "product_id": product_id,
-                "whlo": whlo,
+                "whlo": self._site_name_map.get(whlo, whlo),
                 "ss_policy": ss_policy,
                 "ss_qty": _safe_float(rec.get("SSQT", rec.get("SafetyStock"))),
                 "reop": _safe_float(rec.get("REOP", rec.get("ReorderPoint"))),
@@ -832,7 +1007,7 @@ class InforConfigBuilder:
                 "order_number": f"INF-MO-{mfno}",
                 "config_id": self._config_id,
                 "item_id": product_id,
-                "whlo": whlo,
+                "whlo": self._site_name_map.get(whlo, whlo),
                 "planned_qty": _safe_int(mo.get("ORQA")),
                 "start_date": start_dt,
                 "due_date": due_dt,
@@ -977,7 +1152,7 @@ class InforConfigBuilder:
             """), {
                 "config_id": self._config_id,
                 "product_id": product_id,
-                "whlo": whlo,
+                "whlo": self._site_name_map.get(whlo, whlo),
                 "fc_date": _parse_m3_date(fc.get("FRDT")),
                 "fc_qty": _safe_float(fc.get("FOQA", fc.get("ForecastQty"))),
                 "fc_type": fc.get("FOTY", "statistical"),
@@ -1132,11 +1307,11 @@ class InforConfigBuilder:
             await self.db.execute(text("""
                 UPDATE inv_level SET on_hand_qty = on_hand_qty + :delta
                 WHERE config_id = :config_id AND product_id = :product_id
-                    AND site_id IN (SELECT id FROM site WHERE config_id = :config_id AND site_id_str = :whlo)
+                    AND site_id IN (SELECT id FROM site WHERE config_id = :config_id AND name = :whlo)
             """), {
                 "config_id": self._config_id,
                 "product_id": product_id,
-                "whlo": whlo,
+                "whlo": self._site_name_map.get(whlo, whlo),
                 "delta": qty,
             })
             count += 1
