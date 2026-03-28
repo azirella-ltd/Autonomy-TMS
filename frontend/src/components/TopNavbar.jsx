@@ -42,7 +42,7 @@ import useTabStore from '../stores/useTabStore';
 
 const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOpen = false, onToggleAzirella }) => {
   const { user, isAuthenticated, logout } = useAuth();
-  const { effectiveConfigId } = useActiveConfig();
+  const { activeConfig, effectiveConfigId } = useActiveConfig();
   const [currentPath, setCurrentPath] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [gameInfo, setGameInfo] = useState(null);
@@ -681,7 +681,7 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
 
   const groupName = user?.group?.name || gameInfo?.group?.name;
   const gameConfigName = gameInfo?.config?.name;
-  const scDisplayName = supplyChainConfigName || gameConfigName || systemConfigName;
+  const scDisplayName = supplyChainConfigName || activeConfig?.name || gameConfigName || systemConfigName;
   const gameName = gameInfo?.name;
   const onSystemAdminPage = location.pathname.startsWith('/system');
   const shouldShowContext = !onSystemAdminPage && (groupName || scDisplayName || gameName);
