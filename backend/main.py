@@ -316,6 +316,7 @@ class MeResponse(BaseModel):
     decision_level: Optional[str] = None
     capabilities: List[str] = []
     roles: List[str] = []
+    tenant_logo: Optional[str] = None
 
 
 class OrderSubmission(BaseModel):
@@ -829,18 +830,36 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
     except Exception:
         pass  # Non-fatal — return empty capabilities
 
+    # Fetch tenant logo for frontend branding
+    tenant_logo = None
+    tid = user.get("tenant_id")
+    if tid:
+        try:
+            from app.models.tenant import Tenant as _TenantModel
+            session2 = _sync_sf()
+            try:
+                logo_row = session2.execute(
+                    select(_TenantModel.logo).where(_TenantModel.id == tid)
+                ).scalar_one_or_none()
+                tenant_logo = logo_row if logo_row else None
+            finally:
+                session2.close()
+        except Exception:
+            pass
+
     return MeResponse(
         id=user["id"],
         email=user["email"],
         name=display_name,
         role=user.get("role", "user"),
-        tenant_id=user.get("tenant_id"),
+        tenant_id=tid,
         user_type=user.get("user_type"),
         is_superuser=bool(user.get("is_superuser", False)),
         default_config_id=user.get("default_config_id"),
         decision_level=pr,
         capabilities=capabilities,
         roles=role_names,
+        tenant_logo=tenant_logo,
     )
 
 @api.post("/auth/refresh", response_model=TokenResponse, tags=["auth"])
