@@ -577,64 +577,12 @@ async def startup_event():
             from app.services.sap_staging_jobs import register_sap_staging_jobs
             register_sap_staging_jobs(scheduler_service)
 
-            # Batch calibrate CDT wrappers from historical decision data
-            # Calibrate both global (for monitoring) and per-tenant registries
-            try:
-                from app.services.powell.cdt_calibration_service import CDTCalibrationService
-                from sqlalchemy import text as sa_text
-                cdt_db = sync_session_factory()
-                try:
-                    # Global calibration (all tenants combined)
-                    cdt_svc = CDTCalibrationService(cdt_db)
-                    cdt_stats = cdt_svc.calibrate_all()
-                    calibrated = sum(1 for s in cdt_stats.values() if s.get("status") == "calibrated")
-                    logger.info(f"CDT startup calibration (global): {calibrated}/11 agents calibrated")
-
-                    # Per-tenant calibration so readiness endpoint works
-                    # Also runs simulation bootstrap for any tenant with uncalibrated agents
-                    tenant_rows = cdt_db.execute(
-                        sa_text(
-                            "SELECT DISTINCT sc.tenant_id, sc.id "
-                            "FROM supply_chain_configs sc "
-                            "WHERE sc.tenant_id IS NOT NULL "
-                            "ORDER BY sc.tenant_id"
-                        )
-                    ).fetchall()
-                    seen_tenants = set()
-                    for tid, config_id in tenant_rows:
-                        if tid in seen_tenants:
-                            continue
-                        seen_tenants.add(tid)
-                        try:
-                            tenant_svc = CDTCalibrationService(cdt_db, tenant_id=tid)
-                            tenant_stats = tenant_svc.calibrate_all()
-                            t_cal = sum(1 for s in tenant_stats.values() if s.get("status") == "calibrated")
-                            logger.info(f"CDT startup calibration (tenant {tid}): {t_cal}/11 agents calibrated")
-
-                            # If not all calibrated, run simulation bootstrap
-                            if t_cal < 11 and config_id:
-                                try:
-                                    from app.services.powell.simulation_calibration_service import (
-                                        run_simulation_calibration_bootstrap,
-                                    )
-                                    sim_stats = run_simulation_calibration_bootstrap(
-                                        db=cdt_db,
-                                        config_id=config_id,
-                                        tenant_id=tid,
-                                        n_episodes=50,
-                                    )
-                                    logger.info(
-                                        f"CDT startup simulation bootstrap (tenant {tid}): "
-                                        f"{sim_stats.get('agents_calibrated', 0)}/11 agents calibrated"
-                                    )
-                                except Exception as sim_err:
-                                    logger.warning(f"CDT simulation bootstrap (tenant {tid}): {sim_err}")
-                        except Exception as te:
-                            logger.debug(f"CDT tenant {tid} calibration: {te}")
-                finally:
-                    cdt_db.close()
-            except Exception as e:
-                logger.warning(f"CDT startup calibration failed (non-fatal): {e}")
+            # CDT calibration deferred to background — no longer blocks startup.
+            # Calibration runs:
+            #   - During provisioning (conformal step)
+            #   - Hourly via APScheduler (relearning_jobs.py)
+            #   - On-demand via /site-agent/retraining/trigger API
+            logger.info("CDT startup calibration: SKIPPED (runs via scheduler + provisioning)")
 
             # Register conformal prediction recalibration jobs
             from app.services.conformal_orchestrator import register_conformal_jobs
