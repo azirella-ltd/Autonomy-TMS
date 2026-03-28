@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -553,7 +554,10 @@ async def logout(
 
 
 @router.get("/me", response_model=UserPublic)
-async def read_users_me(current_user: User = Depends(get_current_active_user)):
+async def read_users_me(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Get current user information.
 
@@ -579,8 +583,14 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
         user_dict["decision_level"] = pr.value if hasattr(pr, "value") else str(pr)
 
     # Include tenant logo for frontend branding
-    tenant = getattr(current_user, "tenant", None)
-    user_dict["tenant_logo"] = getattr(tenant, "logo", None) if tenant else None
+    tenant_logo = None
+    if current_user.tenant_id:
+        from app.models.tenant import Tenant
+        tenant_row = await db.execute(
+            select(Tenant.logo).where(Tenant.id == current_user.tenant_id)
+        )
+        tenant_logo = tenant_row.scalar_one_or_none()
+    user_dict["tenant_logo"] = tenant_logo
 
     return user_dict
 
