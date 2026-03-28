@@ -883,10 +883,10 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
                 <img
                   src={user.tenant_logo}
                   alt="Tenant"
-                  className="h-8 w-8 rounded-full object-cover"
+                  className="h-8 max-w-[120px] rounded object-contain"
                 />
               ) : (
-                <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+                <div className="h-8 w-8 rounded bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
                   {getInitials(user?.name || '')}
                 </div>
               )}
