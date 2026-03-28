@@ -355,6 +355,14 @@ seed-food-dist-pipeline:
 	@echo "\n[+] Running forecast pipeline for Food Distribution..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend python scripts/seed_food_dist_pipeline.py
 
+seed-infor-demo:
+	@echo "\n[+] Seeding Infor M3 demo tenants (Midwest Industrial Supply)..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_infor_demo.py
+
+generate-infor-demo-data:
+	@echo "\n[+] Generating Infor M3 demo data..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/generate_infor_demo_data.py /tmp/infor_export
+
 all_demo_configs:
 	@$(MAKE) --no-print-directory seed-demo-configs SEED_ARGS="$(SEED_ARGS)"
 	@$(MAKE) --no-print-directory seed-three-fg-demo SEED_ARGS="$(SEED_ARGS)"

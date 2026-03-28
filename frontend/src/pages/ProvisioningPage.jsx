@@ -7,12 +7,14 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Zap, ArrowRight, Loader2 } from 'lucide-react';
+import { Zap, ArrowRight, Loader2, ShieldAlert } from 'lucide-react';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
+import { useAuth } from '../contexts/AuthContext';
 import ProvisioningStepper from '../components/supply-chain-config/ProvisioningStepper';
 
 export default function ProvisioningPage() {
   const { activeConfig, activeConfigId, refresh, provisioningRequired } = useActiveConfig();
+  const { isTenantAdmin } = useAuth();
   const navigate = useNavigate();
   const [stepperOpen, setStepperOpen] = useState(false);
 
@@ -79,17 +81,31 @@ export default function ProvisioningPage() {
       </div>
 
       <div className="text-center">
-        <button
-          onClick={() => setStepperOpen(true)}
-          className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all hover:shadow-xl"
-        >
-          <Zap className="w-5 h-5" />
-          Start Provisioning
-          <ArrowRight className="w-5 h-5" />
-        </button>
-        <p className="mt-3 text-sm text-gray-500">
-          Takes 2-5 minutes depending on network complexity
-        </p>
+        {isTenantAdmin ? (
+          <>
+            <button
+              onClick={() => setStepperOpen(true)}
+              className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg shadow-lg hover:from-blue-700 hover:to-indigo-700 transition-all hover:shadow-xl"
+            >
+              <Zap className="w-5 h-5" />
+              Start Provisioning
+              <ArrowRight className="w-5 h-5" />
+            </button>
+            <p className="mt-3 text-sm text-gray-500">
+              Takes 2-5 minutes depending on network complexity
+            </p>
+          </>
+        ) : (
+          <div className="inline-flex flex-col items-center gap-3 px-8 py-6 bg-amber-50 border border-amber-200 rounded-xl">
+            <ShieldAlert className="w-8 h-8 text-amber-600" />
+            <p className="text-gray-700 font-medium">
+              Only your tenant administrator can provision this configuration.
+            </p>
+            <p className="text-sm text-gray-500">
+              Please contact your admin to start provisioning.
+            </p>
+          </div>
+        )}
       </div>
 
       {stepperOpen && (

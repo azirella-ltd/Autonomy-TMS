@@ -740,13 +740,15 @@ class D:
 # fit triangular(min, mode, max) from observed values.
 # When no history: use principled fallbacks.
 
+import logging as _logging
 import statistics as _stats
 from collections import defaultdict as _defaultdict
+from dataclasses import dataclass
 from typing import Dict as _Dict, List as _List, Optional as _Optional, Tuple as _Tuple
 
 from sqlalchemy import text as _sql_text
 
-_logger = logging.getLogger(__name__)
+_logger = _logging.getLogger(__name__)
 
 # Industry CoV benchmarks by product category
 _INDUSTRY_COV = {
