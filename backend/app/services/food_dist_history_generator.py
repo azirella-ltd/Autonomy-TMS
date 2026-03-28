@@ -5,26 +5,28 @@ Generates 2 years of daily transactional history for the Food Dist config
 across 16 AWS SC data model entity types:
 
 Existing (10):
-1. OutboundOrderLine — customer demand orders (with cancellations)
-2. InboundOrder / InboundOrderLine — supplier purchase orders
-3. Shipment + ShipmentLot — material movement with food lot traceability
-4. Forecast — daily P10/P50/P90 demand forecasts
-5. InvLevel — daily inventory snapshots per site×product
-6. FulfillmentOrder — warehouse pick/pack/ship execution
-7. ConsensusDemand — monthly S&OP consensus records
-8. SupplementaryTimeSeries — external demand signals (promo-correlated)
-9. InventoryProjection — weekly ATP/CTP projections
-10. Backorder — unfulfilled demand tracking
+1. OutboundOrder — customer order headers (parent for order lines)
+2. OutboundOrderLine — customer demand order lines (with cancellations)
+3. InboundOrder / InboundOrderLine — supplier purchase orders
+4. Shipment + ShipmentLot — material movement with food lot traceability
+5. Forecast — daily P10/P50/P90 demand forecasts
+6. InvLevel — daily inventory snapshots per site×product
+7. FulfillmentOrder — warehouse pick/pack/ship execution
+8. ConsensusDemand — monthly S&OP consensus records
+9. SupplementaryTimeSeries — external demand signals (promo-correlated)
+10. InventoryProjection — weekly ATP/CTP projections
+11. Backorder — unfulfilled demand tracking
 
 New Tier 1 (4):
-11. PurchaseOrder + PurchaseOrderLineItem — typed PO records (FK base for GR)
-12. GoodsReceipt + GoodsReceiptLineItem — supplier quality-at-receipt with inspection
-13. QualityOrder + QualityOrderLineItem — incoming inspection with characteristic checks
-14. InboundOrderLineSchedule — split delivery schedules with promised vs actual dates
+12. PurchaseOrder + PurchaseOrderLineItem — typed PO records (FK base for GR)
+13. GoodsReceipt + GoodsReceiptLineItem — supplier quality-at-receipt with inspection
+14. QualityOrder + QualityOrderLineItem — incoming inspection with characteristic checks
+15. InboundOrderLineSchedule — split delivery schedules with promised vs actual dates
 
-New Tier 2 (2):
-15. TransferOrder + TransferOrderLineItem — inter-DC transfers with damage tracking
-16. MaintenanceOrder — cold chain equipment preventive/corrective/emergency maintenance
+New Tier 2 (3):
+16. TransferOrder + TransferOrderLineItem �� inter-DC transfers with damage tracking
+17. MaintenanceOrder — cold chain equipment preventive/corrective/emergency maintenance
+18. ProductionOrder — CDC repackaging/cross-docking operations (case breakdown, relabeling)
 
 Demand model enhancements:
 - Holiday spikes (Thanksgiving, July 4th, Super Bowl, Christmas, etc.)
@@ -55,7 +57,7 @@ from sqlalchemy import select, text
 
 from app.models.supply_chain_config import Site
 from app.models.sc_entities import (
-    OutboundOrderLine, InboundOrder,
+    OutboundOrder, OutboundOrderLine, InboundOrder,
     Shipment, ShipmentLot, Forecast, InvLevel,
     FulfillmentOrder, ConsensusDemand, SupplementaryTimeSeries,
     InventoryProjection, Backorder, InboundOrderLineSchedule,
@@ -65,6 +67,7 @@ from app.models.goods_receipt import GoodsReceipt, GoodsReceiptLineItem
 from app.models.quality_order import QualityOrder, QualityOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.maintenance_order import MaintenanceOrder
+from app.models.production_order import ProductionOrder
 from app.services.food_dist_config_generator import (
     ALL_PRODUCT_GROUPS, SUPPLIERS, CUSTOMERS, RDCS, DC_CONFIG,
     ProductDefinition, CustomerDefinition, SupplierDefinition,
@@ -288,6 +291,7 @@ class FoodDistHistoryGenerator:
         self._qo_seq = 0
         self._to_transfer_seq = 0
         self._mo_seq = 0
+        self._prod_order_seq = 0
 
         # Cross-method data for FK linkage
         self._po_records: List[PurchaseOrder] = []
@@ -482,8 +486,13 @@ class FoodDistHistoryGenerator:
         demand: Dict[str, Dict[str, List[float]]],
         days: int,
         start_date: date,
-    ) -> Tuple[List, List, List, List, List]:
-        """Generate customer orders and downstream fulfillment records."""
+    ) -> Tuple[List, List, List, List, List, List]:
+        """Generate customer orders and downstream fulfillment records.
+
+        Returns:
+            (outbound_orders, order_lines, fulfillments, shipments, shipment_lots, backorders)
+        """
+        outbound_orders: List[OutboundOrder] = []
         order_lines: List[OutboundOrderLine] = []
         fulfillments: List[FulfillmentOrder] = []
         shipments: List[Shipment] = []
@@ -562,6 +571,10 @@ class FoodDistHistoryGenerator:
                 has_issue = random.random() < 0.03
 
                 total_ship_qty = 0.0
+                total_ordered_qty = 0.0
+                total_order_value = 0.0
+                order_has_backlog = False
+                order_all_cancelled = True
 
                 for sku in selected_skus:
                     # Sum demand over order period
@@ -593,6 +606,14 @@ class FoodDistHistoryGenerator:
                         shipped = round(qty)
                         backlog = 0.0
                         status = "FULFILLED"
+
+                    # Track order-level totals
+                    total_ordered_qty += qty
+                    total_order_value += qty * prod.unit_price
+                    if not is_cancelled:
+                        order_all_cancelled = False
+                    if backlog > 0:
+                        order_has_backlog = True
 
                     priority = random.choices(
                         ["STANDARD", "HIGH", "VIP"],
@@ -686,6 +707,38 @@ class FoodDistHistoryGenerator:
                         )
                         backorders.append(bo)
 
+                # OutboundOrder header (parent for all order lines in this order)
+                if order_all_cancelled:
+                    oo_status = "CANCELLED"
+                elif order_has_backlog:
+                    oo_status = "PARTIALLY_FULFILLED"
+                else:
+                    oo_status = "FULFILLED"
+
+                oo = OutboundOrder(
+                    id=order_id,
+                    company_id=self.company_id,
+                    order_type="SALES",
+                    customer_id=cust.code,
+                    customer_name=cust.name,
+                    ship_from_site_id=rdc_id,
+                    ship_to_site_id=cust_site_id,
+                    status=oo_status,
+                    order_date=d,
+                    requested_delivery_date=delivery_date,
+                    promised_delivery_date=delivery_date,
+                    actual_delivery_date=delivery_date if oo_status == "FULFILLED" else None,
+                    total_ordered_qty=total_ordered_qty,
+                    total_fulfilled_qty=total_ship_qty,
+                    total_value=round(total_order_value, 2),
+                    currency="USD",
+                    priority=priority,  # Last line's priority (representative)
+                    reference_number=f"CUST-PO-{cust.code}-{d.strftime('%Y%m%d')}",
+                    config_id=self.config_id,
+                    source="HISTORY_GEN",
+                )
+                outbound_orders.append(oo)
+
                 # One shipment per customer order (aggregated)
                 if total_ship_qty > 0:
                     actual_delivery = delivery_dt
@@ -747,11 +800,11 @@ class FoodDistHistoryGenerator:
                         shipment_lots.append(sl)
 
         logger.info(
-            f"Outbound flow: {len(order_lines)} order lines, "
+            f"Outbound flow: {len(outbound_orders)} orders, {len(order_lines)} order lines, "
             f"{len(fulfillments)} fulfillments, {len(shipments)} shipments, "
             f"{len(shipment_lots)} lots, {len(backorders)} backorders"
         )
-        return order_lines, fulfillments, shipments, shipment_lots, backorders
+        return outbound_orders, order_lines, fulfillments, shipments, shipment_lots, backorders
 
     # ------------------------------------------------------------------
     # Inbound flow: Supplier POs → Receipts → Shipments
@@ -2274,6 +2327,112 @@ class FoodDistHistoryGenerator:
         return mo_list
 
     # ------------------------------------------------------------------
+    # Production Orders (CDC repackaging / cross-docking operations)
+    # ------------------------------------------------------------------
+
+    def _generate_production_orders(
+        self,
+        days: int,
+        start_date: date,
+    ) -> List[ProductionOrder]:
+        """Generate production orders for CDC repackaging operations.
+
+        Food distribution CDCs perform case-to-each breakdown, relabeling,
+        and mixed-pallet building. These are modeled as simple production orders.
+        ~50 records over the 2-year horizon (roughly bi-weekly).
+        """
+        prod_orders: List[ProductionOrder] = []
+        cdc_id = self.site_ids["CDC_WEST"]
+
+        # Repackaging product candidates (frozen proteins and dry pantry are
+        # commonly broken down from master cases to individual eaches)
+        repack_skus = [
+            ("FP001", "Case-to-each breakdown: chicken breast portions"),
+            ("FP002", "Case-to-each breakdown: beef patties"),
+            ("FP003", "Repack: pork chops portion control"),
+            ("DP001", "Relabel/repack: pasta multi-packs"),
+            ("DP003", "Repack: flour into foodservice bags"),
+            ("FD001", "Mixed-pallet build: ice cream variety packs"),
+            ("BV001", "Mixed-pallet build: juice variety packs"),
+        ]
+
+        # Generate roughly bi-weekly production orders
+        order_interval = 14  # days between production runs
+        for day_off in range(0, days, order_interval):
+            d = start_date + timedelta(days=day_off)
+            # Skip weekends
+            if d.weekday() >= 5:
+                d += timedelta(days=(7 - d.weekday()))
+            if (d - start_date).days >= days:
+                continue
+
+            # Pick 1-2 SKUs per production run
+            n_skus = random.randint(1, 2)
+            selected = random.sample(repack_skus, min(n_skus, len(repack_skus)))
+
+            for sku, description in selected:
+                prod = _SKU_TO_PRODUCT.get(sku)
+                if not prod:
+                    continue
+
+                self._prod_order_seq += 1
+                order_number = f"MO-CDC-{d.strftime('%Y%m%d')}-{self._prod_order_seq:04d}"
+
+                planned_qty = random.randint(50, 300)
+                # Yield: 95-100% for repackaging (minor losses)
+                yield_pct = random.uniform(95.0, 100.0)
+                actual_qty = round(planned_qty * yield_pct / 100.0)
+                scrap_qty = planned_qty - actual_qty
+
+                planned_start = datetime.combine(d, datetime.min.time()) + timedelta(hours=6)
+                # Repackaging takes 2-6 hours
+                duration_hours = random.uniform(2.0, 6.0)
+                planned_end = planned_start + timedelta(hours=duration_hours)
+                # Actual times with slight variance
+                actual_start = planned_start + timedelta(minutes=random.randint(-30, 30))
+                actual_end = planned_end + timedelta(minutes=random.randint(-20, 45))
+
+                status = "COMPLETED"
+                # 5% chance still in progress (recent orders)
+                if day_off > days - 30 and random.random() < 0.15:
+                    status = "IN_PROGRESS"
+                    actual_end = None
+                    actual_qty = None
+                    scrap_qty = 0
+
+                po = ProductionOrder(
+                    order_number=order_number,
+                    item_id=self._pid(sku),
+                    site_id=cdc_id,
+                    config_id=self.config_id,
+                    planned_quantity=planned_qty,
+                    actual_quantity=actual_qty,
+                    scrap_quantity=scrap_qty,
+                    yield_percentage=yield_pct if status == "COMPLETED" else None,
+                    status=status,
+                    planned_start_date=planned_start,
+                    planned_completion_date=planned_end,
+                    actual_start_date=actual_start,
+                    actual_completion_date=actual_end,
+                    released_date=planned_start - timedelta(hours=1),
+                    closed_date=actual_end + timedelta(hours=2) if actual_end else None,
+                    lead_time_planned=1,
+                    lead_time_actual=1 if actual_end else None,
+                    priority=random.choice([3, 4, 5]),
+                    resource_hours_planned=round(duration_hours, 1),
+                    resource_hours_actual=round((actual_end - actual_start).total_seconds() / 3600, 1) if actual_end else None,
+                    setup_cost=round(random.uniform(25.0, 75.0), 2),
+                    unit_cost=round(prod.unit_cost * 0.05, 2),  # Repack cost ~5% of product cost
+                    order_type="REPACK",
+                    notes=description,
+                )
+                po.total_cost = round(po.setup_cost + po.unit_cost * planned_qty, 2)
+                prod_orders.append(po)
+
+        logger.info(f"Production orders: {len(prod_orders)} records (CDC repackaging)")
+        return prod_orders
+
+    # ------------------------------------------------------------------
     # Main entry point
     # ------------------------------------------------------------------
 
@@ -2305,8 +2464,9 @@ class FoodDistHistoryGenerator:
         """
         Generate complete 2-year transactional history.
 
-        Enhanced with: GoodsReceipts, QualityOrders, InboundOrderLineSchedules,
-        TransferOrders, MaintenanceOrders, realistic demand model (holiday spikes,
+        Enhanced with: OutboundOrders (headers), GoodsReceipts, QualityOrders,
+        InboundOrderLineSchedules, TransferOrders, MaintenanceOrders,
+        ProductionOrders (CDC repackaging), realistic demand model (holiday spikes,
         customer churn, promotions, log-normal noise), and log-normal lead times.
 
         Args:
@@ -2345,7 +2505,8 @@ class FoodDistHistoryGenerator:
 
         # Outbound flow (with basket correlations, cancellations)
         logger.info("Generating outbound flow...")
-        ool, fo, ob_sh, ob_lots, bo = self._generate_outbound_flow(demand, days, start_date)
+        oo, ool, fo, ob_sh, ob_lots, bo = self._generate_outbound_flow(demand, days, start_date)
+        counts["outbound_orders"] = len(oo)
         counts["outbound_order_lines"] = len(ool)
         counts["fulfillment_orders"] = len(fo)
         counts["outbound_shipments"] = len(ob_sh)
@@ -2376,6 +2537,11 @@ class FoodDistHistoryGenerator:
         logger.info("Generating maintenance orders...")
         mo_list = self._generate_maintenance_orders(days, start_date)
         counts["maintenance_orders"] = len(mo_list)
+
+        # Production Orders (CDC repackaging)
+        logger.info("Generating production orders...")
+        prod_order_list = self._generate_production_orders(days, start_date)
+        counts["production_orders"] = len(prod_order_list)
 
         # Inventory levels
         logger.info("Generating inventory levels...")
@@ -2419,6 +2585,9 @@ class FoodDistHistoryGenerator:
         logger.info("Generating inbound order line schedules...")
         sched_count = await self._generate_and_insert_schedules(ibl)
         counts["inbound_order_line_schedules"] = sched_count
+
+        # Outbound orders (headers — must precede order lines for FK)
+        await _batch_add(self.db, oo, batch_size=1000)
 
         # Outbound order lines
         await _batch_add(self.db, ool, batch_size=2000)
@@ -2498,6 +2667,11 @@ class FoodDistHistoryGenerator:
 
         logger.info("Inserting maintenance orders...")
         await _batch_add(self.db, mo_list, batch_size=500)
+
+        # --- Phase 4b: Production Orders (CDC repackaging) ---
+
+        logger.info("Inserting production orders...")
+        await _batch_add(self.db, prod_order_list, batch_size=500)
 
         # --- Phase 5: Analytics entities (unchanged) ---
 

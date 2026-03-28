@@ -140,6 +140,12 @@ def extract_from_csv(csv_dir: str) -> Dict[str, List[Dict]]:
         "PurchaseOrders": ["PurchaseOrders.csv", "OPOR.csv"],
         "ProductionOrders": ["ProductionOrders.csv", "OWOR.csv"],
         "ItemWarehouseInfoCollection": ["ItemWarehouseInfoCollection.csv", "OITW.csv"],
+        "PurchaseDeliveryNotes": ["PurchaseDeliveryNotes.csv", "OPDN.csv"],
+        "DeliveryNotes": ["DeliveryNotes.csv", "ODLN.csv"],
+        "StockTransfers": ["StockTransfers.csv", "OWTR.csv"],
+        "BlanketAgreements": ["BlanketAgreements.csv", "OAGL.csv"],
+        "ServiceCalls": ["ServiceCalls.csv", "OSCL.csv"],
+        "QualityTests": ["QualityTests.csv", "OQCN.csv"],
     }
 
     for entity, filenames in entity_map.items():
@@ -238,6 +244,14 @@ def build_config(config_id: int, data: Dict[str, List[Dict]], dry_run: bool = Fa
         session.execute(text("""
             DELETE FROM purchase_order_line_item WHERE po_id IN
             (SELECT id FROM purchase_order WHERE config_id = :cid)
+        """), {"cid": config_id})
+        session.execute(text("""
+            DELETE FROM transfer_order_line_item WHERE to_id IN
+            (SELECT id FROM transfer_order WHERE config_id = :cid)
+        """), {"cid": config_id})
+        session.execute(text("""
+            DELETE FROM goods_receipt_line_item WHERE gr_id IN
+            (SELECT id FROM goods_receipt WHERE config_id = :cid)
         """), {"cid": config_id})
 
         tables_result = session.execute(text("""
@@ -486,6 +500,39 @@ def build_config(config_id: int, data: Dict[str, List[Dict]], dry_run: bool = Fa
             product_id_map, site_ids,
         )
         print(f"  Created {po_count} purchase orders, {ob_count} outbound orders, {mo_count} production orders")
+
+        # Goods Receipts from PurchaseDeliveryNotes
+        gr_count = _build_goods_receipts(
+            session, config_id,
+            data.get("PurchaseDeliveryNotes", []),
+            product_id_map, site_ids,
+        )
+        # Shipments from DeliveryNotes
+        ship_count = _build_shipments(
+            session, config_id, tenant_id,
+            data.get("DeliveryNotes", []),
+            product_id_map, site_ids,
+        )
+        # Transfer Orders from StockTransfers
+        to_count = _build_transfer_orders(
+            session, config_id, tenant_id,
+            data.get("StockTransfers", []),
+            product_id_map, site_ids,
+        )
+        # Inbound Orders from PurchaseOrders (creates inbound view of POs)
+        ib_count = _build_inbound_orders(
+            session, config_id,
+            data.get("PurchaseOrders", []),
+            product_id_map, site_ids,
+        )
+        # Sourcing Rules from BlanketAgreements
+        sr_count = _build_sourcing_rules(
+            session, config_id,
+            data.get("BlanketAgreements", []),
+            product_id_map, site_ids,
+        )
+        print(f"  Created {gr_count} goods receipts, {ship_count} shipments, {to_count} transfer orders")
+        print(f"  Created {ib_count} inbound orders, {sr_count} sourcing rules")
 
         session.commit()
         print(f"\n  SUCCESS — Config {config_id} built from SAP Business One")
@@ -834,6 +881,379 @@ def _build_production_orders(
                  "uom": comp_uom},
             )
 
+        count += 1
+
+    return count
+
+
+def _build_goods_receipts(
+    session, config_id: int,
+    purchase_delivery_notes: List[Dict],
+    product_id_map: Dict[str, str],
+    site_ids: Dict[str, int],
+) -> int:
+    """B1 PurchaseDeliveryNotes → goods_receipt + goods_receipt_line_item."""
+    first_site_id = next(iter(site_ids.values()), None) if site_ids else None
+    if not first_site_id or not purchase_delivery_notes:
+        return 0
+
+    count = 0
+    for grn in purchase_delivery_notes:
+        doc_num = grn.get("DocNum", grn.get("DocEntry"))
+        receipt_date = _parse_b1_date(grn.get("DocDate"))
+        if not doc_num or not receipt_date:
+            continue
+
+        gr_number = f"B1-GR-{doc_num}"
+        card_code = str(grn.get("CardCode", "")).strip()
+        lines = grn.get("DocumentLines", [])
+        first_wh = str(lines[0].get("WarehouseCode", "")).strip() if lines else ""
+        recv_site_id = site_ids.get(first_wh, first_site_id)
+
+        # Find matching PO if vendor is known
+        po_id = None
+        if card_code:
+            po_row = session.execute(
+                text("SELECT id FROM purchase_order WHERE po_number LIKE :pat AND config_id = :cid LIMIT 1"),
+                {"pat": f"B1-PO-%", "cid": config_id},
+            ).fetchone()
+            if po_row:
+                po_id = po_row[0]
+
+        if not po_id:
+            # Skip goods receipts without a linked PO
+            continue
+
+        session.execute(
+            text("""
+                INSERT INTO goods_receipt
+                    (gr_number, po_id, receiving_site_id, receipt_date, status,
+                     source, config_id, created_at)
+                VALUES
+                    (:grn, :poid, :sid, :rd, 'COMPLETED', 'SAP_B1', :cid, NOW())
+                ON CONFLICT (gr_number) DO NOTHING
+            """),
+            {"grn": gr_number, "poid": po_id, "sid": recv_site_id,
+             "rd": receipt_date, "cid": config_id},
+        )
+
+        row = session.execute(
+            text("SELECT id FROM goods_receipt WHERE gr_number = :grn"),
+            {"grn": gr_number},
+        ).fetchone()
+        if not row:
+            continue
+        gr_id = row[0]
+
+        for idx, line in enumerate(lines):
+            item_code = str(line.get("ItemCode", "")).strip()
+            pid = product_id_map.get(item_code)
+            if not pid:
+                continue
+            qty = safe_float(line.get("Quantity"))
+            if qty <= 0:
+                continue
+            session.execute(
+                text("""
+                    INSERT INTO goods_receipt_line_item
+                        (gr_id, line_number, product_id, received_qty,
+                         accepted_qty, config_id, created_at)
+                    VALUES (:gid, :ln, :pid, :qty, :qty, :cid, NOW())
+                """),
+                {"gid": gr_id, "ln": idx + 1, "pid": pid, "qty": qty, "cid": config_id},
+            )
+        count += 1
+
+    return count
+
+
+def _build_shipments(
+    session, config_id: int, tenant_id: int,
+    delivery_notes: List[Dict],
+    product_id_map: Dict[str, str],
+    site_ids: Dict[str, int],
+) -> int:
+    """B1 DeliveryNotes → shipment."""
+    first_site_id = next(iter(site_ids.values()), None) if site_ids else None
+    if not first_site_id or not delivery_notes:
+        return 0
+
+    count = 0
+    for dn in delivery_notes:
+        doc_num = dn.get("DocNum", dn.get("DocEntry"))
+        ship_date = _parse_b1_date(dn.get("DocDate"))
+        if not doc_num or not ship_date:
+            continue
+
+        lines = dn.get("DocumentLines", [])
+        for idx, line in enumerate(lines):
+            item_code = str(line.get("ItemCode", "")).strip()
+            pid = product_id_map.get(item_code)
+            if not pid:
+                continue
+            qty = safe_float(line.get("Quantity"))
+            if qty <= 0:
+                continue
+            wh_code = str(line.get("WarehouseCode", "")).strip()
+            from_site = site_ids.get(wh_code, first_site_id)
+            ship_id = f"B1-SHIP-{doc_num}-{idx}"
+
+            # Find a matching outbound order for the customer
+            cust_code = str(dn.get("CardCode", "")).strip()
+            order_id = f"B1-SO-{doc_num}"  # assume same doc_num
+            # Verify order exists, fall back to any order
+            order_row = session.execute(
+                text("SELECT id FROM outbound_order WHERE id = :oid"),
+                {"oid": order_id},
+            ).fetchone()
+            if not order_row:
+                order_row = session.execute(
+                    text("SELECT id FROM outbound_order WHERE config_id = :cid LIMIT 1"),
+                    {"cid": config_id},
+                ).fetchone()
+                if order_row:
+                    order_id = order_row[0]
+                else:
+                    continue
+
+            # to_site = customer destination (use a different site or same)
+            to_site = site_ids.get("03", first_site_id)  # dropship warehouse as destination
+
+            session.execute(
+                text("""
+                    INSERT INTO shipment
+                        (id, order_id, product_id, quantity, from_site_id, to_site_id,
+                         status, ship_date, source, config_id, tenant_id,
+                         created_at)
+                    VALUES
+                        (:id, :oid, :pid, :qty, :fsi, :tsi,
+                         'DELIVERED', :sd, 'SAP_B1', :cid, :tid,
+                         NOW())
+                    ON CONFLICT (id) DO NOTHING
+                """),
+                {"id": ship_id, "oid": order_id, "pid": pid, "qty": qty,
+                 "fsi": from_site, "tsi": to_site,
+                 "sd": ship_date, "cid": config_id, "tid": tenant_id},
+            )
+            count += 1
+
+    return count
+
+
+def _build_transfer_orders(
+    session, config_id: int, tenant_id: int,
+    stock_transfers: List[Dict],
+    product_id_map: Dict[str, str],
+    site_ids: Dict[str, int],
+) -> int:
+    """B1 StockTransfers → transfer_order + transfer_order_line_item."""
+    first_site_id = next(iter(site_ids.values()), None) if site_ids else None
+    if not first_site_id or not stock_transfers:
+        return 0
+
+    count = 0
+    for st in stock_transfers:
+        doc_num = st.get("DocNum", st.get("DocEntry"))
+        transfer_date = _parse_b1_date(st.get("DocDate"))
+        if not doc_num or not transfer_date:
+            continue
+
+        from_wh = str(st.get("FromWarehouse", "")).strip()
+        to_wh = str(st.get("ToWarehouse", "")).strip()
+        from_site = site_ids.get(from_wh, first_site_id)
+        to_site = site_ids.get(to_wh, first_site_id)
+
+        to_number = f"B1-TO-{doc_num}"
+
+        est_delivery = transfer_date + timedelta(days=2)
+
+        session.execute(
+            text("""
+                INSERT INTO transfer_order
+                    (to_number, source_site_id, destination_site_id,
+                     config_id, tenant_id, order_type, source,
+                     status, order_date, shipment_date,
+                     estimated_delivery_date, created_at)
+                VALUES
+                    (:ton, :src, :dst, :cid, :tid, 'TRANSFER', 'SAP_B1',
+                     'COMPLETED', :od, :sd, :edd, NOW())
+                ON CONFLICT (to_number) DO NOTHING
+            """),
+            {"ton": to_number, "src": from_site, "dst": to_site,
+             "cid": config_id, "tid": tenant_id, "od": transfer_date,
+             "sd": transfer_date, "edd": est_delivery},
+        )
+
+        row = session.execute(
+            text("SELECT id FROM transfer_order WHERE to_number = :ton"),
+            {"ton": to_number},
+        ).fetchone()
+        if not row:
+            continue
+        to_id = row[0]
+
+        lines = st.get("StockTransferLines", [])
+        for idx, line in enumerate(lines):
+            item_code = str(line.get("ItemCode", "")).strip()
+            pid = product_id_map.get(item_code)
+            if not pid:
+                continue
+            qty = safe_float(line.get("Quantity"))
+            if qty <= 0:
+                continue
+
+            session.execute(
+                text("""
+                    INSERT INTO transfer_order_line_item
+                        (to_id, line_number, product_id, quantity,
+                         shipped_quantity, received_quantity,
+                         requested_ship_date, requested_delivery_date,
+                         created_at)
+                    VALUES (:tid, :ln, :pid, :qty, :qty, :qty,
+                            :rsd, :rdd, NOW())
+                """),
+                {"tid": to_id, "ln": idx + 1, "pid": pid, "qty": qty,
+                 "rsd": transfer_date, "rdd": est_delivery},
+            )
+        count += 1
+
+    return count
+
+
+def _build_inbound_orders(
+    session, config_id: int,
+    purchase_orders: List[Dict],
+    product_id_map: Dict[str, str],
+    site_ids: Dict[str, int],
+) -> int:
+    """B1 PurchaseOrders → inbound_order + inbound_order_line (demand-side view of POs)."""
+    first_site_id = next(iter(site_ids.values()), None) if site_ids else None
+    if not first_site_id or not purchase_orders:
+        return 0
+
+    count = 0
+    for po in purchase_orders:
+        doc_num = po.get("DocNum", po.get("DocEntry"))
+        card_code = str(po.get("CardCode", "")).strip()
+        order_date = _parse_b1_date(po.get("DocDate"))
+        if not doc_num or not card_code or not order_date:
+            continue
+
+        delivery_date = _parse_b1_date(po.get("DocDueDate")) or order_date
+        doc_total = safe_float(po.get("DocTotal"))
+        status = _b1_doc_status_to_po_status(str(po.get("DocumentStatus", "O")))
+        vendor_tid = f"B1V_{card_code}"
+        vendor_name = str(po.get("CardName", "")).strip() or None
+        ib_id = f"B1-IB-{doc_num}"
+
+        lines = po.get("DocumentLines", [])
+        dest_site_id = first_site_id
+        if lines:
+            first_wh = str(lines[0].get("WarehouseCode", "")).strip()
+            if first_wh and first_wh in site_ids:
+                dest_site_id = site_ids[first_wh]
+
+        total_qty = sum(safe_float(ln.get("Quantity")) for ln in lines) if lines else 0.0
+
+        session.execute(
+            text("""
+                INSERT INTO inbound_order
+                    (id, order_type, supplier_id, supplier_name,
+                     ship_to_site_id, status, order_date,
+                     requested_delivery_date, total_ordered_qty,
+                     total_value, currency, config_id, source,
+                     created_at)
+                VALUES
+                    (:id, 'PURCHASE', :sid, :sname,
+                     :dest, :status, :od,
+                     :dd, :toq,
+                     :tv, 'USD', :cid, 'SAP_B1',
+                     NOW())
+                ON CONFLICT (id) DO NOTHING
+            """),
+            {"id": ib_id, "sid": vendor_tid, "sname": vendor_name,
+             "dest": dest_site_id, "status": status,
+             "od": order_date, "dd": delivery_date, "toq": total_qty,
+             "tv": doc_total, "cid": config_id},
+        )
+
+        for idx, line in enumerate(lines):
+            item_code = str(line.get("ItemCode", "")).strip()
+            pid = product_id_map.get(item_code)
+            if not pid:
+                continue
+            qty = safe_float(line.get("Quantity"))
+            if qty <= 0:
+                continue
+            line_delivery = _parse_b1_date(line.get("ShipDate")) or delivery_date
+            line_wh = str(line.get("WarehouseCode", "")).strip()
+            line_site = site_ids.get(line_wh, dest_site_id)
+
+            session.execute(
+                text("""
+                    INSERT INTO inbound_order_line
+                        (order_id, line_number, product_id, to_site_id,
+                         tpartner_id, order_type, quantity_submitted,
+                         quantity_confirmed, status, config_id,
+                         submitted_date, expected_delivery_date,
+                         created_at)
+                    VALUES
+                        (:oid, :ln, :pid, :sid,
+                         :tpid, 'PURCHASE', :qty,
+                         :qty, :status, :cid,
+                         :od, :dd,
+                         NOW())
+                """),
+                {"oid": ib_id, "ln": idx + 1, "pid": pid, "sid": line_site,
+                 "tpid": vendor_tid, "qty": qty, "status": status,
+                 "cid": config_id, "od": order_date, "dd": line_delivery},
+            )
+        count += 1
+
+    return count
+
+
+def _build_sourcing_rules(
+    session, config_id: int,
+    blanket_agreements: List[Dict],
+    product_id_map: Dict[str, str],
+    site_ids: Dict[str, int],
+) -> int:
+    """B1 BlanketAgreements → sourcing_rules."""
+    first_site_id = next(iter(site_ids.values()), None) if site_ids else None
+    if not first_site_id or not blanket_agreements:
+        return 0
+
+    count = 0
+    for ba in blanket_agreements:
+        agreement_no = ba.get("AgreementNo")
+        bp_code = str(ba.get("BPCode", "")).strip()
+        if not agreement_no or not bp_code:
+            continue
+
+        start_date = _parse_b1_date(ba.get("StartDate"))
+        end_date = _parse_b1_date(ba.get("EndDate"))
+        vendor_tid = f"B1V_{bp_code}"
+        sr_id = f"B1-SR-{agreement_no}"
+
+        session.execute(
+            text("""
+                INSERT INTO sourcing_rules
+                    (id, to_site_id, tpartner_id, sourcing_rule_type,
+                     sourcing_priority, sourcing_ratio, is_active,
+                     eff_start_date, eff_end_date,
+                     source, config_id)
+                VALUES
+                    (:id, :sid, :tpid, 'vendor',
+                     :pri, 1.0, true,
+                     :sd, :ed,
+                     'SAP_B1', :cid)
+                ON CONFLICT (id) DO NOTHING
+            """),
+            {"id": sr_id, "sid": first_site_id, "tpid": vendor_tid,
+             "pri": count + 1, "sd": start_date, "ed": end_date,
+             "cid": config_id},
+        )
         count += 1
 
     return count

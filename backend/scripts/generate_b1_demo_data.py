@@ -315,12 +315,12 @@ def _random_date(days_back_min=7, days_back_max=180):
     return (TODAY - timedelta(days=delta)).isoformat()
 
 
-def build_orders(count=80):
+def build_orders(count=500):
     """Sales Orders (ORDR + RDR1)."""
     orders = []
     for doc_entry in range(1, count + 1):
         customer = random.choice(CUSTOMERS)
-        doc_date = _random_date(7, 120)
+        doc_date = _random_date(7, 730)
         due_date = (date.fromisoformat(doc_date) + timedelta(days=random.randint(7, 30))).isoformat()
         num_lines = random.randint(1, 5)
         items_chosen = random.sample(FINISHED_GOODS, min(num_lines, len(FINISHED_GOODS)))
@@ -356,13 +356,13 @@ def build_orders(count=80):
     return orders
 
 
-def build_purchase_orders(count=60):
+def build_purchase_orders(count=300):
     """Purchase Orders (OPOR + POR1)."""
     pos = []
     all_purchasable = FINISHED_GOODS + [(c, n, g, cost, v) for c, n, g, cost, v in RAW_MATERIALS]
     for doc_entry in range(1, count + 1):
         vendor = random.choice(VENDORS)
-        doc_date = _random_date(14, 150)
+        doc_date = _random_date(14, 730)
         due_date = (date.fromisoformat(doc_date) + timedelta(days=random.randint(14, 45))).isoformat()
         num_lines = random.randint(1, 6)
         # Pick items from this vendor preferably
@@ -405,7 +405,7 @@ def build_purchase_orders(count=60):
     return pos
 
 
-def build_production_orders(count=25):
+def build_production_orders(count=150):
     """Production Orders (OWOR)."""
     prod_orders = []
     bom_items = list(BOMS.keys())
@@ -413,7 +413,7 @@ def build_production_orders(count=25):
         item_code = random.choice(bom_items)
         item_name = next(n for c, n, *_ in FINISHED_GOODS if c == item_code)
         qty = random.randint(5, 50)
-        start = _random_date(30, 120)
+        start = _random_date(30, 730)
         due = (date.fromisoformat(start) + timedelta(days=random.randint(3, 14))).isoformat()
         status = random.choice(["boposPlanned", "boposReleased", "boposReleased", "boposClosed"])
         prod_orders.append({
@@ -717,24 +717,142 @@ def build_resources():
     return resources, capacities
 
 
-def build_service_calls(count=8):
-    """Service Calls (OSCL) → MaintenanceOrder."""
+def build_service_calls(count=20):
+    """Service Calls (OSCL) — maintenance/service requests for production equipment."""
+    EQUIPMENT = [
+        ("EQUIP-CNC-MILL-01", "CNC Milling Machine #1"),
+        ("EQUIP-CNC-MILL-02", "CNC Milling Machine #2"),
+        ("EQUIP-CNC-LATHE-01", "CNC Lathe #1"),
+        ("EQUIP-PUMP-PRESS", "Hydraulic Press Unit"),
+        ("EQUIP-WELD-STA-01", "Robotic Welding Station #1"),
+        ("EQUIP-WELD-STA-02", "Robotic Welding Station #2"),
+        ("EQUIP-ASSY-LINE-01", "Assembly Line Conveyor #1"),
+        ("EQUIP-ASSY-LINE-02", "Assembly Line Conveyor #2"),
+        ("EQUIP-SOLDER-01", "Wave Solder Machine"),
+        ("EQUIP-OVEN-REFLOW", "Reflow Oven"),
+        ("EQUIP-PICK-PLACE", "Pick-and-Place Machine"),
+        ("EQUIP-INSP-AOI", "Automated Optical Inspection"),
+        ("EQUIP-COMPRESSOR", "Air Compressor Unit"),
+        ("EQUIP-PAINT-BOOTH", "Paint Spray Booth"),
+        ("EQUIP-FORKLIFT-01", "Electric Forklift #1"),
+    ]
+    SUBJECTS_AND_RESOLUTIONS = [
+        ("Hydraulic press pump replacement", "Replaced hydraulic pump unit. System test passed."),
+        ("CNC spindle bearing wear detected", "Replaced spindle bearings and recalibrated axis alignment."),
+        ("Conveyor belt tension adjustment", "Adjusted belt tension and replaced worn rollers."),
+        ("Welding torch nozzle replacement", "Replaced nozzle and recalibrated wire feed speed."),
+        ("Reflow oven temperature calibration", "Recalibrated all heating zones. Profile verified."),
+        ("Solder machine flux level low", "Refilled flux reservoir and cleaned spray nozzles."),
+        ("Pick-and-place feeder jam", "Cleared component jam, replaced worn feeder tape."),
+        ("AOI camera lens cleaning", "Cleaned lenses and updated inspection program."),
+        ("Compressor oil change overdue", "Performed oil change and filter replacement."),
+        ("Paint booth exhaust fan vibration", "Replaced fan bearings and balanced impeller."),
+        ("Forklift battery not holding charge", "Replaced battery pack, load-tested to spec."),
+        ("Assembly line emergency stop malfunction", "Replaced e-stop relay and verified safety circuit."),
+        ("CNC coolant pump failure", "Replaced coolant pump motor and flushed lines."),
+        ("Lathe chuck alignment issue", "Re-seated chuck jaws and verified runout within spec."),
+        ("Milling machine tool changer stuck", "Repaired tool changer carousel motor and sensor."),
+        ("Preventive maintenance — quarterly inspection", "Completed PM checklist, all systems nominal."),
+        ("Electrical panel overheating", "Replaced thermal relay and cleaned ventilation filters."),
+        ("Conveyor speed sensor fault", "Replaced proximity sensor and recalibrated speed control."),
+        ("Welding gas flow regulator leak", "Replaced regulator diaphragm and tested for leaks."),
+        ("General equipment inspection", "Annual inspection completed. Minor wear items replaced."),
+    ]
+    TECHNICIANS = ["TECH01", "TECH02", "TECH03", "TECH04", "TECH05"]
     calls = []
     for i in range(1, count + 1):
-        customer = random.choice(CUSTOMERS)
-        item = random.choice(FINISHED_GOODS)
+        equip_code, equip_name = random.choice(EQUIPMENT)
+        subject, resolution = SUBJECTS_AND_RESOLUTIONS[i % len(SUBJECTS_AND_RESOLUTIONS)]
+        is_closed = random.random() < 0.70
+        priority = random.choices([1, 2, 3], weights=[20, 50, 30])[0]
+        start_date = _random_date(7, 365)
+        end_date = (
+            (date.fromisoformat(start_date) + timedelta(days=random.randint(1, 7))).isoformat()
+            if is_closed else ""
+        )
         calls.append({
             "ServiceCallID": i,
-            "CustomerCode": customer["CardCode"],
-            "CustomerName": customer["CardName"],
-            "ItemCode": item[0], "ItemDescription": item[1],
-            "Subject": f"Maintenance request for {item[1]}",
-            "Status": random.choice([-1, -2, -3]),  # -1=open, -2=pending, -3=closed
-            "Priority": random.choice(["scp_Low", "scp_Medium", "scp_High"]),
-            "CallType": random.choice([1, 2, 3]),
-            "CreationDate": _random_date(5, 60),
+            "CustomerCode": "",
+            "ItemCode": equip_code,
+            "ItemDescription": equip_name,
+            "Subject": subject,
+            "Status": "closed" if is_closed else "open",
+            "Priority": priority,
+            "StartDate": start_date,
+            "EndDate": end_date,
+            "TechnicianCode": random.choice(TECHNICIANS),
+            "Resolution": resolution if is_closed else "",
         })
     return calls
+
+
+def build_quality_tests(count=30):
+    """Quality Tests (OQCN) — incoming quality inspection records for raw materials."""
+    REMARKS_PASSED = [
+        "All units within specification. Lot accepted.",
+        "Visual inspection passed. Dimensions confirmed.",
+        "Surface finish meets requirements. Released to stock.",
+        "Electrical tests passed. Batch approved.",
+        "Material composition verified. Certificate of conformity matched.",
+        "Tensile strength within tolerance. Approved.",
+        "No cosmetic defects found. Full lot accepted.",
+    ]
+    REMARKS_MINOR = [
+        "Minor surface defects on {n} units. Remaining lot accepted.",
+        "{n} units outside dimensional tolerance. Segregated for rework.",
+        "Packaging damage on {n} units. Contents undamaged.",
+        "Minor cosmetic blemishes on {n} units. Usable as-is for internal assembly.",
+        "Label misprint on {n} units. Relabeled and accepted.",
+    ]
+    REMARKS_FAILED = [
+        "Batch failed tensile strength test. Entire lot rejected and returned to vendor.",
+        "Material composition out of spec — elevated impurity levels. Lot quarantined.",
+        "Critical dimensional nonconformance. Supplier NCR raised.",
+        "Electrical continuity test failure rate above 10%. Lot rejected.",
+    ]
+    tests = []
+    rm_items = [(c, n) for c, n, *_ in RAW_MATERIALS]
+    for abs_entry in range(1, count + 1):
+        item_code, item_name = random.choice(rm_items)
+        qty = random.randint(50, 1000)
+        roll = random.random()
+        if roll < 0.85:
+            # Passed — 85%
+            rejected = 0
+            if random.random() < 0.4:
+                # Minor rejects within a passed lot
+                rejected = random.randint(1, max(1, qty // 50))
+            accepted = qty - rejected
+            status = "C"  # Closed / passed
+            if rejected > 0:
+                remarks = random.choice(REMARKS_MINOR).format(n=rejected)
+            else:
+                remarks = random.choice(REMARKS_PASSED)
+        elif roll < 0.95:
+            # Failed — 10%
+            rejected = qty
+            accepted = 0
+            status = "R"  # Rejected
+            remarks = random.choice(REMARKS_FAILED)
+        else:
+            # Pending — 5%
+            rejected = 0
+            accepted = 0
+            status = "O"  # Open / pending
+            remarks = "Inspection in progress. Awaiting lab results."
+        tests.append({
+            "AbsEntry": abs_entry,
+            "ItemCode": item_code,
+            "ItemDescription": item_name,
+            "TestDate": _random_date(3, 180),
+            "Status": status,
+            "Quantity": qty,
+            "AcceptedQty": accepted,
+            "RejectedQty": rejected,
+            "Warehouse": random.choice(["01", "02"]),
+            "Remarks": remarks,
+        })
+    return tests
 
 
 def build_inventory_gen_entries(count=20):
@@ -841,21 +959,22 @@ def main():
     items = build_items()
     product_trees, product_tree_lines = build_product_trees()
     item_whs = build_item_warehouse_info()
-    orders = build_orders(80)
-    purchase_orders = build_purchase_orders(60)
-    production_orders = build_production_orders(25)
-    deliveries = build_delivery_notes(orders, 40)
-    grpos = build_purchase_delivery_notes(purchase_orders, 30)
-    transfers = build_stock_transfers(15)
-    invoices = build_invoices(orders, 35)
-    returns = build_returns(orders, 8)
-    purchase_invoices = build_purchase_invoices(purchase_orders, 25)
+    orders = build_orders(500)
+    purchase_orders = build_purchase_orders(300)
+    production_orders = build_production_orders(150)
+    deliveries = build_delivery_notes(orders, 200)
+    grpos = build_purchase_delivery_notes(purchase_orders, 150)
+    transfers = build_stock_transfers(40)
+    invoices = build_invoices(orders, 180)
+    returns = build_returns(orders, 25)
+    purchase_invoices = build_purchase_invoices(purchase_orders, 120)
     purchase_requests = build_purchase_requests(20)
     transfer_requests = build_inventory_transfer_requests(10)
     goods_returns = build_goods_returns(5)
     blanket_agreements = build_blanket_agreements(6)
     resources, resource_capacities = build_resources()
-    service_calls = build_service_calls(8)
+    service_calls = build_service_calls(20)
+    quality_tests = build_quality_tests(30)
     inv_entries = build_inventory_gen_entries(20)
     inv_exits = build_inventory_gen_exits(15)
 
@@ -891,6 +1010,7 @@ def main():
         "GoodsReturns": goods_returns,
         "BlanketAgreements": blanket_agreements,
         "ServiceCalls": service_calls,
+        "QualityTests": quality_tests,
         "InventoryGenEntries": inv_entries,
         "InventoryGenExits": inv_exits,
         "BatchNumberDetails": build_batch_number_details(),
