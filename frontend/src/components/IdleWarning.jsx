@@ -2,6 +2,10 @@
  * IdleWarning — Modal overlay shown 60 seconds before automatic logout
  * due to inactivity. Displays a countdown and allows the user to stay
  * logged in or log out immediately.
+ *
+ * IMPORTANT: The modal stops event propagation so that clicking within it
+ * does NOT reset the activity timer (which would instantly dismiss the modal).
+ * Only the "Stay Logged In" button explicitly resets timers.
  */
 
 import React, { useCallback } from 'react';
@@ -10,18 +14,30 @@ import { useAuth } from '../contexts/AuthContext';
 const IdleWarning = () => {
   const { showTimeoutWarning, timeLeft, resetTimers, logout } = useAuth();
 
-  const handleStayLoggedIn = useCallback(() => {
+  const handleStayLoggedIn = useCallback((e) => {
+    e.stopPropagation();
     resetTimers();
   }, [resetTimers]);
 
-  const handleLogoutNow = useCallback(() => {
+  const handleLogoutNow = useCallback((e) => {
+    e.stopPropagation();
     logout();
   }, [logout]);
+
+  // Prevent clicks on the modal from bubbling to the activity listeners
+  const stopPropagation = useCallback((e) => {
+    e.stopPropagation();
+  }, []);
 
   if (!showTimeoutWarning) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      onMouseDown={stopPropagation}
+      onKeyDown={stopPropagation}
+      onClick={stopPropagation}
+    >
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4 border border-gray-200 dark:border-gray-700">
         <div className="flex items-center gap-3 mb-4">
           <div className="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
@@ -45,14 +61,14 @@ const IdleWarning = () => {
         </div>
 
         <p className="text-gray-600 dark:text-gray-300 mb-2">
-          Your session will expire in{' '}
+          You will be logged out in{' '}
           <span className="font-bold text-yellow-600 dark:text-yellow-400 tabular-nums">
             {timeLeft}
           </span>{' '}
           {timeLeft === 1 ? 'second' : 'seconds'} due to inactivity.
         </p>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-          Click anywhere or press a key to stay logged in.
+          Click "Stay Logged In" to continue your session.
         </p>
 
         {/* Progress bar */}
