@@ -82,8 +82,23 @@ def create_tenant(tenant_in: TenantCreate, tenant_service: TenantService = Depen
 
 @router.put("/{tenant_id}", response_model=TenantResponse)
 def update_tenant(tenant_id: int, tenant_update: TenantUpdate, tenant_service: TenantService = Depends(get_tenant_service), current_user: User = Depends(get_current_active_user)):
-    if current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    is_system_admin = current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
+    is_own_tenant_admin = (
+        current_user.user_type == UserTypeEnum.TENANT_ADMIN
+        and current_user.tenant_id == tenant_id
+    )
+    if not is_system_admin and not is_own_tenant_admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+    # Tenant admins can only update session_timeout_minutes on their own tenant
+    if is_own_tenant_admin:
+        allowed_fields = {"session_timeout_minutes"}
+        provided_fields = set(tenant_update.dict(exclude_unset=True).keys())
+        disallowed = provided_fields - allowed_fields
+        if disallowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tenant admins can only update: {', '.join(sorted(allowed_fields))}",
+            )
     return tenant_service.update_tenant(tenant_id, tenant_update)
 
 @router.delete("/{tenant_id}", response_model=dict)

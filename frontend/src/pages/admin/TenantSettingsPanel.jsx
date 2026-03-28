@@ -39,6 +39,7 @@ import {
   Server,
   FileSpreadsheet,
   Zap,
+  Shield,
 } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 import { api } from '../../services/api';
@@ -203,12 +204,26 @@ const TenantSettingsPanel = ({
     lead_time: 30,
   });
 
+  const [securitySettings, setSecuritySettings] = useState({
+    session_timeout_minutes: tenantInfo?.session_timeout_minutes || 5,
+  });
+
   const [expandedSections, setExpandedSections] = useState({
     sop: true,
     mps: false,
     mrp: false,
     execution: false,
   });
+
+  // Sync security settings from tenant info
+  useEffect(() => {
+    if (tenantInfo?.session_timeout_minutes) {
+      setSecuritySettings((prev) => ({
+        ...prev,
+        session_timeout_minutes: tenantInfo.session_timeout_minutes,
+      }));
+    }
+  }, [tenantInfo]);
 
   // Load existing settings
   useEffect(() => {
@@ -267,6 +282,13 @@ const TenantSettingsPanel = ({
       // Save CDC settings
       await api.put(`/tenants/${tenantId}/cdc-settings`, cdcSettings).catch(() => null);
 
+      // Save security settings (session timeout)
+      if (securitySettings.session_timeout_minutes >= 1 && securitySettings.session_timeout_minutes <= 480) {
+        await api.put(`/tenants/${tenantId}`, {
+          session_timeout_minutes: securitySettings.session_timeout_minutes,
+        }).catch(() => null);
+      }
+
       setSuccess('Settings saved successfully');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
@@ -288,6 +310,7 @@ const TenantSettingsPanel = ({
     { value: 'datasources', label: 'Data Sources', icon: <Database className="h-4 w-4" /> },
     { value: 'cadence', label: 'Import Cadence', icon: <Clock className="h-4 w-4" /> },
     { value: 'cdc', label: 'CDC Thresholds', icon: <Activity className="h-4 w-4" /> },
+    { value: 'security', label: 'Security', icon: <Shield className="h-4 w-4" /> },
   ];
 
   if (loading) {
@@ -642,6 +665,57 @@ const TenantSettingsPanel = ({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Security Section */}
+        {activeSection === 'security' && (
+          <div className="space-y-4">
+            <div className="text-sm text-muted-foreground mb-4">
+              Configure session security settings for all users in this tenant.
+            </div>
+
+            <div className="border rounded-lg p-4">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-blue-500" />
+                    <span className="font-medium">Session Inactivity Timeout</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Users will be automatically logged out after this period of inactivity.
+                    A warning is shown 60 seconds before logout.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium whitespace-nowrap">
+                  Auto-logout after (minutes):
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="480"
+                  value={securitySettings.session_timeout_minutes}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) {
+                      setSecuritySettings((prev) => ({
+                        ...prev,
+                        session_timeout_minutes: Math.min(480, Math.max(1, val)),
+                      }));
+                    }
+                  }}
+                  className="w-24 p-2 border rounded-md bg-background text-center"
+                />
+                <span className="text-sm text-muted-foreground">
+                  (min: 1, max: 480 = 8 hours)
+                </span>
+              </div>
+              <div className="mt-3 text-xs text-muted-foreground">
+                The new timeout takes effect on the next login. System administrators default to 30 minutes.
+              </div>
             </div>
           </div>
         )}

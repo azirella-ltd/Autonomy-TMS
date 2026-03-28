@@ -8,10 +8,8 @@ import {
   getUserType,
 } from '../utils/authUtils';
 
-// Session timeout in milliseconds (30 minutes)
-const SESSION_TIMEOUT = 30 * 60 * 1000;
-// Warning time before logout (5 minutes before timeout)
-const WARNING_TIME = 5 * 60 * 1000;
+// Warning shown 60 seconds before logout
+const WARNING_LEAD_SECONDS = 60;
 
 const AuthContext = createContext(null);
 
@@ -24,9 +22,14 @@ export function AuthProvider({ children }) {
   const [timeLeft, setTimeLeft] = useState(0);
   const [provisioningStatus, setProvisioningStatus] = useState(null);
   const [provisioningStep, setProvisioningStep] = useState(null);
-  
+  const [sessionTimeoutMinutes, setSessionTimeoutMinutes] = useState(() => {
+    const stored = localStorage.getItem('sessionTimeoutMinutes');
+    return stored ? parseInt(stored, 10) || 5 : 5;
+  });
+
   const logoutTimer = useRef(null);
   const warningTimer = useRef(null);
+  const countdownInterval = useRef(null);
   const activityEvents = useMemo(() => ['mousedown', 'keydown', 'scroll', 'touchstart'], []);
 
   const logout = useCallback(async () => {
@@ -38,13 +41,16 @@ export function AuthProvider({ children }) {
     } finally {
       if (logoutTimer.current) clearTimeout(logoutTimer.current);
       if (warningTimer.current) clearTimeout(warningTimer.current);
+      if (countdownInterval.current) clearInterval(countdownInterval.current);
       setUser(null);
       setIsAuthenticated(false);
       setShowTimeoutWarning(false);
+      setSessionTimeoutMinutes(5);
       setProvisioningStatus(null);
       setProvisioningStep(null);
       setLoading(false);
       localStorage.removeItem('authState');
+      localStorage.removeItem('sessionTimeoutMinutes');
     }
   }, []);
 
@@ -52,50 +58,48 @@ export function AuthProvider({ children }) {
   const resetTimers = useCallback(() => {
     if (logoutTimer.current) clearTimeout(logoutTimer.current);
     if (warningTimer.current) clearTimeout(warningTimer.current);
+    if (countdownInterval.current) clearInterval(countdownInterval.current);
     setShowTimeoutWarning(false);
 
     if (isAuthenticated) {
-      // Set warning timer (5 minutes before logout)
-      warningTimer.current = setTimeout(() => {
-        setShowTimeoutWarning(true);
-        const warningDuration = WARNING_TIME / 1000 / 60; // Convert to minutes
-        toast.warning(`Your session will expire in ${warningDuration} minutes due to inactivity.`, {
-          autoClose: 10000,
-          closeOnClick: false,
-          pauseOnHover: true,
-          draggable: true,
-        });
-      }, SESSION_TIMEOUT - WARNING_TIME);
+      const timeoutMs = sessionTimeoutMinutes * 60 * 1000;
+      const warningMs = WARNING_LEAD_SECONDS * 1000;
+      // Only show warning if timeout is long enough (> 2 minutes)
+      const showWarning = timeoutMs > warningMs * 2;
+
+      if (showWarning) {
+        // Show warning modal 60 seconds before logout
+        warningTimer.current = setTimeout(() => {
+          setShowTimeoutWarning(true);
+          setTimeLeft(WARNING_LEAD_SECONDS);
+          // Tick down every second for the countdown display
+          countdownInterval.current = setInterval(() => {
+            setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+          }, 1000);
+        }, timeoutMs - warningMs);
+      }
 
       // Set logout timer
       logoutTimer.current = setTimeout(() => {
+        if (countdownInterval.current) clearInterval(countdownInterval.current);
         logout();
-        toast.info('Your session has expired. Please log in again.');
-      }, SESSION_TIMEOUT);
-
-      // Update time left counter
-      const updateTimeLeft = () => {
-        if (logoutTimer.current) {
-          const timeLeft = Math.ceil((logoutTimer.current._idleStart + SESSION_TIMEOUT - Date.now()) / 1000 / 60);
-          setTimeLeft(timeLeft > 0 ? timeLeft : 0);
-        }
-      };
-      
-      const interval = setInterval(updateTimeLeft, 60000); // Update every minute
-      updateTimeLeft(); // Initial update
-      
-      return () => clearInterval(interval);
+        toast.info('You have been logged out due to inactivity.');
+      }, timeoutMs);
     }
-  }, [isAuthenticated, logout]);
+  }, [isAuthenticated, logout, sessionTimeoutMinutes]);
 
   // Set up activity listeners
   useEffect(() => {
     if (isAuthenticated) {
-      // Add event listeners for user activity
+      // Throttle activity resets to at most once per second
+      let lastReset = 0;
       const handleActivity = () => {
+        const now = Date.now();
+        if (now - lastReset < 1000) return;
+        lastReset = now;
         resetTimers();
       };
-      
+
       activityEvents.forEach(event => {
         window.addEventListener(event, handleActivity);
       });
@@ -110,6 +114,7 @@ export function AuthProvider({ children }) {
         });
         if (logoutTimer.current) clearTimeout(logoutTimer.current);
         if (warningTimer.current) clearTimeout(warningTimer.current);
+        if (countdownInterval.current) clearInterval(countdownInterval.current);
       };
     }
   }, [isAuthenticated, resetTimers, activityEvents]);
@@ -180,8 +185,12 @@ export function AuthProvider({ children }) {
         setProvisioningStatus(result.provisioning_status || null);
         setProvisioningStep(result.provisioning_step || null);
 
-        // Reset timers after successful login
-        resetTimers();
+        // Store session timeout from tenant setting
+        // (timers will auto-start via the useEffect that watches isAuthenticated + resetTimers)
+        const timeout = result.session_timeout_minutes || 5;
+        setSessionTimeoutMinutes(timeout);
+        localStorage.setItem('sessionTimeoutMinutes', String(timeout));
+
         return { success: true, user: nextUser };
       }
 
@@ -209,7 +218,7 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [resetTimers]);
+  }, []);
 
   
 

@@ -160,6 +160,12 @@ class Tenant(Base):
         comment="Demo tenant — dates auto-shifted daily to keep data fresh"
     )
 
+    # Session security
+    session_timeout_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5,
+        comment="Auto-logout after N minutes of inactivity (1-480, default 5)"
+    )
+
     def apply_industry_sim_defaults(self) -> None:
         """Set simulation parameters from industry benchmarks.
 

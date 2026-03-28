@@ -519,6 +519,24 @@ async def startup_event():
         # This prevents relationship resolution errors and runs configure_mappers()
         import app.models  # noqa: F401 - ensures all models are loaded and configured
 
+        # Ensure session_timeout_minutes column exists on tenants table
+        try:
+            from app.db.session import sync_session_factory as _stf
+            from sqlalchemy import text as _sa_text
+            _patch_db = _stf()
+            try:
+                _patch_db.execute(_sa_text(
+                    "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS "
+                    "session_timeout_minutes INTEGER DEFAULT 5 NOT NULL"
+                ))
+                _patch_db.commit()
+            except Exception:
+                _patch_db.rollback()
+            finally:
+                _patch_db.close()
+        except Exception as _col_err:
+            logger.warning("session_timeout_minutes column patch skipped: %s", _col_err)
+
         # Initialize Knowledge Base database engine (separate pgvector DB)
         try:
             from app.db.kb_session import init_kb_engine

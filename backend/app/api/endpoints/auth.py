@@ -75,6 +75,8 @@ class TokenResponse(BaseModel):
     # Provisioning status for frontend banner
     provisioning_status: Optional[str] = None  # "complete", "in_progress", "not_started", "failed", None (no config)
     provisioning_step: Optional[str] = None    # current/failed step name if not complete
+    # Session timeout for frontend idle detection (minutes)
+    session_timeout_minutes: int = 5
 
 
 # Alias Token to TokenResponse for backward compatibility
@@ -465,6 +467,12 @@ async def login(
     # Check provisioning status (lightweight, non-blocking)
     _prov_status, _prov_step = await _check_provisioning_status(db, user)
 
+    # Resolve session timeout from tenant setting (system admins default to 30 min)
+    _session_timeout = 30  # Default for system admins (no tenant)
+    _resolved_tenant = _tenant_obj or getattr(user, "admin_of_tenant", None)
+    if _resolved_tenant:
+        _session_timeout = getattr(_resolved_tenant, "session_timeout_minutes", 5) or 5
+
     # Return access token and user info
     return TokenResponse(
         access_token=tokens.access_token,
@@ -473,6 +481,7 @@ async def login(
         tenant_subdomain=_tenant_subdomain,
         provisioning_status=_prov_status,
         provisioning_step=_prov_step,
+        session_timeout_minutes=_session_timeout,
     )
 
 

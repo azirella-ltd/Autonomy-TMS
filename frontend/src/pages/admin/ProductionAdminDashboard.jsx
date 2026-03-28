@@ -353,10 +353,10 @@ const ProductionAdminDashboard = () => {
         {/* Settings Tab */}
         {activeTab === 'settings' && (
           <TenantSettingsPanel
-            groupId={tenantId}
-            groupInfo={tenantInfo}
+            tenantId={tenantId}
+            tenantInfo={tenantInfo}
             selectedConfigId={selectedConfig?.id}
-            onGroupInfoChange={setCustomerInfo}
+            onTenantInfoChange={setCustomerInfo}
           />
         )}
       </div>

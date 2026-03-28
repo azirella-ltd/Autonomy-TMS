@@ -298,6 +298,7 @@ export const simulationApi = {
           user: data.user,
           provisioning_status: data.provisioning_status || null,
           provisioning_step: data.provisioning_step || null,
+          session_timeout_minutes: data.session_timeout_minutes || 5,
         };
       }
 

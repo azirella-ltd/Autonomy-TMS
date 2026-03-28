@@ -8,6 +8,7 @@ import { HelpProvider } from "./contexts/HelpContext.jsx";
 import "./index.css";
 import "leaflet/dist/leaflet.css";
 import App from "./App";
+import IdleWarning from "./components/IdleWarning";
 import { AuthProvider } from "./contexts/AuthContext";
 import { AzirellaProvider } from "./contexts/AzirellaContext";
 import { ActiveConfigProvider } from "./contexts/ActiveConfigContext";
@@ -86,6 +87,7 @@ init()
                   anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
                 >
                   <App />
+                  <IdleWarning />
                 </SnackbarProvider>
               </HelpProvider>
             </SystemConfigProvider>

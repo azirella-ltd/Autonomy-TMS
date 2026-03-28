@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from enum import Enum
 
 from .user import UserCreate, User
@@ -60,6 +60,10 @@ class TenantUpdate(BaseModel):
     round_duration_seconds: Optional[int] = None
     data_refresh_schedule: Optional[str] = None
     is_demo: Optional[bool] = None
+    session_timeout_minutes: Optional[int] = Field(
+        None, ge=1, le=480,
+        description="Auto-logout after N minutes of inactivity (1-480)"
+    )
 
 
 class TenantResponse(BaseModel):
@@ -76,6 +80,7 @@ class TenantResponse(BaseModel):
     data_refresh_schedule: Optional[str] = None
     last_data_import: Optional[datetime] = None
     is_demo: bool = False
+    session_timeout_minutes: int = 5
 
     class Config:
         orm_mode = True
