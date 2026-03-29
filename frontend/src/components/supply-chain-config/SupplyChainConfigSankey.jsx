@@ -288,26 +288,34 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
   const resolveSiteTypeToken = useCallback((site) => {
     if (!site) return '';
-    const dagType = normalizeTypeToken(site.dag_type || site.dagType);
-    if (dagType) return dagType;
-
     const masterType = normalizeTypeToken(site.master_type || site.masterType);
+    const dagType = normalizeTypeToken(site.dag_type || site.dagType);
     const explicitType = normalizeTypeToken(site.type || site.site_type || site.node_type);
 
-    // AWS SC canonical mapping — normalize external trading partner master types
-    // to their human-friendly equivalents so all configs use consistent tokens.
-    const MARKET_TYPE_CANONICAL = {
+    // AWS SC canonical mapping — normalize master types and legacy dag types
+    const TYPE_CANONICAL = {
       CUSTOMER: 'CUSTOMER',
       VENDOR: 'VENDOR',
+      MARKET_DEMAND: 'CUSTOMER',   // legacy TBG → AWS SC
+      MARKET_SUPPLY: 'VENDOR',     // legacy TBG → AWS SC
     };
-    if (masterType && MARKET_TYPE_CANONICAL[masterType]) {
-      return MARKET_TYPE_CANONICAL[masterType];
+
+    // Master type takes priority for VENDOR/CUSTOMER classification
+    if (masterType && TYPE_CANONICAL[masterType]) {
+      return TYPE_CANONICAL[masterType];
+    }
+    // Also check dag_type and explicit type for legacy market_supply/market_demand
+    if (dagType && TYPE_CANONICAL[dagType]) {
+      return TYPE_CANONICAL[dagType];
+    }
+    if (explicitType && TYPE_CANONICAL[explicitType]) {
+      return TYPE_CANONICAL[explicitType];
     }
 
-    // Prefer explicit type when it matches a known definition (e.g., "retailer",
-    // "wholesaler") so Beer Game configs with master_type="inventory" get distinct
-    // columns per echelon rather than collapsing all INVENTORY sites together.
+    // For internal sites, prefer explicit type when it matches a known definition
+    // (e.g., "retailer", "wholesaler") for distinct columns per echelon.
     if (explicitType && dagDefinitionOrderMap.has(explicitType)) return explicitType;
+    if (dagType && dagDefinitionOrderMap.has(dagType)) return dagType;
 
     // Fall back to master_type (works for MANUFACTURER, INVENTORY, etc.)
     if (masterType && dagDefinitionOrderMap.has(masterType)) return masterType;

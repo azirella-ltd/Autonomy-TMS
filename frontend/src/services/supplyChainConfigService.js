@@ -278,9 +278,9 @@ export const getSiteTypeColor = (siteType) => {
 // Backward compatibility alias
 export const getNodeTypeColor = getSiteTypeColor;
 
-// Game creation from config
-export const createScenarioFromConfig = async (configId, gameData) => {
-  const response = await api.post(`${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/create-game`, gameData);
+// Scenario creation from config
+export const createScenarioFromConfig = async (configId, scenarioData) => {
+  const response = await api.post(`${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/create-scenario`, scenarioData);
   return response.data;
 };
 
