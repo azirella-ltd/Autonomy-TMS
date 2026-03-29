@@ -578,12 +578,21 @@ async def startup_event():
             from app.services.sap_staging_jobs import register_sap_staging_jobs
             register_sap_staging_jobs(scheduler_service)
 
-            # CDT calibration deferred to background — no longer blocks startup.
-            # Calibration runs:
-            #   - During provisioning (conformal step)
-            #   - Hourly via APScheduler (relearning_jobs.py)
-            #   - On-demand via /site-agent/retraining/trigger API
-            logger.info("CDT startup calibration: SKIPPED (runs via scheduler + provisioning)")
+            # CDT batch calibration from DB (fast — no simulation, just reads
+            # existing decision-outcome pairs). Simulation bootstrap removed
+            # from startup; runs only during provisioning conformal step.
+            try:
+                from app.services.powell.cdt_calibration_service import CDTCalibrationService
+                cdt_db = sync_session_factory()
+                try:
+                    cdt_svc = CDTCalibrationService(cdt_db)
+                    cdt_stats = cdt_svc.calibrate_all()
+                    calibrated = sum(1 for s in cdt_stats.values() if s.get("status") == "calibrated")
+                    logger.info(f"CDT startup calibration: {calibrated}/11 agents calibrated from DB")
+                finally:
+                    cdt_db.close()
+            except Exception as e:
+                logger.warning(f"CDT startup calibration failed (non-fatal): {e}")
 
             # Register conformal prediction recalibration jobs
             from app.services.conformal_orchestrator import register_conformal_jobs
