@@ -1128,6 +1128,7 @@ class DecisionStreamService:
         enrichment = await self._enrich_from_message(message, conv["messages"], config_id)
         data_blocks = enrichment.get("data_blocks", [])
         enrichment_text = enrichment.get("context_text", "")
+        clarifications = enrichment.get("clarifications", [])
         logger.info(
             f"Chat enrichment: {len(data_blocks)} blocks, "
             f"{len(enrichment_text)} chars context"
@@ -1188,6 +1189,7 @@ class DecisionStreamService:
             "suggested_followups": self._suggest_followups(message, response_text, decision_context),
             "embedded_decisions": None,
             "data_blocks": data_blocks,
+            "clarifications": clarifications if clarifications else None,
         }
 
     # ------------------------------------------------------------------
@@ -2205,6 +2207,87 @@ class DecisionStreamService:
             if token_lower in combined_lower:
                 site_ids.add(canonical)
 
+        # Build clarification options when matches are ambiguous
+        clarifications = []
+
+        # If multiple products matched, offer a dropdown to disambiguate
+        if len(product_ids) > 3:
+            # Too many matches — likely a generic word triggered many hits
+            # Build a dropdown with the matched products + descriptions
+            from app.models.sc_entities import Product as _Prod
+            prod_result = await self.db.execute(
+                select(_Prod.id, _Prod.description).where(
+                    _Prod.id.in_(list(product_ids))
+                ).order_by(_Prod.id).limit(20)
+            )
+            prod_options = [
+                f"{r[0].replace(f'CFG{config_id}_', '')} — {r[1] or 'N/A'}"
+                for r in prod_result.fetchall()
+            ]
+            clarifications.append({
+                "field": "product",
+                "question": "Which product are you asking about?",
+                "type": "select",
+                "options": prod_options,
+                "required": True,
+            })
+
+        # If multiple sites matched, offer a dropdown
+        if len(site_ids) > 3:
+            site_options = sorted(site_ids)
+            clarifications.append({
+                "field": "site",
+                "question": "Which site or location?",
+                "type": "select",
+                "options": site_options,
+                "required": True,
+            })
+
+        # If no products matched but the message seems to reference one, offer full catalog
+        if not product_ids and any(kw in combined_lower for kw in (
+            "product", "sku", "item", "beef", "chicken", "pork", "dairy",
+            "cheese", "yogurt", "butter", "juice", "ice cream", "pasta",
+            "wagyu", "wagu", "seafood", "turkey",
+        )):
+            from app.models.sc_entities import Product as _Prod
+            prod_result = await self.db.execute(
+                select(_Prod.id, _Prod.description).where(
+                    _Prod.config_id == config_id,
+                ).order_by(_Prod.id).limit(50)
+            )
+            prod_options = [
+                f"{r[0].replace(f'CFG{config_id}_', '')} — {r[1] or 'N/A'}"
+                for r in prod_result.fetchall()
+            ]
+            if prod_options:
+                clarifications.append({
+                    "field": "product",
+                    "question": "Which product are you asking about?",
+                    "type": "select",
+                    "options": prod_options,
+                    "required": True,
+                })
+
+        # If no sites matched but the message references a location, offer site list
+        if not site_ids and any(kw in combined_lower for kw in (
+            "site", "warehouse", "dc", "customer", "supplier", "location",
+            "region", "store", "deliver",
+        )):
+            site_result = await self.db.execute(
+                select(Site.name, Site.type).where(
+                    Site.config_id == config_id,
+                ).order_by(Site.name)
+            )
+            site_options = [f"{r[0]} — {r[1] or ''}" for r in site_result.fetchall()]
+            if site_options:
+                clarifications.append({
+                    "field": "site",
+                    "question": "Which site or location?",
+                    "type": "select",
+                    "options": site_options,
+                    "required": False,
+                })
+
         # Detect decision type from keywords
         decision_type_hint = None
         if "forecast" in combined_lower:
@@ -2225,7 +2308,7 @@ class DecisionStreamService:
             decision_type_hint = "subcontracting"
 
         if not product_ids and not site_ids:
-            return {"data_blocks": [], "context_text": ""}
+            return {"data_blocks": [], "context_text": "", "clarifications": clarifications}
 
         # Fetch real data for mentioned products/sites
         try:
@@ -2291,6 +2374,7 @@ class DecisionStreamService:
         return {
             "data_blocks": data_blocks,
             "context_text": "\n\n".join(context_parts),
+            "clarifications": clarifications,
         }
 
     async def _fetch_inventory_data(

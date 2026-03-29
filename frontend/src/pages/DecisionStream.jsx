@@ -246,6 +246,7 @@ const DecisionStream = () => {
           content: result.response,
           sources: result.sources || [],
           dataBlocks: result.data_blocks || [],
+          clarifications: result.clarifications || [],
         };
         setChatHistory((prev) => [...prev, aiMessage]);
         setConversationId(result.conversation_id);
@@ -415,6 +416,48 @@ const DecisionStream = () => {
                   <div className="mt-2 space-y-2">
                     {msg.dataBlocks.map((block, i) => (
                       <ChatDataBlock key={i} block={block} />
+                    ))}
+                  </div>
+                )}
+                {/* Structured clarification dropdowns */}
+                {msg.clarifications?.length > 0 && (
+                  <div className="mt-3 p-3 bg-violet-50 border border-violet-200 rounded-lg space-y-2.5">
+                    <div className="text-xs font-semibold text-violet-700 uppercase tracking-wide">
+                      Help me narrow it down
+                    </div>
+                    {msg.clarifications.map((cl) => (
+                      <div key={cl.field}>
+                        <label className="block text-xs font-medium text-foreground mb-1">
+                          {cl.question} {cl.required && <span className="text-red-500">*</span>}
+                        </label>
+                        {cl.type === 'select' && cl.options?.length > 0 ? (
+                          <select
+                            className="w-full rounded-md border border-violet-200 bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60"
+                            defaultValue=""
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                handleSendMessage(`I'm asking about: ${e.target.value}`);
+                              }
+                            }}
+                          >
+                            <option value="">Select...</option>
+                            {cl.options.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Type your answer..."
+                            className="w-full rounded-md border border-violet-200 bg-background px-2.5 py-1.5 text-sm"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && e.target.value.trim()) {
+                                handleSendMessage(`${cl.field}: ${e.target.value.trim()}`);
+                              }
+                            }}
+                          />
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}
