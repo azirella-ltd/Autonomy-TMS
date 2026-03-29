@@ -3,7 +3,7 @@
 - scenarios.current_round → scenarios.current_period
 - scenarios.max_rounds → scenarios.max_periods
 - site.dag_type: 'market_demand' → 'customer', 'market_supply' → 'vendor'
-- supply_chain_configs.node_type_definitions JSON: update type keys
+- supply_chain_configs.site_type_definitions JSON: update type keys
 
 Revision ID: 20260329_tbg_rename
 Revises: a7630db18e62
@@ -38,23 +38,23 @@ def upgrade() -> None:
     op.execute("UPDATE site SET master_type = 'CUSTOMER' WHERE lower(master_type) = 'market_demand'")
     op.execute("UPDATE site SET master_type = 'VENDOR' WHERE lower(master_type) = 'market_supply'")
 
-    # 4. Update node_type_definitions JSON in supply_chain_configs
+    # 4. Update site_type_definitions JSON in supply_chain_configs
     op.execute("""
         UPDATE supply_chain_configs
-        SET node_type_definitions = REPLACE(
+        SET site_type_definitions = REPLACE(
             REPLACE(
                 REPLACE(
-                    REPLACE(node_type_definitions::text,
+                    REPLACE(site_type_definitions::text,
                         '"market_demand"', '"customer"'),
                     '"market_supply"', '"vendor"'),
                 '"Market Demand"', '"Customer"'),
             '"Market Supply"', '"Vendor"'
         )::jsonb
-        WHERE node_type_definitions IS NOT NULL
-        AND (node_type_definitions::text LIKE '%market_demand%'
-             OR node_type_definitions::text LIKE '%market_supply%'
-             OR node_type_definitions::text LIKE '%Market Demand%'
-             OR node_type_definitions::text LIKE '%Market Supply%')
+        WHERE site_type_definitions IS NOT NULL
+        AND (site_type_definitions::text LIKE '%market_demand%'
+             OR site_type_definitions::text LIKE '%market_supply%'
+             OR site_type_definitions::text LIKE '%Market Demand%'
+             OR site_type_definitions::text LIKE '%Market Supply%')
     """)
 
     # 5. Rename transfer_order and purchase_order columns that reference rounds

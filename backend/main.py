@@ -46,7 +46,7 @@ from app.models.scenario_user import ScenarioUser, ScenarioUserRole, ScenarioUse
 
 # Local aliases for backward compatibility within this file (main.py is 62K lines)
 DbGame = DbScenario
-DbGameStatus = DbScenarioStatus
+DbScenarioStatus = DbScenarioStatus
 GameCreate = ScenarioCreate
 PlayerAssignment = ScenarioUserAssignment
 PlayerTypeSchema = ScenarioUserTypeSchema
@@ -2461,7 +2461,7 @@ from app.models.user import UserTypeEnum
 
 # Aliases for backward compatibility within this file
 DbGame = DbScenario
-DbGameStatus = DbScenarioStatus
+DbScenarioStatus = DbScenarioStatus
 
 
 def _is_system_admin_user(user: Any) -> bool:
@@ -2504,11 +2504,11 @@ def _iso(dt: Optional[datetime]) -> Optional[str]:
 
 
 STATUS_REMAPPING = {
-    DbGameStatus.CREATED: "CREATED",
-    DbGameStatus.STARTED: "IN_PROGRESS",
-    DbGameStatus.ROUND_IN_PROGRESS: "IN_PROGRESS",
-    DbGameStatus.ROUND_COMPLETED: "PAUSED",
-    DbGameStatus.FINISHED: "COMPLETED",
+    DbScenarioStatus.CREATED: "CREATED",
+    DbScenarioStatus.STARTED: "IN_PROGRESS",
+    DbScenarioStatus.PERIOD_IN_PROGRESS: "IN_PROGRESS",
+    DbScenarioStatus.PERIOD_COMPLETED: "PAUSED",
+    DbScenarioStatus.FINISHED: "COMPLETED",
 }
 
 PROGRESSION_SUPERVISED = "supervised"
@@ -4663,7 +4663,7 @@ def _finalize_round_if_ready(
         round_record.config["shipments"] = {source: dict(targets) for source, targets in shipments_map.items()}
 
     if game.max_rounds and round_number >= game.max_rounds:
-        game.status = DbGameStatus.FINISHED
+        game.status = DbScenarioStatus.FINISHED
         game.current_round = round_number
     else:
         game.current_round = round_number + 1
@@ -4671,9 +4671,9 @@ def _finalize_round_if_ready(
         next_round.status = "in_progress"
         next_round.started_at = datetime.utcnow()
         game.status = (
-            DbGameStatus.ROUND_IN_PROGRESS
+            DbScenarioStatus.PERIOD_IN_PROGRESS
             if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED
-            else DbGameStatus.STARTED
+            else DbScenarioStatus.STARTED
         )
 
     _touch_game(game)
@@ -4768,7 +4768,7 @@ def _auto_advance_unsupervised_game_sync(
                 )
                 break
 
-            if game.status == DbGameStatus.FINISHED:
+            if game.status == DbScenarioStatus.FINISHED:
                 break
 
             try:
@@ -4791,7 +4791,7 @@ def _auto_advance_unsupervised_game_sync(
 
             session.refresh(game)
 
-            if game.status == DbGameStatus.FINISHED:
+            if game.status == DbScenarioStatus.FINISHED:
                 break
 
             if sleep_seconds:
@@ -5402,7 +5402,7 @@ def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
 
 
 def _serialize_game(game: DbGame) -> Dict[str, Any]:
-    if isinstance(game.status, DbGameStatus):
+    if isinstance(game.status, DbScenarioStatus):
         status = STATUS_REMAPPING.get(game.status, game.status.value)
     else:
         status = str(game.status or "")
@@ -5495,7 +5495,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
         game = DbGame(
             name=payload.name,
             description=payload.description,
-            status=DbGameStatus.CREATED,
+            status=DbScenarioStatus.CREATED,
             current_round=0,
             max_rounds=payload.max_rounds or 0,
             created_at=datetime.utcnow(),
@@ -5644,8 +5644,8 @@ async def list_mixed_scenarios(user: Dict[str, Any] = Depends(get_current_user))
         payload: List[Dict[str, Any]] = []
         for game in games:
             if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED and game.status in {
-                DbGameStatus.STARTED,
-                DbGameStatus.ROUND_IN_PROGRESS,
+                DbScenarioStatus.STARTED,
+                DbScenarioStatus.PERIOD_IN_PROGRESS,
             }:
                 await _schedule_unsupervised_autoplay(game.id)
             payload.append(_serialize_game(game))
@@ -5663,7 +5663,7 @@ async def update_mixed_scenario(
     db = SyncSessionLocal()
     try:
         game = _get_game_for_user(db, user, scenario_id)
-        if game.status not in {DbGameStatus.CREATED}:
+        if game.status not in {DbScenarioStatus.CREATED}:
             raise HTTPException(
                 status_code=400,
                 detail="Games can only be edited while in the CREATED state.",
@@ -5978,7 +5978,7 @@ async def start_game(
     db = SyncSessionLocal()
     try:
         game = _get_game_for_user(db, user, scenario_id)
-        if game.status == DbGameStatus.FINISHED:
+        if game.status == DbScenarioStatus.FINISHED:
             raise HTTPException(status_code=400, detail="Game is already finished")
         game.started_at = datetime.utcnow()
         request_payload: Dict[str, Any] = {}
@@ -6056,9 +6056,9 @@ async def start_game(
             round_record.started_at = datetime.utcnow()
 
             game.status = (
-                DbGameStatus.ROUND_IN_PROGRESS
+                DbScenarioStatus.PERIOD_IN_PROGRESS
                 if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED
-                else DbGameStatus.STARTED
+                else DbScenarioStatus.STARTED
             )
             _touch_game(game)
             _save_game_config(db, game, config)
@@ -6125,7 +6125,7 @@ async def stop_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current
         if pending and not _finalize_round_if_ready(db, game, config, round_record, force=True):
             _save_game_config(db, game, config)
 
-        game.status = DbGameStatus.FINISHED
+        game.status = DbScenarioStatus.FINISHED
         if game.max_rounds:
             game.current_round = max(game.current_round or 0, game.max_rounds)
 
@@ -6203,7 +6203,7 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
         _save_game_config(db, game, config)
 
         game.current_round = 0
-        game.status = DbGameStatus.CREATED
+        game.status = DbScenarioStatus.CREATED
         game.started_at = None
         game.finished_at = None
         game.completed_at = None
@@ -6250,7 +6250,7 @@ async def finish_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curre
         if pending and not _finalize_round_if_ready(db, game, config, round_record, force=True):
             _save_game_config(db, game, config)
 
-        game.status = DbGameStatus.FINISHED
+        game.status = DbScenarioStatus.FINISHED
         if game.max_rounds:
             game.current_round = max(game.current_round or 0, game.max_rounds)
         _touch_game(game)
