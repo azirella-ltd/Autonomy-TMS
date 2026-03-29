@@ -38,6 +38,76 @@ import { useDisplayPreferences } from '../contexts/DisplayPreferencesContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
 
+/**
+ * Searchable clarification dropdown for Azirella disambiguation.
+ * Shows filtered options as user types, with "None of these" at bottom.
+ */
+const ClarificationDropdown = ({ clarification: cl, onSelect }) => {
+  const [search, setSearch] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef(null);
+
+  const filtered = (cl.options || []).filter((opt) =>
+    !search || opt.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Close on outside click
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div ref={ref}>
+      <label className="block text-xs font-semibold text-violet-800 mb-1">
+        {cl.question}
+      </label>
+      <div className="relative">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setIsOpen(true); }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={`Search ${(cl.category || 'options').toLowerCase()}...`}
+          className="w-full rounded-md border border-violet-200 bg-background px-2.5 py-1.5 text-sm
+            focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60"
+        />
+        {isOpen && (
+          <div className="absolute z-50 w-full mt-1 max-h-48 overflow-y-auto bg-background border border-violet-200 rounded-md shadow-lg">
+            {filtered.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-violet-100 truncate"
+                onClick={() => { setIsOpen(false); setSearch(opt); onSelect(opt); }}
+              >
+                {opt}
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-3 py-2 text-xs text-muted-foreground italic">
+                No matches found
+              </div>
+            )}
+            {cl.none_option && (
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm text-violet-600 hover:bg-violet-100 border-t border-violet-100 font-medium"
+                onClick={() => { setIsOpen(false); setSearch(''); onSelect('__none__'); }}
+              >
+                None of these — show full list
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const DecisionStream = () => {
   const location = useLocation();
   const { user, isTenantAdmin } = useAuth();
@@ -419,45 +489,21 @@ const DecisionStream = () => {
                     ))}
                   </div>
                 )}
-                {/* Structured clarification dropdowns */}
+                {/* Structured clarification dropdowns — searchable with "None of these" */}
                 {msg.clarifications?.length > 0 && (
                   <div className="mt-3 p-3 bg-violet-50 border border-violet-200 rounded-lg space-y-2.5">
-                    <div className="text-xs font-semibold text-violet-700 uppercase tracking-wide">
-                      Help me narrow it down
-                    </div>
                     {msg.clarifications.map((cl) => (
-                      <div key={cl.field}>
-                        <label className="block text-xs font-medium text-foreground mb-1">
-                          {cl.question} {cl.required && <span className="text-red-500">*</span>}
-                        </label>
-                        {cl.type === 'select' && cl.options?.length > 0 ? (
-                          <select
-                            className="w-full rounded-md border border-violet-200 bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60"
-                            defaultValue=""
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                handleSendMessage(`I'm asking about: ${e.target.value}`);
-                              }
-                            }}
-                          >
-                            <option value="">Select...</option>
-                            {cl.options.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="Type your answer..."
-                            className="w-full rounded-md border border-violet-200 bg-background px-2.5 py-1.5 text-sm"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && e.target.value.trim()) {
-                                handleSendMessage(`${cl.field}: ${e.target.value.trim()}`);
-                              }
-                            }}
-                          />
-                        )}
-                      </div>
+                      <ClarificationDropdown
+                        key={cl.field}
+                        clarification={cl}
+                        onSelect={(value) => {
+                          if (value === '__none__') {
+                            handleSendMessage(`None of the ${cl.category || 'options'} listed — please show me the full list`);
+                          } else {
+                            handleSendMessage(`I mean: ${value}`);
+                          }
+                        }}
+                      />
                     ))}
                   </div>
                 )}

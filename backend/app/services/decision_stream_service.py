@@ -2207,84 +2207,128 @@ class DecisionStreamService:
             if token_lower in combined_lower:
                 site_ids.add(canonical)
 
-        # Build clarification options when matches are ambiguous
+        # Build clarification options when matches are ambiguous.
+        # Each clarification has: field, question, category (entity type label),
+        # type='select', options[], searchable=True, none_option=True
         clarifications = []
 
-        # If multiple products matched, offer a dropdown to disambiguate
-        if len(product_ids) > 3:
-            # Too many matches — likely a generic word triggered many hits
-            # Build a dropdown with the matched products + descriptions
+        async def _product_options(product_id_set=None):
+            """Build product dropdown options from a set of IDs or full catalog."""
             from app.models.sc_entities import Product as _Prod
-            prod_result = await self.db.execute(
-                select(_Prod.id, _Prod.description).where(
-                    _Prod.id.in_(list(product_ids))
-                ).order_by(_Prod.id).limit(20)
-            )
-            prod_options = [
+            q = select(_Prod.id, _Prod.description).order_by(_Prod.id).limit(50)
+            if product_id_set:
+                q = q.where(_Prod.id.in_(list(product_id_set)))
+            else:
+                q = q.where(_Prod.config_id == config_id)
+            result = await self.db.execute(q)
+            return [
                 f"{r[0].replace(f'CFG{config_id}_', '')} — {r[1] or 'N/A'}"
-                for r in prod_result.fetchall()
+                for r in result.fetchall()
             ]
+
+        async def _site_options(site_name_set=None, master_type=None):
+            """Build site dropdown options, optionally filtered by master_type."""
+            q = select(Site.name, Site.type, Site.attributes).where(
+                Site.config_id == config_id
+            ).order_by(Site.name)
+            if master_type:
+                q = q.where(Site.master_type == master_type)
+            result = await self.db.execute(q)
+            options = []
+            for sname, stype, sattrs in result.fetchall():
+                if site_name_set and sname not in site_name_set:
+                    continue
+                display = sname
+                if sattrs and isinstance(sattrs, dict):
+                    display = sattrs.get("customer_name") or sattrs.get("supplier_name") or sname
+                elif stype and " - " in str(stype):
+                    display = str(stype).split(" - ", 1)[-1]
+                options.append(f"{sname} — {display}")
+            return options
+
+        # If multiple products matched, narrow down with best matches
+        if len(product_ids) > 3:
             clarifications.append({
                 "field": "product",
-                "question": "Which product are you asking about?",
+                "question": "Which of these PRODUCTS do you mean?",
+                "category": "PRODUCTS",
                 "type": "select",
-                "options": prod_options,
+                "options": await _product_options(product_ids),
+                "searchable": True,
+                "none_option": True,
                 "required": True,
             })
 
-        # If multiple sites matched, offer a dropdown
+        # If multiple sites matched, determine the most likely entity type
         if len(site_ids) > 3:
-            site_options = sorted(site_ids)
+            # Check if matched sites are mostly customers, suppliers, or internal
+            matched_sites = [s for s in sites if s[0] in site_ids] if 'sites' in dir() else []
+            customer_matches = [s for s in matched_sites if s[2] == "CUSTOMER"]
+            vendor_matches = [s for s in matched_sites if s[2] == "VENDOR"]
+
+            if len(customer_matches) > len(vendor_matches):
+                category = "CUSTOMERS"
+                opts = await _site_options(site_ids, "CUSTOMER")
+            elif len(vendor_matches) > len(customer_matches):
+                category = "SUPPLIERS"
+                opts = await _site_options(site_ids, "VENDOR")
+            else:
+                category = "SITES"
+                opts = await _site_options(site_ids)
+
             clarifications.append({
                 "field": "site",
-                "question": "Which site or location?",
+                "question": f"Which of these {category} do you mean?",
+                "category": category,
                 "type": "select",
-                "options": site_options,
+                "options": opts,
+                "searchable": True,
+                "none_option": True,
                 "required": True,
             })
 
-        # If no products matched but the message seems to reference one, offer full catalog
+        # If no products matched but message references one, show full catalog
         if not product_ids and any(kw in combined_lower for kw in (
             "product", "sku", "item", "beef", "chicken", "pork", "dairy",
             "cheese", "yogurt", "butter", "juice", "ice cream", "pasta",
             "wagyu", "wagu", "seafood", "turkey",
         )):
-            from app.models.sc_entities import Product as _Prod
-            prod_result = await self.db.execute(
-                select(_Prod.id, _Prod.description).where(
-                    _Prod.config_id == config_id,
-                ).order_by(_Prod.id).limit(50)
-            )
-            prod_options = [
-                f"{r[0].replace(f'CFG{config_id}_', '')} — {r[1] or 'N/A'}"
-                for r in prod_result.fetchall()
-            ]
-            if prod_options:
+            opts = await _product_options()
+            if opts:
                 clarifications.append({
                     "field": "product",
-                    "question": "Which product are you asking about?",
+                    "question": "Which of these PRODUCTS do you mean?",
+                    "category": "PRODUCTS",
                     "type": "select",
-                    "options": prod_options,
+                    "options": opts,
+                    "searchable": True,
+                    "none_option": True,
                     "required": True,
                 })
 
-        # If no sites matched but the message references a location, offer site list
+        # If no sites matched but message references a location
         if not site_ids and any(kw in combined_lower for kw in (
             "site", "warehouse", "dc", "customer", "supplier", "location",
             "region", "store", "deliver",
         )):
-            site_result = await self.db.execute(
-                select(Site.name, Site.type).where(
-                    Site.config_id == config_id,
-                ).order_by(Site.name)
-            )
-            site_options = [f"{r[0]} — {r[1] or ''}" for r in site_result.fetchall()]
-            if site_options:
+            # Determine entity type from keywords
+            if any(kw in combined_lower for kw in ("customer", "deliver", "store")):
+                category, master = "CUSTOMERS", "CUSTOMER"
+            elif any(kw in combined_lower for kw in ("supplier", "vendor")):
+                category, master = "SUPPLIERS", "VENDOR"
+            else:
+                category, master = "SITES", None
+
+            opts = await _site_options(master_type=master)
+            if opts:
                 clarifications.append({
                     "field": "site",
-                    "question": "Which site or location?",
+                    "question": f"Which of these {category} do you mean?",
+                    "category": category,
                     "type": "select",
-                    "options": site_options,
+                    "options": opts,
+                    "searchable": True,
+                    "none_option": True,
                     "required": False,
                 })
 
