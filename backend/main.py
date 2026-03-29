@@ -578,21 +578,71 @@ async def startup_event():
             from app.services.sap_staging_jobs import register_sap_staging_jobs
             register_sap_staging_jobs(scheduler_service)
 
-            # CDT batch calibration from DB (fast — no simulation, just reads
-            # existing decision-outcome pairs). Simulation bootstrap removed
-            # from startup; runs only during provisioning conformal step.
-            try:
-                from app.services.powell.cdt_calibration_service import CDTCalibrationService
-                cdt_db = sync_session_factory()
+            # CDT calibration: batch from DB first (fast), then simulation
+            # bootstrap per tenant in background thread (non-blocking).
+            import threading
+
+            def _cdt_startup_calibration():
+                """Run CDT calibration in background so startup isn't blocked."""
                 try:
-                    cdt_svc = CDTCalibrationService(cdt_db)
-                    cdt_stats = cdt_svc.calibrate_all()
-                    calibrated = sum(1 for s in cdt_stats.values() if s.get("status") == "calibrated")
-                    logger.info(f"CDT startup calibration: {calibrated}/11 agents calibrated from DB")
-                finally:
-                    cdt_db.close()
-            except Exception as e:
-                logger.warning(f"CDT startup calibration failed (non-fatal): {e}")
+                    from app.services.powell.cdt_calibration_service import CDTCalibrationService
+                    from sqlalchemy import text as sa_text
+                    cdt_db = sync_session_factory()
+                    try:
+                        # Phase 1: Fast batch calibration from existing decision-outcome pairs
+                        cdt_svc = CDTCalibrationService(cdt_db)
+                        cdt_stats = cdt_svc.calibrate_all()
+                        calibrated = sum(1 for s in cdt_stats.values() if s.get("status") == "calibrated")
+                        logger.info(f"CDT startup calibration (global): {calibrated}/11 agents calibrated from DB")
+
+                        # Phase 2: Per-tenant calibration + simulation bootstrap for uncalibrated agents
+                        tenant_rows = cdt_db.execute(
+                            sa_text(
+                                "SELECT DISTINCT sc.tenant_id, sc.id "
+                                "FROM supply_chain_configs sc "
+                                "WHERE sc.tenant_id IS NOT NULL AND sc.is_active = true "
+                                "ORDER BY sc.tenant_id"
+                            )
+                        ).fetchall()
+                        seen_tenants = set()
+                        for tid, config_id in tenant_rows:
+                            if tid in seen_tenants:
+                                continue
+                            seen_tenants.add(tid)
+                            try:
+                                tenant_svc = CDTCalibrationService(cdt_db, tenant_id=tid)
+                                tenant_stats = tenant_svc.calibrate_all()
+                                t_cal = sum(1 for s in tenant_stats.values() if s.get("status") == "calibrated")
+                                logger.info(f"CDT startup calibration (tenant {tid}): {t_cal}/11 agents calibrated")
+
+                                # Simulation bootstrap for uncalibrated agents
+                                if t_cal < 11 and config_id:
+                                    try:
+                                        from app.services.powell.simulation_calibration_service import (
+                                            run_simulation_calibration_bootstrap,
+                                        )
+                                        sim_stats = run_simulation_calibration_bootstrap(
+                                            db=cdt_db,
+                                            config_id=config_id,
+                                            tenant_id=tid,
+                                            n_episodes=50,
+                                        )
+                                        logger.info(
+                                            f"CDT startup simulation bootstrap (tenant {tid}): "
+                                            f"{sim_stats.get('agents_calibrated', 0)}/11 agents calibrated"
+                                        )
+                                    except Exception as sim_err:
+                                        logger.warning(f"CDT simulation bootstrap (tenant {tid}): {sim_err}")
+                            except Exception as te:
+                                logger.debug(f"CDT tenant {tid} calibration: {te}")
+                    finally:
+                        cdt_db.close()
+                except Exception as e:
+                    logger.warning(f"CDT startup calibration failed (non-fatal): {e}")
+
+            cdt_thread = threading.Thread(target=_cdt_startup_calibration, daemon=True, name="cdt-startup")
+            cdt_thread.start()
+            logger.info("CDT startup calibration: launched in background thread")
 
             # Register conformal prediction recalibration jobs
             from app.services.conformal_orchestrator import register_conformal_jobs
