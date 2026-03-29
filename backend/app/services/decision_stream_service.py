@@ -2135,12 +2135,29 @@ class DecisionStreamService:
                         if len(w) >= 4 and w not in ("premium", "frozen", "block", "case"):
                             product_lookup[w] = pid
 
-            # Load sites
+            # Load sites — index by code AND human-readable name
             result = await self.db.execute(
-                select(Site.name).where(Site.config_id.in_(cfg_ids))
+                select(Site.name, Site.type, Site.attributes).where(
+                    Site.config_id.in_(cfg_ids)
+                )
             )
-            for (sname,) in result.fetchall():
+            for sname, stype, sattrs in result.fetchall():
                 site_lookup[sname.lower()] = sname
+                # Index by human-readable name from attributes
+                if sattrs and isinstance(sattrs, dict):
+                    for key in ("customer_name", "supplier_name", "name"):
+                        display = sattrs.get(key)
+                        if display:
+                            site_lookup[display.lower()] = sname
+                            # Also index significant words (e.g., "Metro" → CUST_LAX)
+                            for word in display.split():
+                                w = word.strip(",.()-").lower()
+                                if len(w) >= 4 and w not in ("foods", "group", "company", "services"):
+                                    site_lookup[w] = sname
+                # Index from type field (e.g., "Supplier - Tyson Foods Inc")
+                if stype and " - " in str(stype):
+                    display = str(stype).split(" - ", 1)[-1]
+                    site_lookup[display.lower()] = sname
 
         except Exception as e:
             logger.warning(f"Vocabulary load failed: {e}")
@@ -2622,23 +2639,38 @@ class DecisionStreamService:
             prefix = f"CFG{config_id}_"
             parts = []
 
-            # Sites — all sites with master type
+            # Sites — all sites with master type and human-readable names
             result = await self.db.execute(
-                select(Site.name, Site.type, Site.master_type).where(
+                select(Site.name, Site.type, Site.master_type, Site.attributes).where(
                     Site.config_id == config_id
                 )
             )
             sites = result.fetchall()
             if sites:
-                internal = [f"{s[0]} ({s[1]})" for s in sites if s[2] == "INVENTORY"]
-                vendors = [s[0] for s in sites if s[2] == "VENDOR"]
-                customers = [s[0] for s in sites if s[2] == "CUSTOMER"]
-                if internal:
-                    parts.append(f"Internal sites: {', '.join(internal)}")
-                if vendors:
-                    parts.append(f"Vendor sites: {', '.join(vendors)}")
-                if customers:
-                    parts.append(f"Customer sites: {', '.join(customers)}")
+                internal_lines = []
+                vendor_lines = []
+                customer_lines = []
+                for s_name, s_type, s_master, s_attrs in sites:
+                    # Extract human-readable name from attributes or type
+                    display = s_name
+                    if s_attrs and isinstance(s_attrs, dict):
+                        display = s_attrs.get("customer_name") or s_attrs.get("supplier_name") or s_attrs.get("name") or s_name
+                    elif s_type and " - " in str(s_type):
+                        display = str(s_type).split(" - ", 1)[-1]
+
+                    if s_master == "INVENTORY":
+                        internal_lines.append(f"{s_name}: {s_type or display}")
+                    elif s_master == "VENDOR":
+                        vendor_lines.append(f"{s_name}: {display}")
+                    elif s_master == "CUSTOMER":
+                        customer_lines.append(f"{s_name}: {display}")
+
+                if internal_lines:
+                    parts.append(f"INTERNAL SITES:\n" + "\n".join(f"  {l}" for l in internal_lines))
+                if vendor_lines:
+                    parts.append(f"SUPPLIERS ({len(vendor_lines)}):\n" + "\n".join(f"  {l}" for l in sorted(vendor_lines)))
+                if customer_lines:
+                    parts.append(f"CUSTOMERS ({len(customer_lines)}):\n" + "\n".join(f"  {l}" for l in sorted(customer_lines)))
 
             # Product groups (distinct)
             result = await self.db.execute(
