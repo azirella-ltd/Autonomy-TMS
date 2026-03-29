@@ -165,7 +165,12 @@ class ConfigProvisioningStatus(Base):
     rl_training_at = Column(DateTime, nullable=True)
     rl_training_error = Column(Text, nullable=True)
 
-    # Step 9: Supply plan generation
+    # Step 10: Backtest evaluation (TRM agents vs held-out test period)
+    backtest_evaluation_status = Column(String(20), default="pending")
+    backtest_evaluation_at = Column(DateTime, nullable=True)
+    backtest_evaluation_error = Column(Text, nullable=True)
+
+    # Step 11: Supply plan generation
     supply_plan_status = Column(String(20), default="pending")
     supply_plan_at = Column(DateTime, nullable=True)
     supply_plan_error = Column(Text, nullable=True)
@@ -216,7 +221,8 @@ class ConfigProvisioningStatus(Base):
     STEPS = [
         "warm_start", "sop_graphsage", "cfa_optimization",
         "lgbm_forecast", "demand_tgnn", "supply_tgnn", "inventory_tgnn",
-        "trm_training", "rl_training", "supply_plan", "rccp_validation",
+        "trm_training", "rl_training", "backtest_evaluation",
+        "supply_plan", "rccp_validation",
         "decision_seed", "site_tgnn", "conformal", "scenario_bootstrap", "briefing",
     ]
 
@@ -241,6 +247,7 @@ class ConfigProvisioningStatus(Base):
         "inventory_tgnn": "Inventory Optimization Agent",
         "trm_training": "Execution Role Agent Training",
         "rl_training": "Simulation RL Fine-Tuning",
+        "backtest_evaluation": "Agent Backtest Evaluation",
         "supply_plan": "Supply Plan Generation",
         "decision_seed": "Decision Stream Seeding",
         "site_tgnn": "Operational Site Agent Training",
@@ -259,9 +266,10 @@ class ConfigProvisioningStatus(Base):
         "inventory_tgnn": ["supply_tgnn"],
         "trm_training": ["demand_tgnn", "supply_tgnn", "inventory_tgnn"],
         "rl_training": ["trm_training"],
-        "supply_plan": ["cfa_optimization", "rl_training"],
+        "backtest_evaluation": ["rl_training"],
+        "supply_plan": ["cfa_optimization", "backtest_evaluation"],
         "rccp_validation": ["supply_plan"],
-        "decision_seed": ["rl_training"],
+        "decision_seed": ["backtest_evaluation"],
         "site_tgnn": ["decision_seed"],
         "conformal": ["warm_start"],
         "scenario_bootstrap": ["conformal", "decision_seed"],

@@ -1,7 +1,7 @@
 """
-Food Distribution 2-Year History Generator
+Food Distribution 3-Year History Generator
 
-Generates 2 years of daily transactional history for the Food Dist config
+Generates 3 years of daily transactional history for the Food Dist config
 across 16 AWS SC data model entity types:
 
 Existing (10):
@@ -30,7 +30,7 @@ New Tier 2 (3):
 
 Demand model enhancements:
 - Holiday spikes (Thanksgiving, July 4th, Super Bowl, Christmas, etc.)
-- Customer churn (2 accounts lost, 1 gained over 2-year horizon)
+- Customer churn (2 accounts lost, 1 gained over 3-year horizon)
 - Promotional demand lifts correlated with SupplementaryTimeSeries signals
 - Log-normal noise (right-skewed instead of symmetric Gaussian)
 - Basket correlations between product pairs
@@ -133,7 +133,7 @@ HOLIDAY_SPIKES = [
 ]
 
 # ============================================================================
-# Customer Churn Events (day_offset thresholds over 730-day horizon)
+# Customer Churn Events (day_offset thresholds over 1095-day horizon)
 # ============================================================================
 
 # Gained customer: Reno Fresh Markets joins at month 10 (~day 300)
@@ -269,7 +269,7 @@ async def _batch_add(db: AsyncSession, records: list, batch_size: int = 2000):
 # ============================================================================
 
 class FoodDistHistoryGenerator:
-    """Generates 2 years of daily transactional history for Food Dist."""
+    """Generates 3 years of daily transactional history for Food Dist."""
 
     def __init__(self, db: AsyncSession, config_id: int, tenant_id: int,
                  company_id: str = None):
@@ -301,7 +301,7 @@ class FoodDistHistoryGenerator:
         # All customers including churn-gained ones
         self._all_customers: List[CustomerDefinition] = list(CUSTOMERS) + [CUST_RNO]
         # Total days of history (set in generate_history, used by NPI gate)
-        self._total_days: int = 730
+        self._total_days: int = 1095
 
     # ------------------------------------------------------------------
     # Network loading
@@ -2341,7 +2341,7 @@ class FoodDistHistoryGenerator:
 
         Food distribution CDCs perform case-to-each breakdown, relabeling,
         and mixed-pallet building. These are modeled as simple production orders.
-        ~50 records over the 2-year horizon (roughly bi-weekly).
+        ~75 records over the 3-year horizon (roughly bi-weekly).
         """
         prod_orders: List[ProductionOrder] = []
         cdc_id = self.site_ids["CDC_WEST"]
@@ -2459,12 +2459,16 @@ class FoodDistHistoryGenerator:
 
     async def generate_history(
         self,
-        days: int = 730,
+        days: int = 1095,
         start_date: Optional[date] = None,
         seed: int = 42,
     ) -> Dict[str, int]:
         """
-        Generate complete 2-year transactional history.
+        Generate complete 3-year transactional history.
+
+        The 3-year horizon supports train/test split evaluation:
+        - Training period: first 2 years (days 0-730)
+        - Test period: last 1 year (days 731-1095)
 
         Enhanced with: OutboundOrders (headers), GoodsReceipts, QualityOrders,
         InboundOrderLineSchedules, TransferOrders, MaintenanceOrders,
@@ -2472,7 +2476,7 @@ class FoodDistHistoryGenerator:
         customer churn, promotions, log-normal noise), and log-normal lead times.
 
         Args:
-            days: Number of days of history (default 730 = 2 years)
+            days: Number of days of history (default 1095 = 3 years)
             start_date: Start date for history (default: today - days)
             seed: Random seed for reproducibility
 

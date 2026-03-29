@@ -83,9 +83,15 @@ const STEP_META = {
     detail: 'Phase 1 behavioral cloning: ATP, PO, MO, TO, rebalancing, quality, maintenance, forecast adj, buffer, subcontracting, order tracking',
     estimate: '30–90s',
   },
+  backtest_evaluation: {
+    label: 'Agent Backtest Evaluation',
+    desc: 'Validate trained agents against held-out test period data (last 1/3 of history)',
+    detail: 'Time-based train/test split: agents trained on first 2 years, evaluated on last year. Computes agent score, cost impact, and override rate per TRM type.',
+    estimate: '10–30s',
+  },
   supply_plan: {
     label: 'Supply Plan Generation',
-    desc: 'Generate 52-week supply plan using 2-year demand forecast and trained agent parameters',
+    desc: 'Generate 52-week supply plan using 3-year demand history and trained agent parameters',
     detail: 'Creates purchase orders, transfer orders, and manufacturing orders across the full 52-week planning horizon with Monte Carlo evaluation',
     estimate: '15–60s',
   },
@@ -153,7 +159,7 @@ const TIERS = [
     label: 'Execution Agents',
     description: '11 site-level role agents: ATP, PO, MO, TO, quality, maintenance, and more',
     Icon: Users,
-    steps: ['trm_training', 'decision_seed'],
+    steps: ['trm_training', 'backtest_evaluation', 'decision_seed'],
     color: 'indigo',
   },
   {

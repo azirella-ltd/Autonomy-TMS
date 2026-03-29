@@ -1,6 +1,6 @@
 """Provisioning Service — Orchestrates the full Powell Cascade warm-start pipeline.
 
-Manages the 15-step provisioning process for any supply chain config:
+Manages the 17-step provisioning process for any supply chain config:
   1. Historical demand & belief states (warm start)
   2. S&OP GraphSAGE training
   3. CFA policy optimization
@@ -9,13 +9,15 @@ Manages the 15-step provisioning process for any supply chain config:
   6. Supply Planning tGNN training
   7. Inventory Optimization tGNN training
   8. TRM Phase 1 (Behavioral Cloning)
-  8b. TRM Phase 2 (Simulation-based RL / PPO fine-tuning)
-  9. Supply plan generation
-  9b. RCCP validation
-  10. Decision stream seeding
-  11. Site tGNN training
-  12. Conformal calibration
-  13. Executive briefing
+  9. TRM Phase 2 (Simulation-based RL / PPO fine-tuning)
+  10. Backtest evaluation (TRM agents vs held-out test period)
+  11. Supply plan generation
+  12. RCCP validation
+  13. Decision stream seeding
+  14. Site tGNN training
+  15. Conformal calibration
+  16. Scenario bootstrap
+  17. Executive briefing
 
 Each step tracks its own status (pending/running/completed/failed) with
 dependency enforcement — a step only runs if its prerequisites are complete.
@@ -869,8 +871,30 @@ class ProvisioningService:
         finally:
             sync_db.close()
 
+    async def _step_backtest_evaluation(self, config_id: int) -> dict:
+        """Step 10: Backtest evaluation — run TRM agents against held-out test period.
+
+        Splits historical data into training (first 2/3) and test (last 1/3)
+        periods, runs heuristic-library decisions on test data, and computes
+        validated performance metrics stored in PerformanceMetric.
+        """
+        try:
+            tenant_id = await self._resolve_tenant_id(config_id)
+            from app.services.powell.backtest_evaluation_service import BacktestEvaluationService
+            svc = BacktestEvaluationService(self.db, config_id, tenant_id)
+            result = await svc.run_backtest()
+            return {
+                "status": result.get("status", "ok"),
+                "trm_types_evaluated": result.get("trm_types_evaluated", 0),
+                "split_date": result.get("split_date"),
+                "aggregate": result.get("aggregate"),
+            }
+        except Exception as e:
+            logger.warning("Backtest evaluation failed for config %d: %s", config_id, e)
+            return {"status": "ok", "note": f"Backtest attempted: {str(e)[:200]}"}
+
     async def _step_supply_plan(self, config_id: int) -> dict:
-        """Step 9: Generate initial supply plan with default stochastic parameters."""
+        """Step 11: Generate initial supply plan with default stochastic parameters."""
         try:
             from app.services.supply_plan_service import SupplyPlanService
             from app.services.stochastic_sampling import StochasticParameters

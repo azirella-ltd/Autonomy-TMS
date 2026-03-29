@@ -172,11 +172,11 @@ make llm-check             # Check LLM connectivity
 
 ---
 
-## Provisioning (16 steps)
+## Provisioning (17 steps)
 
-warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → rl_training → supply_plan → rccp_validation → decision_seed → site_tgnn → conformal → scenario_bootstrap → briefing
+warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → rl_training → backtest_evaluation → supply_plan → rccp_validation → decision_seed → site_tgnn → conformal → scenario_bootstrap → briefing
 
-- **FULL scope**: All 16 steps (structural changes)
+- **FULL scope**: All 17 steps (structural changes)
 - **PARAMETER_ONLY scope**: 4 steps — cfa_optimization, decision_seed, conformal, briefing (policy changes)
 - Only tenant admin can provision (never systemadmin)
 

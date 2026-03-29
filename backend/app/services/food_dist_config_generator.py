@@ -689,7 +689,7 @@ class FoodDistConfigGenerator:
                 config_id=self.sc_config.id,
                 tenant_id=self.tenant.id,
             )
-            history_counts = await history_gen.generate_history(days=730)
+            history_counts = await history_gen.generate_history(days=1095)
             logger.info(f"Generated {history_counts.get('total', 0):,} history records")
         except Exception:
             logger.exception("History generation failed — config created without history")
