@@ -124,12 +124,12 @@ async def create_default_environment():
             
                 # Create nodes
                 nodes = [
-                    {"name": "Market Supply", "node_type": NodeType.MARKET_SUPPLY, "position_x": -1, "position_y": 0, "role": None},
+                    {"name": "Vendor", "node_type": NodeType.VENDOR, "position_x": -1, "position_y": 0, "role": None},
                     {"name": "Manufacturer", "node_type": NodeType.MANUFACTURER, "position_x": 0, "position_y": 0, "role": ScenarioUserRole.MANUFACTURER},
                     {"name": "Distributor", "node_type": NodeType.DISTRIBUTOR, "position_x": 1, "position_y": 0, "role": ScenarioUserRole.DISTRIBUTOR},
                     {"name": "Wholesaler", "node_type": NodeType.WHOLESALER, "position_x": 2, "position_y": 0, "role": ScenarioUserRole.WHOLESALER},
                     {"name": "Retailer", "node_type": NodeType.RETAILER, "position_x": 3, "position_y": 0, "role": ScenarioUserRole.RETAILER},
-                    {"name": "Market Demand", "node_type": NodeType.MARKET_DEMAND, "position_x": 4, "position_y": 0, "role": None},
+                    {"name": "Customer", "node_type": NodeType.CUSTOMER, "position_x": 4, "position_y": 0, "role": None},
                 ]
                 
                 node_objs = []
@@ -164,7 +164,7 @@ async def create_default_environment():
                 
                 # Create item-node configurations
                 for node in node_objs:
-                    if node.node_type in {NodeType.MARKET_SUPPLY, NodeType.MARKET_DEMAND}:
+                    if node.node_type in {NodeType.VENDOR, NodeType.CUSTOMER}:
                         continue
                     inc = ProductSiteConfig(
                         item_id=item.id,
@@ -218,8 +218,8 @@ async def create_default_environment():
                 default_scenario = Scenario(
                     name="Default Simulation",
                     description="Default simulation with AI scenario_users",
-                    max_rounds=50,
-                    current_round=0,
+                    max_periods=50,
+                    current_period=0,
                     status=ScenarioStatus.CREATED,
                     supply_chain_config_id=default_config.id,
                     tenant_id=default_tenant.id,

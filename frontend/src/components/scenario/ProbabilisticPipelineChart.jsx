@@ -166,7 +166,7 @@ const ProbabilisticPipelineChart = ({
   }
 
   const { shipments, arrival_distribution, lead_time_stats } = pipelineData;
-  const currentRound = pipelineData.current_round || propCurrentRound;
+  const currentRound = pipelineData.current_period || propCurrentRound;
 
   // Build chart data for arrival distribution
   const arrivalChartData = Object.entries(arrival_distribution || {})

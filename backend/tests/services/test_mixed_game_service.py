@@ -85,9 +85,9 @@ def test_build_lane_views_normalises_leadtime_payloads():
     }
     cfg = {
         "node_types": {"retailer": "retailer", "wholesaler": "wholesaler", "factory": "market_supply"},
-        "market_demand_nodes": ["Market Demand"],
+        "market_demand_nodes": ["Customer"],
         "nodes": [
-            {"name": "Market Demand", "type": "market_demand", "master_type": "market_demand"},
+            {"name": "Customer", "type": "market_demand", "master_type": "market_demand"},
         ],
         "lanes": [
             {

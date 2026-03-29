@@ -91,20 +91,20 @@ const ScenarioBoard = () => {
   );
   const periodLabelSingular = getTimePeriodLabel(timeBucket);
   const currentPeriodDisplay = useMemo(() => {
-    if (!gameState?.current_round) {
+    if (!gameState?.current_period) {
       return "";
     }
     const referenceDate =
       gameState.current_period_start || gameDetails?.current_period_start;
     return buildTimePeriodDisplay(
-      gameState.current_round,
+      gameState.current_period,
       timeBucket,
       referenceDate
     );
   }, [
     gameDetails?.current_period_start,
     gameState?.current_period_start,
-    gameState?.current_round,
+    gameState?.current_period,
     timeBucket,
   ]);
 
@@ -174,9 +174,9 @@ const ScenarioBoard = () => {
           setGameState(state);
 
           // Update derived state
-          if (state.current_round) {
+          if (state.current_period) {
             setIsScenarioUserTurn(
-              state.current_round.current_scenario_user_id === state.scenario_user_id
+              state.current_period.current_scenario_user_id === state.scenario_user_id
             );
           }
 
@@ -413,7 +413,7 @@ const ScenarioBoard = () => {
   // Handle fallback warning acknowledgement
   const handleFallbackConfirm = useCallback(() => {
     // Mark all current fallbacks as acknowledged
-    const currentRound = gameState?.current_round || 1;
+    const currentRound = gameState?.current_period || 1;
     Object.keys(currentFallbacks).forEach((nodeKey) => {
       acknowledgedFallbacksRef.current.add(`${currentRound}-${nodeKey}`);
     });
@@ -426,7 +426,7 @@ const ScenarioBoard = () => {
       duration: 5000,
       isClosable: true,
     });
-  }, [currentFallbacks, gameState?.current_round, toast]);
+  }, [currentFallbacks, gameState?.current_period, toast]);
 
   // Handle fallback warning cancellation
   const handleFallbackCancel = useCallback(() => {
@@ -580,7 +580,7 @@ const ScenarioBoard = () => {
                         <span className="text-xl font-bold">
                           {currentPeriodDisplay ||
                             `${periodLabelSingular} ${
-                              gameState?.current_round || 1
+                              gameState?.current_period || 1
                             }`}
                         </span>
                       </div>
@@ -641,7 +641,7 @@ const ScenarioBoard = () => {
                   <RoundTimer
                     scenarioId={scenarioId}
                     scenarioUserId={viewingScenarioUserId}
-                    roundNumber={gameState?.current_round || 1}
+                    roundNumber={gameState?.current_period || 1}
                     onOrderSubmit={handleOrderSubmit}
                     isScenarioUserTurn={viewingIsCurrent}
                     orderComment={orderComment}
@@ -731,7 +731,7 @@ const ScenarioBoard = () => {
                 <div className="flex flex-col gap-4">
                   <h3 className="font-bold">
                     {currentPeriodDisplay ||
-                      `${periodLabelSingular} ${gameState?.current_round || 1}`}
+                      `${periodLabelSingular} ${gameState?.current_period || 1}`}
                   </h3>
                   <div className="h-[300px]">
                     <ResponsiveContainer width="100%" height="100%">

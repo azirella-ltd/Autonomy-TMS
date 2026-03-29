@@ -1897,7 +1897,7 @@ async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: di
         )
         existing_sites = {r["name"] for r in existing_result.mappings().all()}
         new_sites = sap_site_keys - existing_sites
-        removed_sites = existing_sites - sap_site_keys - {"Market Supply", "Market Demand"}
+        removed_sites = existing_sites - sap_site_keys - {"Vendor", "Customer"}
         if new_sites or removed_sites:
             changes_detected = True
             change_summary["sites_added"] = len(new_sites)

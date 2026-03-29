@@ -75,7 +75,7 @@ const SiteForm = ({
   const defaultType = useMemo(() => {
     const preferred = availableTypes.find(
       (entry) =>
-        !['market_supply', 'market_demand'].includes(
+        !['vendor', 'customer'].includes(
           String(entry.type || '').toLowerCase()
         )
     );
@@ -542,7 +542,7 @@ const SiteForm = ({
             />
           </div>
 
-          {formData.type?.toLowerCase() === 'market_demand' && (
+          {formData.type?.toLowerCase() === 'customer' && (
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="order-aging">Order Aging (periods)</Label>
@@ -613,7 +613,7 @@ const SiteForm = ({
             </div>
           )}
 
-          {formData.type?.toLowerCase() === 'market_supply' && (
+          {formData.type?.toLowerCase() === 'vendor' && (
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="supply-capacity">Supply Capacity</Label>

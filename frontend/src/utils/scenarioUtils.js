@@ -139,11 +139,11 @@ export const getScenarioStatusBadge = (status) => {
  * @returns {number} Progress percentage (0-100)
  */
 export const calculateScenarioProgress = (game) => {
-  if (!game || !game.current_round || !game.settings?.max_rounds) {
+  if (!game || !game.current_period || !game.settings?.max_periods) {
     return 0;
   }
   
-  return Math.min(100, Math.round((game.current_round / game.settings.max_rounds) * 100));
+  return Math.min(100, Math.round((game.current_period / game.settings.max_periods) * 100));
 };
 
 /**

@@ -96,7 +96,7 @@ async def seed_hierarchical_policies():
         print()
 
         policies = []
-        relevant_nodes = [n for n in nodes if n.master_type in ['inventory', 'manufacturer', 'market_demand']]
+        relevant_nodes = [n for n in nodes if n.master_type in ['inventory', 'manufacturer', 'customer']]
 
         # Level 1: Product + Site specific policies (highest priority)
         print("Level 1: Product + Site specific policies")

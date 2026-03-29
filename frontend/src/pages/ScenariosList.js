@@ -429,8 +429,8 @@ const ScenariosList = () => {
                         {modeLabel.replace(/_/g, ' ').replace(/^./, (s) => s.toUpperCase())}
                       </Badge>
                     </TableCell>
-                    <TableCell>{scenario.current_round}</TableCell>
-                    <TableCell>{scenario.max_rounds}</TableCell>
+                    <TableCell>{scenario.current_period}</TableCell>
+                    <TableCell>{scenario.max_periods}</TableCell>
                     <TableCell>
                       <span
                         className="truncate max-w-[260px] block"

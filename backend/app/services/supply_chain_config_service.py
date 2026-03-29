@@ -247,16 +247,16 @@ def _normalize_site_type_definitions(payload: Any) -> Tuple[List[Dict[str, Any]]
     def _canonical_master(master: Any, node_type: str) -> str:
         token = str(master or "").strip().lower()
         node_type_lower = str(node_type or "").strip().lower()
-        if token in {"market_demand", "market", "demand"}:
-            return "market_demand"
-        if token in {"market_supply", "supply"}:
-            return "market_supply"
+        if token in {"customer", "market", "demand"}:
+            return "customer"
+        if token in {"vendor", "supply"}:
+            return "vendor"
         if token == "manufacturer":
             return "manufacturer"
         # Playable nodes default to inventory master type
         if node_type_lower in {"retailer", "wholesaler", "distributor", "inventory", "supplier"}:
             return "inventory"
-        return "market_demand"
+        return "customer"
 
     if not payload:
         raise ValueError("Supply chain configuration must include site type definitions persisted in the database")
@@ -270,13 +270,13 @@ def _normalize_site_type_definitions(payload: Any) -> Tuple[List[Dict[str, Any]]
                 node_type = str(entry.get("type") or "")
                 label = str(entry.get("label") or "").strip() or node_type.replace("_", " ").title()
                 order = entry.get("order")
-                is_required = bool(entry.get("is_required", node_type in {"market_supply", "market_demand"}))
+                is_required = bool(entry.get("is_required", node_type in {"vendor", "customer"}))
                 master_type = _canonical_master(entry.get("master_type"), node_type)
             else:
                 node_type = str(getattr(entry, "type", "") or "")
                 label = str(getattr(entry, "label", "") or "").strip() or node_type.replace("_", " ").title()
                 order = getattr(entry, "order", None)
-                is_required = bool(getattr(entry, "is_required", node_type in {"market_supply", "market_demand"}))
+                is_required = bool(getattr(entry, "is_required", node_type in {"vendor", "customer"}))
                 master_type = _canonical_master(getattr(entry, "master_type", None), node_type)
 
             if not node_type:
@@ -600,7 +600,7 @@ class SupplyChainConfigService:
                 standard_cost = max(selling_price * 0.8, 0.0)
 
             inbound_lanes = lanes_by_downstream.get(node.id, [])
-            is_market_node = (normalized_master in {"market_supply", "market_demand"})
+            is_market_node = (normalized_master in {"vendor", "customer"})
 
             if not is_market_node and not node_item_configs:
                 raise ValueError(f"Node {node.name} must include item-node configuration data")
@@ -667,7 +667,7 @@ class SupplyChainConfigService:
                 "order_aging": node_order_aging,
                 "lost_sale_cost": node_lost_sale_cost,
             }
-            if normalized_master == "market_supply":
+            if normalized_master == "vendor":
                 capacity_val = None
                 if isinstance(node_attrs, dict):
                     capacity_val = _to_float(node_attrs.get("supply_capacity"))
@@ -710,7 +710,7 @@ class SupplyChainConfigService:
         demand_node_entries: List[Tuple[Site, str, Set[str]]] = []
         for node in nodes:
             node_type_canonical = MixedScenarioService._normalise_node_type(getattr(node, "type", None))
-            if node_type_canonical == "market_demand":
+            if node_type_canonical == "customer":
                 node_key = MixedScenarioService._normalise_key(node.name)
                 demand_node_entries.append((node, node_key, set(_tokenise(node.name))))
 
@@ -787,7 +787,7 @@ class SupplyChainConfigService:
         market_demand_node_ids: Set[int] = {
             node.id
             for node in nodes
-            if MixedScenarioService._normalise_node_type(getattr(node, "type", None)) == "market_demand"
+            if MixedScenarioService._normalise_node_type(getattr(node, "type", None)) == "customer"
         }
         market_feeders: Set[str] = set()
         if market_demand_node_ids:
@@ -810,7 +810,7 @@ class SupplyChainConfigService:
             explicit_market = [
                 name
                 for name, ntype in node_types.items()
-                if ntype == NodeType.CUSTOMER.value.lower() or ntype == "market_demand"
+                if ntype == NodeType.CUSTOMER.value.lower() or ntype == "customer"
             ]
             market_nodes = sorted(explicit_market)
 
@@ -820,7 +820,7 @@ class SupplyChainConfigService:
         market_supply_nodes = [
             name
             for name, ntype in node_types.items()
-            if ntype == NodeType.VENDOR.value.lower() or ntype == "market_supply"
+            if ntype == NodeType.VENDOR.value.lower() or ntype == "vendor"
         ]
         if not market_supply_nodes:
             raise ValueError("Supply chain DAG must include at least one Market Supply node persisted in the database")
@@ -842,7 +842,7 @@ class SupplyChainConfigService:
                 sources.append(node)
                 continue
             node_type = node_types.get(node)
-            if node_type in {NodeType.VENDOR.value.lower(), "market_supply", NodeType.CUSTOMER.value.lower(), "market_demand"}:
+            if node_type in {NodeType.VENDOR.value.lower(), "vendor", NodeType.CUSTOMER.value.lower(), "customer"}:
                 sources.append(node)
         sinks = sorted([node for node in all_node_keys if node not in upstreams])
         def _normalize_node_type(node_key: str) -> Optional[str]:
@@ -853,19 +853,19 @@ class SupplyChainConfigService:
                 return MixedScenarioService._normalise_node_type(node_type_raw)
 
             token = MixedScenarioService._normalise_key(node_key)
-            if "market_supply" in token:
-                return "market_supply"
-            if "market_demand" in token or token == "market":
-                return "market_demand"
+            if "vendor" in token:
+                return "vendor"
+            if "customer" in token or token == "market":
+                return "customer"
             if "supplier" in token:
                 return "supplier"
             return None
 
         allowed_source_types = {
             MixedScenarioService._normalise_node_type(NodeType.VENDOR.value),
-            "market_supply",
+            "vendor",
             MixedScenarioService._normalise_node_type(NodeType.CUSTOMER.value),
-            "market_demand",
+            "customer",
             MixedScenarioService._normalise_node_type(NodeType.SUPPLIER.value),
             "supplier",
             "component_supplier",
@@ -884,9 +884,9 @@ class SupplyChainConfigService:
                 "Supply chain DAG sources must be Supplier / Component Supplier / Market Supply / Market Demand nodes; invalid sources: "
                 + ", ".join(invalid_sources)
             )
-        if not any(_normalize_node_type(node) in {NodeType.VENDOR.value.lower(), "market_supply"} for node in sources):
+        if not any(_normalize_node_type(node) in {NodeType.VENDOR.value.lower(), "vendor"} for node in sources):
             raise ValueError("Supply chain DAG must include at least one Market Supply source node.")
-        if not any(_normalize_node_type(node) in {NodeType.CUSTOMER.value.lower(), "market_demand"} for node in sinks):
+        if not any(_normalize_node_type(node) in {NodeType.CUSTOMER.value.lower(), "customer"} for node in sinks):
             raise ValueError("Supply chain DAG must include at least one Market Demand sink node.")
 
         md = market_demands[0]
@@ -1064,7 +1064,7 @@ class SupplyChainConfigService:
         game_config = {
             "name": game_data.get('name', f"Game - {config.name}"),
             "description": game_data.get('description', config.description or ""),
-            "max_rounds": game_data.get('max_rounds', 40),
+            "max_periods": game_data.get('max_periods', 40),
             "is_public": game_data.get('is_public', True),
             "node_policies": node_policies,
             "demand_pattern": demand_pattern,

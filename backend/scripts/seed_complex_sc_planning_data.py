@@ -86,7 +86,7 @@ async def seed_planning_data():
 
         # Find finished goods (FG-01, FG-02) and demand markets
         finished_goods = [i for i in items.values() if i.name.startswith('FG-')]
-        demand_nodes = [n for n in nodes.values() if n.master_type == 'market_demand']
+        demand_nodes = [n for n in nodes.values() if n.master_type == 'customer']
 
         forecast_count = 0
         start_date = date.today()
@@ -201,7 +201,7 @@ async def seed_planning_data():
         for item in items.values():
             # For each node that could need this item
             for node in nodes.values():
-                if node.master_type in ['manufacturer', 'inventory', 'market_demand']:
+                if node.master_type in ['manufacturer', 'inventory', 'customer']:
                     # Find upstream nodes (potential sources)
                     upstream_nodes = [n for n in nodes.values()
                                      if any(l.from_site_id == n.id and l.to_site_id == node.id
@@ -211,7 +211,7 @@ async def seed_planning_data():
                         # Determine rule type
                         if node.master_type == 'manufacturer':
                             rule_type = 'manufacture'
-                        elif upstream.master_type == 'market_supply':
+                        elif upstream.master_type == 'vendor':
                             rule_type = 'buy'
                         else:
                             rule_type = 'transfer'

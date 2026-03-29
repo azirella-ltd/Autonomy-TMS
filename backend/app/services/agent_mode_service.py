@@ -141,7 +141,7 @@ class AgentModeService:
                 new_mode=new_mode.value,
                 scenario_user_id=scenario_user_id,
                 scenario_id=scenario_id,
-                round_number=game.current_round,
+                round_number=game.current_period,
                 reason=reason.value,
                 message=f"Mode already set to {new_mode.value}",
                 timestamp=datetime.utcnow().isoformat(),
@@ -167,7 +167,7 @@ class AgentModeService:
         self._record_mode_history(
             scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
-            round_number=game.current_round,
+            round_number=game.current_period,
             previous_mode=current_mode,
             new_mode=new_mode.value,
             reason=reason.value,
@@ -191,7 +191,7 @@ class AgentModeService:
             new_mode=new_mode.value,
             scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
-            round_number=game.current_round,
+            round_number=game.current_period,
             reason=reason.value,
             message=f"Successfully switched from {current_mode} to {new_mode.value}",
             timestamp=datetime.utcnow().isoformat(),
@@ -446,9 +446,9 @@ class AgentModeService:
                 "You can observe and override if needed."
             )
 
-        if game.current_round < 5:
+        if game.current_period < 5:
             warnings.append(
-                f"Early in game (Round {game.current_round}/52). "
+                f"Early in game (Round {game.current_period}/52). "
                 "AI agents perform better with more historical data."
             )
 

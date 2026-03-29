@@ -308,8 +308,12 @@ class TRMSiteTrainer:
         loss_history = []
 
         # 3 sub-phases of increasing complexity (simple → moderate → full)
+        # Phase 3 (disruptions where TRMs outperform heuristics) gets 50% of
+        # samples.  This is where the differentiation happens.
+        from app.services.powell.trm_curriculum import PHASE_SAMPLE_WEIGHTS
         for sub_phase in [1, 2, 3]:
-            data = curriculum.generate(phase=sub_phase, num_samples=num_samples)
+            phase_n = max(1, int(num_samples * PHASE_SAMPLE_WEIGHTS.get(sub_phase, 1 / 3)))
+            data = curriculum.generate(phase=sub_phase, num_samples=phase_n)
 
             # Signal augmentation: extend state vectors with synthetic signal features
             augmented_states = self._augment_states_synthetic(data.state_vectors)
@@ -318,7 +322,7 @@ class TRMSiteTrainer:
             act_cont_t = torch.tensor(data.action_continuous, dtype=torch.float32).to(self.device)
             rewards_t = torch.tensor(data.rewards, dtype=torch.float32).to(self.device)
 
-            phase_epochs = max(1, epochs // 3)
+            phase_epochs = max(1, int(epochs * PHASE_SAMPLE_WEIGHTS.get(sub_phase, 1 / 3)))
             for epoch in range(phase_epochs):
                 self.model.train()
                 total_loss = 0.0

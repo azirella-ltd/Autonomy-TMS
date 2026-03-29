@@ -67,13 +67,13 @@ async def main():
 
             print(f"Found scenario {scenario.id}: {scenario.name}")
             print(f"  Status: {scenario.status}")
-            print(f"  Current round: {scenario.current_round}/{scenario.max_rounds}")
+            print(f"  Current round: {scenario.current_period}/{scenario.max_periods}")
 
             # Reset if needed
             if scenario.status != DbScenarioStatus.CREATED:
                 print(f"  Resetting scenario status from {scenario.status} to CREATED...")
                 scenario.status = DbScenarioStatus.CREATED
-                scenario.current_round = 0
+                scenario.current_period = 0
                 session.add(scenario)
                 await session.commit()
 
@@ -92,7 +92,7 @@ async def main():
 
             # Progress through rounds
             print(f"Running rounds...")
-            for round_num in range(1, min(5, scenario.max_rounds + 1)):
+            for round_num in range(1, min(5, scenario.max_periods + 1)):
                 print(f"  Round {round_num}...", end="", flush=True)
                 try:
                     await service.start_new_round(scenario)
@@ -101,7 +101,7 @@ async def main():
                     print(f" ✗ Error: {e}")
                     return 1
 
-            print(f"\n✓ Successfully completed first {min(4, scenario.max_rounds)} rounds!")
+            print(f"\n✓ Successfully completed first {min(4, scenario.max_periods)} rounds!")
             return 0
 
         except Exception as e:

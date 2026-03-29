@@ -84,7 +84,7 @@ const RLTrainingPanel = ({ selectedConfig }) => {
     batch_size: 64,
     ent_coef: 0.01,
     gamma: 0.99,
-    max_rounds: 52,
+    max_periods: 52,
     max_order: 100,
     holding_cost: 1.0,
     backlog_cost: 2.0
@@ -450,8 +450,8 @@ const RLTrainingPanel = ({ selectedConfig }) => {
                   <FormField label="Max Rounds" helperText="Maximum rounds per episode">
                     <Input
                       type="number"
-                      value={trainingConfig.max_rounds}
-                      onChange={(e) => handleConfigChange('max_rounds', parseInt(e.target.value))}
+                      value={trainingConfig.max_periods}
+                      onChange={(e) => handleConfigChange('max_periods', parseInt(e.target.value))}
                       disabled={trainingStatus?.status === 'training'}
                     />
                   </FormField>

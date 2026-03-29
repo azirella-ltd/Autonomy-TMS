@@ -7,8 +7,8 @@ Creates realistic geography records based on site types:
 - Wholesalers: Regional distribution hubs
 - Distributors: Major logistics DC locations
 - Manufacturers/Factories: Brewery/manufacturing facilities
-- Market Supply: Raw material supplier regions
-- Market Demand: Consumer market metropolitan areas
+- Vendor: Raw material supplier regions
+- Customer: Consumer market metropolitan areas
 
 Uses hierarchical geography structure per AWS SC DM:
   Company -> Region -> State -> City -> Site
@@ -132,10 +132,10 @@ GEOGRAPHY_DATA = {
     },
 
     # ============================================================
-    # MARKET SUPPLY - Raw material supplier regions
+    # VENDOR - Raw material supplier regions
     # ============================================================
-    "market_supply": {
-        "name": "Market Supply",
+    "vendor": {
+        "name": "Vendor",
         "description": "Cargill - Minneapolis Grain Hub",
         "address_1": "15407 McGinty Road West",
         "city": "Wayzata",
@@ -148,10 +148,10 @@ GEOGRAPHY_DATA = {
     },
 
     # ============================================================
-    # MARKET DEMAND - Consumer market metropolitan areas
+    # CUSTOMER - Consumer market metropolitan areas
     # ============================================================
-    "market_demand": {
-        "name": "Market Demand",
+    "customer": {
+        "name": "Customer",
         "description": "Chicago Metropolitan Market",
         "address_1": "Chicago Metro Area",
         "city": "Chicago",

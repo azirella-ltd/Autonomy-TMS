@@ -166,12 +166,12 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
         db.refresh(item)
 
         node_specs = [
-            ("Market Demand", NodeType.CUSTOMER, "market_demand", "market_demand"),
+            ("Customer", NodeType.CUSTOMER, "customer", "customer"),
             ("Retailer", NodeType.RETAILER, "retailer", "inventory"),
             ("Wholesaler", NodeType.WHOLESALER, "wholesaler", "inventory"),
             ("Distributor", NodeType.DISTRIBUTOR, "distributor", "inventory"),
             ("Factory", NodeType.MANUFACTURER, "factory", "inventory"),
-            ("Market Supply", NodeType.VENDOR, "market_supply", "market_supply"),
+            ("Vendor", NodeType.VENDOR, "vendor", "vendor"),
         ]
         nodes: Dict[NodeType, Site] = {}
         for name, node_type, dag_type, master_type in node_specs:
@@ -291,11 +291,11 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
     # Create default game from configuration
     service = SupplyChainConfigService(db)
     scenario_cfg = service.create_scenario_from_config(
-        config.id, {"name": "Default Scenario", "max_rounds": 50}
+        config.id, {"name": "Default Scenario", "max_periods": 50}
     )
     scenario = Scenario(
         name=scenario_cfg["name"],
-        max_rounds=scenario_cfg.get("max_rounds", 50),
+        max_periods=scenario_cfg.get("max_periods", 50),
         config=scenario_cfg,
         created_by=user.id,
         role_assignments={},

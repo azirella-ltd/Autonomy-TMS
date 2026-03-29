@@ -78,8 +78,8 @@ const FALLBACK_ROLE_COLORS = [
   "#8b5cf6",
 ];
 
-const CUSTOMER_TYPE = "market_demand";
-const VENDOR_TYPE = "market_supply";
+const CUSTOMER_TYPE = "customer";
+const VENDOR_TYPE = "vendor";
 
 const normalizeNodeTypeToken = (value) =>
   String(value ?? "")
@@ -87,7 +87,7 @@ const normalizeNodeTypeToken = (value) =>
     .replace(/[-\s]+/g, "_")
     .trim();
 
-const MARKET_NODE_TYPES = new Set(["market", "market_supply", "market_demand"]);
+const MARKET_NODE_TYPES = new Set(["market", "vendor", "customer"]);
 
 const isMarketNodeType = (value) =>
   MARKET_NODE_TYPES.has(normalizeNodeTypeToken(value));
@@ -125,7 +125,7 @@ const isUpstreamFromManufacturer = (key) => {
   return (
     type === "supplier" ||
     type === "component_supplier" ||
-    type === "market_supply"
+    type === "vendor"
   );
 };
 
@@ -220,20 +220,20 @@ const inferNodeTypeFromKey = (key) => {
   }
   if (
     normalized === "market" ||
-    normalized.includes("market_demand") ||
+    normalized.includes("customer") ||
     normalized.includes("customers") ||
     normalized.includes("customer")
   ) {
-    return "market_demand";
+    return "customer";
   }
   if (normalized.includes("supplier")) {
     return "component_supplier";
   }
   if (
-    normalized.includes("market_supply") ||
+    normalized.includes("vendor") ||
     (normalized.startsWith("supply") && !normalized.startsWith("supplier"))
   ) {
-    return "market_supply";
+    return "vendor";
   }
   if (
     normalized.includes("manufacturer") ||
@@ -898,7 +898,7 @@ const ScenarioReport = () => {
         register(`market_demand_${demandRegionMatch[1].toLowerCase()}`);
       }
       if (/market\s+supply/i.test(name)) {
-        register("market_supply");
+        register("vendor");
       }
     };
 
@@ -1700,7 +1700,7 @@ const ScenarioReport = () => {
       const summaries = entry.node_type_summaries || {};
       const roundOrders = Object.entries(summaries).reduce((sum, [typeKey, summary]) => {
         const key = String(typeKey || "").toLowerCase();
-        if (key === "market_demand") {
+        if (key === "customer") {
           return sum;
         }
         const quantity = Number(summary?.orders ?? 0);
@@ -2500,7 +2500,7 @@ const ScenarioReport = () => {
                                       {node.formattedFlowTotal ?? node.formattedShipments}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                      {node.role === "market_demand"
+                                      {node.role === "customer"
                                         ? "-"
                                         : node.formattedAvgInventory}
                                     </TableCell>

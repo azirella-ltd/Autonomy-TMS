@@ -774,10 +774,10 @@ class FoodDistConfigGenerator:
             tenant_id=self.tenant.id,
             is_active=True,
             site_type_definitions=[
-                {"type": "market_supply", "label": "Supplier", "order": 3, "is_required": True, "master_type": "market_supply"},
+                {"type": "vendor", "label": "Supplier", "order": 3, "is_required": True, "master_type": "vendor"},
                 {"type": "CDC", "label": "Central DC", "order": 2, "is_required": False, "master_type": "inventory"},
                 {"type": "RDC", "label": "Regional DC", "order": 1, "is_required": False, "master_type": "inventory"},
-                {"type": "market_demand", "label": "Customer", "order": 0, "is_required": True, "master_type": "market_demand"},
+                {"type": "customer", "label": "Customer", "order": 0, "is_required": True, "master_type": "customer"},
             ],
         )
         self.db.add(config)
@@ -850,7 +850,7 @@ class FoodDistConfigGenerator:
                 config_id=self.sc_config.id,
                 name=supplier_def.code,
                 type=f"Supplier - {supplier_def.name}",
-                dag_type="market_supply",
+                dag_type="vendor",
                 master_type="VENDOR",
                 is_external=True,
                 tpartner_type="vendor",
@@ -879,7 +879,7 @@ class FoodDistConfigGenerator:
                 config_id=self.sc_config.id,
                 name=customer_def.code,
                 type=f"Customer - {customer_def.city}, {customer_def.state}",
-                dag_type="market_demand",
+                dag_type="customer",
                 master_type="CUSTOMER",
                 is_external=True,
                 tpartner_type="customer",

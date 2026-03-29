@@ -41,7 +41,7 @@ def parse_log(log_path: Path) -> Dict[Tuple[int, str], Dict[str, Any]]:
     Parse the debug log into a dict keyed by (round, node) with reply/ending data.
     """
     data: Dict[Tuple[int, str], Dict[str, Any]] = {}
-    current_round = None
+    current_period = None
     current_node = None
     in_reply = False
     in_ending = False
@@ -50,7 +50,7 @@ def parse_log(log_path: Path) -> Dict[Tuple[int, str], Dict[str, Any]]:
     for raw in log_path.read_text().splitlines():
         m_round = round_re.match(raw)
         if m_round:
-            current_round = int(m_round.group(1))
+            current_period = int(m_round.group(1))
             current_node = None
             in_reply = False
             in_ending = False
@@ -65,7 +65,7 @@ def parse_log(log_path: Path) -> Dict[Tuple[int, str], Dict[str, Any]]:
             reply_lines = []
             ending_lines = []
             continue
-        if current_node is None or current_round is None:
+        if current_node is None or current_period is None:
             continue
         if raw.strip().startswith('"inbound_demand"') or '"inbound_supply"' in raw:
             in_reply = True
@@ -82,7 +82,7 @@ def parse_log(log_path: Path) -> Dict[Tuple[int, str], Dict[str, Any]]:
                     blob = json.loads("{\n" + "\n".join(reply_lines) + "\n}")
                 except Exception:
                     blob = {}
-                data.setdefault((current_round, current_node), {})["reply"] = blob
+                data.setdefault((current_period, current_node), {})["reply"] = blob
                 in_reply = False
                 reply_lines = []
             if in_ending:
@@ -90,7 +90,7 @@ def parse_log(log_path: Path) -> Dict[Tuple[int, str], Dict[str, Any]]:
                     blob = json.loads("{\n" + "\n".join(ending_lines) + "\n}")
                 except Exception:
                     blob = {}
-                data.setdefault((current_round, current_node), {})["ending"] = blob
+                data.setdefault((current_period, current_node), {})["ending"] = blob
                 in_ending = False
                 ending_lines = []
     return data

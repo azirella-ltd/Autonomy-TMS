@@ -354,12 +354,12 @@ export const CLASSIC_SUPPLY_CHAIN = {
     },
   ],
   sites: [
-    { id: 1, name: 'Vendor', type: 'market_supply', description: '' },
+    { id: 1, name: 'Vendor', type: 'vendor', description: '' },
     { id: 2, name: 'Manufacturer 1', type: 'manufacturer', description: '' },
     { id: 3, name: 'Distributor 1', type: 'distributor', description: '' },
     { id: 4, name: 'Wholesaler 1', type: 'wholesaler', description: '' },
     { id: 5, name: 'Retailer 1', type: 'retailer', description: '' },
-    { id: 6, name: 'Customer', type: 'market_demand', description: '' },
+    { id: 6, name: 'Customer', type: 'customer', description: '' },
   ],
   lanes: [
     {

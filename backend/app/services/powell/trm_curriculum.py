@@ -48,6 +48,39 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Disruption Scenario Types
+# ---------------------------------------------------------------------------
+# Phase 3 disruption scenarios where heuristics fail and TRMs must learn
+# corrective actions.  Each disruption returns a string tag used by per-TRM
+# Phase 3 generators to (a) modify the state vector and (b) override the
+# heuristic expert label with the *correct* action for that disruption.
+
+DISRUPTION_TYPES = [
+    "demand_spike",          # 2-5x sudden demand increase
+    "supply_disruption",     # Lead time doubles, partial shipments, supplier failure
+    "seasonal_shift",        # Demand pattern changing between seasons
+    "bullwhip_amplification",# Upstream signal amplification noise
+    "capacity_constraint",   # Machine breakdown, shift reduction
+    "cross_product_interaction",  # Shared resource contention
+    "none",                  # Normal scenario (heuristic is fine)
+]
+
+# Probability weights — 60% disrupted, 40% normal.  This ensures TRMs see
+# enough disruption signal to learn corrective behaviour.
+DISRUPTION_WEIGHTS = [0.15, 0.15, 0.10, 0.08, 0.07, 0.05, 0.40]
+
+
+def _pick_disruption() -> str:
+    """Pick a disruption type according to DISRUPTION_WEIGHTS."""
+    return random.choices(DISRUPTION_TYPES, weights=DISRUPTION_WEIGHTS, k=1)[0]
+
+
+# Phase sample proportion: Phase 1 = 20%, Phase 2 = 30%, Phase 3 = 50%.
+# Used by the trainer to weight how many samples each sub-phase generates.
+PHASE_SAMPLE_WEIGHTS = {1: 0.20, 2: 0.30, 3: 0.50}
+
+
+# ---------------------------------------------------------------------------
 # Helpers: build ERPPlanningParams from SCConfigData
 # ---------------------------------------------------------------------------
 
@@ -327,33 +360,112 @@ class ATPCurriculum(TRMCurriculumBase):
         )
 
     def _phase3(self, n: int) -> CurriculumData:
-        """Phase 3: Full complexity, demand spikes, supply disruptions."""
+        """Phase 3: Disruption scenarios where heuristics fail.
+
+        For each sample a disruption type is drawn.  The state vector is
+        modified to represent the disruption, and the expert label is set to
+        the *corrective* action (which differs from what the heuristic would
+        naively produce).
+
+        Disruptions and TRM-correct responses:
+        - demand_spike: 2-5x requested qty, high uncertainty.  Heuristic
+          over-fulfills from depleted stock; TRM should *partial fill* high
+          priority and *defer* low priority to preserve allocation.
+        - supply_disruption: near-zero inventory/pipeline, collapsed
+          allocations.  Heuristic tries to fulfill and fails; TRM should
+          *reject* low-priority and *reserve* for imminent replenishment.
+        - seasonal_shift: forecast much higher than current inventory trend.
+          Heuristic ignores the leading signal; TRM should *defer* medium
+          orders to build stock for the anticipated surge.
+        - bullwhip_amplification: very high uncertainty with contradictory
+          allocation tiers.  Heuristic amplifies noise; TRM should *partial*
+          to dampen variance.
+        - capacity_constraint: limited allocations mimicking upstream
+          bottleneck.  Heuristic ignores capacity; TRM should *reserve*
+          for top-priority orders.
+        """
         states = np.zeros((n, ATP_STATE_DIM), dtype=np.float32)
         actions = np.zeros(n, dtype=np.int64)
         qty_fracs = np.zeros((n, 1), dtype=np.float32)
         rewards = np.zeros(n, dtype=np.float32)
 
         for i in range(n):
+            disruption = _pick_disruption()
             priority = np.random.randint(1, 6)
-            # Demand spikes
-            spike = np.random.random() < 0.2
-            requested = np.random.uniform(50, 200) if spike else np.random.uniform(10, 80)
-            # Supply disruption
-            disruption = np.random.random() < 0.15
-            inventory = np.random.uniform(0, 30) if disruption else np.random.uniform(20, 120)
-            pipeline = np.random.uniform(0, 10) if disruption else np.random.uniform(10, 60)
+
+            # --- Base state (moderate complexity) ---
+            requested = np.random.uniform(20, 100)
+            inventory = np.random.uniform(20, 120)
+            pipeline = np.random.uniform(10, 60)
             safety = np.random.uniform(10, 60)
             forecast = np.random.uniform(30, 120)
             uncertainty = np.random.uniform(0.15, 0.5)
-            allocs = np.random.uniform(0, 60, 5)
-            if disruption:
-                allocs *= 0.3
+            allocs = np.random.uniform(5, 60, 5)
+
+            # --- Apply disruption to state vector ---
+            if disruption == "demand_spike":
+                requested *= np.random.uniform(2.0, 5.0)
+                uncertainty = np.random.uniform(0.4, 0.8)
+                forecast *= np.random.uniform(1.5, 3.0)
+            elif disruption == "supply_disruption":
+                inventory = np.random.uniform(0, 15)
+                pipeline = np.random.uniform(0, 5)
+                allocs *= np.random.uniform(0.1, 0.3)
+            elif disruption == "seasonal_shift":
+                forecast *= np.random.uniform(1.8, 3.0)
+                uncertainty = np.random.uniform(0.3, 0.6)
+            elif disruption == "bullwhip_amplification":
+                uncertainty = np.random.uniform(0.6, 0.9)
+                allocs = np.random.uniform(0, 80, 5)
+                allocs[np.random.choice(5, 2, replace=False)] = 0
+            elif disruption == "capacity_constraint":
+                allocs = np.random.uniform(0, 20, 5)
+                allocs[np.random.choice(5, 3, replace=False)] = 0
 
             states[i] = [priority, requested, inventory, pipeline, safety,
                          forecast, uncertainty, *allocs]
 
-            act, frac, rew = self._compute_atp_action(
+            # --- Compute heuristic baseline ---
+            h_act, h_frac, _ = self._compute_atp_action(
                 priority, requested, inventory, pipeline, safety, forecast, 3)
+
+            # --- Override with disruption-aware corrective label ---
+            if disruption == "demand_spike":
+                if priority <= 2:
+                    act, frac = 1, min(1.0, inventory / (requested + 1e-6))  # partial
+                    rew = 0.85
+                else:
+                    act, frac = 2, 0.0  # defer low-priority
+                    rew = 0.75
+            elif disruption == "supply_disruption":
+                if priority <= 2:
+                    act, frac = 3, 0.0  # reserve for replenishment
+                    rew = 0.70
+                else:
+                    act, frac = 4, 0.0  # reject
+                    rew = 0.60
+            elif disruption == "seasonal_shift":
+                if priority <= 3:
+                    act, frac = 2, 0.0  # defer to build stock
+                    rew = 0.70
+                else:
+                    act, frac = h_act, h_frac  # follow heuristic for top priority
+                    rew = 0.65
+            elif disruption == "bullwhip_amplification":
+                act, frac = 1, min(0.7, h_frac)  # partial to dampen
+                rew = 0.75
+            elif disruption == "capacity_constraint":
+                if priority <= 2:
+                    act, frac = 3, 0.0  # reserve for high-priority
+                    rew = 0.70
+                else:
+                    act, frac = h_act, h_frac
+                    rew = 0.60
+            else:
+                # No disruption — use heuristic as expert
+                act, frac = h_act, h_frac
+                rew = 0.8 * 0.8  # standard phase-3 reward
+
             actions[i] = act
             qty_fracs[i, 0] = frac
             rewards[i] = rew
@@ -578,27 +690,70 @@ class RebalancingCurriculum(TRMCurriculumBase):
         )
 
     def _phase3(self, n: int) -> CurriculumData:
-        """Phase 3: Full network, risk scores, proactive rebalancing."""
+        """Phase 3: Disruption scenarios where heuristics fail.
+
+        Disruptions and TRM-correct responses:
+        - demand_spike: Destination demand surges; heuristic doesn't transfer
+          fast enough.  TRM should aggressively transfer even at high cost.
+        - supply_disruption: Source site inventory collapses; heuristic still
+          tries to transfer.  TRM should *hold* to protect source.
+        - seasonal_shift: Destination about to enter peak season.  Heuristic
+          uses average demand; TRM should proactively pre-position.
+        - bullwhip_amplification: Both sites see noisy demand signals.
+          Heuristic oscillates; TRM should smooth (small transfers only).
+        - capacity_constraint: Transit lane degraded (low reliability, high
+          cost).  Heuristic ignores cost; TRM should hold unless deficit is
+          critical.
+        """
         states = np.zeros((n, REB_STATE_DIM), dtype=np.float32)
         actions = np.zeros(n, dtype=np.int64)
         qtys = np.zeros((n, 1), dtype=np.float32)
         rewards = np.zeros(n, dtype=np.float32)
 
         for i in range(n):
+            disruption = _pick_disruption()
+
             demand = np.random.uniform(20, 100)
             safety = demand * np.random.uniform(1.0, 2.5)
+            src_oh = np.random.uniform(safety * 0.3, safety * 3)
+            dst_oh = np.random.uniform(safety * 0.2, safety * 2)
+            src_backlog = np.random.uniform(0, 25)
+            dst_backlog = np.random.uniform(0, 30)
+            transit_time = np.random.uniform(1, 14)
+            transit_cost = np.random.uniform(0.1, 5.0)
+            reliability = np.random.uniform(0.7, 0.99)
 
-            # Disruption scenarios
-            disruption = np.random.random() < 0.2
-            src_oh = np.random.uniform(safety * 0.1, safety * 3)
-            dst_oh = np.random.uniform(0, safety * 0.4) if disruption else np.random.uniform(
-                safety * 0.2, safety * 2)
+            # --- Apply disruption ---
+            if disruption == "demand_spike":
+                # Destination demand surges — need aggressive transfer
+                demand_dst = demand * np.random.uniform(2.0, 4.0)
+                dst_oh = np.random.uniform(0, safety * 0.3)
+                dst_backlog = np.random.uniform(10, 50)
+            elif disruption == "supply_disruption":
+                # Source inventory collapses — should NOT transfer
+                src_oh = np.random.uniform(0, safety * 0.3)
+                src_backlog = np.random.uniform(10, 40)
+                demand_dst = demand
+            elif disruption == "seasonal_shift":
+                # Destination about to peak — proactive pre-positioning
+                demand_dst = demand * np.random.uniform(1.5, 2.5)
+                dst_oh = np.random.uniform(safety * 0.3, safety * 0.8)
+            elif disruption == "bullwhip_amplification":
+                # Noisy signals on both sides
+                demand_dst = demand * np.random.uniform(0.5, 2.0)
+                src_oh = np.random.uniform(safety * 0.5, safety * 2.5)
+                dst_oh = np.random.uniform(safety * 0.3, safety * 2.0)
+            elif disruption == "capacity_constraint":
+                # Degraded lane
+                reliability = np.random.uniform(0.3, 0.6)
+                transit_cost *= np.random.uniform(2.0, 4.0)
+                transit_time *= np.random.uniform(1.5, 3.0)
+                demand_dst = demand
+            else:
+                demand_dst = demand
 
             stockout_risk_src = max(0, 1 - src_oh / (safety + 1e-6))
             stockout_risk_dst = max(0, 1 - dst_oh / (safety + 1e-6))
-
-            src_backlog = np.random.uniform(0, 25)
-            dst_backlog = np.random.uniform(0, 30)
 
             src = self._make_site_features(
                 src_oh, safety, src_backlog, np.random.uniform(0, 50),
@@ -607,15 +762,11 @@ class RebalancingCurriculum(TRMCurriculumBase):
                 np.random.uniform(0.005, 0.03), stockout_risk_src)
             dst = self._make_site_features(
                 dst_oh, safety, dst_backlog, np.random.uniform(0, 40),
-                demand, demand * np.random.uniform(0.1, 0.4),
+                demand_dst, demand_dst * np.random.uniform(0.1, 0.4),
                 np.random.uniform(0.3, 0.9), np.random.uniform(0.5, 0.95),
                 np.random.uniform(0.005, 0.03), stockout_risk_dst)
 
-            transit_time = np.random.uniform(1, 14)
-            transit_cost = np.random.uniform(0.1, 5.0)
-            reliability = np.random.uniform(0.6, 0.99)
             lane = np.array([transit_time, transit_cost, reliability], dtype=np.float32)
-
             imbalance = abs(src_oh - dst_oh) / (safety + 1e-6)
             excess = max(0, src_oh - safety)
             deficit = max(0, safety - dst_oh)
@@ -623,9 +774,43 @@ class RebalancingCurriculum(TRMCurriculumBase):
 
             states[i] = np.concatenate([src, dst, lane, network])
 
-            act, qty, rew = self._compute_reb_action(
+            # --- Compute heuristic baseline ---
+            h_act, h_qty, _ = self._compute_reb_action(
                 src_oh, safety, src_backlog, dst_oh, safety, dst_backlog,
                 transit_cost, 3)
+
+            # --- Override with disruption-aware corrective label ---
+            if disruption == "demand_spike":
+                # Aggressive transfer — move as much excess as possible
+                transfer = max(0, src_oh - safety)
+                act, qty = (1, transfer) if transfer > 0 else (0, 0.0)
+                rew = 0.85 if act == 1 else 0.50
+            elif disruption == "supply_disruption":
+                # Protect source — hold
+                act, qty, rew = 0, 0.0, 0.80
+            elif disruption == "seasonal_shift":
+                # Proactive pre-position
+                transfer = max(0, min(src_oh - safety, deficit))
+                act, qty = (1, transfer) if transfer > 0 else (0, 0.0)
+                rew = 0.80
+            elif disruption == "bullwhip_amplification":
+                # Dampen — small transfer only if deficit is large
+                if deficit > safety * 0.5 and excess > 0:
+                    act, qty = 1, min(excess * 0.3, deficit * 0.5)
+                    rew = 0.75
+                else:
+                    act, qty, rew = 0, 0.0, 0.70
+            elif disruption == "capacity_constraint":
+                # Only transfer if critical deficit and lane is usable
+                if dst_oh < safety * 0.2 and reliability > 0.4:
+                    transfer = min(max(0, src_oh - safety), deficit)
+                    act, qty = (1, transfer) if transfer > 0 else (0, 0.0)
+                    rew = 0.65
+                else:
+                    act, qty, rew = 0, 0.0, 0.70
+            else:
+                act, qty, rew = h_act, h_qty, 0.5 * 0.7  # normal
+
             actions[i] = act
             qtys[i, 0] = qty
             rewards[i] = rew
@@ -864,44 +1049,112 @@ class POCreationCurriculum(TRMCurriculumBase):
         )
 
     def _phase3(self, n: int) -> CurriculumData:
-        """Phase 3: Disruptions, forecast uncertainty, expedite costs."""
+        """Phase 3: Disruption scenarios where heuristics fail.
+
+        Disruptions and TRM-correct responses:
+        - demand_spike: 2-5x forecast surge.  Heuristic reorder-point
+          hasn't adjusted; TRM should order 1.5-2x heuristic qty urgently.
+        - supply_disruption: Supplier unreliable, lead times extended.
+          Heuristic uses stale lead time; TRM should *expedite* or *cancel*
+          and seek alternate.
+        - seasonal_shift: Forecast rising but ROP static.  Heuristic under-
+          orders; TRM should order ahead of the shift.
+        - bullwhip_amplification: High demand volatility.  Heuristic
+          amplifies orders; TRM should smooth order quantity.
+        - capacity_constraint: Supplier at capacity (low OTR).  Heuristic
+          ignores; TRM should split across periods or defer non-critical.
+        """
         states = np.zeros((n, PO_STATE_DIM), dtype=np.float32)
         actions = np.zeros(n, dtype=np.int64)
         qtys = np.zeros((n, 1), dtype=np.float32)
         rewards = np.zeros(n, dtype=np.float32)
 
         for i in range(n):
-            disruption = np.random.random() < 0.2
-            demand_spike = np.random.random() < 0.15
+            disruption = _pick_disruption()
 
+            # --- Base state ---
             forecast = np.random.uniform(40, 120)
-            if demand_spike:
-                forecast *= 1.8
             safety = forecast * np.random.uniform(1.0, 2.5)
             rop = safety + forecast * np.random.uniform(0.3, 1.0)
-            on_hand = np.random.uniform(0, rop * 1.2)
-            in_transit = np.random.uniform(0, forecast * 0.6)
-            on_order = np.random.uniform(0, forecast * 0.5)
-            committed = np.random.uniform(0, on_hand * 0.5)
-            backlog = np.random.uniform(0, 30) if demand_spike else np.random.uniform(0, 10)
+            on_hand = np.random.uniform(0, rop * 1.5)
+            in_transit = np.random.uniform(0, forecast * 0.5)
+            on_order = np.random.uniform(0, forecast * 0.4)
+            committed = np.random.uniform(0, on_hand * 0.4)
+            backlog = np.random.uniform(0, 15)
+            lead_time = np.random.uniform(3, 21)
+            unit_cost = np.random.uniform(3, 50)
+            moq = np.random.uniform(20, 100)
+            otr = np.random.uniform(0.8, 0.98)
+            available = 1.0
+            uncertainty = np.random.uniform(0.1, 0.3)
+            supply_risk = np.random.uniform(0.05, 0.3)
+            demand_vol = np.random.uniform(0.05, 0.25)
+
+            # --- Apply disruption ---
+            if disruption == "demand_spike":
+                forecast *= np.random.uniform(2.0, 5.0)
+                backlog = np.random.uniform(10, 50)
+                uncertainty = np.random.uniform(0.3, 0.6)
+                demand_vol = np.random.uniform(0.3, 0.6)
+            elif disruption == "supply_disruption":
+                otr = np.random.uniform(0.3, 0.6)
+                lead_time *= np.random.uniform(1.5, 3.0)
+                supply_risk = np.random.uniform(0.5, 0.9)
+                available = 0.0 if np.random.random() < 0.4 else 1.0
+            elif disruption == "seasonal_shift":
+                forecast *= np.random.uniform(1.5, 2.5)
+                uncertainty = np.random.uniform(0.2, 0.4)
+            elif disruption == "bullwhip_amplification":
+                demand_vol = np.random.uniform(0.4, 0.8)
+                uncertainty = np.random.uniform(0.4, 0.7)
+            elif disruption == "capacity_constraint":
+                otr = np.random.uniform(0.4, 0.65)
+                supply_risk = np.random.uniform(0.4, 0.7)
+
             dos = on_hand / (forecast / 30 + 1e-6)
-            lead_time = np.random.uniform(2, 30)
-            unit_cost = np.random.uniform(2, 80)
-            moq = np.random.uniform(10, 150)
-            otr = np.random.uniform(0.5, 0.7) if disruption else np.random.uniform(0.75, 0.98)
-            available = 0.0 if (disruption and np.random.random() < 0.4) else 1.0
-            uncertainty = np.random.uniform(0.2, 0.5)
-            supply_risk = np.random.uniform(0.4, 0.9) if disruption else np.random.uniform(0.05, 0.3)
-            demand_vol = np.random.uniform(0.2, 0.5) if demand_spike else np.random.uniform(0.05, 0.25)
 
             states[i] = [on_hand, in_transit, on_order, committed, backlog,
                          safety, rop, dos, lead_time, unit_cost, moq, otr,
                          available, forecast, uncertainty, supply_risk, demand_vol]
 
-            act, qty, rew = self._compute_po_action(
+            # --- Compute heuristic baseline ---
+            h_act, h_qty, _ = self._compute_po_action(
                 on_hand, in_transit, on_order, committed, backlog,
                 safety, rop, forecast, lead_time, moq, otr, available,
                 supply_risk, 3)
+
+            # --- Override with disruption-aware corrective label ---
+            ip = on_hand + in_transit + on_order - committed - backlog
+            if disruption == "demand_spike":
+                # Order aggressively — 1.5-2x heuristic qty, expedite
+                corrective_qty = max(h_qty * 1.5, forecast * 0.5)
+                if ip < safety:
+                    act, qty, rew = 2, corrective_qty, 0.80  # expedite
+                else:
+                    act, qty, rew = 0, corrective_qty, 0.75  # order large
+            elif disruption == "supply_disruption":
+                if not available:
+                    act, qty, rew = 3, 0.0, 0.65  # cancel, find alternate
+                else:
+                    act, qty, rew = 2, h_qty, 0.70  # expedite what we can
+            elif disruption == "seasonal_shift":
+                # Order ahead of the shift — more than heuristic suggests
+                corrective_qty = max(h_qty, forecast * 0.4)
+                act, qty, rew = 0, corrective_qty, 0.75
+            elif disruption == "bullwhip_amplification":
+                # Smooth — order less than heuristic to dampen
+                smoothed_qty = h_qty * np.random.uniform(0.5, 0.8) if h_qty > 0 else 0
+                act = 0 if smoothed_qty > 0 else 1
+                qty, rew = smoothed_qty, 0.70
+            elif disruption == "capacity_constraint":
+                # Defer non-critical if supplier can't deliver
+                if ip > safety * 0.5:
+                    act, qty, rew = 1, 0.0, 0.65  # defer
+                else:
+                    act, qty, rew = 0, h_qty * 0.7, 0.60  # reduced order
+            else:
+                act, qty, rew = h_act, h_qty, 0.8 * 0.8
+
             actions[i] = act
             qtys[i, 0] = qty
             rewards[i] = rew
@@ -1145,72 +1398,119 @@ class OrderTrackingCurriculum(TRMCurriculumBase):
         )
 
     def _phase3(self, n: int) -> CurriculumData:
-        """Phase 3: Context-aware resolution with cascading impacts."""
+        """Phase 3: Disruption scenarios where heuristics fail.
+
+        Disruptions and TRM-correct responses:
+        - demand_spike: Large customer orders surge; heuristic tracks slowly.
+          TRM should escalate severity and recommend proactive expediting.
+        - supply_disruption: Supplier going dark, partial deliveries.
+          Heuristic waits passively; TRM should detect early and find
+          alternates before it's too late.
+        - seasonal_shift: Delivery patterns shifting; heuristic uses
+          historical transit times.  TRM should adjust expectations.
+        - bullwhip_amplification: Frequent false-alarm exceptions.
+          Heuristic escalates everything; TRM should filter noise.
+        - capacity_constraint: Supplier at max capacity, splitting shipments.
+          Heuristic doesn't detect pattern; TRM should consolidate tracking.
+        """
         states = np.zeros((n, OT_STATE_DIM), dtype=np.float32)
         exception_types = np.zeros(n, dtype=np.int64)
         cont = np.zeros((n, 2), dtype=np.float32)
         rewards = np.zeros(n, dtype=np.float32)
 
         for i in range(n):
+            disruption_type = _pick_disruption()
+
             otype = np.random.choice(3)
             is_po, is_to, is_co = float(otype == 0), float(otype == 1), float(otype == 2)
             otype_str = ["PO", "TO", "CO"][otype]
             is_transit = float(np.random.random() < 0.4)
             is_partial = float(not is_transit and np.random.random() < 0.3)
 
-            # More extreme scenarios
+            # Base scenario parameters
             days_until = np.random.uniform(-20, 15)
             days_since = np.random.uniform(1, 45)
             ordered = np.random.uniform(10, 200)
-
-            # Complex shortage/overage
-            scenario = np.random.choice(
-                ["normal", "late", "early", "shortage", "overage", "quality",
-                 "stuck", "price", "missing"],
-                p=[0.3, 0.15, 0.05, 0.12, 0.03, 0.08, 0.07, 0.08, 0.12]
-            )
-
-            if scenario == "shortage":
-                received = ordered * np.random.uniform(0.3, 0.8) if not is_transit else 0
-            elif scenario == "overage":
-                received = ordered * np.random.uniform(1.05, 1.2) if not is_transit else 0
-            else:
-                received = ordered * np.random.uniform(0.9, 1.0) if not is_transit else 0
-
-            remaining = ordered - received
-            fill_rate = received / (ordered + 1e-6)
-            price_var = np.random.uniform(-0.25, 0.25) if scenario == "price" else np.random.uniform(-0.05, 0.05)
-            partner_otr = np.random.uniform(0.5, 0.99)
-            partner_fr = np.random.uniform(0.6, 0.99)
+            received = ordered * np.random.uniform(0.9, 1.0) if not is_transit else 0
+            price_var = np.random.uniform(-0.05, 0.05)
+            partner_otr = np.random.uniform(0.7, 0.99)
+            partner_fr = np.random.uniform(0.7, 0.99)
             transit_days = np.random.uniform(1, 21)
 
-            if scenario == "late":
-                days_until = np.random.uniform(-15, -1)
-            elif scenario == "early":
-                days_until = np.random.uniform(3, 15)
-            elif scenario == "stuck":
-                days_since = transit_days * np.random.uniform(2, 4)
-                is_transit = 1.0
-            elif scenario == "missing":
-                days_since = np.random.uniform(3, 10)
-                is_transit = 0.0
-                is_partial = 0.0
-                received = 0.0
+            # --- Apply disruption ---
+            if disruption_type == "demand_spike":
+                # Large critical orders — need proactive escalation
+                ordered *= np.random.uniform(2.0, 4.0)
+                is_critical = True
+                days_until = np.random.uniform(-5, 3)
+            elif disruption_type == "supply_disruption":
+                # Supplier going dark — partial/missing deliveries
+                partner_otr = np.random.uniform(0.3, 0.55)
+                partner_fr = np.random.uniform(0.4, 0.7)
+                received = ordered * np.random.uniform(0.2, 0.5) if not is_transit else 0
+                is_partial = float(received > 0 and received < ordered)
+                is_critical = np.random.random() < 0.5
+            elif disruption_type == "seasonal_shift":
+                # Transit time patterns shifting
+                transit_days *= np.random.uniform(1.5, 2.5)
+                days_until = np.random.uniform(-10, -1)
+                is_critical = False
+            elif disruption_type == "bullwhip_amplification":
+                # False alarm noise — minor variance, not real exceptions
+                price_var = np.random.uniform(-0.03, 0.03)
+                days_until = np.random.uniform(-1, 5)
+                partner_otr = np.random.uniform(0.85, 0.98)
+                is_critical = False
+            elif disruption_type == "capacity_constraint":
+                # Split shipments from capacity-constrained supplier
+                received = ordered * np.random.uniform(0.3, 0.6) if not is_transit else 0
+                is_partial = 1.0
+                partner_fr = np.random.uniform(0.5, 0.7)
+                is_critical = False
+            else:
+                is_critical = np.random.random() < 0.2
 
-            fill_rate = received / (ordered + 1e-6)
             remaining = ordered - received
+            fill_rate = received / (ordered + 1e-6)
             days_overdue = max(0, -days_until)
-
-            is_critical = scenario in ("late", "stuck") and np.random.random() < 0.3
 
             states[i] = [is_po, is_to, is_co, is_transit, is_partial,
                          days_until, days_since, ordered, received, remaining,
                          fill_rate, price_var, partner_otr, partner_fr, transit_days]
 
-            et, sev, act, rew = self._compute_ot_action(
+            # --- Compute heuristic baseline ---
+            h_et, h_sev, h_act, _ = self._compute_ot_action(
                 otype_str, days_overdue, ordered, received, partner_otr,
                 is_critical, price_var, bool(is_transit), bool(is_partial),
                 days_since, transit_days, 3)
+
+            # --- Override with disruption-aware corrective label ---
+            if disruption_type == "demand_spike":
+                # Escalate immediately — high severity, find alternate or expedite
+                et, sev, act = 0, 3, 4  # late_delivery, escalate, find_alternate
+                rew = 0.80
+            elif disruption_type == "supply_disruption":
+                if fill_rate < 0.5:
+                    et, sev, act = 2, 3, 4  # quantity_shortage, escalate, find_alternate
+                    rew = 0.75
+                else:
+                    et, sev, act = 2, 2, 1  # shortage, major, expedite
+                    rew = 0.70
+            elif disruption_type == "seasonal_shift":
+                # Adjust expectations, don't escalate — just monitor
+                et, sev, act = 0, 1, 1  # late, minor, expedite
+                rew = 0.75
+            elif disruption_type == "bullwhip_amplification":
+                # Filter noise — suppress false alarms
+                et, sev, act = 8, 0, 0  # no_exception
+                rew = 0.85
+            elif disruption_type == "capacity_constraint":
+                # Track partial pattern, don't escalate each one
+                et, sev, act = 2, 1, 3  # shortage, minor, partial_receipt
+                rew = 0.75
+            else:
+                et, sev, act, rew = h_et, h_sev, h_act, 0.9 * 0.9
+
             exception_types[i] = et
             cont[i, 0] = sev
             cont[i, 1] = act

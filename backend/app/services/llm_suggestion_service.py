@@ -148,7 +148,7 @@ Primary objectives:
 {chr(10).join(f"- {obj}" for obj in objectives['goals'])}
 
 Current Game State:
-- Round: {context.get('current_round', 0)}
+- Round: {context.get('current_period', 0)}
 - Current Inventory: {context.get('current_inventory', 0)} units
 - Current Backlog: {context.get('current_backlog', 0)} units
 - Incoming Shipment: {context.get('incoming_shipment', 0)} units (arriving in {context.get('lead_time', 2)} rounds)
@@ -244,7 +244,7 @@ IMPORTANT:
                     "Optimize manufacturing throughput and yield",
                 ]
             },
-            "market_supply": {
+            "vendor": {
                 "description": "You are an upstream supply source. Release supply on demand within lead time constraints.",
                 "goals": [
                     "Fulfill replenishment orders reliably",
@@ -252,7 +252,7 @@ IMPORTANT:
                     "Minimize supply disruptions",
                 ]
             },
-            "market_demand": {
+            "customer": {
                 "description": "You represent terminal customer demand. Generate orders according to demand patterns.",
                 "goals": [
                     "Place orders that reflect actual end-customer demand",
@@ -741,7 +741,7 @@ def _build_multi_node_context(
 ) -> Dict[str, Any]:
     """Build context containing all relevant nodes."""
     context = {
-        "current_round": game_state.get("current_round", 0),
+        "current_period": game_state.get("current_period", 0),
         "nodes": {}
     }
 

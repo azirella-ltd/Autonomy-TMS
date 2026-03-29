@@ -125,7 +125,7 @@ const VARIABLE_DEFINITIONS = {
 
   // Demand Variables
   demand: {
-    label: 'Market Demand',
+    label: 'Customer',
     description: 'Customer demand quantity',
     field: 'demand_dist',
     category: 'Demand',

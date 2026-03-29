@@ -75,15 +75,15 @@ const ScenarioRoom = () => {
   const timeBucket = normalizeTimeBucket(game?.time_bucket);
   const periodLabelSingular = getTimePeriodLabel(timeBucket);
   const periodLabelPlural = getTimePeriodLabel(timeBucket, { plural: true });
-  const currentPeriodDisplay = game?.current_round
+  const currentPeriodDisplay = game?.current_period
     ? buildTimePeriodDisplay(
-        game.current_round,
+        game.current_period,
         timeBucket,
         game?.current_period_start
       )
     : "";
-  const maxPeriodDisplay = game?.settings?.max_rounds
-    ? `${game.settings.max_rounds} ${periodLabelPlural}`
+  const maxPeriodDisplay = game?.settings?.max_periods
+    ? `${game.settings.max_periods} ${periodLabelPlural}`
     : "";
 
   // Fetch game data
@@ -395,7 +395,7 @@ const ScenarioRoom = () => {
     try {
       setIsSubmitting(true);
       const response = await simulationApi.post(
-        `/mixed-scenarios/${scenarioId}/rounds/${game.current_round}/fulfillment`,
+        `/mixed-scenarios/${scenarioId}/rounds/${game.current_period}/fulfillment`,
         {
           scenario_user_id: currentScenarioUser.id,
           fulfill_qty: fulfillQty,
@@ -432,7 +432,7 @@ const ScenarioRoom = () => {
     try {
       setIsSubmitting(true);
       const response = await simulationApi.post(
-        `/mixed-scenarios/${scenarioId}/rounds/${game.current_round}/replenishment`,
+        `/mixed-scenarios/${scenarioId}/rounds/${game.current_period}/replenishment`,
         {
           scenario_user_id: currentScenarioUser.id,
           order_qty: orderQty,
@@ -618,7 +618,7 @@ const ScenarioRoom = () => {
               phase={roundPhase}
               scenarioUsersCompleted={scenarioUsersCompleted}
               totalScenarioUsers={game.users.length}
-              currentRound={game.current_round}
+              currentRound={game.current_period}
               phaseStartedAt={game.phase_started_at}
             />
           )}
@@ -628,7 +628,7 @@ const ScenarioRoom = () => {
             <div className="flex items-center space-x-4">
               <Badge variant="info" size="lg">
                 {currentPeriodDisplay ||
-                  `${periodLabelSingular} ${game.current_round || 0}`}{" "}
+                  `${periodLabelSingular} ${game.current_period || 0}`}{" "}
                 {maxPeriodDisplay ? `of ${maxPeriodDisplay}` : ""}
               </Badge>
               <Badge variant="success" size="lg">
@@ -689,7 +689,7 @@ const ScenarioRoom = () => {
                         pipeline={pipelineData}
                         backlog={currentScenarioUser?.backlog || 0}
                         demandHistory={demandHistory}
-                        currentRound={game.current_round}
+                        currentRound={game.current_period}
                         agentMode={currentScenarioUser?.agent_mode || 'manual'}
                         scenarioId={scenarioId}
                         scenarioUserId={currentScenarioUser?.id}
@@ -718,7 +718,7 @@ const ScenarioRoom = () => {
                         {roundComparisonResults.length > 0 && (
                           <DecisionComparisonPanel
                             roundResults={roundComparisonResults}
-                            currentRound={lastComparedRound || game.current_round - 1}
+                            currentRound={lastComparedRound || game.current_period - 1}
                             scenarioUserId={currentScenarioUser?.id}
                           />
                         )}
@@ -775,7 +775,7 @@ const ScenarioRoom = () => {
                         Current {periodLabelSingular}:
                       </span>
                       <span className="font-medium">
-                        {currentPeriodDisplay || game.current_round}
+                        {currentPeriodDisplay || game.current_period}
                         {maxPeriodDisplay ? ` / ${maxPeriodDisplay}` : ""}
                       </span>
                     </div>
@@ -1048,7 +1048,7 @@ const ScenarioRoom = () => {
                           className="bg-primary h-2.5 rounded-full transition-all"
                           style={{
                             width: `${
-                              (game.current_round / game.settings.max_rounds) *
+                              (game.current_period / game.settings.max_periods) *
                               100
                             }%`,
                           }}
@@ -1058,7 +1058,7 @@ const ScenarioRoom = () => {
                         <span>0</span>
                         <span>
                           {currentPeriodDisplay ||
-                            `${periodLabelSingular} ${game.current_round}`}
+                            `${periodLabelSingular} ${game.current_period}`}
                           {maxPeriodDisplay ? ` of ${maxPeriodDisplay}` : ""}
                         </span>
                       </div>
@@ -1101,7 +1101,7 @@ const ScenarioRoom = () => {
                           <dt className="text-muted-foreground">
                             Max {periodLabelPlural}:
                           </dt>
-                          <dd>{game.settings.max_rounds}</dd>
+                          <dd>{game.settings.max_periods}</dd>
                         </div>
                         <div className="flex justify-between text-sm">
                           <dt className="text-muted-foreground">Starting Inventory:</dt>
@@ -1134,7 +1134,7 @@ const ScenarioRoom = () => {
                 <ProbabilisticPipelineChart
                   scenarioId={parseInt(scenarioId)}
                   scenarioUserId={currentScenarioUser?.id}
-                  currentRound={game?.current_round}
+                  currentRound={game?.current_period}
                   nSimulations={100}
                 />
 

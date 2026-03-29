@@ -19,7 +19,7 @@ def test_order_units_roundtrip():
 
 def test_site_type_onehot_known():
     """site_type_onehot should produce a valid one-hot vector for known master_types."""
-    for mt in ["market_supply", "market_demand", "inventory", "manufacturer"]:
+    for mt in ["vendor", "customer", "inventory", "manufacturer"]:
         oh = site_type_onehot(mt)
         assert len(oh) == 4
         assert sum(oh) == 1.0

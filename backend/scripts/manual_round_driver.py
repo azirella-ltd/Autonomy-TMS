@@ -125,14 +125,14 @@ class ManualRoundDebugger:
     def setup_game(
         self,
         *,
-        max_rounds: int = 12,
+        max_periods: int = 12,
         supply_chain_config_id: int,
         demand_pattern: Optional[Dict[str, Any]] = None,
         policies: Optional[Dict[str, tuple[str, Dict[str, Any]]]] = None,
     ) -> None:
         payload: Dict[str, Any] = {
             "name": "Debugger walkthrough",
-            "max_rounds": max_rounds,
+            "max_periods": max_periods,
             "supply_chain_config_id": supply_chain_config_id,
         }
         if demand_pattern is not None:
@@ -175,7 +175,7 @@ class ManualRoundDebugger:
 
 
 def _print_state(state: Dict[str, Any]) -> None:
-    print(f"\nRound {state['current_round']}/{state['max_rounds']}  status={state['status']}")
+    print(f"\nRound {state['current_period']}/{state['max_periods']}  status={state['status']}")
     print("ScenarioUsers:")
     for scenario_user in state.get("scenario_users", []):
         snapshot = PlayerSnapshot(
@@ -214,7 +214,7 @@ def main() -> None:
     token = _login()
     driver = ManualRoundDebugger(token=token)
     driver.setup_game(
-        max_rounds=args.max_rounds,
+        max_periods=args.max_periods,
         supply_chain_config_id=args.config_id,
     )
 

@@ -149,7 +149,7 @@ const ScenarioUsersPage = () => {
     try {
       const payload = {
         name: `Quick Game ${new Date().toLocaleString()}`,
-        max_rounds: 20,
+        max_periods: 20,
         demand_pattern: { type: 'classic', params: { initial_demand: 4, change_week: 6, final_demand: 8 } },
       };
       const newGame = await simulationApi.createScenario(payload);

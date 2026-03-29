@@ -45,7 +45,7 @@ def test_process_ship_queue_preserves_pipeline_state():
 
 def test_market_supply_ships_full_demand():
     shipped, inventory_after, backlog_after, demand, available = compute_shipping_outcome(
-        node_type="market_supply",
+        node_type="vendor",
         inventory_before=0,
         backlog_before=0,
         arrivals_now=0,

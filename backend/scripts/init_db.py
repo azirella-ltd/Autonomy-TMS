@@ -36,8 +36,8 @@ class Scenario(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     status = Column(Enum(ScenarioStatus), default=ScenarioStatus.CREATED)
-    current_round = Column(Integer, default=0)
-    max_rounds = Column(Integer, default=52)
+    current_period = Column(Integer, default=0)
+    max_periods = Column(Integer, default=52)
     demand_pattern = Column(JSON, default={
         "type": "classic",
         "params": {"initial_demand": 4, "change_week": 6, "final_demand": 8}

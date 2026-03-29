@@ -36,7 +36,7 @@ class AgentGameDemo:
         print("\n=== Creating a new agent scenario ===")
         game_data = {
             "name": "AI Agent Demo Scenario",
-            "max_rounds": 10,
+            "max_periods": 10,
             "demand_pattern": {
                 "type": "classic",
                 "params": {
@@ -145,7 +145,7 @@ class AgentGameDemo:
 
         print(f"\n=== Scenario: {state['name']} ===")
         print(f"Status: {state['status']}")
-        print(f"Round: {state['current_round']}/{state['max_rounds']}")
+        print(f"Round: {state['current_period']}/{state['max_periods']}")
         
         print("\nPlayers:")
         for scenario_user in state['scenario_users']:

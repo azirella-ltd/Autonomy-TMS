@@ -51,7 +51,7 @@ def test_autonomy_dtce_agent_returns_reason(base_local_state, base_upstream_data
     )
 
     decision = agent.make_decision(
-        current_round=3,
+        current_period=3,
         current_demand=9,
         upstream_data=base_upstream_data,
         local_state=base_local_state,
@@ -72,7 +72,7 @@ def test_autonomy_dtce_central_agent_returns_reason(base_local_state, base_upstr
     )
 
     decision = agent.make_decision(
-        current_round=5,
+        current_period=5,
         current_demand=None,
         upstream_data=base_upstream_data,
         local_state={**base_local_state, "node_label": "Wholesaler", "node_key": "wholesaler"},
@@ -94,7 +94,7 @@ def test_autonomy_dtce_global_agent_returns_reason(base_local_state, base_upstre
     )
 
     decision = agent.make_decision(
-        current_round=7,
+        current_period=7,
         current_demand=None,
         upstream_data=base_upstream_data,
         local_state={**base_local_state, "node_label": "Distributor", "node_key": "distributor"},
@@ -128,7 +128,7 @@ def test_llm_supervised_agent_generates_adjusted_order(base_local_state, base_up
     agent._llm_agent = _StubLLMAgent(order=8, message="LLM stub explanation")
 
     decision = agent.make_decision(
-        current_round=4,
+        current_period=4,
         current_demand=10,
         upstream_data=base_upstream_data,
         local_state={**base_local_state, "node_label": "Wholesaler", "node_key": "wholesaler"},
@@ -152,7 +152,7 @@ def test_llm_global_agent_coordinated_plan(base_local_state, base_upstream_data)
     agent._llm_agent = _StubLLMAgent(order=9, message="LLM orchestrator explanation")
 
     decision = agent.make_decision(
-        current_round=6,
+        current_period=6,
         current_demand=12,
         upstream_data=base_upstream_data,
         local_state={**base_local_state, "node_label": "Manufacturer", "node_key": "manufacturer"},

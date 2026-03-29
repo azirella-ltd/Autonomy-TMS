@@ -31,7 +31,7 @@ class RLTrainingRequest(BaseModel):
     n_steps: int = Field(2048, description="Steps per update (PPO only)", ge=128, le=8192)
     gamma: float = Field(0.99, description="Discount factor", gt=0, le=1)
     ent_coef: float = Field(0.01, description="Entropy coefficient", ge=0, le=1)
-    max_rounds: int = Field(52, description="Max rounds per episode", ge=10, le=200)
+    max_periods: int = Field(52, description="Max rounds per episode", ge=10, le=200)
     max_order: int = Field(50, description="Max order quantity", ge=10, le=200)
     holding_cost: float = Field(0.5, description="Holding cost per unit", ge=0, le=10)
     backlog_cost: float = Field(1.0, description="Backlog cost per unit", ge=0, le=10)
@@ -182,7 +182,7 @@ def run_training_task(request: RLTrainingRequest):
             "--n-steps", str(request.n_steps),
             "--gamma", str(request.gamma),
             "--ent-coef", str(request.ent_coef),
-            "--max-rounds", str(request.max_rounds),
+            "--max-rounds", str(request.max_periods),
             "--max-order", str(request.max_order),
             "--holding-cost", str(request.holding_cost),
             "--backlog-cost", str(request.backlog_cost),

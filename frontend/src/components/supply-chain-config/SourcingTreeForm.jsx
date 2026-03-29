@@ -65,7 +65,7 @@ const SourcingTreeForm = ({
   const marketDemandSites = useMemo(() => {
     return sites.filter((site) => {
       const masterType = (site.master_type || '').toLowerCase();
-      return masterType === 'market_demand';
+      return masterType === 'customer';
     });
   }, [sites]);
 
@@ -108,8 +108,8 @@ const SourcingTreeForm = ({
       if (!site) return Infinity;
 
       const masterType = (site.master_type || '').toLowerCase();
-      if (masterType === 'market_demand') return 0;
-      if (masterType === 'market_supply') return Infinity;
+      if (masterType === 'customer') return 0;
+      if (masterType === 'vendor') return Infinity;
 
       const downstreamLanes = lanes.filter((lane) => lane.from_site_id === siteId);
       if (downstreamLanes.length === 0) return Infinity;
@@ -133,7 +133,7 @@ const SourcingTreeForm = ({
         })
         .filter((site) => {
           const masterType = (site.master_type || '').toLowerCase();
-          return masterType !== 'market_demand' && masterType !== 'market_supply';
+          return masterType !== 'customer' && masterType !== 'vendor';
         });
     },
     [sites, calculateDAGLayer]
@@ -783,7 +783,7 @@ const SourcingTreeForm = ({
 
       {marketDemandSites.length === 0 && (
         <Alert variant="warning" className="mb-4">
-          No market demand sites defined. Add a site with master type "Market Demand" in the Sites step.
+          No market demand sites defined. Add a site with master type "Customer" in the Sites step.
         </Alert>
       )}
 

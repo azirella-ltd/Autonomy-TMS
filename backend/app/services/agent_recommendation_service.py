@@ -109,7 +109,7 @@ class AgentRecommendationService:
         self,
         game: Game,
         scenario_user: ScenarioUser,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         atp: int,
         demand: int,
         backlog: int = 0,
@@ -120,7 +120,7 @@ class AgentRecommendationService:
         Args:
             game: Game instance
             scenario_user: ScenarioUser instance with agent configuration
-            current_round: Current game round
+            current_period: Current game round
             atp: Available to Promise quantity
             demand: Downstream demand (including backlog)
             backlog: Current backlog
@@ -151,7 +151,7 @@ class AgentRecommendationService:
             "backlog": backlog,
             "demand": demand,
             "atp": atp,
-            "round": current_round.round_number,
+            "round": current_period.round_number,
         }
 
         # For Phase 2, use simple heuristic-based recommendation
@@ -232,7 +232,7 @@ class AgentRecommendationService:
         self,
         game: Game,
         scenario_user: ScenarioUser,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         current_inventory: int,
         pipeline: List[Dict[str, Any]],
         backlog: int = 0,
@@ -244,7 +244,7 @@ class AgentRecommendationService:
         Args:
             game: Game instance
             scenario_user: ScenarioUser instance with agent configuration
-            current_round: Current game round
+            current_period: Current game round
             current_inventory: Current on-hand inventory
             pipeline: List of in-transit shipments
             backlog: Current backlog

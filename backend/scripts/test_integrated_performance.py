@@ -52,7 +52,7 @@ async def test_integrated_performance():
             tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,  # Enable Phase 3 optimizations
-            max_rounds=5,
+            max_periods=5,
             start_date=date.today()
         )
         db.add(scenario)

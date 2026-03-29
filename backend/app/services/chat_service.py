@@ -213,7 +213,7 @@ class ChatService:
             logger.error(f"Failed to build context for {agent_name} in game {scenario_id}: {e}")
             # Fallback to minimal context
             context = {
-                "current_round": game.current_round,
+                "current_period": game.current_period,
                 "current_inventory": 0,
                 "current_backlog": 0,
             }
@@ -262,7 +262,7 @@ class ChatService:
         # Create suggestion
         suggestion = AgentSuggestion(
             scenario_id=scenario_id,
-            round=game.current_round,
+            round=game.current_period,
             agent_name=agent_name,
             order_quantity=order_quantity,
             confidence=confidence,
@@ -387,7 +387,7 @@ class ChatService:
 
         analysis = WhatIfAnalysis(
             scenario_id=scenario_id,
-            round=game.current_round,
+            round=game.current_period,
             scenario_user_id=analysis_data.scenario_user_id,
             question=analysis_data.question,
             scenario=analysis_data.scenario,
@@ -485,7 +485,7 @@ class ChatService:
         recent_rounds = list(rounds_result.scalars().all())
 
         # Current state (most recent round)
-        current_round = recent_rounds[0] if recent_rounds else None
+        current_period = recent_rounds[0] if recent_rounds else None
 
         # Calculate metrics from history
         recent_demand = []
@@ -554,12 +554,12 @@ class ChatService:
 
         # Pipeline orders (orders placed but not yet received)
         pipeline_orders = []
-        if current_round and hasattr(scenario_user, 'lead_time') and scenario_user.lead_time:
+        if current_period and hasattr(scenario_user, 'lead_time') and scenario_user.lead_time:
             lead_time = scenario_user.lead_time
             # Look back through recent rounds within lead time
             for r in recent_rounds[:lead_time]:
                 if hasattr(r, 'order_placed') and r.order_placed:
-                    eta_rounds = lead_time - (game.current_round - r.round)
+                    eta_rounds = lead_time - (game.current_period - r.round)
                     if eta_rounds > 0:
                         pipeline_orders.append({
                             "round": r.round,
@@ -569,15 +569,15 @@ class ChatService:
 
         # Incoming shipment
         incoming_shipment = 0
-        if current_round and hasattr(current_round, 'incoming_shipment'):
-            incoming_shipment = current_round.incoming_shipment or 0
+        if current_period and hasattr(current_period, 'incoming_shipment'):
+            incoming_shipment = current_period.incoming_shipment or 0
 
         # Build comprehensive context
         context = {
             # Current state
-            "current_round": game.current_round,
-            "current_inventory": current_round.current_inventory if current_round else 0,
-            "current_backlog": current_round.current_backlog if current_round else 0,
+            "current_period": game.current_period,
+            "current_inventory": current_period.current_inventory if current_period else 0,
+            "current_backlog": current_period.current_backlog if current_period else 0,
             "incoming_shipment": incoming_shipment,
             "lead_time": scenario_user.lead_time if hasattr(scenario_user, 'lead_time') else 2,
 

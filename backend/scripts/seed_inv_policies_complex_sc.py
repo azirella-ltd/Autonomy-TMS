@@ -68,7 +68,7 @@ async def seed_inv_policies():
         print("Creating default inventory policies...")
 
         policy_count = 0
-        relevant_nodes = [n for n in nodes if n.master_type in ['inventory', 'manufacturer', 'market_demand']]
+        relevant_nodes = [n for n in nodes if n.master_type in ['inventory', 'manufacturer', 'customer']]
 
         # Create policies in batches of 100 to avoid parameter limit
         batch_size = 100

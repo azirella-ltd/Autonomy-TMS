@@ -35,13 +35,13 @@ def split_log(
 
     per_node_blocks: dict[str, list[str]] = {}
     current_node: str | None = None
-    current_round: str | None = None
+    current_period: str | None = None
     buffer: list[str] = []
 
     def flush() -> None:
-        nonlocal buffer, current_node, current_round
+        nonlocal buffer, current_node, current_period
         if current_node and buffer:
-            header = f"Round {current_round}" if current_round else "Round ?"
+            header = f"Round {current_period}" if current_period else "Round ?"
             payload = header + "\n" + "\n".join(buffer).rstrip() + "\n"
             per_node_blocks.setdefault(current_node, []).append(payload)
         buffer = []
@@ -49,7 +49,7 @@ def split_log(
     for line in log_path.read_text().splitlines():
         m_round = round_re.match(line)
         if m_round:
-            current_round = m_round.group(1)
+            current_period = m_round.group(1)
             continue
         m_node = node_re.match(line)
         if m_node:

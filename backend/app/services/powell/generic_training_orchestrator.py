@@ -127,7 +127,7 @@ class GenericTrainingOrchestrator:
                     SELECT id, name, type, master_type
                     FROM site
                     WHERE config_id = :c
-                      AND LOWER(master_type) NOT IN ('market_demand', 'market_supply', 'vendor', 'customer')
+                      AND LOWER(master_type) NOT IN ('customer', 'vendor')
                 """),
                 {"c": self.config_id},
             ).fetchall()

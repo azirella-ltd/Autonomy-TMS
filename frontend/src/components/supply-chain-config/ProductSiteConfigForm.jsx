@@ -31,8 +31,8 @@ const SITE_TYPE_LABELS = {
   distributor: 'Distributor',
   manufacturer: 'Manufacturer',
   factory: 'Factory',
-  market_supply: 'Market Supply',
-  market_demand: 'Market Demand',
+  market_supply: 'Vendor',
+  market_demand: 'Customer',
 };
 
 const SITE_TYPE_VARIANTS = {

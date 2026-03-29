@@ -39,7 +39,7 @@ const ScenarioLobby = () => {
         max_scenario_users: 4,
         settings: {
           round_duration: 60, // seconds
-          max_rounds: 20,
+          max_periods: 20,
           starting_inventory: 12,
         },
       });
@@ -159,7 +159,7 @@ const ScenarioLobby = () => {
                           {game.status === 'in_progress' && (
                             <div className="ml-6 flex items-center text-sm text-gray-500">
                               <ClockIcon className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
-                              <p>Round {game.current_round} of {game.settings.max_rounds}</p>
+                              <p>Round {game.current_period} of {game.settings.max_periods}</p>
                             </div>
                           )}
                         </div>

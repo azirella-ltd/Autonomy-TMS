@@ -237,7 +237,7 @@ class FulfillmentService:
         product_id: str,
         scenario_id: Optional[int] = None,
         config_id: Optional[int] = None,
-        current_round: Optional[int] = None,
+        current_period: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Fulfill customer orders using FIFO with priority support.
@@ -251,7 +251,7 @@ class FulfillmentService:
             product_id: Product to fulfill
             scenario_id: Scenario ID
             config_id: Supply chain configuration ID
-            current_round: Current round number (for TO arrival calculation)
+            current_period: Current round number (for TO arrival calculation)
 
         Returns:
             Dictionary with fulfillment summary:
@@ -314,10 +314,10 @@ class FulfillmentService:
             )
 
             # Create TransferOrder for shipment
-            to_number = f"TO-{order.order_id}-{order.line_number}-{current_round or 0}"
+            to_number = f"TO-{order.order_id}-{order.line_number}-{current_period or 0}"
 
             # Calculate arrival round (1-week lead time for simulation)
-            arrival_round = (current_round + 1) if current_round is not None else None
+            arrival_round = (current_period + 1) if current_period is not None else None
             estimated_delivery = order.requested_delivery_date or (date.today() + timedelta(weeks=1))
 
             transfer_order = await self.order_mgmt.create_transfer_order(
@@ -329,7 +329,7 @@ class FulfillmentService:
                 estimated_delivery_date=estimated_delivery,
                 config_id=config_id,
                 scenario_id=scenario_id,
-                order_round=current_round,
+                order_round=current_period,
                 arrival_round=arrival_round,
                 source_po_id=None,  # Not applicable for customer orders
             )
@@ -372,7 +372,7 @@ class FulfillmentService:
         product_id: str,
         scenario_id: Optional[int] = None,
         config_id: Optional[int] = None,
-        current_round: Optional[int] = None,
+        current_period: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Specifically process backlogged customer orders.
@@ -385,7 +385,7 @@ class FulfillmentService:
             product_id: Product to fulfill
             scenario_id: Scenario ID
             config_id: Supply chain configuration ID
-            current_round: Current round number
+            current_period: Current round number
 
         Returns:
             Same as fulfill_customer_orders_fifo()
@@ -395,7 +395,7 @@ class FulfillmentService:
             product_id=product_id,
             scenario_id=scenario_id,
             config_id=config_id,
-            current_round=current_round,
+            current_period=current_period,
         )
 
     # ========================================================================
@@ -408,7 +408,7 @@ class FulfillmentService:
         product_id: str,
         scenario_id: Optional[int] = None,
         config_id: Optional[int] = None,
-        current_round: Optional[int] = None,
+        current_period: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Fulfill purchase orders from downstream sites.
@@ -422,7 +422,7 @@ class FulfillmentService:
             product_id: Product to fulfill
             scenario_id: Scenario ID
             config_id: Supply chain configuration ID
-            current_round: Current round number
+            current_period: Current round number
 
         Returns:
             Dictionary with fulfillment summary:
@@ -490,10 +490,10 @@ class FulfillmentService:
             )
 
             # Create TransferOrder for shipment
-            to_number = f"TO-PO-{po.po_number}-{current_round or 0}"
+            to_number = f"TO-PO-{po.po_number}-{current_period or 0}"
 
             # Calculate arrival round (lead time from lane)
-            arrival_round = (current_round + 1) if current_round is not None else None
+            arrival_round = (current_period + 1) if current_period is not None else None
             estimated_delivery = po.requested_delivery_date or (date.today() + timedelta(weeks=1))
 
             transfer_order = await self.order_mgmt.create_transfer_order(
@@ -505,7 +505,7 @@ class FulfillmentService:
                 estimated_delivery_date=estimated_delivery,
                 config_id=config_id,
                 scenario_id=scenario_id,
-                order_round=current_round,
+                order_round=current_period,
                 arrival_round=arrival_round,
                 source_po_id=po.id,
             )
@@ -639,7 +639,7 @@ class FulfillmentService:
         product_id: str,
         config_id: int,
         scenario_id: Optional[int] = None,
-        current_round: Optional[int] = None,
+        current_period: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Fulfill customer orders using Powell allocation-based ATP.
@@ -658,7 +658,7 @@ class FulfillmentService:
             product_id: Product to fulfill
             config_id: Supply chain configuration ID
             scenario_id: Scenario ID (optional)
-            current_round: Current round number
+            current_period: Current round number
 
         Returns:
             Dictionary with fulfillment summary including Powell metrics
@@ -673,7 +673,7 @@ class FulfillmentService:
                 product_id=product_id,
                 scenario_id=scenario_id,
                 config_id=config_id,
-                current_round=current_round,
+                current_period=current_period,
             )
 
         # Get unfulfilled orders (FIFO + priority)
@@ -769,8 +769,8 @@ class FulfillmentService:
             )
 
             # Create TransferOrder for shipment
-            to_number = f"TO-{order.order_id}-{order.line_number}-{current_round or 0}"
-            arrival_round = (current_round + 1) if current_round is not None else None
+            to_number = f"TO-{order.order_id}-{order.line_number}-{current_period or 0}"
+            arrival_round = (current_period + 1) if current_period is not None else None
             estimated_delivery = order.requested_delivery_date or (date.today() + timedelta(weeks=1))
 
             transfer_order = await self.order_mgmt.create_transfer_order(
@@ -782,7 +782,7 @@ class FulfillmentService:
                 estimated_delivery_date=estimated_delivery,
                 config_id=config_id,
                 scenario_id=scenario_id,
-                order_round=current_round,
+                order_round=current_period,
                 arrival_round=arrival_round,
                 source_po_id=None,
             )

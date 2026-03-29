@@ -98,8 +98,8 @@ def _seed_site_hierarchy(
         by_type[mt].append(s)
 
     _REGION_LABELS = {
-        "MARKET_SUPPLY": "Suppliers",
-        "MARKET_DEMAND": "Customers",
+        "VENDOR": "Suppliers",
+        "CUSTOMER": "Customers",
         "INVENTORY": "Distribution Sites",
         "MANUFACTURER": "Manufacturing Sites",
     }

@@ -68,7 +68,7 @@ def ensure_agent_game(
             {
                 "name": name,
                 "description": description,
-                "max_rounds": 40,
+                "max_periods": 40,
                 "is_public": True,
             },
         )
@@ -79,7 +79,7 @@ def ensure_agent_game(
             created_by=tenant.admin_id,
             customer_id=tenant.id,
             status=ScenarioStatus.CREATED,
-            max_rounds=base_config.get("max_rounds", 40),
+            max_periods=base_config.get("max_periods", 40),
             config=base_config,
             demand_pattern=base_config.get("demand_pattern", {}),
             supply_chain_config_id=config.id,

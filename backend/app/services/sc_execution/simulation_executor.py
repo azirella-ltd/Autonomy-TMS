@@ -227,7 +227,7 @@ class SimulationExecutor:
 
             print(f"✓ Market demand: {market_demand} units → Retailer")
 
-            round_summary["steps"]["market_demand"] = {
+            round_summary["steps"]["customer"] = {
                 "quantity": market_demand,
                 "order_id": outbound_order.order_id
             }
@@ -422,8 +422,8 @@ class SimulationExecutor:
 
         return {
             "scenario_id": scenario_id,
-            "current_round": game.current_round or 0,
-            "max_rounds": game.max_rounds or 52,
+            "current_period": game.current_period or 0,
+            "max_periods": game.max_periods or 52,
             "status": game.status,
             "state": current_state,
             "costs": cost_summary

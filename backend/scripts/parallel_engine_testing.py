@@ -93,8 +93,8 @@ class ParallelEngineComparator:
         scenario = Scenario(
             name=name,
             config_id=config.id,
-            current_round=1,
-            max_rounds=self.rounds,
+            current_period=1,
+            max_periods=self.rounds,
             status="IN_PROGRESS",
         )
         self.db.add(scenario)
@@ -141,7 +141,7 @@ class ParallelEngineComparator:
         for round_num in range(1, self.rounds + 1):
             round_result = await engine.execute_round(
                 scenario_id=scenario.id,
-                current_round=round_num,
+                current_period=round_num,
                 agent_decisions=None,  # Use default replenishment
             )
 
@@ -155,7 +155,7 @@ class ParallelEngineComparator:
             round_snapshots.append(snapshot)
 
             # Update scenario round
-            scenario.current_round = round_num + 1
+            scenario.current_period = round_num + 1
 
         await self.db.commit()
 

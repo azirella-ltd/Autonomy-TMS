@@ -170,8 +170,8 @@ const TenantScenarioSupervisionPanel = ({
       setAutoProgress({
         gameId: game.id,
         name: game.name,
-        currentRound: result?.current_round ?? game.current_round ?? 0,
-        maxRounds: result?.max_rounds ?? game.max_rounds ?? 0,
+        currentRound: result?.current_period ?? game.current_period ?? 0,
+        maxRounds: result?.max_periods ?? game.max_periods ?? 0,
         status: result?.status ?? game.status,
         lastUpdated: new Date().toISOString(),
         done: false,
@@ -238,8 +238,8 @@ const TenantScenarioSupervisionPanel = ({
         if (cancelled) return;
 
         const statusRaw = String(gameData?.status || '').toLowerCase();
-        const currentRound = state?.round ?? gameData?.current_round ?? 0;
-        const maxRoundsFromData = gameData?.max_rounds ?? 0;
+        const currentRound = state?.round ?? gameData?.current_period ?? 0;
+        const maxRoundsFromData = gameData?.max_periods ?? 0;
         const history = Array.isArray(state?.history) ? state.history : [];
 
         let finished = false;
@@ -346,8 +346,8 @@ const TenantScenarioSupervisionPanel = ({
         return;
       }
 
-      const maxRounds = Number(game.max_rounds ?? 0);
-      const currentRound = Number(game.current_round ?? 0);
+      const maxRounds = Number(game.max_periods ?? 0);
+      const currentRound = Number(game.current_period ?? 0);
       if (maxRounds > 0 && currentRound >= maxRounds && !autoStopRef.current.has(game.id)) {
         autoStopRef.current.add(game.id);
         runAction(game.id, 'stop', simulationApi.stopScenario, 'Scenario stopped automatically').catch(() => {
@@ -515,8 +515,8 @@ const TenantScenarioSupervisionPanel = ({
     }
 
     if (status === 'in_progress') {
-      const maxRounds = Number(game.max_rounds ?? 0);
-      const currentRound = Number(game.current_round ?? 0);
+      const maxRounds = Number(game.max_periods ?? 0);
+      const currentRound = Number(game.current_period ?? 0);
       const reachedEnd = maxRounds > 0 && currentRound >= maxRounds;
       const monitoringThisGame = autoProgress?.gameId === game.id;
       const hideStopButton =
@@ -662,12 +662,12 @@ const TenantScenarioSupervisionPanel = ({
                       <TableCell>
                         <div className="space-y-1">
                           <p className="text-sm">
-                            {game.current_round ?? 0} / {game.max_rounds ?? '—'}
+                            {game.current_period ?? 0} / {game.max_periods ?? '—'}
                           </p>
                           <Progress
                             value={(() => {
-                              const current = Number(game.current_round ?? 0);
-                              const total = Number(game.max_rounds ?? 0);
+                              const current = Number(game.current_period ?? 0);
+                              const total = Number(game.max_periods ?? 0);
                               if (!total || Number.isNaN(total) || total <= 0) {
                                 return 0;
                               }
@@ -773,13 +773,13 @@ const TenantScenarioSupervisionPanel = ({
                   ? latest.node_type_summaries
                   : {};
               const demandOrder = [
-                "market_demand",
+                "customer",
                 "retailer",
                 "wholesaler",
                 "distributor",
                 "manufacturer",
                 "supplier",
-                "market_supply",
+                "vendor",
               ];
               const entries = Object.entries(summaries).sort((a, b) => {
                 const ia = demandOrder.indexOf(String(a[0]).toLowerCase());

@@ -106,7 +106,7 @@ class TransferOrderValidator:
 
         # Get scenario info
         scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
-        max_round = scenario.current_round if scenario else 0
+        max_round = scenario.current_period if scenario else 0
 
         # Expected: At least 1 TO per round per site (market demand)
         # Plus TOs for inter-site transfers (depends on PO fulfillment)
@@ -332,7 +332,7 @@ class TransferOrderValidator:
         ).all()
 
         initial_inventory_per_site = 12.0  # From scenario initialization
-        num_sites = len([n for n in nodes if n.master_node_type != "MARKET_SUPPLY"])
+        num_sites = len([n for n in nodes if n.master_node_type != "VENDOR"])
 
         total_initial = initial_inventory_per_site * num_sites
 
@@ -359,7 +359,7 @@ class TransferOrderValidator:
         market_node = self.db.query(Site).filter(
             and_(
                 Site.config_id == scenario.config_id,
-                Site.master_node_type == "MARKET_DEMAND"
+                Site.master_node_type == "CUSTOMER"
             )
         ).first()
 
@@ -418,7 +418,7 @@ class TransferOrderValidator:
         print("-" * 80)
 
         scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
-        current_round = scenario.current_round
+        current_period = scenario.current_period
 
         # Pick a node to test projection (use first non-market node)
         test_node = self.db.query(Site).filter(
@@ -458,7 +458,7 @@ class TransferOrderValidator:
         projection = {
             "site_id": test_site_name,
             "node_id": test_node_id,
-            "current_round": current_round,
+            "current_period": current_period,
             "current_on_hand": inv_level.on_hand_qty,
             "current_in_transit": inv_level.in_transit_qty,
             "future_arrivals": []
@@ -500,7 +500,7 @@ class TransferOrderValidator:
         }
 
         print(f"  Site: {test_site_name} (Site ID={test_node_id})")
-        print(f"  Current round: {current_round}")
+        print(f"  Current round: {current_period}")
         print(f"  On-hand: {inv_level.on_hand_qty:.2f}")
         print(f"  In-transit (inv_level): {inv_level.in_transit_qty:.2f}")
         print(f"  In-transit (from TOs): {total_in_transit_from_tos:.2f}")
@@ -541,8 +541,8 @@ def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
     scenario = Scenario(
         name="TO Test 52-Round Simulation",
         config_id=1,  # Default TBG config
-        max_rounds=52,
-        current_round=0,
+        max_periods=52,
+        current_period=0,
         status="active",
         created_at=datetime.now()
     )
@@ -566,7 +566,7 @@ def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
 
     # Get sites
     sites = executor._get_scenario_sites(scenario.id)
-    site_ids = [s.site_id for s in sites if s.site_type != "MARKET_SUPPLY"]
+    site_ids = [s.site_id for s in sites if s.site_type != "VENDOR"]
 
     print(f"Sites: {site_ids}\n")
 
@@ -610,7 +610,7 @@ def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
             # Compute order
             order_qty = policy.compute_order(
                 node,
-                {"current_round": round_num, "demand": 8.0}
+                {"current_period": round_num, "demand": 8.0}
             )
 
             agent_decisions[site_id] = order_qty
@@ -628,8 +628,8 @@ def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
 
         round_summaries.append(round_summary)
 
-        # Update scenario current_round
-        scenario.current_round = round_num
+        # Update scenario current_period
+        scenario.current_period = round_num
         db.commit()
 
         # Print summary

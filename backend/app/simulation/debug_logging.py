@@ -390,20 +390,20 @@ def split_debug_log_file(log_path: Path, *, cfg: Dict[str, Any]) -> None:
     node_re = re.compile(r"^\s*Node:\s*(.+)$")
     per_node_blocks: Dict[str, List[str]] = {}
     current_node = None
-    current_round = None
+    current_period = None
     buffer: List[str] = []
 
     def flush():
-        nonlocal buffer, current_node, current_round
+        nonlocal buffer, current_node, current_period
         if current_node and buffer:
-            header = f"Round {current_round}" if current_round else "Round ?"
+            header = f"Round {current_period}" if current_period else "Round ?"
             per_node_blocks.setdefault(current_node, []).append(header + "\n" + "\n".join(buffer).rstrip() + "\n")
         buffer.clear()
 
     for line in log_path.read_text().splitlines():
         m_round = round_re.match(line)
         if m_round:
-            current_round = m_round.group(1)
+            current_period = m_round.group(1)
             continue
         m_node = node_re.match(line)
         if m_node:

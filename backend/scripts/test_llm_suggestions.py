@@ -26,7 +26,7 @@ async def test_basic_suggestion():
 
     # Mock context: Normal operating conditions
     context = {
-        "current_round": 5,
+        "current_period": 5,
         "current_inventory": 12,
         "current_backlog": 5,
         "incoming_shipment": 20,
@@ -96,7 +96,7 @@ async def test_high_backlog_scenario():
 
     # High backlog scenario
     context = {
-        "current_round": 8,
+        "current_period": 8,
         "current_inventory": 2,
         "current_backlog": 45,  # Critical backlog
         "incoming_shipment": 15,
@@ -152,7 +152,7 @@ async def test_overstock_scenario():
 
     # Overstock scenario
     context = {
-        "current_round": 10,
+        "current_period": 10,
         "current_inventory": 85,  # Excess inventory
         "current_backlog": 0,
         "incoming_shipment": 30,
@@ -208,7 +208,7 @@ async def test_bullwhip_scenario():
 
     # Bullwhip scenario
     context = {
-        "current_round": 12,
+        "current_period": 12,
         "current_inventory": 18,
         "current_backlog": 12,
         "incoming_shipment": 45,
@@ -262,7 +262,7 @@ async def test_fallback_mode():
     llm_service = get_llm_service(provider="invalid_provider", model="qwen3-8b")
 
     context = {
-        "current_round": 5,
+        "current_period": 5,
         "current_inventory": 15,
         "current_backlog": 8,
         "recent_demand": [30, 32, 35],
@@ -310,7 +310,7 @@ async def test_different_agent_roles():
     llm_service = get_llm_service()
 
     context = {
-        "current_round": 7,
+        "current_period": 7,
         "current_inventory": 20,
         "current_backlog": 10,
         "incoming_shipment": 25,

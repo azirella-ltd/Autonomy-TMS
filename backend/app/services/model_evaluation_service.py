@@ -41,7 +41,7 @@ class ModelEvaluationService:
         config_name: str,
         agent_types: List[str],
         num_trials: int = 10,
-        max_rounds: int = 36,
+        max_periods: int = 36,
         seed: Optional[int] = None
     ) -> Dict[str, Any]:
         """
@@ -51,7 +51,7 @@ class ModelEvaluationService:
             config_name: Supply chain configuration name
             agent_types: List of agent types to benchmark
             num_trials: Number of games to run per agent type
-            max_rounds: Number of rounds per game
+            max_periods: Number of rounds per game
             seed: Random seed for reproducibility
 
         Returns:
@@ -62,7 +62,7 @@ class ModelEvaluationService:
         results = {
             "config_name": config_name,
             "num_trials": num_trials,
-            "max_rounds": max_rounds,
+            "max_periods": max_periods,
             "agents": {},
             "rankings": {},
             "started_at": datetime.utcnow().isoformat()
@@ -77,7 +77,7 @@ class ModelEvaluationService:
                     config_name=config_name,
                     agent_type=agent_type,
                     num_trials=num_trials,
-                    max_rounds=max_rounds,
+                    max_periods=max_periods,
                     seed=seed
                 )
 
@@ -107,7 +107,7 @@ class ModelEvaluationService:
         config_name: str,
         agent_type: str,
         num_trials: int,
-        max_rounds: int,
+        max_periods: int,
         seed: Optional[int]
     ) -> Dict[str, Any]:
         """
@@ -151,7 +151,7 @@ class ModelEvaluationService:
                 # Run game
                 await game_service.start_game(game.id)
 
-                for round_num in range(max_rounds):
+                for round_num in range(max_periods):
                     await game_service.play_round(game.id)
 
                 # Calculate metrics for this trial
@@ -440,7 +440,7 @@ class ModelEvaluationService:
         config_name: str,
         agent_type: str,
         num_trials: int = 10,
-        max_rounds: int = 36
+        max_periods: int = 36
     ) -> Dict[str, Any]:
         """
         Evaluate a single agent type.
@@ -449,7 +449,7 @@ class ModelEvaluationService:
             config_name: Supply chain configuration
             agent_type: Agent type to evaluate
             num_trials: Number of evaluation trials
-            max_rounds: Rounds per game
+            max_periods: Rounds per game
 
         Returns:
             results: Evaluation results with statistics
@@ -460,7 +460,7 @@ class ModelEvaluationService:
             config_name=config_name,
             agent_type=agent_type,
             num_trials=num_trials,
-            max_rounds=max_rounds,
+            max_periods=max_periods,
             seed=42
         )
 
@@ -468,7 +468,7 @@ class ModelEvaluationService:
             "config_name": config_name,
             "agent_type": agent_type,
             "num_trials": num_trials,
-            "max_rounds": max_rounds,
+            "max_periods": max_periods,
             "results": results,
             "timestamp": datetime.utcnow().isoformat()
         }
@@ -496,7 +496,7 @@ class ModelEvaluationService:
         report.append(f"# Agent Benchmarking Report\n")
         report.append(f"**Configuration**: {benchmark_results['config_name']}\n")
         report.append(f"**Trials per Agent**: {benchmark_results['num_trials']}\n")
-        report.append(f"**Rounds per Game**: {benchmark_results['max_rounds']}\n")
+        report.append(f"**Rounds per Game**: {benchmark_results['max_periods']}\n")
         report.append(f"**Completed**: {benchmark_results.get('completed_at', 'N/A')}\n\n")
 
         # Overall rankings

@@ -210,9 +210,9 @@ def _master_type_to_node_type(master_type: str) -> models.NodeType:
         "customer": models.NodeType.CUSTOMER,
         "manufacturer": models.NodeType.MANUFACTURER,
         "inventory": models.NodeType.INVENTORY,
-        # Legacy names (backward compatibility)
-        "market_supply": models.NodeType.VENDOR,
-        "market_demand": models.NodeType.CUSTOMER,
+        # Legacy names (backward compatibility — kept for old configs)
+        "vendor": models.NodeType.VENDOR,
+        "customer": models.NodeType.CUSTOMER,
     }
     return mapping.get(canonical, models.NodeType.MANUFACTURER)
 
@@ -2333,13 +2333,13 @@ def create_scenario_from_config(
         default={
             "name": "New Scenario",
             "description": "Scenario created from supply chain configuration",
-            "max_rounds": 52,
+            "max_periods": 52,
             "is_public": True
         },
         example={
             "name": "New Scenario",
             "description": "Scenario created from supply chain configuration",
-            "max_rounds": 52,
+            "max_periods": 52,
             "is_public": True
         }
     ),

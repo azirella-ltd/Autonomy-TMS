@@ -61,10 +61,10 @@ def test_legacy_mode():
             tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=False,  # LEGACY MODE
-            max_rounds=1,
+            max_periods=1,
             status="active",
             start_date=date(2024, 1, 1),
-            current_round=0,
+            current_period=0,
             config={
                 "demand_pattern": {"type": "constant", "value": 4}
             }
@@ -144,10 +144,10 @@ async def test_aws_sc_mode_async():
             tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,  # AWS SC MODE
-            max_rounds=1,
+            max_periods=1,
             status="active",
             start_date=date(2024, 1, 1),
-            current_round=0,
+            current_period=0,
             config={
                 "demand_pattern": {"type": "constant", "value": 4},
                 "nodes": {}
@@ -169,7 +169,7 @@ async def test_aws_sc_mode_async():
         # Initialize node states in scenario config
         nodes_state = {}
         for node in config.nodes:
-            if node.type not in ['market_supply', 'market_demand']:
+            if node.type not in ['vendor', 'customer']:
                 scenario_user = ScenarioUser(
                     scenario_id=scenario.id,
                     role=node.name,

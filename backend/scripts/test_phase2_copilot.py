@@ -238,7 +238,7 @@ def test_integration_with_existing_scenario(db: Session):
     print_header("Test 8: Integration with Existing Scenario")
 
     # Try to find an existing scenario
-    scenario = db.query(Scenario).filter(Scenario.status.in_([ScenarioStatus.CREATED, ScenarioStatus.STARTED, ScenarioStatus.ROUND_IN_PROGRESS])).first()
+    scenario = db.query(Scenario).filter(Scenario.status.in_([ScenarioStatus.CREATED, ScenarioStatus.STARTED, ScenarioStatus.PERIOD_IN_PROGRESS])).first()
 
     if not scenario:
         print_result("Find existing scenario", False, "No scenarios found - create one to test integration")

@@ -108,7 +108,7 @@ def main():
     logger.info(f"Learning rate: {args.learning_rate}")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"Entropy coefficient: {args.ent_coef}")
-    logger.info(f"Max rounds: {args.max_rounds}")
+    logger.info(f"Max rounds: {args.max_periods}")
     logger.info(f"Max order: {args.max_order}")
     logger.info(f"Holding cost: {args.holding_cost}")
     logger.info(f"Backlog cost: {args.backlog_cost}")
@@ -146,7 +146,7 @@ def main():
         seed=args.seed,
         checkpoint_dir=args.checkpoint_dir,
         log_dir=args.log_dir,
-        max_rounds=args.max_rounds,
+        max_periods=args.max_periods,
         max_order=args.max_order,
         holding_cost=args.holding_cost,
         backlog_cost=args.backlog_cost,
@@ -155,7 +155,7 @@ def main():
 
     # Train agent
     logger.info(f"Starting training for {args.timesteps:,} timesteps...")
-    logger.info(f"Episodes expected: ~{args.timesteps // args.max_rounds:,}")
+    logger.info(f"Episodes expected: ~{args.timesteps // args.max_periods:,}")
     logger.info("-" * 80)
 
     try:

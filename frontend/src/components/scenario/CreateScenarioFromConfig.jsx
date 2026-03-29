@@ -38,7 +38,7 @@ const CreateScenarioFromConfig = () => {
   const [scenarioData, setGameData] = useState({
     name: '',
     description: '',
-    max_rounds: 52,
+    max_periods: 52,
     is_public: true
   });
   const [modelStatus, setModelStatus] = useState(null);
@@ -291,9 +291,9 @@ const CreateScenarioFromConfig = () => {
                 <FormField label="Max Rounds" required className="w-40">
                   <Input
                     type="number"
-                    id="max_rounds"
-                    name="max_rounds"
-                    value={scenarioData.max_rounds}
+                    id="max_periods"
+                    name="max_periods"
+                    value={scenarioData.max_periods}
                     onChange={handleInputChange}
                     min={1}
                     max={1000}

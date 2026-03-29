@@ -104,7 +104,7 @@ class LegacyToExecutionMigrator:
             self.log(f"ERROR: Scenario {self.scenario_id} not found")
             return None
 
-        self.log(f"Scenario: {scenario.name}, Status: {scenario.status}, Rounds: {scenario.current_round}")
+        self.log(f"Scenario: {scenario.name}, Status: {scenario.status}, Rounds: {scenario.current_period}")
         return scenario
 
     async def _load_legacy_data(self) -> List[ScenarioUserPeriod]:
@@ -200,7 +200,7 @@ class LegacyToExecutionMigrator:
                         site_id=pr.site_id,
                         ordered_quantity=float(pr.backlog),
                         requested_delivery_date=date.today() + timedelta(weeks=1),
-                        order_date=date.today() - timedelta(weeks=(scenario.current_round - round_num)),
+                        order_date=date.today() - timedelta(weeks=(scenario.current_period - round_num)),
                         status="PARTIALLY_FULFILLED" if pr.backlog > 0 else "FULFILLED",
                         priority_code="STANDARD",
                         shipped_quantity=0.0,
@@ -219,7 +219,7 @@ class LegacyToExecutionMigrator:
                         destination_site_id=pr.site_id,
                         config_id=scenario.supply_chain_config_id,
                         status="APPROVED",
-                        order_date=date.today() - timedelta(weeks=(scenario.current_round - round_num)),
+                        order_date=date.today() - timedelta(weeks=(scenario.current_period - round_num)),
                         requested_delivery_date=date.today() + timedelta(weeks=2),
                         scenario_id=self.scenario_id,
                         order_round=round_num,
@@ -328,7 +328,7 @@ class LegacyToExecutionMigrator:
             select(Site).where(Site.config_id == scenario.supply_chain_config_id)
         )
         sites_count = len(list(result.scalars().all()))
-        expected_metrics = sites_count * scenario.current_round
+        expected_metrics = sites_count * scenario.current_period
 
         if metrics_count < expected_metrics:
             validation_errors.append(

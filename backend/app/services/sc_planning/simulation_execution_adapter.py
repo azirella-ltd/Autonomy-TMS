@@ -585,7 +585,7 @@ class SimulationExecutionAdapter:
         """
         if master_type == 'manufacturer':
             return 'MO'  # Manufacturing Order
-        elif master_type == 'market_supply':
+        elif master_type == 'vendor':
             return 'PO'  # Purchase Order
         else:
             return 'TO'  # Transfer Order
@@ -608,7 +608,7 @@ class SimulationExecutionAdapter:
         # Determine order type based on upstream node master_type
         if upstream_node.master_type == 'manufacturer':
             order_type = 'MO'  # Manufacturing Order
-        elif upstream_node.master_type == 'market_supply':
+        elif upstream_node.master_type == 'vendor':
             order_type = 'PO'  # Purchase Order (external)
         else:
             order_type = 'TO'  # Transfer Order (internal)
@@ -709,7 +709,7 @@ class SimulationExecutionAdapter:
             return 0.0
 
         inventory, _ = self._get_scenario_user_inventory_and_backlog(
-            scenario_user, self.game.current_round
+            scenario_user, self.game.current_period
         )
         return inventory
 

@@ -125,11 +125,11 @@ const HumanDashboard = () => {
   }, [dashboardData?.scenario_id, dashboardData?.scenario_user_id, connect, subscribe, fetchDashboardData]);
 
   useEffect(() => {
-    if (!dashboardData?.current_round) {
+    if (!dashboardData?.current_period) {
       return;
     }
 
-    const currentRound = dashboardData.current_round;
+    const currentRound = dashboardData.current_period;
     if (lastRoundRef.current === currentRound) {
       return;
     }
@@ -197,11 +197,11 @@ const HumanDashboard = () => {
     if (!dashboardData) {
       return 0;
     }
-    return Math.max(dashboardData.max_rounds || 0, dashboardData.current_round || 0);
+    return Math.max(dashboardData.max_periods || 0, dashboardData.current_period || 0);
   }, [dashboardData]);
 
   const sliderDisplayMax = sliderMax || 1;
-  const sliderValue = Math.min(dashboardData?.current_round || 0, sliderDisplayMax);
+  const sliderValue = Math.min(dashboardData?.current_period || 0, sliderDisplayMax);
   const progressPercent = sliderDisplayMax
     ? Math.round((sliderValue / sliderDisplayMax) * 100)
     : 0;
@@ -450,7 +450,7 @@ const HumanDashboard = () => {
     );
   }
 
-  const { game_name, scenario_user_role, current_round, last_updated } = dashboardData;
+  const { game_name, scenario_user_role, current_period, last_updated } = dashboardData;
   const roleColor = ROLE_COLORS[scenario_user_role] || 'gray';
   const roleVariant = roleColor === 'blue' ? 'info' :
                       roleColor === 'green' ? 'success' :
@@ -476,7 +476,7 @@ const HumanDashboard = () => {
                   {scenario_user_role || 'PLAYER'}
                 </Badge>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Round {current_round || 1}
+                  Round {current_period || 1}
                 </p>
               </div>
             </div>
@@ -502,7 +502,7 @@ const HumanDashboard = () => {
         <Card>
           <CardContent className="p-6">
             <h2 className="text-lg font-semibold mb-4">
-              Submit order for Week {current_round || 1}
+              Submit order for Week {current_period || 1}
             </h2>
             <form onSubmit={handleOrderSubmit}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -533,7 +533,7 @@ const HumanDashboard = () => {
               </div>
               <div className="flex justify-between items-center mt-4 flex-wrap gap-3">
                 <p className="text-sm text-muted-foreground">
-                  Round {current_round || 1} of {sliderDisplayMax}. Keep orders flowing to avoid backlog.
+                  Round {current_period || 1} of {sliderDisplayMax}. Keep orders flowing to avoid backlog.
                 </p>
                 <Button type="submit" disabled={isSubmitting}>
                   {isSubmitting ? 'Submitting...' : 'Submit order'}

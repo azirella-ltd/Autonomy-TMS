@@ -62,7 +62,7 @@ class SimulationExecutionEngine:
     async def execute_round(
         self,
         scenario_id: int,
-        current_round: int,
+        current_period: int,
         agent_decisions: Optional[Dict[int, float]] = None,
     ) -> Dict[str, Any]:
         """
@@ -70,7 +70,7 @@ class SimulationExecutionEngine:
 
         Args:
             scenario_id: simulation ID
-            current_round: Current round number
+            current_period: Current round number
             agent_decisions: Optional dict of {site_id: order_quantity} for agent decisions
 
         Returns:
@@ -93,7 +93,7 @@ class SimulationExecutionEngine:
         # Step 1: Receive shipments (TransferOrders arriving this round)
         receipt_summary = await self._receive_shipments(
             scenario_id=scenario_id,
-            current_round=current_round,
+            current_period=current_period,
             config_id=config.id,
         )
 
@@ -101,7 +101,7 @@ class SimulationExecutionEngine:
         customer_order_summary = await self._generate_customer_orders(
             scenario_id=scenario_id,
             config_id=config.id,
-            current_round=current_round,
+            current_period=current_period,
             product_id=product_id,
         )
 
@@ -110,7 +110,7 @@ class SimulationExecutionEngine:
             sites=sites,
             scenario_id=scenario_id,
             config_id=config.id,
-            current_round=current_round,
+            current_period=current_period,
             product_id=product_id,
         )
 
@@ -119,7 +119,7 @@ class SimulationExecutionEngine:
             sites=sites,
             scenario_id=scenario_id,
             config_id=config.id,
-            current_round=current_round,
+            current_period=current_period,
             product_id=product_id,
             agent_decisions=agent_decisions,
         )
@@ -129,7 +129,7 @@ class SimulationExecutionEngine:
             sites=sites,
             scenario_id=scenario_id,
             config_id=config.id,
-            current_round=current_round,
+            current_period=current_period,
             product_id=product_id,
         )
 
@@ -138,7 +138,7 @@ class SimulationExecutionEngine:
 
         return {
             'scenario_id': scenario_id,
-            'round': current_round,
+            'round': current_period,
             'receipts': receipt_summary,
             'customer_orders': customer_order_summary,
             'fulfillment': fulfillment_summary,
@@ -153,13 +153,13 @@ class SimulationExecutionEngine:
     async def _receive_shipments(
         self,
         scenario_id: int,
-        current_round: int,
+        current_period: int,
         config_id: int,
     ) -> Dict[str, Any]:
         """Process all arriving TransferOrders for current round."""
         return await self.fulfillment.receive_shipments(
             scenario_id=scenario_id,
-            arrival_round=current_round,
+            arrival_round=current_period,
             config_id=config_id,
         )
 
@@ -171,7 +171,7 @@ class SimulationExecutionEngine:
         self,
         scenario_id: int,
         config_id: int,
-        current_round: int,
+        current_period: int,
         product_id: str,
     ) -> Dict[str, Any]:
         """
@@ -199,7 +199,7 @@ class SimulationExecutionEngine:
             demand_qty = await self._get_market_demand(
                 scenario_id=scenario_id,
                 market_site_id=market_site.id,
-                round_number=current_round,
+                round_number=current_period,
             )
 
             if demand_qty <= 0:
@@ -213,7 +213,7 @@ class SimulationExecutionEngine:
 
             # Create customer order
             order = await self.order_mgmt.create_customer_order(
-                order_id=f"ORD-{scenario_id}-{current_round}-{market_site.id}",
+                order_id=f"ORD-{scenario_id}-{current_period}-{market_site.id}",
                 line_number=1,
                 product_id=product_id,
                 site_id=retailer.id,
@@ -247,7 +247,7 @@ class SimulationExecutionEngine:
         sites: List[Site],
         scenario_id: int,
         config_id: int,
-        current_round: int,
+        current_period: int,
         product_id: str,
     ) -> Dict[str, Any]:
         """
@@ -271,7 +271,7 @@ class SimulationExecutionEngine:
                 product_id=product_id,
                 scenario_id=scenario_id,
                 config_id=config_id,
-                current_round=current_round,
+                current_period=current_period,
             )
 
             # Fulfill POs (for Wholesaler, Distributor, Manufacturer)
@@ -280,7 +280,7 @@ class SimulationExecutionEngine:
                 product_id=product_id,
                 scenario_id=scenario_id,
                 config_id=config_id,
-                current_round=current_round,
+                current_period=current_period,
             )
 
             fulfillment_by_site[site.id] = {
@@ -300,7 +300,7 @@ class SimulationExecutionEngine:
         sites: List[Site],
         scenario_id: int,
         config_id: int,
-        current_round: int,
+        current_period: int,
         product_id: str,
         agent_decisions: Optional[Dict[int, float]] = None,
     ) -> Dict[str, Any]:
@@ -348,7 +348,7 @@ class SimulationExecutionEngine:
 
             # Create PO to upstream site
             po = await self.order_mgmt.create_purchase_order(
-                po_number=f"PO-{scenario_id}-{current_round}-{site.id}-{upstream_site.id}",
+                po_number=f"PO-{scenario_id}-{current_period}-{site.id}-{upstream_site.id}",
                 supplier_site_id=upstream_site.id,
                 destination_site_id=site.id,
                 product_id=product_id,
@@ -357,7 +357,7 @@ class SimulationExecutionEngine:
                 config_id=config_id,
                 customer_id=None,
                 scenario_id=scenario_id,
-                order_round=current_round,
+                order_round=current_period,
             )
 
             replenishment_by_site[site.id] = {
@@ -416,7 +416,7 @@ class SimulationExecutionEngine:
         sites: List[Site],
         scenario_id: int,
         config_id: int,
-        current_round: int,
+        current_period: int,
         product_id: str,
     ) -> Dict[str, Any]:
         """
@@ -468,7 +468,7 @@ class SimulationExecutionEngine:
             prev_cumulative = await self._get_previous_cumulative_cost(
                 scenario_id=scenario_id,
                 site_id=site.id,
-                round_number=current_round - 1,
+                round_number=current_period - 1,
             )
             cumulative_cost = prev_cumulative + total_cost
 
@@ -477,21 +477,21 @@ class SimulationExecutionEngine:
                 site_id=site.id,
                 product_id=product_id,
                 scenario_id=scenario_id,
-                current_round=current_round,
+                current_period=current_period,
             )
 
             outgoing_order_qty = await self._get_outgoing_order_quantity(
                 site_id=site.id,
                 product_id=product_id,
                 scenario_id=scenario_id,
-                current_round=current_round,
+                current_period=current_period,
             )
 
             shipment_qty = await self._get_shipment_quantity(
                 site_id=site.id,
                 product_id=product_id,
                 scenario_id=scenario_id,
-                current_round=current_round,
+                current_period=current_period,
             )
 
             # Calculate KPIs
@@ -499,7 +499,7 @@ class SimulationExecutionEngine:
                 site_id=site.id,
                 product_id=product_id,
                 scenario_id=scenario_id,
-                current_round=current_round,
+                current_period=current_period,
             )
 
             fill_rate = (orders_fulfilled / orders_received) if orders_received > 0 else 1.0
@@ -511,7 +511,7 @@ class SimulationExecutionEngine:
             # Create RoundMetric
             metric = RoundMetric(
                 scenario_id=scenario_id,
-                round_number=current_round,
+                round_number=current_period,
                 site_id=site.id,
                 scenario_user_id=scenario_user_id,
                 inventory=inventory,
@@ -718,7 +718,7 @@ class SimulationExecutionEngine:
         site_id: int,
         product_id: str,
         scenario_id: int,
-        current_round: int,
+        current_period: int,
     ) -> float:
         """Get incoming order quantity (customer orders + POs received this round)."""
         # Customer orders
@@ -728,7 +728,7 @@ class SimulationExecutionEngine:
                 OutboundOrderLine.site_id == site_id,
                 OutboundOrderLine.product_id == product_id,
                 OutboundOrderLine.scenario_id == scenario_id,
-                func.extract('week', OutboundOrderLine.order_date) == current_round
+                func.extract('week', OutboundOrderLine.order_date) == current_period
             ))
         )
         customer_qty = customer_result.scalar() or 0.0
@@ -741,7 +741,7 @@ class SimulationExecutionEngine:
             .where(and_(
                 PurchaseOrder.supplier_site_id == site_id,
                 PurchaseOrder.scenario_id == scenario_id,
-                PurchaseOrder.order_round == current_round,
+                PurchaseOrder.order_round == current_period,
                 PurchaseOrderLineItem.product_id == product_id
             ))
         )
@@ -754,7 +754,7 @@ class SimulationExecutionEngine:
         site_id: int,
         product_id: str,
         scenario_id: int,
-        current_round: int,
+        current_period: int,
     ) -> float:
         """Get outgoing order quantity (POs issued this round)."""
         result = await self.db.execute(
@@ -764,7 +764,7 @@ class SimulationExecutionEngine:
             .where(and_(
                 PurchaseOrder.destination_site_id == site_id,
                 PurchaseOrder.scenario_id == scenario_id,
-                PurchaseOrder.order_round == current_round,
+                PurchaseOrder.order_round == current_period,
                 PurchaseOrderLineItem.product_id == product_id
             ))
         )
@@ -776,7 +776,7 @@ class SimulationExecutionEngine:
         site_id: int,
         product_id: str,
         scenario_id: int,
-        current_round: int,
+        current_period: int,
     ) -> float:
         """Get shipment quantity (TOs created this round)."""
         result = await self.db.execute(
@@ -786,7 +786,7 @@ class SimulationExecutionEngine:
             .where(and_(
                 TransferOrder.source_site_id == site_id,
                 TransferOrder.scenario_id == scenario_id,
-                TransferOrder.order_round == current_round,
+                TransferOrder.order_round == current_period,
                 TransferOrderLineItem.product_id == product_id
             ))
         )
@@ -798,7 +798,7 @@ class SimulationExecutionEngine:
         site_id: int,
         product_id: str,
         scenario_id: int,
-        current_round: int,
+        current_period: int,
     ) -> Tuple[int, int]:
         """Get orders received and fulfilled counts."""
         # Orders received (customer orders this round)
@@ -808,7 +808,7 @@ class SimulationExecutionEngine:
                 OutboundOrderLine.site_id == site_id,
                 OutboundOrderLine.product_id == product_id,
                 OutboundOrderLine.scenario_id == scenario_id,
-                func.extract('week', OutboundOrderLine.order_date) == current_round
+                func.extract('week', OutboundOrderLine.order_date) == current_period
             ))
         )
         orders_received = received_result.scalar() or 0
@@ -821,7 +821,7 @@ class SimulationExecutionEngine:
                 OutboundOrderLine.product_id == product_id,
                 OutboundOrderLine.scenario_id == scenario_id,
                 OutboundOrderLine.status == "FULFILLED",
-                func.extract('week', OutboundOrderLine.last_ship_date) == current_round
+                func.extract('week', OutboundOrderLine.last_ship_date) == current_period
             ))
         )
         orders_fulfilled = fulfilled_result.scalar() or 0

@@ -201,7 +201,7 @@ The scenario_user is asking: "{message}"
 {conversation_context}
 
 Current Game State:
-- Round: {context.get('current_round', 0)}
+- Round: {context.get('current_period', 0)}
 - Inventory: {context.get('current_inventory', 0)} units
 - Backlog: {context.get('current_backlog', 0)} units
 - Incoming Shipment: {context.get('incoming_shipment', 0)} units
@@ -236,11 +236,11 @@ Respond in JSON format:
             .filter(
                 and_(
                     ScenarioUserPeriod.scenario_user_id == scenario_user.id,
-                    ScenarioUserPeriod.round == game.current_round
+                    ScenarioUserPeriod.round == game.current_period
                 )
             )
         )
-        current_round = result.scalars().first()
+        current_period = result.scalars().first()
 
         # Get recent rounds for demand history
         history_result = await self.db.execute(
@@ -256,10 +256,10 @@ Respond in JSON format:
         return {
             "scenario_id": game.id,
             "scenario_user_id": scenario_user.id,
-            "current_round": game.current_round,
-            "current_inventory": current_round.current_inventory if current_round else 0,
-            "current_backlog": current_round.current_backlog if current_round else 0,
-            "incoming_shipment": current_round.incoming_shipment if current_round else 0,
+            "current_period": game.current_period,
+            "current_inventory": current_period.current_inventory if current_period else 0,
+            "current_backlog": current_period.current_backlog if current_period else 0,
+            "incoming_shipment": current_period.incoming_shipment if current_period else 0,
             "recent_demand": recent_demand,
             "scenario_user_role": scenario_user.role,
             "timestamp": datetime.utcnow().isoformat(),

@@ -52,8 +52,8 @@ async def get_user_scenarios(
                 "name": scenario.name,
                 "status": scenario.status.value if hasattr(scenario.status, 'value') else str(scenario.status),
                 "role": role_value,
-                "current_round": scenario.current_round,
-                "max_rounds": scenario.max_rounds,
+                "current_period": scenario.current_period,
+                "max_periods": scenario.max_periods,
                 "created_at": scenario.created_at.isoformat() if scenario.created_at else None
             })
 
@@ -151,8 +151,8 @@ async def get_human_dashboard(
         scenario_id=active_scenario.id,
         scenario_user_id=scenario_user.id,
         scenario_name=active_scenario.name,
-        current_round=active_scenario.current_round,
-        max_rounds=active_scenario.max_rounds,
+        current_period=active_scenario.current_period,
+        max_periods=active_scenario.max_periods,
         participant_role=role_value,
         metrics=schemas.ScenarioUserMetrics(**metrics),
         time_series=time_series_points,

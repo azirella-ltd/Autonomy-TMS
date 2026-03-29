@@ -364,10 +364,10 @@ class SimulationDataConverter:
 
                 # Node type from period state or name inference
                 is_supply = 1.0 if any(
-                    getattr(ps, 'master_type', '') == 'market_supply' for ps in states
+                    getattr(ps, 'master_type', '') in ('vendor', 'vendor') for ps in states
                 ) else 0.0
                 is_demand = 1.0 if any(
-                    getattr(ps, 'master_type', '') == 'market_demand' for ps in states
+                    getattr(ps, 'master_type', '') in ('customer', 'customer') for ps in states
                 ) else 0.0
                 is_mfg = 1.0 if any(
                     getattr(ps, 'master_type', '') == 'manufacturer' for ps in states

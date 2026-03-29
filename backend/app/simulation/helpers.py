@@ -368,7 +368,7 @@ def compute_shipping_outcome(
     demand_now = backlog_before + incoming_now
     available_now = inventory_before + arrivals_now
 
-    if node_type == "market_supply":
+    if node_type == "vendor":
         shipped_now = demand_now
         inventory_after = max(0, available_now - shipped_now)
         backlog_after = 0

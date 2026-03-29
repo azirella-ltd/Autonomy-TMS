@@ -146,7 +146,7 @@ def mock_session():
 def baseline_nodes():
     """Create the 6 baseline Beer Game nodes."""
     config_id = 100  # baseline config id
-    market_demand = _make_node(config_id, "Market Demand", "MARKET_DEMAND",
+    market_demand = _make_node(config_id, "Customer", "MARKET_DEMAND",
                                {"demand_mean": 10, "demand_std": 2}, 0, 0, 0, node_id=10)
     retailer = _make_node(config_id, "Retailer", "RETAILER",
                           {"inventory": 100, "backlog": 0}, 1, 100, 100, node_id=11)
@@ -156,7 +156,7 @@ def baseline_nodes():
                              {"inventory": 100, "backlog": 0}, 3, 300, 300, node_id=13)
     factory = _make_node(config_id, "Factory", "MANUFACTURER",
                          {"inventory": 100, "backlog": 0}, 4, 400, 400, node_id=14)
-    market_supply = _make_node(config_id, "Market Supply", "MARKET_SUPPLY",
+    market_supply = _make_node(config_id, "Vendor", "MARKET_SUPPLY",
                                {}, 5, 500, 500, node_id=15)
     return [market_demand, retailer, wholesaler, distributor, factory, market_supply]
 

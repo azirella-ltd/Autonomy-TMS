@@ -108,7 +108,7 @@ class SupplyChainValidator:
             master_types[mt].append(node.id)
 
         # Check for required master types
-        required_types = ['market_demand', 'market_supply']
+        required_types = ['customer', 'vendor']
         for mt in required_types:
             if mt not in master_types:
                 self.issues.append(ValidationIssue(
@@ -141,7 +141,7 @@ class SupplyChainValidator:
 
         # Market supply nodes should have no upstream
         for node in no_upstream:
-            if node.master_type != 'market_supply':
+            if node.master_type != 'vendor':
                 self.issues.append(ValidationIssue(
                     'WARNING', 'dag_topology',
                     f'Node {node.name} has no upstream lanes but is not market_supply',
@@ -150,7 +150,7 @@ class SupplyChainValidator:
 
         # Market demand nodes should have no downstream
         for node in no_downstream:
-            if node.master_type != 'market_demand':
+            if node.master_type != 'customer':
                 self.issues.append(ValidationIssue(
                     'WARNING', 'dag_topology',
                     f'Node {node.name} has no downstream lanes but is not market_demand',
@@ -226,7 +226,7 @@ class SupplyChainValidator:
         for node in self.config.nodes:
             master_type = node.master_type or 'none'
 
-            if master_type == 'market_supply':
+            if master_type == 'vendor':
                 # Market supply can produce any component, should have configs
                 if node.id not in coverage:
                     self.issues.append(ValidationIssue(
@@ -288,7 +288,7 @@ class SupplyChainValidator:
 
         if not self.config.market_demands:
             self.issues.append(ValidationIssue(
-                'ERROR', 'market_demand',
+                'ERROR', 'customer',
                 'No market demands defined'
             ))
             return
@@ -301,7 +301,7 @@ class SupplyChainValidator:
         for market in self.config.markets:
             if market.id not in market_demand_count:
                 self.issues.append(ValidationIssue(
-                    'WARNING', 'market_demand',
+                    'WARNING', 'customer',
                     f'Market {market.name} has no demand definitions',
                     {'market_id': market.id, 'market_name': market.name}
                 ))
@@ -311,7 +311,7 @@ class SupplyChainValidator:
             pattern = md.demand_pattern
             if not pattern:
                 self.issues.append(ValidationIssue(
-                    'ERROR', 'market_demand',
+                    'ERROR', 'customer',
                     f'Market demand has no demand_pattern',
                     {'demand_id': md.id, 'product_id': md.product_id, 'market_id': md.market_id}
                 ))
@@ -322,7 +322,7 @@ class SupplyChainValidator:
             for field in required_fields:
                 if field not in pattern:
                     self.issues.append(ValidationIssue(
-                        'ERROR', 'market_demand',
+                        'ERROR', 'customer',
                         f'Market demand pattern missing required field: {field}',
                         {'demand_id': md.id, 'product_id': md.product_id,
                          'market_id': md.market_id, 'missing_field': field}

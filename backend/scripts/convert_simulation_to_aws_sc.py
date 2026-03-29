@@ -108,7 +108,7 @@ async def convert_config_to_aws_sc(
 
         for node in config.nodes:
             # Skip market nodes (they don't have inventory policies)
-            if node.type in ['market_supply', 'market_demand', 'Market Supply', 'Market Demand']:
+            if node.type in ['vendor', 'customer', 'Vendor', 'Customer']:
                 print(f"   ⊗ Skipping {node.name} (market node)")
                 continue
 
@@ -162,7 +162,7 @@ async def convert_config_to_aws_sc(
             # Determine sourcing type based on from_node master_type
             if from_node.master_type == 'manufacturer':
                 sourcing_type = 'manufacture'
-            elif from_node.master_type == 'market_supply':
+            elif from_node.master_type == 'vendor':
                 sourcing_type = 'purchase'
             else:
                 sourcing_type = 'transfer'

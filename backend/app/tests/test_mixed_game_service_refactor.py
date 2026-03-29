@@ -20,7 +20,7 @@ def mock_context():
         lanes=[],
         shipments_map={},
         orders_map={"retailer": ["wholesaler"]},
-        market_nodes=["market_demand"],
+        market_nodes=["customer"],
         all_nodes=["retailer", "wholesaler"],
         node_sequence=["wholesaler", "retailer"],
         lanes_by_upstream={},
@@ -74,7 +74,7 @@ def test_process_ai_players_places_order(mock_service, mock_context):
     assert order.quantity == 10
     assert order.source == "retailer"
     assert order.downstream == "retailer"
-    assert order.due_round == 2 # current_round (1) + leadtime (1)
+    assert order.due_round == 2 # current_period (1) + leadtime (1)
 
 def test_process_ai_players_skips_if_no_players(mock_service, mock_context):
     game = Scenario(id=1)

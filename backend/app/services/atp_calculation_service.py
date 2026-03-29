@@ -36,7 +36,7 @@ class ATPCalculationService:
         product_id: str,
         config_id: Optional[int] = None,
         scenario_id: Optional[int] = None,
-        current_round: Optional[int] = None,
+        current_period: Optional[int] = None,
         horizon_rounds: int = 4,
     ) -> Dict[str, Any]:
         """
@@ -49,7 +49,7 @@ class ATPCalculationService:
             product_id: Product ID
             config_id: Supply chain configuration ID
             scenario_id: Scenario ID
-            current_round: Current round number
+            current_period: Current round number
             horizon_rounds: Number of future rounds to project (default: 4)
 
         Returns:
@@ -77,7 +77,7 @@ class ATPCalculationService:
             site_id=site_id,
             product_id=product_id,
             scenario_id=scenario_id,
-            arrival_round=current_round,
+            arrival_round=current_period,
             horizon_rounds=2,  # Current + next round
         )
 
@@ -103,7 +103,7 @@ class ATPCalculationService:
             site_id=site_id,
             product_id=product_id,
             scenario_id=scenario_id,
-            current_round=current_round,
+            current_period=current_period,
             horizon_rounds=horizon_rounds,
         )
 
@@ -131,7 +131,7 @@ class ATPCalculationService:
         requested_date: date,
         config_id: Optional[int] = None,
         scenario_id: Optional[int] = None,
-        current_round: Optional[int] = None,
+        current_period: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Calculate promise date for an order quantity.
@@ -146,7 +146,7 @@ class ATPCalculationService:
             requested_date: Customer's requested delivery date
             config_id: Supply chain configuration ID
             scenario_id: Scenario ID
-            current_round: Current round number
+            current_period: Current round number
 
         Returns:
             Dictionary with promise details:
@@ -165,7 +165,7 @@ class ATPCalculationService:
             product_id=product_id,
             config_id=config_id,
             scenario_id=scenario_id,
-            current_round=current_round,
+            current_period=current_period,
             horizon_rounds=6,
         )
 
@@ -178,7 +178,7 @@ class ATPCalculationService:
                 'can_promise': True,
                 'promised_quantity': requested_quantity,
                 'promised_date': requested_date,
-                'promised_round': current_round,
+                'promised_round': current_period,
                 'shortfall_quantity': 0.0,
                 'confidence': 1.0,
             }
@@ -193,7 +193,7 @@ class ATPCalculationService:
                 # Can promise in this future round
                 promised_round = round_projection['round']
                 # Convert round to date (1 week per round)
-                weeks_ahead = promised_round - current_round if current_round else 0
+                weeks_ahead = promised_round - current_period if current_period else 0
                 promised_date = date.today() + timedelta(weeks=weeks_ahead)
 
                 return {
@@ -213,7 +213,7 @@ class ATPCalculationService:
             'can_promise': False,
             'promised_quantity': max_promise,
             'promised_date': requested_date,
-            'promised_round': current_round,
+            'promised_round': current_period,
             'shortfall_quantity': shortfall,
             'confidence': 0.5,
         }
@@ -402,7 +402,7 @@ class ATPCalculationService:
         site_id: int,
         product_id: str,
         scenario_id: Optional[int] = None,
-        current_round: Optional[int] = None,
+        current_period: Optional[int] = None,
         horizon_rounds: int = 4,
     ) -> List[Dict[str, Any]]:
         """
@@ -415,13 +415,13 @@ class ATPCalculationService:
             ...
         ]
         """
-        if current_round is None:
+        if current_period is None:
             return []
 
         receipts = []
 
         for round_offset in range(horizon_rounds):
-            future_round = current_round + round_offset + 1
+            future_round = current_period + round_offset + 1
 
             # Get TOs arriving in this round
             query = select(TransferOrder).where(

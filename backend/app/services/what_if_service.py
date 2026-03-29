@@ -166,9 +166,9 @@ class WhatIfAnalysisService:
             .order_by(desc(ScenarioUserPeriod.round))
             .limit(1)
         )
-        current_round = round_result.scalars().first()
+        current_period = round_result.scalars().first()
 
-        if not current_round:
+        if not current_period:
             raise ValueError(f"No periods found for scenario_user {scenario_user.id}")
 
         # Extract scenario parameters
@@ -186,7 +186,7 @@ class WhatIfAnalysisService:
 
         # Calculate average demand
         recent_demand = [r.demand for r in recent_rounds if hasattr(r, 'demand') and r.demand is not None]
-        projected_demand = sum(recent_demand) / len(recent_demand) if recent_demand else current_round.demand
+        projected_demand = sum(recent_demand) / len(recent_demand) if recent_demand else current_period.demand
 
         # Load cost rates from InvPolicy for the scenario's config
         holding_cost_rate, backlog_cost_rate = await self._get_cost_rates(
@@ -194,8 +194,8 @@ class WhatIfAnalysisService:
         )
 
         # Current state
-        inventory = current_round.current_inventory
-        backlog = current_round.current_backlog
+        inventory = current_period.current_inventory
+        backlog = current_period.current_backlog
 
         # Simple projection (1-round ahead)
         # Assumes order arrives with lead time and demand continues at projected rate

@@ -80,11 +80,11 @@ class PlanningBenchmark:
     """Creates synthetic supply-chain networks and benchmarks planning services."""
 
     LAYER_RATIOS = {
-        "supplier":     (0.15, "market_supply", "MARKET_SUPPLY"),
+        "supplier":     (0.15, "vendor", "VENDOR"),
         "manufacturer": (0.15, "manufacturer",  "MANUFACTURER"),
         "dc":           (0.25, "inventory",     "DISTRIBUTOR"),
         "retailer":     (0.30, "inventory",     "RETAILER"),
-        "customer":     (0.15, "market_demand", "MARKET_DEMAND"),
+        "customer":     (0.15, "customer", "CUSTOMER"),
     }
 
     def __init__(self, db_url: str):

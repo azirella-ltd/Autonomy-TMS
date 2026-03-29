@@ -131,7 +131,7 @@ def create_mixed_game(
     
     - **scenario_user_assignments**: List of scenario_user assignments specifying which roles are human/AI
     - **demand_pattern**: Configuration for customer demand pattern
-    - **max_rounds**: Total number of rounds in the game
+    - **max_periods**: Total number of rounds in the game
     """
     try:
         return scenario_service.create_game(scenario_data, current_user.id)
@@ -764,8 +764,8 @@ async def submit_replenishment_decision(
             )
 
             # Broadcast round completed
-            next_round = round_number + 1 if round_number < scenario.max_rounds else None
-            scenario_finished = round_number >= scenario.max_rounds
+            next_round = round_number + 1 if round_number < scenario.max_periods else None
+            scenario_finished = round_number >= scenario.max_periods
             await broadcast_round_completed(
                 scenario_id=scenario_id,
                 round_number=round_number,
@@ -849,7 +849,7 @@ def get_pipeline(
 
         # Get game for current round
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
-        current_round = scenario.current_round if game else 0
+        current_period = scenario.current_period if game else 0
 
         # Get in-transit shipments with line items
         from app.models.transfer_order import TransferOrderLineItem
@@ -888,7 +888,7 @@ def get_pipeline(
                 "destination": site_name_cache.get(to.destination_site_id, str(to.destination_site_id)),
                 "order_round": to.order_round,
                 "arrival_round": to.arrival_round,
-                "rounds_until_arrival": max(0, to.arrival_round - current_round),
+                "rounds_until_arrival": max(0, to.arrival_round - current_period),
                 "status": to.status,
             }
             for to, total_qty in in_transit
@@ -975,15 +975,15 @@ def get_fulfillment_recommendation(
             raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get current round
-        current_round = (
+        current_period = (
             scenario_service.db.query(ScenarioRound)
             .filter(
                 ScenarioRound.scenario_id == scenario_id,
-                ScenarioRound.round_number == scenario.current_round
+                ScenarioRound.round_number == scenario.current_period
             )
             .first()
         )
-        if not current_round:
+        if not current_period:
             raise HTTPException(status_code=404, detail="Current round not found")
 
         # Calculate ATP
@@ -997,7 +997,7 @@ def get_fulfillment_recommendation(
         recommendation = recommendation_service.get_fulfillment_recommendation(
             game=scenario,
             scenario_user=scenario_user,
-            current_round=current_round,
+            current_period=current_period,
             atp=atp,
             demand=demand,
             backlog=backlog,
@@ -1083,15 +1083,15 @@ def get_replenishment_recommendation(
             raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get current round
-        current_round = (
+        current_period = (
             scenario_service.db.query(ScenarioRound)
             .filter(
                 ScenarioRound.scenario_id == scenario_id,
-                ScenarioRound.round_number == scenario.current_round
+                ScenarioRound.round_number == scenario.current_period
             )
             .first()
         )
-        if not current_round:
+        if not current_period:
             raise HTTPException(status_code=404, detail="Current round not found")
 
         # Get pipeline shipments
@@ -1123,7 +1123,7 @@ def get_replenishment_recommendation(
         recommendation = recommendation_service.get_replenishment_recommendation(
             game=scenario,
             scenario_user=scenario_user,
-            current_round=current_round,
+            current_period=current_period,
             current_inventory=scenario_user.current_stock,
             pipeline=pipeline,
             backlog=scenario_user.backlog or 0,
@@ -1187,17 +1187,17 @@ async def get_current_atp(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round (may be None if game hasn't started)
-        current_round = None
-        if scenario.current_round and scenario.current_round > 0:
-            current_round = scenario_service.db.query(ScenarioRound).filter_by(
-                scenario_id=scenario_id, round_number=scenario.current_round
+        current_period = None
+        if scenario.current_period and scenario.current_period > 0:
+            current_period = scenario_service.db.query(ScenarioRound).filter_by(
+                scenario_id=scenario_id, round_number=scenario.current_period
             ).first()
 
         # Calculate ATP
         atp_result = atp_service.calculate_current_atp(
             scenario_user=scenario_user,
             game=scenario,
-            current_round=current_round,
+            current_period=current_period,
             include_safety_stock=include_safety_stock
         )
 
@@ -1269,11 +1269,11 @@ async def get_atp_projection(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round
-        current_round = scenario_service.db.query(ScenarioRound).filter_by(
-            scenario_id=scenario_id, round_number=scenario.current_round
+        current_period = scenario_service.db.query(ScenarioRound).filter_by(
+            scenario_id=scenario_id, round_number=scenario.current_period
         ).first()
 
-        if not current_round:
+        if not current_period:
             raise HTTPException(
                 status_code=400,
                 detail="Scenario has not started yet - no current round available"
@@ -1283,7 +1283,7 @@ async def get_atp_projection(
         projection = atp_service.project_atp_multi_period(
             scenario_user=scenario_user,
             game=scenario,
-            current_round=current_round,
+            current_period=current_period,
             periods=periods
         )
 
@@ -1357,17 +1357,17 @@ async def get_probabilistic_atp(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round (may be None if game hasn't started)
-        current_round = None
-        if scenario.current_round and scenario.current_round > 0:
-            current_round = scenario_service.db.query(ScenarioRound).filter_by(
-                scenario_id=scenario_id, round_number=scenario.current_round
+        current_period = None
+        if scenario.current_period and scenario.current_period > 0:
+            current_period = scenario_service.db.query(ScenarioRound).filter_by(
+                scenario_id=scenario_id, round_number=scenario.current_period
             ).first()
 
         # Calculate probabilistic ATP
         prob_atp_result = atp_service.calculate_probabilistic_atp(
             scenario_user=scenario_user,
             game=scenario,
-            current_round=current_round,
+            current_period=current_period,
             n_simulations=n_simulations,
             include_safety_stock=include_safety_stock
         )
@@ -1517,7 +1517,7 @@ async def get_atp_history(
             "scenario_user_name": scenario_user.name,
             "node_id": node.id if node else None,
             "node_name": node.name if node else None,
-            "current_round": scenario.current_round,
+            "current_period": scenario.current_period,
             "history": atp_records,
             "ctp_history": ctp_records
         }
@@ -1605,10 +1605,10 @@ async def get_current_ctp(
             )
 
         # Get current round
-        current_round = scenario_service.db.query(ScenarioRound).filter_by(
-            scenario_id=scenario_id, round_number=scenario.current_round
+        current_period = scenario_service.db.query(ScenarioRound).filter_by(
+            scenario_id=scenario_id, round_number=scenario.current_period
         ).first()
-        if not current_round:
+        if not current_period:
             raise HTTPException(
                 status_code=400,
                 detail="Scenario has not started yet - no current round available"
@@ -1618,7 +1618,7 @@ async def get_current_ctp(
         ctp_result = ctp_service.calculate_current_ctp(
             scenario_user=scenario_user,
             game=scenario,
-            current_round=current_round,
+            current_period=current_period,
             item_id=item_id
         )
 
@@ -1712,17 +1712,17 @@ async def get_probabilistic_ctp(
             )
 
         # Get current round (may be None if game tracks state in config JSON)
-        current_round = None
-        if scenario.current_round and scenario.current_round > 0:
-            current_round = scenario_service.db.query(ScenarioRound).filter_by(
-                scenario_id=scenario_id, round_number=scenario.current_round
+        current_period = None
+        if scenario.current_period and scenario.current_period > 0:
+            current_period = scenario_service.db.query(ScenarioRound).filter_by(
+                scenario_id=scenario_id, round_number=scenario.current_period
             ).first()
 
         # Calculate probabilistic CTP
         ctp_result = ctp_service.calculate_probabilistic_ctp(
             scenario_user=scenario_user,
             game=scenario,
-            current_round=current_round,
+            current_period=current_period,
             product_id=product_id,
             n_simulations=n_simulations
         )
@@ -1760,7 +1760,7 @@ async def get_pipeline_visualization(
         {
             "scenario_user_id": 3,
             "scenario_user_name": "Distributor",
-            "current_round": 5,
+            "current_period": 5,
             "pipeline_total": 150,
             "shipments": [
                 {
@@ -1827,11 +1827,11 @@ async def get_pipeline_visualization(
             )
 
         # Check if game has started
-        if scenario.current_round is None or scenario.current_round < 1:
+        if scenario.current_period is None or scenario.current_period < 1:
             return {
                 "scenario_user_id": scenario_user.id,
                 "scenario_user_name": scenario_user.name,
-                "current_round": 0,
+                "current_period": 0,
                 "pipeline_total": 0,
                 "shipments": [],
                 "arrival_distribution": {},
@@ -1921,7 +1921,7 @@ async def get_pipeline_visualization(
                 continue
 
             # Scheduled arrival is slot 0 = next round, slot 1 = round+2, etc.
-            scheduled_arrival = scenario.current_round + slot_idx + 1
+            scheduled_arrival = scenario.current_period + slot_idx + 1
 
             # Monte Carlo simulation for arrival probability
             arrival_rounds = []
@@ -1934,7 +1934,7 @@ async def get_pipeline_visualization(
 
                 # Calculate actual arrival round with variance
                 actual_arrival = scheduled_arrival + int(round(lt_variance))
-                actual_arrival = max(scenario.current_round + 1, actual_arrival)  # Can't arrive in past
+                actual_arrival = max(scenario.current_period + 1, actual_arrival)  # Can't arrive in past
                 arrival_rounds.append(actual_arrival)
 
             arrival_rounds = sorted(arrival_rounds)
@@ -1943,7 +1943,7 @@ async def get_pipeline_visualization(
             arrival_p90 = int(np.percentile(arrival_rounds, 90))
 
             # Probability of arriving in current round + 1 (next round)
-            next_round = scenario.current_round + 1
+            next_round = scenario.current_period + 1
             arrival_prob_next = sum(1 for r in arrival_rounds if r == next_round) / n_simulations
 
             shipment_entry = {
@@ -1979,7 +1979,7 @@ async def get_pipeline_visualization(
         return {
             "scenario_user_id": scenario_user.id,
             "scenario_user_name": scenario_user.name,
-            "current_round": scenario.current_round,
+            "current_period": scenario.current_period,
             "pipeline_total": sum(pipeline_shipments) if pipeline_shipments else 0,
             "shipments": shipments,
             "arrival_distribution": arrival_distribution,
@@ -2083,17 +2083,17 @@ async def get_conformal_atp(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round (may be None if game hasn't started)
-        current_round = None
-        if scenario.current_round and scenario.current_round > 0:
-            current_round = scenario_service.db.query(ScenarioRound).filter_by(
-                scenario_id=scenario_id, round_number=scenario.current_round
+        current_period = None
+        if scenario.current_period and scenario.current_period > 0:
+            current_period = scenario_service.db.query(ScenarioRound).filter_by(
+                scenario_id=scenario_id, round_number=scenario.current_period
             ).first()
 
         # First, calculate the current point estimate using probabilistic ATP
         prob_atp_result = atp_service.calculate_probabilistic_atp(
             scenario_user=scenario_user,
             game=scenario,
-            current_round=current_round,
+            current_period=current_period,
             n_simulations=100,
             include_safety_stock=True
         )
@@ -2547,10 +2547,10 @@ async def get_conformal_lead_time(
         earliest, latest = lt_conformal.predict_arrival_window(base_lead_time)
 
         # Calculate arrival rounds
-        current_round = scenario.current_round or 1
-        earliest_round = current_round + int(round(earliest))
-        expected_round = current_round + int(round(base_lead_time))
-        latest_round = current_round + int(round(latest))
+        current_period = scenario.current_period or 1
+        earliest_round = current_period + int(round(earliest))
+        expected_round = current_period + int(round(base_lead_time))
+        latest_round = current_period + int(round(latest))
 
         return {
             "expected_lead_time": round(base_lead_time, 2),
@@ -2659,15 +2659,15 @@ async def allocate_atp_to_customers(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round
-        current_round = scenario_service.db.query(ScenarioRound).filter_by(
-            scenario_id=scenario_id, round_number=scenario.current_round
+        current_period = scenario_service.db.query(ScenarioRound).filter_by(
+            scenario_id=scenario_id, round_number=scenario.current_period
         ).first()
 
         # Calculate current ATP
         atp_result = atp_service.calculate_current_atp(
             scenario_user=scenario_user,
             game=scenario,
-            current_round=current_round,
+            current_period=current_period,
             include_safety_stock=True
         )
 
@@ -2781,11 +2781,11 @@ async def calculate_promise_date(
             )
 
         # Get current round
-        current_round = scenario_service.db.query(ScenarioRound).filter_by(
-            scenario_id=scenario_id, round_number=scenario.current_round
+        current_period = scenario_service.db.query(ScenarioRound).filter_by(
+            scenario_id=scenario_id, round_number=scenario.current_period
         ).first()
 
-        if not current_round:
+        if not current_period:
             raise HTTPException(
                 status_code=400,
                 detail="Scenario has not started yet - no current round available"
@@ -2795,7 +2795,7 @@ async def calculate_promise_date(
         promise_result = ctp_service.calculate_promise_date(
             scenario_user=scenario_user,
             game=scenario,
-            current_round=current_round,
+            current_period=current_period,
             item_id=item_id,
             quantity=quantity
         )

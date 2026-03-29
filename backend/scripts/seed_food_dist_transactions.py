@@ -169,7 +169,7 @@ def create_forecasts(db, config, sites, products):
     print("\n1. Creating Forecasts (AWS SC: forecast table)...")
 
     # Get customer sites (where demand occurs)
-    customer_sites = [s for s in sites if s.master_type == "MARKET_DEMAND"]
+    customer_sites = [s for s in sites if s.master_type == "CUSTOMER"]
     if not customer_sites:
         # Fallback to sites that look like customers
         customer_sites = [s for s in sites if "Customer" in (s.name or "") or "Store" in (s.name or "")]
@@ -289,7 +289,7 @@ def create_inventory_levels(db, config, sites, products):
         return existing
 
     # Inventory held at DC and customer sites
-    inventory_sites = [s for s in sites if s.master_type in ("INVENTORY", "MARKET_DEMAND")]
+    inventory_sites = [s for s in sites if s.master_type in ("INVENTORY", "CUSTOMER")]
 
     inv_count = 0
     today = datetime.now()
@@ -342,7 +342,7 @@ def create_inventory_policies(db, config, sites, products):
         return existing
 
     # Policies apply to DC and customer sites
-    policy_sites = [s for s in sites if s.master_type in ("INVENTORY", "MARKET_DEMAND")]
+    policy_sites = [s for s in sites if s.master_type in ("INVENTORY", "CUSTOMER")]
 
     policy_count = 0
 
@@ -402,7 +402,7 @@ def create_sourcing_rules(db, config, sites, products, lanes):
 
     # Find DC (destination) and suppliers (sources)
     dc_sites = [s for s in sites if s.master_type == "INVENTORY" and "DC" in (s.name or "").upper()]
-    supplier_sites = [s for s in sites if s.master_type == "MARKET_SUPPLY"]
+    supplier_sites = [s for s in sites if s.master_type == "VENDOR"]
 
     if not dc_sites:
         dc_sites = [s for s in sites if s.master_type == "INVENTORY"][:1]

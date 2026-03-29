@@ -223,7 +223,7 @@ class SiteInfo:
     name: str
     master_type: str         # "manufacturer", "inventory", "vendor", "customer"
     sc_site_type: Optional[str] = None  # NodeType enum value
-    dag_type: Optional[str] = None      # "CDC", "RDC", "market_supply", etc.
+    dag_type: Optional[str] = None      # "CDC", "RDC", "vendor", etc.
     is_external: bool = False
     role: SiteRole = SiteRole.EXTERNAL
     region: Optional[str] = None
@@ -275,7 +275,7 @@ def classify_site_roles(
 
         # Step 1: external
         mt = site.master_type.lower()
-        if site.is_external or mt in ("vendor", "customer", "market_supply", "market_demand"):
+        if site.is_external or mt in ("vendor", "customer", "vendor", "customer"):
             site.role = SiteRole.EXTERNAL
             continue
 

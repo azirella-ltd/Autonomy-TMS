@@ -189,7 +189,7 @@ class ATPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         include_safety_stock: bool = True,
         use_sap_bridge: bool = False,
         sap_bridge: Optional[Any] = None,
@@ -202,7 +202,7 @@ class ATPService:
         Args:
             scenario_user: ScenarioUser instance (inventory node)
             game: Game instance
-            current_round: Current game round
+            current_period: Current game round
             include_safety_stock: Whether to reserve safety stock (default True)
             use_sap_bridge: Whether to use SAP ATP Bridge for real-time data (default False)
             sap_bridge: Optional SAPATPBridge instance for SAP integration
@@ -234,7 +234,7 @@ class ATPService:
         on_hand = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
 
         # Handle case where game hasn't started (no current round)
-        round_number = current_round.round_number if current_round else 0
+        round_number = current_period.round_number if current_period else 0
 
         # Scheduled receipts = in-transit shipments arriving this round
         scheduled_receipts = self._get_scheduled_receipts(
@@ -271,7 +271,7 @@ class ATPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         n_simulations: int = 100,
         include_safety_stock: bool = True,
     ) -> ProbabilisticATPResult:
@@ -288,7 +288,7 @@ class ATPService:
         Args:
             scenario_user: ScenarioUser instance (inventory node)
             game: Game instance
-            current_round: Current game round
+            current_period: Current game round
             n_simulations: Number of Monte Carlo runs (default 100)
             include_safety_stock: Whether to reserve safety stock (default True)
 
@@ -302,7 +302,7 @@ class ATPService:
         on_hand = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
 
         # Handle case where game hasn't started
-        round_number = current_round.round_number if current_round else 0
+        round_number = current_period.round_number if current_period else 0
 
         # Allocated orders (deterministic - already committed)
         allocated_orders = self._get_allocated_orders(scenario_user, round_number, game)
@@ -432,7 +432,7 @@ class ATPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         periods: int = 8,
     ) -> List[ATPPeriod]:
         """
@@ -446,7 +446,7 @@ class ATPService:
         Args:
             scenario_user: ScenarioUser instance
             game: Game instance
-            current_round: Current game round
+            current_period: Current game round
             periods: Number of future periods to project (default 8)
 
         Returns:
@@ -462,14 +462,14 @@ class ATPService:
         safety_stock = self._get_safety_stock(scenario_user)
 
         for period_offset in range(1, periods + 1):
-            future_round = current_round.round_number + period_offset
+            future_round = current_period.round_number + period_offset
 
             # Get scheduled receipts for this period
             receipts = self._get_scheduled_receipts(scenario_user, future_round)
 
             # Forecast demand for this period
             forecasted_demand = self._forecast_demand_for_period(
-                scenario_user, game, current_round, period_offset
+                scenario_user, game, current_period, period_offset
             )
 
             # Get planned allocations (future confirmed orders)
@@ -755,7 +755,7 @@ class ATPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         period_offset: int,
     ) -> int:
         """
@@ -769,7 +769,7 @@ class ATPService:
         Args:
             scenario_user: ScenarioUser instance
             game: Game instance
-            current_round: Current game round
+            current_period: Current game round
             period_offset: How many periods ahead to forecast
 
         Returns:
@@ -1001,7 +1001,7 @@ class ATPService:
         game: Game,
         scenario_user: ScenarioUser,
         result: ProbabilisticATPResult,
-        current_round: int,
+        current_period: int,
     ) -> int:
         """
         Save probabilistic ATP result to database for historical tracking.
@@ -1010,7 +1010,7 @@ class ATPService:
             game: Game instance
             scenario_user: ScenarioUser instance
             result: ProbabilisticATPResult from calculate_probabilistic_atp
-            current_round: Current round number
+            current_period: Current round number
 
         Returns:
             ID of the saved record
@@ -1048,7 +1048,7 @@ class ATPService:
                 # Game integration
                 scenario_id=game.id,
                 source="probabilistic_atp",
-                source_event_id=f"game_{game.id}_round_{current_round}",
+                source_event_id=f"game_{game.id}_round_{current_period}",
             )
 
             self.db.add(atp_record)

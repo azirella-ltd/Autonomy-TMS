@@ -347,8 +347,8 @@ class InforConfigBuilder:
                 site_type = "manufacturer"
                 dag_type = "manufacturer"
             elif master_type == "MARKET":
-                site_type = "market_demand"
-                dag_type = "market_demand"
+                site_type = "customer"
+                dag_type = "customer"
             else:
                 site_type = "inventory"
                 dag_type = "inventory"
@@ -499,7 +499,7 @@ class InforConfigBuilder:
             await self.db.execute(text("""
                 INSERT INTO site (config_id, name, type, dag_type, master_type,
                     is_external, tpartner_type, trading_partner_id, order_aging, geo_id)
-                VALUES (:config_id, :name, 'market_supply', 'market_supply', 'VENDOR',
+                VALUES (:config_id, :name, 'vendor', 'vendor', 'VENDOR',
                     true, 'vendor', :tp_id, 0, '')
                 ON CONFLICT DO NOTHING
             """), {
@@ -549,7 +549,7 @@ class InforConfigBuilder:
             await self.db.execute(text("""
                 INSERT INTO site (config_id, name, type, dag_type, master_type,
                     is_external, tpartner_type, trading_partner_id, order_aging, geo_id)
-                VALUES (:config_id, :name, 'market_demand', 'market_demand', 'CUSTOMER',
+                VALUES (:config_id, :name, 'customer', 'customer', 'CUSTOMER',
                     true, 'customer', :tp_id, 0, '')
                 ON CONFLICT DO NOTHING
             """), {

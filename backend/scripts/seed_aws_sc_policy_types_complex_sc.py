@@ -74,7 +74,7 @@ async def seed_policy_types():
         print()
 
         policies = []
-        relevant_nodes = [n for n in nodes if n.master_type in ['inventory', 'manufacturer', 'market_demand']]
+        relevant_nodes = [n for n in nodes if n.master_type in ['inventory', 'manufacturer', 'customer']]
 
         # Policy Type 1: abs_level (Absolute Level)
         # Fixed safety stock quantity - simplest policy

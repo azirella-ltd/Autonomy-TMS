@@ -34,5 +34,5 @@ __all__ = [
     'lane',  # DEPRECATED: Use transportation_lane
     'product_site_config',  # AWS SC DM: Product-Site config
     'market',
-    'market_demand',
+    'customer',
 ]

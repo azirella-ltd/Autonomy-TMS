@@ -299,7 +299,7 @@ async def example_4_scenario_configuration():
             tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
-            max_rounds=10,
+            max_periods=10,
             start_date=date.today(),
             config={
                 'use_capacity_constraints': True,  # Enable capacity constraints

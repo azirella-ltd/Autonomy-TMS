@@ -70,7 +70,7 @@ const TrainingReports = () => {
 
   const getGameStats = (game) => {
     // Extract basic stats from game data
-    const rounds = game.current_round || game.max_rounds || 0;
+    const rounds = game.current_period || game.max_periods || 0;
     return { rounds };
   };
 

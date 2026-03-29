@@ -212,8 +212,8 @@ const Dashboard = () => {
   const metrics = dashboardData?.metrics;
   const timeSeriesRaw = dashboardData?.time_series;
   const timeSeries = useMemo(() => timeSeriesRaw ?? [], [timeSeriesRaw]);
-  const totalRounds = normalizeNumber(dashboardData?.max_rounds) ?? 0;
-  const currentRoundRaw = normalizeNumber(dashboardData?.current_round) ?? 0;
+  const totalRounds = normalizeNumber(dashboardData?.max_periods) ?? 0;
+  const currentRoundRaw = normalizeNumber(dashboardData?.current_period) ?? 0;
   const sliderMax = totalRounds > 0 ? totalRounds : 1;
   const sliderValue = Math.min(Math.max(currentRoundRaw, 0), sliderMax);
   const progressPercent = sliderMax ? Math.round((sliderValue / sliderMax) * 100) : 0;
@@ -365,7 +365,7 @@ const Dashboard = () => {
                       >
                         {availableGames.map((game) => (
                           <option key={game.id} value={game.id}>
-                            {game.name} - {game.role} (Round {game.current_round}/{game.max_rounds})
+                            {game.name} - {game.role} (Round {game.current_period}/{game.max_periods})
                           </option>
                         ))}
                       </Select>

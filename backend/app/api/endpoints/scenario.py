@@ -38,8 +38,8 @@ class ScenarioResponse(BaseModel):
     id: int
     name: str
     status: str
-    current_round: int
-    max_rounds: int
+    current_period: int
+    max_periods: int
     demand_pattern: Dict[str, Any]
     created_at: datetime
     updated_at: datetime
@@ -82,8 +82,8 @@ class ScenarioResponse(BaseModel):
                 'id': int(obj.id),
                 'name': str(obj.name),
                 'status': obj.status.value if hasattr(obj.status, 'value') else str(obj.status),
-                'current_round': int(obj.current_round) if obj.current_round is not None else 0,
-                'max_rounds': int(obj.max_rounds) if obj.max_rounds is not None else 20,
+                'current_period': int(obj.current_period) if obj.current_period is not None else 0,
+                'max_periods': int(obj.max_periods) if obj.max_periods is not None else 20,
                 'demand_pattern': clean_demand_pattern,
                 'created_at': obj.created_at,
                 'updated_at': obj.updated_at
@@ -101,8 +101,8 @@ class ScenarioResponse(BaseModel):
                 id=getattr(obj, 'id', 0),
                 name=getattr(obj, 'name', 'Unknown'),
                 status=str(getattr(obj, 'status', 'UNKNOWN')),
-                current_round=int(getattr(obj, 'current_round', 0)),
-                max_rounds=int(getattr(obj, 'max_rounds', 20)),
+                current_period=int(getattr(obj, 'current_period', 0)),
+                max_periods=int(getattr(obj, 'max_periods', 20)),
                 demand_pattern={
                     'type': DEFAULT_DEMAND_PATTERN['type'],
                     'params': DEFAULT_DEMAND_PATTERN['params'].copy(),
@@ -158,8 +158,8 @@ async def list_scenarios(
                     'id': scenario.id,
                     'name': scenario.name,
                     'status': scenario.status.value if hasattr(scenario.status, 'value') else str(scenario.status),
-                    'current_round': scenario.current_round,
-                    'max_rounds': scenario.max_rounds,
+                    'current_period': scenario.current_period,
+                    'max_periods': scenario.max_periods,
                     'created_at': scenario.created_at.isoformat() if scenario.created_at else None,
                     'updated_at': scenario.updated_at.isoformat() if scenario.updated_at else None
                 }
@@ -429,7 +429,7 @@ def get_round(
     return ScenarioPeriodResponse.model_validate(scenario_round)
 
 @router.get("/{scenario_id}/current-round", response_model=ScenarioPeriodResponse)
-def get_current_round(
+def get_current_period(
     scenario_id: int,
     db: Session = Depends(get_sync_db),
     current_user: dict = Depends(get_current_user)
@@ -446,7 +446,7 @@ def get_current_round(
 
     scenario_round = db.query(ScenarioRound).filter(
         ScenarioRound.scenario_id == scenario_id,
-        ScenarioRound.round_number == scenario.current_round
+        ScenarioRound.round_number == scenario.current_period
     ).first()
 
     if not scenario_round:
@@ -474,12 +474,12 @@ async def get_round_submission_status(
         raise HTTPException(status_code=404, detail="Scenario not found")
 
     # Get current round
-    current_round = db.query(ScenarioRound).filter(
+    current_period = db.query(ScenarioRound).filter(
         ScenarioRound.scenario_id == scenario_id,
-        ScenarioRound.round_number == scenario.current_round
+        ScenarioRound.round_number == scenario.current_period
     ).first()
 
-    if not current_round:
+    if not current_period:
         raise HTTPException(status_code=404, detail="Current round not found")
 
     # Get all scenario_users in the scenario
@@ -488,7 +488,7 @@ async def get_round_submission_status(
 
     # Get scenario_users who have submitted for the current round
     submitted_participants = db.query(ScenarioUserPeriod).filter(
-        ScenarioUserPeriod.round_id == current_round.id
+        ScenarioUserPeriod.round_id == current_period.id
     ).all()
     submitted_count = len(submitted_participants)
 
@@ -498,18 +498,18 @@ async def get_round_submission_status(
 
     return {
         "scenario_id": scenario_id,
-        "round_number": current_round.round_number,
-        "is_completed": current_round.is_completed,
+        "round_number": current_period.round_number,
+        "is_completed": current_period.is_completed,
         "total_participants": total_participants,
         "submitted_count": submitted_count,
         "pending_count": total_participants - submitted_count,
         "pending_participants": [{"id": p.id, "name": p.name, "role": p.role} for p in pending_participants],
-        "all_submitted": current_round.is_completed
+        "all_submitted": current_period.is_completed
     }
 
 # ScenarioUser Round endpoints
 @router.get("/{scenario_id}/scenario_users/{scenario_user_id}/current-round", response_model=ScenarioUserPeriodResponse)
-def get_participant_current_round(
+def get_participant_current_period(
     scenario_id: int,
     scenario_user_id: int,
     db: Session = Depends(get_sync_db),
@@ -526,12 +526,12 @@ def get_participant_current_round(
             detail="Scenario not found"
         )
 
-    current_round = db.query(ScenarioRound).filter(
+    current_period = db.query(ScenarioRound).filter(
         ScenarioRound.scenario_id == scenario_id,
-        ScenarioRound.round_number == scenario.current_round
+        ScenarioRound.round_number == scenario.current_period
     ).first()
 
-    if not current_round:
+    if not current_period:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Current round not found"
@@ -540,14 +540,14 @@ def get_participant_current_round(
     # Get the scenario_user's round
     participant_round = db.query(ScenarioUserPeriod).filter(
         ScenarioUserPeriod.scenario_user_id == scenario_user_id,
-        ScenarioUserPeriod.round_id == current_round.id
+        ScenarioUserPeriod.round_id == current_period.id
     ).first()
 
     if not participant_round:
         # If the scenario_user hasn't taken their turn yet, create a new scenario_user round
         participant_round = ScenarioUserPeriod(
             scenario_user_id=scenario_user_id,
-            round_id=current_round.id,
+            round_id=current_period.id,
             order_placed=0,  # Default to 0, will be updated when order is placed
             order_received=0,
             inventory_before=0,

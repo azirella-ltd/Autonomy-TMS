@@ -304,12 +304,12 @@ const CreateMixedGame = () => {
   );
 
   const siteTypeLabels = {
-    market_supply: 'Market Supply',
+    market_supply: 'Vendor',
     manufacturer: 'Manufacturer',
     distributor: 'Distributor',
     wholesaler: 'Wholesaler',
     retailer: 'Retailer',
-    market_demand: 'Market Demand',
+    market_demand: 'Customer',
   };
 
   const computeRangeMidpoint = useCallback((range, fallback = 0) => {
@@ -475,7 +475,7 @@ const CreateMixedGame = () => {
             ? leadMax
             : 0;
 
-      const isMarketSite = ['market_supply', 'market_demand'].includes(nodeType);
+      const isMarketSite = ['vendor', 'customer'].includes(nodeType);
       return {
         order_leadtime: isMarketSite ? 0 : 1,
         supply_leadtime: isMarketSite ? 0 : supplyLeadTime,
@@ -521,9 +521,9 @@ const CreateMixedGame = () => {
     ).toLowerCase();
 
     const currentRoundValue = toNumberOr(
-      statePayload?.current_round ??
-      game?.current_round ??
-      config?.current_round,
+      statePayload?.current_period ??
+      game?.current_period ??
+      config?.current_period,
       0
     );
 
@@ -643,7 +643,7 @@ const CreateMixedGame = () => {
     return {
       gameName: game?.name || statePayload?.name || config?.name || '',
       description: game?.description || config?.description || '',
-      maxRounds: toNumberOr(game?.max_rounds ?? statePayload?.max_rounds ?? config?.max_rounds, 20),
+      maxRounds: toNumberOr(game?.max_periods ?? statePayload?.max_periods ?? config?.max_periods, 20),
       isPublic:
         game?.is_public !== undefined
           ? Boolean(game.is_public)
@@ -1052,7 +1052,7 @@ const CreateMixedGame = () => {
 
   const siteTypeOptions = useMemo(() => {
     const types = Object.keys(sitesByType);
-    const order = ['market_supply', 'manufacturer', 'distributor', 'wholesaler', 'retailer', 'market_demand'];
+    const order = ['vendor', 'manufacturer', 'distributor', 'wholesaler', 'retailer', 'customer'];
     return order.filter((type) => types.includes(type));
   }, [sitesByType]);
 
@@ -1098,7 +1098,7 @@ const CreateMixedGame = () => {
       return;
     }
     if (!selectedSiteType || !availableTypes.includes(selectedSiteType)) {
-      const ordered = ['market_supply', 'manufacturer', 'distributor', 'wholesaler', 'retailer', 'market_demand'];
+      const ordered = ['vendor', 'manufacturer', 'distributor', 'wholesaler', 'retailer', 'customer'];
       const nextType = ordered.find((type) => availableTypes.includes(type)) || availableTypes[0];
       setSelectedNodeType(nextType);
     }
@@ -1420,7 +1420,7 @@ const CreateMixedGame = () => {
 
       const gameData = {
         name: gameName,
-        max_rounds: maxRounds,
+        max_periods: maxRounds,
         description,
         is_public: isPublic,
         progression_mode: progressionMode,
@@ -2001,7 +2001,7 @@ const CreateMixedGame = () => {
                         (() => {
                           const nodes = sitesByType[selectedSiteType] || [];
 
-                          if (selectedSiteType === 'market_demand') {
+                          if (selectedSiteType === 'customer') {
                             if (marketDemandRows.length === 0) {
                               return (
                                 <p className="text-sm text-muted-foreground">
@@ -2034,7 +2034,7 @@ const CreateMixedGame = () => {
                             );
                           }
 
-                          if (selectedSiteType === 'market_supply') {
+                          if (selectedSiteType === 'vendor') {
                             if (marketSupplyRows.length === 0) {
                               return (
                                 <p className="text-sm text-muted-foreground">

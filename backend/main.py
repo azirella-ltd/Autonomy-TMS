@@ -223,7 +223,7 @@ def _derive_shipments_from_entry(
     interior_types = [
         token
         for token in normalized_sequence
-        if token not in {"market_supply", "market_demand"}
+        if token not in {"vendor", "customer"}
     ]
 
     ordered_types: List[str] = []
@@ -234,10 +234,10 @@ def _derive_shipments_from_entry(
             ordered_types.append(token)
             seen.add(token)
 
-    _append("market_supply")
+    _append("vendor")
     for token in reversed(interior_types):
         _append(token)
-    _append("market_demand")
+    _append("customer")
 
     if len(ordered_types) < 2:
         raise ValueError("Unable to traverse supply chain DAG to derive shipments")
@@ -2549,7 +2549,7 @@ def _actor_nodes_from_order(
 
     # External TradingPartner node types — not managed by internal planners.
     # "vendor"/"customer" are the current names; legacy aliases kept for backward compat.
-    skip_types = {"vendor", "customer", "market_demand", "market_supply"}
+    skip_types = {"vendor", "customer"}
     actors: List[str] = []
     for node in ordered_nodes:
         node_type = str(node_types.get(node, "") or "").lower()
@@ -2581,20 +2581,14 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
     def _canonical_type(value: Any) -> str:
         slug = MixedScenarioService._normalise_node_type(value)
         if slug == "market":
-            return "market_demand"
+            return "customer"
         return slug
 
     def _master_type(value: Any) -> str:
         canonical = MixedScenarioService._canonical_role(value)
-        # Current names
-        if canonical in {"customer"}:
+        if canonical in {"customer", "market_demand", "market"}:
             return "customer"
-        if canonical in {"vendor"}:
-            return "vendor"
-        # Legacy backward-compat aliases
-        if canonical in {"market_demand", "market"}:
-            return "customer"
-        if canonical == "market_supply":
+        if canonical in {"vendor", "market_supply"}:
             return "vendor"
         if canonical == "manufacturer":
             return "manufacturer"
@@ -2665,14 +2659,14 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
     for slug in sorted(observed_types):
         if slug not in label_map:
             label_map[slug] = default_label_map.get(slug, slug.replace("_", " ").title())
-        if slug not in order_hints and slug not in {"customer", "vendor", "market_demand", "market_supply"}:
+        if slug not in order_hints and slug not in {"customer", "vendor"}:
             order_hints[slug] = fallback_start
             fallback_start += 1
 
     interior_types = [
         node_type
         for node_type in observed_types
-        if node_type not in {"customer", "vendor", "market_demand", "market_supply"} and node_type
+        if node_type not in {"customer", "vendor"} and node_type
     ]
     interior_types.sort(key=lambda slug: (order_hints.get(slug, default_order_map.get(slug, 0)), slug))
 
@@ -2685,7 +2679,7 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
     definitions.append(
         {
             "type": "customer",
-            "label": label_map.get("customer", label_map.get("market_demand", "Customer")),
+            "label": label_map.get("customer", "Customer"),
             "sequence": 0,
             "is_required": True,
             "is_external": True,
@@ -2708,7 +2702,7 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
     definitions.append(
         {
             "type": "vendor",
-            "label": label_map.get("vendor", label_map.get("market_supply", "Vendor")),
+            "label": label_map.get("vendor", "Vendor"),
             "sequence": sequence_counter,
             "is_required": True,
             "is_external": True,
@@ -3044,7 +3038,7 @@ def _ensure_simulation_state(config: Dict[str, Any]) -> Dict[str, Any]:
         if steady_quantity <= 0:
             return False
         node_type = node_types_map.get(node_label)
-        if node_type in {"market_supply", "market_demand"}:
+        if node_type in {"vendor", "customer"}:
             return False
         policy = MixedScenarioService._policy_for_node(node_policies, node_label)
         if isinstance(policy, dict):
@@ -3099,7 +3093,7 @@ def _ensure_simulation_state(config: Dict[str, Any]) -> Dict[str, Any]:
             order_leadtime = max(0, int(policy.get("order_leadtime", 0)))
 
             node_type = (node_types_map or {}).get(node)
-            enforce_defaults = node_type not in {"market_supply", "market_demand"}
+            enforce_defaults = node_type not in {"vendor", "customer"}
             if enforce_defaults and order_leadtime <= 0:
                 order_leadtime = 1
                 policy["order_leadtime"] = order_leadtime
@@ -3171,7 +3165,7 @@ def _ensure_simulation_state(config: Dict[str, Any]) -> Dict[str, Any]:
             state["inbound_supply"] = inbound_supply
 
             inbound_demand: List[Dict[str, Any]] = []
-            if node_type not in {"market_demand", "market_supply"} and order_leadtime > 0 and default_downstream:
+            if node_type not in {"customer", "vendor"} and order_leadtime > 0 and default_downstream:
                 for offset in range(order_leadtime):
                     due_round = state["current_step"] + offset + 1
                     inbound_demand.append(
@@ -3185,7 +3179,7 @@ def _ensure_simulation_state(config: Dict[str, Any]) -> Dict[str, Any]:
                     )
             state["inbound_demand"] = inbound_demand
 
-            if node_type == "market_supply":
+            if node_type == "vendor":
                 state["inventory"] = 0
                 state["on_order"] = 0
 
@@ -3467,18 +3461,18 @@ def _finalize_round_if_ready(
         display_name_map.setdefault(canonical, str(candidate))
 
     # Ensure canonical market node names are present for downstream reporting
-    display_name_map.setdefault("market_supply", "Market Supply")
-    display_name_map.setdefault("market_demand", "Market Demand")
-    display_name_map.setdefault("market", "Market Demand")
+    display_name_map.setdefault("vendor", "Vendor")
+    display_name_map.setdefault("customer", "Customer")
+    display_name_map.setdefault("market", "Customer")
 
     resolved_node_types: Dict[str, str] = {}
     for node in all_nodes:
         node_type = str(node_types_map.get(node, "") or "").lower()
         if not node_type:
-            if node == "market_supply":
-                node_type = "market_supply"
-            elif node in {"market", "market_demand"}:
-                node_type = "market_demand"
+            if node == "vendor":
+                node_type = "vendor"
+            elif node in {"market", "customer"}:
+                node_type = "customer"
             elif "supplier" in node:
                 node_type = "supplier"
             else:
@@ -3509,7 +3503,7 @@ def _finalize_round_if_ready(
     market_demand_nodes_types = {
         node
         for node, node_type in node_types_map.items()
-        if str(node_type or "").lower() == "market_demand" and node in engine
+        if str(node_type or "").lower() == "customer" and node in engine
     }
     market_demand_nodes_config = {
         n for n in lane_views.get("market_nodes", []) if n in engine
@@ -3728,13 +3722,13 @@ def _finalize_round_if_ready(
         info_payload: Optional[Dict[str, Any]] = None
         reply_payload: Optional[Dict[str, Any]] = None
 
-        if node_type == "market_supply":
+        if node_type == "vendor":
             state_node["holding_cost"] = 0.0
             state_node["backorder_cost"] = 0.0
             state_node["total_cost"] = 0.0
             continue
 
-        if node_type == "market_demand":
+        if node_type == "customer":
             state_node["holding_cost"] = 0.0
             state_node["backorder_cost"] = state_node.get("backorder_cost", 0.0) + backlog_after * back_cost
             state_node["total_cost"] = state_node["backorder_cost"]
@@ -4123,7 +4117,7 @@ def _finalize_round_if_ready(
         node_type = node_types_map.get(node, "")
         state_node = engine[node]
         arriving = arrivals_this_step.get(node, 0)
-        if node_type in {"market_supply", "market_demand"}:
+        if node_type in {"vendor", "customer"}:
             continue
         available_after_ship = max(0, inventory_after_shipping.get(node, 0))
         backlog_after = max(0, backlog_after_shipping.get(node, 0))
@@ -4200,12 +4194,12 @@ def _finalize_round_if_ready(
     if not market_entry:
         market_entry = {
             "node": "market",
-            "scenario_user": {"name": "Market Demand", "is_ai": False},
+            "scenario_user": {"name": "Customer", "is_ai": False},
             "info_sent": {
                 "current_round": round_number,
                 "external_demand": market_demand_value,
             },
-            "reply": {"type": "market_demand", "demand": market_demand_value},
+            "reply": {"type": "customer", "demand": market_demand_value},
             "ending_state": {"demand_transmitted": market_demand_value},
         }
         round_debug_entries["market"] = market_entry
@@ -4509,7 +4503,7 @@ def _finalize_round_if_ready(
         # For market demand nodes, rely on their own recorded orders (not an external
         # demand echo) so we don’t double-count customer demand in UI summaries.
         node_type = str(node_stats.get(node, {}).get("type") or resolved_node_types.get(node) or "").lower()
-        if node_type == "market_demand":
+        if node_type == "customer":
             base_entry["quantity"] = int(node_stats.get(node, {}).get("order", base_entry.get("quantity", 0)) or 0)
         base_entry.setdefault("type", node_stats.get(node, {}).get("type", resolved_node_types.get(node)))
         base_entry.setdefault(
@@ -4547,7 +4541,7 @@ def _finalize_round_if_ready(
         summary["shipments"] += float(stats.get("shipped", 0))
         summary["arrivals"] += float(stats.get("arrivals", 0))
         summary["demand"] += float(stats.get("demand", 0))
-        if node_type != "market_demand":
+        if node_type != "customer":
             summary["orders_satisfied"] += float(stats.get("shipped", 0))
         summary["inventory_after"] += float(stats.get("inventory_after", 0))
         summary["backlog_after"] += float(stats.get("backlog_after", 0))
@@ -5145,7 +5139,7 @@ def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
         if fallback:
             return str(fallback).lower()
         if node_key == "market":
-            return "market_demand"
+            return "customer"
         return str(node_key).lower()
 
     type_to_nodes: Dict[str, List[str]] = defaultdict(list)

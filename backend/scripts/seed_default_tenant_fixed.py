@@ -159,7 +159,7 @@ def ensure_default_scenario(session: Session, tenant: Tenant) -> Scenario:
         status=ScenarioStatus.CREATED,
         tenant_id=tenant.id,
         created_by=tenant.admin_id,
-        max_rounds=52,  # Default number of periods
+        max_periods=52,  # Default number of periods
         supply_chain_config_id=sc_config.id,
     )
     session.add(scenario)

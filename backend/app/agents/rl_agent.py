@@ -81,7 +81,7 @@ class RLConfig:
     log_dir: str = "logs/rl"
 
     # Environment parameters
-    max_rounds: int = 52
+    max_periods: int = 52
     max_order: int = 50
     holding_cost: float = 0.5
     backlog_cost: float = 1.0
@@ -109,7 +109,7 @@ class SimulationRLEnv(gym.Env):
 
     def __init__(
         self,
-        max_rounds: int = 52,
+        max_periods: int = 52,
         max_order: int = 50,
         holding_cost: float = 0.5,
         backlog_cost: float = 1.0,
@@ -117,7 +117,7 @@ class SimulationRLEnv(gym.Env):
         lead_time: int = 2,
         normalize_obs: bool = True
     ):
-        self.max_rounds = max_rounds
+        self.max_periods = max_periods
         self.max_order = max_order
         self.holding_cost = holding_cost
         self.backlog_cost = backlog_cost
@@ -126,7 +126,7 @@ class SimulationRLEnv(gym.Env):
         self.normalize_obs = normalize_obs
 
         # State variables
-        self.current_round = 0
+        self.current_period = 0
         self.inventory = initial_inventory
         self.backlog = 0
         self.pipeline_shipments = [0] * lead_time
@@ -160,7 +160,7 @@ class SimulationRLEnv(gym.Env):
         if seed is not None:
             np.random.seed(seed)
 
-        self.current_round = 0
+        self.current_period = 0
         self.inventory = self.initial_inventory
         self.backlog = 0
         self.pipeline_shipments = [0] * self.lead_time
@@ -228,12 +228,12 @@ class SimulationRLEnv(gym.Env):
         self.incoming_order = max(0, self.incoming_order)
 
         # Advance round
-        self.current_round += 1
-        terminated = self.current_round >= self.max_rounds
+        self.current_period += 1
+        terminated = self.current_period >= self.max_periods
         truncated = False  # We don't have truncation conditions
 
         info = {
-            "round": self.current_round,
+            "round": self.current_period,
             "inventory": self.inventory,
             "backlog": self.backlog,
             "cost": round_cost,
@@ -253,8 +253,8 @@ class SimulationRLEnv(gym.Env):
             self.pipeline_shipments[1] if len(self.pipeline_shipments) > 1 else 0,
             self.incoming_order,
             self.last_order,
-            self.current_round / self.max_rounds,  # Normalized round
-            self.total_cost / (self.max_rounds * 100)  # Normalized cost
+            self.current_period / self.max_periods,  # Normalized round
+            self.total_cost / (self.max_periods * 100)  # Normalized cost
         ], dtype=np.float32)
 
         if self.normalize_obs:
@@ -367,7 +367,7 @@ class RLAgent(BasePolicy):
 
         # Get round number
         round_number = context.get("round_number", 0)
-        max_rounds = context.get("max_rounds", 52)
+        max_periods = context.get("max_periods", 52)
 
         # Get total cost
         total_cost = node.total_cost if hasattr(node, 'total_cost') else 0
@@ -379,8 +379,8 @@ class RLAgent(BasePolicy):
             incoming_shipment_1,
             incoming_order,
             last_order,
-            round_number / max_rounds,
-            total_cost / (max_rounds * 100)
+            round_number / max_periods,
+            total_cost / (max_periods * 100)
         ], dtype=np.float32)
 
         if self.config.normalize_obs:
@@ -416,7 +416,7 @@ class RLAgent(BasePolicy):
         # Create vectorized environments
         def make_env():
             env = SimulationRLEnv(
-                max_rounds=52,
+                max_periods=52,
                 max_order=50,
                 normalize_obs=self.config.normalize_obs
             )

@@ -223,7 +223,7 @@ def sample_supplier_reliability(
     all_nodes = session.query(Node).filter(Node.config_id == config.id).all()
     suppliers = [
         node for node in all_nodes
-        if str(node.type).lower() in {"supplier", "component_supplier", "component supplier", "market_supply", "market supply"}
+        if str(node.type).lower() in {"supplier", "component_supplier", "component supplier", "vendor", "market supply"}
     ]
 
     reliability_samples = {}

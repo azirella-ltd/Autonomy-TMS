@@ -170,7 +170,7 @@ async def get_global_optimization(
 
         # Get current round
         query = text("""
-            SELECT current_round
+            SELECT current_period
             FROM scenarios
             WHERE id = :scenario_id
         """)
@@ -183,7 +183,7 @@ async def get_global_optimization(
                 detail="Scenario not found"
             )
 
-        current_round = row.current_round
+        current_period = row.current_period
 
         # Get all scenario_users' state
         query = text("""
@@ -204,7 +204,7 @@ async def get_global_optimization(
         """)
         result = await db.execute(query, {
             "scenario_id": scenario_id,
-            "round_number": current_round
+            "round_number": current_period
         })
         rows = result.fetchall()
 
@@ -229,7 +229,7 @@ async def get_global_optimization(
             })
 
         scenario_state = {
-            "current_round": current_round,
+            "current_period": current_period,
             "scenario_users": scenario_users
         }
 

@@ -10,7 +10,7 @@ def _active_statuses() -> List[ScenarioStatus]:
     """Return the list of scenario statuses considered active."""
 
     candidates = []
-    for status_name in ("IN_PROGRESS", "STARTED", "ROUND_IN_PROGRESS", "PAUSED"):
+    for status_name in ("IN_PROGRESS", "STARTED", "PERIOD_IN_PROGRESS", "PAUSED"):
         if hasattr(ScenarioStatus, status_name):
             candidates.append(getattr(ScenarioStatus, status_name))
     return candidates or [ScenarioStatus.IN_PROGRESS]

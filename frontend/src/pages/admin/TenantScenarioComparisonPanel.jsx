@@ -269,7 +269,7 @@ const TenantScenarioComparisonPanel = ({
                   <TableCell className="capitalize">
                     {String(game.status || '').replace(/_/g, ' ')}
                   </TableCell>
-                  <TableCell>{game.current_round ?? game.max_rounds ?? '—'}</TableCell>
+                  <TableCell>{game.current_period ?? game.max_periods ?? '—'}</TableCell>
                   <TableCell>{formatDate(game.completed_at)}</TableCell>
                 </TableRow>
               ))}

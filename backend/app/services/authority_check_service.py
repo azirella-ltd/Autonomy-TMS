@@ -147,7 +147,7 @@ class AuthorityCheckService:
             Created DecisionProposal instance
         """
         # Build proposal title and description
-        title = f"{action_type.capitalize()} Override: {scenario_user.role} Round {scenario_user.scenario.current_round}"
+        title = f"{action_type.capitalize()} Override: {scenario_user.role} Round {scenario_user.scenario.current_period}"
         description = (
             f"ScenarioUser {scenario_user.id} ({scenario_user.role}) wants to override agent recommendation.\n"
             f"Agent recommended: {agent_qty} units\n"
@@ -167,7 +167,7 @@ class AuthorityCheckService:
             proposal_metadata={
                 "scenario_user_id": scenario_user.id,
                 "participant_role": scenario_user.role,
-                "round_number": scenario_user.scenario.current_round,
+                "round_number": scenario_user.scenario.current_period,
                 "agent_qty": agent_qty,
                 "human_qty": human_qty,
                 "override_pct": override_pct,

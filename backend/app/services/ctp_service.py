@@ -161,7 +161,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: Optional[ScenarioRound],
+        current_period: Optional[ScenarioRound],
         product_id: str,
     ) -> CTPResult:
         """
@@ -179,7 +179,7 @@ class CTPService:
         Args:
             scenario_user: ScenarioUser instance (manufacturer node)
             game: Game instance
-            current_round: Current game round (can be None)
+            current_period: Current game round (can be None)
             product_id: AWS SC Product ID (string)
 
         Returns:
@@ -203,7 +203,7 @@ class CTPService:
         capacity = self._get_production_capacity(node)
 
         # Step 2: Get current production commitments
-        commitments = self._get_production_commitments(scenario_user, current_round)
+        commitments = self._get_production_commitments(scenario_user, current_period)
 
         # Available capacity after commitments
         available_capacity = max(0, capacity - commitments)
@@ -214,7 +214,7 @@ class CTPService:
 
         # Step 4: BOM explosion - check component ATP
         component_constraints = self._check_component_atp(
-            scenario_user, game, current_round, product_id, available_after_yield
+            scenario_user, game, current_period, product_id, available_after_yield
         )
 
         # Step 5: Calculate final CTP (minimum of capacity and component constraints)
@@ -257,7 +257,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: Optional[ScenarioRound],
+        current_period: Optional[ScenarioRound],
         product_id: str,
         n_simulations: int = 100,
     ) -> ProbabilisticCTPResult:
@@ -276,7 +276,7 @@ class CTPService:
         Args:
             scenario_user: ScenarioUser instance (manufacturer node)
             game: Game instance
-            current_round: Current game round
+            current_period: Current game round
             product_id: AWS SC Product ID (string, e.g., "FG-001")
             n_simulations: Number of Monte Carlo runs (default 100)
 
@@ -311,7 +311,7 @@ class CTPService:
 
         # Get base values (deterministic)
         capacity = self._get_production_capacity(node)
-        commitments = self._get_production_commitments(scenario_user, current_round)
+        commitments = self._get_production_commitments(scenario_user, current_period)
         base_yield = self._get_yield_rate(node)
         base_lead_time = self._get_production_lead_time(node)
 
@@ -343,7 +343,7 @@ class CTPService:
 
             # Check component constraints (use base calculation)
             component_constraints = self._check_component_atp(
-                scenario_user, game, current_round, product_id, available_after_yield
+                scenario_user, game, current_period, product_id, available_after_yield
             )
 
             # Calculate CTP for this simulation
@@ -369,7 +369,7 @@ class CTPService:
         cap_p90 = int(np.percentile(cap_array, 90))
 
         # Determine primary constraint
-        base_result = self.calculate_current_ctp(scenario_user, game, current_round, product_id)
+        base_result = self.calculate_current_ctp(scenario_user, game, current_period, product_id)
         constrained_by = base_result.constrained_by
 
         logger.info(
@@ -401,7 +401,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         item_id: int,
         periods: int = 8,
     ) -> List[CTPPeriod]:
@@ -416,7 +416,7 @@ class CTPService:
         Args:
             scenario_user: ScenarioUser instance (manufacturer)
             game: Game instance
-            current_round: Current game round
+            current_period: Current game round
             item_id: Item ID to produce
             periods: Number of future periods to project (default 8)
 
@@ -433,7 +433,7 @@ class CTPService:
         yield_rate = self._get_yield_rate(node)
 
         for period_offset in range(1, periods + 1):
-            future_round = current_round.round_number + period_offset
+            future_round = current_period.round_number + period_offset
 
             # Get production commitments for future periods from ProductionOrder
             commitments = 0
@@ -525,7 +525,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         item_id: int,
         quantity: int,
     ) -> PromiseDateResult:
@@ -540,7 +540,7 @@ class CTPService:
         Args:
             scenario_user: ScenarioUser instance (manufacturer)
             game: Game instance
-            current_round: Current game round
+            current_period: Current game round
             item_id: Item ID to produce
             quantity: Quantity requested
 
@@ -549,7 +549,7 @@ class CTPService:
         """
         # Get current CTP
         ctp_result = self.calculate_current_ctp(
-            scenario_user, game, current_round, item_id
+            scenario_user, game, current_period, item_id
         )
 
         # Get lead times
@@ -563,7 +563,7 @@ class CTPService:
 
         if quantity <= ctp_result.ctp:
             # Can fulfill immediately
-            earliest_date = current_round.round_number + total_lead_time
+            earliest_date = current_period.round_number + total_lead_time
             confidence = 0.95  # High confidence
             breakdown.append(
                 f"Current CTP ({ctp_result.ctp} units) >= requested quantity ({quantity} units)"
@@ -579,7 +579,7 @@ class CTPService:
             # Need to find future period with sufficient CTP
             # Project CTP forward
             projection = self.project_ctp_multi_period(
-                scenario_user, game, current_round, item_id, periods=8
+                scenario_user, game, current_period, item_id, periods=8
             )
 
             # Find first period where CTP >= quantity
@@ -609,7 +609,7 @@ class CTPService:
 
             if not found:
                 # Cannot fulfill within projection window
-                earliest_date = current_round.round_number + 8 + total_lead_time
+                earliest_date = current_period.round_number + 8 + total_lead_time
                 confidence = 0.3  # Low confidence
                 breakdown.append(
                     f"Requested quantity ({quantity} units) exceeds CTP for next 8 rounds"
@@ -690,7 +690,7 @@ class CTPService:
         return 0.95
 
     def _get_production_commitments(
-        self, scenario_user: ScenarioUser, current_round: ScenarioRound
+        self, scenario_user: ScenarioUser, current_period: ScenarioRound
     ) -> int:
         """Get current production commitments (WIP + scheduled).
 
@@ -700,7 +700,7 @@ class CTPService:
         try:
             from app.models.production_order import ProductionOrder
 
-            node = _get_scenario_user_node(self.db, scenario_user, current_round.game)
+            node = _get_scenario_user_node(self.db, scenario_user, current_period.game)
             if not node:
                 return 0
 
@@ -744,7 +744,7 @@ class CTPService:
         scenario_user: ScenarioUser,
         game: Game,
         component_product_id: str,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
     ) -> int:
         """
         Get component ATP from supplier nodes.
@@ -757,7 +757,7 @@ class CTPService:
             scenario_user: The manufacturer scenario_user requesting the component
             game: Current game
             component_product_id: Product ID of the component
-            current_round: Current game round
+            current_period: Current game round
 
         Returns:
             Total available ATP for the component from all suppliers
@@ -857,7 +857,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_round: ScenarioRound,
+        current_period: ScenarioRound,
         item_id: str,  # Now uses string product_id (SC compliant)
         max_producible_from_capacity: int,
     ) -> List[ComponentConstraint]:
@@ -906,7 +906,7 @@ class CTPService:
                 scenario_user=scenario_user,
                 game=game,
                 component_product_id=component_product_id,
-                current_round=current_round
+                current_period=current_period
             )
 
             # Calculate max producible from this component
@@ -939,7 +939,7 @@ class CTPService:
         game: Game,
         scenario_user: ScenarioUser,
         result: ProbabilisticCTPResult,
-        current_round: int,
+        current_period: int,
         product_id: str,
     ) -> int:
         """
@@ -949,7 +949,7 @@ class CTPService:
             game: Game instance
             scenario_user: ScenarioUser instance
             result: ProbabilisticCTPResult from calculate_probabilistic_ctp
-            current_round: Current round number
+            current_period: Current round number
             product_id: AWS SC Product ID (string)
 
         Returns:
@@ -989,7 +989,7 @@ class CTPService:
                 # Game integration
                 scenario_id=game.id,
                 source="probabilistic_ctp",
-                source_event_id=f"game_{game.id}_round_{current_round}",
+                source_event_id=f"game_{game.id}_round_{current_period}",
             )
 
             self.db.add(ctp_record)

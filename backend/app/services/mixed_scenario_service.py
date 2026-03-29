@@ -572,7 +572,7 @@ class MixedScenarioService:
                 {
                     "name": getattr(game, "name", "") or "",
                     "description": getattr(game, "description", "") or "",
-                    "max_rounds": getattr(game, "max_rounds", 40) or 40,
+                    "max_periods": getattr(game, "max_periods", 40) or 40,
                     "is_public": getattr(game, "is_public", True),
                 },
             )
@@ -680,7 +680,7 @@ class MixedScenarioService:
                         node_entry[item_key] = component_map
             node_type_value = MixedScenarioService._normalise_node_type(node_payload["type"])
             normalized_name = MixedScenarioService._normalise_key(node.name)
-            if node_type_value == "market_demand" and normalized_name:
+            if node_type_value == "customer" and normalized_name:
                 market_demand_nodes.append(normalized_name)
                 demand_node_entries.append(
                     (
@@ -812,15 +812,15 @@ class MixedScenarioService:
 
         def _canonical_master(master: Any, node_type: str) -> str:
             token = MixedScenarioService._canonical_role(master)
-            if token in {"market_demand", "market"}:
-                return "market_demand"
-            if token == "market_supply":
-                return "market_supply"
+            if token in {"customer", "market"}:
+                return "customer"
+            if token == "vendor":
+                return "vendor"
             if token == "manufacturer":
                 return "manufacturer"
             if node_type in {"retailer", "wholesaler", "distributor", "inventory", "supplier"}:
                 return "inventory"
-            return "market_demand"
+            return "customer"
 
         if not payload:
             return definitions, label_map
@@ -842,7 +842,7 @@ class MixedScenarioService:
                 is_required = bool(
                     entry.get(
                         "is_required",
-                        node_type in {"market_supply", "market_demand"},
+                        node_type in {"vendor", "customer"},
                     )
                 )
                 master_type = _canonical_master(entry.get("master_type"), node_type)
@@ -857,7 +857,7 @@ class MixedScenarioService:
                     getattr(
                         entry,
                         "is_required",
-                        node_type in {"market_supply", "market_demand"},
+                        node_type in {"vendor", "customer"},
                     )
                 )
                 master_type = _canonical_master(getattr(entry, "master_type", None), node_type)
@@ -959,7 +959,7 @@ class MixedScenarioService:
         if not token:
             return ""
 
-        # Normalise delimiters so variants like "Market Supply", "market_supply",
+        # Normalise delimiters so variants like "Vendor", "vendor",
         # or "Market-Supply" map to the same canonical key.  This prevents
         # configuration mismatches where lane definitions and node policies use
         # different spacing conventions.
@@ -993,12 +993,12 @@ class MixedScenarioService:
         canonical = MixedScenarioService._normalise_node_type(node_type or "")
         mapping = {
             "retailer": AgentType.RETAILER,
-            "market_demand": AgentType.RETAILER,
+            "customer": AgentType.RETAILER,
             "wholesaler": AgentType.WHOLESALER,
             "distributor": AgentType.DISTRIBUTOR,
             "manufacturer": AgentType.MANUFACTURER,
             "supplier": AgentType.SUPPLIER,
-            "market_supply": AgentType.SUPPLIER,
+            "vendor": AgentType.SUPPLIER,
         }
         return mapping.get(canonical, AgentType.MANUFACTURER)
 
@@ -1014,7 +1014,7 @@ class MixedScenarioService:
 
         # Fall back to any policy entry whose canonicalised key matches the
         # requested node. This catches variants like "market demand" vs
-        # "market_demand" that would otherwise return an empty policy.
+        # "customer" that would otherwise return an empty policy.
         for key, value in node_policies.items():
             if MixedScenarioService._canonical_role(key) == canonical:
                 return value if isinstance(value, dict) else {}
@@ -1233,7 +1233,7 @@ class MixedScenarioService:
         explicit_market_nodes = [
             MixedScenarioService._normalise_key(node)
             for node, node_type in node_types.items()
-            if str(node_type).lower() == "market_demand"
+            if str(node_type).lower() == "customer"
         ]
         market_nodes = [n for n in market_nodes if n] or [n for n in explicit_market_nodes if n]
         if not market_nodes:
@@ -1241,7 +1241,7 @@ class MixedScenarioService:
         for md in market_nodes:
             if md not in all_nodes:
                 all_nodes.add(md)
-            node_types.setdefault(md, "market_demand")
+            node_types.setdefault(md, "customer")
 
         source_nodes = []
         for node in sorted(all_nodes):
@@ -1250,13 +1250,13 @@ class MixedScenarioService:
             source_nodes.append(node)
         if not source_nodes:
             raise ValueError("Supply chain DAG has no source nodes; Market Demand nodes are required.")
-        if not any(str(node_types.get(node, "")).lower() == "market_supply" for node in source_nodes):
+        if not any(str(node_types.get(node, "")).lower() == "vendor" for node in source_nodes):
             raise ValueError("Supply chain DAG must include at least one Market Supply source node.")
         invalid_sources = [
             node
             for node in source_nodes
             if str(node_types.get(node, "")).lower()
-            not in {"market_supply", "market_demand", "supplier", "component_supplier"}
+            not in {"vendor", "customer", "supplier", "component_supplier"}
         ]
         if invalid_sources:
             logger.warning(
@@ -1267,7 +1267,7 @@ class MixedScenarioService:
         sink_nodes = [node for node in sorted(all_nodes) if not shipments_map.get(node)]
         if not sink_nodes:
             raise ValueError("Supply chain DAG has no sink nodes; Market Demand nodes are required.")
-        if not any(str(node_types.get(node, "")).lower() == "market_demand" for node in sink_nodes):
+        if not any(str(node_types.get(node, "")).lower() == "customer" for node in sink_nodes):
             raise ValueError("Supply chain DAG must include at least one Market Demand sink node.")
 
         for node in sorted(all_nodes):
@@ -1376,7 +1376,7 @@ class MixedScenarioService:
                 candidates.append(key)
         node_types = cfg.get("node_types") or {}
         for node, node_type in node_types.items():
-            if str(node_type).lower() == "market_demand":
+            if str(node_type).lower() == "customer":
                 key = MixedScenarioService._normalise_key(node)
                 if key:
                     candidates.append(key)
@@ -1889,7 +1889,7 @@ class MixedScenarioService:
         state: Dict[str, Any],
         entry: Dict[str, Any],
         *,
-        current_round: int,
+        current_period: int,
     ) -> List[Dict[str, Any]]:
         """Expand a queue entry into per-item order requests."""
 
@@ -1898,7 +1898,7 @@ class MixedScenarioService:
         base_item = MixedScenarioService._normalise_product_id(entry.get("product_id"))
         downstream_default = entry.get("downstream")
         priority = entry.get("order_priority", 1)
-        due_round = entry.get("step_number", current_round)
+        due_round = entry.get("step_number", current_period)
 
         if isinstance(breakdown, dict) and breakdown:
             for downstream, payload in breakdown.items():
@@ -2172,7 +2172,7 @@ class MixedScenarioService:
 
     def _preprocess_queues(self, context: RoundContext) -> None:
         """Process global queues to determine arrivals and matured orders for the round."""
-        current_round = context.round_number
+        current_period = context.round_number
         node_policies = context.node_policies
         
         # Use a stable node order for logging: downstream-to-upstream if possible.
@@ -2181,7 +2181,7 @@ class MixedScenarioService:
             node_order = list(context.node_states.keys())
         else:
             # If sequence appears upstream->downstream (e.g., market_supply first), reverse it for downstream-first logs.
-            if node_order and node_order[0].startswith("market_supply"):
+            if node_order and node_order[0].startswith("vendor"):
                 node_order = list(reversed(node_order))
 
         for node_key in node_order:
@@ -2205,14 +2205,14 @@ class MixedScenarioService:
                 due_step = order.step_number if order.step_number is not None else order.due_round
                 seq = order.sequence if order.sequence is not None else 0
                 ord_priority = order.order_priority if order.order_priority is not None else 0
-                return (*priority_key, due_step or current_round, ord_priority, seq)
+                return (*priority_key, due_step or current_period, ord_priority, seq)
 
             # Ensure inbound orders and backlog orders respect item priority before maturity
             state.inbound_demand.sort(key=_order_queue_sort)
             state.backlog_orders.sort(key=_order_queue_sort)
             
             # 1. Process Orders Queue
-            # Identify orders that are due to be processed in this round (step_number <= current_round)
+            # Identify orders that are due to be processed in this round (step_number <= current_period)
             matured_orders = []
             remaining_orders = []
             orders_count_by_item: Dict[str, int] = defaultdict(int)
@@ -2223,7 +2223,7 @@ class MixedScenarioService:
                 # The original code uses 'step_number'.
                 due_step = order.step_number if order.step_number is not None else order.due_round
                 
-                if due_step <= current_round:
+                if due_step <= current_period:
                     matured_orders.append(order)
                     item_key = MixedScenarioService._normalise_product_id(order.product_id)
                     orders_count_by_item[item_key] += 1
@@ -2238,7 +2238,7 @@ class MixedScenarioService:
             state.inbound_demand = remaining_orders
             
             # 2. Process Arrivals Queue
-            # Identify shipments that have arrived (arrival_round <= current_round)
+            # Identify shipments that have arrived (arrival_round <= current_period)
             supply_leadtime = max(0, int(policy.get('supply_leadtime', 0)))
             
             due_arrivals = []
@@ -2249,7 +2249,7 @@ class MixedScenarioService:
             # Here we assume inbound_supply_future is already populated correctly from state.
             
             for shipment in state.inbound_supply_future:
-                if shipment.arrival_round <= current_round:
+                if shipment.arrival_round <= current_period:
                     due_arrivals.append(shipment)
                     item_key = MixedScenarioService._normalise_product_id(shipment.product_id)
                     arrival_count_by_item[item_key] += 1
@@ -2435,7 +2435,7 @@ class MixedScenarioService:
 
         shipments_map = context.topology.shipments_map or {}
         orders_map = context.topology.orders_map or {}
-        current_round = context.round_number
+        current_period = context.round_number
 
         for market_node, item_map in context.market_demand_map.items():
             market_key = MixedScenarioService._normalise_key(market_node)
@@ -2493,7 +2493,7 @@ class MixedScenarioService:
                     if qty <= 0:
                         continue
                     product_id = MixedScenarioService._normalise_product_id(key)
-                    due_round = current_round + lead_steps
+                    due_round = current_period + lead_steps
                     order_req = OrderRequest(
                         product_id=product_id,
                         quantity=qty,
@@ -2530,11 +2530,11 @@ class MixedScenarioService:
 
         supply_received: Dict[str, int] = defaultdict(int)
 
-        if master_type == "market_demand":
+        if master_type == "customer":
             self._process_market_demand_shipments(node_key, state, context)
             return
 
-        if master_type == "market_supply":
+        if master_type == "vendor":
             for shipment in state.inbound_supply:
                 qty_val = max(0, int(shipment.quantity))
                 if qty_val <= 0:
@@ -2565,7 +2565,7 @@ class MixedScenarioService:
         if master_type == "manufacturer":
             cfg = context.config or {}
             bom_for_node = MixedScenarioService._bom_for_node(cfg, node_key)
-            current_round = context.round_number
+            current_period = context.round_number
 
             finished_inventory = dict(getattr(state, "finished_inventory_by_item", {}) or {})
             component_inventory = dict(getattr(state, "component_inventory_by_item", {}) or {})
@@ -2594,8 +2594,8 @@ class MixedScenarioService:
                 except Exception:
                     arrival_round = None
                 if arrival_round is None:
-                    arrival_round = current_round
-                if arrival_round <= current_round:
+                    arrival_round = current_period
+                if arrival_round <= current_period:
                     due_manufacturing.append(shipment)
                 else:
                     remaining_manufacturing.append(shipment)
@@ -2664,7 +2664,7 @@ class MixedScenarioService:
                 continue
             item_token = MixedScenarioService._normalise_product_id(shipment.product_id)
             supply_received[item_token] += qty_val
-            if master_type != 'market_supply':
+            if master_type != 'vendor':
                 state.inventory_by_item[item_token] = state.inventory_by_item.get(item_token, 0) + qty_val
                 state.on_order_by_item[item_token] = max(0, state.on_order_by_item.get(item_token, 0) - qty_val)
 
@@ -2726,7 +2726,7 @@ class MixedScenarioService:
             lost_sale_rate = float(raw_cost) if raw_cost is not None else 100.0
         except (TypeError, ValueError):
             lost_sale_rate = 100.0
-        current_round = context.round_number
+        current_period = context.round_number
 
         pending_entries: List[Dict[str, Any]] = []
         for order in list(state.backlog_orders or []):
@@ -2735,7 +2735,7 @@ class MixedScenarioService:
                 continue
             due_round = order.step_number if order.step_number is not None else order.due_round
             if due_round is None:
-                due_round = current_round
+                due_round = current_period
             item_token = MixedScenarioService._normalise_product_id(order.product_id) or str(order.product_id or "")
             pending_entries.append(
                 {
@@ -2769,7 +2769,7 @@ class MixedScenarioService:
                 entry["remaining"] -= allocate
                 qty -= allocate
                 fulfilled_by_item[item_token] += allocate
-                arrival_round = current_round
+                arrival_round = current_period
                 if arrival_round - entry["due_round"] > late_threshold:
                     entry["late"] = True
                 if entry["remaining"] == 0:
@@ -2785,7 +2785,7 @@ class MixedScenarioService:
                 entry = queue.popleft()
                 if entry["remaining"] <= 0:
                     continue
-                if current_round - entry["due_round"] > late_threshold:
+                if current_period - entry["due_round"] > late_threshold:
                     entry["late"] = True
                     lost_entries.append(entry)
                 else:
@@ -2923,14 +2923,14 @@ class MixedScenarioService:
     def _process_transfer_order_arrivals(
         self,
         scenario_id: int,
-        current_round: int,
+        current_period: int,
     ) -> List[TransferOrder]:
         """
         Process TransferOrders arriving in the current round.
 
         Queries all TOs where:
         - scenario_id matches
-        - arrival_round == current_round
+        - arrival_round == current_period
         - status == 'IN_TRANSIT'
 
         Updates:
@@ -2940,7 +2940,7 @@ class MixedScenarioService:
 
         Args:
             scenario_id: Game ID
-            current_round: Current round number
+            current_period: Current round number
 
         Returns:
             List of arrived TransferOrders
@@ -2954,7 +2954,7 @@ class MixedScenarioService:
             self.db.query(TransferOrder)
             .filter(
                 TransferOrder.scenario_id == scenario_id,
-                TransferOrder.arrival_round == current_round,
+                TransferOrder.arrival_round == current_period,
                 TransferOrder.status == "IN_TRANSIT",
             )
             .all()
@@ -3106,7 +3106,7 @@ class MixedScenarioService:
         bom_for_node = MixedScenarioService._bom_for_node(cfg, node_key) if master_type == "manufacturer" else {}
 
         # Market demand is a pure sink/source of demand; it does not ship or hold inventory.
-        if master_type == "market_demand":
+        if master_type == "customer":
             # Market Demand handles fulfillment when supply arrivals are processed.
             state.current_round_fulfillment = dict(getattr(state, "current_round_fulfillment", {}) or {})
             return
@@ -3125,7 +3125,7 @@ class MixedScenarioService:
         # Matured orders have downstream.
 
         # Market Supply: finite (or infinite) source that ships by downstream priority.
-        if master_type == "market_supply":
+        if master_type == "vendor":
             cap_map = MixedScenarioService._market_supply_capacity(policy, state)
             infinite_supply = cap_map is None
             available_by_item = dict(cap_map or {})
@@ -3238,7 +3238,7 @@ class MixedScenarioService:
             return
 
         if master_type == "manufacturer":
-            current_round = context.round_number
+            current_period = context.round_number
             supply_lead = int(policy.get("supply_leadtime", 0) or 0)
             finished_inventory: Dict[str, int] = {}
             component_inventory: Dict[str, int] = {}
@@ -3268,7 +3268,7 @@ class MixedScenarioService:
                     if order.downstream:
                         lane = context.topology.lane_lookup.get((node_key, order.downstream))
                         lead_time = getattr(lane, "supply_lead_time", supply_lead) if lane else supply_lead
-                        arrival_round = current_round + max(0, int(lead_time))
+                        arrival_round = current_period + max(0, int(lead_time))
                         shipments_created.append(
                             Shipment(
                                 product_id=product_id,
@@ -3283,7 +3283,7 @@ class MixedScenarioService:
                 if remainder > 0:
                     bo = order.copy()
                     bo.quantity = remainder
-                    bo.step_number = current_round + 1
+                    bo.step_number = current_period + 1
                     bo.due_round = bo.step_number
                     next_backlog.append(bo)
 
@@ -3401,7 +3401,7 @@ class MixedScenarioService:
         lost_sales: Dict[str, int] = defaultdict(int)
         orders_created_counter = 0
 
-        infinite_supply = (node_type in {'market_supply', 'supplier'})
+        infinite_supply = (node_type in {'vendor', 'supplier'})
 
         for product_id in sorted_items:
             item_orders = orders_by_item[product_id]
@@ -3483,13 +3483,13 @@ class MixedScenarioService:
 
         order_aging = max(0, int(policy.get("order_aging", 0) or 0))
         filtered_backlog: List[OrderRequest] = []
-        current_round = context.round_number
+        current_period = context.round_number
         for order in next_backlog:
             product_id = MixedScenarioService._normalise_product_id(order.product_id)
             arrival_round = order.step_number if order.step_number is not None else order.due_round
             if arrival_round is None:
-                arrival_round = current_round
-            if order_aging > 0 and (current_round - arrival_round) > order_aging:
+                arrival_round = current_period
+            if order_aging > 0 and (current_period - arrival_round) > order_aging:
                 lost_sales[product_id] += max(0, int(order.quantity))
                 continue
             filtered_backlog.append(order)
@@ -3506,14 +3506,14 @@ class MixedScenarioService:
             item_key = MixedScenarioService._normalise_product_id(bo.product_id)
             arrival_round = bo.step_number if bo.step_number is not None else bo.due_round
             if arrival_round is None:
-                arrival_round = current_round
-            if arrival_round <= current_round:
+                arrival_round = current_period
+            if arrival_round <= current_period:
                 new_backlog_summary[item_key] += max(0, int(bo.quantity))
 
         state.backlog_by_item = dict(new_backlog_summary)
         state.backlog = sum(new_backlog_summary.values())
         # Market supply has infinite supply and does not hold stock.
-        if master_type == "market_supply":
+        if master_type == "vendor":
             state.inventory_by_item = {}
             state.inventory = 0
         else:
@@ -3692,10 +3692,10 @@ class MixedScenarioService:
                 lost_sale_rate = backlog_rate * 2
             holding_cost = inventory_total * holding_rate
             backlog_cost = backlog_total * backlog_rate + lost_sales_total * lost_sale_rate
-            if node_types.get(node_key) == "market_supply":
+            if node_types.get(node_key) == "vendor":
                 holding_cost = 0.0
                 backlog_cost = 0.0
-            elif node_types.get(node_key) == "market_demand":
+            elif node_types.get(node_key) == "customer":
                 holding_cost = 0.0
 
             inbound_snapshot_orders = getattr(state, "debug_matured_orders_snapshot", None) or state.matured_orders
@@ -3946,7 +3946,7 @@ class MixedScenarioService:
             # If game finished, auto-split the log for convenience
             try:
                 should_split = debug_cfg.get("split_logs")
-                finished = getattr(game, "current_round", 0) >= getattr(game, "max_rounds", 0) or getattr(game, "status", None) == GameStatusDB.FINISHED
+                finished = getattr(game, "current_period", 0) >= getattr(game, "max_periods", 0) or getattr(game, "status", None) == GameStatusDB.FINISHED
                 if should_split and finished:
                     path = ensure_debug_log_file(cfg, game)
                     if path:
@@ -4093,10 +4093,10 @@ class MixedScenarioService:
         self._record_round_history(game, context)
         
         # 6. Update game status when finished
-        total_rounds = game.max_rounds or 50
-        if (round_record and round_record.round_number >= total_rounds) or (game.current_round or 0) >= total_rounds:
+        total_rounds = game.max_periods or 50
+        if (round_record and round_record.round_number >= total_rounds) or (game.current_period or 0) >= total_rounds:
             game.status = GameStatusDB.FINISHED
-            game.current_round = total_rounds
+            game.current_period = total_rounds
         else:
             game.status = GameStatusDB.STARTED
         # Ensure SQLAlchemy notices JSON mutations
@@ -4113,7 +4113,7 @@ class MixedScenarioService:
             return None
 
         cfg = game.config
-        round_number = round_number if round_number is not None else (game.current_round or 0) + 1
+        round_number = round_number if round_number is not None else (game.current_period or 0) + 1
 
         # Rotate debug log per game run so each start creates a fresh file
         debug_cfg = normalize_debug_config(cfg)
@@ -4235,7 +4235,7 @@ class MixedScenarioService:
             master_type = node_master_types_map.get(node) or MixedScenarioService._master_node_type(node_type)
             if (
                 not normalised_orders
-                and master_type not in {"market_supply", "market_demand"}
+                and master_type not in {"vendor", "customer"}
                 and round_number == 1
             ):
                 raise ValueError(f"Engine state missing inbound_demand for node '{node}' at round {round_number}")
@@ -4251,12 +4251,12 @@ class MixedScenarioService:
             combined_shipments = list(inbound_supply_raw)
             normalised_shipments = self._normalise_shipment_queue(
                 combined_shipments,
-                current_round=round_number,
+                current_period=round_number,
                 destination=node,
             )
             if (
                 not normalised_shipments
-                and master_type not in {"market_supply", "market_demand", "manufacturer"}
+                and master_type not in {"vendor", "customer", "manufacturer"}
                 and round_number == 1
             ):
                 raise ValueError(
@@ -4496,29 +4496,29 @@ class MixedScenarioService:
         return normalised
 
     @staticmethod
-    def _order_pipeline_snapshot(queue: List[Dict[str, Any]], current_round: int) -> List[int]:
+    def _order_pipeline_snapshot(queue: List[Dict[str, Any]], current_period: int) -> List[int]:
         future_entries: List[Dict[str, Any]] = []
         for entry in queue:
             try:
-                step_number = int(entry.get("step_number", current_round))
+                step_number = int(entry.get("step_number", current_period))
                 quantity = int(entry.get("quantity", 0))
             except (TypeError, ValueError):
                 continue
             if quantity <= 0:
                 continue
-            if step_number > current_round:
+            if step_number > current_period:
                 future_entries.append({"step_number": step_number, "quantity": quantity})
 
         if not future_entries:
             return []
 
-        max_offset = max(entry["step_number"] - current_round for entry in future_entries)
+        max_offset = max(entry["step_number"] - current_period for entry in future_entries)
         if max_offset <= 0:
             return []
 
         buckets = [0] * max_offset
         for entry in future_entries:
-            offset = entry["step_number"] - current_round
+            offset = entry["step_number"] - current_period
             if offset <= 0:
                 continue
             idx = offset - 1
@@ -4529,15 +4529,15 @@ class MixedScenarioService:
 
     @staticmethod
     def _order_detail_pipeline_snapshot(
-        queue: List[Dict[str, Any]], current_round: int
+        queue: List[Dict[str, Any]], current_period: int
     ) -> List[Dict[str, Dict[str, int]]]:
         future_entries: List[Dict[str, Any]] = []
         for entry in queue:
             try:
-                step_number = int(entry.get("step_number", current_round))
+                step_number = int(entry.get("step_number", current_period))
             except (TypeError, ValueError):
                 continue
-            if step_number <= current_round:
+            if step_number <= current_period:
                 continue
             try:
                 quantity = int(entry.get("quantity", 0))
@@ -4550,7 +4550,7 @@ class MixedScenarioService:
         if not future_entries:
             return []
 
-        max_offset = max(int(entry.get("step_number", current_round)) - current_round for entry in future_entries)
+        max_offset = max(int(entry.get("step_number", current_period)) - current_period for entry in future_entries)
         if max_offset <= 0:
             return []
 
@@ -4559,10 +4559,10 @@ class MixedScenarioService:
         ]
         for entry in future_entries:
             try:
-                step_number = int(entry.get("step_number", current_round))
+                step_number = int(entry.get("step_number", current_period))
             except (TypeError, ValueError):
                 continue
-            offset = step_number - current_round
+            offset = step_number - current_period
             if offset <= 0:
                 continue
             idx = offset - 1
@@ -4697,7 +4697,7 @@ class MixedScenarioService:
     def _normalise_shipment_queue(
         queue: Any,
         *,
-        current_round: int,
+        current_period: int,
         destination: str,
     ) -> List[Dict[str, Any]]:
         """Coerce arbitrary shipment payloads into the required Shipment fields."""
@@ -4727,7 +4727,7 @@ class MixedScenarioService:
             try:
                 arrival_round = int(arrival_raw)
             except (TypeError, ValueError):
-                arrival_round = current_round
+                arrival_round = current_period
 
             source = entry.get("source") or entry.get("from") or entry.get("upstream")
             if source is None:
@@ -5142,7 +5142,7 @@ class MixedScenarioService:
 
         order_pipeline = MixedScenarioService._order_pipeline_snapshot(
             state.get("inbound_demand", []),
-            current_round=current_step,
+            current_period=current_step,
         )
         state["order_pipe"] = MixedScenarioService._normalise_pipeline_length(
             order_pipeline,
@@ -5443,14 +5443,14 @@ class MixedScenarioService:
             supply_leadtime = int(policy.get("supply_leadtime", 0) or 0)
             if not supply_leadtime:
                 supply_leadtime = max(0, max(lane_supply_leads) if lane_supply_leads else 0)
-            if supply_leadtime <= 0 and node_role not in {"market_supply", "market_demand"}:
+            if supply_leadtime <= 0 and node_role not in {"vendor", "customer"}:
                 # Default to 2 if nothing is configured for non-market nodes.
                 supply_leadtime = 2
             if order_leadtime <= 0:
                 raise ValueError(
                     f"Node '{node}' is missing order_leadtime in policy or lane configuration; cannot seed."
                 )
-            if supply_leadtime <= 0 and node_role not in {"market_supply", "market_demand"}:
+            if supply_leadtime <= 0 and node_role not in {"vendor", "customer"}:
                 raise ValueError(
                     f"Node '{node}' is missing supply_leadtime in policy or lane configuration; cannot seed."
                 )
@@ -5607,13 +5607,13 @@ class MixedScenarioService:
             if node_role == "manufacturer":
                 inbound_supply = [entry for entry in inbound_supply if MixedScenarioService._normalise_product_id(entry.get("product_id")) not in finished_demands]
 
-            if node_role == "market_supply":
+            if node_role == "vendor":
                 inventory_by_item = {product_id: 0 for product_id in item_demands_orders}
                 on_order_by_item = {product_id: 0 for product_id in item_demands_orders}
                 base_stock_by_item = {product_id: 0 for product_id in item_demands_orders}
                 inbound_supply = []
                 inbound_demand_entries = []
-            elif node_role == "market_demand":
+            elif node_role == "customer":
                 inventory_by_item = {product_id: 0 for product_id in item_demands_orders}
                 on_order_by_item = {product_id: 0 for product_id in item_demands_orders}
                 base_stock_by_item = {product_id: 0 for product_id in item_demands_orders}
@@ -5645,16 +5645,16 @@ class MixedScenarioService:
 
             state: Dict[str, Any] = {
                 "current_step": 0,
-                "inventory": inventory_total if node_role not in {"market_supply", "market_demand"} else 0,
+                "inventory": inventory_total if node_role not in {"vendor", "customer"} else 0,
                 "backlog": 0,
-                "on_order": on_order_total if node_role not in {"market_supply", "market_demand"} else 0,
-                "base_stock": sum(base_stock_by_item.values()) if node_role not in {"market_supply", "market_demand"} else 0,
+                "on_order": on_order_total if node_role not in {"vendor", "customer"} else 0,
+                "base_stock": sum(base_stock_by_item.values()) if node_role not in {"vendor", "customer"} else 0,
                 "backlog_breakdown": {},
                 "inventory_by_item": inventory_by_item,
                 "backlog_by_item": backlog_by_item,
                 "on_order_by_item": on_order_by_item,
-                "inbound_demand": inbound_demand_entries if node_role not in {"market_supply", "market_demand"} else [],
-                "inbound_supply": inbound_supply if node_role != "market_supply" else [],
+                "inbound_demand": inbound_demand_entries if node_role not in {"vendor", "customer"} else [],
+                "inbound_supply": inbound_supply if node_role != "vendor" else [],
                 "incoming_orders": 0,
             }
 
@@ -5663,7 +5663,7 @@ class MixedScenarioService:
 
             order_pipeline = MixedScenarioService._order_pipeline_snapshot(
                 state.get("inbound_demand", []),
-                current_round=0,
+                current_period=0,
             )
             state["order_pipe"] = MixedScenarioService._normalise_pipeline_length(
                 order_pipeline,
@@ -5689,7 +5689,7 @@ class MixedScenarioService:
                 state["finished_inventory_by_item"] = dict(finished_inventory_by_item)
                 state["component_inventory_by_item"] = dict(component_inventory_by_item)
 
-            if node_role == "market_supply":
+            if node_role == "vendor":
                 state["inventory"] = 0
                 state["on_order"] = 0
 
@@ -5782,7 +5782,7 @@ class MixedScenarioService:
     ) -> int:
         """Compute the order quantity for a node after fulfilling local demand."""
 
-        if node_type == "market_demand":
+        if node_type == "customer":
             return 0
 
         strategy = MixedScenarioService._infer_node_strategy(policy, cfg, global_policy)
@@ -5846,8 +5846,8 @@ class MixedScenarioService:
                 getattr(GameStatusDB, "IN_PROGRESS", GameStatusDB.STARTED).value
                 if hasattr(GameStatusDB, "IN_PROGRESS")
                 else GameStatusDB.STARTED.value,
-                getattr(GameStatusDB, "ROUND_IN_PROGRESS", GameStatusDB.STARTED).value,
-                getattr(GameStatusDB, "ROUND_COMPLETED", GameStatusDB.STARTED).value,
+                getattr(GameStatusDB, "PERIOD_IN_PROGRESS", GameStatusDB.STARTED).value,
+                getattr(GameStatusDB, "PERIOD_COMPLETED", GameStatusDB.STARTED).value,
                 GameStatus.IN_PROGRESS.value,
             ],
             GameStatus.COMPLETED: [
@@ -5875,8 +5875,8 @@ class MixedScenarioService:
             "created": GameStatus.CREATED,
             GameStatusDB.STARTED.value: GameStatus.IN_PROGRESS,
             getattr(GameStatusDB, "IN_PROGRESS", GameStatusDB.STARTED).value: GameStatus.IN_PROGRESS,
-            getattr(GameStatusDB, "ROUND_IN_PROGRESS", GameStatusDB.STARTED).value: GameStatus.IN_PROGRESS,
-            getattr(GameStatusDB, "ROUND_COMPLETED", GameStatusDB.STARTED).value: GameStatus.IN_PROGRESS,
+            getattr(GameStatusDB, "PERIOD_IN_PROGRESS", GameStatusDB.STARTED).value: GameStatus.IN_PROGRESS,
+            getattr(GameStatusDB, "PERIOD_COMPLETED", GameStatusDB.STARTED).value: GameStatus.IN_PROGRESS,
             "started": GameStatus.IN_PROGRESS,
             "IN_PROGRESS": GameStatus.IN_PROGRESS,
             "in_progress": GameStatus.IN_PROGRESS,
@@ -5956,8 +5956,8 @@ class MixedScenarioService:
             "id": game.id,
             "name": getattr(game, "name", f"Game {game.id}") or f"Game {game.id}",
             "status": self._map_status_to_schema(getattr(game, "status", None)),
-            "current_round": getattr(game, "current_round", 0) or 0,
-            "max_rounds": getattr(game, "max_rounds", 0) or 0,
+            "current_period": getattr(game, "current_period", 0) or 0,
+            "max_periods": getattr(game, "max_periods", 0) or 0,
             "demand_pattern": demand_pattern,
             "created_at": getattr(game, "created_at", datetime.utcnow()),
             "updated_at": self._compute_updated_at(game),
@@ -6049,7 +6049,7 @@ class MixedScenarioService:
         config["start_date"] = DEFAULT_START_DATE.isoformat()
         game = Game(
             name=game_data.name,
-            max_rounds=game_data.max_rounds,
+            max_periods=game_data.max_periods,
             status=GameStatus.CREATED,
             config=config,
             supply_chain_config_id=config["supply_chain_config_id"],
@@ -6386,11 +6386,11 @@ class MixedScenarioService:
         if "is_public" in payload:
             game.is_public = bool(payload.get("is_public"))
 
-        if "max_rounds" in payload and payload["max_rounds"] is not None:
+        if "max_periods" in payload and payload["max_periods"] is not None:
             try:
-                game.max_rounds = int(payload["max_rounds"])
+                game.max_periods = int(payload["max_periods"])
             except (TypeError, ValueError) as exc:
-                raise ValueError("max_rounds must be an integer") from exc
+                raise ValueError("max_periods must be an integer") from exc
 
         if "progression_mode" in payload and payload["progression_mode"]:
             cfg["progression_mode"] = payload["progression_mode"]
@@ -6517,15 +6517,15 @@ class MixedScenarioService:
         if not scenario_user:
             raise ValueError("ScenarioUser not found for this game")
 
-        current_round = (
+        current_period = (
             self.db.query(ScenarioRound)
             .filter(
                 ScenarioRound.scenario_id == scenario_id,
-                ScenarioRound.round_number == game.current_round,
+                ScenarioRound.round_number == game.current_period,
             )
             .first()
         )
-        if not current_round:
+        if not current_period:
             raise ValueError("No active round to submit an order to")
 
         if order_quantity < 0:
@@ -6541,7 +6541,7 @@ class MixedScenarioService:
             self.db.query(ScenarioUserPeriod)
             .filter(
                 ScenarioUserPeriod.scenario_user_id == scenario_user_id,
-                ScenarioUserPeriod.round_id == current_round.id,
+                ScenarioUserPeriod.round_id == current_period.id,
             )
             .first()
         )
@@ -6556,7 +6556,7 @@ class MixedScenarioService:
             starting_backlog = getattr(inventory, "backorders", 0) if inventory else 0
             scenario_user_period = ScenarioUserPeriod(
                 scenario_user_id=scenario_user_id,
-                round_id=current_round.id,
+                round_id=current_period.id,
                 order_placed=order_quantity,
                 order_received=0,
                 inventory_before=starting_stock,
@@ -6783,7 +6783,7 @@ class MixedScenarioService:
             
         # Update game status
         game.status = GameStatusDB.STARTED
-        game.current_round = 0  # Will be incremented in start_new_round
+        game.current_period = 0  # Will be incremented in start_new_round
         game.started_at = datetime.utcnow()
 
         # Initialize simple engine state if not present
@@ -6814,7 +6814,7 @@ class MixedScenarioService:
             for r in existing_rounds:
                 self.db.delete(r)
             cfg["history"] = []
-            game.current_round = 0
+            game.current_period = 0
             flag_modified(game, "config")
 
         demand_pattern_cfg, demand_pattern_changed = self._upgrade_config_entry(
@@ -7313,7 +7313,7 @@ class MixedScenarioService:
             )
             return None
 
-        total_rounds = game_obj.max_rounds or 52
+        total_rounds = game_obj.max_periods or 52
 
         latest_round: Optional[ScenarioRound] = (
             self.db.query(ScenarioRound)
@@ -7327,15 +7327,15 @@ class MixedScenarioService:
             else:
                 target_round = latest_round.round_number
         else:
-            current_round_value = game_obj.current_round or 0
-            target_round = current_round_value if current_round_value > 0 else 1
+            current_period_value = game_obj.current_period or 0
+            target_round = current_period_value if current_period_value > 0 else 1
 
         if target_round > total_rounds:
             game_obj.status = GameStatusDB.FINISHED
             self.db.commit()
             return None
 
-        game_obj.current_round = target_round
+        game_obj.current_period = target_round
         self.db.add(game_obj)
         self.db.commit()
 
@@ -7528,7 +7528,7 @@ class MixedScenarioService:
 
         Uses the original engine.py logic with SupplyChainLine and Node classes.
         """
-        total_rounds = game_obj.max_rounds or 50  # Default
+        total_rounds = game_obj.max_periods or 50  # Default
 
         # Determine target round based on existing round records
         latest_round: Optional[ScenarioRound] = (
@@ -7543,16 +7543,16 @@ class MixedScenarioService:
             else:
                 target_round = latest_round.round_number
         else:
-            # If a caller already primed current_round, respect it; otherwise start at 1
-            current_round_value = game_obj.current_round or 0
-            target_round = current_round_value if current_round_value > 0 else 1
+            # If a caller already primed current_period, respect it; otherwise start at 1
+            current_period_value = game_obj.current_period or 0
+            target_round = current_period_value if current_period_value > 0 else 1
 
         if target_round > total_rounds:
             game_obj.status = GameStatusDB.FINISHED
             self.db.commit()
             return None
 
-        game_obj.current_round = target_round
+        game_obj.current_period = target_round
         self.db.add(game_obj)
 
         # When starting from round 1 (or reset), reseed a clean engine state
@@ -7618,7 +7618,7 @@ class MixedScenarioService:
             return None
 
         # Determine target round
-        total_rounds = game_obj.max_rounds or 50
+        total_rounds = game_obj.max_periods or 50
         latest_round: Optional[ScenarioRound] = (
             self.db.query(ScenarioRound)
             .filter(ScenarioRound.scenario_id == game_obj.id)
@@ -7632,15 +7632,15 @@ class MixedScenarioService:
             else:
                 target_round = latest_round.round_number
         else:
-            current_round_value = game_obj.current_round or 0
-            target_round = current_round_value if current_round_value > 0 else 1
+            current_period_value = game_obj.current_period or 0
+            target_round = current_period_value if current_period_value > 0 else 1
 
         if target_round > total_rounds:
             game_obj.status = GameStatusDB.FINISHED
             self.db.commit()
             return None
 
-        game_obj.current_round = target_round
+        game_obj.current_period = target_round
         self.db.add(game_obj)
         self.db.commit()
 
@@ -7817,7 +7817,7 @@ class MixedScenarioService:
         """
         from app.models.supply_chain import RoundPhase
 
-        total_rounds = game_obj.max_rounds or 50
+        total_rounds = game_obj.max_periods or 50
 
         # Determine target round
         latest_round: Optional[ScenarioRound] = (
@@ -7842,7 +7842,7 @@ class MixedScenarioService:
             self.db.commit()
             return None
 
-        game_obj.current_round = target_round
+        game_obj.current_period = target_round
 
         # Create new round with FULFILLMENT phase
         round_record = ScenarioRound(
@@ -8024,7 +8024,7 @@ class MixedScenarioService:
 
             # Make agent decision
             decision = agent.make_decision(
-                current_round=round_obj.round_number,
+                current_period=round_obj.round_number,
                 current_demand=None,  # Not visible to upstream nodes
                 upstream_data=None,
                 local_state=local_state,
@@ -8706,7 +8706,7 @@ class MixedScenarioService:
                 
             # Skip special nodes (though they shouldn't be in node_to_scenario_users usually)
             node_type = context.topology.node_types.get(node_key, "")
-            if node_type in {"market_demand", "market_supply"}:
+            if node_type in {"customer", "vendor"}:
                 continue
                 
             # Process for each scenario_user assigned (usually one)
@@ -8868,7 +8868,7 @@ class MixedScenarioService:
                 upstream_data["previous_orders"] = upstream_node_history
 
         # Make decision
-        current_round_number = getattr(context.round_record, "round_number", None) or context.round_number
+        current_period_number = getattr(context.round_record, "round_number", None) or context.round_number
         aggregate_demand = sum(node_state.current_round_demand.values())
         local_state = {
             "inventory": sum(node_state.inventory_by_item.values()),
@@ -8889,7 +8889,7 @@ class MixedScenarioService:
             },
         }
         decision = agent.make_decision(
-            current_round=current_round_number,
+            current_period=current_period_number,
             current_demand=aggregate_demand,
             upstream_data=upstream_data,
             local_state=local_state,
@@ -9004,7 +9004,7 @@ class MixedScenarioService:
                 upstream_node=upstream_node,
                 quantity=decision.quantity,
                 game_round=game_round,
-                current_round_number=current_round_number
+                current_period_number=current_period_number
             )
 
     def _place_single_order(
@@ -9015,7 +9015,7 @@ class MixedScenarioService:
         upstream_node: str,
         quantity: int,
         game_round: ScenarioRound,
-        current_round_number: int,
+        current_period_number: int,
     ) -> None:
         """Place a single order to a specific upstream supplier.
 
@@ -9053,7 +9053,7 @@ class MixedScenarioService:
             quantity=quantity,
             due_round=game_round.round_number + lead_time,
             downstream=node_key,  # The one placing the order
-            step_number=current_round_number,
+            step_number=current_period_number,
         )
 
         # Add to upstream's order queue
@@ -9210,7 +9210,7 @@ class MixedScenarioService:
         game_round.completed_at = timestamp
         self.db.commit()
     
-    def get_current_round(self, scenario_id: int) -> Optional[ScenarioRound]:
+    def get_current_period(self, scenario_id: int) -> Optional[ScenarioRound]:
         """Get the current round for a game."""
         return self.db.query(ScenarioRound).filter(
             ScenarioRound.scenario_id == scenario_id,
@@ -10040,8 +10040,8 @@ class MixedScenarioService:
             ("name", "name"),
             ("description", "description"),
             ("status", "status"),
-            ("current_round", "current_round"),
-            ("max_rounds", "max_rounds"),
+            ("current_period", "current_period"),
+            ("max_periods", "max_periods"),
             ("created_at", "created_at"),
             ("updated_at", "updated_at"),
             ("started_at", "started_at"),
@@ -10122,8 +10122,8 @@ class MixedScenarioService:
             SELECT g.id,
                    g.name,
                    g.status,
-                   g.current_round,
-                   g.max_rounds,
+                   g.current_period,
+                   g.max_periods,
                    g.created_at,
                    g.updated_at,
                    g.demand_pattern,
@@ -10211,7 +10211,7 @@ class MixedScenarioService:
                 node_key=node_key,
             ))
 
-        current_round = self.get_current_round(scenario_id)
+        current_period = self.get_current_period(scenario_id)
         
         # Create a default demand pattern if none exists
         try:
@@ -10304,8 +10304,8 @@ class MixedScenarioService:
             return None
 
         history_payload: List[Dict[str, Any]] = []
-        current_round_number = (
-            current_round.round_number if current_round is not None else game_record.get("current_round", 0)
+        current_period_number = (
+            current_period.round_number if current_period is not None else game_record.get("current_period", 0)
         )
 
         if isinstance(engine_state, dict) and engine_state:
@@ -10333,7 +10333,7 @@ class MixedScenarioService:
             effective_sequence = list(node_sequence) or list(node_states_payload.keys())
             history_payload.append(
                 {
-                    "round": current_round_number,
+                    "round": current_period_number,
                     "node_sequence": effective_sequence,
                     "current_node": effective_sequence[0] if effective_sequence else None,
                     "node_states": node_states_payload,
@@ -10364,7 +10364,7 @@ class MixedScenarioService:
                 }
             history_payload.append(
                 {
-                    "round": current_round_number,
+                    "round": current_period_number,
                     "node_sequence": fallback_sequence,
                     "current_node": fallback_sequence[0] if fallback_sequence else None,
                     "node_states": node_states_payload,
@@ -10375,8 +10375,8 @@ class MixedScenarioService:
             id=game_record["id"],
             name=game_record["name"],
             status=game_record["status"],
-            current_round=game_record["current_round"],
-            max_rounds=game_record["max_rounds"],
+            current_period=game_record["current_period"],
+            max_periods=game_record["max_periods"],
             progression_mode=progression_mode,
             scenario_users=scenario_user_states,
             current_demand=None,  # Will be set by the round

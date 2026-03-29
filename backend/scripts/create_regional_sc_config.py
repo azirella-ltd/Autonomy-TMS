@@ -51,7 +51,7 @@ HOLDING_COST_RANGE = {"min": 0.5, "max": 1.5}
 BACKLOG_COST_RANGE = {"min": 5.0, "max": 12.0}
 SELLING_PRICE_RANGE = {"min": 55.0, "max": 95.0}
 MANUFACTURING_PRICE_RANGE = {"min": 45.0, "max": 80.0}
-DEFAULT_MARKET_SUPPLY_CAPACITY = 0
+DEFAULT_VENDOR_CAPACITY = 0
 SUPPLIER_INVENTORY_TARGET_RANGE = {"min": 12, "max": 24}
 SUPPLIER_INITIAL_INVENTORY_RANGE = {"min": 8, "max": 16}
 SUPPLIER_HOLDING_COST_RANGE = {"min": 0.3, "max": 0.9}
@@ -64,10 +64,10 @@ def _node_dag_type(node: Node) -> str:
 
 
 def _master_from_enum(node_type: NodeType) -> str:
-    if node_type in {NodeType.MARKET_SUPPLY}:
-        return "market_supply"
-    if node_type in {NodeType.MARKET_DEMAND}:
-        return "market_demand"
+    if node_type in {NodeType.VENDOR}:
+        return "vendor"
+    if node_type in {NodeType.CUSTOMER}:
+        return "customer"
     if node_type in {NodeType.MANUFACTURER}:
         return "manufacturer"
     return "inventory"
@@ -121,7 +121,7 @@ def _create_items(session: Session, config: SupplyChainConfig) -> List[Item]:
 def _ensure_market_supply_attributes(
     node: Optional[Node],
     *,
-    default_capacity: int = DEFAULT_MARKET_SUPPLY_CAPACITY,
+    default_capacity: int = DEFAULT_VENDOR_CAPACITY,
 ) -> None:
     """Ensure Market Supply nodes expose the required capacity metadata."""
 
@@ -178,7 +178,7 @@ def _create_nodes(
         tier2_node = Node(
             config_id=config.id,
             name=f"Tier2-{code}",
-            type=NodeType.MARKET_SUPPLY,
+            type=NodeType.VENDOR,
         )
         session.add(tier2_node)
         session.flush()
@@ -189,7 +189,7 @@ def _create_nodes(
 
     # Market demand nodes
     for code in ("A", "B", "C"):
-        node = Node(config_id=config.id, name=f"Demand Region {code}", type=NodeType.MARKET_DEMAND)
+        node = Node(config_id=config.id, name=f"Demand Region {code}", type=NodeType.CUSTOMER)
         session.add(node)
         session.flush()
         nodes[f"market-{code}"] = node
@@ -599,11 +599,11 @@ def _component_supplier_site_type_definitions() -> List[Dict[str, object]]:
     """Return the desired node type definition payload for component suppliers."""
 
     blueprint: Tuple[Tuple[str, str, bool, str], ...] = (
-        ("market_demand", "Demand Region", True, "market_demand"),
+        ("customer", "Demand Region", True, "customer"),
         ("distributor", "Distributor", False, "inventory"),
         ("plant", "Plant", False, "manufacturer"),
         ("component_supplier", "Tier1 Supplier", False, "inventory"),
-        ("market_supply", "Supply Region", True, "market_supply"),
+        ("vendor", "Supply Region", True, "vendor"),
     )
 
     definitions: List[Dict[str, object]] = []
@@ -664,11 +664,11 @@ def _ensure_component_supplier_metadata(session: Session, config: SupplyChainCon
         if normalized_name.startswith("tier2-") or normalized_name.startswith("market supply"):
             if not normalized_name.startswith("tier2-"):
                 node.name = "Tier2-A"
-            _apply(node, "market_supply", "market_supply")
+            _apply(node, "vendor", "vendor")
             continue
 
         if normalized_name.startswith("market demand") or normalized_name.startswith("demand region"):
-            _apply(node, "market_demand", "market_demand")
+            _apply(node, "customer", "customer")
             continue
 
         if normalized_name.startswith("dc ") or normalized_name.startswith("dc-"):
@@ -799,9 +799,9 @@ def _ensure_complex_market_nodes(session: Session, config: SupplyChainConfig) ->
             node = Node(
                 config_id=config.id,
                 name=desired_name,
-                type=NodeType.MARKET_SUPPLY.value.lower(),
-                dag_type=NodeType.MARKET_SUPPLY.value.lower(),
-                master_type=_master_from_enum(NodeType.MARKET_SUPPLY),
+                type=NodeType.VENDOR.value.lower(),
+                dag_type=NodeType.VENDOR.value.lower(),
+                master_type=_master_from_enum(NodeType.VENDOR),
             )
             session.add(node)
             session.flush()
@@ -812,7 +812,7 @@ def _ensure_complex_market_nodes(session: Session, config: SupplyChainConfig) ->
         tier2_nodes[code] = node
 
     market_demand_nodes = [
-        _get_or_create(f"Demand Region {code}", NodeType.MARKET_DEMAND)
+        _get_or_create(f"Demand Region {code}", NodeType.CUSTOMER)
         for code in ("A", "B", "C")
     ]
 

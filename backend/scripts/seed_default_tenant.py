@@ -160,7 +160,7 @@ COMPLEX_SC_DESCRIPTION = (
     "three demand regions, and thirty suppliers."
 )
 
-DEFAULT_MARKET_SUPPLY_CAPACITY = 0
+DEFAULT_VENDOR_CAPACITY = 0
 
 logger = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
@@ -168,11 +168,11 @@ if not logging.getLogger().handlers:
 
 DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS = [
     {
-        "type": "market_demand",
-        "label": "Market Demand",
+        "type": "customer",
+        "label": "Customer",
         "order": 0,
         "is_required": True,
-        "master_type": "market_demand",
+        "master_type": "customer",
     },
     {
         "type": "retailer",
@@ -203,11 +203,11 @@ DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS = [
         "master_type": "inventory",
     },
     {
-        "type": "market_supply",
-        "label": "Market Supply",
+        "type": "vendor",
+        "label": "Vendor",
         "order": 5,
         "is_required": True,
-        "master_type": "market_supply",
+        "master_type": "vendor",
     },
 ]
 
@@ -233,11 +233,11 @@ def _case_classic_demand_pattern() -> Dict[str, Any]:
 
 CASE_SIMULATION_NODE_TYPE_DEFINITIONS = [
     {
-        "type": "market_demand",
-        "label": "Market Demand",
+        "type": "customer",
+        "label": "Customer",
         "order": 0,
         "is_required": True,
-        "master_type": "market_demand",
+        "master_type": "customer",
     },
     {
         "type": "retailer",
@@ -268,21 +268,21 @@ CASE_SIMULATION_NODE_TYPE_DEFINITIONS = [
         "master_type": "manufacturer",
     },
     {
-        "type": "market_supply",
-        "label": "Market Supply",
+        "type": "vendor",
+        "label": "Vendor",
         "order": 5,
         "is_required": True,
-        "master_type": "market_supply",
+        "master_type": "vendor",
     },
 ]
 
 SIX_PACK_SIMULATION_NODE_TYPE_DEFINITIONS = [
     {
-        "type": "market_demand",
-        "label": "Market Demand",
+        "type": "customer",
+        "label": "Customer",
         "order": 0,
         "is_required": True,
-        "master_type": "market_demand",
+        "master_type": "customer",
     },
     {
         "type": "retailer",
@@ -320,21 +320,21 @@ SIX_PACK_SIMULATION_NODE_TYPE_DEFINITIONS = [
         "master_type": "manufacturer",
     },
     {
-        "type": "market_supply",
-        "label": "Market Supply",
+        "type": "vendor",
+        "label": "Vendor",
         "order": 6,
         "is_required": True,
-        "master_type": "market_supply",
+        "master_type": "vendor",
     },
 ]
 
 BOTTLE_SIMULATION_NODE_TYPE_DEFINITIONS = [
     {
-        "type": "market_demand",
-        "label": "Market Demand",
+        "type": "customer",
+        "label": "Customer",
         "order": 0,
         "is_required": True,
-        "master_type": "market_demand",
+        "master_type": "customer",
     },
     {
         "type": "retailer",
@@ -379,11 +379,11 @@ BOTTLE_SIMULATION_NODE_TYPE_DEFINITIONS = [
         "master_type": "manufacturer",
     },
     {
-        "type": "market_supply",
-        "label": "Market Supply",
+        "type": "vendor",
+        "label": "Vendor",
         "order": 7,
         "is_required": True,
-        "master_type": "market_supply",
+        "master_type": "vendor",
     },
 ]
 
@@ -583,11 +583,11 @@ def _canonical_master_type(node_type: NodeType, override: Optional[str] = None) 
     if node_type in inventory_types:
         return NodeType.INVENTORY.value.lower()
 
-    if node_type == NodeType.MARKET_SUPPLY:
-        return NodeType.MARKET_SUPPLY.value.lower()
+    if node_type == NodeType.VENDOR:
+        return NodeType.VENDOR.value.lower()
 
-    if node_type == NodeType.MARKET_DEMAND:
-        return NodeType.MARKET_DEMAND.value.lower()
+    if node_type == NodeType.CUSTOMER:
+        return NodeType.CUSTOMER.value.lower()
 
     return _normalise_node_key(getattr(node_type, "value", node_type))
 
@@ -595,12 +595,12 @@ def _canonical_master_type(node_type: NodeType, override: Optional[str] = None) 
 def _player_role_for_node_type(node_type: Optional[str]) -> PlayerRole:
     mapping = {
         "retailer": PlayerRole.RETAILER,
-        "market_demand": PlayerRole.RETAILER,
+        "customer": PlayerRole.RETAILER,
         "wholesaler": PlayerRole.WHOLESALER,
         "distributor": PlayerRole.DISTRIBUTOR,
         "manufacturer": PlayerRole.MANUFACTURER,
         "supplier": PlayerRole.SUPPLIER,
-        "market_supply": PlayerRole.SUPPLIER,
+        "vendor": PlayerRole.SUPPLIER,
     }
     canonical = (node_type or "").strip().lower()
     return mapping.get(canonical, PlayerRole.MANUFACTURER)
@@ -685,7 +685,7 @@ def _iter_node_slots(config_payload: Dict[str, Any]) -> List[NodeSlot]:
         if not key:
             continue
         node_type = node_types.get(key, "")
-        if node_type in {"market_supply", "market_demand"}:
+        if node_type in {"vendor", "customer"}:
             continue
         label = label_lookup.get(key) or str(raw_key).strip() or key
         attributes = dict(attr_lookup.get(key) or {})
@@ -770,7 +770,7 @@ def _apply_default_lead_times(config_payload: Dict[str, Any]) -> None:
         for legacy_key in ("ship_delay", "shipDelay", "shipping_delay"):
             policy.pop(legacy_key, None)
         node_type = str(node_types.get(node_key, "")).lower()
-        if node_type not in {"market_supply", "market_demand"}:
+        if node_type not in {"vendor", "customer"}:
             policy["init_inventory"] = initial_demand
 
     global_policy = config_payload.get("global_policy")
@@ -822,7 +822,7 @@ def _apply_default_lead_times(config_payload: Dict[str, Any]) -> None:
         node_state.setdefault("backlog", 0)
         node_state.setdefault("current_step", 0)
         node_type = str(node_types.get(node_key, "")).lower()
-        if node_type in {"market_supply", "market_demand"}:
+        if node_type in {"vendor", "customer"}:
             node_state.setdefault("inventory", int(policy.get("init_inventory", 0)))
         else:
             node_state["inventory"] = int(policy.get("init_inventory", initial_demand))
@@ -830,8 +830,8 @@ def _apply_default_lead_times(config_payload: Dict[str, Any]) -> None:
         order_leadtime = max(0, int(policy.get("order_leadtime", 0)))
         supply_leadtime = max(0, int(policy.get("supply_leadtime", 0)))
         node_type = str(node_types.get(node_key, "")).lower()
-        is_market_supply = node_type == "market_supply"
-        is_market_demand = node_type == "market_demand"
+        is_market_supply = node_type == "vendor"
+        is_market_demand = node_type == "customer"
 
         if order_leadtime > 0:
             seeded_orders = [initial_demand] * order_leadtime
@@ -878,7 +878,7 @@ def _apply_default_lead_times(config_payload: Dict[str, Any]) -> None:
         for raw_node_key, policy in node_policies.items():
             node_key = str(raw_node_key)
             node_type = str(node_types.get(node_key, "")).lower()
-            if node_type in {"market_supply", "market_demand"}:
+            if node_type in {"vendor", "customer"}:
                 continue
             order_leadtime = max(0, int(policy.get("order_leadtime", 0)))
             supply_leadtime = max(0, int(policy.get("supply_leadtime", 0)))
@@ -1217,7 +1217,7 @@ def ensure_supply_chain_config(
 
     # Nodes and master types
     node_specs = [
-        ("Market Supply", NodeType.MARKET_SUPPLY, "market_supply", "market_supply"),
+        ("Vendor", NodeType.VENDOR, "vendor", "vendor"),
         (
             "Factory",
             NodeType.MANUFACTURER,
@@ -1227,7 +1227,7 @@ def ensure_supply_chain_config(
         ("Distributor", NodeType.DISTRIBUTOR, "distributor", "inventory"),
         ("Wholesaler", NodeType.WHOLESALER, "wholesaler", "inventory"),
         ("Retailer", NodeType.RETAILER, "retailer", "inventory"),
-        ("Market Demand", NodeType.MARKET_DEMAND, "market_demand", "market_demand"),
+        ("Customer", NodeType.CUSTOMER, "customer", "customer"),
     ]
     nodes: Dict[NodeType, Node] = {}
     for node_name, node_type, dag_type, master_type in node_specs:
@@ -1242,7 +1242,7 @@ def ensure_supply_chain_config(
         session.flush()
         nodes[node_type] = node
 
-    market_supply_node = nodes.get(NodeType.MARKET_SUPPLY)
+    market_supply_node = nodes.get(NodeType.VENDOR)
     _ensure_market_supply_attributes(market_supply_node)
     if market_supply_node:
         session.add(market_supply_node)
@@ -1258,11 +1258,11 @@ def ensure_supply_chain_config(
         session.add(factory_node)
 
     lane_specs = [
-        (NodeType.MARKET_SUPPLY, NodeType.MANUFACTURER),
+        (NodeType.VENDOR, NodeType.MANUFACTURER),
         (NodeType.MANUFACTURER, NodeType.DISTRIBUTOR),
         (NodeType.DISTRIBUTOR, NodeType.WHOLESALER),
         (NodeType.WHOLESALER, NodeType.RETAILER),
-        (NodeType.RETAILER, NodeType.MARKET_DEMAND),
+        (NodeType.RETAILER, NodeType.CUSTOMER),
     ]
     for upstream_type, downstream_type in lane_specs:
         lane = Lane(
@@ -1279,7 +1279,7 @@ def ensure_supply_chain_config(
     session.flush()
 
     for node in nodes.values():
-        if str(node.master_type or "").lower() in {"market_supply", "market_demand"}:
+        if str(node.master_type or "").lower() in {"vendor", "customer"}:
             continue
         for item in (case_item, six_pack_item):
             node_config = InvPolicy(
@@ -1412,7 +1412,7 @@ def ensure_three_fg_inventory_config(
     nodes = session.query(Node).filter(Node.config_id == config.id).all()
     for node in nodes:
         master = str(node.master_type or "").lower()
-        if master in {"market_supply", "market_demand"}:
+        if master in {"vendor", "customer"}:
             continue
         for item in items.values():
             exists = (
@@ -1514,12 +1514,12 @@ def _create_inventory_only_config(
 
     # Nodes: all internal nodes use INVENTORY master/type; Factory keeps DAG identity but uses the inventory master type
     node_specs = [
-        ("Market Supply", NodeType.MARKET_SUPPLY, "market_supply", "market_supply"),
+        ("Vendor", NodeType.VENDOR, "vendor", "vendor"),
         ("Factory", NodeType.MANUFACTURER, "factory", "inventory"),
         ("Distributor", NodeType.DISTRIBUTOR, "distributor", "inventory"),
         ("Wholesaler", NodeType.WHOLESALER, "wholesaler", "inventory"),
         ("Retailer", NodeType.RETAILER, "retailer", "inventory"),
-        ("Market Demand", NodeType.MARKET_DEMAND, "market_demand", "market_demand"),
+        ("Customer", NodeType.CUSTOMER, "customer", "customer"),
     ]
     nodes: Dict[str, Node] = {}
     for name_val, node_type, master_type, dag_key in node_specs:
@@ -1534,18 +1534,18 @@ def _create_inventory_only_config(
         session.flush()
         nodes[dag_key] = node
 
-    market_supply_node = nodes.get("market_supply")
+    market_supply_node = nodes.get("vendor")
     _ensure_market_supply_attributes(market_supply_node)
     if market_supply_node:
         session.add(market_supply_node)
 
     # Lanes (linear DAG): Market Supply -> Factory -> Distributor -> Wholesaler -> Retailer -> Market Demand
     lane_order = [
-        ("market_supply", "factory"),
+        ("vendor", "factory"),
         ("factory", "distributor"),
         ("distributor", "wholesaler"),
         ("wholesaler", "retailer"),
-        ("retailer", "market_demand"),
+        ("retailer", "customer"),
     ]
     for upstream_key, downstream_key in lane_order:
         upstream_node = nodes.get(upstream_key)
@@ -1566,7 +1566,7 @@ def _create_inventory_only_config(
 
     # Product-node configs: Case for every internal node (excluding Market Supply/Demand)
     for node in nodes.values():
-        if str(node.master_type or "").lower() in {"market_supply", "market_demand"}:
+        if str(node.master_type or "").lower() in {"vendor", "customer"}:
             continue
         node_config = InvPolicy(
             product_id=case_item.id,
@@ -1621,12 +1621,12 @@ def _ensure_default_topology(
 
     factory_master_token = _normalise_node_key(factory_master_type) or "inventory"
     allowed_keys = {
-        "market_supply": ("Market Supply", NodeType.MARKET_SUPPLY.value.lower()),
+        "vendor": ("Vendor", NodeType.VENDOR.value.lower()),
         "factory": ("Factory", factory_master_token),
         "distributor": ("Distributor", NodeType.INVENTORY.value.lower()),
         "wholesaler": ("Wholesaler", NodeType.INVENTORY.value.lower()),
         "retailer": ("Retailer", NodeType.INVENTORY.value.lower()),
-        "market_demand": ("Market Demand", NodeType.MARKET_DEMAND.value.lower()),
+        "customer": ("Customer", NodeType.CUSTOMER.value.lower()),
     }
     legacy_aliases = {
         "case_mfg": "factory",
@@ -1713,10 +1713,10 @@ def _ensure_default_topology(
         return node
 
     market_supply = _get_or_create(
-        NodeType.MARKET_SUPPLY,
-        "Market Supply",
-        "market_supply",
-        "market_supply",
+        NodeType.VENDOR,
+        "Vendor",
+        "vendor",
+        "vendor",
     )
     _ensure_market_supply_attributes(market_supply)
     session.add(market_supply)
@@ -1745,10 +1745,10 @@ def _ensure_default_topology(
         "retailer",
     )
     market_demand = _get_or_create(
-        NodeType.MARKET_DEMAND,
-        "Market Demand",
-        "market_demand",
-        "market_demand",
+        NodeType.CUSTOMER,
+        "Customer",
+        "customer",
+        "customer",
     )
 
     # Products: Case only (inventory-only default simulation config)
@@ -2066,7 +2066,7 @@ def _apply_site_type_definitions(
 def _ensure_market_supply_attributes(
     node: Optional[Node],
     *,
-    default_capacity: int = DEFAULT_MARKET_SUPPLY_CAPACITY,
+    default_capacity: int = DEFAULT_VENDOR_CAPACITY,
 ) -> None:
     """Ensure Market Supply nodes carry required supply capacity metadata."""
 
@@ -2244,7 +2244,7 @@ def _compute_item_flow_by_node(session: Session, config: SupplyChainConfig) -> D
         node.id
         for node in nodes
         if node.id is not None
-        and str(getattr(node, "master_type", "") or "").lower() == "market_demand"
+        and str(getattr(node, "master_type", "") or "").lower() == "customer"
     ]
     if not demand_nodes:
         return {}
@@ -2291,7 +2291,7 @@ def _compute_item_flow_by_node(session: Session, config: SupplyChainConfig) -> D
             else:
                 items_by_node[upstream_id].update(propagate)
 
-            if not propagate or master == "market_supply":
+            if not propagate or master == "vendor":
                 continue
 
             unseen = propagate - pending[upstream_id]
@@ -2320,7 +2320,7 @@ def _reseed_product_site_configs(session: Session, config: SupplyChainConfig) ->
         if not node:
             continue
         master = str(getattr(node, "master_type", "") or "").lower()
-        if master in {"market_supply", "market_demand"}:
+        if master in {"vendor", "customer"}:
             continue
         for item_id in item_ids:
             desired_pairs.add((node_id, item_id))
@@ -2467,12 +2467,12 @@ def ensure_case_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
 
     # Nodes
     node_specs = [
-        ("Market Supply", NodeType.MARKET_SUPPLY, "market_supply"),
+        ("Vendor", NodeType.VENDOR, "vendor"),
         ("Case Mfg", NodeType.MANUFACTURER, "case_mfg"),
         ("Distributor", NodeType.DISTRIBUTOR, "distributor"),
         ("Wholesaler", NodeType.WHOLESALER, "wholesaler"),
         ("Retailer", NodeType.RETAILER, "retailer"),
-        ("Market Demand", NodeType.MARKET_DEMAND, "market_demand"),
+        ("Customer", NodeType.CUSTOMER, "customer"),
     ]
     allowed_keys = {_normalise_node_key(name) for name, *_ in node_specs}
     existing_nodes = session.query(Node).filter(Node.config_id == config.id).all()
@@ -2504,7 +2504,7 @@ def ensure_case_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
         session.add(node)
 
     manufacturer = nodes.get(_normalise_node_key("Case Mfg"))
-    market_supply = nodes.get(_normalise_node_key("Market Supply"))
+    market_supply = nodes.get(_normalise_node_key("Vendor"))
     _ensure_market_supply_attributes(market_supply)
     if market_supply:
         session.add(market_supply)
@@ -2524,7 +2524,7 @@ def ensure_case_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
             (manufacturer, nodes[_normalise_node_key("Distributor")]),
             (nodes[_normalise_node_key("Distributor")], nodes[_normalise_node_key("Wholesaler")]),
             (nodes[_normalise_node_key("Wholesaler")], nodes[_normalise_node_key("Retailer")]),
-            (nodes[_normalise_node_key("Retailer")], nodes[_normalise_node_key("Market Demand")]),
+            (nodes[_normalise_node_key("Retailer")], nodes[_normalise_node_key("Customer")]),
         ]
         if pair
     ]
@@ -2579,7 +2579,7 @@ def ensure_case_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
         )
 
     for node in session.query(Node).filter(Node.config_id == config.id).all():
-        if str(node.master_type or "").lower() in {"market_supply", "market_demand"}:
+        if str(node.master_type or "").lower() in {"vendor", "customer"}:
             continue
         for item in (case_item, six_pack_item):
             _ensure_cfg(item, node)
@@ -2678,13 +2678,13 @@ def ensure_six_pack_config(session: Session, tenant: Tenant) -> SupplyChainConfi
 
     # Nodes (clean up any obsolete nodes from prior runs)
     node_specs = [
-        ("Market Supply", NodeType.MARKET_SUPPLY, "market_supply"),
+        ("Vendor", NodeType.VENDOR, "vendor"),
         ("Six-Pack Mfg", NodeType.MANUFACTURER, "six_pack_mfg"),
         ("Case Mfg", NodeType.MANUFACTURER, "case_mfg"),
         ("Distributor", NodeType.DISTRIBUTOR, "distributor"),
         ("Wholesaler", NodeType.WHOLESALER, "wholesaler"),
         ("Retailer", NodeType.RETAILER, "retailer"),
-        ("Market Demand", NodeType.MARKET_DEMAND, "market_demand"),
+        ("Customer", NodeType.CUSTOMER, "customer"),
     ]
     allowed_keys = {_normalise_node_key(name) for name, *_ in node_specs}
     existing_nodes = session.query(Node).filter(Node.config_id == config.id).all()
@@ -2720,7 +2720,7 @@ def ensure_six_pack_config(session: Session, tenant: Tenant) -> SupplyChainConfi
 
     six_pack_manu = nodes.get(_normalise_node_key("Six-Pack Mfg"))
     manufacturer = nodes.get(_normalise_node_key("Case Mfg"))
-    market_supply = nodes.get(_normalise_node_key("Market Supply"))
+    market_supply = nodes.get(_normalise_node_key("Vendor"))
     _ensure_market_supply_attributes(market_supply)
     if market_supply:
         session.add(market_supply)
@@ -2751,7 +2751,7 @@ def ensure_six_pack_config(session: Session, tenant: Tenant) -> SupplyChainConfi
             (manufacturer, nodes[_normalise_node_key("Distributor")]),
             (nodes[_normalise_node_key("Distributor")], nodes[_normalise_node_key("Wholesaler")]),
             (nodes[_normalise_node_key("Wholesaler")], nodes[_normalise_node_key("Retailer")]),
-            (nodes[_normalise_node_key("Retailer")], nodes[_normalise_node_key("Market Demand")]),
+            (nodes[_normalise_node_key("Retailer")], nodes[_normalise_node_key("Customer")]),
         ]
         if pair
     ]
@@ -2806,7 +2806,7 @@ def ensure_six_pack_config(session: Session, tenant: Tenant) -> SupplyChainConfi
         )
 
     for node in session.query(Node).filter(Node.config_id == config.id).all():
-        if str(node.master_type or "").lower() in {"market_supply", "market_demand"}:
+        if str(node.master_type or "").lower() in {"vendor", "customer"}:
             continue
         for item in (case_item, six_pack_item, bottle_item):
             _ensure_node_cfg(item, node)
@@ -2907,14 +2907,14 @@ def ensure_bottle_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
             session.flush()
 
     node_specs = [
-        ("Market Supply", NodeType.MARKET_SUPPLY, "market_supply"),
+        ("Vendor", NodeType.VENDOR, "vendor"),
         ("Bottle Mfg", NodeType.MANUFACTURER, "bottle_mfg"),
         ("Six-Pack Mfg", NodeType.MANUFACTURER, "six_pack_mfg"),
         ("Case Mfg", NodeType.MANUFACTURER, "case_mfg"),
         ("Distributor", NodeType.DISTRIBUTOR, "distributor"),
         ("Wholesaler", NodeType.WHOLESALER, "wholesaler"),
         ("Retailer", NodeType.RETAILER, "retailer"),
-        ("Market Demand", NodeType.MARKET_DEMAND, "market_demand"),
+        ("Customer", NodeType.CUSTOMER, "customer"),
     ]
     allowed_keys = {_normalise_node_key(name) for name, *_ in node_specs}
     existing_nodes = session.query(Node).filter(Node.config_id == config.id).all()
@@ -2952,7 +2952,7 @@ def ensure_bottle_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
     bottle_manu = nodes.get(_normalise_node_key("Bottle Mfg"))
     six_pack_manu = nodes.get(_normalise_node_key("Six-Pack Mfg"))
     case_manu = nodes.get(_normalise_node_key("Case Mfg"))
-    market_supply = nodes.get(_normalise_node_key("Market Supply"))
+    market_supply = nodes.get(_normalise_node_key("Vendor"))
     _ensure_market_supply_attributes(market_supply)
     if market_supply:
         session.add(market_supply)
@@ -2991,7 +2991,7 @@ def ensure_bottle_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
             (case_manu, nodes[_normalise_node_key("Distributor")]),
             (nodes[_normalise_node_key("Distributor")], nodes[_normalise_node_key("Wholesaler")]),
             (nodes[_normalise_node_key("Wholesaler")], nodes[_normalise_node_key("Retailer")]),
-            (nodes[_normalise_node_key("Retailer")], nodes[_normalise_node_key("Market Demand")]),
+            (nodes[_normalise_node_key("Retailer")], nodes[_normalise_node_key("Customer")]),
         ]
         if pair
     ]
@@ -3046,7 +3046,7 @@ def ensure_bottle_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
         )
 
     for node in session.query(Node).filter(Node.config_id == config.id).all():
-        if str(node.master_type or "").lower() in {"market_supply", "market_demand"}:
+        if str(node.master_type or "").lower() in {"vendor", "customer"}:
             continue
         for item in (case_item, six_pack_item, bottle_item, ingredients_item):
             _ensure_cfg(item, node)
@@ -3132,13 +3132,13 @@ def ensure_multi_item_six_pack_config(session: Session, tenant: Tenant) -> Suppl
     noalc_bottle = _get_or_create_item("NoAlc_Bottle", "Non-alcoholic Bottle")
 
     node_specs = [
-        ("Market Supply", NodeType.MARKET_SUPPLY, "market_supply"),
+        ("Vendor", NodeType.VENDOR, "vendor"),
         ("Six-Pack Manufacturer", NodeType.MANUFACTURER, "six_pack_mfg"),
         ("Case Manufacturer", NodeType.MANUFACTURER, "case_mfg"),
         ("Distributor", NodeType.DISTRIBUTOR, "distributor"),
         ("Wholesaler", NodeType.WHOLESALER, "wholesaler"),
         ("Retailer", NodeType.RETAILER, "retailer"),
-        ("Market Demand", NodeType.MARKET_DEMAND, "market_demand"),
+        ("Customer", NodeType.CUSTOMER, "customer"),
     ]
     nodes: Dict[str, Node] = {_normalise_node_key(n.name): n for n in session.query(Node).filter(Node.config_id == config.id).all()}
     allowed_keys = {_normalise_node_key(name) for name, *_ in node_specs}
@@ -3171,7 +3171,7 @@ def ensure_multi_item_six_pack_config(session: Session, tenant: Tenant) -> Suppl
         node.master_type = _canonical_master_type(node_type)
         session.add(node)
 
-    market_supply_node = nodes.get(_normalise_node_key("Market Supply"))
+    market_supply_node = nodes.get(_normalise_node_key("Vendor"))
     _ensure_market_supply_attributes(market_supply_node)
     if market_supply_node:
         session.add(market_supply_node)
@@ -3194,12 +3194,12 @@ def ensure_multi_item_six_pack_config(session: Session, tenant: Tenant) -> Suppl
 
     # Lanes
     lanes = [
-        (nodes[_normalise_node_key("Market Supply")], six_mfg),
+        (nodes[_normalise_node_key("Vendor")], six_mfg),
         (six_mfg, case_mfg),
         (case_mfg, nodes[_normalise_node_key("Distributor")]),
         (nodes[_normalise_node_key("Distributor")], nodes[_normalise_node_key("Wholesaler")]),
         (nodes[_normalise_node_key("Wholesaler")], nodes[_normalise_node_key("Retailer")]),
-        (nodes[_normalise_node_key("Retailer")], nodes[_normalise_node_key("Market Demand")]),
+        (nodes[_normalise_node_key("Retailer")], nodes[_normalise_node_key("Customer")]),
     ]
     desired = {(u.id, d.id) for u, d in lanes if u and d}
     for lane in session.query(Lane).filter(Lane.config_id == config.id).all():
@@ -3232,7 +3232,7 @@ def ensure_multi_item_six_pack_config(session: Session, tenant: Tenant) -> Suppl
     # Product node configs
     all_items = [dark_case, pilsner_case, noalc_case, pilsner_six, noalc_six, noalc_bottle]
     for node in session.query(Node).filter(Node.config_id == config.id).all():
-        if str(node.master_type or "").lower() in {"market_supply", "market_demand"}:
+        if str(node.master_type or "").lower() in {"vendor", "customer"}:
             continue
         for item in all_items:
             exists = (
@@ -3351,7 +3351,7 @@ def ensure_default_game(
     config_service = SupplyChainConfigService(session)
     game_config = config_service.create_game_from_config(
         sc_config.id,
-        {"name": target_name, "max_rounds": 40},
+        {"name": target_name, "max_periods": 40},
     )
     _apply_default_lead_times(game_config)
     game_config["progression_mode"] = "unsupervised"
@@ -3364,7 +3364,7 @@ def ensure_default_game(
         created_by=creator_id,
         tenant_id=tenant.id,
         status=ScenarioStatus.CREATED,
-        max_rounds=game_config.get("max_rounds", 52),
+        max_periods=game_config.get("max_periods", 52),
         config=game_config,
         demand_pattern=game_config.get("demand_pattern", {}),
         supply_chain_config_id=sc_config.id,
@@ -3399,7 +3399,7 @@ def ensure_naive_unsupervised_game(
             config.id,
             {
                 "name": game_name,
-                "max_rounds": 40,
+                "max_periods": 40,
                 "is_public": False,
                 "description": NAIVE_AGENT_DESCRIPTION,
             },
@@ -3415,7 +3415,7 @@ def ensure_naive_unsupervised_game(
             created_by=creator_id,
             tenant_id=tenant.id,
             status=ScenarioStatus.CREATED,
-            max_rounds=base_config.get("max_rounds", 40),
+            max_periods=base_config.get("max_periods", 40),
             config=base_config,
             demand_pattern=base_config.get("demand_pattern", {}),
             description=NAIVE_AGENT_DESCRIPTION,
@@ -3434,7 +3434,7 @@ def ensure_naive_unsupervised_game(
                 game_config = {}
         _apply_default_lead_times(game_config)
         game_config["progression_mode"] = "unsupervised"
-        game_config["max_rounds"] = game_config.get("max_rounds", 40)
+        game_config["max_periods"] = game_config.get("max_periods", 40)
         if demand_pattern_override:
             game_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
         game.config = json.loads(json.dumps(game_config))
@@ -3473,7 +3473,7 @@ def ensure_pid_game(
             config.id,
             {
                 "name": game_name,
-                "max_rounds": 40,
+                "max_periods": 40,
                 "is_public": False,
                 "description": PID_AGENT_DESCRIPTION,
             },
@@ -3489,7 +3489,7 @@ def ensure_pid_game(
             created_by=creator_id,
             tenant_id=tenant.id,
             status=ScenarioStatus.CREATED,
-            max_rounds=base_config.get("max_rounds", 40),
+            max_periods=base_config.get("max_periods", 40),
             config=base_config,
             demand_pattern=base_config.get("demand_pattern", {}),
             description=PID_AGENT_DESCRIPTION,
@@ -3508,7 +3508,7 @@ def ensure_pid_game(
                 game_config = {}
         _apply_default_lead_times(game_config)
         game_config["progression_mode"] = "unsupervised"
-        game_config["max_rounds"] = game_config.get("max_rounds", 40)
+        game_config["max_periods"] = game_config.get("max_periods", 40)
         if demand_pattern_override:
             game_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
         game.config = json.loads(json.dumps(game_config))
@@ -3554,7 +3554,7 @@ def ensure_trm_game(
             config.id,
             {
                 "name": game_name,
-                "max_rounds": 40,
+                "max_periods": 40,
                 "is_public": False,
                 "description": TRM_AGENT_DESCRIPTION,
             },
@@ -3570,7 +3570,7 @@ def ensure_trm_game(
             created_by=creator_id,
             tenant_id=tenant.id,
             status=ScenarioStatus.CREATED,
-            max_rounds=base_config.get("max_rounds", 40),
+            max_periods=base_config.get("max_periods", 40),
             config=base_config,
             demand_pattern=base_config.get("demand_pattern", {}),
             description=TRM_AGENT_DESCRIPTION,
@@ -3589,7 +3589,7 @@ def ensure_trm_game(
                 game_config = {}
         _apply_default_lead_times(game_config)
         game_config["progression_mode"] = "unsupervised"
-        game_config["max_rounds"] = game_config.get("max_rounds", 40)
+        game_config["max_periods"] = game_config.get("max_periods", 40)
         if demand_pattern_override:
             game_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
         game.config = json.loads(json.dumps(game_config))
@@ -3736,7 +3736,7 @@ def ensure_human_game_for_config(
             config.id,
             {
                 "name": game_name,
-                "max_rounds": 40,
+                "max_periods": 40,
                 "is_public": False,
                 "description": description,
             },
@@ -3750,7 +3750,7 @@ def ensure_human_game_for_config(
             created_by=creator_id,
             tenant_id=tenant.id,
             status=ScenarioStatus.CREATED,
-            max_rounds=base_config.get("max_rounds", 40),
+            max_periods=base_config.get("max_periods", 40),
             config=base_config,
             demand_pattern=base_config.get("demand_pattern", {}),
             description=description,
@@ -3849,7 +3849,7 @@ def ensure_hybrid_human_naive_game(
     print(f"[info] Creating hybrid scenario_users for game '{game_name}'...")
     for slot in slots:
         # Skip Market Demand and Market Supply sites
-        if slot.node_type in [NodeType.MARKET_DEMAND, NodeType.MARKET_SUPPLY]:
+        if slot.node_type in [NodeType.CUSTOMER, NodeType.VENDOR]:
             continue
 
         if slot.key == human_site_key:
@@ -4535,7 +4535,7 @@ def ensure_autonomy_games(
                 config.id,
                 {
                     "name": game_name,
-                    "max_rounds": 40,
+                    "max_periods": 40,
                     "is_public": True,
                     "description": spec["description"],
                 },
@@ -4567,7 +4567,7 @@ def ensure_autonomy_games(
                 created_by=creator_id,
                 tenant_id=tenant.id,
                 status=ScenarioStatus.CREATED,
-                max_rounds=base_config.get("max_rounds", 40),
+                max_periods=base_config.get("max_periods", 40),
                 config=base_config,
                 demand_pattern=base_config.get("demand_pattern", {}),
                 description=spec["description"],
@@ -4612,7 +4612,7 @@ def ensure_autonomy_games(
                 }
                 game_config.setdefault("autonomy_overrides", {}).update(override_nodes)
             game_config["progression_mode"] = "unsupervised"
-            game_config["max_rounds"] = 40
+            game_config["max_periods"] = 40
             game.config = json.loads(json.dumps(game_config))
             session.add(game)
 

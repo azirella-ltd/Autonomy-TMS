@@ -166,8 +166,8 @@ class AgentGameService:
         game = Game(
             name=game_data.name,
             status=GameStatus.CREATED,
-            current_round=0,
-            max_rounds=game_data.max_rounds,
+            current_period=0,
+            max_periods=game_data.max_periods,
             demand_pattern=pattern_config,
             config={},
             supply_chain_config_id=int(supply_chain_config_id),
@@ -190,7 +190,7 @@ class AgentGameService:
 
     def start_game(self, scenario_id: int) -> Game:
         game = self._get_game(scenario_id)
-        if game.status not in {GameStatus.CREATED, GameStatus.ROUND_COMPLETED}:
+        if game.status not in {GameStatus.CREATED, GameStatus.PERIOD_COMPLETED}:
             raise ValueError("Game is already in progress or finished")
 
         topology = self._load_topology(game)
@@ -198,7 +198,7 @@ class AgentGameService:
         config["executor_mode"] = "sc_execution"
         game.config = config
         game.status = GameStatus.STARTED
-        game.current_round = 1
+        game.current_period = 1
         game.started_at = datetime.utcnow()
         self.db.commit()
         self.db.refresh(game)
@@ -208,8 +208,8 @@ class AgentGameService:
         game = self._get_game(scenario_id)
         if game.status not in {
             GameStatus.STARTED,
-            GameStatus.ROUND_COMPLETED,
-            GameStatus.ROUND_IN_PROGRESS,
+            GameStatus.PERIOD_COMPLETED,
+            GameStatus.PERIOD_IN_PROGRESS,
         }:
             raise ValueError("Game must be started before playing rounds")
 
@@ -241,8 +241,8 @@ class AgentGameService:
             "scenario_id": game.id,
             "name": game.name,
             "status": game.status,
-            "current_round": game.current_round,
-            "max_rounds": game.max_rounds,
+            "current_period": game.current_period,
+            "max_periods": game.max_periods,
             "scenario_users": scenario_user_states,
             "demand_pattern": game.demand_pattern,
         }
@@ -346,7 +346,7 @@ class AgentGameService:
                 {
                     "name": game_data.name or "Agent Game",
                     "description": game_data.description or "",
-                    "max_rounds": game_data.max_rounds,
+                    "max_periods": game_data.max_periods,
                 },
             )
         except Exception:
@@ -412,14 +412,14 @@ class AgentGameService:
             self.db.query(ScenarioRound)
             .filter(
                 ScenarioRound.scenario_id == game.id,
-                ScenarioRound.round_number == game.current_round,
+                ScenarioRound.round_number == game.current_period,
             )
             .one_or_none()
         )
         if not round_record:
             round_record = ScenarioRound(
                 scenario_id=game.id,
-                round_number=game.current_round,
+                round_number=game.current_period,
                 customer_demand=demand,
                 started_at=datetime.utcnow(),
             )
@@ -470,7 +470,7 @@ class AgentGameService:
         from app.models.sc_entities import InvLevel, Product as ProductModel
 
         demand_pattern = DemandPattern(**game.demand_pattern)
-        current_demand = self._get_current_demand(game.current_round, demand_pattern)
+        current_demand = self._get_current_demand(game.current_period, demand_pattern)
 
         # Load current inventory state from InvLevel for policy obs
         config_id = game.supply_chain_config_id
@@ -523,7 +523,7 @@ class AgentGameService:
         executor = SimulationExecutor(db=self.db, scenario=game)
         executor._load_config()
         executor.execute_round(
-            round_number=game.current_round,
+            round_number=game.current_period,
             agent_decisions=agent_decisions,
             market_demand=float(current_demand),
         )
@@ -532,12 +532,12 @@ class AgentGameService:
         round_record.is_completed = True
         round_record.completed_at = datetime.utcnow()
 
-        if game.current_round >= game.max_rounds:
+        if game.current_period >= game.max_periods:
             game.status = GameStatus.FINISHED
             game.finished_at = datetime.utcnow()
         else:
-            game.current_round += 1
-            game.status = GameStatus.ROUND_COMPLETED
+            game.current_period += 1
+            game.status = GameStatus.PERIOD_COMPLETED
 
         self.db.commit()
         return self.get_game_state(game.id)

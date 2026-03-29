@@ -83,7 +83,7 @@ class LLMAgent:
 
     def make_decision(
         self,
-        current_round: int,
+        current_period: int,
         current_inventory: int,
         backorders: int,
         incoming_shipments: list,
@@ -122,7 +122,7 @@ class LLMAgent:
             logger.debug(
                 "Autonomy LLM request | role=%s round=%s | payload=%s",
                 self.role,
-                current_round,
+                current_period,
                 _summarize(payload),
             )
             try:
@@ -135,7 +135,7 @@ class LLMAgent:
                 logger.debug(
                     "Autonomy LLM response | role=%s round=%s | decision=%s",
                     self.role,
-                    current_round,
+                    current_period,
                     _summarize(decision),
                 )
 
@@ -191,20 +191,20 @@ class LLMAgent:
                 logger.exception(
                     "Autonomy LLM error | role=%s round=%s | payload=%s | error=%s",
                     self.role,
-                    current_round,
+                    current_period,
                     summary,
                     exc,
                 )
                 error_message = (
                     "Autonomy LLM call failed in llm_agent.LLMAgent.make_decision "
-                    f"(role={self.role}, round={current_round}): {exc}"
+                    f"(role={self.role}, round={current_period}): {exc}"
                 )
                 self.last_explanation = error_message
                 raise AutonomyLLMError(
                     error_message,
                     context={
                         "role": self.role,
-                        "round": current_round,
+                        "round": current_period,
                         "payload": summary,
                     },
                 ) from exc
@@ -218,7 +218,7 @@ class LLMAgent:
 
         error_message = (
             "Autonomy LLM payload missing in llm_agent.LLMAgent.make_decision "
-            f"(role={self.role}, round={current_round}) | upstream_keys={upstream_keys}"
+            f"(role={self.role}, round={current_period}) | upstream_keys={upstream_keys}"
         )
         logger.error(error_message)
         self.last_explanation = error_message
@@ -226,7 +226,7 @@ class LLMAgent:
             error_message,
             context={
                 "role": self.role,
-                "round": current_round,
+                "round": current_period,
                 "upstream_keys": upstream_keys,
             },
         )
@@ -291,7 +291,7 @@ if __name__ == "__main__":
     
     # Example scenario state
     order = agent.make_decision(
-        current_round=1,
+        current_period=1,
         current_inventory=12,
         backorders=0,
         incoming_shipments=[4, 4],

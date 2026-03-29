@@ -202,10 +202,10 @@ customer_trms = get_active_trms("customer")
 check("customer: 0 TRMs", len(customer_trms) == 0, f"got {len(customer_trms)}")
 
 # Legacy compatibility
-legacy_vendor = get_active_trms("market_supply")
+legacy_vendor = get_active_trms("vendor")
 check("market_supply (legacy) maps to vendor", legacy_vendor == vendor_trms)
 
-legacy_customer = get_active_trms("market_demand")
+legacy_customer = get_active_trms("customer")
 check("market_demand (legacy) maps to customer", legacy_customer == customer_trms)
 
 # ---------------------------------------------------------------------------

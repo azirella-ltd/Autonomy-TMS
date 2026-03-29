@@ -131,7 +131,7 @@ def get_active_trms(
         master_type: One of "manufacturer", "inventory" for internal sites, or
             "vendor"/"customer" for external TradingPartner-backed sites
             (lowercase, as stored in Site.master_type or Site.tpartner_type).
-            The legacy values "market_supply" and "market_demand" are mapped to
+            The legacy values "vendor" and "customer" are mapped to
             "vendor" and "customer" respectively for backward compatibility.
         sc_site_type: Optional NodeType value (uppercase, e.g. "RETAILER",
             "DISTRIBUTOR").  If provided AND an override exists, it takes
@@ -147,7 +147,7 @@ def get_active_trms(
     mt = master_type.lower()
 
     # Backward-compatibility: map legacy VENDOR/CUSTOMER to new names
-    _LEGACY_MAP = {"market_supply": "vendor", "market_demand": "customer"}
+    _LEGACY_MAP = {"vendor": "vendor", "customer": "customer"}
     mt = _LEGACY_MAP.get(mt, mt)
 
     # Check sc_site_type override first

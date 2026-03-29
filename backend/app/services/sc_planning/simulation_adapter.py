@@ -363,7 +363,7 @@ class SimulationToSCAdapter:
         if not scenario_user:
             return 0.0
 
-        return self._get_scenario_user_inventory(scenario_user, self.game.current_round)
+        return self._get_scenario_user_inventory(scenario_user, self.game.current_period)
 
     async def record_actual_demand(
         self,
@@ -392,7 +392,7 @@ class SimulationToSCAdapter:
 
         # Create outbound order line
         order_line = OutboundOrderLine(
-            order_id=f"GAME_{self.game.id}_R{self.game.current_round}",
+            order_id=f"GAME_{self.game.id}_R{self.game.current_period}",
             line_number=1,
             product_id=item.id,
             site_id=node.id,

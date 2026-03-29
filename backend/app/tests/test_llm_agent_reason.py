@@ -54,7 +54,7 @@ def test_llm_agent_records_rationale(monkeypatch):
     agent = llm_module.LLMAgent(role="retailer", model="stub-model")
 
     order = agent.make_decision(
-        current_round=1,
+        current_period=1,
         current_inventory=10,
         backorders=2,
         incoming_shipments=[2, 2],
@@ -109,7 +109,7 @@ def test_llm_agent_truncates_lengthy_rationale(monkeypatch):
     agent = llm_module.LLMAgent(role="retailer", model="stub-model")
 
     agent.make_decision(
-        current_round=1,
+        current_period=1,
         current_inventory=10,
         backorders=2,
         incoming_shipments=[2, 2],
@@ -165,7 +165,7 @@ def test_llm_agent_handles_empty_payload(monkeypatch):
     agent = llm_module.LLMAgent(role="retailer", model="stub-model")
 
     order = agent.make_decision(
-        current_round=1,
+        current_period=1,
         current_inventory=10,
         backorders=2,
         incoming_shipments=[2, 2],
@@ -208,7 +208,7 @@ def test_llm_agent_errors_when_payload_missing(monkeypatch):
 
     with pytest.raises(llm_module.AutonomyLLMError) as excinfo:
         agent.make_decision(
-            current_round=1,
+            current_period=1,
             current_inventory=10,
             backorders=2,
             incoming_shipments=[2, 2],
@@ -253,7 +253,7 @@ def test_llm_agent_surfaces_strategist_errors(monkeypatch):
 
     with pytest.raises(llm_module.AutonomyLLMError) as excinfo:
         agent.make_decision(
-            current_round=1,
+            current_period=1,
             current_inventory=10,
             backorders=2,
             incoming_shipments=[2, 2],

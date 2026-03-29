@@ -1150,16 +1150,18 @@ class PowellTrainingService:
         best_loss = float('inf')
         num_samples = trm_config.min_training_samples or 5000
 
+        from app.services.powell.trm_curriculum import PHASE_SAMPLE_WEIGHTS
         for phase in [1, 2, 3]:
-            logger.info(f"  TRM {trm_type_key} phase {phase}...")
-            data = curriculum.generate(phase=phase, num_samples=num_samples)
+            phase_n = max(1, int(num_samples * PHASE_SAMPLE_WEIGHTS.get(phase, 1 / 3)))
+            logger.info(f"  TRM {trm_type_key} phase {phase} ({phase_n} samples)...")
+            data = curriculum.generate(phase=phase, num_samples=phase_n)
 
             states_t = torch.tensor(data.state_vectors, dtype=torch.float32).to(self.device)
             act_disc_t = torch.tensor(data.action_discrete, dtype=torch.long).to(self.device)
             act_cont_t = torch.tensor(data.action_continuous, dtype=torch.float32).to(self.device)
             rewards_t = torch.tensor(data.rewards, dtype=torch.float32).to(self.device)
 
-            phase_epochs = max(1, epochs // 3)
+            phase_epochs = max(1, int(epochs * PHASE_SAMPLE_WEIGHTS.get(phase, 1 / 3)))
             for epoch in range(phase_epochs):
                 model.train()
                 optimizer.zero_grad()

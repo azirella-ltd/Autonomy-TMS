@@ -99,17 +99,17 @@ def test_compute_initial_conditions_reflects_lead_times():
 
 def test_apply_market_demand_respects_lane_lead_time():
     service = _make_service()
-    lane = LaneConfig(**{"from": "retailer", "to": "market_demand", "demand_lead_time": 1})
+    lane = LaneConfig(**{"from": "retailer", "to": "customer", "demand_lead_time": 1})
     topology = TopologyConfig(
         lanes=[lane],
-        shipments_map={"retailer": ["market_demand"]},
-        orders_map={"market_demand": ["retailer"]},
-        market_nodes=["market_demand"],
-        all_nodes=["retailer", "market_demand"],
-        node_sequence=["market_demand", "retailer"],
+        shipments_map={"retailer": ["customer"]},
+        orders_map={"customer": ["retailer"]},
+        market_nodes=["customer"],
+        all_nodes=["retailer", "customer"],
+        node_sequence=["customer", "retailer"],
         lanes_by_upstream={"retailer": [lane]},
-        node_types={"retailer": "retailer", "market_demand": "market_demand"},
-        lane_lookup={("retailer", "market_demand"): lane},
+        node_types={"retailer": "retailer", "customer": "customer"},
+        lane_lookup={("retailer", "customer"): lane},
     )
     context = RoundContext(
         round_number=1,
@@ -117,10 +117,10 @@ def test_apply_market_demand_respects_lane_lead_time():
         topology=topology,
         node_states={
             "retailer": NodeState(),
-            "market_demand": NodeState(),
+            "customer": NodeState(),
         },
         node_policies={"retailer": {"order_leadtime": 1}},
-        market_demand_map={"market_demand": {"Case": 4}},
+        market_demand_map={"customer": {"Case": 4}},
     )
     demand_inputs = defaultdict(int)
     demand_item_inputs = defaultdict(lambda: defaultdict(int))
@@ -129,12 +129,12 @@ def test_apply_market_demand_respects_lane_lead_time():
 
     supplier_orders = context.node_states["retailer"].inbound_demand
     assert len(supplier_orders) == 1
-    assert supplier_orders[0].due_round == 2  # current_round (1) + lane lead (1)
+    assert supplier_orders[0].due_round == 2  # current_period (1) + lane lead (1)
     assert supplier_orders[0].quantity == 4
 
-    market_orders = context.node_states["market_demand"].backlog_orders
+    market_orders = context.node_states["customer"].backlog_orders
     assert len(market_orders) == 1
     assert market_orders[0].due_round == 2
     assert market_orders[0].quantity == 4
 
-    assert demand_inputs["market_demand"] == 4
+    assert demand_inputs["customer"] == 4

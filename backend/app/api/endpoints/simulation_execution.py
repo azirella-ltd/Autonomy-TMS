@@ -195,7 +195,7 @@ class ATPCalculationRequest(BaseModel):
     product_id: str
     config_id: int
     scenario_id: int
-    current_round: Optional[int] = None
+    current_period: Optional[int] = None
 
 
 class ATPCalculationResponse(BaseModel):
@@ -265,12 +265,12 @@ async def execute_round(
     # Execute round
     result = await engine.execute_round(
         scenario_id=request.scenario_id,
-        current_round=scenario.current_round,
+        current_period=scenario.current_period,
         agent_decisions=request.agent_decisions,
     )
 
     # Update scenario round
-    scenario.current_round += 1
+    scenario.current_period += 1
     await db.commit()
 
     execution_time = (datetime.utcnow() - start_time).total_seconds() * 1000
@@ -832,7 +832,7 @@ async def calculate_atp(
         product_id=request.product_id,
         config_id=request.config_id,
         scenario_id=request.scenario_id,
-        current_round=request.current_round,
+        current_period=request.current_period,
         horizon_rounds=6,
     )
 

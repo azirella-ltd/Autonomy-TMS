@@ -158,7 +158,7 @@ def test_create_game_from_config_parses_string_pattern():
     wholesaler = _make_node(4, "Wholesaler", NodeType.WHOLESALER)
     distributor = _make_node(3, "Distributor", NodeType.DISTRIBUTOR)
     manufacturer = _make_node(2, "Manufacturer", NodeType.MANUFACTURER)
-    market_supply = _make_node(1, "Market Supply", NodeType.VENDOR)
+    market_supply = _make_node(1, "Vendor", NodeType.VENDOR)
 
     nodes = [market_supply, manufacturer, distributor, wholesaler, retailer]
 
@@ -210,7 +210,7 @@ def test_create_game_from_config_parses_string_pattern():
     session = DummySession(mapping)
     service = SupplyChainConfigService(session)
 
-    snapshot = service.create_game_from_config(42, {"name": "LogNormal", "max_rounds": 30})
+    snapshot = service.create_game_from_config(42, {"name": "LogNormal", "max_periods": 30})
 
     demand_pattern = snapshot["demand_pattern"]
     assert demand_pattern["type"] == "lognormal"

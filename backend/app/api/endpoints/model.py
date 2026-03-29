@@ -176,7 +176,7 @@ class BenchmarkRequest(BaseModel):
     config_name: str = "Default Supply Chain"
     agent_types: List[str] = ["naive", "rl", "gnn", "llm"]
     num_trials: int = 10
-    max_rounds: int = 36
+    max_periods: int = 36
     seed: Optional[int] = 42
 
 class EvaluateAgentRequest(BaseModel):
@@ -184,7 +184,7 @@ class EvaluateAgentRequest(BaseModel):
     config_name: str = "Default Supply Chain"
     agent_type: str = "rl"
     num_trials: int = 10
-    max_rounds: int = 36
+    max_periods: int = 36
 
 class ExplainPredictionRequest(BaseModel):
     """Request for model prediction explanation"""
@@ -713,7 +713,7 @@ async def benchmark_agents(
             config_name=req.config_name,
             agent_types=req.agent_types,
             num_trials=req.num_trials,
-            max_rounds=req.max_rounds,
+            max_periods=req.max_periods,
             seed=req.seed
         )
 
@@ -770,7 +770,7 @@ async def evaluate_single_agent(
             config_name=req.config_name,
             agent_type=req.agent_type,
             num_trials=req.num_trials,
-            max_rounds=req.max_rounds
+            max_periods=req.max_periods
         )
 
         # Save results

@@ -293,7 +293,7 @@ def build_llm_decision_payload(
     demand_pattern = _coerce_dict(demand_pattern_raw)
     demand_params = _coerce_dict(demand_pattern.get("params", {}))
 
-    total_weeks = _select_int(game.max_rounds, sim_params.get("weeks"), default=40)
+    total_weeks = _select_int(game.max_periods, sim_params.get("weeks"), default=40)
     order_lead = max(
         1,
         _select_int(

@@ -111,12 +111,12 @@ def auto_play_autonomy_scenarios() -> None:
             session.flush()
 
             if scenario.status == DbScenarioStatus.CREATED:
-                if not scenario.current_round or scenario.current_round <= 0:
-                    scenario.current_round = 1
-                round_rec = _ensure_round(session, scenario, scenario.current_round)
+                if not scenario.current_period or scenario.current_period <= 0:
+                    scenario.current_period = 1
+                round_rec = _ensure_round(session, scenario, scenario.current_period)
                 round_rec.status = 'in_progress'
                 round_rec.started_at = datetime.utcnow()
-                scenario.status = DbScenarioStatus.ROUND_IN_PROGRESS
+                scenario.status = DbScenarioStatus.PERIOD_IN_PROGRESS
                 _touch_scenario(scenario)
                 _save_scenario_config(session, scenario, config)
                 session.add(round_rec)
@@ -145,14 +145,14 @@ def auto_play_autonomy_scenarios() -> None:
             while True:
                 session.refresh(scenario)
                 if scenario.status == DbScenarioStatus.FINISHED:
-                    print(f"  Scenario finished at round {scenario.current_round}")
+                    print(f"  Scenario finished at round {scenario.current_period}")
                     break
 
                 config = _coerce_scenario_config(scenario)
                 _ensure_simulation_state(config)
                 pending = _pending_orders(config)
                 pending.clear()
-                round_record = _ensure_round(session, scenario, scenario.current_round or 1)
+                round_record = _ensure_round(session, scenario, scenario.current_period or 1)
                 if round_record.status != 'in_progress':
                     round_record.status = 'in_progress'
                     round_record.started_at = datetime.utcnow()
@@ -219,7 +219,7 @@ def auto_play_autonomy_scenarios() -> None:
                     visible_demand = demand if (scenario_user.can_see_demand or role_key == 'retailer' or full_visibility) else None
 
                     decision = agent.make_decision(
-                        current_round=round_record.round_number,
+                        current_period=round_record.round_number,
                         current_demand=visible_demand,
                         upstream_data=upstream_data,
                         local_state=local_state,
@@ -272,7 +272,7 @@ def auto_play_autonomy_scenarios() -> None:
 
                 if not progressed:
                     print(f"  Warning: round {round_record.round_number} did not finalize; forcing advance")
-                    scenario.current_round = (scenario.current_round or 0) + 1
+                    scenario.current_period = (scenario.current_period or 0) + 1
                     session.commit()
 
             export_round_history(scenario.id, os.environ.get("ROUND_EXPORT_DIR", "/app/exports"))

@@ -37,12 +37,12 @@ class AIService:
             return 0
 
         # Get the current period
-        current_round = self._get_current_round(scenario_user.scenario_id)
-        if not current_round:
+        current_period = self._get_current_period(scenario_user.scenario_id)
+        if not current_period:
             return 0
 
         # Get historical data
-        history = self._get_participant_history(scenario_user.id, current_round.round_number)
+        history = self._get_participant_history(scenario_user.id, current_period.round_number)
 
         # Make decision based on difficulty level
         if scenario_user.is_ai == "easy":
@@ -105,7 +105,7 @@ class AIService:
         Uses exponential smoothing for demand forecasting and considers supply chain position.
         """
         # Get more historical data for better forecasting
-        full_history = self._get_participant_history(participant_state.id, scenario_state.current_round)
+        full_history = self._get_participant_history(participant_state.id, scenario_state.current_period)
         
         # Calculate demand forecast using exponential smoothing (alpha = 0.3)
         alpha = 0.3
@@ -179,7 +179,7 @@ class AIService:
         lead_time = 2
         return 1.65 * std_dev * (lead_time ** 0.5)
     
-    def _get_current_round(self, scenario_id: int) -> Optional[ScenarioRound]:
+    def _get_current_period(self, scenario_id: int) -> Optional[ScenarioRound]:
         """Get the current period for a scenario."""
         return self.db.query(ScenarioRound).join(Scenario).filter(
             Scenario.id == scenario_id
@@ -187,13 +187,13 @@ class AIService:
             ScenarioRound.round_number.desc()
         ).first()
     
-    def _get_participant_history(self, scenario_user_id: int, current_round: int, limit: int = 10) -> List[Dict]:
+    def _get_participant_history(self, scenario_user_id: int, current_period: int, limit: int = 10) -> List[Dict]:
         """Get the scenario_user's order history."""
         history = self.db.query(ScenarioUserPeriod, ScenarioRound).join(
             ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id
         ).filter(
             ScenarioUserPeriod.scenario_user_id == scenario_user_id,
-            ScenarioRound.round_number < current_round
+            ScenarioRound.round_number < current_period
         ).order_by(
             ScenarioRound.round_number.desc()
         ).limit(limit).all()

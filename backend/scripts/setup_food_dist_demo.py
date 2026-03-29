@@ -38,19 +38,19 @@ DEMO_SCENARIOS = [
         "name": "Food Dist - Naive Baseline",
         "description": "Baseline simulation using Naive agents (echo incoming demand) for the Food Distribution network.",
         "strategy": "naive",
-        "max_rounds": 52,
+        "max_periods": 52,
     },
     {
         "name": "Food Dist - PID Controller",
         "description": "PID feedback controller agents managing inventory in the Food Distribution network.",
         "strategy": "pid_heuristic",
-        "max_rounds": 52,
+        "max_periods": 52,
     },
     {
         "name": "Food Dist - TRM Agents",
         "description": "TRM (Tiny Recursive Model) agents with trained neural network models managing the Food Distribution DC. Uses checkpoints from Phase 1 behavioral cloning.",
         "strategy": "trm",
-        "max_rounds": 52,
+        "max_periods": 52,
     },
 ]
 
@@ -148,7 +148,7 @@ def build_scenario_config(session, config_id):
         "name": config.name,
         "description": config.description or "",
         "supply_chain_config_id": config_id,
-        "max_rounds": 52,
+        "max_periods": 52,
         "is_public": True,
         "time_bucket": "week",
         "nodes": nodes_list,
@@ -190,7 +190,7 @@ def create_scenario_with_agents(session, base_config, spec, admin_user_id):
         created_by=admin_user_id,
         tenant_id=TENANT_ID,
         status=ScenarioStatus.CREATED,
-        max_rounds=spec["max_rounds"],
+        max_periods=spec["max_periods"],
         config=scenario_config,
         demand_pattern=scenario_config.get("demand_pattern", {}),
         supply_chain_config_id=CONFIG_ID,
@@ -205,13 +205,13 @@ def create_scenario_with_agents(session, base_config, spec, admin_user_id):
 
     role_mapping = {
         "retailer": PlayerRole.RETAILER,
-        "market_demand": PlayerRole.RETAILER,
+        "customer": PlayerRole.RETAILER,
         "wholesaler": PlayerRole.WHOLESALER,
         "distributor": PlayerRole.DISTRIBUTOR,
         "inventory": PlayerRole.DISTRIBUTOR,
         "distribution center": PlayerRole.DISTRIBUTOR,
         "manufacturer": PlayerRole.MANUFACTURER,
-        "market_supply": PlayerRole.SUPPLIER,
+        "vendor": PlayerRole.SUPPLIER,
         "supplier": PlayerRole.SUPPLIER,
     }
 

@@ -32,7 +32,7 @@ def action_idx_to_order_units(idx: int) -> int:
 
 # AWS SC master_type one-hot encoding — topology-agnostic (always 4 values, matching
 # the 4 AWS SC site master_type categories).
-_MASTER_TYPES = ["market_supply", "market_demand", "inventory", "manufacturer"]
+_MASTER_TYPES = ["vendor", "customer", "inventory", "manufacturer"]
 
 
 def site_type_onehot(master_type: str) -> List[float]:

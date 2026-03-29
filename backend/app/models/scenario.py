@@ -35,8 +35,8 @@ class ScenarioStatus(str, Enum):
     """Status of a scenario/simulation."""
     CREATED = "CREATED"
     STARTED = "STARTED"
-    ROUND_IN_PROGRESS = "ROUND_IN_PROGRESS"
-    ROUND_COMPLETED = "ROUND_COMPLETED"
+    PERIOD_IN_PROGRESS = "PERIOD_IN_PROGRESS"
+    PERIOD_COMPLETED = "PERIOD_COMPLETED"
     FINISHED = "FINISHED"
 
 
@@ -50,9 +50,12 @@ class Scenario(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), index=True)
-    status: Mapped[ScenarioStatus] = mapped_column(SQLEnum(ScenarioStatus), default=ScenarioStatus.CREATED)
-    current_round: Mapped[int] = mapped_column(Integer, default=0)
-    max_rounds: Mapped[int] = mapped_column(Integer, default=52)
+    status: Mapped[ScenarioStatus] = mapped_column(
+        SQLEnum(ScenarioStatus, name="scenariostatus", create_type=False),
+        default=ScenarioStatus.CREATED,
+    )
+    current_period: Mapped[int] = mapped_column(Integer, default=0)
+    max_periods: Mapped[int] = mapped_column(Integer, default=52)
 
     # Optional metadata/ownership
     created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

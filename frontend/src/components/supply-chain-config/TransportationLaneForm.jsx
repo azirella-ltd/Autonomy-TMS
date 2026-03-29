@@ -65,8 +65,8 @@ const SITE_TYPE_LABELS = {
   warehouse: 'Warehouse',
   manufacturing_plant: 'Manufacturing Plant',
   vendor: 'Vendor',
-  market_supply: 'Market Supply',
-  market_demand: 'Market Demand',
+  market_supply: 'Vendor',
+  market_demand: 'Customer',
   // Legacy TBG types
   retailer: 'Retailer',
   wholesaler: 'Wholesaler',
@@ -212,7 +212,7 @@ const TransportationLaneForm = ({
 
       setFilteredToSites(availableSites);
 
-      if (!editingLane && fromSite?.type === 'market_supply' && formData.demand_lead_time !== 0) {
+      if (!editingLane && fromSite?.type === 'vendor' && formData.demand_lead_time !== 0) {
         setFormData((prev) => ({ ...prev, demand_lead_time: 0 }));
       }
 
@@ -377,14 +377,14 @@ const TransportationLaneForm = ({
 
       if (name === 'from_site_id') {
         const fromSite = normalisedSites.find((n) => n.id === numericValue);
-        if (fromSite?.type === 'market_supply') {
+        if (fromSite?.type === 'vendor') {
           next.demand_lead_time = 0;
         }
       }
 
       if (name === 'to_site_id') {
         const toSite = normalisedSites.find((n) => n.id === numericValue);
-        if (toSite?.type === 'market_demand') {
+        if (toSite?.type === 'customer') {
           next.supply_lead_time = 0;
         }
       }
@@ -458,7 +458,7 @@ const TransportationLaneForm = ({
     return `$${numeric.toFixed(2)}`;
   };
 
-  const sourceSites = normalisedSites.filter((site) => site.type !== 'market_supply');
+  const sourceSites = normalisedSites.filter((site) => site.type !== 'vendor');
 
   const sortedLanes = useMemo(() => {
     return [...normalisedLanes]

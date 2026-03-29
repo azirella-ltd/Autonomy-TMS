@@ -34,8 +34,8 @@ class GNNAgent:
         "manufacturer": 3,
         "supplier": 4,
         "market": 5,
-        "market_demand": 6,
-        "market_supply": 7,
+        "customer": 6,
+        "vendor": 7,
     }
 
     def __init__(

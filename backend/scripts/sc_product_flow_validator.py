@@ -164,11 +164,11 @@ def classify_nodes_by_role(
         node_type_str = str(node.type).lower() if node.type else ""
 
         # Market Supply nodes (Tier 2 component sources)
-        if node_type_str in {"market_supply", "market supply"}:
+        if node_type_str in {"vendor", "market supply"}:
             market_supply_nodes.add(node.id)
 
         # Market Demand nodes
-        elif node_type_str in {"market_demand", "market demand"}:
+        elif node_type_str in {"customer", "market demand"}:
             market_demand_nodes.add(node.id)
 
         # Manufacturer/Plant nodes
@@ -260,11 +260,11 @@ def validate_and_fix_product_site_assignments(
             "fg_names": product_class.fg_names
         },
         "nodes": {
-            "market_supply": len(node_class.market_supply_nodes),
+            "vendor": len(node_class.market_supply_nodes),
             "tier1_suppliers": len(node_class.tier1_suppliers),
             "manufacturers": len(node_class.manufacturers),
             "distributors": len(node_class.distributors),
-            "market_demand": len(node_class.market_demand_nodes)
+            "customer": len(node_class.market_demand_nodes)
         },
         "issues_found": [],
         "actions_taken": [],

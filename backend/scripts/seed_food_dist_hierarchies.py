@@ -418,7 +418,7 @@ def create_sites(db: Session, config: SupplyChainConfig, company: Company, geo_m
             name=supp_code,
             type=f"Supplier - {supp_data['name']}",
             dag_type="SUPPLIER",
-            master_type="MARKET_SUPPLY",
+            master_type="VENDOR",
             attributes={
                 "description": supp_data["name"],
                 "location": f"{supp_data['city']}, {supp_data['state']}",
@@ -441,7 +441,7 @@ def create_sites(db: Session, config: SupplyChainConfig, company: Company, geo_m
                     name=f"CUST_{city_data['code']}",
                     type=f"Customer - {city_data['name']}, {state_code}",
                     dag_type="RETAILER",
-                    master_type="MARKET_DEMAND",
+                    master_type="CUSTOMER",
                     geo_id=city_geo_id,
                     company_id=company.id,
                     attributes={

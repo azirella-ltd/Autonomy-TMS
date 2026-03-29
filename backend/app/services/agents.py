@@ -394,7 +394,7 @@ class SimulationAgent:
 
     def make_decision(
         self,
-        current_round: int,
+        current_period: int,
         current_demand: Optional[int] = None,
         upstream_data: Optional[Dict] = None,
         local_state: Optional[Dict[str, Any]] = None,
@@ -403,7 +403,7 @@ class SimulationAgent:
         Make an order decision based on the agent's strategy and available information.
         
         Args:
-            current_round: Current game round
+            current_period: Current game round
             current_demand: Current customer demand (only visible to retailer if configured)
             upstream_data: Data from upstream (e.g., orders from downstream)
             
@@ -494,7 +494,7 @@ class SimulationAgent:
             order = self._conservative_strategy(current_demand)
         elif self.strategy == AgentStrategy.PID:
             order = self._pid_strategy(
-                current_round,
+                current_period,
                 current_demand,
                 upstream_data or {},
                 inventory_level,
@@ -504,7 +504,7 @@ class SimulationAgent:
             )
         elif self.strategy == AgentStrategy.TRM:
             order = self._trm_strategy(
-                current_round,
+                current_period,
                 current_demand,
                 upstream_data or {},
                 inventory_level,
@@ -513,7 +513,7 @@ class SimulationAgent:
             )
         elif self.strategy == AgentStrategy.GNN:
             order = self._gnn_strategy(
-                current_round,
+                current_period,
                 current_demand,
                 upstream_data or {},
                 inventory_level,
@@ -522,7 +522,7 @@ class SimulationAgent:
             )
         elif self.strategy == AgentStrategy.RL:
             order = self._rl_strategy(
-                current_round,
+                current_period,
                 current_demand,
                 upstream_data or {},
                 inventory_level,
@@ -537,7 +537,7 @@ class SimulationAgent:
             try:
                 if self.strategy == AgentStrategy.LLM:
                     order = self._llm_strategy(
-                        current_round,
+                        current_period,
                         current_demand,
                         upstream_data,
                         inventory_level,
@@ -546,7 +546,7 @@ class SimulationAgent:
                     )
                 elif self.strategy == AgentStrategy.LLM_SUPERVISED:
                     order = self._llm_supervised_strategy(
-                        current_round,
+                        current_period,
                         current_demand,
                         upstream_data,
                         inventory_level,
@@ -555,7 +555,7 @@ class SimulationAgent:
                     )
                 else:
                     order = self._llm_global_strategy(
-                        current_round,
+                        current_period,
                         prev_order,
                         current_demand,
                         upstream_data,
@@ -566,7 +566,7 @@ class SimulationAgent:
             except AutonomyLLMError as exc:
                 order = self._handle_llm_failure(
                     error=exc,
-                    current_round=current_round,
+                    current_period=current_period,
                     prev_order=prev_order,
                     current_demand=current_demand,
                     upstream_data=upstream_data,
@@ -576,7 +576,7 @@ class SimulationAgent:
                 )
         elif self.strategy == AgentStrategy.AUTONOMY_DTCE:
             order = self._autonomy_dtce_strategy(
-                current_round,
+                current_period,
                 prev_order,
                 current_demand,
                 upstream_data,
@@ -586,7 +586,7 @@ class SimulationAgent:
             )
         elif self.strategy == AgentStrategy.AUTONOMY_DTCE_CENTRAL:
             order = self._autonomy_central_strategy(
-                current_round,
+                current_period,
                 prev_order,
                 current_demand,
                 upstream_data,
@@ -596,7 +596,7 @@ class SimulationAgent:
             )
         elif self.strategy == AgentStrategy.AUTONOMY_DTCE_GLOBAL:
             order = self._autonomy_global_strategy(
-                current_round,
+                current_period,
                 prev_order,
                 current_demand,
                 upstream_data,
@@ -606,7 +606,7 @@ class SimulationAgent:
             )
         elif self.strategy == AgentStrategy.SITE_AGENT:
             order = self._site_agent_strategy(
-                current_round,
+                current_period,
                 prev_order,
                 current_demand,
                 upstream_data,
@@ -771,7 +771,7 @@ class SimulationAgent:
 
     def _pid_strategy(
         self,
-        current_round: int,
+        current_period: int,
         current_demand: Optional[int],
         upstream_data: Dict[str, Any],
         inventory_level: int,
@@ -829,7 +829,7 @@ class SimulationAgent:
         demand_anchor = max(
             forecast,
             float(previous_orders_by_role.get(downstream_role, 0)) if downstream_role else 0.0,
-            float(previous_orders_by_role.get("market_demand", 0)) if previous_orders_by_role else 0.0,
+            float(previous_orders_by_role.get("customer", 0)) if previous_orders_by_role else 0.0,
             1.0,
         )
         target_inventory = float(
@@ -880,7 +880,7 @@ class SimulationAgent:
 
     def _trm_strategy(
         self,
-        current_round: int,
+        current_period: int,
         current_demand: Optional[int],
         upstream_data: Dict[str, Any],
         inventory_level: int,
@@ -902,7 +902,7 @@ class SimulationAgent:
         try:
             # Build context for TRM agent
             context = {
-                "round_number": current_round,
+                "round_number": current_period,
                 "upstream_data": upstream_data,
             }
 
@@ -987,7 +987,7 @@ class SimulationAgent:
 
     def _gnn_strategy(
         self,
-        current_round: int,
+        current_period: int,
         current_demand: Optional[int],
         upstream_data: Dict[str, Any],
         inventory_level: int,
@@ -1010,7 +1010,7 @@ class SimulationAgent:
         try:
             # Build context for GNN agent
             context = {
-                "round_number": current_round,
+                "round_number": current_period,
                 "upstream_data": upstream_data,
             }
 
@@ -1066,7 +1066,7 @@ class SimulationAgent:
 
     def _rl_strategy(
         self,
-        current_round: int,
+        current_period: int,
         current_demand: Optional[int],
         upstream_data: Dict[str, Any],
         inventory_level: int,
@@ -1096,8 +1096,8 @@ class SimulationAgent:
 
             # Build context for RL agent
             context = {
-                "round_number": current_round,
-                "max_rounds": upstream_data.get("max_rounds", 52) if upstream_data else 52,
+                "round_number": current_period,
+                "max_periods": upstream_data.get("max_periods", 52) if upstream_data else 52,
             }
 
             # Create a simplified node object for RL
@@ -1202,7 +1202,7 @@ class SimulationAgent:
 
     def _llm_decision_core(
         self,
-        current_round: int,
+        current_period: int,
         current_demand: Optional[int],
         upstream_data: Optional[Dict],
         inventory_level: int,
@@ -1214,7 +1214,7 @@ class SimulationAgent:
 
         try:
             order_qty = llm_agent.make_decision(
-                current_round=current_round,
+                current_period=current_period,
                 current_inventory=self.inventory,
                 backorders=self.backlog,
                 incoming_shipments=self.pipeline,
@@ -1286,7 +1286,7 @@ class SimulationAgent:
 
     def _llm_strategy(
         self,
-        current_round: int,
+        current_period: int,
         current_demand: Optional[int],
         upstream_data: Optional[Dict],
         inventory_level: int,
@@ -1294,7 +1294,7 @@ class SimulationAgent:
         incoming_shipments: List[float],
     ) -> int:
         order, explanation, _ = self._llm_decision_core(
-            current_round,
+            current_period,
             current_demand,
             upstream_data,
             inventory_level,
@@ -1306,7 +1306,7 @@ class SimulationAgent:
 
     def _llm_supervised_strategy(
         self,
-        current_round: int,
+        current_period: int,
         current_demand: Optional[int],
         upstream_data: Optional[Dict],
         inventory_level: int,
@@ -1314,7 +1314,7 @@ class SimulationAgent:
         incoming_shipments: List[float],
     ) -> int:
         base_order, base_explanation, context = self._llm_decision_core(
-            current_round,
+            current_period,
             current_demand,
             upstream_data,
             inventory_level,
@@ -1334,7 +1334,7 @@ class SimulationAgent:
                 self.agent_type,
                 float(base_order),
                 context,
-                week=current_round,
+                week=current_period,
             )
 
         if supervisor_explanation:
@@ -1350,7 +1350,7 @@ class SimulationAgent:
 
     def _llm_global_strategy(
         self,
-        current_round: int,
+        current_period: int,
         prev_order: Optional[int],
         current_demand: Optional[int],
         upstream_data: Optional[Dict],
@@ -1359,7 +1359,7 @@ class SimulationAgent:
         incoming_shipments: List[float],
     ) -> int:
         base_order, base_explanation, context = self._llm_decision_core(
-            current_round,
+            current_period,
             current_demand,
             upstream_data,
             inventory_level,
@@ -1378,7 +1378,7 @@ class SimulationAgent:
         if self.global_controller:
             final_order, global_explanation = self.global_controller.plan_order(
                 self.agent_type,
-                current_round,
+                current_period,
                 float(base_order),
                 context,
                 prev_order,
@@ -1402,7 +1402,7 @@ class SimulationAgent:
         self,
         *,
         error: Exception,
-        current_round: int,
+        current_period: int,
         prev_order: Optional[int],
         current_demand: Optional[int],
         upstream_data: Optional[Dict],
@@ -1416,12 +1416,12 @@ class SimulationAgent:
         logger.warning(
             "Autonomy LLM failure | role=%s round=%s | falling back to PID heuristic | error=%s",
             self.agent_type.value,
-            current_round,
+            current_period,
             error,
         )
 
         fallback_order = self._pid_strategy(
-            current_round,
+            current_period,
             current_demand,
             upstream_context,
             inventory_level,
@@ -1454,7 +1454,7 @@ class SimulationAgent:
                 self.agent_type,
                 float(fallback_order),
                 context,
-                week=current_round,
+                week=current_period,
             )
             if supervisor_explanation:
                 combined = self.last_explanation or ""
@@ -1476,7 +1476,7 @@ class SimulationAgent:
             )
             adjusted_order, global_explanation = self.global_controller.plan_order(
                 self.agent_type,
-                current_round,
+                current_period,
                 float(fallback_order),
                 context,
                 prev_order,
@@ -1546,7 +1546,7 @@ class SimulationAgent:
 
     def _autonomy_dtce_strategy(
         self,
-        current_round: int,
+        current_period: int,
         prev_order: Optional[int],
         current_demand: Optional[int],
         upstream_data: Optional[Dict],
@@ -1563,7 +1563,7 @@ class SimulationAgent:
         )
         order = max(0, int(round(base_order)))
         explanation = self._build_autonomy_explanation(
-            week=current_round,
+            week=current_period,
             inventory_level=inventory_level,
             backlog_level=backlog_level,
             incoming_shipments=incoming_shipments,
@@ -1579,7 +1579,7 @@ class SimulationAgent:
 
     def _autonomy_central_strategy(
         self,
-        current_round: int,
+        current_period: int,
         prev_order: Optional[int],
         current_demand: Optional[int],
         upstream_data: Optional[Dict],
@@ -1601,11 +1601,11 @@ class SimulationAgent:
                 self.agent_type,
                 base_order,
                 context,
-                week=current_round,
+                week=current_period,
             )
 
         role_explanation = self._build_autonomy_explanation(
-            week=current_round,
+            week=current_period,
             inventory_level=inventory_level,
             backlog_level=backlog_level,
             incoming_shipments=incoming_shipments,
@@ -1626,7 +1626,7 @@ class SimulationAgent:
 
     def _autonomy_global_strategy(
         self,
-        current_round: int,
+        current_period: int,
         prev_order: Optional[int],
         current_demand: Optional[int],
         upstream_data: Optional[Dict],
@@ -1647,14 +1647,14 @@ class SimulationAgent:
         if self.global_controller:
             final_order, global_explanation = self.global_controller.plan_order(
                 self.agent_type,
-                current_round,
+                current_period,
                 base_order,
                 context,
                 prev_order,
             )
 
         role_explanation = self._build_autonomy_explanation(
-            week=current_round,
+            week=current_period,
             inventory_level=inventory_level,
             backlog_level=backlog_level,
             incoming_shipments=incoming_shipments,
@@ -1801,7 +1801,7 @@ class SimulationAgent:
 
     def _site_agent_strategy(
         self,
-        current_round: int,
+        current_period: int,
         prev_order: int,
         current_demand: int,
         upstream_data: Optional[List[Dict[str, Any]]],

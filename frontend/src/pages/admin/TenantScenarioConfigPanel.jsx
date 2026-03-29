@@ -278,8 +278,8 @@ const TenantScenarioConfigPanel = ({
                   <TableCell>
                     <span className="text-sm">
                       {(() => {
-                        const current = Number(game.current_round ?? 0);
-                        const max = game.max_rounds;
+                        const current = Number(game.current_period ?? 0);
+                        const max = game.max_periods;
                         if (max == null) {
                           return current;
                         }

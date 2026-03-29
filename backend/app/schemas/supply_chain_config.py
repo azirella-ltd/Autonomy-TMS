@@ -101,7 +101,7 @@ class NodeTypeDefinition(BaseModel):
             return MasterNodeType.INVENTORY
         if role == "manufacturer":
             return MasterNodeType.MANUFACTURER
-        if role == "market_supply":
+        if role == "vendor":
             return MasterNodeType.VENDOR
         return MasterNodeType.CUSTOMER
 
@@ -110,7 +110,7 @@ def default_site_type_definitions() -> List[NodeTypeDefinition]:
     return [
         NodeTypeDefinition(
             type=NodeType.VENDOR.value,
-            label="Market Supply",
+            label="Vendor",
             order=0,
             is_required=True,
             master_type=MasterNodeType.VENDOR,
@@ -145,7 +145,7 @@ def default_site_type_definitions() -> List[NodeTypeDefinition]:
         ),
         NodeTypeDefinition(
             type=NodeType.CUSTOMER.value,
-            label="Market Demand",
+            label="Customer",
             order=5,
             is_required=True,
             master_type=MasterNodeType.CUSTOMER,
@@ -369,7 +369,7 @@ class SupplyChainConfigBase(BaseModel):
 
         # Log warning instead of raising error for missing required types
         # This allows reading legacy data that may not have all required types
-        required_types = {"market_demand", "market_supply"}
+        required_types = {"customer", "vendor"}
         missing_required = [rtype for rtype in required_types if rtype not in {d.type for d in normalized}]
         if missing_required:
             import logging

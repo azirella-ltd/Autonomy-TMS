@@ -175,11 +175,11 @@ function buildSemanticView(allSites, allEdges, currentZoom) {
 
   allSites.forEach((site) => {
     const mt = (site.master_type || '').toLowerCase()
-    if (mt === 'market_supply' || mt === 'market_demand') {
+    if (mt === 'vendor' || mt === 'customer') {
       const continent = site.attributes?.continent
         || site.attributes?.region  // fallback: region key may be continent name
         || 'Other'
-      const bucket = mt === 'market_supply' ? supplyByContinent : demandByContinent
+      const bucket = mt === 'vendor' ? supplyByContinent : demandByContinent
       if (!bucket[continent]) {
         bucket[continent] = { sites: [], totalCount: 0, countries: new Set() }
       }
@@ -222,7 +222,7 @@ function buildSemanticView(allSites, allEdges, currentZoom) {
         id: aggId,
         name: `${continent}`,
         role,
-        master_type: role === 'Suppliers' ? 'market_supply' : 'market_demand',
+        master_type: role === 'Suppliers' ? 'vendor' : 'customer',
         latitude: lat,
         longitude: lng,
         capacity: 0,

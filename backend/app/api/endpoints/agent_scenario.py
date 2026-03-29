@@ -25,7 +25,7 @@ def create_agent_game(
     Create a new game with AI agents.
     
     - **name**: Name of the game
-    - **max_rounds**: Maximum number of rounds (default: 20)
+    - **max_periods**: Maximum number of rounds (default: 20)
     - **demand_pattern**: Configuration for the demand pattern
     """
     try:
