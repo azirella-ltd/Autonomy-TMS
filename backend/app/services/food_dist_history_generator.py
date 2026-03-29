@@ -1776,6 +1776,8 @@ class FoodDistHistoryGenerator:
                     total_rejected_qty=round(total_rejected, 1),
                     has_variance=has_variance,
                     completed_at=datetime.combine(receipt_date, datetime.min.time()),
+                    config_id=self.config_id,
+                    source="HISTORY_GEN",
                 )
                 gr._parent_po = po
                 gr._line_items = line_items
