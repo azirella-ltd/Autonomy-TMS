@@ -763,7 +763,7 @@ class ProvisioningService:
         """Step 5: TRM Phase 1 BC (foreground fallback, normally runs via _bg)."""
         from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
         orchestrator = GenericTrainingOrchestrator(config_id=config_id)
-        result = await orchestrator.train_trms(epochs=10, num_samples=2000)
+        result = await orchestrator.train_trms(epochs=20, num_samples=50000)
         return {"status": "ok", "trms_trained": result.models_trained}
 
     async def _step_rl_training(self, config_id: int) -> dict:
@@ -872,11 +872,11 @@ class ProvisioningService:
             sync_db.close()
 
     async def _step_backtest_evaluation(self, config_id: int) -> dict:
-        """Step 10: Backtest evaluation — run TRM agents against held-out test period.
+        """Step 10: Backtest evaluation — run TRM agents in the Digital Twin.
 
-        Splits historical data into training (first 2/3) and test (last 1/3)
-        periods, runs heuristic-library decisions on test data, and computes
-        validated performance metrics stored in PerformanceMetric.
+        Runs the stochastic simulation (DagChain) for test episodes using
+        heuristic baseline and trained TRM policy, compares BSC scores,
+        and stores validated performance metrics in PerformanceMetric.
         """
         try:
             tenant_id = await self._resolve_tenant_id(config_id)
@@ -886,7 +886,7 @@ class ProvisioningService:
             return {
                 "status": result.get("status", "ok"),
                 "trm_types_evaluated": result.get("trm_types_evaluated", 0),
-                "split_date": result.get("split_date"),
+                "episodes": result.get("episodes"),
                 "aggregate": result.get("aggregate"),
             }
         except Exception as e:
@@ -1427,7 +1427,7 @@ class ProvisioningService:
         """Step 5 background: TRM Phase 1 BC for ALL active TRMs at all non-market sites."""
         from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
         orchestrator = GenericTrainingOrchestrator(config_id=config_id)
-        result = await orchestrator.train_trms(epochs=10, num_samples=2000)
+        result = await orchestrator.train_trms(epochs=20, num_samples=50000)
         return {
             "status": "ok" if result.errors == 0 else "partial",
             "trms_trained": result.models_trained,
