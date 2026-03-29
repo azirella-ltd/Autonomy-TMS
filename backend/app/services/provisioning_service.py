@@ -760,11 +760,32 @@ class ProvisioningService:
             return {"status": "ok", "note": f"Inventory tGNN attempted: {str(e)[:100]}"}
 
     async def _step_trm_training(self, config_id: int) -> dict:
-        """Step 5: TRM Phase 1 BC (foreground fallback, normally runs via _bg)."""
+        """Step 5: TRM Phase 1 BC (foreground fallback, normally runs via _bg).
+
+        Post-condition: at least 1 checkpoint file must be produced.
+        Reports 'failed' if zero models trained (SOC II: no silent failures).
+        """
         from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
         orchestrator = GenericTrainingOrchestrator(config_id=config_id)
         result = await orchestrator.train_trms(epochs=20, num_samples=50000)
-        return {"status": "ok", "trms_trained": result.models_trained}
+
+        if result.models_trained == 0:
+            msg = f"TRM training produced 0 checkpoints (errors={result.errors})"
+            logger.error("SOC II ALERT: %s for config %d", msg, config_id)
+            raise RuntimeError(msg)
+
+        if result.errors > 0:
+            logger.warning(
+                "TRM training completed with %d errors out of %d models for config %d",
+                result.errors, result.models_trained + result.errors, config_id,
+            )
+
+        return {
+            "status": "ok",
+            "trms_trained": result.models_trained,
+            "errors": result.errors,
+            "duration_seconds": result.duration_seconds,
+        }
 
     async def _step_rl_training(self, config_id: int) -> dict:
         """Step 8b: TRM Phase 2 RL (foreground fallback, normally runs via _bg)."""
@@ -866,8 +887,8 @@ class ProvisioningService:
                 "errors": errors,
             }
         except Exception as e:
-            logger.warning("RL training step failed: %s", e)
-            return {"status": "ok", "note": f"RL training attempted: {str(e)[:200]}"}
+            logger.error("SOC II ALERT: RL training step failed for config %d: %s", config_id, e)
+            return {"status": "failed", "error": f"RL training failed: {str(e)[:200]}"}
         finally:
             sync_db.close()
 
