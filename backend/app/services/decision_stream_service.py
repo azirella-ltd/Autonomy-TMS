@@ -2113,12 +2113,27 @@ class DecisionStreamService:
             if not cfg_ids:
                 return product_lookup, site_lookup
 
-            # Load products
+            # Load products — index by ID, description, and SKU for fuzzy matching
             result = await self.db.execute(
-                select(Product.id).where(Product.config_id.in_(cfg_ids))
+                select(Product.id, Product.description).where(
+                    Product.config_id.in_(cfg_ids)
+                )
             )
-            for (pid,) in result.fetchall():
+            for pid, desc in result.fetchall():
                 product_lookup[pid.lower()] = pid
+                # Also index by base SKU (e.g., "FP006" → CFG129_FP006)
+                for prefix_id in cfg_ids:
+                    base = pid.replace(f"CFG{prefix_id}_", "")
+                    if base != pid:
+                        product_lookup[base.lower()] = pid
+                # Also index by description words for natural language matching
+                if desc:
+                    product_lookup[desc.lower()] = pid
+                    # Index significant words from description (3+ chars)
+                    for word in desc.split():
+                        w = word.strip(",.()-").lower()
+                        if len(w) >= 4 and w not in ("premium", "frozen", "block", "case"):
+                            product_lookup[w] = pid
 
             # Load sites
             result = await self.db.execute(
@@ -2592,11 +2607,11 @@ class DecisionStreamService:
             return "Unable to load decision context."
 
     async def _get_dag_topology(self, config_id: Optional[int] = None) -> str:
-        """Load the SC config DAG topology for LLM clarification.
+        """Load the SC config DAG topology + full product catalog for LLM context.
 
-        Returns a compact text representation of valid sites, products,
-        regions, vendors, and customers so the LLM can offer closed-list
-        options when the user's query is ambiguous.
+        Returns a complete text representation of sites, products (with IDs,
+        descriptions, categories, suppliers), vendors, and customers so the
+        LLM can accurately identify any product or entity the user mentions.
         """
         if not config_id:
             return ""
@@ -2604,9 +2619,10 @@ class DecisionStreamService:
             from app.models.supply_chain_config import Site
             from app.models.sc_entities import Product, TradingPartner
 
+            prefix = f"CFG{config_id}_"
             parts = []
 
-            # Sites (internal)
+            # Sites — all sites with master type
             result = await self.db.execute(
                 select(Site.name, Site.type, Site.master_type).where(
                     Site.config_id == config_id
@@ -2614,8 +2630,15 @@ class DecisionStreamService:
             )
             sites = result.fetchall()
             if sites:
-                site_list = [f"{s[0]} ({s[1]})" for s in sites]
-                parts.append(f"Internal sites: {', '.join(site_list)}")
+                internal = [f"{s[0]} ({s[1]})" for s in sites if s[2] == "INVENTORY"]
+                vendors = [s[0] for s in sites if s[2] == "VENDOR"]
+                customers = [s[0] for s in sites if s[2] == "CUSTOMER"]
+                if internal:
+                    parts.append(f"Internal sites: {', '.join(internal)}")
+                if vendors:
+                    parts.append(f"Vendor sites: {', '.join(vendors)}")
+                if customers:
+                    parts.append(f"Customer sites: {', '.join(customers)}")
 
             # Product groups (distinct)
             result = await self.db.execute(
@@ -2626,40 +2649,63 @@ class DecisionStreamService:
             )
             groups = [r[0] for r in result.fetchall() if r[0]]
             if groups:
-                parts.append(f"Product groups: {', '.join(sorted(groups))}")
+                parts.append(f"Product categories: {', '.join(sorted(groups))}")
 
-            # Sample products (top 20 by name)
+            # FULL product catalog — load ALL products with ID, description, group
             result = await self.db.execute(
-                select(Product.description).where(
+                select(
+                    Product.id, Product.description, Product.product_group_name,
+                    Product.unit_of_measure,
+                ).where(
                     Product.config_id == config_id,
-                ).limit(20)
+                ).order_by(Product.id).limit(500)
             )
-            products = [r[0] for r in result.fetchall() if r[0]]
-            if products:
-                parts.append(f"Sample products ({len(products)} of total): {', '.join(products[:15])}")
+            all_products = result.fetchall()
+            if all_products:
+                product_lines = []
+                for pid, desc, group, uom in all_products:
+                    sku = pid.replace(prefix, "") if pid.startswith(prefix) else pid
+                    line = f"  {sku}: {desc or 'N/A'}"
+                    if group:
+                        line += f" [{group}]"
+                    product_lines.append(line)
+                parts.append(f"PRODUCT CATALOG ({len(all_products)} products):\n" + "\n".join(product_lines))
 
-            # Vendors
-            result = await self.db.execute(
-                select(TradingPartner.description).where(
-                    TradingPartner.tpartner_type == "vendor",
-                ).limit(20)
-            )
-            vendors = [r[0] for r in result.fetchall() if r[0]]
-            if vendors:
-                parts.append(f"Vendors: {', '.join(vendors[:15])}")
+            # Vendor-product mapping (which supplier carries which product)
+            try:
+                from app.models.supplier import VendorProduct
+                vp_result = await self.db.execute(
+                    select(VendorProduct.product_id, VendorProduct.tpartner_id).where(
+                        VendorProduct.product_id.like(f"{prefix}%")
+                    ).limit(200)
+                )
+                vp_rows = vp_result.fetchall()
+                if vp_rows:
+                    vp_map = {}
+                    for pid, vendor in vp_rows:
+                        sku = pid.replace(prefix, "")
+                        vendor_name = vendor.replace(prefix, "") if vendor and vendor.startswith(prefix) else vendor
+                        vp_map.setdefault(vendor_name, []).append(sku)
+                    vp_lines = [f"  {v}: {', '.join(skus)}" for v, skus in sorted(vp_map.items())]
+                    parts.append(f"SUPPLIER-PRODUCT MAPPING:\n" + "\n".join(vp_lines))
+            except Exception:
+                pass
 
-            # Customers
-            result = await self.db.execute(
-                select(TradingPartner.description).where(
-                    TradingPartner.tpartner_type == "customer",
-                ).limit(20)
-            )
-            customers = [r[0] for r in result.fetchall() if r[0]]
-            if customers:
-                parts.append(f"Customers: {', '.join(customers[:15])}")
+            # Trading partners (config-scoped)
+            for tp_type, label in [("vendor", "Vendors"), ("customer", "Customers")]:
+                result = await self.db.execute(
+                    select(TradingPartner.id, TradingPartner.description).where(
+                        TradingPartner.id.like(f"{prefix}%"),
+                        TradingPartner.tpartner_type == tp_type,
+                    ).limit(50)
+                )
+                tp_rows = result.fetchall()
+                if tp_rows:
+                    tp_list = [f"{r[0].replace(prefix, '')}: {r[1]}" if r[1] else r[0].replace(prefix, "") for r in tp_rows]
+                    parts.append(f"{label}: {', '.join(tp_list)}")
 
             if parts:
-                return "=== SUPPLY CHAIN TOPOLOGY ===\n" + "\n".join(parts) + "\n=== END TOPOLOGY ==="
+                return "=== SUPPLY CHAIN TOPOLOGY & PRODUCT CATALOG ===\n" + "\n".join(parts) + "\n=== END TOPOLOGY ==="
             return ""
         except Exception as e:
             logger.debug("DAG topology load failed: %s", e)
