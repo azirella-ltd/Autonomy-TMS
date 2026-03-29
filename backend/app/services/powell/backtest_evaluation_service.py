@@ -253,14 +253,14 @@ class BacktestEvaluationService:
 
             # Determine active TRM types from site master types
             sites = (
-                db.query(Site.master_type, Site.sc_site_type)
+                db.query(Site.master_type, Site.type)
                 .filter(Site.config_id == self.config_id, Site.is_external == False)
                 .all()
             )
             active = set()
-            for master_type, sc_site_type in sites:
+            for master_type, site_type in sites:
                 mt = master_type or "INVENTORY"
-                active.update(get_active_trms(mt, sc_site_type))
+                active.update(get_active_trms(mt, site_type))
 
             return site_configs, topo_order, frozenset(active)
         finally:
