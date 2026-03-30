@@ -116,10 +116,16 @@ class ForecastHorizonRequest(BaseModel):
 
 
 class AutoCalibrateRequest(BaseModel):
-    """Auto-calibrate from historical forecast vs actual data"""
+    """Auto-calibrate from historical transaction data across all variable types"""
     alpha: float = Field(0.1, description="Miscoverage rate (0.1 = 90% coverage guarantee)")
     product_id: Optional[str] = Field(None, description="Specific product to calibrate (None = all)")
     site_id: Optional[int] = Field(None, description="Specific site to calibrate (None = all)")
+    config_id: Optional[int] = Field(None, description="Supply chain config ID for scoping")
+    variable_types: Optional[List[str]] = Field(
+        None,
+        description="Variable types to calibrate (None = all). Options: demand, lead_time, "
+                    "receipt_variance, quality_rejection, transit_time, maintenance_downtime, forecast_bias"
+    )
 
 
 # ============================================================================
@@ -490,10 +496,183 @@ async def auto_calibrate(
             "coverage_guarantee": 1 - cal_result.alpha,
         })
 
+    # =========================================================================
+    # Additional variable types — calibrate from transaction tables
+    # =========================================================================
+    from app.services.conformal_prediction.suite import get_conformal_suite
+    suite = get_conformal_suite()
+    cfg_id = request.config_id
+    do_all = request.variable_types is None
+    vt = set(request.variable_types or [])
+
+    if cfg_id and (do_all or "lead_time" in vt):
+        # Supplier lead time: InboundOrder (planned vs actual delivery)
+        from app.models.sc_entities import InboundOrder
+        lt_query = (
+            select(
+                InboundOrder.supplier_id,
+                func.array_agg(InboundOrder.requested_delivery_date - InboundOrder.order_date),
+                func.array_agg(InboundOrder.actual_delivery_date - InboundOrder.order_date),
+            )
+            .where(and_(
+                InboundOrder.config_id == cfg_id,
+                InboundOrder.actual_delivery_date.isnot(None),
+                InboundOrder.order_date.isnot(None),
+                InboundOrder.supplier_id.isnot(None),
+                InboundOrder.order_type == "PURCHASE",
+            ))
+            .group_by(InboundOrder.supplier_id)
+            .having(func.count() >= 10)
+        )
+        lt_result = await db.execute(lt_query)
+        for supplier_id, planned_days, actual_days in lt_result.all():
+            if planned_days and actual_days:
+                # DATE - DATE returns int (days) in PostgreSQL
+                planned = [float(d.days if hasattr(d, 'days') else d) for d in planned_days if d is not None]
+                actual = [float(d.days if hasattr(d, 'days') else d) for d in actual_days if d is not None]
+                if len(planned) >= 10:
+                    suite.calibrate_lead_time(str(supplier_id), planned, actual)
+                    calibrated.append({"variable": "lead_time", "entity_id": supplier_id, "n_samples": len(planned)})
+
+    if cfg_id and (do_all or "receipt_variance" in vt):
+        # Receipt quantity: GoodsReceiptLineItem (expected vs received)
+        from app.models.goods_receipt import GoodsReceiptLineItem
+        rv_query = (
+            select(
+                GoodsReceiptLineItem.product_id,
+                func.array_agg(GoodsReceiptLineItem.expected_qty),
+                func.array_agg(GoodsReceiptLineItem.received_qty),
+            )
+            .where(and_(
+                GoodsReceiptLineItem.expected_qty > 0,
+                GoodsReceiptLineItem.received_qty.isnot(None),
+            ))
+            .group_by(GoodsReceiptLineItem.product_id)
+            .having(func.count() >= 10)
+        )
+        rv_result = await db.execute(rv_query)
+        for product_id, ordered, received in rv_result.all():
+            if ordered and received:
+                o = [float(x) for x in ordered if x is not None]
+                r = [float(x) for x in received if x is not None]
+                if len(o) >= 10:
+                    vendor_key = str(product_id).split("_")[-1] if product_id else "unknown"
+                    suite.calibrate_receipt_variance(vendor_key, o, r)
+                    calibrated.append({"variable": "receipt_variance", "entity_id": vendor_key, "n_samples": len(o)})
+
+    if cfg_id and (do_all or "quality_rejection" in vt):
+        # Quality rejection rate: QualityOrder (rejected/inspected qty)
+        from app.models.quality_order import QualityOrder
+        qr_query = (
+            select(
+                QualityOrder.product_id,
+                func.array_agg(QualityOrder.inspection_quantity),
+                func.array_agg(QualityOrder.rejected_quantity),
+            )
+            .where(and_(
+                QualityOrder.config_id == cfg_id,
+                QualityOrder.inspection_quantity > 0,
+            ))
+            .group_by(QualityOrder.product_id)
+            .having(func.count() >= 5)
+        )
+        qr_result = await db.execute(qr_query)
+        for product_id, insp_qtys, rej_qtys in qr_result.all():
+            if insp_qtys and rej_qtys:
+                # Compute rejection rates
+                rates_actual = [float(r or 0) / max(1, float(i)) for i, r in zip(insp_qtys, rej_qtys)]
+                rates_expected = [sum(rates_actual) / len(rates_actual)] * len(rates_actual)  # Historical avg as prediction
+                if len(rates_actual) >= 5:
+                    suite.calibrate_quality_rejection(str(product_id), rates_expected, rates_actual)
+                    calibrated.append({"variable": "quality_rejection", "entity_id": product_id, "n_samples": len(rates_actual)})
+
+    if cfg_id and (do_all or "transit_time" in vt):
+        # Transfer transit time: TransferOrder (estimated vs actual delivery)
+        from app.models.transfer_order import TransferOrder
+        tt_query = (
+            select(
+                func.concat(TransferOrder.source_site_id, '->', TransferOrder.destination_site_id).label("lane"),
+                func.array_agg(TransferOrder.estimated_delivery_date - TransferOrder.shipment_date),
+                func.array_agg(TransferOrder.actual_delivery_date - TransferOrder.shipment_date),
+            )
+            .where(and_(
+                TransferOrder.config_id == cfg_id,
+                TransferOrder.actual_delivery_date.isnot(None),
+                TransferOrder.shipment_date.isnot(None),
+                TransferOrder.status == "RECEIVED",
+            ))
+            .group_by(TransferOrder.source_site_id, TransferOrder.destination_site_id)
+            .having(func.count() >= 10)
+        )
+        tt_result = await db.execute(tt_query)
+        for lane_id, est_days, act_days in tt_result.all():
+            if est_days and act_days:
+                e = [float(d.days if hasattr(d, 'days') else d) for d in est_days if d is not None]
+                a = [float(d.days if hasattr(d, 'days') else d) for d in act_days if d is not None]
+                if len(e) >= 10:
+                    suite.calibrate_transit_time(str(lane_id), e, a)
+                    calibrated.append({"variable": "transit_time", "entity_id": lane_id, "n_samples": len(e)})
+
+    if cfg_id and (do_all or "maintenance_downtime" in vt):
+        # Maintenance downtime: MaintenanceOrder (estimated vs actual hours)
+        from app.models.maintenance_order import MaintenanceOrder
+        md_query = (
+            select(
+                MaintenanceOrder.asset_type,
+                func.array_agg(MaintenanceOrder.estimated_downtime_hours),
+                func.array_agg(MaintenanceOrder.actual_downtime_hours),
+            )
+            .where(and_(
+                MaintenanceOrder.config_id == cfg_id,
+                MaintenanceOrder.estimated_downtime_hours.isnot(None),
+                MaintenanceOrder.actual_downtime_hours.isnot(None),
+                MaintenanceOrder.status == "COMPLETED",
+            ))
+            .group_by(MaintenanceOrder.asset_type)
+            .having(func.count() >= 5)
+        )
+        md_result = await db.execute(md_query)
+        for asset_type, est_hours, act_hours in md_result.all():
+            if est_hours and act_hours:
+                e = [float(h) for h in est_hours if h is not None]
+                a = [float(h) for h in act_hours if h is not None]
+                if len(e) >= 5:
+                    suite.calibrate_maintenance_downtime(str(asset_type), e, a)
+                    calibrated.append({"variable": "maintenance_downtime", "entity_id": asset_type, "n_samples": len(e)})
+
+    if cfg_id and (do_all or "forecast_bias" in vt):
+        # Forecast bias: Forecast.forecast_bias field
+        bias_query = (
+            select(Forecast.product_id, func.array_agg(Forecast.forecast_bias))
+            .where(and_(
+                Forecast.config_id == cfg_id,
+                Forecast.forecast_bias.isnot(None),
+            ))
+            .group_by(Forecast.product_id)
+            .having(func.count() >= 10)
+        )
+        bias_result = await db.execute(bias_query)
+        for product_id, biases in bias_result.all():
+            if biases:
+                b = [float(x) for x in biases if x is not None]
+                if len(b) >= 10:
+                    suite.calibrate_forecast_bias(str(product_id), b)
+                    calibrated.append({"variable": "forecast_bias", "entity_id": product_id, "n_samples": len(b)})
+
+    # Build summary by variable type
+    var_summary = {}
+    for c in calibrated:
+        vtype = c.get("variable", "demand")
+        if vtype not in var_summary:
+            var_summary[vtype] = {"count": 0, "total_samples": 0}
+        var_summary[vtype]["count"] += 1
+        var_summary[vtype]["total_samples"] += c.get("n_samples", 0)
+
     return {
         "calibrated_count": len(calibrated),
-        "calibrations": calibrated,
-        "summary": service.get_calibration_summary(),
+        "calibrations": calibrated[:50],  # Limit response size
+        "variable_summary": var_summary,
+        "suite_summary": suite.get_calibration_summary(),
     }
 
 

@@ -175,6 +175,157 @@ class PriceConformalPredictor:
         return self._calibrated
 
 
+class TransitTimeConformalPredictor:
+    """
+    Conformal predictor for transportation/transfer transit times.
+
+    Transit times are positive with right-skewed distribution (occasional delays).
+    Uses split conformal with floor at 0.
+    """
+
+    def __init__(self, coverage: float = 0.90):
+        self.coverage = coverage
+        self.predictor = SplitConformalPredictor(target="transit_time", coverage=coverage)
+        self._calibrated = False
+
+    def calibrate(self, estimated_times: List[float], actual_times: List[float], lane_id: Optional[str] = None):
+        self.predictor.calibrate_from_history(estimated_times, actual_times)
+        self._calibrated = True
+        logger.info(f"Calibrated transit_time predictor for {lane_id} with {len(estimated_times)} points")
+
+    def predict(self, estimated_time: float) -> Tuple[float, float]:
+        if not self._calibrated:
+            return (max(0.0, estimated_time * 0.7), estimated_time * 1.5)
+        interval = self.predictor.predict(estimated_time)
+        return (max(0.0, interval.lower), interval.upper)
+
+    @property
+    def is_calibrated(self) -> bool:
+        return self._calibrated
+
+
+class ReceiptVarianceConformalPredictor:
+    """
+    Conformal predictor for receipt quantity variance (ordered vs received).
+
+    Variance ratio is typically near 1.0 with occasional under/over delivery.
+    Bounded to [0, ∞).
+    """
+
+    def __init__(self, coverage: float = 0.90):
+        self.coverage = coverage
+        self.predictor = SplitConformalPredictor(target="receipt_variance", coverage=coverage)
+        self._calibrated = False
+
+    def calibrate(self, ordered_quantities: List[float], received_quantities: List[float], vendor_id: Optional[str] = None):
+        # Compute variance ratios: received/ordered
+        ratios_pred = [1.0] * len(ordered_quantities)  # Expected: 100% receipt
+        ratios_actual = [r / max(1, o) for o, r in zip(ordered_quantities, received_quantities)]
+        self.predictor.calibrate_from_history(ratios_pred, ratios_actual)
+        self._calibrated = True
+        logger.info(f"Calibrated receipt_variance predictor for {vendor_id} with {len(ordered_quantities)} points")
+
+    def predict(self, expected_qty: float) -> Tuple[float, float]:
+        if not self._calibrated:
+            return (expected_qty * 0.85, expected_qty * 1.05)
+        interval = self.predictor.predict(1.0)  # Predict around ratio=1.0
+        return (max(0.0, expected_qty * interval.lower), expected_qty * interval.upper)
+
+    @property
+    def is_calibrated(self) -> bool:
+        return self._calibrated
+
+
+class QualityRejectionConformalPredictor:
+    """
+    Conformal predictor for quality rejection rates.
+
+    Rejection rate is bounded to [0, 1] with most values near 0.
+    Uses split conformal with tight bounds.
+    """
+
+    def __init__(self, coverage: float = 0.95):  # Higher coverage for quality (food safety)
+        self.coverage = coverage
+        self.predictor = SplitConformalPredictor(target="quality_rejection", coverage=coverage)
+        self._calibrated = False
+
+    def calibrate(self, expected_rates: List[float], actual_rates: List[float], product_id: Optional[str] = None):
+        self.predictor.calibrate_from_history(expected_rates, actual_rates)
+        self._calibrated = True
+        logger.info(f"Calibrated quality_rejection predictor for {product_id} with {len(expected_rates)} points")
+
+    def predict(self, expected_rate: float) -> Tuple[float, float]:
+        if not self._calibrated:
+            return (0.0, min(1.0, expected_rate + 0.10))
+        interval = self.predictor.predict(expected_rate)
+        return (max(0.0, interval.lower), min(1.0, interval.upper))
+
+    @property
+    def is_calibrated(self) -> bool:
+        return self._calibrated
+
+
+class MaintenanceDowntimeConformalPredictor:
+    """
+    Conformal predictor for maintenance downtime (estimated vs actual hours).
+
+    Downtime is positive with heavy right tail (emergency repairs can be much longer).
+    Uses split conformal for batch calibration from historical data.
+    """
+
+    def __init__(self, coverage: float = 0.90):
+        self.coverage = coverage
+        self.predictor = SplitConformalPredictor(
+            target="maintenance_downtime", coverage=coverage,
+        )
+        self._calibrated = False
+
+    def calibrate(self, estimated_hours: List[float], actual_hours: List[float], asset_type: Optional[str] = None):
+        self.predictor.calibrate_from_history(estimated_hours, actual_hours)
+        self._calibrated = True
+        logger.info(f"Calibrated maintenance_downtime predictor for {asset_type} with {len(estimated_hours)} points")
+
+    def predict(self, estimated_hours: float) -> Tuple[float, float]:
+        if not self._calibrated:
+            return (max(0.0, estimated_hours * 0.5), estimated_hours * 3.0)
+        interval = self.predictor.predict(estimated_hours)
+        return (max(0.0, interval.lower), interval.upper)
+
+    @property
+    def is_calibrated(self) -> bool:
+        return self._calibrated
+
+
+class ForecastBiasConformalPredictor:
+    """
+    Conformal predictor for forecast bias.
+
+    Bias should be near zero. Calibrated interval gives guaranteed bounds on bias magnitude.
+    """
+
+    def __init__(self, coverage: float = 0.90):
+        self.coverage = coverage
+        self.predictor = SplitConformalPredictor(target="forecast_bias", coverage=coverage)
+        self._calibrated = False
+
+    def calibrate(self, bias_values: List[float], product_id: Optional[str] = None):
+        # Predict zero bias, actual is measured bias
+        zeros = [0.0] * len(bias_values)
+        self.predictor.calibrate_from_history(zeros, bias_values)
+        self._calibrated = True
+        logger.info(f"Calibrated forecast_bias predictor for {product_id} with {len(bias_values)} points")
+
+    def predict(self) -> Tuple[float, float]:
+        if not self._calibrated:
+            return (-0.15, 0.15)
+        interval = self.predictor.predict(0.0)
+        return (interval.lower, interval.upper)
+
+    @property
+    def is_calibrated(self) -> bool:
+        return self._calibrated
+
+
 class SupplyChainConformalSuite:
     """
     Unified suite for supply chain conformal prediction.
@@ -210,17 +361,32 @@ class SupplyChainConformalSuite:
         lead_time_coverage: float = 0.90,
         yield_coverage: float = 0.95,  # Higher coverage for yields (critical)
         price_coverage: float = 0.90,
+        transit_time_coverage: float = 0.90,
+        receipt_variance_coverage: float = 0.90,
+        quality_rejection_coverage: float = 0.95,  # Higher for food safety
+        maintenance_downtime_coverage: float = 0.90,
+        forecast_bias_coverage: float = 0.90,
     ):
         self.demand_coverage = demand_coverage
         self.lead_time_coverage = lead_time_coverage
         self.yield_coverage = yield_coverage
         self.price_coverage = price_coverage
+        self.transit_time_coverage = transit_time_coverage
+        self.receipt_variance_coverage = receipt_variance_coverage
+        self.quality_rejection_coverage = quality_rejection_coverage
+        self.maintenance_downtime_coverage = maintenance_downtime_coverage
+        self.forecast_bias_coverage = forecast_bias_coverage
 
         # Predictor registries keyed by (product_id, site_id) or similar
         self._demand_predictors: Dict[str, DemandConformalPredictor] = {}
         self._lead_time_predictors: Dict[str, LeadTimeConformalPredictor] = {}
         self._yield_predictors: Dict[str, YieldConformalPredictor] = {}
         self._price_predictors: Dict[str, PriceConformalPredictor] = {}
+        self._transit_time_predictors: Dict[str, TransitTimeConformalPredictor] = {}
+        self._receipt_variance_predictors: Dict[str, ReceiptVarianceConformalPredictor] = {}
+        self._quality_rejection_predictors: Dict[str, QualityRejectionConformalPredictor] = {}
+        self._maintenance_downtime_predictors: Dict[str, MaintenanceDowntimeConformalPredictor] = {}
+        self._forecast_bias_predictors: Dict[str, ForecastBiasConformalPredictor] = {}
 
         # Calibration timestamps for staleness detection
         self._calibration_timestamps: Dict[str, datetime] = {}
@@ -228,7 +394,10 @@ class SupplyChainConformalSuite:
         logger.info(
             f"Initialized SupplyChainConformalSuite: "
             f"demand={demand_coverage}, lead_time={lead_time_coverage}, "
-            f"yield={yield_coverage}, price={price_coverage}"
+            f"yield={yield_coverage}, price={price_coverage}, "
+            f"transit={transit_time_coverage}, receipt_var={receipt_variance_coverage}, "
+            f"quality={quality_rejection_coverage}, maint={maintenance_downtime_coverage}, "
+            f"bias={forecast_bias_coverage}"
         )
 
     def _get_key(self, *args) -> str:
@@ -482,6 +651,141 @@ class SupplyChainConformalSuite:
         """Check if price predictor exists for material"""
         key = self._get_key("price", material_id)
         return key in self._price_predictors
+
+    # =========================================================================
+    # Transit Time Prediction (transfer orders, inter-DC shipments)
+    # =========================================================================
+
+    def calibrate_transit_time(
+        self, lane_id: str, estimated_times: List[float], actual_times: List[float],
+    ):
+        key = self._get_key("transit_time", lane_id)
+        predictor = TransitTimeConformalPredictor(coverage=self.transit_time_coverage)
+        predictor.calibrate(estimated_times, actual_times, lane_id)
+        self._transit_time_predictors[key] = predictor
+        self._calibration_timestamps[key] = datetime.utcnow()
+
+    def predict_transit_time(self, lane_id: str, estimated_time: float) -> Tuple[float, float]:
+        key = self._get_key("transit_time", lane_id)
+        if key not in self._transit_time_predictors:
+            return (max(0.0, estimated_time * 0.7), estimated_time * 1.5)
+        return self._transit_time_predictors[key].predict(estimated_time)
+
+    def has_transit_time_predictor(self, lane_id: str) -> bool:
+        return self._get_key("transit_time", lane_id) in self._transit_time_predictors
+
+    # =========================================================================
+    # Receipt Quantity Variance (PO receipt accuracy by vendor)
+    # =========================================================================
+
+    def calibrate_receipt_variance(
+        self, vendor_id: str, ordered_quantities: List[float], received_quantities: List[float],
+    ):
+        key = self._get_key("receipt_variance", vendor_id)
+        predictor = ReceiptVarianceConformalPredictor(coverage=self.receipt_variance_coverage)
+        predictor.calibrate(ordered_quantities, received_quantities, vendor_id)
+        self._receipt_variance_predictors[key] = predictor
+        self._calibration_timestamps[key] = datetime.utcnow()
+
+    def predict_receipt_variance(self, vendor_id: str, expected_qty: float) -> Tuple[float, float]:
+        key = self._get_key("receipt_variance", vendor_id)
+        if key not in self._receipt_variance_predictors:
+            return (expected_qty * 0.85, expected_qty * 1.05)
+        return self._receipt_variance_predictors[key].predict(expected_qty)
+
+    def has_receipt_variance_predictor(self, vendor_id: str) -> bool:
+        return self._get_key("receipt_variance", vendor_id) in self._receipt_variance_predictors
+
+    # =========================================================================
+    # Quality Rejection Rate (incoming inspection by product×vendor)
+    # =========================================================================
+
+    def calibrate_quality_rejection(
+        self, entity_id: str, expected_rates: List[float], actual_rates: List[float],
+    ):
+        key = self._get_key("quality_rejection", entity_id)
+        predictor = QualityRejectionConformalPredictor(coverage=self.quality_rejection_coverage)
+        predictor.calibrate(expected_rates, actual_rates, entity_id)
+        self._quality_rejection_predictors[key] = predictor
+        self._calibration_timestamps[key] = datetime.utcnow()
+
+    def predict_quality_rejection(self, entity_id: str, expected_rate: float) -> Tuple[float, float]:
+        key = self._get_key("quality_rejection", entity_id)
+        if key not in self._quality_rejection_predictors:
+            return (0.0, min(1.0, expected_rate + 0.10))
+        return self._quality_rejection_predictors[key].predict(expected_rate)
+
+    def has_quality_rejection_predictor(self, entity_id: str) -> bool:
+        return self._get_key("quality_rejection", entity_id) in self._quality_rejection_predictors
+
+    # =========================================================================
+    # Maintenance Downtime (estimated vs actual by equipment type)
+    # =========================================================================
+
+    def calibrate_maintenance_downtime(
+        self, asset_type: str, estimated_hours: List[float], actual_hours: List[float],
+    ):
+        key = self._get_key("maintenance_downtime", asset_type)
+        predictor = MaintenanceDowntimeConformalPredictor(coverage=self.maintenance_downtime_coverage)
+        predictor.calibrate(estimated_hours, actual_hours, asset_type)
+        self._maintenance_downtime_predictors[key] = predictor
+        self._calibration_timestamps[key] = datetime.utcnow()
+
+    def predict_maintenance_downtime(self, asset_type: str, estimated_hours: float) -> Tuple[float, float]:
+        key = self._get_key("maintenance_downtime", asset_type)
+        if key not in self._maintenance_downtime_predictors:
+            return (max(0.0, estimated_hours * 0.5), estimated_hours * 3.0)
+        return self._maintenance_downtime_predictors[key].predict(estimated_hours)
+
+    def has_maintenance_downtime_predictor(self, asset_type: str) -> bool:
+        return self._get_key("maintenance_downtime", asset_type) in self._maintenance_downtime_predictors
+
+    # =========================================================================
+    # Forecast Bias (systematic over/under-forecasting)
+    # =========================================================================
+
+    def calibrate_forecast_bias(
+        self, entity_id: str, bias_values: List[float],
+    ):
+        key = self._get_key("forecast_bias", entity_id)
+        predictor = ForecastBiasConformalPredictor(coverage=self.forecast_bias_coverage)
+        predictor.calibrate(bias_values, entity_id)
+        self._forecast_bias_predictors[key] = predictor
+        self._calibration_timestamps[key] = datetime.utcnow()
+
+    def predict_forecast_bias(self, entity_id: str) -> Tuple[float, float]:
+        key = self._get_key("forecast_bias", entity_id)
+        if key not in self._forecast_bias_predictors:
+            return (-0.15, 0.15)
+        return self._forecast_bias_predictors[key].predict()
+
+    def has_forecast_bias_predictor(self, entity_id: str) -> bool:
+        return self._get_key("forecast_bias", entity_id) in self._forecast_bias_predictors
+
+    # =========================================================================
+    # Calibration Summary (all variable types)
+    # =========================================================================
+
+    def get_calibration_summary(self) -> Dict[str, Any]:
+        """Return summary of all calibrated predictors across all variable types."""
+        return {
+            "demand": {"count": len(self._demand_predictors), "coverage": self.demand_coverage},
+            "lead_time": {"count": len(self._lead_time_predictors), "coverage": self.lead_time_coverage},
+            "yield": {"count": len(self._yield_predictors), "coverage": self.yield_coverage},
+            "price": {"count": len(self._price_predictors), "coverage": self.price_coverage},
+            "transit_time": {"count": len(self._transit_time_predictors), "coverage": self.transit_time_coverage},
+            "receipt_variance": {"count": len(self._receipt_variance_predictors), "coverage": self.receipt_variance_coverage},
+            "quality_rejection": {"count": len(self._quality_rejection_predictors), "coverage": self.quality_rejection_coverage},
+            "maintenance_downtime": {"count": len(self._maintenance_downtime_predictors), "coverage": self.maintenance_downtime_coverage},
+            "forecast_bias": {"count": len(self._forecast_bias_predictors), "coverage": self.forecast_bias_coverage},
+            "total_predictors": (
+                len(self._demand_predictors) + len(self._lead_time_predictors) +
+                len(self._yield_predictors) + len(self._price_predictors) +
+                len(self._transit_time_predictors) + len(self._receipt_variance_predictors) +
+                len(self._quality_rejection_predictors) + len(self._maintenance_downtime_predictors) +
+                len(self._forecast_bias_predictors)
+            ),
+        }
 
     # =========================================================================
     # Joint Uncertainty Scenarios
