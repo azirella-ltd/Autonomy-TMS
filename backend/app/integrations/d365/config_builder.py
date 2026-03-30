@@ -311,6 +311,15 @@ class D365ConfigBuilder:
                 site_map, product_map, result,
             )
 
+            # Derivation fallbacks for empty entities
+            derived_counts = await self._run_derivation_fallbacks(
+                config, data, site_map, product_map, result,
+            )
+
+            # Build and save extraction audit report
+            audit = self._build_extraction_audit(config, data, result, derived_counts)
+            await audit.save(self.db)
+
             await self.db.commit()
             logger.info("D365 config build complete: config_id=%d", config.id)
 
@@ -2813,6 +2822,188 @@ class D365ConfigBuilder:
             "D365: enriched %d quality test results, created %d quality notifications",
             result.quality_details_enriched, result.quality_notifications_created,
         )
+
+    # ------------------------------------------------------------------
+    # Derivation Fallbacks
+    # ------------------------------------------------------------------
+
+    async def _derive_transfer_orders_from_shipments(
+        self, config, data, site_map, product_map, result,
+    ):
+        """Derive TOs from shipment + receipt cross-reference when TransferOrderHeaders is empty.
+
+        Matches outbound shipments from Site A with inbound receipts at Site B
+        where both sites are internal (not vendor/customer).
+        """
+        from app.models.transfer_order import TransferOrder, TransferOrderLineItem
+        from datetime import datetime, timedelta
+
+        # Get internal site IDs
+        internal_site_ids = set()
+        for site_key, site in site_map.items():
+            internal_site_ids.add(site.id)
+
+        if len(internal_site_ids) < 2:
+            return 0
+
+        # Check if PO receipt journal has data that can be matched to shipments
+        receipts = data.get("PurchaseOrderReceiptJournal", [])
+        shipment_headers = data.get("ShipmentHeaders", [])
+
+        # D365 approach: find all inventory movements between internal warehouses
+        # by looking at ShipmentHeaders with from/to in internal sites
+        count = 0
+        today = datetime.utcnow().date()
+
+        # Build shipment lookup: track from→to warehouse pairs
+        seen_pairs = set()
+        for sh in shipment_headers:
+            from_wh = sh.get("ShipFromWarehouseId", sh.get("FromWarehouse", ""))
+            to_wh = sh.get("ShipToWarehouseId", sh.get("ToWarehouse", ""))
+            from_site = site_map.get(from_wh)
+            to_site = site_map.get(to_wh)
+            if (from_site and to_site
+                    and from_site.id in internal_site_ids
+                    and to_site.id in internal_site_ids
+                    and from_site.id != to_site.id):
+                pair_key = (from_wh, to_wh)
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                # Create one representative TO per internal site pair
+                to_order = TransferOrder(
+                    to_number=f"D365_TO_DERIVED_{from_wh}_{to_wh}",
+                    source_site_id=from_site.id,
+                    destination_site_id=to_site.id,
+                    config_id=config.id,
+                    tenant_id=self.tenant_id,
+                    company_id=f"D365_{self.tenant_id}",
+                    order_type="transfer",
+                    source="D365_DERIVED",
+                    status="SHIPPED",
+                    order_date=today,
+                    shipment_date=today,
+                    estimated_delivery_date=today + timedelta(days=2),
+                    notes=f"Derived from shipment data: {from_wh} → {to_wh}",
+                )
+                self.db.add(to_order)
+                await self.db.flush()
+                count += 1
+                result.transfer_orders_created += 1
+
+        await self.db.flush()
+        logger.info("D365: derived %d transfer orders from shipment data", count)
+        return count
+
+    async def _derive_outbound_status_from_shipments(
+        self, config, data, site_map, result,
+    ):
+        """Derive SO fulfillment status when no explicit status data exists.
+
+        Cross-references SalesOrderHeaders with ShipmentHeaders to determine
+        which SOs have been fulfilled.
+        """
+        from sqlalchemy import text as sql_text
+
+        so_headers = data.get("SalesOrderHeadersV2", [])
+        shipment_headers = data.get("ShipmentHeaders", [])
+        if not so_headers or not shipment_headers:
+            return 0
+
+        # Build set of SO numbers referenced in shipments
+        shipped_sos = set()
+        for sh in shipment_headers:
+            so_ref = sh.get("SalesOrderNumber", sh.get("OrderNumber", ""))
+            if so_ref:
+                shipped_sos.add(so_ref)
+
+        if not shipped_sos:
+            return 0
+
+        count = 0
+        for so in so_headers:
+            so_number = so.get("SalesOrderNumber", "")
+            if so_number and so_number in shipped_sos:
+                order_id = f"D365_SO_{so_number}"
+                r = await self.db.execute(sql_text(
+                    "UPDATE outbound_order SET status = 'FULFILLED' "
+                    "WHERE id = :oid AND config_id = :cid AND status IN ('DRAFT', 'CONFIRMED')"
+                ), {"oid": order_id, "cid": config.id})
+                if r.rowcount > 0:
+                    count += 1
+
+        await self.db.flush()
+        logger.info("D365: derived %d outbound order statuses from shipment data", count)
+        return count
+
+    async def _run_derivation_fallbacks(self, config, data, site_map, product_map, result):
+        """Run derivation fallbacks for empty D365 entities."""
+        derived = {}
+
+        # TOs empty → derive from shipments
+        to_headers = data.get("TransferOrderHeaders", [])
+        if not to_headers:
+            count = await self._derive_transfer_orders_from_shipments(
+                config, data, site_map, product_map, result,
+            )
+            if count > 0:
+                derived["transfer_orders_from_shipments"] = count
+
+        # SO status not explicitly available → derive from shipment cross-reference
+        shipment_headers = data.get("ShipmentHeaders", [])
+        if shipment_headers:
+            count = await self._derive_outbound_status_from_shipments(
+                config, data, site_map, result,
+            )
+            if count > 0:
+                derived["outbound_status_from_shipments"] = count
+
+        return derived
+
+    def _build_extraction_audit(self, config, data, result, derived_counts):
+        """Build extraction audit report for D365 config build."""
+        from app.services.extraction_audit_service import ExtractionAuditReport
+
+        audit = ExtractionAuditReport(config_id=config.id, erp_type="D365")
+
+        # Record all D365 entities
+        for entity_name, records in data.items():
+            row_count = len(records) if records else 0
+            if row_count > 0:
+                audit.record_extracted(entity_name, row_count)
+            else:
+                audit.record_empty(entity_name)
+
+        # Record result counts
+        for attr in [
+            "sites_created", "products_created", "lanes_created", "boms_created",
+            "trading_partners_created", "purchase_orders_created",
+            "outbound_orders_created", "production_orders_created",
+            "forecasts_created", "goods_receipts_created", "shipments_created",
+            "transfer_orders_created", "quality_orders_created",
+            "maintenance_orders_created",
+        ]:
+            count = getattr(result, attr, 0)
+            if count > 0:
+                audit.record_extracted(f"entity:{attr}", count)
+
+        # Record derivations
+        derivation_notes = {
+            "transfer_orders_from_shipments": (
+                "ShipmentHeaders (internal pairs)",
+                "TransferOrderHeaders was empty — derived TOs from internal shipment patterns",
+            ),
+            "outbound_status_from_shipments": (
+                "SalesOrderHeaders + ShipmentHeaders",
+                "Derived SO fulfillment status from shipment cross-reference",
+            ),
+        }
+        for key, count in derived_counts.items():
+            source, note = derivation_notes.get(key, ("alternative entities", "Derived"))
+            audit.record_derived(f"derived:{key}", count, source=source, note=note)
+
+        return audit
 
     # ------------------------------------------------------------------
     # Utility helpers

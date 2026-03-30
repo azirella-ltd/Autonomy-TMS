@@ -205,6 +205,9 @@ class ConfigProvisioningStatus(Base):
     briefing_at = Column(DateTime, nullable=True)
     briefing_error = Column(Text, nullable=True)
 
+    # Extraction audit — per-table report from ERP config builder
+    extraction_audit = Column(JSON, nullable=True)
+
     # Overall
     overall_status = Column(String(20), default="not_started")
     # not_started | in_progress | completed | partial | failed

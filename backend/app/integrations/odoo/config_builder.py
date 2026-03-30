@@ -255,6 +255,15 @@ class OdooConfigBuilder:
                 config, quality_alerts, site_map, product_map, result,
             )
 
+            # Derivation fallbacks for empty models
+            derived_counts = await self._run_derivation_fallbacks(
+                config, data, site_map, product_map, result,
+            )
+
+            # Build and save extraction audit report
+            audit = self._build_extraction_audit(config, data, result, derived_counts)
+            await audit.save(self.db)
+
             await self.db.commit()
             logger.info("Odoo config build complete: config_id=%d", config.id)
 
@@ -2579,6 +2588,137 @@ class OdooIngestionMonitor:
             "total_models": len(data),
             "overall_completeness": round(overall * 100, 1),
         }
+
+    # ------------------------------------------------------------------
+    # Derivation Fallbacks
+    # ------------------------------------------------------------------
+
+    async def _derive_transfer_orders_from_pickings(
+        self, config, data, site_map, product_map, result,
+    ):
+        """Derive TOs from stock.picking records when no explicit internal transfers exist.
+
+        Odoo uses stock.picking with picking_type_code='internal' for transfers.
+        If no internal pickings were found, look for stock.move between internal
+        locations and create synthetic TOs.
+        """
+        from app.models.transfer_order import TransferOrder, TransferOrderLineItem
+        from datetime import datetime, timedelta
+
+        stock_moves = data.get("stock.move", [])
+        if not stock_moves:
+            return 0
+
+        # Get internal site IDs
+        internal_site_ids = set()
+        for site_key, site in site_map.items():
+            internal_site_ids.add(site.id)
+
+        if len(internal_site_ids) < 2:
+            return 0
+
+        count = 0
+        today = datetime.utcnow().date()
+        seen_pairs = set()
+
+        for move in stock_moves:
+            # Check if this is an internal move between warehouses
+            location_id = move.get("location_id")
+            location_dest_id = move.get("location_dest_id")
+
+            # Resolve warehouse from location
+            from_wh = move.get("warehouse_id")
+            to_wh = move.get("warehouse_dest_id")
+
+            if from_wh and to_wh and from_wh != to_wh:
+                from_wh_str = str(from_wh[0] if isinstance(from_wh, (list, tuple)) else from_wh)
+                to_wh_str = str(to_wh[0] if isinstance(to_wh, (list, tuple)) else to_wh)
+
+                from_site = site_map.get(from_wh_str)
+                to_site = site_map.get(to_wh_str)
+
+                if (from_site and to_site
+                        and from_site.id in internal_site_ids
+                        and to_site.id in internal_site_ids):
+                    pair_key = (from_wh_str, to_wh_str)
+                    if pair_key in seen_pairs:
+                        continue
+                    seen_pairs.add(pair_key)
+
+                    to_order = TransferOrder(
+                        to_number=f"ODOO_TO_DERIVED_{from_wh_str}_{to_wh_str}",
+                        source_site_id=from_site.id,
+                        destination_site_id=to_site.id,
+                        config_id=config.id,
+                        tenant_id=self.tenant_id,
+                        company_id=f"ODOO_{self.tenant_id}",
+                        order_type="transfer",
+                        source="ODOO_DERIVED",
+                        status="DONE",
+                        order_date=today,
+                        shipment_date=today,
+                        estimated_delivery_date=today + timedelta(days=1),
+                        notes=f"Derived from stock.move: WH {from_wh_str} → WH {to_wh_str}",
+                    )
+                    self.db.add(to_order)
+                    await self.db.flush()
+                    count += 1
+                    result.transfer_orders_created += 1
+
+        await self.db.flush()
+        logger.info("Odoo: derived %d transfer orders from stock.move data", count)
+        return count
+
+    async def _run_derivation_fallbacks(self, config, data, site_map, product_map, result):
+        """Run derivation fallbacks for empty Odoo models."""
+        derived = {}
+
+        # Transfer orders: if no internal pickings found, try stock.move
+        if result.transfer_orders_created == 0:
+            count = await self._derive_transfer_orders_from_pickings(
+                config, data, site_map, product_map, result,
+            )
+            if count > 0:
+                derived["transfer_orders_from_stock_moves"] = count
+
+        return derived
+
+    def _build_extraction_audit(self, config, data, result, derived_counts):
+        """Build extraction audit report for Odoo config build."""
+        from app.services.extraction_audit_service import ExtractionAuditReport
+
+        audit = ExtractionAuditReport(config_id=config.id, erp_type="Odoo")
+
+        # Record all Odoo models
+        for model_name, records in data.items():
+            row_count = len(records) if records else 0
+            if row_count > 0:
+                audit.record_extracted(model_name, row_count)
+            else:
+                audit.record_empty(model_name)
+
+        # Record entity counts
+        for attr in [
+            "sites_created", "products_created", "lanes_created", "boms_created",
+            "trading_partners_created", "purchase_orders_created",
+            "outbound_orders_created", "production_orders_created",
+            "goods_receipts_created", "shipments_created",
+            "transfer_orders_created", "quality_checks_created",
+            "maintenance_requests_created", "forecasts_created",
+        ]:
+            count = getattr(result, attr, 0)
+            if count > 0:
+                audit.record_extracted(f"entity:{attr}", count)
+
+        # Record derivations
+        for key, count in derived_counts.items():
+            audit.record_derived(
+                f"derived:{key}", count,
+                source="stock.move (internal warehouse moves)",
+                note="No internal stock.picking found — derived TOs from stock.move data",
+            )
+
+        return audit
 
     @staticmethod
     def compute_referential_integrity(data: Dict[str, List[Dict]]) -> Dict[str, Any]:

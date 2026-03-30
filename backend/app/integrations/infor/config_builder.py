@@ -298,6 +298,13 @@ class InforConfigBuilder:
             result.inv_movements_applied = await _safe("InvMovements", self._apply_inv_movements(
                 data.get("InventoryTransaction", [])))
 
+            # Derivation fallbacks for empty entities
+            derived_counts = await self._run_derivation_fallbacks(data)
+
+            # Build and save extraction audit report
+            audit = self._build_extraction_audit(data, result, derived_counts)
+            await audit.save(self.db)
+
             await self.db.flush()
             result.success = True
 
@@ -1318,3 +1325,114 @@ class InforConfigBuilder:
 
         logger.info("  Inventory movements applied: %d", count)
         return count
+
+    # ------------------------------------------------------------------
+    # Derivation Fallbacks
+    # ------------------------------------------------------------------
+
+    async def _derive_transfer_orders_from_topology(self) -> int:
+        """Derive TOs from internal lanes when TransferOrder entity is empty.
+
+        For multi-site Infor configs, create representative TOs for each
+        internal-to-internal transportation lane.
+        """
+        if not self._config_id or len(self._site_ids) < 2:
+            return 0
+
+        # Get all internal sites
+        site_result = await self.db.execute(text(
+            "SELECT id, name, master_type FROM site WHERE config_id = :cid"
+        ), {"cid": self._config_id})
+        internal_sites: Dict[int, str] = {}
+        for sid, sname, mt in site_result.fetchall():
+            if mt not in ("VENDOR", "CUSTOMER"):
+                internal_sites[sid] = sname
+
+        if len(internal_sites) < 2:
+            return 0
+
+        # Find internal-to-internal lanes
+        lane_result = await self.db.execute(text(
+            "SELECT id, from_site_id, to_site_id, lead_time_days FROM transportation_lane "
+            "WHERE config_id = :cid AND from_site_id IS NOT NULL AND to_site_id IS NOT NULL"
+        ), {"cid": self._config_id})
+
+        count = 0
+        today = date.today()
+        for lid, from_sid, to_sid, lt_days in lane_result.fetchall():
+            if from_sid not in internal_sites or to_sid not in internal_sites:
+                continue
+
+            lt = lt_days if lt_days and lt_days > 0 else 2
+            to_num = f"INF-TO-DERIVED-{from_sid}-{to_sid}"
+            await self.db.execute(text("""
+                INSERT INTO inbound_order (id, company_id, order_type,
+                    status, order_date, config_id)
+                VALUES (:id, :company, 'TRANSFER',
+                    'PLANNED', :order_date, :config_id)
+                ON CONFLICT (id) DO NOTHING
+            """), {
+                "id": to_num,
+                "company": "",
+                "order_date": today,
+                "config_id": self._config_id,
+            })
+            count += 1
+
+        logger.info("  Derived Transfer Orders from topology: %d", count)
+        return count
+
+    async def _run_derivation_fallbacks(self, data: Dict[str, List[Dict]]) -> Dict[str, int]:
+        """Run derivation fallbacks for empty Infor entities."""
+        derived: Dict[str, int] = {}
+
+        # TransferOrder empty → derive from topology
+        transfers = data.get("TransferOrder", [])
+        if not transfers:
+            count = await self._derive_transfer_orders_from_topology()
+            if count > 0:
+                derived["transfer_orders_from_topology"] = count
+
+        return derived
+
+    def _build_extraction_audit(
+        self, data: Dict[str, List[Dict]], result: InforConfigBuildResult,
+        derived_counts: Dict[str, int],
+    ) -> "ExtractionAuditReport":
+        """Build extraction audit report for Infor config build."""
+        from app.services.extraction_audit_service import ExtractionAuditReport
+
+        audit = ExtractionAuditReport(
+            config_id=self._config_id or 0, erp_type="Infor_M3",
+        )
+
+        # Record all Infor entities
+        for entity_name, records in data.items():
+            row_count = len(records) if records else 0
+            if row_count > 0:
+                audit.record_extracted(entity_name, row_count)
+            else:
+                audit.record_empty(entity_name)
+
+        # Record entity counts
+        for attr in [
+            "sites_created", "products_created", "lanes_created", "boms_created",
+            "trading_partners_created", "purchase_orders_created",
+            "outbound_orders_created", "production_orders_created",
+            "goods_receipts_created", "shipments_created",
+            "transfer_orders_created", "quality_orders_created",
+            "maintenance_orders_created", "forecasts_created",
+        ]:
+            count = getattr(result, attr, 0)
+            if count > 0:
+                audit.record_extracted(f"entity:{attr}", count)
+
+        # Record derivations
+        for key, count in derived_counts.items():
+            audit.record_derived(
+                f"derived:{key}", count,
+                source="Internal transportation lanes + inventory",
+                note="TransferOrder entity was empty — derived TOs from network topology",
+            )
+
+        return audit

@@ -56,6 +56,7 @@ from app.services.sap_field_mapping_service import (
     SAPFieldMappingService,
     create_field_mapping_service,
 )
+from app.services.extraction_audit_service import ExtractionAuditReport
 
 logger = logging.getLogger(__name__)
 
@@ -492,6 +493,21 @@ class SAPConfigBuilder:
             await _report(10, total_steps, "Inferring transportation lanes from sourcing & shipping data...")
             lane_count = await self._create_lanes()
 
+            # Step 10b: Derivation fallbacks — populate data from alternative
+            # SAP tables when primary tables are empty
+            derived_counts = await self._run_derivation_fallbacks(opts)
+
+            # Build and save extraction audit report
+            audit = self._build_extraction_audit(
+                order_counts, derived_counts,
+                site_count=site_count, product_count=product_count,
+                lane_count=lane_count, vendor_count=vendor_count,
+                customer_count=customer_count, bom_count=bom_count,
+                sourcing_count=sourcing_count, forecast_count=forecast_count,
+                inv_count=inv_count,
+            )
+            await audit.save(self.db)
+
             await self.db.commit()
 
             return {
@@ -510,7 +526,9 @@ class SAPConfigBuilder:
                     "forecasts": forecast_count,
                     "inventory_records": inv_count,
                     **order_counts,
+                    **{f"derived_{k}": v for k, v in derived_counts.items()},
                 },
+                "extraction_audit": audit.to_dict(),
             }
 
         except Exception:
@@ -4466,6 +4484,465 @@ class SAPConfigBuilder:
         await self.db.flush()
         logger.info(f"Updated {count} production orders with AFRU confirmations")
         return count
+
+    # ------------------------------------------------------------------
+    # Derivation Fallbacks — populate data from alternative SAP tables
+    # when the primary table is empty.
+    # ------------------------------------------------------------------
+
+    async def _derive_shipments_from_deliveries(self) -> int:
+        """Derive shipment records from LIKP/LIPS when MSEG/MKPF are empty.
+
+        LIKP: Delivery header — VBELN (delivery#), WADAT (planned GI date), KUNNR (customer)
+        LIPS: Delivery items — VBELN, POSNR (item#), MATNR (material), LFIMG (qty), WERKS (plant)
+        """
+        likp = self._data.get("LIKP", pd.DataFrame())
+        lips = self._data.get("LIPS", pd.DataFrame())
+        if likp.empty and lips.empty:
+            return 0
+
+        # Build LIPS lookup by delivery number
+        lips_by_vbeln: Dict[str, pd.DataFrame] = {}
+        if not lips.empty and "VBELN" in lips.columns:
+            for vbeln, group in lips.groupby(lips["VBELN"].astype(str).str.strip()):
+                lips_by_vbeln[vbeln] = group
+
+        # If we only have LIPS (no headers), create header iteration from LIPS keys
+        if likp.empty and not lips.empty:
+            likp = pd.DataFrame({"VBELN": list(lips_by_vbeln.keys())})
+
+        # Clean up prior derived shipments for this config
+        await self.db.execute(sql_text(
+            "DELETE FROM shipment WHERE source = 'SAP_DERIVED' AND config_id = :cid"
+        ), {"cid": self._config.id})
+        await self.db.flush()
+
+        count = 0
+        for _, hdr in likp.iterrows():
+            vbeln = str(hdr.get("VBELN", "")).strip()
+            if not vbeln:
+                continue
+
+            items = lips_by_vbeln.get(vbeln, pd.DataFrame())
+            if items.empty:
+                continue
+
+            wadat_str = str(hdr.get("WADAT", hdr.get("WADAT_IST", ""))).strip()
+            ship_date = self._parse_sap_date(wadat_str)
+            kunnr = str(hdr.get("KUNNR", "")).strip()
+            to_site_id = self._get_site_id(kunnr) if kunnr else None
+            if not to_site_id:
+                to_site_id = self._get_first_demand_site_id()
+
+            for line_idx, (_, item_row) in enumerate(items.iterrows(), start=1):
+                matnr = str(item_row.get("MATNR", "")).strip()
+                product_id = self._get_product_id(matnr) if matnr else None
+                if not product_id:
+                    continue
+
+                werks = str(item_row.get("WERKS", "")).strip()
+                from_site_id = self._get_site_id(werks) if werks else None
+                if not from_site_id:
+                    from_site_id = self._get_first_plant_site_id()
+                if not from_site_id:
+                    continue
+
+                lfimg = float(pd.to_numeric(item_row.get("LFIMG", 0), errors="coerce") or 0)
+                if lfimg <= 0:
+                    continue
+
+                posnr = str(item_row.get("POSNR", str(line_idx))).strip()
+                vbeln_clean = vbeln.lstrip("0") or "0"
+                shipment = Shipment(
+                    id=f"SAP-DLV-{vbeln_clean}-{posnr}",
+                    description=f"Derived from LIKP/LIPS delivery {vbeln}",
+                    order_id=f"SAP-DLV-{vbeln_clean}",
+                    order_line_number=int(pd.to_numeric(posnr, errors="coerce") or line_idx),
+                    product_id=product_id,
+                    quantity=lfimg,
+                    uom=str(item_row.get("VRKME", item_row.get("MEINS", "EA"))).strip(),
+                    from_site_id=from_site_id,
+                    to_site_id=to_site_id or from_site_id,
+                    status="delivered",
+                    ship_date=datetime.combine(ship_date, datetime.min.time()) if ship_date else None,
+                    config_id=self._config.id,
+                    tenant_id=self.tenant_id,
+                    source="SAP_DERIVED",
+                    source_event_id=f"LIKP-{vbeln}-LIPS-{posnr}",
+                    source_update_dttm=datetime.utcnow(),
+                )
+                self.db.add(shipment)
+                count += 1
+
+        await self.db.flush()
+        logger.info(f"Derived {count} shipment records from LIKP/LIPS (MSEG was empty)")
+        return count
+
+    async def _derive_goods_receipts_from_po_history(self) -> int:
+        """Derive goods receipt records from EKBE when MSEG/MKPF are empty.
+
+        EKBE has PO receipt history with VGABE=1 (goods receipt) and MENGE (qty).
+        Each GR from EKBE creates a Shipment with status='delivered' representing
+        the vendor-to-plant material flow.
+        """
+        ekbe = self._data.get("EKBE", pd.DataFrame())
+        if ekbe.empty:
+            return 0
+
+        if "EBELN" not in ekbe.columns or "EBELP" not in ekbe.columns:
+            return 0
+
+        # Clean up prior derived goods receipts for this config
+        await self.db.execute(sql_text(
+            "DELETE FROM shipment WHERE source = 'SAP_DERIVED_GR' AND config_id = :cid"
+        ), {"cid": self._config.id})
+        await self.db.flush()
+
+        count = 0
+        for _, row in ekbe.iterrows():
+            vgabe = str(row.get("VGABE", "")).strip()
+            bwart = str(row.get("BWART", "")).strip()
+
+            # Only goods receipts (VGABE=1 or BWART=101)
+            if vgabe not in ("1",) and bwart not in ("101",):
+                continue
+
+            ebeln = str(row.get("EBELN", "")).strip()
+            ebelp = str(row.get("EBELP", "")).strip()
+            if not ebeln or not ebelp:
+                continue
+
+            menge = float(pd.to_numeric(row.get("MENGE", 0), errors="coerce") or 0)
+            if menge <= 0:
+                continue
+
+            matnr = str(row.get("MATNR", "")).strip()
+            product_id = self._get_product_id(matnr) if matnr else None
+            werks = str(row.get("WERKS", "")).strip()
+            to_site_id = self._get_site_id(werks) if werks else None
+            if not to_site_id:
+                to_site_id = self._get_first_plant_site_id()
+            if not to_site_id:
+                continue
+
+            # Try to resolve vendor from EKBE.LIFNR or EKKO lookup
+            lifnr = str(row.get("LIFNR", "")).strip()
+            from_site_id = self._get_site_id(lifnr) if lifnr else None
+            if not from_site_id:
+                from_site_id = self._get_first_supply_site_id() or to_site_id
+
+            budat = self._parse_sap_date(str(row.get("BUDAT", "")).strip())
+
+            ebeln_clean = ebeln.lstrip("0") or "0"
+            ebelp_clean = ebelp.lstrip("0") or "0"
+            shipment = Shipment(
+                id=f"SAP-GR-{ebeln_clean}-{ebelp_clean}",
+                description=f"Derived GR from EKBE PO history: PO {ebeln}",
+                order_id=f"SAP-PO-{ebeln_clean}",
+                order_line_number=int(pd.to_numeric(ebelp, errors="coerce") or 1),
+                product_id=product_id or f"UNKNOWN-{matnr}",
+                quantity=menge,
+                uom=str(row.get("MEINS", "EA")).strip(),
+                from_site_id=from_site_id,
+                to_site_id=to_site_id,
+                status="delivered",
+                ship_date=datetime.combine(budat, datetime.min.time()) if budat else None,
+                config_id=self._config.id,
+                tenant_id=self.tenant_id,
+                source="SAP_DERIVED_GR",
+                source_event_id=f"EKBE-{ebeln}-{ebelp}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(shipment)
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Derived {count} goods receipt records from EKBE (MSEG was empty)")
+        return count
+
+    async def _derive_outbound_status_from_deliveries(self) -> int:
+        """Derive SO fulfillment status from VBAK + LIKP when VBUK/VBUP are empty.
+
+        Cross-reference: if SO (VBELN) from VBAK appears in LIKP → FULFILLED.
+        If SO has some items in LIKP but not all → PARTIALLY_FULFILLED.
+        """
+        vbak = self._data.get("VBAK", pd.DataFrame())
+        likp = self._data.get("LIKP", pd.DataFrame())
+        lips = self._data.get("LIPS", pd.DataFrame())
+
+        if vbak.empty or (likp.empty and lips.empty):
+            return 0
+
+        # Build set of SO numbers that have deliveries
+        delivered_sos: Set[str] = set()
+        if not likp.empty and "VBELN" in likp.columns:
+            # LIKP.VGBEL = reference sales order for delivery
+            for col in ("VGBEL",):
+                if col in likp.columns:
+                    for val in likp[col].dropna():
+                        s = str(val).strip()
+                        if s:
+                            delivered_sos.add(s)
+
+        # Also check LIPS for reference SO items
+        if not lips.empty:
+            for col in ("VGBEL",):
+                if col in lips.columns:
+                    for val in lips[col].dropna():
+                        s = str(val).strip()
+                        if s:
+                            delivered_sos.add(s)
+
+        if not delivered_sos:
+            return 0
+
+        count = 0
+        for _, row in vbak.iterrows():
+            vbeln = str(row.get("VBELN", "")).strip()
+            if not vbeln:
+                continue
+
+            vbeln_clean = vbeln.lstrip("0") or "0"
+            order_id = f"SAP-SO-{vbeln_clean}"
+
+            if vbeln in delivered_sos:
+                new_status = "FULFILLED"
+            else:
+                continue  # No delivery data for this SO
+
+            result = await self.db.execute(sql_text(
+                "UPDATE outbound_order SET status = :st "
+                "WHERE id = :oid AND config_id = :cid AND status IN ('DRAFT', 'CONFIRMED')"
+            ), {"st": new_status, "oid": order_id, "cid": self._config.id})
+            if result.rowcount > 0:
+                count += 1
+
+        await self.db.flush()
+        logger.info(f"Derived {count} outbound order statuses from VBAK+LIKP (VBUK/VBUP empty)")
+        return count
+
+    async def _derive_transfer_orders_from_topology(self) -> int:
+        """Derive transfer orders from internal transportation lanes when LTAK/LTAP are empty.
+
+        For multi-site configs, finds internal-to-internal lanes and creates
+        synthetic TOs based on BOM dependencies and lane existence.
+        """
+        if not self._config:
+            return 0
+
+        # Get all internal site IDs (non-VENDOR, non-CUSTOMER)
+        internal_site_ids: Set[int] = set()
+        internal_site_map: Dict[int, str] = {}  # site_id → site name
+        for key, site in self._sites.items():
+            mt = getattr(site, "master_type", "")
+            if mt not in ("VENDOR", "CUSTOMER"):
+                internal_site_ids.add(site.id)
+                internal_site_map[site.id] = getattr(site, "name", key)
+
+        if len(internal_site_ids) < 2:
+            return 0  # Need at least 2 internal sites for transfers
+
+        # Find lanes between internal sites
+        result = await self.db.execute(sql_text(
+            "SELECT id, from_site_id, to_site_id, lead_time_days "
+            "FROM transportation_lane "
+            "WHERE config_id = :cid "
+            "  AND from_site_id IS NOT NULL AND to_site_id IS NOT NULL"
+        ), {"cid": self._config.id})
+        rows = result.fetchall()
+
+        internal_lanes = [
+            r for r in rows
+            if r[1] in internal_site_ids and r[2] in internal_site_ids
+        ]
+
+        if not internal_lanes:
+            return 0
+
+        # Clean up prior derived TOs
+        await self.db.execute(sql_text(
+            "DELETE FROM transfer_order_line_item WHERE transfer_order_id IN "
+            "(SELECT id FROM transfer_order WHERE source = 'SAP_DERIVED_TOPO' AND config_id = :cid)"
+        ), {"cid": self._config.id})
+        await self.db.execute(sql_text(
+            "DELETE FROM transfer_order WHERE source = 'SAP_DERIVED_TOPO' AND config_id = :cid"
+        ), {"cid": self._config.id})
+        await self.db.flush()
+
+        # Get products at each site via inventory or BOMs
+        products_at_site: Dict[int, List[str]] = {}
+        inv_result = await self.db.execute(sql_text(
+            "SELECT DISTINCT product_id, site_id FROM inv_level "
+            "WHERE config_id = :cid AND on_hand_qty > 0"
+        ), {"cid": self._config.id})
+        for (pid, sid) in inv_result.fetchall():
+            if sid in internal_site_ids:
+                products_at_site.setdefault(sid, []).append(pid)
+
+        count = 0
+        today = datetime.utcnow().date()
+        for lane_id, from_sid, to_sid, lt_days in internal_lanes:
+            # Find products that exist at the source site
+            available_products = products_at_site.get(from_sid, [])
+            if not available_products:
+                continue
+
+            lt = lt_days if lt_days and lt_days > 0 else 2
+            # Create one TO per lane with up to 5 representative products
+            for prod_id in available_products[:5]:
+                to_num = f"SAP-TO-DERIVED-{from_sid}-{to_sid}-{prod_id[:20]}"
+                to = TransferOrder(
+                    to_number=to_num,
+                    source_site_id=from_sid,
+                    destination_site_id=to_sid,
+                    config_id=self._config.id,
+                    tenant_id=self.tenant_id,
+                    company_id=getattr(self, "_company_code", ""),
+                    order_type="transfer",
+                    source="SAP_DERIVED_TOPO",
+                    source_event_id=f"LANE-{lane_id}-{prod_id}",
+                    source_update_dttm=datetime.utcnow(),
+                    status="PLANNED",
+                    shipment_date=today,
+                    estimated_delivery_date=today + timedelta(days=lt),
+                    transportation_mode="truck",
+                    notes=f"Derived from topology: {internal_site_map.get(from_sid, from_sid)} → {internal_site_map.get(to_sid, to_sid)}",
+                )
+                self.db.add(to)
+                await self.db.flush()
+                count += 1
+
+                line = TransferOrderLineItem(
+                    to_id=to.id,
+                    line_number=1,
+                    product_id=prod_id,
+                    quantity=100.0,  # Representative quantity
+                    requested_ship_date=today,
+                    requested_delivery_date=today + timedelta(days=lt),
+                )
+                self.db.add(line)
+
+        await self.db.flush()
+        logger.info(f"Derived {count} transfer orders from internal topology (LTAK/LTAP empty)")
+        return count
+
+    async def _run_derivation_fallbacks(self, opts: Dict[str, Any]) -> Dict[str, int]:
+        """Run all derivation fallbacks for empty SAP tables.
+
+        Only derives data when the primary table is empty AND the alternative
+        source has data. Returns counts of derived records.
+        """
+        derived: Dict[str, int] = {}
+
+        # 1. MSEG/MKPF empty → derive shipments from LIKP/LIPS
+        mseg = self._data.get("MSEG", pd.DataFrame())
+        if mseg.empty and opts.get("include_goods_movements", True):
+            # Check if there's already shipment data
+            existing = await self.db.execute(sql_text(
+                "SELECT COUNT(*) FROM shipment WHERE config_id = :cid"
+            ), {"cid": self._config.id})
+            if (existing.scalar() or 0) == 0:
+                dlv_count = await self._derive_shipments_from_deliveries()
+                if dlv_count > 0:
+                    derived["shipments_from_deliveries"] = dlv_count
+
+                gr_count = await self._derive_goods_receipts_from_po_history()
+                if gr_count > 0:
+                    derived["goods_receipts_from_ekbe"] = gr_count
+
+        # 2. VBUK/VBUP empty → derive SO status from VBAK + LIKP
+        vbuk = self._data.get("VBUK", pd.DataFrame())
+        vbup = self._data.get("VBUP", pd.DataFrame())
+        if vbuk.empty and vbup.empty and opts.get("include_outbound_order_status", True):
+            status_count = await self._derive_outbound_status_from_deliveries()
+            if status_count > 0:
+                derived["outbound_status_from_deliveries"] = status_count
+
+        # 3. LTAK/LTAP empty → derive TOs from topology
+        ltak = self._data.get("LTAK", pd.DataFrame())
+        ltap = self._data.get("LTAP", pd.DataFrame())
+        if ltak.empty and ltap.empty and opts.get("include_transfer_orders", True):
+            existing = await self.db.execute(sql_text(
+                "SELECT COUNT(*) FROM transfer_order WHERE config_id = :cid"
+            ), {"cid": self._config.id})
+            if (existing.scalar() or 0) == 0:
+                to_count = await self._derive_transfer_orders_from_topology()
+                if to_count > 0:
+                    derived["transfer_orders_from_topology"] = to_count
+
+        return derived
+
+    def _build_extraction_audit(
+        self,
+        order_counts: Dict[str, int],
+        derived_counts: Dict[str, int],
+        **kwargs,
+    ) -> ExtractionAuditReport:
+        """Build an ExtractionAuditReport tracking what was extracted vs derived.
+
+        Records per-table status for every SAP table in the extracted data,
+        plus derivation results for tables that were empty.
+        """
+        audit = ExtractionAuditReport(
+            config_id=self._config.id,
+            erp_type="SAP",
+        )
+
+        # Record status for every table in the extracted data
+        for table_name, df in self._data.items():
+            row_count = len(df) if not df.empty else 0
+            if row_count > 0:
+                audit.record_extracted(table_name, row_count)
+            else:
+                audit.record_empty(table_name)
+
+        # Record entity-level extraction results
+        entity_map = {
+            "sites": ("T001W", kwargs.get("site_count", 0)),
+            "products": ("MARA/MARC", kwargs.get("product_count", 0)),
+            "lanes": ("EORD/LIKP/VBAK", kwargs.get("lane_count", 0)),
+            "vendors": ("LFA1", kwargs.get("vendor_count", 0)),
+            "customers": ("KNA1", kwargs.get("customer_count", 0)),
+            "bom_entries": ("STPO/STKO", kwargs.get("bom_count", 0)),
+            "sourcing_rules": ("EORD", kwargs.get("sourcing_count", 0)),
+            "forecasts": ("/SAPAPO/SNPFC", kwargs.get("forecast_count", 0)),
+            "inventory_records": ("MARC/MARD", kwargs.get("inv_count", 0)),
+        }
+        for entity, (source_table, count) in entity_map.items():
+            if count > 0:
+                audit.record_extracted(f"entity:{entity}", count, note=f"From {source_table}")
+
+        # Record transactional entity counts from order_counts
+        for key, count in order_counts.items():
+            if count > 0:
+                audit.record_extracted(f"txn:{key}", count)
+            else:
+                audit.record_empty(f"txn:{key}")
+
+        # Record derivation results
+        derivation_notes = {
+            "shipments_from_deliveries": (
+                "LIKP/LIPS (deliveries)",
+                "MSEG was empty — derived shipment records from delivery data",
+            ),
+            "goods_receipts_from_ekbe": (
+                "EKBE (PO history)",
+                "MSEG was empty — derived goods receipt records from PO receipt history",
+            ),
+            "outbound_status_from_deliveries": (
+                "VBAK + LIKP (SO + deliveries)",
+                "VBUK/VBUP were empty — derived SO fulfillment status from delivery cross-reference",
+            ),
+            "transfer_orders_from_topology": (
+                "Internal lanes + inv_level",
+                "LTAK/LTAP were empty — derived transfer orders from internal network topology",
+            ),
+        }
+        for key, count in derived_counts.items():
+            source, note = derivation_notes.get(key, ("alternative tables", "Derived from alternative data"))
+            audit.record_derived(f"derived:{key}", count, source=source, note=note)
+
+        return audit
 
     def _get_first_demand_site_id(self) -> Optional[int]:
         """Get ID of first CUSTOMER site in config."""

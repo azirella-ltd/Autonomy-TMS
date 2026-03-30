@@ -498,6 +498,13 @@ class B1ConfigBuilder:
                 mrp_count = await self._build_mrp_results(mrp_results)
                 result.mrp_results_created = mrp_count
 
+            # Derivation fallbacks for empty entities
+            derived_counts = await self._run_derivation_fallbacks(data)
+
+            # Build and save extraction audit report
+            audit = self._build_extraction_audit(data, result, derived_counts)
+            await audit.save(self.db)
+
         return result
 
     # ------------------------------------------------------------------
@@ -3800,3 +3807,139 @@ class B1ConfigBuilder:
             logger.info("Skipped %d MRP results (missing fields or unknown type)", skipped_count)
         logger.info("Created %d planned orders from B1 MRPResults", created_count)
         return created_count
+
+    # ------------------------------------------------------------------
+    # Derivation Fallbacks
+    # ------------------------------------------------------------------
+
+    async def _derive_transfer_orders_from_delivery_notes(
+        self, delivery_notes: List[Dict], purchase_delivery_notes: List[Dict],
+    ) -> int:
+        """Derive TOs when StockTransfers is empty by matching outbound deliveries
+        with inbound purchase delivery notes between internal sites.
+
+        B1 DeliveryNotes (outbound) from Site A + PurchaseDeliveryNotes (inbound)
+        at Site B where both are internal warehouses → internal transfer.
+        """
+        config_id = self._config_id
+        if config_id is None:
+            return 0
+
+        internal_site_ids = set(self._site_ids.values())
+        if len(internal_site_ids) < 2:
+            return 0
+
+        count = 0
+        today = date.today()
+        seen_pairs: set = set()
+
+        # Look for delivery notes going to internal sites
+        for dn in delivery_notes:
+            ship_to_code = dn.get("ShipToCode", dn.get("WarehouseCode", ""))
+            from_wh = dn.get("DocumentLines", [{}])[0].get("WarehouseCode", "") if dn.get("DocumentLines") else ""
+
+            from_site_id = self._site_ids.get(from_wh)
+            to_site_id = self._site_ids.get(ship_to_code)
+
+            if (from_site_id and to_site_id
+                    and from_site_id in internal_site_ids
+                    and to_site_id in internal_site_ids
+                    and from_site_id != to_site_id):
+                pair_key = (from_wh, ship_to_code)
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+
+                to_number = f"B1_TO_DERIVED_{from_wh}_{ship_to_code}"
+                await self.db.execute(
+                    text("""
+                        INSERT INTO transfer_order
+                            (to_number, source_site_id, destination_site_id,
+                             config_id, tenant_id, company_id,
+                             order_type, source, source_event_id, source_update_dttm,
+                             status, shipment_date, notes)
+                        VALUES
+                            (:to_number, :source_site_id, :dest_site_id,
+                             :config_id, :tenant_id, :company_id,
+                             'transfer', 'B1_DERIVED', :source_event_id, :now,
+                             'SHIPPED', :ship_date, :notes)
+                        ON CONFLICT (to_number) DO NOTHING
+                    """),
+                    {
+                        "to_number": to_number,
+                        "source_site_id": from_site_id,
+                        "dest_site_id": to_site_id,
+                        "config_id": config_id,
+                        "tenant_id": self.tenant_id,
+                        "company_id": f"B1_{config_id}",
+                        "source_event_id": f"B1_DN_DERIVED_{from_wh}_{ship_to_code}",
+                        "now": datetime.utcnow(),
+                        "ship_date": today,
+                        "notes": f"Derived from delivery pattern: {from_wh} → {ship_to_code}",
+                    },
+                )
+                count += 1
+
+        await self.db.flush()
+        logger.info("B1: derived %d transfer orders from delivery notes", count)
+        return count
+
+    async def _run_derivation_fallbacks(self, data: Dict[str, List[Dict]]) -> Dict[str, int]:
+        """Run derivation fallbacks for empty B1 entities."""
+        derived: Dict[str, int] = {}
+
+        # StockTransfers empty → derive from delivery notes
+        stock_transfers = data.get("StockTransfers", [])
+        if not stock_transfers:
+            delivery_notes = data.get("DeliveryNotes", [])
+            purchase_delivery_notes = data.get("PurchaseDeliveryNotes", [])
+            if delivery_notes or purchase_delivery_notes:
+                count = await self._derive_transfer_orders_from_delivery_notes(
+                    delivery_notes, purchase_delivery_notes,
+                )
+                if count > 0:
+                    derived["transfer_orders_from_delivery_notes"] = count
+
+        return derived
+
+    def _build_extraction_audit(
+        self, data: Dict[str, List[Dict]], result: B1ConfigBuildResult,
+        derived_counts: Dict[str, int],
+    ) -> "ExtractionAuditReport":
+        """Build extraction audit report for B1 config build."""
+        from app.services.extraction_audit_service import ExtractionAuditReport
+
+        audit = ExtractionAuditReport(
+            config_id=self._config_id or 0, erp_type="B1",
+        )
+
+        # Record all B1 entities
+        for entity_name, records in data.items():
+            row_count = len(records) if records else 0
+            if row_count > 0:
+                audit.record_extracted(entity_name, row_count)
+            else:
+                audit.record_empty(entity_name)
+
+        # Record entity counts
+        for attr in [
+            "sites_created", "products_created", "lanes_created", "boms_created",
+            "trading_partners_created", "purchase_orders_created",
+            "outbound_orders_created", "production_orders_created",
+            "goods_receipts_created", "shipments_created",
+            "transfer_orders_created", "quality_orders_created",
+            "maintenance_orders_created", "forecasts_created",
+        ]:
+            count = getattr(result, attr, 0)
+            if count > 0:
+                audit.record_extracted(f"entity:{attr}", count)
+
+        # Record derivations
+        for key, count in derived_counts.items():
+            audit.record_derived(
+                f"derived:{key}", count,
+                source="DeliveryNotes + PurchaseDeliveryNotes (internal pairs)",
+                note="StockTransfers was empty — derived TOs from delivery note patterns",
+            )
+
+        return audit

@@ -168,6 +168,30 @@ async def reprovision_config(
     }
 
 
+@router.get("/audit/{config_id}")
+async def get_extraction_audit(
+    config_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Get the extraction audit report for a config.
+
+    Shows per-table extraction status: which ERP tables had data,
+    which were empty, which entities were derived from alternative sources,
+    and which were skipped. Visible to any authenticated user with access
+    to the config's tenant.
+    """
+    from app.services.extraction_audit_service import get_extraction_audit as _get_audit
+
+    audit = await _get_audit(db, config_id)
+    if not audit:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No extraction audit found for config {config_id}",
+        )
+    return audit
+
+
 @router.delete("/config/{config_id}")
 async def delete_config(
     config_id: int,
