@@ -292,12 +292,10 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     const dagType = normalizeTypeToken(site.dag_type || site.dagType);
     const explicitType = normalizeTypeToken(site.type || site.site_type || site.node_type);
 
-    // AWS SC canonical mapping — normalize master types and legacy dag types
+    // AWS SC canonical mapping
     const TYPE_CANONICAL = {
       CUSTOMER: 'CUSTOMER',
       VENDOR: 'VENDOR',
-      MARKET_DEMAND: 'CUSTOMER',   // legacy TBG → AWS SC
-      MARKET_SUPPLY: 'VENDOR',     // legacy TBG → AWS SC
     };
 
     // Master type takes priority for VENDOR/CUSTOMER classification
