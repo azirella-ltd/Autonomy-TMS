@@ -123,6 +123,21 @@ async def update_maintenance_order(
 
     await db.commit()
     await db.refresh(order)
+
+    # ─── Conformal observation: maintenance downtime ─────
+    if order_update.status == "COMPLETED" and order.estimated_downtime_hours and order.actual_downtime_hours:
+        try:
+            from app.services.conformal_orchestrator import ConformalOrchestrator
+            orchestrator = ConformalOrchestrator.get_instance()
+            await orchestrator.on_maintenance_downtime_observed(
+                db=db, asset_type=order.asset_type or "unknown", asset_id=order.asset_id or "",
+                estimated_hours=float(order.estimated_downtime_hours),
+                actual_hours=float(order.actual_downtime_hours),
+                tenant_id=current_user.tenant_id,
+            )
+        except Exception:
+            pass  # Non-critical
+
     return order.to_dict()
 
 @router.post("/{order_id}/approve")

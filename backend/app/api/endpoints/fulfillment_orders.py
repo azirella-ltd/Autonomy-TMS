@@ -509,6 +509,21 @@ async def deliver_fulfillment_order(
 
     await db.commit()
     await db.refresh(fo)
+
+    # ─── Conformal observation: service level (fill rate) ─────
+    try:
+        from app.services.conformal_orchestrator import ConformalOrchestrator
+        orchestrator = ConformalOrchestrator.get_instance()
+        if fo.quantity and fo.quantity > 0:
+            actual_fill = float(fo.delivered_quantity or 0) / float(fo.quantity)
+            await orchestrator.on_service_level_observed(
+                db=db, product_id=fo.product_id or "", site_id=fo.site_id or 0,
+                expected_fill_rate=1.0, actual_fill_rate=min(1.0, actual_fill),
+                tenant_id=current_user.tenant_id,
+            )
+    except Exception:
+        pass  # Non-critical
+
     return fo
 
 

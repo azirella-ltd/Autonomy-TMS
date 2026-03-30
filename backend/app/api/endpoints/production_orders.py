@@ -495,6 +495,18 @@ async def complete_production_order(
         db.commit()
         db.refresh(order)
 
+        # ─── Conformal observation: production yield ─────
+        try:
+            if order.planned_quantity and order.planned_quantity > 0 and order.actual_quantity is not None:
+                actual_yield = float(order.actual_quantity) / float(order.planned_quantity)
+                product_id = str(getattr(order, 'product_id', '') or getattr(order, 'item_id', ''))
+                logger.info(
+                    "Conformal observation: MO %s yield — planned=%s, actual=%s, yield=%.2f",
+                    order.id, order.planned_quantity, order.actual_quantity, actual_yield,
+                )
+        except Exception:
+            pass  # Non-critical
+
         return order
 
     except ValueError as e:
