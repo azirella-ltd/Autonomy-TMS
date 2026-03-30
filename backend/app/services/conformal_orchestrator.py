@@ -1086,6 +1086,77 @@ class ConformalOrchestrator:
         }
 
 
+    # =========================================================================
+    # New observation hooks for extended conformal variables
+    # =========================================================================
+
+    async def on_transit_time_observed(
+        self, db: AsyncSession, lane_id: str,
+        estimated_days: float, actual_days: float, tenant_id: int,
+    ) -> Optional[Dict]:
+        """Hook called when a transfer order is received, providing transit time observation."""
+        if estimated_days <= 0 or actual_days < 0:
+            return None
+        entity_id = f"transit:{lane_id}"
+        emergency_recal = await self._record_and_check_calibration(
+            db, EntityType.LEAD_TIME, entity_id,
+            tenant_id, estimated_days, actual_days,
+        )
+        return {"lane_id": lane_id, "estimated": estimated_days, "actual": actual_days,
+                "error": actual_days - estimated_days, "emergency_recalibration": emergency_recal}
+
+    async def on_receipt_variance_observed(
+        self, db: AsyncSession, vendor_id: str, product_id: str,
+        ordered_qty: float, received_qty: float, tenant_id: int,
+    ) -> Optional[Dict]:
+        """Hook called when goods receipt is recorded, providing receipt qty variance."""
+        if ordered_qty <= 0:
+            return None
+        entity_id = f"receipt:{vendor_id}:{product_id}"
+        ratio = received_qty / ordered_qty
+        emergency_recal = await self._record_and_check_calibration(
+            db, EntityType.INVENTORY, entity_id,
+            tenant_id, 1.0, ratio,  # Expected ratio = 1.0
+        )
+        return {"vendor_id": vendor_id, "product_id": product_id,
+                "ordered": ordered_qty, "received": received_qty, "ratio": ratio,
+                "emergency_recalibration": emergency_recal}
+
+    async def on_quality_rejection_observed(
+        self, db: AsyncSession, product_id: str,
+        inspected_qty: float, rejected_qty: float, tenant_id: int,
+    ) -> Optional[Dict]:
+        """Hook called when quality inspection is completed."""
+        if inspected_qty <= 0:
+            return None
+        rejection_rate = rejected_qty / inspected_qty
+        entity_id = f"quality:{product_id}"
+        emergency_recal = await self._record_and_check_calibration(
+            db, EntityType.YIELD, entity_id,
+            tenant_id, 0.0, rejection_rate,  # Expected: 0% rejection
+        )
+        return {"product_id": product_id, "inspected": inspected_qty,
+                "rejected": rejected_qty, "rate": rejection_rate,
+                "emergency_recalibration": emergency_recal}
+
+    async def on_maintenance_downtime_observed(
+        self, db: AsyncSession, asset_type: str, asset_id: str,
+        estimated_hours: float, actual_hours: float, tenant_id: int,
+    ) -> Optional[Dict]:
+        """Hook called when maintenance order is completed."""
+        if estimated_hours <= 0:
+            return None
+        entity_id = f"maint:{asset_type}:{asset_id}"
+        emergency_recal = await self._record_and_check_calibration(
+            db, EntityType.CAPACITY, entity_id,
+            tenant_id, estimated_hours, actual_hours,
+        )
+        return {"asset_type": asset_type, "asset_id": asset_id,
+                "estimated": estimated_hours, "actual": actual_hours,
+                "error": actual_hours - estimated_hours,
+                "emergency_recalibration": emergency_recal}
+
+
 # ===========================================================================
 # GAP 4: Scheduled Recalibration (module-level for APScheduler pickling)
 # ===========================================================================

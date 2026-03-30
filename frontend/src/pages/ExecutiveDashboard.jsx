@@ -464,36 +464,34 @@ const ModelConfidenceCard = ({ conformalStatus, onRecalibrate, recalibrating }) 
   const leadTimeCoverage = conformalStatus?.summary?.lead_time_coverage_actual || 0;
   const jointCoverage = conformalStatus?.joint_coverage_guarantee || 0;
   const stalePredictors = conformalStatus?.stale_predictors || [];
-  const demandPredictors = conformalStatus?.summary?.demand_predictors || 0;
-  const leadTimePredictors = conformalStatus?.summary?.lead_time_predictors || 0;
 
-  // Determine overall status
-  const isHealthy = demandCoverage >= 85 && leadTimeCoverage >= 80 && stalePredictors.length === 0;
-  const isWarning = !isHealthy && (demandCoverage >= 70 || leadTimeCoverage >= 70);
-  const isDanger = demandCoverage < 70 || leadTimeCoverage < 70;
+  // Extended variable types from suite
+  const varTypes = conformalStatus?.variable_types || {};
+  const totalPredictors = varTypes.total_predictors || 0;
+
+  // Display labels for variable types
+  const VAR_LABELS = {
+    demand: { label: 'Demand', target: 90, icon: '📊' },
+    lead_time: { label: 'Supplier Lead Time', target: 85, icon: '🚚' },
+    receipt_variance: { label: 'Receipt Accuracy', target: 90, icon: '📦' },
+    quality_rejection: { label: 'Quality', target: 95, icon: '✅' },
+    transit_time: { label: 'Transit Time', target: 90, icon: '🔄' },
+    maintenance_downtime: { label: 'Maintenance', target: 90, icon: '🔧' },
+    forecast_bias: { label: 'Forecast Bias', target: 90, icon: '📈' },
+    yield: { label: 'Production Yield', target: 95, icon: '🏭' },
+    price: { label: 'Price', target: 90, icon: '💰' },
+  };
+
+  // Determine overall status based on calibrated predictor count
+  const calibratedTypes = Object.entries(varTypes)
+    .filter(([k, v]) => k !== 'total_predictors' && typeof v === 'object' && v.count > 0)
+    .length;
+  const isHealthy = calibratedTypes >= 3 && totalPredictors >= 20 && stalePredictors.length === 0;
+  const isWarning = !isHealthy && totalPredictors > 0;
+  const isDanger = totalPredictors === 0;
 
   const statusVariant = isHealthy ? 'success' : isWarning ? 'warning' : 'danger';
   const statusText = isHealthy ? 'Healthy' : isWarning ? 'Attention Needed' : 'Recalibration Required';
-
-  const CoverageBar = ({ label, value, target, variant }) => {
-    const ratio = Math.min((value / target) * 100, 100);
-    const barColor = variant === 'success' ? 'bg-green-500' : variant === 'warning' ? 'bg-amber-500' : 'bg-red-500';
-
-    return (
-      <div className="space-y-1">
-        <div className="flex justify-between text-xs">
-          <span className="text-muted-foreground">{label}</span>
-          <span className="font-medium">{value.toFixed(0)}% / {target}%</span>
-        </div>
-        <div className="h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className={cn('h-full rounded-full transition-all', barColor)}
-            style={{ width: `${ratio}%` }}
-          />
-        </div>
-      </div>
-    );
-  };
 
   return (
     <Card className={cn(
@@ -514,34 +512,43 @@ const ModelConfidenceCard = ({ conformalStatus, onRecalibrate, recalibrating }) 
           </Badge>
         </div>
         <p className="text-xs text-muted-foreground">
-          Conformal prediction coverage guarantees
+          Conformal prediction coverage across {calibratedTypes} variable types
         </p>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Coverage Bars */}
-        <div className="space-y-3">
-          <CoverageBar
-            label="Demand Coverage"
-            value={demandCoverage}
-            target={90}
-            variant={demandCoverage >= 85 ? 'success' : demandCoverage >= 70 ? 'warning' : 'danger'}
-          />
-          <CoverageBar
-            label="Lead Time Coverage"
-            value={leadTimeCoverage}
-            target={85}
-            variant={leadTimeCoverage >= 80 ? 'success' : leadTimeCoverage >= 65 ? 'warning' : 'danger'}
-          />
+      <CardContent className="space-y-3">
+        {/* Variable type grid */}
+        <div className="space-y-1.5">
+          {Object.entries(varTypes)
+            .filter(([k, v]) => k !== 'total_predictors' && typeof v === 'object')
+            .sort(([, a], [, b]) => (b.count || 0) - (a.count || 0))
+            .map(([key, info]) => {
+              const meta = VAR_LABELS[key] || { label: key, target: 90, icon: '📐' };
+              const coverage = info.coverage ? (info.coverage * 100).toFixed(0) : '—';
+              const count = info.count || 0;
+              const isActive = count > 0;
+
+              return (
+                <div key={key} className="flex items-center justify-between text-xs py-0.5">
+                  <span className={cn('flex items-center gap-1.5', !isActive && 'text-muted-foreground')}>
+                    <span>{meta.icon}</span>
+                    <span>{meta.label}</span>
+                  </span>
+                  <span className={cn('font-mono', isActive ? 'text-foreground font-medium' : 'text-muted-foreground')}>
+                    {isActive ? `${count} @ ${coverage}%` : 'not calibrated'}
+                  </span>
+                </div>
+              );
+            })}
         </div>
 
         {/* Joint Coverage */}
         <div className="p-3 bg-muted/50 rounded-lg">
           <div className="flex justify-between items-center">
-            <span className="text-sm">Joint Coverage Guarantee</span>
-            <span className="text-xl font-bold">{(jointCoverage * 100).toFixed(0)}%</span>
+            <span className="text-sm">Total Predictors</span>
+            <span className="text-xl font-bold">{totalPredictors}</span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {demandPredictors} demand × {leadTimePredictors} lead time predictors calibrated
+            {calibratedTypes} variable types calibrated from transaction history
           </p>
         </div>
 
@@ -564,7 +571,7 @@ const ModelConfidenceCard = ({ conformalStatus, onRecalibrate, recalibrating }) 
           disabled={recalibrating}
         >
           <RefreshCw className={`h-4 w-4 ${recalibrating ? 'animate-spin' : ''}`} />
-          {recalibrating ? 'Calibrating…' : 'Recalibrate Predictors Now'}
+          {recalibrating ? 'Calibrating…' : 'Recalibrate All Predictors'}
         </Button>
       </CardContent>
     </Card>

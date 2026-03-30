@@ -931,10 +931,14 @@ def get_suite_status(db: Session = Depends(get_db)):
         else 0
     )
 
+    # Add extended variable summaries from get_calibration_summary()
+    extended = suite.get_calibration_summary()
+
     return {
         "summary": summary,
         "joint_coverage_guarantee": suite.compute_joint_coverage(),
         "stale_predictors": suite.check_recalibration_needed(),
+        "variable_types": extended,
     }
 
 
