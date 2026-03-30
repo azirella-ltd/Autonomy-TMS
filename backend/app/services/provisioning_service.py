@@ -1249,14 +1249,131 @@ class ProvisioningService:
             except Exception:
                 pass
 
+            # ─── Auto-calibrate conformal predictors for ALL variable types ───
+            # This ensures every provisioned config has calibrated conformal
+            # intervals for demand, lead time, receipt variance, quality,
+            # transit time, maintenance downtime, and forecast bias.
+            predictor_summary = {}
+            try:
+                from app.services.conformal_prediction.suite import get_conformal_suite
+                from app.services.conformal_prediction import get_conformal_service
+                from app.models.sc_entities import InboundOrder
+                from app.models.goods_receipt import GoodsReceiptLineItem
+                from app.models.quality_order import QualityOrder
+                from app.models.transfer_order import TransferOrder
+                from app.models.maintenance_order import MaintenanceOrder
+                import numpy as np
+
+                suite = get_conformal_suite()
+                svc = get_conformal_service()
+                prefix = f"CFG{config_id}_"
+                calibrated_count = 0
+
+                # 1. Demand (from forecast_error)
+                from sqlalchemy import func as sa_func, and_
+                groups = await self.db.execute(
+                    select(Forecast.product_id, Forecast.site_id)
+                    .where(and_(Forecast.config_id == config_id, Forecast.forecast_error.isnot(None)))
+                    .group_by(Forecast.product_id, Forecast.site_id)
+                    .having(sa_func.count() >= 10)
+                )
+                for pid, sid in groups.all():
+                    data = await self.db.execute(
+                        select(Forecast.forecast_p50, Forecast.forecast_error)
+                        .where(and_(
+                            Forecast.product_id == pid, Forecast.site_id == sid,
+                            Forecast.config_id == config_id,
+                            Forecast.forecast_error.isnot(None), Forecast.forecast_p50.isnot(None),
+                        ))
+                    )
+                    rows = data.all()
+                    preds = [float(r[0]) for r in rows if r[0] is not None and r[1] is not None]
+                    actuals = [float(r[0]) + float(r[1]) for r in rows if r[0] is not None and r[1] is not None]
+                    if len(preds) >= 10:
+                        svc.calibrate_demand(
+                            historical_forecasts=np.array(preds), historical_actuals=np.array(actuals),
+                            alpha=0.1, product_id=str(pid), site_id=int(sid) if sid else None,
+                        )
+                        calibrated_count += 1
+
+                # 2. Lead time (from inbound_order)
+                lt_data = await self.db.execute(
+                    select(InboundOrder.supplier_id,
+                           sa_func.array_agg(InboundOrder.requested_delivery_date - InboundOrder.order_date),
+                           sa_func.array_agg(InboundOrder.actual_delivery_date - InboundOrder.order_date))
+                    .where(and_(InboundOrder.config_id == config_id,
+                                InboundOrder.actual_delivery_date.isnot(None),
+                                InboundOrder.order_date.isnot(None),
+                                InboundOrder.supplier_id.isnot(None)))
+                    .group_by(InboundOrder.supplier_id).having(sa_func.count() >= 10)
+                )
+                for supplier_id, planned, actual in lt_data.all():
+                    if planned and actual:
+                        p = [float(d.days if hasattr(d, 'days') else d) for d in planned if d is not None]
+                        a = [float(d.days if hasattr(d, 'days') else d) for d in actual if d is not None]
+                        if len(p) >= 10:
+                            suite.calibrate_lead_time(str(supplier_id), p, a)
+                            calibrated_count += 1
+
+                # 3. Forecast bias
+                bias_data = await self.db.execute(
+                    select(Forecast.product_id, sa_func.array_agg(Forecast.forecast_bias))
+                    .where(and_(Forecast.config_id == config_id, Forecast.forecast_bias.isnot(None)))
+                    .group_by(Forecast.product_id).having(sa_func.count() >= 10)
+                )
+                for pid, biases in bias_data.all():
+                    b = [float(x) for x in (biases or []) if x is not None]
+                    if len(b) >= 10:
+                        suite.calibrate_forecast_bias(str(pid), b)
+                        calibrated_count += 1
+
+                # 4. Quality rejection
+                qr_data = await self.db.execute(
+                    select(QualityOrder.product_id,
+                           sa_func.array_agg(QualityOrder.inspection_quantity),
+                           sa_func.array_agg(QualityOrder.rejected_quantity))
+                    .where(and_(QualityOrder.config_id == config_id, QualityOrder.inspection_quantity > 0))
+                    .group_by(QualityOrder.product_id).having(sa_func.count() >= 5)
+                )
+                for pid, insp, rej in qr_data.all():
+                    rates_actual = [float(r or 0) / max(1, float(i)) for i, r in zip(insp or [], rej or [])]
+                    if len(rates_actual) >= 5:
+                        avg_rate = sum(rates_actual) / len(rates_actual)
+                        suite.calibrate_quality_rejection(str(pid), [avg_rate] * len(rates_actual), rates_actual)
+                        calibrated_count += 1
+
+                # 5. Maintenance downtime
+                md_data = await self.db.execute(
+                    select(MaintenanceOrder.asset_type,
+                           sa_func.array_agg(MaintenanceOrder.estimated_downtime_hours),
+                           sa_func.array_agg(MaintenanceOrder.actual_downtime_hours))
+                    .where(and_(MaintenanceOrder.config_id == config_id,
+                                MaintenanceOrder.estimated_downtime_hours.isnot(None),
+                                MaintenanceOrder.actual_downtime_hours.isnot(None),
+                                MaintenanceOrder.status == "COMPLETED"))
+                    .group_by(MaintenanceOrder.asset_type).having(sa_func.count() >= 5)
+                )
+                for asset_type, est, act in md_data.all():
+                    e = [float(h) for h in (est or []) if h is not None]
+                    a = [float(h) for h in (act or []) if h is not None]
+                    if len(e) >= 5:
+                        suite.calibrate_maintenance_downtime(str(asset_type), e, a)
+                        calibrated_count += 1
+
+                predictor_summary = suite.get_calibration_summary()
+                logger.info("Conformal auto-calibrate: %d predictors calibrated for config %d", calibrated_count, config_id)
+            except Exception as cal_err:
+                logger.warning("Conformal auto-calibrate failed: %s", cal_err, exc_info=True)
+
             return {
                 "status": "ok",
                 "predictors_hydrated": count,
                 "cdt_readiness": cdt_summary,
+                "conformal_predictors": predictor_summary.get("total_predictors", 0) if predictor_summary else 0,
             }
         except Exception as e:
-            logger.warning("Conformal calibration failed (non-critical): %s", e)
-            return {"status": "ok", "note": "Conformal calibration attempted"}
+            logger.error("Conformal calibration FAILED for config %s: %s", config_id, e, exc_info=True)
+            return {"status": "failed", "error": f"Conformal calibration failed: {str(e)[:200]}"}
 
     async def _step_scenario_bootstrap(self, config_id: int) -> dict:
         """Step 15: Warm-start scenario template priors via digital twin simulation.
