@@ -71,13 +71,31 @@ def strip_zeros(val: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Rebuild SAP config with individual sites")
-    parser.add_argument("--config-id", type=int, default=82, help="Config ID to rebuild")
+    parser.add_argument("--config-id", type=int, default=None, help="Config ID to rebuild (auto-detects SAP demo if not specified)")
     parser.add_argument("--csv-dir", type=str, default="imports/sap_faa_extract",
                         help="Directory with SAP CSV extracts")
     parser.add_argument("--plant", type=str, default="1710",
                         help="Primary SAP plant code (default: 1710)")
     parser.add_argument("--dry-run", action="store_true", help="Print plan without modifying DB")
     args = parser.parse_args()
+
+    # Auto-detect SAP demo config if not specified
+    if args.config_id is None:
+        from app.db.session import sync_session_factory
+        from sqlalchemy import text
+        _db = sync_session_factory()
+        row = _db.execute(text(
+            "SELECT sc.id FROM supply_chain_configs sc "
+            "JOIN tenants t ON t.id = sc.tenant_id "
+            "WHERE t.slug = 'sap-demo' ORDER BY sc.id DESC LIMIT 1"
+        )).fetchone()
+        if row:
+            args.config_id = row[0]
+            print(f"Auto-detected SAP demo config: {args.config_id}")
+        else:
+            print("ERROR: No SAP demo config found. Use --config-id explicitly.")
+            sys.exit(1)
+        _db.close()
 
     csv_dir = Path(args.csv_dir)
     if not csv_dir.exists():

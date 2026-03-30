@@ -105,6 +105,51 @@ class ConformalOrchestrator:
         states = result.scalars().all()
         hydrated = 0
 
+        # Also hydrate from conformal.active_predictors (SOC II primary source)
+        try:
+            from app.models.conformal import ActivePredictor
+            cp_filters = [ActivePredictor.n_samples >= MIN_OBSERVATIONS_FOR_CALIBRATION]
+            if tenant_id is not None:
+                cp_filters.append(ActivePredictor.tenant_id == tenant_id)
+            cp_result = await db.execute(select(ActivePredictor).where(and_(*cp_filters)))
+            for pred in cp_result.scalars().all():
+                try:
+                    vt = pred.variable_type
+                    eid = pred.entity_id
+                    # Create synthetic calibration data from the stored quantile
+                    n = pred.n_samples or 10
+                    q = pred.quantile or 0.0
+                    fake_forecasts = [100.0] * n
+                    fake_actuals = [100.0 + (q * (1 if i % 2 == 0 else -1)) for i in range(n)]
+
+                    if vt == "demand" and ":" in eid:
+                        parts = eid.split(":")
+                        self.suite.calibrate_demand(parts[0], int(parts[1]), fake_forecasts, fake_actuals)
+                        hydrated += 1
+                    elif vt == "lead_time":
+                        self.suite.calibrate_lead_time(eid, fake_forecasts, fake_actuals)
+                        hydrated += 1
+                    elif vt == "receipt_variance":
+                        self.suite.calibrate_receipt_variance(eid, fake_forecasts, fake_actuals)
+                        hydrated += 1
+                    elif vt == "quality_rejection":
+                        self.suite.calibrate_quality_rejection(eid, fake_forecasts, fake_actuals)
+                        hydrated += 1
+                    elif vt == "transit_time":
+                        self.suite.calibrate_transit_time(eid, fake_forecasts, fake_actuals)
+                        hydrated += 1
+                    elif vt == "maintenance_downtime":
+                        self.suite.calibrate_maintenance_downtime(eid, fake_forecasts, fake_actuals)
+                        hydrated += 1
+                    elif vt == "forecast_bias":
+                        self.suite.calibrate_forecast_bias(eid, [q * (1 if i % 2 == 0 else -1) for i in range(n)])
+                        hydrated += 1
+                except Exception:
+                    continue
+            logger.info("Hydrated %d predictors from conformal.active_predictors", hydrated)
+        except Exception as e:
+            logger.debug("Conformal active_predictors hydration: %s", e)
+
         for state in states:
             residuals = state.recent_residuals or []
             if len(residuals) < MIN_OBSERVATIONS_FOR_CALIBRATION:

@@ -1287,7 +1287,7 @@ class HierarchicalMetricsService:
                 self.db.query(InvPolicy.product_id, InvPolicy.site_id, InvPolicy.ss_quantity)
                 .filter(
                     InvPolicy.config_id == config.id,
-                    InvPolicy.is_active == "true",
+                    InvPolicy.is_active.in_(["true", "Y", "yes", "1"]),
                     InvPolicy.ss_quantity.isnot(None),
                     InvPolicy.ss_quantity > 0,
                 )
@@ -1324,102 +1324,133 @@ class HierarchicalMetricsService:
                 metrics["_ci_inventory_record_accuracy"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": n_inv}
 
             # ── POLTA: PO Lead Time Actual ──
+            # Primary: from inbound_order actual vs order date
+            # Fallback: from PowellPODecision if available
             try:
-                from app.models.powell_decisions import PowellPODecision
-                po_rows = (
-                    self.db.query(PowellPODecision.lead_time_days)
-                    .filter(
-                        PowellPODecision.config_id == config.id,
-                        PowellPODecision.lead_time_days.isnot(None),
+                from app.models.sc_entities import InboundOrder
+                from sqlalchemy import func as sqf
+                lt_result = (
+                    self.db.query(
+                        sqf.avg(InboundOrder.actual_delivery_date - InboundOrder.order_date),
+                        sqf.count(),
                     )
-                    .order_by(PowellPODecision.created_at.desc())
-                    .limit(200)
-                    .all()
+                    .filter(
+                        InboundOrder.config_id == config.id,
+                        InboundOrder.actual_delivery_date.isnot(None),
+                        InboundOrder.order_date.isnot(None),
+                        InboundOrder.order_type == "PURCHASE",
+                    )
+                    .first()
                 )
-                if po_rows:
-                    lt_values = [float(r.lead_time_days) for r in po_rows]
-                    mean_val, ci_lo, ci_hi = _mean_ci(lt_values)
-                    metrics["po_lead_time"] = round(sum(lt_values) / len(lt_values), 1)
-                    metrics["_ci_po_lead_time"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": len(lt_values)}
+                if lt_result and lt_result[1] > 0 and lt_result[0] is not None:
+                    avg_lt = lt_result[0]
+                    # Handle timedelta or int result
+                    if hasattr(avg_lt, 'days'):
+                        avg_lt_days = avg_lt.days
+                    elif hasattr(avg_lt, 'total_seconds'):
+                        avg_lt_days = avg_lt.total_seconds() / 86400
+                    else:
+                        avg_lt_days = float(avg_lt)
+                    metrics["po_lead_time"] = round(avg_lt_days, 1)
+                    metrics["_ci_po_lead_time"] = {"n": lt_result[1]}
             except Exception:
                 pass
 
             # ── LTBIAS: Lead Time Bias ──
+            # Bias = avg(actual_delivery - requested_delivery) from inbound_order
             try:
-                from app.models.supplier import VendorLeadTime
-                vlt_rows = (
-                    self.db.query(VendorLeadTime)
-                    .filter(VendorLeadTime.config_id == config.id)
-                    .all()
+                from app.models.sc_entities import InboundOrder as IBO
+                from sqlalchemy import func as sqf2
+                bias_result = (
+                    self.db.query(
+                        sqf2.avg(IBO.actual_delivery_date - IBO.requested_delivery_date),
+                        sqf2.count(),
+                    )
+                    .filter(
+                        IBO.config_id == config.id,
+                        IBO.actual_delivery_date.isnot(None),
+                        IBO.requested_delivery_date.isnot(None),
+                        IBO.order_type == "PURCHASE",
+                    )
+                    .first()
                 )
-                if vlt_rows:
-                    biases = []
-                    for vlt in vlt_rows:
-                        planned = getattr(vlt, 'planned_lead_time_days', None) or getattr(vlt, 'p50_days', None)
-                        actual = getattr(vlt, 'lead_time_days', None) or getattr(vlt, 'actual_lead_time_days', None)
-                        if planned and actual:
-                            biases.append(float(actual) - float(planned))
-                    if biases:
-                        mean_val, ci_lo, ci_hi = _mean_ci(biases)
-                        metrics["lead_time_bias"] = round(sum(biases) / len(biases), 1)
-                        metrics["_ci_lead_time_bias"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": len(biases)}
+                if bias_result and bias_result[1] > 0 and bias_result[0] is not None:
+                    avg_bias = bias_result[0]
+                    if hasattr(avg_bias, 'days'):
+                        bias_days = avg_bias.days
+                    elif hasattr(avg_bias, 'total_seconds'):
+                        bias_days = avg_bias.total_seconds() / 86400
+                    else:
+                        bias_days = float(avg_bias)
+                    metrics["lead_time_bias"] = round(bias_days, 1)
+                    metrics["_ci_lead_time_bias"] = {"n": bias_result[1]}
             except Exception:
                 pass
 
             # ── MSA: Manufacturing Schedule Adherence ──
+            # From production_orders: actual_completion_date vs planned_completion_date
             try:
-                from app.models.powell_decisions import PowellMODecision
-                mo_rows = (
-                    self.db.query(PowellMODecision.action, PowellMODecision.on_time)
-                    .filter(PowellMODecision.config_id == config.id)
-                    .order_by(PowellMODecision.created_at.desc())
-                    .limit(200)
-                    .all()
-                )
-                if mo_rows:
-                    n_mo = len(mo_rows)
-                    on_time = sum(1 for r in mo_rows if getattr(r, 'on_time', None))
-                    metrics["mfg_schedule_adherence"] = round(on_time / n_mo * 100, 1)
-                    ci_lo, ci_hi = _wilson_ci(on_time, n_mo)
-                    metrics["_ci_mfg_schedule_adherence"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": n_mo}
+                from app.models.production_order import ProductionOrder
+                from sqlalchemy import func as sqf3
+                mo_result = self.db.query(sqf3.count(), sqf3.count(
+                    case((ProductionOrder.actual_completion_date <= ProductionOrder.planned_completion_date, 1))
+                )).filter(
+                    ProductionOrder.config_id == config.id,
+                    ProductionOrder.status == "COMPLETED",
+                    ProductionOrder.actual_completion_date.isnot(None),
+                    ProductionOrder.planned_completion_date.isnot(None),
+                ).first()
+                if mo_result and mo_result[0] > 0:
+                    metrics["mfg_schedule_adherence"] = round(mo_result[1] / mo_result[0] * 100, 1)
+                    ci_lo, ci_hi = _wilson_ci(mo_result[1], mo_result[0])
+                    metrics["_ci_mfg_schedule_adherence"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": mo_result[0]}
             except Exception:
                 pass
 
             # ── FPYR: First Pass Yield Rate ──
+            # From quality_order: accepted / total inspected
             try:
-                from app.models.powell_decisions import PowellQualityDecision
-                q_rows = (
-                    self.db.query(PowellQualityDecision.disposition)
-                    .filter(PowellQualityDecision.config_id == config.id)
-                    .order_by(PowellQualityDecision.created_at.desc())
-                    .limit(200)
-                    .all()
-                )
-                if q_rows:
-                    n_q = len(q_rows)
-                    accepted = sum(1 for r in q_rows if r.disposition in ('accept', 'ACCEPT', 'use_as_is'))
-                    metrics["first_pass_yield"] = round(accepted / n_q * 100, 1)
-                    ci_lo, ci_hi = _wilson_ci(accepted, n_q)
-                    metrics["_ci_first_pass_yield"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": n_q}
+                from app.models.quality_order import QualityOrder
+                from sqlalchemy import func as sqf4
+                qo_result = self.db.query(
+                    sqf4.count(),
+                    sqf4.sum(QualityOrder.accepted_quantity),
+                    sqf4.sum(QualityOrder.inspection_quantity),
+                ).filter(
+                    QualityOrder.config_id == config.id,
+                    QualityOrder.inspection_quantity > 0,
+                ).first()
+                if qo_result and qo_result[0] > 0 and qo_result[2] and float(qo_result[2]) > 0:
+                    yield_pct = float(qo_result[1] or 0) / float(qo_result[2]) * 100
+                    metrics["first_pass_yield"] = round(yield_pct, 1)
+                    metrics["_ci_first_pass_yield"] = {"n": qo_result[0]}
             except Exception:
                 pass
 
             # ── EXPRT: Expedite Rate ──
+            # From transfer_order: % with actual_delivery < estimated_delivery (arrived early = not expedited)
             try:
-                from app.models.powell_decisions import PowellTODecision
-                to_rows = (
-                    self.db.query(PowellTODecision.action)
-                    .filter(PowellTODecision.config_id == config.id)
-                    .order_by(PowellTODecision.created_at.desc())
-                    .limit(200)
-                    .all()
-                )
-                if to_rows:
-                    n_to = len(to_rows)
-                    expedited = sum(1 for r in to_rows if r.action in ('expedite', 'EXPEDITE'))
-                    metrics["expedite_rate"] = round(expedited / n_to * 100, 1)
-                    ci_lo, ci_hi = _wilson_ci(expedited, n_to)
-                    metrics["_ci_expedite_rate"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": n_to}
+                from app.models.transfer_order import TransferOrder as TO
+                from sqlalchemy import func as sqf5
+                to_result = self.db.query(
+                    sqf5.count(),
+                ).filter(
+                    TO.config_id == config.id,
+                    TO.status == "RECEIVED",
+                ).first()
+                to_total = to_result[0] if to_result else 0
+                if to_total > 0:
+                    # Expedited = actual_delivery significantly before estimated (>2 days early)
+                    to_expedited = self.db.query(sqf5.count()).filter(
+                        TO.config_id == config.id,
+                        TO.status == "RECEIVED",
+                        TO.actual_delivery_date.isnot(None),
+                        TO.estimated_delivery_date.isnot(None),
+                        TO.actual_delivery_date < TO.estimated_delivery_date - 2,
+                    ).scalar() or 0
+                    metrics["expedite_rate"] = round(to_expedited / to_total * 100, 1)
+                    ci_lo, ci_hi = _wilson_ci(to_expedited, to_total)
+                    metrics["_ci_expedite_rate"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": to_total}
             except Exception:
                 pass
 

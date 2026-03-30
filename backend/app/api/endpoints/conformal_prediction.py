@@ -941,7 +941,7 @@ def calibrate_suite(
 
 
 @router.get("/suite/status")
-def get_suite_status(db: Session = Depends(get_db)):
+async def get_suite_status(db: Session = Depends(get_db)):
     """
     Get the current status of the conformal suite.
 
@@ -985,8 +985,24 @@ def get_suite_status(db: Session = Depends(get_db)):
         else 0
     )
 
-    # Add extended variable summaries from get_calibration_summary()
-    extended = suite.get_calibration_summary()
+    # Read authoritative predictor counts from conformal.active_predictors DB table
+    extended = {}
+    try:
+        from sqlalchemy import text as sqt
+        result = await db.execute(sqt(
+            "SELECT variable_type, count(*), avg(coverage_guarantee) "
+            "FROM conformal.active_predictors "
+            "GROUP BY variable_type ORDER BY count(*) DESC"
+        ))
+        vt_rows = result.fetchall()
+        total = 0
+        for vtype, cnt, avg_cov in vt_rows:
+            extended[vtype] = {"count": cnt, "coverage": round(float(avg_cov or 0.9), 2)}
+            total += cnt
+        extended["total_predictors"] = total
+    except Exception:
+        # Fallback to in-memory suite
+        extended = suite.get_calibration_summary()
 
     return {
         "summary": summary,
