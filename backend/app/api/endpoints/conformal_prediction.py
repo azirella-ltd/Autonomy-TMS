@@ -416,9 +416,55 @@ async def auto_calibrate(
     calibrated = []
 
     # SOC II: Scope by config_id — conformal calibration must be tenant-scoped
+    cfg_id = request.config_id
     config_filter = []
-    if hasattr(request, 'config_id') and request.config_id:
-        config_filter.append(Forecast.config_id == request.config_id)
+    if cfg_id:
+        config_filter.append(Forecast.config_id == cfg_id)
+
+    # ─── Helper: persist calibration to conformal schema (SOC II) ─────
+    async def _persist_conformal(variable_type, entity_id, n_samples, coverage, quantile=None):
+        try:
+            from app.models.conformal import CalibrationSnapshot, ActivePredictor
+            from sqlalchemy import text as sa_text
+            if not cfg_id:
+                return
+            t_result = await db.execute(sa_text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"), {"c": cfg_id})
+            tenant_id = t_result.scalar_one_or_none()
+            if not tenant_id:
+                return
+
+            db.add(CalibrationSnapshot(
+                tenant_id=tenant_id, config_id=cfg_id,
+                variable_type=variable_type, entity_id=str(entity_id),
+                alpha=request.alpha, quantile=quantile,
+                empirical_coverage=coverage, n_samples=n_samples, method="split",
+            ))
+
+            existing = await db.execute(
+                select(ActivePredictor).where(and_(
+                    ActivePredictor.tenant_id == tenant_id, ActivePredictor.config_id == cfg_id,
+                    ActivePredictor.variable_type == variable_type, ActivePredictor.entity_id == str(entity_id),
+                ))
+            )
+            pred = existing.scalar_one_or_none()
+            if pred is None:
+                pred = ActivePredictor(
+                    tenant_id=tenant_id, config_id=cfg_id,
+                    variable_type=variable_type, entity_id=str(entity_id),
+                    alpha=request.alpha, quantile=quantile or 0.0,
+                    coverage_guarantee=1.0 - request.alpha, n_samples=n_samples,
+                )
+                db.add(pred)
+            else:
+                pred.quantile = quantile or 0.0
+                pred.empirical_coverage = coverage
+                pred.n_samples = n_samples
+                pred.is_stale = False
+                from datetime import datetime as dt
+                pred.last_calibrated_at = dt.utcnow()
+            await db.flush()
+        except Exception as e:
+            logger.debug("Conformal persist: %s", e)
 
     # Query forecasts with error data (these have historical actuals)
     query = select(Forecast).where(Forecast.forecast_error.isnot(None))
@@ -487,6 +533,7 @@ async def auto_calibrate(
         )
 
         calibrated.append({
+            "variable": "demand",
             "product_id": product_id,
             "site_id": site_id,
             "alpha": cal_result.alpha,
@@ -495,13 +542,14 @@ async def auto_calibrate(
             "n_samples": cal_result.n_samples,
             "coverage_guarantee": 1 - cal_result.alpha,
         })
+        await _persist_conformal("demand", f"{product_id}:{site_id}", cal_result.n_samples,
+                                  cal_result.empirical_coverage, cal_result.quantile)
 
     # =========================================================================
     # Additional variable types — calibrate from transaction tables
     # =========================================================================
     from app.services.conformal_prediction.suite import get_conformal_suite
     suite = get_conformal_suite()
-    cfg_id = request.config_id
     do_all = request.variable_types is None
     vt = set(request.variable_types or [])
 
@@ -533,6 +581,7 @@ async def auto_calibrate(
                 if len(planned) >= 10:
                     suite.calibrate_lead_time(str(supplier_id), planned, actual)
                     calibrated.append({"variable": "lead_time", "entity_id": supplier_id, "n_samples": len(planned)})
+                    await _persist_conformal("lead_time", supplier_id, len(planned), 0.9)
 
     if cfg_id and (do_all or "receipt_variance" in vt):
         # Receipt quantity: GoodsReceiptLineItem (expected vs received)
@@ -559,6 +608,7 @@ async def auto_calibrate(
                     vendor_key = str(product_id).split("_")[-1] if product_id else "unknown"
                     suite.calibrate_receipt_variance(vendor_key, o, r)
                     calibrated.append({"variable": "receipt_variance", "entity_id": vendor_key, "n_samples": len(o)})
+                    await _persist_conformal("receipt_variance", vendor_key, len(o), 0.9)
 
     if cfg_id and (do_all or "quality_rejection" in vt):
         # Quality rejection rate: QualityOrder (rejected/inspected qty)
@@ -585,6 +635,7 @@ async def auto_calibrate(
                 if len(rates_actual) >= 5:
                     suite.calibrate_quality_rejection(str(product_id), rates_expected, rates_actual)
                     calibrated.append({"variable": "quality_rejection", "entity_id": product_id, "n_samples": len(rates_actual)})
+                    await _persist_conformal("quality_rejection", product_id, len(rates_actual), 0.95)
 
     if cfg_id and (do_all or "transit_time" in vt):
         # Transfer transit time: TransferOrder (estimated vs actual delivery)
@@ -612,6 +663,7 @@ async def auto_calibrate(
                 if len(e) >= 10:
                     suite.calibrate_transit_time(str(lane_id), e, a)
                     calibrated.append({"variable": "transit_time", "entity_id": lane_id, "n_samples": len(e)})
+                    await _persist_conformal("transit_time", lane_id, len(e), 0.9)
 
     if cfg_id and (do_all or "maintenance_downtime" in vt):
         # Maintenance downtime: MaintenanceOrder (estimated vs actual hours)
@@ -639,6 +691,7 @@ async def auto_calibrate(
                 if len(e) >= 5:
                     suite.calibrate_maintenance_downtime(str(asset_type), e, a)
                     calibrated.append({"variable": "maintenance_downtime", "entity_id": asset_type, "n_samples": len(e)})
+                    await _persist_conformal("maintenance_downtime", asset_type, len(e), 0.9)
 
     if cfg_id and (do_all or "forecast_bias" in vt):
         # Forecast bias: Forecast.forecast_bias field
@@ -658,6 +711,7 @@ async def auto_calibrate(
                 if len(b) >= 10:
                     suite.calibrate_forecast_bias(str(product_id), b)
                     calibrated.append({"variable": "forecast_bias", "entity_id": product_id, "n_samples": len(b)})
+                    await _persist_conformal("forecast_bias", product_id, len(b), 0.9)
 
     # Build summary by variable type
     var_summary = {}
