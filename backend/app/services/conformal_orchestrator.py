@@ -1339,12 +1339,105 @@ async def _async_daily_recalibration() -> None:
             orchestrator = ConformalOrchestrator.get_instance()
             await orchestrator.hydrate_from_db(db)
 
+        # Run coverage audit after recalibration
+        audit_count = await _run_coverage_audit(db, tenant_ids)
+
         await db.commit()
         logger.info(
             f"Daily conformal recalibration complete: "
-            f"{total_recalibrated} belief states recalibrated across "
+            f"{total_recalibrated} belief states recalibrated, "
+            f"{audit_count} coverage audits recorded across "
             f"{len(tenant_ids)} tenants"
         )
+
+
+async def _run_coverage_audit(db: AsyncSession, tenant_ids: List[int]) -> int:
+    """
+    Sweep all active predictors and verify empirical coverage meets guarantees.
+    Writes results to conformal.coverage_audit for SOC II compliance.
+    """
+    from app.models.conformal import ActivePredictor, CoverageAudit, ObservationLog
+
+    audit_count = 0
+    now = datetime.utcnow()
+    window_start = now - timedelta(days=7)
+
+    for tenant_id in tenant_ids:
+        try:
+            # Get all active predictors for this tenant
+            result = await db.execute(
+                select(ActivePredictor).where(
+                    ActivePredictor.tenant_id == tenant_id
+                )
+            )
+            predictors = result.scalars().all()
+
+            for pred in predictors:
+                # Count observations in the audit window
+                obs_result = await db.execute(
+                    select(func.count()).select_from(ObservationLog).where(
+                        and_(
+                            ObservationLog.tenant_id == tenant_id,
+                            ObservationLog.config_id == pred.config_id,
+                            ObservationLog.variable_type == pred.variable_type,
+                            ObservationLog.entity_id == pred.entity_id,
+                            ObservationLog.observed_at >= window_start,
+                        )
+                    )
+                )
+                n_obs = obs_result.scalar() or 0
+
+                if n_obs < 5:
+                    continue  # Not enough data for meaningful audit
+
+                # Count covered observations
+                covered_result = await db.execute(
+                    select(func.count()).select_from(ObservationLog).where(
+                        and_(
+                            ObservationLog.tenant_id == tenant_id,
+                            ObservationLog.config_id == pred.config_id,
+                            ObservationLog.variable_type == pred.variable_type,
+                            ObservationLog.entity_id == pred.entity_id,
+                            ObservationLog.observed_at >= window_start,
+                            ObservationLog.was_covered == True,
+                        )
+                    )
+                )
+                n_covered = covered_result.scalar() or 0
+
+                empirical = n_covered / n_obs if n_obs > 0 else 0.0
+                guaranteed = pred.coverage_guarantee or 0.90
+                gap = empirical - guaranteed
+                is_compliant = empirical >= guaranteed
+
+                audit_entry = CoverageAudit(
+                    tenant_id=tenant_id,
+                    config_id=pred.config_id,
+                    variable_type=pred.variable_type,
+                    entity_id=pred.entity_id,
+                    guaranteed_coverage=guaranteed,
+                    empirical_coverage=round(empirical, 4),
+                    n_observations=n_obs,
+                    coverage_gap=round(gap, 4),
+                    is_compliant=is_compliant,
+                    audit_window_start=window_start,
+                    audit_window_end=now,
+                )
+                db.add(audit_entry)
+                audit_count += 1
+
+                if not is_compliant:
+                    logger.warning(
+                        "Coverage violation: %s:%s (tenant=%d) — "
+                        "empirical=%.1f%% < guaranteed=%.1f%% (gap=%.1f%%, n=%d)",
+                        pred.variable_type, pred.entity_id, tenant_id,
+                        empirical * 100, guaranteed * 100, gap * 100, n_obs,
+                    )
+
+        except Exception as e:
+            logger.error("Coverage audit failed for tenant %d: %s", tenant_id, e)
+
+    return audit_count
 
 
 def register_conformal_jobs(scheduler_service) -> None:
