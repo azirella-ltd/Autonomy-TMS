@@ -99,6 +99,19 @@ class ProvisioningService:
                 return {"status": "running", "step": step_key, "note": "Training dispatched"}
 
             result = await self._execute_step(config_id, step_key)
+
+            # SOC II: Check inner result for failure — don't mark failed steps as completed
+            inner_status = result.get("status", "ok") if isinstance(result, dict) else "ok"
+            if inner_status == "failed":
+                logger.error("Provisioning step %s returned failure for config %d: %s",
+                             step_key, config_id, result.get("error", "unknown"))
+                setattr(status, f"{step_key}_status", "failed")
+                setattr(status, f"{step_key}_at", datetime.utcnow())
+                setattr(status, f"{step_key}_error", str(result.get("error", ""))[:500])
+                status.overall_status = "partial"
+                await self.db.commit()
+                return {"status": "failed", "step": step_key, "result": result}
+
             setattr(status, f"{step_key}_status", "completed")
             setattr(status, f"{step_key}_at", datetime.utcnow())
             setattr(status, f"{step_key}_error", None)
@@ -942,8 +955,8 @@ class ProvisioningService:
             finally:
                 sync_db.close()
         except Exception as e:
-            logger.warning("Supply plan generation failed (non-critical): %s", e)
-            return {"status": "ok", "note": f"Supply plan attempted: {str(e)[:100]}"}
+            logger.error("Supply plan generation FAILED for config %s: %s", config_id, e, exc_info=True)
+            return {"status": "failed", "error": f"Supply plan failed: {str(e)[:200]}"}
 
     async def _step_rccp_validation(self, config_id: int) -> dict:
         """Step 9b: Run RCCP validation against the latest MPS plan for each site.
