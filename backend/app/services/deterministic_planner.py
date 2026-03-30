@@ -220,14 +220,27 @@ class DeterministicPlanner:
         return max(1, eoq)
 
     def _get_lead_time(self, node: Site, item: Product) -> int:
-        """Get procurement/manufacturing lead time from upstream lane."""
+        """Get procurement/manufacturing lead time from upstream lane.
+
+        Handles both legacy int format and AWS SC DM JSON format:
+        - int: direct lead time in weeks
+        - dict: {"value": N, "unit": "day"|"week"}
+        """
         if self.session:
             lane = self.session.query(TransportationLane).filter(
                 TransportationLane.to_site_id == node.id,
                 TransportationLane.config_id == node.config_id,
             ).first()
             if lane and lane.supply_lead_time:
-                return max(1, lane.supply_lead_time)
+                lt = lane.supply_lead_time
+                if isinstance(lt, dict):
+                    value = lt.get("value", 2)
+                    unit = lt.get("unit", "day")
+                    if unit == "day":
+                        return max(1, round(value / 7))  # Convert days to weeks
+                    return max(1, round(value))
+                if isinstance(lt, (int, float)):
+                    return max(1, int(lt))
         return 2  # Default 2 weeks
 
     def _get_item_value(self, item: Product) -> float:

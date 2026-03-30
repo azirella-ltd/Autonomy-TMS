@@ -226,11 +226,20 @@ class MonteCarloEngine:
 
             # Sample lead times for each lane
             for lane in config.lanes:
-                lead_time = self.sampler.sample_lead_time(
-                    from_site_id=lane.from_site_id,
-                    to_site_id=lane.to_site_id,
-                    product_id=lane.item_id
-                )
+                # Extract base lead time from lane (handles JSON or int format)
+                lt_raw = lane.supply_lead_time
+                if isinstance(lt_raw, dict):
+                    base_lt = lt_raw.get("value", 7)
+                    if lt_raw.get("unit") == "week":
+                        base_lt = base_lt * 7
+                elif isinstance(lt_raw, (int, float)):
+                    base_lt = lt_raw
+                else:
+                    base_lt = 7  # Default 7 days
+
+                # Add stochastic variation
+                import random
+                lead_time = max(1, round(base_lt * random.uniform(0.8, 1.3)))
                 sampled["lead_times"][f"{lane.from_site_id}->{lane.to_site_id}"] = lead_time
 
             # Sample demand — lookup forecast mean from market_demands, fall back to 100
