@@ -242,6 +242,78 @@ class ConformalOrchestrator:
         state.interval_width_mean = upper - lower
 
         await db.flush()
+
+        # Also write to conformal schema tables (SOC II isolated)
+        try:
+            from app.models.conformal import CalibrationSnapshot, ActivePredictor
+            from sqlalchemy import text as sa_text
+
+            # Map EntityType to variable_type string
+            var_type_map = {
+                EntityType.DEMAND: "demand", EntityType.LEAD_TIME: "lead_time",
+                EntityType.YIELD: "yield", EntityType.PRICE: "price",
+                EntityType.CAPACITY: "maintenance_downtime",
+                EntityType.INVENTORY: "receipt_variance",
+                EntityType.SERVICE_LEVEL: "service_level",
+            }
+            variable_type = var_type_map.get(entity_type, str(entity_type.value) if entity_type else "unknown")
+
+            # Resolve config_id from tenant_id if not available on state
+            config_id = getattr(state, 'config_id', None)
+            if not config_id:
+                cfg_row = await db.execute(
+                    sa_text("SELECT id FROM supply_chain_configs WHERE tenant_id = :tid ORDER BY id DESC LIMIT 1"),
+                    {"tid": tenant_id},
+                )
+                cfg = cfg_row.scalar_one_or_none()
+                config_id = cfg if cfg else 0
+
+            # Append-only calibration snapshot
+            snapshot = CalibrationSnapshot(
+                tenant_id=tenant_id, config_id=config_id,
+                variable_type=variable_type, entity_id=entity_id,
+                alpha=1.0 - coverage, quantile=upper - point_estimate,
+                empirical_coverage=state.empirical_coverage,
+                n_samples=len(residuals), method=method.value if method else "adaptive",
+                nonconformity_scores=residuals[-50:],
+                coverage_history=coverage_history[-50:],
+                distribution_fit=getattr(state, 'distribution_fit', None),
+            )
+            db.add(snapshot)
+
+            # Upsert active predictor
+            existing = await db.execute(
+                select(ActivePredictor).where(and_(
+                    ActivePredictor.tenant_id == tenant_id,
+                    ActivePredictor.config_id == config_id,
+                    ActivePredictor.variable_type == variable_type,
+                    ActivePredictor.entity_id == entity_id,
+                ))
+            )
+            pred = existing.scalar_one_or_none()
+            if pred is None:
+                pred = ActivePredictor(
+                    tenant_id=tenant_id, config_id=config_id,
+                    variable_type=variable_type, entity_id=entity_id,
+                    alpha=1.0 - coverage, quantile=upper - point_estimate,
+                    coverage_guarantee=coverage,
+                )
+                db.add(pred)
+            pred.quantile = upper - point_estimate
+            pred.empirical_coverage = state.empirical_coverage
+            pred.coverage_guarantee = coverage
+            pred.interval_width_mean = upper - lower
+            pred.n_samples = len(residuals)
+            pred.method = method.value if method else "adaptive"
+            pred.is_stale = False
+            pred.last_calibrated_at = datetime.utcnow()
+            pred.drift_detected = state.drift_detected
+            pred.drift_score = state.drift_score
+
+            await db.flush()
+        except Exception as e:
+            logger.debug("Conformal schema persist failed (non-critical): %s", e)
+
         return state
 
     # =======================================================================
@@ -507,7 +579,7 @@ class ConformalOrchestrator:
         if state.conformal_lower is not None and state.conformal_upper is not None:
             in_interval = state.conformal_lower <= actual_value <= state.conformal_upper
 
-        # Log to PowellCalibrationLog
+        # Log to PowellCalibrationLog (agents schema)
         log_entry = PowellCalibrationLog(
             belief_state_id=state.id,
             predicted_value=predicted_value,
@@ -519,6 +591,31 @@ class ConformalOrchestrator:
             observed_at=datetime.utcnow(),
         )
         db.add(log_entry)
+
+        # Also log to conformal.observation_log (SOC II isolated audit)
+        try:
+            from app.models.conformal import ObservationLog
+            var_type_map = {
+                EntityType.DEMAND: "demand", EntityType.LEAD_TIME: "lead_time",
+                EntityType.YIELD: "yield", EntityType.PRICE: "price",
+                EntityType.CAPACITY: "maintenance_downtime",
+                EntityType.INVENTORY: "receipt_variance",
+                EntityType.SERVICE_LEVEL: "service_level",
+            }
+            config_id = getattr(state, 'config_id', None) or 0
+            obs = ObservationLog(
+                tenant_id=tenant_id, config_id=config_id,
+                variable_type=var_type_map.get(entity_type, str(entity_type.value)),
+                entity_id=entity_id,
+                predicted_value=predicted_value, actual_value=actual_value,
+                residual=residual, nonconformity_score=abs(residual),
+                was_covered=in_interval,
+                interval_lower=state.conformal_lower,
+                interval_upper=state.conformal_upper,
+            )
+            db.add(obs)
+        except Exception:
+            pass  # Non-critical — observation log is supplementary
 
         # Update state's residuals and coverage history
         recent_residuals = (state.recent_residuals or []) + [residual]
@@ -690,6 +787,33 @@ class ConformalOrchestrator:
             f"Emergency recalibration complete for {entity_type.value}:{entity_id}. "
             f"New interval: [{lower}, {upper}]"
         )
+
+        # Log drift event to conformal.drift_events (SOC II audit)
+        try:
+            from app.models.conformal import DriftEvent
+            var_type_map = {
+                EntityType.DEMAND: "demand", EntityType.LEAD_TIME: "lead_time",
+                EntityType.YIELD: "yield", EntityType.PRICE: "price",
+                EntityType.CAPACITY: "maintenance_downtime",
+                EntityType.INVENTORY: "receipt_variance",
+                EntityType.SERVICE_LEVEL: "service_level",
+            }
+            config_id = getattr(state, 'config_id', None) or 0
+            drift_event = DriftEvent(
+                tenant_id=tenant_id, config_id=config_id,
+                variable_type=var_type_map.get(entity_type, str(entity_type.value)),
+                entity_id=entity_id,
+                drift_type="coverage_drop",
+                drift_score=state.drift_score or 0.0,
+                coverage_before=state.empirical_coverage,
+                coverage_after=coverage,
+                threshold=DRIFT_COVERAGE_THRESHOLD,
+                action_taken="emergency_recalibration",
+            )
+            db.add(drift_event)
+            await db.flush()
+        except Exception:
+            pass  # Non-critical
 
     # =======================================================================
     # CRPS: Continuous Ranked Probability Score (Lokad gold standard)
