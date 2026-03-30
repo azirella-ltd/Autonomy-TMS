@@ -227,11 +227,11 @@ class MonteCarloEngine:
             # Sample lead times for each lane
             for lane in config.lanes:
                 lead_time = self.sampler.sample_lead_time(
-                    from_node_id=lane.from_node_id,
-                    to_node_id=lane.to_node_id,
+                    from_site_id=lane.from_site_id,
+                    to_site_id=lane.to_site_id,
                     product_id=lane.item_id
                 )
-                sampled["lead_times"][f"{lane.from_node_id}->{lane.to_node_id}"] = lead_time
+                sampled["lead_times"][f"{lane.from_site_id}->{lane.to_site_id}"] = lead_time
 
             # Sample demand — lookup forecast mean from market_demands, fall back to 100
             from app.models.supply_chain_config import MarketDemand

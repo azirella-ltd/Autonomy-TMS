@@ -733,7 +733,7 @@ class CTPService:
         """Get shipping lead time from downstream lane."""
         from app.models.supply_chain_config import TransportationLane
         lane = self.db.query(TransportationLane).filter(
-            TransportationLane.from_node_id == node.id,
+            TransportationLane.from_site_id == node.id,
         ).first()
         if lane and lane.supply_lead_time:
             return max(1, lane.supply_lead_time)

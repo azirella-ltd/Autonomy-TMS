@@ -223,7 +223,7 @@ class DeterministicPlanner:
         """Get procurement/manufacturing lead time from upstream lane."""
         if self.session:
             lane = self.session.query(TransportationLane).filter(
-                TransportationLane.to_node_id == node.id,
+                TransportationLane.to_site_id == node.id,
                 TransportationLane.config_id == node.config_id,
             ).first()
             if lane and lane.supply_lead_time:
