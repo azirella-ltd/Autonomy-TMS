@@ -6688,6 +6688,8 @@ api.include_router(executive_briefing_router, prefix="/executive-briefing", tags
 # Decision Stream — LLM-First UI with Decision-Back Planning
 from app.api.endpoints.decision_stream import router as decision_stream_router
 api.include_router(decision_stream_router, tags=["decision-stream"])
+from app.api.endpoints.governance import router as governance_router
+api.include_router(governance_router, tags=["governance"])
 from app.api.endpoints.decision_stream_ws import router as decision_stream_ws_router
 app.include_router(decision_stream_ws_router)
 

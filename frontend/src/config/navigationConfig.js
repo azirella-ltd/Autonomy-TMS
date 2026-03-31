@@ -987,6 +987,12 @@ export const SYSTEM_ADMIN_NAVIGATION = [
         icon: AdminIcon,
         description: 'Create and manage tenants and their administrators',
       },
+      {
+        label: 'Decision Governance',
+        path: '/admin/governance',
+        icon: GovernanceIcon,
+        description: 'Inspect and configure decision governance pipeline across tenants',
+      },
     ],
   },
 ];
