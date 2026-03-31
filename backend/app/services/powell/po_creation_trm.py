@@ -335,6 +335,58 @@ class POCreationTRM:
         if not need_to_order:
             return []
 
+        # ── Adjust Before Create: check existing open POs first ────────
+        # Glenday principle: Green runners almost always have open POs to
+        # expedite or increase. Only create new POs when no existing order
+        # can satisfy the need.
+        try:
+            from .engines.order_adjustment_advisor import OrderAdjustmentAdvisor, AdjustmentAction
+            from .engines.setup_matrix import RunnerCategory
+            runner = getattr(state, "runner_category", "blue")
+            if isinstance(runner, RunnerCategory):
+                runner = runner.value
+            advisor = OrderAdjustmentAdvisor(
+                db=self.db, config_id=self.config_id,
+                product_id=state.product_id, site_id=state.location_id,
+            )
+            target_qty = max(
+                state.inventory_position.reorder_point - state.inventory_position.inventory_position,
+                0,
+            )
+            if target_qty > 0:
+                import datetime as _dt
+                lead_days = min(
+                    (s.lead_time_days for s in state.suppliers if s.is_available),
+                    default=14,
+                )
+                needed_by = _dt.date.today() + _dt.timedelta(days=lead_days)
+                adj = advisor.recommend(
+                    need_type="po", needed_qty=target_qty, needed_by=needed_by,
+                    runner_category=runner,
+                    supplier_id=state.suppliers[0].supplier_id if state.suppliers else None,
+                )
+                if adj.action != AdjustmentAction.CREATE and adj.existing_order:
+                    # Emit as an adjustment recommendation, not a new PO
+                    logger.info(
+                        "PO adjust-before-create: %s on PO %s for %s (runner: %s)",
+                        adj.action.value, adj.existing_order.order_id,
+                        state.product_id, runner,
+                    )
+                    # Convert to PORecommendation with adjustment metadata
+                    from dataclasses import asdict
+                    rec = self._heuristic_evaluate_supplier(
+                        state, state.suppliers[0], trigger_reason, urgency,
+                    ) if state.suppliers else None
+                    if rec:
+                        rec.adjustment_action = adj.action.value
+                        rec.adjustment_order_id = adj.existing_order.order_id
+                        rec.adjustment_reasoning = adj.reasoning
+                        if adj.adjust_qty_delta > 0:
+                            rec.recommended_qty = adj.adjust_qty_delta
+                        return [rec]
+        except Exception as e:
+            logger.debug("PO adjust-before-create check failed: %s", e)
+
         # Evaluate each supplier
         for supplier in state.suppliers:
             if not supplier.is_available:

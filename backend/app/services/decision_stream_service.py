@@ -537,6 +537,61 @@ def _get_suggested_action(decision, decision_type: str) -> str:
     return "Review decision"
 
 
+def _get_effective_dates(decision, decision_type: str) -> Tuple[Optional[str], int]:
+    """Extract the effective start date and period duration (days) for a decision.
+
+    Returns (effective_from_iso, period_days).
+    - effective_from: when the action takes effect (ISO date string)
+    - period_days: how long the action spans (default 7 = one planning week)
+    """
+    from datetime import date as _date
+
+    # Default: action starts today, spans 1 planning week
+    created = getattr(decision, "created_at", None)
+    default_from = created.date() if created and hasattr(created, "date") else _date.today()
+    default_period = 7
+
+    if decision_type == "po_creation":
+        receipt = getattr(decision, "expected_receipt_date", None)
+        if receipt:
+            lead_days = (receipt - default_from).days if hasattr(receipt, "__sub__") else 0
+            return default_from.isoformat(), max(lead_days, 7)
+        return default_from.isoformat(), 14  # PO typically 2-week horizon
+
+    elif decision_type == "rebalancing":
+        # Transfer decisions: effect is immediate, transit 1-3 days
+        return default_from.isoformat(), 7
+
+    elif decision_type == "forecast_adjustment":
+        periods = getattr(decision, "time_horizon_periods", None)
+        if periods and isinstance(periods, int):
+            return default_from.isoformat(), periods * 7  # periods are weekly
+        return default_from.isoformat(), 28  # default 4 weeks for forecasts
+
+    elif decision_type == "mo_execution":
+        return default_from.isoformat(), 14  # production cycle ~2 weeks
+
+    elif decision_type == "to_execution":
+        transit = getattr(decision, "estimated_transit_days", None)
+        if transit:
+            try:
+                return default_from.isoformat(), max(int(float(transit)) + 7, 7)
+            except (TypeError, ValueError):
+                pass
+        return default_from.isoformat(), 7
+
+    elif decision_type == "maintenance":
+        sched = getattr(decision, "scheduled_date", None)
+        if sched:
+            return sched.isoformat() if hasattr(sched, "isoformat") else str(sched), 7
+        return default_from.isoformat(), 7
+
+    elif decision_type == "inventory_buffer":
+        return default_from.isoformat(), 28  # buffer adjustments span ~4 weeks
+
+    return default_from.isoformat(), default_period
+
+
 def _get_reason(decision, decision_type: str) -> Optional[str]:
     """Extract the short reason code/text from a decision.
 
@@ -830,6 +885,17 @@ class DecisionStreamService:
         decisions, product_names, site_names = await self._collect_pending_decisions(
             config_id, decision_level, level_override=level_override,
         )
+
+        # 1b. Forward-rolling coordination: remove decisions made redundant
+        #     by earlier (higher-priority) decisions targeting the same shortfall.
+        #     Evaluates in chronological order — today's decisions project forward
+        #     and may eliminate tomorrow's.
+        try:
+            from app.services.decision_impact_ledger import DecisionImpactLedger
+            ledger = DecisionImpactLedger(self.db, config_id or (config_filter[0] if config_filter else 0))
+            decisions = await ledger.evaluate_decisions(decisions)
+        except Exception as e:
+            logger.warning("Forward-rolling decision evaluation failed: %s", e)
 
         # 2. Prioritize
         decisions = self._prioritize_decisions(decisions)
@@ -1160,6 +1226,10 @@ class DecisionStreamService:
                     )
                 except Exception as sp_err:
                     logger.warning(f"Supply plan adjustment failed for {decision_id}: {sp_err}")
+
+            # Note: redundant decisions are removed at digest-build time by the
+            # forward-rolling DecisionImpactLedger.evaluate_decisions(). The cache
+            # invalidation above ensures the next digest call re-evaluates.
 
             # Fire-and-forget: extract experiential knowledge from rich override text
             if action in ("modify", "cancel") and override_reason_text and len(override_reason_text) > 30:
@@ -1531,12 +1601,17 @@ class DecisionStreamService:
                         "decision_reasoning": _humanize_ids(raw_reasoning, product_names, site_names) if raw_reasoning else None,
                         "suggested_action": _humanize_ids(_get_suggested_action(row, type_key), product_names, site_names),
                         "deep_link": DEEP_LINK_MAP.get(type_key, "/insights/actions"),
+                        "effective_from": _get_effective_dates(row, type_key)[0],
+                        "period_days": _get_effective_dates(row, type_key)[1],
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                         "editable_values": _get_editable_values(row, type_key),
                         "context": {
                             "config_id": row.config_id,
                             "decision_method": getattr(row, "decision_method", None),
                             "triggered_by": getattr(row, "triggered_by", None),
+                            # Site routing for rebalancing/TO coordination
+                            "from_site_id": getattr(row, "from_site", None) or getattr(row, "source_site_id", None),
+                            "to_site_id": getattr(row, "to_site", None) or getattr(row, "dest_site_id", None),
                         },
                     })
 
@@ -1661,9 +1736,20 @@ class DecisionStreamService:
                         coord_action = proposed.get("coordination_action", "")
 
                         if alloc_action and alloc_qty:
-                            action_label = alloc_action.replace("_", " ").title()
-                            summary = f"{action_label}: {int(alloc_qty)} units of {alloc_pdesc} {from_site}→{to_site}"
-                            action = f"{action_label} {int(alloc_qty)} units"
+                            # Translate internal action names to clear business language
+                            _action_labels = {
+                                "pre_position": "Transfer",
+                                "reallocate": "Reallocate",
+                                "demand_shift": "Redirect",
+                                "rebalance": "Rebalance",
+                                "expedite": "Expedite",
+                                "consolidate": "Consolidate",
+                            }
+                            action_label = _action_labels.get(alloc_action, alloc_action.replace("_", " ").title())
+                            from_display = site_names.get(str(from_site), from_site) if from_site else "?"
+                            to_display = site_names.get(str(to_site), to_site) if to_site else "?"
+                            summary = f"{action_label} {int(alloc_qty)} units of {alloc_pdesc} from {from_display} to {to_display}"
+                            action = f"{action_label} {int(alloc_qty)} units from {from_display} → {to_display}"
                         elif coord_action:
                             action_label = coord_action.replace("_", " ").title()
                             summary = f"Site Coordination: {action_label} at {site_display}"
@@ -1704,6 +1790,21 @@ class DecisionStreamService:
                         reasoning_parts.append(f"Local resolution blocked: {blocked_by}")
                     if revenue and revenue > 0:
                         reasoning_parts.append(f"Revenue at risk: ${revenue:,.0f}")
+                    if cost_delay and cost_delay > 0:
+                        reasoning_parts.append(f"Cost of delay: ${cost_delay:,.0f}/day")
+                    # Add financial estimate from quantity + generic cost assumptions
+                    if not revenue and not cost_delay and alloc_qty:
+                        try:
+                            qty_val = float(alloc_qty)
+                            # Estimate: $2/unit holding cost/week, $5/unit stockout cost/week
+                            holding_exp = qty_val * 2.0
+                            stockout_exp = qty_val * 5.0
+                            reasoning_parts.append(
+                                f"**Financial impact**: Holding cost exposure ~${holding_exp:,.0f}/week, "
+                                f"stockout cost exposure ~${stockout_exp:,.0f}/week"
+                            )
+                        except (TypeError, ValueError):
+                            pass
 
                     enriched_reasoning = " | ".join(reasoning_parts) if reasoning_parts else None
                     site_display = site_names.get(str(row.site_key), row.site_key)
@@ -1711,6 +1812,14 @@ class DecisionStreamService:
                     # Extract product_id from proposed_values for GNN directives
                     gnn_pid = proposed.get("product_id")
                     gnn_pname = product_names.get(str(gnn_pid)) if gnn_pid else None
+
+                    # Compute effective dates for GNN directives
+                    gnn_eff_from = row.created_at.date().isoformat() if row.created_at else None
+                    gnn_period = 14  # tactical directives default to 2-week horizon
+                    if scope == "sop_policy":
+                        gnn_period = 28  # strategic = 4 weeks
+                    elif scope == "site_coordination":
+                        gnn_period = 7   # operational = 1 week
 
                     all_decisions.append({
                         "id": row.id,
@@ -1733,6 +1842,8 @@ class DecisionStreamService:
                         "decision_reasoning": enriched_reasoning,
                         "suggested_action": action,
                         "deep_link": "/admin/powell" if scope == "sop_policy" else "/insights/actions",
+                        "effective_from": gnn_eff_from,
+                        "period_days": gnn_period,
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                         "editable_values": row.proposed_values,
                         "context": {
@@ -1743,6 +1854,8 @@ class DecisionStreamService:
                             "source_signals": source_signals if source_signals else None,
                             "local_resolution_blocked_by": blocked_by,
                             "escalation_id": getattr(row, "escalation_id", None),
+                            "from_site_id": proposed.get("from_site"),
+                            "to_site_id": proposed.get("to_site"),
                         },
                     })
             except Exception as e:
@@ -1805,6 +1918,8 @@ class DecisionStreamService:
                         "decision_reasoning": f"User directive routed to {layer} layer. {row.reason_code or ''}",
                         "suggested_action": f"Routed to {layer}: {', '.join(row.target_trm_types) if row.target_trm_types else 'all agents'}",
                         "deep_link": "/directives",
+                        "effective_from": row.created_at.date().isoformat() if row.created_at else None,
+                        "period_days": 28,  # governance directives default 4-week horizon
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                         "editable_values": row.parsed_scope,
                         "context": {

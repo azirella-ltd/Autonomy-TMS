@@ -311,6 +311,48 @@ class InventoryRebalancingTRM:
         pairs = self._identify_candidate_pairs(state)
 
         for from_site, to_site in pairs:
+            # ── Adjust Before Create: check existing TOs for this route ──
+            # Before recommending a new transfer, check if there's an open TO
+            # on this route that can be expedited or increased.
+            try:
+                from .engines.order_adjustment_advisor import OrderAdjustmentAdvisor, AdjustmentAction
+                advisor = OrderAdjustmentAdvisor(
+                    db=self.db, config_id=self.config_id,
+                    product_id=state.product_id, site_id=to_site,
+                )
+                dest_state = state.site_states.get(to_site)
+                needed_qty = 0
+                if dest_state:
+                    needed_qty = max(0, dest_state.safety_stock - dest_state.available)
+                if needed_qty > 0:
+                    import datetime as _dt
+                    adj = advisor.recommend(
+                        need_type="to", needed_qty=needed_qty,
+                        needed_by=_dt.date.today(),
+                        runner_category=getattr(state, "runner_category", "blue"),
+                        from_site_id=from_site, to_site_id=to_site,
+                    )
+                    if adj.action != AdjustmentAction.CREATE and adj.existing_order:
+                        logger.info(
+                            "Rebalancing adjust-before-create: %s on TO %s for %s→%s",
+                            adj.action.value, adj.existing_order.order_id,
+                            from_site, to_site,
+                        )
+                        # Create recommendation with adjustment metadata
+                        rec = RebalanceRecommendation(
+                            from_site=from_site, to_site=to_site,
+                            quantity=adj.adjust_qty_delta if adj.adjust_qty_delta > 0 else needed_qty,
+                            urgency=0.7, confidence=0.8,
+                            reason=RebalanceReason.STOCKOUT_RISK,
+                        )
+                        rec.adjustment_action = adj.action.value
+                        rec.adjustment_order_id = adj.existing_order.order_id
+                        rec.adjustment_reasoning = adj.reasoning
+                        recommendations.append(rec)
+                        continue  # Skip normal evaluation — we're adjusting
+            except Exception as e:
+                logger.debug("Rebalancing adjust-before-create failed: %s", e)
+
             if self.trm_model is not None:
                 rec = self._trm_evaluate_pair(state, from_site, to_site)
             elif self.use_heuristic_fallback:

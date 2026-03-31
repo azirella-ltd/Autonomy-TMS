@@ -1581,6 +1581,17 @@ class SiteAgent:
             result.phases.append(phase_result)
             result.total_signals_emitted += phase_result.signals_emitted
 
+            # ── Forward sweep: propagate phase decisions into shared state ──
+            # After each phase, update the projected inventory position so that
+            # later phases see the cumulative effect of earlier decisions.
+            # E.g., PO ordered in ACQUIRE → rebalancing in REFLECT sees updated
+            # inventory position and may decide the transfer is unnecessary.
+            if self.signal_bus and phase_result.trms_executed:
+                try:
+                    self._propagate_phase_decisions(phase, phase_result.trms_executed)
+                except Exception as e:
+                    logger.debug(f"Phase state propagation failed: {e}")
+
             # REFLECT phase: detect conflicts and update signal divergence
             if phase == DecisionCyclePhase.REFLECT and self.signal_bus:
                 try:
@@ -1600,6 +1611,52 @@ class SiteAgent:
         result.completed_at = datetime.utcnow()
         result.total_duration_ms = (time.monotonic() - cycle_start) * 1000.0
         return result
+
+    def _propagate_phase_decisions(
+        self,
+        phase: DecisionCyclePhase,
+        trms_executed: List[str],
+    ) -> None:
+        """Update shared state with inventory deltas from decisions made in this phase.
+
+        This ensures later phases see the cumulative effect of earlier decisions.
+        For example, after ACQUIRE (PO agent orders 500 units), the projected
+        on_order quantity increases — so REFLECT (rebalancing) may decide a
+        transfer is no longer needed.
+        """
+        if not hasattr(self, "_state") or self._state is None:
+            return
+
+        state = self._state
+        # Collect inventory deltas from recent decisions cache
+        cache = getattr(self, "_recent_decisions_cache", None)
+        if not cache:
+            return
+
+        for trm_name in trms_executed:
+            decisions = cache.get(trm_name, [])
+            for d in decisions:
+                qty = 0.0
+                if trm_name in ("po_creation", "subcontracting"):
+                    qty = d.get("recommended_qty", 0) or d.get("qty", 0) or 0
+                    # PO increases on_order (future supply)
+                    if hasattr(state, "on_order"):
+                        state.on_order = (state.on_order or 0) + float(qty)
+                elif trm_name in ("mo_execution",):
+                    qty = d.get("planned_qty", 0) or d.get("qty", 0) or 0
+                    # MO increases WIP
+                    if hasattr(state, "wip"):
+                        state.wip = (state.wip or 0) + float(qty)
+                elif trm_name in ("to_execution",):
+                    qty = d.get("planned_qty", 0) or d.get("qty", 0) or 0
+                    # TO increases in_transit at destination (this site if destination)
+                    if hasattr(state, "in_transit"):
+                        state.in_transit = (state.in_transit or 0) + float(qty)
+                elif trm_name == "atp_executor":
+                    qty = d.get("promised_qty", 0) or d.get("allocated_qty", 0) or 0
+                    # ATP commits inventory
+                    if hasattr(state, "committed_inventory"):
+                        state.committed_inventory = (state.committed_inventory or 0) + float(qty)
 
     # Mapping from InterHiveSignalType → HiveSignalType for local bus injection.
     _INTER_TO_LOCAL: Dict[InterHiveSignalType, HiveSignalType] = {

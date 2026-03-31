@@ -266,6 +266,9 @@ const DecisionCard = ({
         from_site_id: decision.editable_values?.from_site_id || decision.context?.from_site_id,
         to_site_id: decision.editable_values?.to_site_id || decision.context?.to_site_id,
         decision_date: decision.created_at,
+        // Scope chart window: 1 week before effective_from → 1 week after period ends
+        effective_from: decision.effective_from,
+        period_days: decision.period_days,
       });
       setChartData(data);
     } catch {
@@ -409,32 +412,45 @@ const DecisionCard = ({
           </div>
         </div>
 
-        {/* Date / period */}
-        {decision.created_at && (
-          <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            <span>
-              {new Date(decision.created_at).toLocaleDateString(undefined, {
-                year: 'numeric', month: 'short', day: 'numeric',
-              })}
-              {' '}
-              {new Date(decision.created_at).toLocaleTimeString(undefined, {
-                hour: '2-digit', minute: '2-digit',
-              })}
-            </span>
-            {decision.planning_period && (
-              <span className="ml-2 px-1.5 py-0.5 bg-muted rounded text-[10px] font-medium">
-                Period {decision.planning_period}
-              </span>
-            )}
-          </div>
-        )}
-
         {/* Suggested action */}
         {decision.suggested_action && (
-          <p className="text-sm mb-3">
-            <span className="text-muted-foreground">Decided: </span>
+          <p className="text-sm mb-1">
+            <span className="text-muted-foreground">Decision: </span>
             <span className="font-medium">{decision.suggested_action}</span>
+          </p>
+        )}
+
+        {/* Timeframe — always visible as separate line */}
+        {decision.effective_from && (
+          <p className="text-sm mb-3 flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+            <span className="font-medium text-primary">
+              Timeframe:
+            </span>
+            <span>
+              {new Date(decision.effective_from + 'T00:00:00').toLocaleDateString(undefined, {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+              })}
+              {decision.period_days > 0 && (
+                <> for {decision.period_days >= 28
+                  ? `${Math.round(decision.period_days / 7)} weeks`
+                  : decision.period_days >= 14
+                    ? `${Math.round(decision.period_days / 7)} weeks`
+                    : decision.period_days === 7
+                      ? '1 week'
+                      : `${decision.period_days} days`
+                }</>
+              )}
+              {decision.period_days > 0 && (
+                <span className="text-muted-foreground ml-1">
+                  (through {new Date(
+                    new Date(decision.effective_from + 'T00:00:00').getTime() + decision.period_days * 86400000
+                  ).toLocaleDateString(undefined, {
+                    day: '2-digit', month: '2-digit', year: 'numeric',
+                  })})
+                </span>
+              )}
+            </span>
           </p>
         )}
 
@@ -530,6 +546,32 @@ const DecisionCard = ({
               <div className="flex items-start gap-2">
                 <HelpCircle className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
                 <div className="leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-strong:text-blue-800">
+                  {/* Temporal context header */}
+                  {decision.effective_from && (
+                    <div className="text-xs font-semibold text-blue-700 mb-2 pb-1.5 border-b border-blue-200">
+                      <Clock className="h-3 w-3 inline mr-1 -mt-0.5" />
+                      Effective from {new Date(decision.effective_from + 'T00:00:00').toLocaleDateString(undefined, {
+                        day: '2-digit', month: '2-digit', year: 'numeric',
+                      })}
+                      {decision.period_days > 0 && (
+                        <> for {decision.period_days >= 28
+                          ? `${Math.round(decision.period_days / 7)} weeks`
+                          : decision.period_days >= 14
+                            ? `${Math.round(decision.period_days / 7)} weeks`
+                            : decision.period_days === 7
+                              ? '1 week'
+                              : `${decision.period_days} days`
+                        }</>
+                      )}
+                      {decision.period_days > 0 && (
+                        <> (through {new Date(
+                          new Date(decision.effective_from + 'T00:00:00').getTime() + decision.period_days * 86400000
+                        ).toLocaleDateString(undefined, {
+                          day: '2-digit', month: '2-digit', year: 'numeric',
+                        })})</>
+                      )}
+                    </div>
+                  )}
                   <Markdown>{reasoning || decision.decision_reasoning}</Markdown>
                 </div>
               </div>

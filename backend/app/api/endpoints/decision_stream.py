@@ -487,10 +487,16 @@ async def get_decision_time_series(
     to_site_id: Optional[str] = Query(None, description="Destination site for transfers"),
     decision_date: Optional[str] = Query(None, description="Decision timestamp"),
     decision_id: Optional[str] = Query(None, description="Decision ID"),
+    effective_from: Optional[str] = Query(None, description="Decision effective start date (ISO)"),
+    period_days: Optional[int] = Query(None, description="Decision period duration in days"),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """Return contextual time series for a decision — shows the issue, action, and projected outcome.
+
+    Chart window is scoped to: 1 week before effective_from → 1 week after period ends.
+    This ensures the chart shows context before the action, the full action period,
+    and a week of projected outcome.
 
     Each TRM decision type returns different data:
     - Rebalancing: inventory at source + destination before/after transfer
@@ -507,13 +513,23 @@ async def get_decision_time_series(
     if not cfg_id:
         return {"series": [], "lines": [], "error": True}
 
-    # Parse decision date for time window
+    # Parse effective date for chart window
     ref_date = date.today()
-    if decision_date:
+    if effective_from:
+        try:
+            ref_date = date.fromisoformat(effective_from)
+        except Exception:
+            pass
+    elif decision_date:
         try:
             ref_date = datetime.fromisoformat(decision_date.replace("Z", "+00:00")).date()
         except Exception:
             pass
+
+    # Chart window: 1 week before effective_from → 1 week after period ends
+    p_days = period_days or 7
+    chart_start = ref_date - timedelta(days=7)
+    chart_end = ref_date + timedelta(days=p_days + 7)
 
     # Normalize product ID to config-prefixed format
     pid = product_id
@@ -543,8 +559,8 @@ async def get_decision_time_series(
         if decision_type in ("rebalancing", "inventory_rebalancing"):
             src = from_site_id or site_id
             dst = to_site_id
-            window_start = ref_date - timedelta(days=7)
-            window_end = ref_date + timedelta(days=14)
+            window_start = chart_start
+            window_end = chart_end
 
             for site_label, sid in [("source", src), ("destination", dst)]:
                 if not sid:
@@ -576,12 +592,12 @@ async def get_decision_time_series(
                 {"key": "destination_safety_stock", "color": "#ff7300", "label": f"{dst_name} Safety Stock", "bold": False},
             ]
             title = f"Inventory Rebalancing: {src_name} → {dst_name}"
-            annotation = f"Transfer impact window: {window_start} to {window_end}"
+            annotation = f"Decision period: {ref_date} to {ref_date + timedelta(days=p_days)}"
 
         # ─── ATP: available-to-promise vs demand ──────────────────────
         elif decision_type == "atp":
-            window_start = ref_date - timedelta(days=3)
-            window_end = ref_date + timedelta(days=7)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT inventory_date, on_hand_qty, allocated_qty, available_qty, safety_stock_qty
                 FROM inv_level
@@ -608,8 +624,8 @@ async def get_decision_time_series(
 
         # ─── PO CREATION: inventory vs reorder point + receipt ────────
         elif decision_type == "po_creation":
-            window_start = ref_date - timedelta(days=7)
-            window_end = ref_date + timedelta(days=21)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT inventory_date, on_hand_qty, safety_stock_qty
                 FROM inv_level
@@ -634,8 +650,8 @@ async def get_decision_time_series(
 
         # ─── FORECAST ADJUSTMENT: old vs new forecast vs actuals ──────
         elif decision_type == "forecast_adjustment":
-            window_start = ref_date - timedelta(days=28)
-            window_end = ref_date + timedelta(days=28)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT forecast_date, forecast_p10, forecast_p50, forecast_p90
                 FROM forecast
@@ -661,8 +677,8 @@ async def get_decision_time_series(
 
         # ─── INVENTORY BUFFER: on-hand vs safety stock target ─────────
         elif decision_type == "inventory_buffer":
-            window_start = ref_date - timedelta(days=14)
-            window_end = ref_date + timedelta(days=14)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT inventory_date, on_hand_qty, safety_stock_qty
                 FROM inv_level
@@ -684,8 +700,8 @@ async def get_decision_time_series(
 
         # ─── MO EXECUTION: production capacity + WIP ──────────────────
         elif decision_type == "mo_execution":
-            window_start = ref_date - timedelta(days=7)
-            window_end = ref_date + timedelta(days=14)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT inventory_date, on_hand_qty, in_transit_qty
                 FROM inv_level
@@ -709,8 +725,8 @@ async def get_decision_time_series(
         elif decision_type == "to_execution":
             src = from_site_id or site_id
             dst = to_site_id
-            window_start = ref_date - timedelta(days=3)
-            window_end = ref_date + timedelta(days=7)
+            window_start = chart_start
+            window_end = chart_end
             for label, sid in [("source", src), ("dest", dst)]:
                 if not sid:
                     continue
@@ -738,8 +754,8 @@ async def get_decision_time_series(
 
         # ─── QUALITY DISPOSITION: rejection trend + inventory impact ───
         elif decision_type == "quality_disposition":
-            window_start = ref_date - timedelta(days=14)
-            window_end = ref_date + timedelta(days=7)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT order_date, inspection_quantity, accepted_quantity, rejected_quantity
                 FROM quality_order
@@ -763,8 +779,8 @@ async def get_decision_time_series(
 
         # ─── MAINTENANCE: downtime + capacity impact ──────────────────
         elif decision_type == "maintenance_scheduling":
-            window_start = ref_date - timedelta(days=28)
-            window_end = ref_date + timedelta(days=7)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT order_date, estimated_downtime_hours, actual_downtime_hours, maintenance_type
                 FROM maintenance_order
@@ -785,8 +801,8 @@ async def get_decision_time_series(
 
         # ─── SUBCONTRACTING: capacity vs demand ───────────────────────
         elif decision_type == "subcontracting":
-            window_start = ref_date - timedelta(days=14)
-            window_end = ref_date + timedelta(days=14)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT inventory_date, on_hand_qty, in_transit_qty
                 FROM inv_level
@@ -808,8 +824,8 @@ async def get_decision_time_series(
 
         # ─── ORDER TRACKING: delivery timeline ────────────────────────
         elif decision_type == "order_tracking":
-            window_start = ref_date - timedelta(days=14)
-            window_end = ref_date + timedelta(days=14)
+            window_start = chart_start
+            window_end = chart_end
             result = await db.execute(text("""
                 SELECT order_date, requested_delivery_date, actual_delivery_date
                 FROM inbound_order
@@ -832,10 +848,71 @@ async def get_decision_time_series(
             ]
             title = "Order Tracking — Lead Time Performance"
 
+        # ─── GNN DIRECTIVES: inventory at source + destination ─────────
+        elif decision_type in ("execution_directive", "allocation_refresh",
+                                "network_directive", "site_coordination", "sop_policy"):
+            # GNN directives involving transfers: show inventory at both sites
+            src = from_site_id or site_id
+            dst = to_site_id
+            window_start = chart_start
+            window_end = chart_end
+
+            if src or dst:
+                for site_label, sid in [("source", src), ("destination", dst)]:
+                    if not sid:
+                        continue
+                    try:
+                        result = await db.execute(text("""
+                            SELECT inventory_date, on_hand_qty, safety_stock_qty
+                            FROM inv_level
+                            WHERE product_id = ANY(:pids) AND site_id = :sid AND config_id = :cfg
+                            AND inventory_date BETWEEN :s AND :e
+                            ORDER BY inventory_date
+                        """), {"pids": pid_variants, "sid": int(sid), "cfg": cfg_id,
+                               "s": window_start, "e": window_end})
+                        for row in result.fetchall():
+                            d_str = row[0].strftime("%Y-%m-%d") if row[0] else ""
+                            entry = next((s for s in series if s["date"] == d_str), None)
+                            if not entry:
+                                entry = {"date": d_str}
+                                series.append(entry)
+                            entry[f"{site_label}_on_hand"] = round(float(row[1] or 0), 1)
+                            entry[f"{site_label}_safety_stock"] = round(float(row[2] or 0), 1)
+                    except Exception:
+                        pass
+
+                series.sort(key=lambda x: x["date"])
+                src_name = await _site_name(src) if src else "Source"
+                dst_name = await _site_name(dst) if dst else "Destination"
+                lines = [
+                    {"key": "source_on_hand", "color": "#8884d8", "label": f"{src_name} On Hand", "bold": True},
+                    {"key": "source_safety_stock", "color": "#8884d8", "label": f"{src_name} Safety Stock", "bold": False},
+                    {"key": "destination_on_hand", "color": "#ff7300", "label": f"{dst_name} On Hand", "bold": True},
+                    {"key": "destination_safety_stock", "color": "#ff7300", "label": f"{dst_name} Safety Stock", "bold": False},
+                ]
+                title = f"Inventory Position — {await _site_name(src) if src else '?'} / {await _site_name(dst) if dst else '?'}"
+            else:
+                # No site routing — fall through to forecast chart
+                if pid_variants:
+                    result = await db.execute(text("""
+                        SELECT forecast_date, forecast_p50
+                        FROM forecast
+                        WHERE product_id = ANY(:pids) AND config_id = :cfg
+                        AND forecast_date BETWEEN :s AND :e AND forecast_p50 IS NOT NULL
+                        ORDER BY forecast_date
+                    """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
+                    for row in result.fetchall():
+                        series.append({
+                            "date": row[0].strftime("%Y-%m-%d"),
+                            "p50": round(float(row[1] or 0), 1),
+                        })
+                    lines = [{"key": "p50", "color": "#8884d8", "label": "Forecast P50", "bold": True}]
+                    title = f"Forecast Context — {product_id}"
+
         # ─── FALLBACK: generic forecast context ───────────────────────
         else:
-            window_start = ref_date - timedelta(days=14)
-            window_end = ref_date + timedelta(days=14)
+            window_start = chart_start
+            window_end = chart_end
             if pid_variants:
                 result = await db.execute(text("""
                     SELECT forecast_date, forecast_p10, forecast_p50, forecast_p90
