@@ -242,29 +242,10 @@ class QualityDispositionTRM:
 
         engine_result = self.engine.evaluate_disposition(snapshot)
 
-        # ── Glenday Sieve: runner category influences inspection rigor ──
-        # Green runners (high volume, known quality) get expedited through
-        # inspection — accept with skip-lot or reduced sampling unless defects
-        # are severe. Blue items (unknown, one-off) get full inspection.
-        try:
-            from .engines.setup_matrix import GlendaySieve, RunnerCategory
-            sieve = GlendaySieve(site_id=state.site_id, db=self.db)
-            sieve.classify()
-            runner = sieve.get_category(state.product_id)
-            if runner == RunnerCategory.GREEN and state.severity_level in ("minor", "cosmetic", None):
-                # Green + minor defect → accept (skip-lot principle)
-                if engine_result.disposition in ("rework", "reject"):
-                    logger.info(
-                        "Quality Glenday override: %s → accept for green runner %s (severity: %s)",
-                        engine_result.disposition, state.product_id, state.severity_level,
-                    )
-                    engine_result.disposition = "accept"
-                    engine_result.reasoning = (
-                        f"Green runner (Glenday): {state.product_id} — minor defect accepted "
-                        f"under skip-lot inspection. Vendor score: {state.vendor_quality_score:.0f}%"
-                    )
-        except Exception as e:
-            logger.debug("Quality Glenday classification failed: %s", e)
+        # Note: Glenday Sieve skip-lot logic for Green runners is enforced
+        # by the governance gate, not inline. The TRM generates the best
+        # disposition; governance may override to "accept" for green runners
+        # with minor defects.
 
         if self.model is not None and self.config.use_trm_model:
             try:

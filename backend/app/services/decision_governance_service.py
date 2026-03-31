@@ -190,6 +190,7 @@ class DecisionGovernanceService:
         """
         Full governance pipeline for an AgentAction.
 
+        0. Planning envelope: check existing orders (adjust before create)
         1. Find matching policy (most specific wins)
         2. Score impact → set impact_score and impact_breakdown
         3. Assign AIIO mode
@@ -198,6 +199,24 @@ class DecisionGovernanceService:
 
         The action object is mutated in place and returned.
         """
+        # 0. Planning envelope: adjust before create
+        # For order-creating actions (PO, MO, TO, rebalancing, quality),
+        # check whether an existing planned/open order can be adjusted
+        # instead. Uses Glenday Sieve to weight the preference.
+        try:
+            adjustment = DecisionGovernanceService._check_adjust_before_create(
+                db, action, tenant_id,
+            )
+            if adjustment:
+                action.planning_envelope_check = adjustment
+                # If an adjustable order exists, add constraint context to
+                # the impact breakdown so scoring and mode assignment reflect it
+                if adjustment.get("adjustable_order_found"):
+                    # Force at least INFORM so the user sees the adjustment option
+                    action._force_min_mode = "INFORM"
+        except Exception as e:
+            logger.debug("Planning envelope check failed: %s", e)
+
         # Find matching policy
         policy = DecisionGovernanceService.get_policy(
             db, tenant_id,
@@ -227,6 +246,14 @@ class DecisionGovernanceService:
 
         # Assign AIIO mode
         mode = DecisionGovernanceService.assign_mode(breakdown["score"], policy)
+
+        # Enforce planning envelope minimum mode
+        force_min = getattr(action, "_force_min_mode", None)
+        if force_min == "INFORM" and mode == ActionMode.AUTOMATE:
+            mode = ActionMode.INFORM
+        elif force_min == "INSPECT" and mode in (ActionMode.AUTOMATE, ActionMode.INFORM):
+            mode = ActionMode.INSPECT
+
         action.action_mode = mode
 
         # Check for active guardrail directives that might override mode
@@ -265,6 +292,134 @@ class DecisionGovernanceService:
         )
 
         return action
+
+    # ------------------------------------------------------------------
+    # Planning envelope: adjust before create (Glenday Sieve)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _check_adjust_before_create(
+        db: Session,
+        action: AgentAction,
+        tenant_id: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Check if an existing planned/open order can be adjusted instead of creating new.
+
+        Applies to all order-creating decision types: PO, MO, TO, rebalancing, quality.
+        Uses OrderAdjustmentAdvisor with Glenday Sieve classification.
+
+        Returns a dict with the check result, or None if not applicable.
+        """
+        # Only check order-creating action types
+        order_types = {
+            "po_creation", "mo_execution", "to_execution",
+            "rebalancing", "quality_disposition", "subcontracting",
+        }
+        action_type = action.action_type
+        if action_type not in order_types:
+            return None
+
+        # Extract product/site from action context
+        impact = action.estimated_impact or {}
+        if isinstance(impact, str):
+            try:
+                import json
+                impact = json.loads(impact)
+            except Exception:
+                impact = {}
+
+        product_id = (
+            impact.get("product_id")
+            or getattr(action, "product_id", None)
+        )
+        site_id = (
+            impact.get("site_id")
+            or impact.get("location_id")
+            or getattr(action, "site_id", None)
+        )
+        qty = impact.get("qty") or impact.get("recommended_qty") or impact.get("planned_qty") or 0
+
+        if not product_id or not site_id:
+            return None
+
+        try:
+            from app.services.powell.engines.order_adjustment_advisor import (
+                OrderAdjustmentAdvisor, AdjustmentAction,
+            )
+            from app.models.supply_chain_config import SupplyChainConfig
+
+            # Resolve config_id from tenant
+            config = db.query(SupplyChainConfig).filter(
+                SupplyChainConfig.tenant_id == tenant_id,
+                SupplyChainConfig.is_active == True,
+            ).first()
+            if not config:
+                return None
+
+            # Get Glenday classification
+            runner_category = "blue"
+            try:
+                from app.services.powell.engines.setup_matrix import GlendaySieve
+                sieve = GlendaySieve(site_id=str(site_id), db=db)
+                sieve.classify()
+                runner_category = sieve.get_category(str(product_id)).value
+            except Exception:
+                pass
+
+            advisor = OrderAdjustmentAdvisor(
+                db=db, config_id=config.id,
+                product_id=str(product_id), site_id=str(site_id),
+            )
+
+            # Map action_type to order type
+            need_type_map = {
+                "po_creation": "po",
+                "mo_execution": "mo",
+                "to_execution": "to",
+                "rebalancing": "to",
+                "quality_disposition": "qo",
+                "subcontracting": "po",
+            }
+            need_type = need_type_map.get(action_type, "po")
+
+            from datetime import date, timedelta
+            needed_by = date.today() + timedelta(days=14)
+
+            rec = advisor.recommend(
+                need_type=need_type,
+                needed_qty=float(qty) if qty else 100,
+                needed_by=needed_by,
+                runner_category=runner_category,
+                supplier_id=impact.get("supplier_id"),
+                from_site_id=impact.get("from_site_id"),
+                to_site_id=impact.get("to_site_id"),
+            )
+
+            result = {
+                "adjustable_order_found": rec.action != AdjustmentAction.CREATE,
+                "recommended_action": rec.action.value,
+                "runner_category": runner_category,
+                "reasoning": rec.reasoning,
+            }
+            if rec.existing_order:
+                result["existing_order_id"] = rec.existing_order.order_id
+                result["existing_order_type"] = rec.existing_order.order_type
+                result["existing_order_qty"] = rec.existing_order.current_qty
+
+            if rec.action != AdjustmentAction.CREATE:
+                logger.info(
+                    "Governance: adjust-before-create for %s — %s on %s %s (runner: %s)",
+                    action_type, rec.action.value,
+                    rec.existing_order.order_type if rec.existing_order else "?",
+                    rec.existing_order.order_id if rec.existing_order else "?",
+                    runner_category,
+                )
+
+            return result
+
+        except Exception as e:
+            logger.debug("Adjust-before-create governance check failed: %s", e)
+            return None
 
     # ------------------------------------------------------------------
     # Decision resolution (human review of INSPECT decisions)
