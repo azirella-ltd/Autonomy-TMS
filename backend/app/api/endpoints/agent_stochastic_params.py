@@ -102,7 +102,7 @@ def get_trm_param_metadata(
 
 
 @router.get("/", response_model=List[StochasticParamResponse])
-def list_stochastic_params(
+async def list_stochastic_params(
     config_id: int = Query(..., description="Supply chain config ID"),
     trm_type: Optional[str] = Query(None, description="Filter by TRM type"),
     site_id: Optional[int] = Query(None, description="Filter by site ID"),
@@ -110,21 +110,22 @@ def list_stochastic_params(
     current_user: User = Depends(get_current_user),
 ):
     """List all stochastic parameters for a config, optionally filtered."""
-    q = db.query(AgentStochasticParam).filter(
-        AgentStochasticParam.config_id == config_id,
-    )
-    if trm_type:
-        q = q.filter(AgentStochasticParam.trm_type == trm_type)
-    if site_id is not None:
-        q = q.filter(AgentStochasticParam.site_id == site_id)
-    else:
-        # By default, return config-wide params (site_id IS NULL)
-        q = q.filter(AgentStochasticParam.site_id.is_(None))
+    from sqlalchemy import select, and_
 
-    rows = q.order_by(
-        AgentStochasticParam.trm_type,
-        AgentStochasticParam.param_name,
-    ).all()
+    filters = [AgentStochasticParam.config_id == config_id]
+    if trm_type:
+        filters.append(AgentStochasticParam.trm_type == trm_type)
+    if site_id is not None:
+        filters.append(AgentStochasticParam.site_id == site_id)
+    else:
+        filters.append(AgentStochasticParam.site_id.is_(None))
+
+    result = await db.execute(
+        select(AgentStochasticParam)
+        .where(and_(*filters))
+        .order_by(AgentStochasticParam.trm_type, AgentStochasticParam.param_name)
+    )
+    rows = result.scalars().all()
 
     return [
         StochasticParamResponse(

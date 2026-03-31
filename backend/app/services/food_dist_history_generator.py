@@ -2735,7 +2735,8 @@ class FoodDistHistoryGenerator:
         site_rows = sites.fetchall()
 
         vendors = await self.db.execute(text(
-            "SELECT id, description FROM trading_partners WHERE config_id = :cfg AND tpartner_type = 'vendor' LIMIT 10"
+            "SELECT id, description FROM trading_partners WHERE tpartner_type = 'vendor' "
+            "AND company_id = (SELECT company_id FROM site WHERE config_id = :cfg LIMIT 1) LIMIT 10"
         ), {"cfg": self.config_id})
         vendor_rows = vendors.fetchall()
 
