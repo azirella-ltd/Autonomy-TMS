@@ -24,42 +24,50 @@ const CDTReadinessBanner = ({ configId }) => {
       .catch(() => setData(null));
   }, [configId]);
 
-  // Don't render if fully calibrated, dismissed, or no data
-  if (!data || data.ready || dismissed) return null;
+  if (!data) return null;
 
-  const { summary, message, trm_types } = data;
+  const { summary, trm_types } = data;
+  const isFullyCalibrated = data.ready;
   const uncalibratedTypes = trm_types?.filter(t => t.status !== 'calibrated') || [];
 
+  // Visual state: green when fully calibrated, amber when partial
+  const borderColor = isFullyCalibrated ? 'border-green-500/20' : 'border-amber-500/20';
+  const bgColor = isFullyCalibrated ? 'bg-green-500/5' : 'bg-amber-500/5';
+  const IconComponent = isFullyCalibrated ? CheckCircle2 : ShieldAlert;
+  const iconColor = isFullyCalibrated ? 'text-green-500' : 'text-amber-500';
+  const titleColor = isFullyCalibrated
+    ? 'text-green-700 dark:text-green-400'
+    : 'text-amber-700 dark:text-amber-400';
+
   return (
-    <div className="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/5 overflow-hidden">
+    <div className={cn('mb-4 rounded-lg border overflow-hidden', borderColor, bgColor)}>
       <div
         className="flex items-start gap-3 px-4 py-3 cursor-pointer"
         onClick={() => setExpanded(!expanded)}
       >
-        <ShieldAlert className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+        <IconComponent className={cn('h-4 w-4 flex-shrink-0 mt-0.5', iconColor)} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+            <span className={cn('text-sm font-medium', titleColor)}>
               Uncertainty Calibration: {summary.calibrated}/{summary.total} agents ready
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-            {summary.uncalibrated > 0
-              ? `${summary.uncalibrated} TRM agent${summary.uncalibrated > 1 ? 's' : ''} lack calibration data. `
-              : ''}
-            {summary.partial > 0
-              ? `${summary.partial} accumulating data (auto-calibrates at 30 decision-outcome pairs). `
-              : ''}
-            Uncalibrated agents use conservative risk bounds, which may trigger more escalations.
+            {isFullyCalibrated
+              ? 'All applicable TRM agents have conformal coverage guarantees. Decisions are risk-bounded.'
+              : <>
+                  {summary.uncalibrated > 0
+                    ? `${summary.uncalibrated} TRM agent${summary.uncalibrated > 1 ? 's' : ''} lack calibration data. `
+                    : ''}
+                  {summary.partial > 0
+                    ? `${summary.partial} accumulating data (auto-calibrates at 30 decision-outcome pairs). `
+                    : ''}
+                  Uncalibrated agents use conservative risk bounds, which may trigger more escalations.
+                </>
+            }
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            className="text-xs text-muted-foreground hover:text-foreground px-1"
-            onClick={(e) => { e.stopPropagation(); setDismissed(true); }}
-          >
-            Dismiss
-          </button>
           {expanded ? (
             <ChevronUp className="h-4 w-4 text-muted-foreground" />
           ) : (
