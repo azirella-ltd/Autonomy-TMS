@@ -1061,13 +1061,39 @@ def get_cdt_readiness(
         if global_diag:
             diagnostics = global_diag
 
-    # All 11 TRM types
+    # Determine applicable TRM types from config's site topology
+    # Only count TRMs that are relevant for this network's site types
     all_trm_types = [
         "atp", "inventory_rebalancing", "po_creation", "order_tracking",
         "mo_execution", "to_execution", "quality_disposition",
         "maintenance_scheduling", "subcontracting", "forecast_adjustment",
         "inventory_buffer",
     ]
+    if config_id or (current_user and getattr(current_user, 'default_config_id', None)):
+        try:
+            cid = config_id or current_user.default_config_id
+            from ...services.powell.site_capabilities import get_active_trms
+            from ...models.supply_chain_config import Site
+            from ...db.session import sync_session_factory as _ssf
+            _db = _ssf()
+            sites = _db.query(Site.master_type, Site.type).filter(
+                Site.config_id == cid, Site.is_external == False
+            ).all()
+            active = set()
+            for mt, st in sites:
+                active.update(get_active_trms(mt or "INVENTORY", st))
+            _db.close()
+            if active:
+                # Map site_capabilities names → CDT registry names
+                cap_to_cdt = {
+                    "atp_executor": "atp",
+                    "rebalancing": "inventory_rebalancing",
+                    "inventory_rebalancing": "inventory_rebalancing",
+                    "atp": "atp",
+                }
+                all_trm_types = sorted(set(cap_to_cdt.get(t, t) for t in active))
+        except Exception:
+            pass  # Fall back to all 11
 
     trm_labels = {
         "atp": "ATP Executor",
