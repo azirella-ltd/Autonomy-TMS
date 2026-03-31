@@ -1,6 +1,6 @@
 import { api } from './api';
 
-const SUPPLY_CHAIN_CONFIG_BASE_URL = '/v1/supply-chain-config';
+const SUPPLY_CHAIN_CONFIG_BASE_URL = '/supply-chain-config';
 
 export const canonicalizeSiteTypeKey = (value = '') => {
   const cleaned = String(value || '')
