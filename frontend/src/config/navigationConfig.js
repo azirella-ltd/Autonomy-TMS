@@ -856,18 +856,9 @@ export const NAVIGATION_CONFIG = [
         icon: NetworkIcon,
         requiredCapability: 'view_sc_configs',
       },
-      {
-        label: 'Approval Templates',
-        path: '/admin/approval-templates',
-        icon: ApprovalIcon,
-        requiredCapability: 'manage_approval_templates',
-      },
-      {
-        label: 'Exception Workflows',
-        path: '/admin/exception-workflows',
-        icon: WorkflowIcon,
-        requiredCapability: 'manage_approval_templates',
-      },
+      // Approval Templates and Exception Workflows removed:
+      // AIIO principle — agents always act, no approval workflow needed.
+      // Exception handling is done by TRM agents (Order Tracking, Quality).
       {
         label: 'Context Engine',
         path: '/admin/context-engine',
@@ -932,11 +923,11 @@ export const NAVIGATION_CONFIG = [
         description: 'Set balanced scorecard weights for AI calibration',
       },
       {
-        label: 'Governance',
+        label: 'Decision Governance',
         path: '/admin/governance',
         icon: GovernanceIcon,
-        requiredCapability: 'manage_approval_templates',
-        description: 'Governance workflows and compliance controls',
+        requiredCapability: 'manage_tenant_users',
+        description: 'Decision pipeline: AIIO thresholds, guardrails, planning envelope, audit trail',
       },
       {
         label: 'Planning Hierarchy',
@@ -959,13 +950,7 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'manage_tenant_users',
         description: 'System health, telemetry, and performance monitoring',
       },
-      {
-        label: 'Synthetic Data Wizard',
-        path: '/admin/synthetic-data',
-        icon: WandIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'AI-guided company and supply chain data generation',
-      },
+      // Synthetic Data Wizard removed: not implemented (blank page).
     ],
   },
 

@@ -2685,6 +2685,13 @@ class FoodDistHistoryGenerator:
         # Final commit
         await self.db.commit()
 
+        # Seed Experiential Knowledge from DAG topology + transaction patterns
+        try:
+            ek_count = await self._seed_experiential_knowledge()
+            counts["experiential_knowledge"] = ek_count
+        except Exception as e:
+            logger.warning(f"EK seeding failed (non-critical): {e}")
+
         total = sum(counts.values())
         counts["total"] = total
 
@@ -2694,3 +2701,221 @@ class FoodDistHistoryGenerator:
                 logger.info(f"  {entity}: {count:,}")
 
         return counts
+
+    async def _seed_experiential_knowledge(self) -> int:
+        """Seed Experiential Knowledge entries derived from DAG topology and transactions.
+
+        Generates realistic EK patterns a food distribution network would have learned:
+        - Seasonal demand shifts for perishable products
+        - Vendor lead time variability by region/season
+        - Quality inspection patterns by product category
+        - Rebalancing patterns between regions
+        - Capacity constraints at manufacturing/DC sites
+        """
+        from app.models.experiential_knowledge import ExperientialKnowledge
+        from sqlalchemy import text
+
+        # Clean existing EK for this config
+        await self.db.execute(text(
+            "DELETE FROM experiential_knowledge WHERE config_id = :cfg"
+        ), {"cfg": self.config_id})
+
+        entries = []
+        now = datetime.utcnow()
+
+        # Get products and sites for realistic entity references
+        products = await self.db.execute(text(
+            "SELECT id, description FROM product WHERE config_id = :cfg LIMIT 30"
+        ), {"cfg": self.config_id})
+        prod_rows = products.fetchall()
+
+        sites = await self.db.execute(text(
+            "SELECT id, name, type, master_type FROM site WHERE config_id = :cfg AND is_external = false"
+        ), {"cfg": self.config_id})
+        site_rows = sites.fetchall()
+
+        vendors = await self.db.execute(text(
+            "SELECT id, description FROM trading_partners WHERE config_id = :cfg AND tpartner_type = 'vendor' LIMIT 10"
+        ), {"cfg": self.config_id})
+        vendor_rows = vendors.fetchall()
+
+        # 1. Seasonal demand patterns per product category
+        seasonal_patterns = [
+            ("Q4 holiday demand surge for desserts and bakery items",
+             "demand_seasonality", {"season": "Q4", "product_category": "desserts_bakery"},
+             {"variable": "demand", "direction": "increase", "multiplier": 1.35, "confidence_interval": [1.2, 1.5]},
+             ["forecast_adjustment", "inventory_buffer"]),
+            ("Summer demand spike for beverages and juices",
+             "demand_seasonality", {"season": "summer", "months": [6, 7, 8]},
+             {"variable": "demand", "direction": "increase", "multiplier": 1.45, "confidence_interval": [1.3, 1.6]},
+             ["forecast_adjustment", "inventory_buffer", "po_creation"]),
+            ("Post-holiday demand drop in January for dairy products",
+             "demand_seasonality", {"month": 1, "product_category": "dairy"},
+             {"variable": "demand", "direction": "decrease", "multiplier": 0.75, "confidence_interval": [0.65, 0.85]},
+             ["forecast_adjustment"]),
+        ]
+
+        for summary, ptype, conditions, effect, trms in seasonal_patterns:
+            entries.append(ExperientialKnowledge(
+                tenant_id=self.tenant_id,
+                config_id=self.config_id,
+                entity_type="product_category",
+                entity_ids={"category": conditions.get("product_category", "all")},
+                pattern_type=ptype,
+                conditions=conditions,
+                effect=effect,
+                confidence=0.82,
+                knowledge_type="GENUINE",
+                knowledge_type_rationale="Observed consistent seasonal pattern across 2+ years of order history",
+                source_type="transaction_analysis",
+                evidence=[{"source": "outbound_order_line", "period": "2024-2025", "sample_size": 500}],
+                source_user_ids=[],
+                trm_types_affected=trms,
+                state_feature_names=[f"ek_{ptype}_{conditions.get('season', conditions.get('month', 'all'))}"],
+                reward_shaping_bonus=0.05,
+                cdt_uncertainty_multiplier=1.2,
+                status="CONFIRMED",
+                summary=summary,
+                created_at=now,
+            ))
+
+        # 2. Vendor lead time variability
+        for vendor in vendor_rows[:5]:
+            vid, vname = vendor
+            entries.append(ExperientialKnowledge(
+                tenant_id=self.tenant_id,
+                config_id=self.config_id,
+                entity_type="vendor",
+                entity_ids={"vendor_id": str(vid)},
+                pattern_type="lead_time_variability",
+                conditions={"vendor_id": str(vid), "day_of_week": "friday"},
+                effect={"variable": "lead_time", "direction": "increase", "multiplier": 1.3,
+                        "additive_days": 1, "confidence_interval": [1.1, 1.5]},
+                confidence=0.75,
+                knowledge_type="GENUINE",
+                knowledge_type_rationale=f"Friday POs to {vname} consistently arrive 1 day later due to weekend cutoff",
+                source_type="po_receipt_analysis",
+                evidence=[{"source": "goods_receipt", "vendor_id": str(vid), "sample_size": 120}],
+                source_user_ids=[],
+                trm_types_affected=["po_creation", "order_tracking"],
+                state_feature_names=["ek_vendor_lt_risk"],
+                reward_shaping_bonus=0.03,
+                cdt_uncertainty_multiplier=1.3,
+                status="CONFIRMED",
+                summary=f"Vendor {vname}: Friday POs arrive ~1 day late (weekend processing delay)",
+                created_at=now,
+            ))
+
+        # 3. Quality inspection patterns
+        for prod in prod_rows[:3]:
+            pid, pdesc = prod
+            short_name = pdesc.split("[")[0].strip() if "[" in pdesc else pdesc
+            entries.append(ExperientialKnowledge(
+                tenant_id=self.tenant_id,
+                config_id=self.config_id,
+                entity_type="product",
+                entity_ids={"product_id": str(pid)},
+                pattern_type="quality_risk",
+                conditions={"product_id": str(pid), "temperature_excursion": True},
+                effect={"variable": "defect_rate", "direction": "increase", "multiplier": 2.5,
+                        "confidence_interval": [1.8, 3.2]},
+                confidence=0.88,
+                knowledge_type="GENUINE",
+                knowledge_type_rationale=f"Temperature excursions during transit double defect rate for {short_name}",
+                source_type="quality_analysis",
+                evidence=[{"source": "quality_order", "product_id": str(pid), "sample_size": 45}],
+                source_user_ids=[],
+                trm_types_affected=["quality_disposition", "order_tracking"],
+                state_feature_names=["ek_temp_excursion_risk"],
+                reward_shaping_bonus=0.04,
+                cdt_uncertainty_multiplier=1.5,
+                status="CONFIRMED",
+                summary=f"{short_name}: temperature excursions double defect rate — inspect immediately on receipt",
+                created_at=now,
+            ))
+
+        # 4. Rebalancing patterns between regions
+        dc_sites = [s for s in site_rows if s[3] in ("INVENTORY", "inventory")]
+        if len(dc_sites) >= 2:
+            entries.append(ExperientialKnowledge(
+                tenant_id=self.tenant_id,
+                config_id=self.config_id,
+                entity_type="site_pair",
+                entity_ids={"from_site": str(dc_sites[0][0]), "to_site": str(dc_sites[1][0])},
+                pattern_type="rebalancing_pattern",
+                conditions={"day_of_week": "monday", "demand_region": "southwest"},
+                effect={"variable": "transfer_qty", "direction": "increase", "multiplier": 1.2,
+                        "confidence_interval": [1.1, 1.4]},
+                confidence=0.70,
+                knowledge_type="GENUINE",
+                knowledge_type_rationale=f"Monday restocking from {dc_sites[0][1]} to {dc_sites[1][1]} consistently 20% higher due to weekend depletion",
+                source_type="transfer_analysis",
+                evidence=[{"source": "transfer_order", "sample_size": 80}],
+                source_user_ids=[],
+                trm_types_affected=["rebalancing", "to_execution"],
+                state_feature_names=["ek_monday_restock_boost"],
+                reward_shaping_bonus=0.03,
+                cdt_uncertainty_multiplier=1.1,
+                status="CONFIRMED",
+                summary=f"Monday restocking {dc_sites[0][1]} → {dc_sites[1][1]} runs 20% higher (weekend depletion pattern)",
+                created_at=now,
+            ))
+
+        # 5. Capacity constraint at manufacturing
+        mfg_sites = [s for s in site_rows if s[3] in ("MANUFACTURER", "manufacturer")]
+        for mfg in mfg_sites[:2]:
+            entries.append(ExperientialKnowledge(
+                tenant_id=self.tenant_id,
+                config_id=self.config_id,
+                entity_type="site",
+                entity_ids={"site_id": str(mfg[0])},
+                pattern_type="capacity_constraint",
+                conditions={"site_id": str(mfg[0]), "season": "Q4"},
+                effect={"variable": "capacity", "direction": "decrease", "multiplier": 0.85,
+                        "confidence_interval": [0.78, 0.92]},
+                confidence=0.78,
+                knowledge_type="GENUINE",
+                knowledge_type_rationale=f"{mfg[1]} operates at 85% effective capacity in Q4 due to maintenance windows",
+                source_type="production_analysis",
+                evidence=[{"source": "production_orders", "site_id": str(mfg[0]), "sample_size": 60}],
+                source_user_ids=[],
+                trm_types_affected=["mo_execution", "subcontracting"],
+                state_feature_names=["ek_q4_capacity_constraint"],
+                reward_shaping_bonus=0.04,
+                cdt_uncertainty_multiplier=1.15,
+                status="CONFIRMED",
+                summary=f"{mfg[1]}: Q4 effective capacity drops to 85% (scheduled maintenance windows)",
+                created_at=now,
+            ))
+
+        # 6. Compensating knowledge (workaround — not used for reward shaping)
+        entries.append(ExperientialKnowledge(
+            tenant_id=self.tenant_id,
+            config_id=self.config_id,
+            entity_type="process",
+            entity_ids={"process": "po_splitting"},
+            pattern_type="order_splitting_workaround",
+            conditions={"order_qty_threshold": 500, "single_vendor": True},
+            effect={"variable": "order_qty", "direction": "split", "max_per_po": 250},
+            confidence=0.65,
+            knowledge_type="COMPENSATING",
+            knowledge_type_rationale="Planners split POs above 500 units to avoid single-vendor concentration. This is a workaround for missing multi-sourcing policy.",
+            source_type="override_analysis",
+            evidence=[{"source": "powell_po_decisions", "override_count": 18, "period": "2025-Q3"}],
+            source_user_ids=[],
+            trm_types_affected=["po_creation"],
+            state_feature_names=[],
+            reward_shaping_bonus=0.0,  # COMPENSATING: no reward shaping
+            cdt_uncertainty_multiplier=1.0,
+            status="CONFIRMED",
+            summary="Planners split POs above 500 units (workaround for single-vendor risk — root cause: no multi-sourcing policy)",
+            created_at=now,
+        ))
+
+        # Persist
+        for entry in entries:
+            self.db.add(entry)
+        await self.db.flush()
+
+        logger.info(f"Seeded {len(entries)} Experiential Knowledge entries for config {self.config_id}")
+        return len(entries)
