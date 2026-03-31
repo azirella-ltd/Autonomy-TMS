@@ -11,8 +11,12 @@ import { useState, useEffect } from 'react';
 import { Info, CheckCircle2, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../../services/api';
 import { cn } from '../../lib/utils/cn';
+import { useAuth } from '../../contexts/AuthContext';
 
 const CDTReadinessBanner = ({ configId }) => {
+  const { user, isTenantAdmin } = useAuth();
+  const isAdmin = isTenantAdmin || user?.decision_level === 'DEMO_ALL';
+
   const [data, setData] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -28,6 +32,24 @@ const CDTReadinessBanner = ({ configId }) => {
 
   const { summary, trm_types } = data;
   const isFullyCalibrated = data.ready;
+
+  // Non-admin users: only see a brief note when NOT calibrated, nothing when healthy
+  if (!isAdmin) {
+    if (isFullyCalibrated) return null;
+    return (
+      <div className="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <Info className="h-4 w-4 text-amber-500 flex-shrink-0" />
+          <p className="text-xs text-muted-foreground">
+            Some agent decisions are using conservative risk bounds while calibration completes.
+            Contact your tenant administrator for details.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin users: full detail below
   const uncalibratedTypes = trm_types?.filter(t => t.status !== 'calibrated') || [];
 
   // Visual state: green when fully calibrated, amber when partial
