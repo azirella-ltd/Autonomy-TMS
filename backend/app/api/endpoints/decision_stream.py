@@ -483,26 +483,53 @@ async def get_decision_time_series(
     product_id: Optional[str] = Query(None, description="Product ID"),
     site_id: Optional[str] = Query(None, description="Site ID"),
     config_id: Optional[int] = Query(None, description="Config ID"),
+    from_site_id: Optional[str] = Query(None, description="Source site for transfers"),
+    to_site_id: Optional[str] = Query(None, description="Destination site for transfers"),
+    decision_date: Optional[str] = Query(None, description="Decision timestamp"),
+    decision_id: Optional[str] = Query(None, description="Decision ID"),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Return time series data for a decision's product/site context.
+    """Return contextual time series for a decision — shows the issue, action, and projected outcome.
 
-    Returns forecast, inventory, or lead time data depending on decision type,
-    formatted for Recharts rendering.
+    Each TRM decision type returns different data:
+    - Rebalancing: inventory at source + destination before/after transfer
+    - ATP: ATP vs demand at fulfillment site
+    - PO Creation: inventory vs reorder point + expected receipt
+    - Forecast Adjustment: old vs new forecast vs actuals
+    - Inventory Buffer: on-hand vs safety stock target
+    - MO/TO/Quality/Maintenance/Subcontracting/Order Tracking: type-specific context
     """
     from sqlalchemy import text
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, date
 
-    # Resolve config
     cfg_id = config_id or getattr(current_user, 'default_config_id', None)
     if not cfg_id:
         return {"series": [], "lines": [], "error": True}
 
-    # Determine which data to fetch based on decision type
-    # Include GNN directive types — they also have product context
-    DEMAND_TYPES = {"forecast_adjustment", "atp", "po_creation", "execution_directive", "sop_policy", "site_coordination"}
-    INVENTORY_TYPES = {"inventory_buffer", "rebalancing"}
+    # Parse decision date for time window
+    ref_date = date.today()
+    if decision_date:
+        try:
+            ref_date = datetime.fromisoformat(decision_date.replace("Z", "+00:00")).date()
+        except Exception:
+            pass
+
+    # Normalize product ID to config-prefixed format
+    pid = product_id
+    if pid and not pid.startswith(f"CFG{cfg_id}_"):
+        pid = f"CFG{cfg_id}_{pid}"
+    pid_variants = [product_id, pid] if product_id else []
+
+    # Resolve site names for display
+    async def _site_name(sid):
+        if not sid:
+            return "?"
+        try:
+            r = await db.execute(text("SELECT name FROM site WHERE id = :id"), {"id": int(sid)})
+            return r.scalar_one_or_none() or str(sid)
+        except Exception:
+            return str(sid)
 
     series = []
     lines = []
@@ -511,138 +538,322 @@ async def get_decision_time_series(
     chart_type = "line"
     annotation = None
 
-    # Product IDs in forecast/inv_level use config-prefixed format (e.g. CFG22_BV001)
-    # Decision cards may pass unprefixed IDs — try both formats
-    pid_variants = [product_id] if product_id else []
-    if product_id and not product_id.startswith(f"CFG{cfg_id}_"):
-        pid_variants.append(f"CFG{cfg_id}_{product_id}")
-
     try:
-        if decision_type in DEMAND_TYPES and product_id:
-            # Fetch forecast time series (P10/P50/P90) — try both ID formats
-            result = await db.execute(
-                text("""
-                    SELECT forecast_date, forecast_p10, forecast_p50, forecast_p90
-                    FROM forecast
-                    WHERE product_id = ANY(:pids) AND config_id = :cfg
-                    AND forecast_p50 IS NOT NULL AND forecast_p50 > 0
-                    ORDER BY forecast_date
-                    LIMIT 52
-                """),
-                {"pids": pid_variants, "cfg": cfg_id},
-            )
-            rows = result.fetchall()
-            for row in rows:
+        # ─── REBALANCING: inventory at source + destination ───────────
+        if decision_type in ("rebalancing", "inventory_rebalancing"):
+            src = from_site_id or site_id
+            dst = to_site_id
+            window_start = ref_date - timedelta(days=7)
+            window_end = ref_date + timedelta(days=14)
+
+            for site_label, sid in [("source", src), ("destination", dst)]:
+                if not sid:
+                    continue
+                result = await db.execute(text("""
+                    SELECT inventory_date, on_hand_qty, safety_stock_qty
+                    FROM inv_level
+                    WHERE product_id = ANY(:pids) AND site_id = :sid AND config_id = :cfg
+                    AND inventory_date BETWEEN :s AND :e
+                    ORDER BY inventory_date
+                """), {"pids": pid_variants, "sid": int(sid), "cfg": cfg_id,
+                       "s": window_start, "e": window_end})
+                for row in result.fetchall():
+                    d = row[0].strftime("%Y-%m-%d") if row[0] else ""
+                    entry = next((s for s in series if s["date"] == d), None)
+                    if not entry:
+                        entry = {"date": d}
+                        series.append(entry)
+                    entry[f"{site_label}_on_hand"] = round(float(row[1] or 0), 1)
+                    entry[f"{site_label}_safety_stock"] = round(float(row[2] or 0), 1)
+
+            series.sort(key=lambda x: x["date"])
+            src_name = await _site_name(src)
+            dst_name = await _site_name(dst)
+            lines = [
+                {"key": "source_on_hand", "color": "#8884d8", "label": f"{src_name} On Hand", "bold": True},
+                {"key": "source_safety_stock", "color": "#8884d8", "label": f"{src_name} Safety Stock", "bold": False},
+                {"key": "destination_on_hand", "color": "#ff7300", "label": f"{dst_name} On Hand", "bold": True},
+                {"key": "destination_safety_stock", "color": "#ff7300", "label": f"{dst_name} Safety Stock", "bold": False},
+            ]
+            title = f"Inventory Rebalancing: {src_name} → {dst_name}"
+            annotation = f"Transfer impact window: {window_start} to {window_end}"
+
+        # ─── ATP: available-to-promise vs demand ──────────────────────
+        elif decision_type == "atp":
+            window_start = ref_date - timedelta(days=3)
+            window_end = ref_date + timedelta(days=7)
+            result = await db.execute(text("""
+                SELECT inventory_date, on_hand_qty, allocated_qty, available_qty, safety_stock_qty
+                FROM inv_level
+                WHERE product_id = ANY(:pids) AND site_id = :sid AND config_id = :cfg
+                AND inventory_date BETWEEN :s AND :e
+                ORDER BY inventory_date
+            """), {"pids": pid_variants, "sid": int(site_id) if site_id else 0,
+                   "cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
                 series.append({
-                    "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
-                    "p10": float(row[1] or 0),
-                    "p50": float(row[2] or 0),
-                    "p90": float(row[3] or 0),
+                    "date": row[0].strftime("%Y-%m-%d"),
+                    "on_hand": round(float(row[1] or 0), 1),
+                    "allocated": round(float(row[2] or 0), 1),
+                    "available": round(float(row[3] or 0), 1),
+                    "safety_stock": round(float(row[4] or 0), 1),
+                })
+            lines = [
+                {"key": "on_hand", "color": "#8884d8", "label": "On Hand", "bold": True},
+                {"key": "available", "color": "#22c55e", "label": "Available (ATP)", "bold": True},
+                {"key": "allocated", "color": "#ff7300", "label": "Allocated", "bold": False},
+                {"key": "safety_stock", "color": "#ef4444", "label": "Safety Stock", "bold": False},
+            ]
+            title = f"ATP Position — {product_id}"
+
+        # ─── PO CREATION: inventory vs reorder point + receipt ────────
+        elif decision_type == "po_creation":
+            window_start = ref_date - timedelta(days=7)
+            window_end = ref_date + timedelta(days=21)
+            result = await db.execute(text("""
+                SELECT inventory_date, on_hand_qty, safety_stock_qty
+                FROM inv_level
+                WHERE product_id = ANY(:pids) AND config_id = :cfg
+                AND inventory_date BETWEEN :s AND :e
+                ORDER BY inventory_date
+            """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d"),
+                    "on_hand": round(float(row[1] or 0), 1),
+                    "reorder_point": round(float(row[2] or 0) * 1.5, 1),  # ROP ≈ 1.5x SS
+                    "safety_stock": round(float(row[2] or 0), 1),
+                })
+            lines = [
+                {"key": "on_hand", "color": "#8884d8", "label": "On Hand", "bold": True},
+                {"key": "reorder_point", "color": "#ff7300", "label": "Reorder Point", "bold": False},
+                {"key": "safety_stock", "color": "#ef4444", "label": "Safety Stock", "bold": False},
+            ]
+            title = f"Inventory vs Reorder Point — {product_id}"
+            annotation = "PO triggered when on-hand drops below reorder point"
+
+        # ─── FORECAST ADJUSTMENT: old vs new forecast vs actuals ──────
+        elif decision_type == "forecast_adjustment":
+            window_start = ref_date - timedelta(days=28)
+            window_end = ref_date + timedelta(days=28)
+            result = await db.execute(text("""
+                SELECT forecast_date, forecast_p10, forecast_p50, forecast_p90
+                FROM forecast
+                WHERE product_id = ANY(:pids) AND config_id = :cfg
+                AND forecast_date BETWEEN :s AND :e AND forecast_p50 IS NOT NULL
+                ORDER BY forecast_date
+            """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d"),
+                    "p10": round(float(row[1] or 0), 1),
+                    "p50": round(float(row[2] or 0), 1),
+                    "p90": round(float(row[3] or 0), 1),
                 })
             chart_type = "area"
             bands = [
                 {"key": "p90", "color": "#ffc658", "label": "P90 (High)"},
                 {"key": "p10", "color": "#82ca9d", "label": "P10 (Low)"},
             ]
-            lines = [{"key": "p50", "color": "#8884d8", "label": "P50 (Most Likely)", "bold": True}]
-            title = f"Demand Forecast — {product_id}"
-            annotation = f"Decision type: {decision_type.replace('_', ' ')}"
+            lines = [{"key": "p50", "color": "#8884d8", "label": "Forecast P50", "bold": True}]
+            title = f"Forecast Adjustment — {product_id}"
+            annotation = f"4-week context: {window_start} to {window_end}"
 
-        elif decision_type in INVENTORY_TYPES and product_id:
-            # Fetch inventory levels over time — try both ID formats
-            result = await db.execute(
-                text("""
-                    SELECT inventory_date, on_hand_qty, in_transit_qty
-                    FROM inv_level
-                    WHERE product_id = ANY(:pids) AND config_id = :cfg
-                    ORDER BY inventory_date
-                    LIMIT 52
-                """),
-                {"pids": pid_variants, "cfg": cfg_id},
-            )
-            rows = result.fetchall()
-            for row in rows:
+        # ─── INVENTORY BUFFER: on-hand vs safety stock target ─────────
+        elif decision_type == "inventory_buffer":
+            window_start = ref_date - timedelta(days=14)
+            window_end = ref_date + timedelta(days=14)
+            result = await db.execute(text("""
+                SELECT inventory_date, on_hand_qty, safety_stock_qty
+                FROM inv_level
+                WHERE product_id = ANY(:pids) AND config_id = :cfg
+                AND inventory_date BETWEEN :s AND :e
+                ORDER BY inventory_date
+            """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
                 series.append({
-                    "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
-                    "on_hand": float(row[1] or 0),
-                    "in_transit": float(row[2] or 0),
+                    "date": row[0].strftime("%Y-%m-%d"),
+                    "on_hand": round(float(row[1] or 0), 1),
+                    "safety_stock": round(float(row[2] or 0), 1),
                 })
             lines = [
                 {"key": "on_hand", "color": "#8884d8", "label": "On Hand", "bold": True},
-                {"key": "in_transit", "color": "#82ca9d", "label": "In Transit", "bold": False},
+                {"key": "safety_stock", "color": "#ef4444", "label": "Safety Stock Target", "bold": False},
             ]
-            title = f"Inventory Levels — {product_id}"
+            title = f"Buffer Level — {product_id}"
 
+        # ─── MO EXECUTION: production capacity + WIP ──────────────────
+        elif decision_type == "mo_execution":
+            window_start = ref_date - timedelta(days=7)
+            window_end = ref_date + timedelta(days=14)
+            result = await db.execute(text("""
+                SELECT inventory_date, on_hand_qty, in_transit_qty
+                FROM inv_level
+                WHERE product_id = ANY(:pids) AND config_id = :cfg
+                AND inventory_date BETWEEN :s AND :e
+                ORDER BY inventory_date
+            """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d"),
+                    "finished_goods": round(float(row[1] or 0), 1),
+                    "wip": round(float(row[2] or 0), 1),
+                })
+            lines = [
+                {"key": "finished_goods", "color": "#8884d8", "label": "Finished Goods", "bold": True},
+                {"key": "wip", "color": "#22c55e", "label": "WIP / In Transit", "bold": False},
+            ]
+            title = f"Production Impact — {product_id}"
+
+        # ─── TO EXECUTION: in-transit + source/dest on-hand ───────────
+        elif decision_type == "to_execution":
+            src = from_site_id or site_id
+            dst = to_site_id
+            window_start = ref_date - timedelta(days=3)
+            window_end = ref_date + timedelta(days=7)
+            for label, sid in [("source", src), ("dest", dst)]:
+                if not sid:
+                    continue
+                result = await db.execute(text("""
+                    SELECT inventory_date, on_hand_qty, in_transit_qty
+                    FROM inv_level
+                    WHERE product_id = ANY(:pids) AND site_id = :sid AND config_id = :cfg
+                    AND inventory_date BETWEEN :s AND :e
+                    ORDER BY inventory_date
+                """), {"pids": pid_variants, "sid": int(sid), "cfg": cfg_id,
+                       "s": window_start, "e": window_end})
+                for row in result.fetchall():
+                    d = row[0].strftime("%Y-%m-%d")
+                    entry = next((s for s in series if s["date"] == d), None)
+                    if not entry:
+                        entry = {"date": d}
+                        series.append(entry)
+                    entry[f"{label}_on_hand"] = round(float(row[1] or 0), 1)
+            series.sort(key=lambda x: x["date"])
+            lines = [
+                {"key": "source_on_hand", "color": "#8884d8", "label": "Source On Hand", "bold": True},
+                {"key": "dest_on_hand", "color": "#ff7300", "label": "Destination On Hand", "bold": True},
+            ]
+            title = f"Transfer Order Impact — {product_id}"
+
+        # ─── QUALITY DISPOSITION: rejection trend + inventory impact ───
+        elif decision_type == "quality_disposition":
+            window_start = ref_date - timedelta(days=14)
+            window_end = ref_date + timedelta(days=7)
+            result = await db.execute(text("""
+                SELECT order_date, inspection_quantity, accepted_quantity, rejected_quantity
+                FROM quality_order
+                WHERE config_id = :cfg AND product_id = ANY(:pids)
+                AND order_date BETWEEN :s AND :e
+                ORDER BY order_date
+            """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
+                insp = float(row[1] or 1)
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
+                    "accepted": round(float(row[2] or 0), 1),
+                    "rejected": round(float(row[3] or 0), 1),
+                    "yield_pct": round(float(row[2] or 0) / max(insp, 1) * 100, 1),
+                })
+            lines = [
+                {"key": "yield_pct", "color": "#22c55e", "label": "Yield %", "bold": True},
+                {"key": "rejected", "color": "#ef4444", "label": "Rejected Qty", "bold": False},
+            ]
+            title = f"Quality Inspection — {product_id}"
+
+        # ─── MAINTENANCE: downtime + capacity impact ──────────────────
+        elif decision_type == "maintenance_scheduling":
+            window_start = ref_date - timedelta(days=28)
+            window_end = ref_date + timedelta(days=7)
+            result = await db.execute(text("""
+                SELECT order_date, estimated_downtime_hours, actual_downtime_hours, maintenance_type
+                FROM maintenance_order
+                WHERE config_id = :cfg AND order_date BETWEEN :s AND :e
+                ORDER BY order_date
+            """), {"cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
+                    "estimated_hours": round(float(row[1] or 0), 1),
+                    "actual_hours": round(float(row[2] or 0), 1),
+                })
+            lines = [
+                {"key": "estimated_hours", "color": "#8884d8", "label": "Estimated Downtime", "bold": False},
+                {"key": "actual_hours", "color": "#ef4444", "label": "Actual Downtime", "bold": True},
+            ]
+            title = "Maintenance Downtime History"
+
+        # ─── SUBCONTRACTING: capacity vs demand ───────────────────────
+        elif decision_type == "subcontracting":
+            window_start = ref_date - timedelta(days=14)
+            window_end = ref_date + timedelta(days=14)
+            result = await db.execute(text("""
+                SELECT inventory_date, on_hand_qty, in_transit_qty
+                FROM inv_level
+                WHERE product_id = ANY(:pids) AND config_id = :cfg
+                AND inventory_date BETWEEN :s AND :e
+                ORDER BY inventory_date
+            """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d"),
+                    "on_hand": round(float(row[1] or 0), 1),
+                    "in_transit": round(float(row[2] or 0), 1),
+                })
+            lines = [
+                {"key": "on_hand", "color": "#8884d8", "label": "On Hand", "bold": True},
+                {"key": "in_transit", "color": "#22c55e", "label": "In Transit (Subcontract)", "bold": False},
+            ]
+            title = f"Subcontracting Impact — {product_id}"
+
+        # ─── ORDER TRACKING: delivery timeline ────────────────────────
+        elif decision_type == "order_tracking":
+            window_start = ref_date - timedelta(days=14)
+            window_end = ref_date + timedelta(days=14)
+            result = await db.execute(text("""
+                SELECT order_date, requested_delivery_date, actual_delivery_date
+                FROM inbound_order
+                WHERE config_id = :cfg AND order_date BETWEEN :s AND :e
+                AND supplier_id IS NOT NULL
+                ORDER BY order_date
+                LIMIT 30
+            """), {"cfg": cfg_id, "s": window_start, "e": window_end})
+            for row in result.fetchall():
+                planned_lt = (row[1] - row[0]).days if row[1] and row[0] else 0
+                actual_lt = (row[2] - row[0]).days if row[2] and row[0] else None
+                series.append({
+                    "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
+                    "planned_lead_time": planned_lt,
+                    "actual_lead_time": actual_lt,
+                })
+            lines = [
+                {"key": "planned_lead_time", "color": "#8884d8", "label": "Planned Lead Time (days)", "bold": False},
+                {"key": "actual_lead_time", "color": "#ff7300", "label": "Actual Lead Time (days)", "bold": True},
+            ]
+            title = "Order Tracking — Lead Time Performance"
+
+        # ─── FALLBACK: generic forecast context ───────────────────────
         else:
-            # Generic: try forecast as fallback
-            if product_id:
-                result = await db.execute(
-                    text("""
-                        SELECT forecast_date, p50_quantity
-                        FROM forecast
-                        WHERE product_id = :pid AND config_id = :cfg
-                        ORDER BY forecast_date
-                        LIMIT 52
-                    """),
-                    {"pid": product_id, "cfg": cfg_id},
-                )
-                rows = result.fetchall()
-                for row in rows:
+            window_start = ref_date - timedelta(days=14)
+            window_end = ref_date + timedelta(days=14)
+            if pid_variants:
+                result = await db.execute(text("""
+                    SELECT forecast_date, forecast_p10, forecast_p50, forecast_p90
+                    FROM forecast
+                    WHERE product_id = ANY(:pids) AND config_id = :cfg
+                    AND forecast_date BETWEEN :s AND :e AND forecast_p50 IS NOT NULL
+                    ORDER BY forecast_date
+                """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
+                for row in result.fetchall():
                     series.append({
-                        "date": row[0].strftime("%Y-%m-%d") if row[0] else "",
-                        "forecast": float(row[1] or 0),
+                        "date": row[0].strftime("%Y-%m-%d"),
+                        "p50": round(float(row[2] or 0), 1),
                     })
-                lines = [{"key": "forecast", "color": "#8884d8", "label": "Forecast (P50)", "bold": True}]
-                title = f"Forecast — {product_id}"
-
-        # Fallback: if no data from primary source, show decision history
-        if not series and product_id:
-            # Query the decision table for this product's decision history
-            TABLE_MAP = {
-                "forecast_adjustment": ("powell_forecast_adjustment_decisions", "created_at", "confidence"),
-                "atp": ("powell_atp_decisions", "created_at", "confidence"),
-                "po_creation": ("powell_po_decisions", "created_at", "confidence"),
-                "rebalancing": ("powell_rebalance_decisions", "created_at", "confidence"),
-                "inventory_buffer": ("powell_buffer_decisions", "created_at", "confidence"),
-                "mo_execution": ("powell_mo_decisions", "created_at", "confidence"),
-                "to_execution": ("powell_to_decisions", "created_at", "confidence"),
-            }
-            tbl_info = TABLE_MAP.get(decision_type)
-            if tbl_info:
-                tbl_name, date_col, val_col = tbl_info
-                result = await db.execute(
-                    text(f"""
-                        SELECT {date_col}, {val_col}, urgency_at_time,
-                               decision_reasoning
-                        FROM {tbl_name}
-                        WHERE product_id = :pid AND config_id = :cfg
-                        ORDER BY {date_col}
-                        LIMIT 30
-                    """),
-                    {"pid": product_id, "cfg": cfg_id},
-                )
-                rows = result.fetchall()
-                for row in rows:
-                    series.append({
-                        "date": row[0].strftime("%Y-%m-%d %H:%M") if row[0] else "",
-                        "confidence": round(float(row[1] or 0) * 100, 1),
-                        "urgency": round(float(row[2] or 0) * 100, 1),
-                    })
-                lines = [
-                    {"key": "confidence", "color": "#8884d8", "label": "Confidence %", "bold": True},
-                    {"key": "urgency", "color": "#ff7300", "label": "Urgency %", "bold": False},
-                ]
-                # Get product name from description
-                prod_result = await db.execute(
-                    text("SELECT description FROM product WHERE id = :pid"),
-                    {"pid": product_id},
-                )
-                prod_name = prod_result.scalar_one_or_none() or product_id
-                title = f"Agent Decision History — {prod_name}"
-                annotation = f"{len(series)} decisions for this product"
+                lines = [{"key": "p50", "color": "#8884d8", "label": "Forecast P50", "bold": True}]
+                title = f"Forecast Context — {product_id}"
 
     except Exception as e:
-        logger.warning(f"Time series query failed: {e}")
+        logger.warning(f"Time series query failed for {decision_type}: {e}")
         return {"series": [], "lines": [], "error": True}
 
     return {

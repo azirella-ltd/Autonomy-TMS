@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 _CACHE_TTL_SECONDS = int(os.environ.get("DECISION_STREAM_CACHE_TTL", 1800))
 _MAX_CACHE_SIZE = int(os.environ.get("DECISION_STREAM_MAX_CACHE", 200))
 _DIGEST_MAX_DECISIONS = 20
+_REBALANCE_COOLDOWN_HOURS = int(os.environ.get("REBALANCE_COOLDOWN_HOURS", 24))
 _ALERT_LOOKBACK_HOURS = 48
 _CDC_TRIGGER_LIMIT = 10
 _LLM_SUMMARY_MAX_DECISIONS = 10
@@ -622,6 +623,84 @@ def _get_editable_values(row, decision_type: str) -> Optional[Dict[str, Any]]:
     return result
 
 
+async def _create_supply_plan_adjustment(
+    db: "AsyncSession",
+    decision: Any,
+    decision_type: str,
+    override_values: Optional[Dict[str, Any]],
+) -> None:
+    """Persist a supply plan record reflecting the actioned decision.
+
+    When a user accepts or modifies a TRM decision, the supply plan must be
+    updated from the action date forward so downstream planning (MRP, capacity)
+    reflects the change.
+    """
+    from app.models.sc_entities import SupplyPlan
+
+    config_id = getattr(decision, "config_id", None)
+    if not config_id:
+        return
+
+    action_date = datetime.utcnow().date()
+
+    # Build plan row from decision type
+    plan_type_map = {
+        "rebalancing": "to_request",
+        "po_creation": "po_request",
+        "mo_execution": "mo_request",
+        "to_execution": "to_request",
+        "inventory_buffer": "ss_adjustment",
+        "forecast_adjustment": "forecast_adjustment",
+    }
+    plan_type = plan_type_map.get(decision_type, "adjustment")
+
+    # Extract quantity and sites from override_values or decision attributes
+    ov = override_values or {}
+    qty = (
+        ov.get("qty")
+        or ov.get("allocated_qty")
+        or ov.get("buffer_qty")
+        or getattr(decision, "recommended_qty", None)
+        or getattr(decision, "qty", None)
+        or 0
+    )
+    try:
+        qty = float(qty)
+    except (TypeError, ValueError):
+        qty = 0
+
+    product_id = getattr(decision, "product_id", None)
+    site_id = (
+        getattr(decision, "location_id", None)
+        or getattr(decision, "site_id", None)
+        or getattr(decision, "to_site", None)
+    )
+    from_site = getattr(decision, "from_site", None) or getattr(decision, "source_site_id", None)
+    supplier_id = getattr(decision, "supplier_id", None) or ov.get("supplier_id")
+
+    plan = SupplyPlan(
+        config_id=config_id,
+        product_id=str(product_id) if product_id else None,
+        site_id=int(site_id) if site_id and str(site_id).isdigit() else None,
+        plan_date=action_date,
+        plan_type=plan_type,
+        planned_order_quantity=qty,
+        planned_order_date=action_date,
+        supplier_id=str(supplier_id) if supplier_id else None,
+        from_site_id=int(from_site) if from_site and str(from_site).isdigit() else None,
+        planner_name="decision_stream",
+        source="decision_action",
+        source_event_id=f"{decision_type}:{decision.id}",
+        plan_version="live",
+    )
+    db.add(plan)
+    await db.commit()
+    logger.info(
+        "Supply plan adjustment created: type=%s decision=%s qty=%.1f",
+        plan_type, decision.id, qty,
+    )
+
+
 def _extract_ek_from_override(
     tenant_id: int, config_id: int, decision_type: str,
     decision_id: int, reason_text: str, reason_code: str,
@@ -1069,6 +1148,18 @@ class DecisionStreamService:
 
             # Invalidate digest cache so the stream refreshes
             invalidate_digest_cache(tenant_id=self.tenant_id)
+
+            # ── Create supply plan adjustment from decision action ────────
+            if action in ("accept", "modify") and decision_type in (
+                "rebalancing", "po_creation", "mo_execution", "to_execution",
+                "inventory_buffer", "forecast_adjustment",
+            ):
+                try:
+                    await _create_supply_plan_adjustment(
+                        self.db, decision, decision_type, override_values,
+                    )
+                except Exception as sp_err:
+                    logger.warning(f"Supply plan adjustment failed for {decision_id}: {sp_err}")
 
             # Fire-and-forget: extract experiential knowledge from rich override text
             if action in ("modify", "cancel") and override_reason_text and len(override_reason_text) > 30:
@@ -1730,6 +1821,34 @@ class DecisionStreamService:
                     await self.db.rollback()
                 except Exception:
                     pass
+
+        # ── Rebalancing cooldown dedup ────────────────────────────────────
+        # Suppress duplicate rebalancing decisions for the same product+site pair
+        # within the cooldown window. Keep only the most recent (highest urgency).
+        if _REBALANCE_COOLDOWN_HOURS > 0:
+            cooldown_cutoff = datetime.utcnow() - timedelta(hours=_REBALANCE_COOLDOWN_HOURS)
+            seen_rebalance: dict[str, dict] = {}  # key → best decision
+            deduped = []
+            for d in all_decisions:
+                if d.get("decision_type") == "rebalancing":
+                    ev = d.get("editable_values") or {}
+                    key = f"{d.get('product_id')}|{ev.get('from_site_id')}|{ev.get('to_site_id')}"
+                    created = d.get("created_at")
+                    # If an earlier decision for same route exists within cooldown, keep highest urgency
+                    prev = seen_rebalance.get(key)
+                    if prev is None:
+                        seen_rebalance[key] = d
+                        deduped.append(d)
+                    else:
+                        # Replace if this one has higher urgency
+                        if (d.get("urgency_score") or 0) > (prev.get("urgency_score") or 0):
+                            deduped = [x for x in deduped if x is not prev]
+                            seen_rebalance[key] = d
+                            deduped.append(d)
+                        # else: suppress duplicate
+                else:
+                    deduped.append(d)
+            all_decisions = deduped
 
         # ── Post-filter: escalation passthrough ──────────────────────────
         # If a role only sees "tactical" by default but has escalation_from="execution",

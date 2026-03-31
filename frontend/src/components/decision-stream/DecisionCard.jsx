@@ -36,6 +36,7 @@ import {
   Box,
   Loader2,
   XCircle,
+  Clock,
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent } from '../common';
 import { cn } from '../../lib/utils/cn';
@@ -259,7 +260,12 @@ const DecisionCard = ({
         decision_type: decision.decision_type,
         product_id: decision.product_id,
         site_id: decision.site_id,
-        config_id: decision.config_id,
+        config_id: decision.config_id || decision.context?.config_id,
+        // Pass decision-specific context for contextual charts
+        decision_id: decision.id,
+        from_site_id: decision.editable_values?.from_site_id || decision.context?.from_site_id,
+        to_site_id: decision.editable_values?.to_site_id || decision.context?.to_site_id,
+        decision_date: decision.created_at,
       });
       setChartData(data);
     } catch {
@@ -402,6 +408,27 @@ const DecisionCard = ({
             <ConfidenceChip value={decision.likelihood} />
           </div>
         </div>
+
+        {/* Date / period */}
+        {decision.created_at && (
+          <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            <span>
+              {new Date(decision.created_at).toLocaleDateString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+              })}
+              {' '}
+              {new Date(decision.created_at).toLocaleTimeString(undefined, {
+                hour: '2-digit', minute: '2-digit',
+              })}
+            </span>
+            {decision.planning_period && (
+              <span className="ml-2 px-1.5 py-0.5 bg-muted rounded text-[10px] font-medium">
+                Period {decision.planning_period}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Suggested action */}
         {decision.suggested_action && (
