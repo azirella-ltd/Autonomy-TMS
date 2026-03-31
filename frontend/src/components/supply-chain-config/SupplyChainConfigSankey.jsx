@@ -302,7 +302,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     if (masterType && TYPE_CANONICAL[masterType]) {
       return TYPE_CANONICAL[masterType];
     }
-    // Also check dag_type and explicit type for legacy market_supply/market_demand
+    // Also check dag_type and explicit type for legacy market_supply/customer
     if (dagType && TYPE_CANONICAL[dagType]) {
       return TYPE_CANONICAL[dagType];
     }

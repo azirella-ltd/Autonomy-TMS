@@ -120,8 +120,8 @@ class SupplyChainConfig(Base):
     # NOTE: items relationship removed - use Product table from sc_entities instead
     sites = relationship("Site", back_populates="config", cascade="all, delete-orphan")
     transportation_lanes = relationship("TransportationLane", back_populates="config", cascade="all, delete-orphan")
-    markets = relationship("Market", back_populates="config", cascade="all, delete-orphan")
-    market_demands = relationship("MarketDemand", back_populates="config", cascade="all, delete-orphan")
+    # markets and market_demands relationships removed — tables dropped (TBG legacy)
+    # Demand data now comes from Forecast table (AWS SC DM)
     tenant = relationship("Tenant", back_populates="supply_chain_configs")
     # Scenarios using this configuration
     scenarios = relationship(
@@ -409,11 +409,10 @@ class MarketDemand(Base):
     })
 
     # Relationships
-    config = relationship("SupplyChainConfig", back_populates="market_demands")
+    config = relationship("SupplyChainConfig")
     product = relationship("Product")
     trading_partner = relationship("TradingPartner", foreign_keys=[trading_partner_id])
-    # Deprecated: kept for backward compatibility during migration
-    market = relationship("Market", back_populates="demands")
+    market = relationship("Market")
 
 
 class Market(Base):
@@ -437,8 +436,8 @@ class Market(Base):
     )
 
     # Relationships
-    config = relationship("SupplyChainConfig", back_populates="markets")
-    demands = relationship("MarketDemand", back_populates="market", cascade="all, delete-orphan")
+    config = relationship("SupplyChainConfig")
+    demands = relationship("MarketDemand", cascade="all, delete-orphan")
 
 
 class SupplyChainTrainingArtifact(Base):

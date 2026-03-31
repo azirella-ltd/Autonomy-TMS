@@ -32,7 +32,7 @@ const SITE_TYPE_LABELS = {
   manufacturer: 'Manufacturer',
   factory: 'Factory',
   market_supply: 'Vendor',
-  market_demand: 'Customer',
+  customer: 'Customer',
 };
 
 const SITE_TYPE_VARIANTS = {
@@ -42,7 +42,7 @@ const SITE_TYPE_VARIANTS = {
   manufacturer: 'warning',
   factory: 'warning',
   market_supply: 'default',
-  market_demand: 'secondary',
+  customer: 'secondary',
 };
 
 const ProductSiteConfigForm = ({

@@ -32,7 +32,7 @@ const DEFAULT_PATTERN = {
   params: { value: 4 },
 };
 
-const MarketDemandForm = ({
+const CustomerDemandForm = ({
   navigationButtons = null,
   demands = [],
   products = [],
@@ -380,4 +380,6 @@ const MarketDemandForm = ({
   );
 };
 
-export default MarketDemandForm;
+// Backward compatibility alias
+export const MarketDemandForm = CustomerDemandForm;
+export default CustomerDemandForm;

@@ -41,7 +41,7 @@ const DEFAULT_ROLE_COLORS = {
   supplier: '#f59e0b',
   vendor: '#f59e0b',
   market_supply: '#f59e0b',
-  market_demand: '#10b981',
+  customer: '#10b981',
   customer: '#10b981',
   inventory: '#0ea5e9',
   cdc: '#6366f1',

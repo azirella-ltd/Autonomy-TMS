@@ -151,9 +151,7 @@ def get_config_or_404(db: Session, config_id: int):
             joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.downstream_site),
             joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.upstream_partner),
             joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.downstream_partner),
-            joinedload(SupplyChainConfig.markets),
-            joinedload(SupplyChainConfig.market_demands).joinedload(MarketDemand.market),
-            # joinedload(SupplyChainConfig.market_demands).joinedload(MarketDemand.item),  # DEPRECATED - use .product
+            # markets and market_demands tables dropped (TBG legacy — replaced by Forecast table)
         )
         .filter(SupplyChainConfig.id == config_id)
         .first()
@@ -504,7 +502,8 @@ def _compute_config_hash(db: Session, config_id: int) -> Optional[str]:
     sites = crud.site.get_multi_by_config(db, config_id=config_id, limit=1000)
     lanes = crud.lane.get_by_config(db, config_id=config_id)
     product_site_configs = crud.product_site_config.get_by_config(db, config_id=config_id)  # Legacy table
-    market_demands = crud.market_demand.get_by_config(db, config_id=config_id)
+    # market_demands table dropped (TBG legacy — demand comes from Forecast table)
+    market_demands = []
 
     payload = {
         "config": {
@@ -560,15 +559,7 @@ def _compute_config_hash(db: Session, config_id: int) -> Optional[str]:
             }
             for md in sorted(market_demands, key=lambda obj: obj.id)
         ],
-        "markets": [
-            {
-                "id": market.id,
-                "name": market.name,
-                "description": market.description,
-                "company": getattr(market, "company", None),
-            }
-            for market in sorted(markets, key=lambda obj: obj.id)
-        ],
+        "markets": [],  # markets table dropped (TBG legacy)
     }
 
     encoded = json.dumps(payload, sort_keys=True, default=_json_default)
@@ -2120,9 +2111,8 @@ def read_markets(
     config_id: int,
     current_user: models.User = Depends(deps.get_current_active_user),
 ):
-    config = get_config_or_404(db, config_id)
-    _ensure_user_can_manage_config(db, current_user, config)
-    return crud.market.get_by_config(db, config_id=config_id)
+    # markets table dropped (TBG legacy — demand comes from Forecast + TradingPartner)
+    return []
 
 
 @router.post(

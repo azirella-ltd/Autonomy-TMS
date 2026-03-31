@@ -309,7 +309,7 @@ const CreateMixedGame = () => {
     distributor: 'Distributor',
     wholesaler: 'Wholesaler',
     retailer: 'Retailer',
-    market_demand: 'Customer',
+    customer: 'Customer',
   };
 
   const computeRangeMidpoint = useCallback((range, fallback = 0) => {
@@ -1193,7 +1193,7 @@ const CreateMixedGame = () => {
     return bounds;
   }, [activeSupplyChainConfig, normalizeSiteName]);
 
-  const marketDemandRows = useMemo(() => {
+  const customerDemandRows = useMemo(() => {
     const demands = activeSupplyChainConfig?.market_demands || [];
     if (!demands.length) {
       return [];
@@ -2002,7 +2002,7 @@ const CreateMixedGame = () => {
                           const nodes = sitesByType[selectedSiteType] || [];
 
                           if (selectedSiteType === 'customer') {
-                            if (marketDemandRows.length === 0) {
+                            if (customerDemandRows.length === 0) {
                               return (
                                 <p className="text-sm text-muted-foreground">
                                   No market demand records are defined for this configuration.
@@ -2020,7 +2020,7 @@ const CreateMixedGame = () => {
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {marketDemandRows.map((row) => (
+                                    {customerDemandRows.map((row) => (
                                       <TableRow key={row.id}>
                                         <TableCell>{row.productName}</TableCell>
                                         <TableCell>{row.marketName}</TableCell>

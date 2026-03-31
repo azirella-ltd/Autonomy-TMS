@@ -712,7 +712,7 @@ const ScenarioReport = () => {
     });
     map.market = map.market || "#6b7280";
     map.market_supply = map.market_supply || "#334155";
-    map.market_demand = map.market_demand || map.market || "#6b7280";
+    map.customer = map.customer || map.market || "#6b7280";
     return map;
   }, [roles]);
 
@@ -722,8 +722,8 @@ const ScenarioReport = () => {
       const normalizedKey = normalizeNodeTypeToken(key) || String(key ?? "");
       map[normalizedKey] = value;
     });
-    map.market = map.market || map.market_demand || "Customer";
-    map.market_demand = map.market_demand || "Customer";
+    map.market = map.market || map.customer || "Customer";
+    map.customer = map.customer || "Customer";
     map.market_supply = map.market_supply || "Vendor";
     return map;
   }, [siteTypeLabelMap]);
@@ -891,11 +891,11 @@ const ScenarioReport = () => {
       }
       const demandMatch = name.match(/market\s+demand\s*([A-Z])/i);
       if (demandMatch) {
-        register(`market_demand_${demandMatch[1].toLowerCase()}`);
+        register(`customer_${demandMatch[1].toLowerCase()}`);
       }
       const demandRegionMatch = name.match(/demand\s+region\s*([A-Z])/i);
       if (demandRegionMatch) {
-        register(`market_demand_${demandRegionMatch[1].toLowerCase()}`);
+        register(`customer_${demandRegionMatch[1].toLowerCase()}`);
       }
       if (/market\s+supply/i.test(name)) {
         register("vendor");

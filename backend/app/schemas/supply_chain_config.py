@@ -655,6 +655,12 @@ class MarketDemand(MarketDemandBase):
     class Config:
         orm_mode = True
 
+# AWS SC DM aliases — use these in new code
+CustomerDemandBase = MarketDemandBase
+CustomerDemandCreate = MarketDemandCreate
+CustomerDemandUpdate = MarketDemandUpdate
+CustomerDemand = MarketDemand
+
 class TransportationLane(TransportationLaneBase):
     """AWS SC DM: Transportation lane response (edge between sites)."""
     id: int
@@ -745,6 +751,7 @@ class SupplyChainConfig(SupplyChainConfigBase):
     transportation_lanes: List[TransportationLane] = []
     markets: List[Market] = []
     market_demands: List[MarketDemand] = []
+    customer_demands: List[CustomerDemand] = []  # AWS SC DM terminology
 
     class Config:
         orm_mode = True

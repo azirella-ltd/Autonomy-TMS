@@ -37,7 +37,7 @@ import {
 /**
  * SourcingTreeForm - Smart sourcing tree that follows DAG structure
  *
- * Builds a hierarchical sourcing tree starting from Market Demand + FG Product,
+ * Builds a hierarchical sourcing tree starting from Customer Demand + FG Product,
  * following the supply chain DAG, and handling BOM transitions at manufacturers.
  */
 const SourcingTreeForm = ({
@@ -62,7 +62,7 @@ const SourcingTreeForm = ({
   const [expectedDemand, setExpectedDemand] = useState(100);
   const [pathSiteSelections, setPathSiteSelections] = useState({});
 
-  const marketDemandSites = useMemo(() => {
+  const customerDemandSites = useMemo(() => {
     return sites.filter((site) => {
       const masterType = (site.master_type || '').toLowerCase();
       return masterType === 'customer';
@@ -142,7 +142,7 @@ const SourcingTreeForm = ({
   const handleStartConfiguration = () => {
     if (!selectedMarket || !selectedProduct) return;
 
-    const marketSite = marketDemandSites.find((s) => s.id === parseInt(selectedMarket));
+    const marketSite = customerDemandSites.find((s) => s.id === parseInt(selectedMarket));
     const product = productList.find((p) => p.id === parseInt(selectedProduct));
 
     if (marketSite && product) {
@@ -764,7 +764,7 @@ const SourcingTreeForm = ({
         <div>
           <h2 className="text-lg font-semibold">Product Sourcing Configuration</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Define sourcing paths from market demand through the supply chain DAG
+            Define sourcing paths from customer demand through the supply chain DAG
           </p>
         </div>
         <div className="flex gap-2">
@@ -781,9 +781,9 @@ const SourcingTreeForm = ({
         </div>
       </div>
 
-      {marketDemandSites.length === 0 && (
+      {customerDemandSites.length === 0 && (
         <Alert variant="warning" className="mb-4">
-          No market demand sites defined. Add a site with master type "Customer" in the Sites step.
+          No customer demand sites defined. Add a site with master type "Customer" in the Sites step.
         </Alert>
       )}
 
@@ -793,7 +793,7 @@ const SourcingTreeForm = ({
         </Alert>
       )}
 
-      {marketDemandSites.length > 0 && productList.length > 0 && (
+      {customerDemandSites.length > 0 && productList.length > 0 && (
         <div>
           <Card className="mb-6">
             <CardHeader>
@@ -805,17 +805,17 @@ const SourcingTreeForm = ({
             <CardContent>
               <div className="grid grid-cols-12 gap-4">
                 <div className="col-span-4">
-                  <Label htmlFor="market-demand-site">Market Demand Site</Label>
+                  <Label htmlFor="customer-demand-site">Customer Demand Site</Label>
                   <Select
                     value={selectedMarket}
                     onValueChange={setSelectedMarket}
                     disabled={loading}
                   >
-                    <SelectTrigger id="market-demand-site">
-                      <SelectValue placeholder="Select market demand site..." />
+                    <SelectTrigger id="customer-demand-site">
+                      <SelectValue placeholder="Select customer demand site..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {marketDemandSites.map((site) => (
+                      {customerDemandSites.map((site) => (
                         <SelectItem key={site.id} value={String(site.id)}>
                           <div className="flex items-center gap-2">
                             <TrendingUp className="h-4 w-4" />

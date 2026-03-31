@@ -39,7 +39,7 @@ import {
   getLanes,
   getProductSiteConfigs,
   getMarkets,
-  getMarketDemands,
+  getCustomerDemands,
   createProduct,
   updateProduct,
   deleteProduct,
@@ -54,9 +54,9 @@ import {
   createMarket,
   updateMarket,
   deleteMarket,
-  createMarketDemand,
-  updateMarketDemand,
-  deleteMarketDemand,
+  createCustomerDemand,
+  updateCustomerDemand,
+  deleteCustomerDemand,
   getSiteTypeDisplayName,
   DEFAULT_CONFIG,
   CLASSIC_SUPPLY_CHAIN,
@@ -203,7 +203,7 @@ const SupplyChainConfigForm = ({
   const [lanes, setLanes] = useState(isEditMode ? [] : CLASSIC_SUPPLY_CHAIN.lanes);
   const [productSiteConfigs, setProductSiteConfigs] = useState([]);
   const [markets, setMarkets] = useState([]);
-  const [marketDemands, setMarketDemands] = useState([]);
+  const [customerDemands, setCustomerDemands] = useState([]);
   const [nodeTypeDefinitions, setNodeTypeDefinitions] = useState(() =>
     normalizeNodeTypeDefinitions(
       DEFAULT_SITE_TYPE_DEFINITIONS.map((definition) => ({ ...definition }))
@@ -508,9 +508,9 @@ const SupplyChainConfigForm = ({
     return marketsData;
   }, [id]);
 
-  const fetchMarketDemands = useCallback(async () => {
-    const demandsData = await getMarketDemands(id);
-    setMarketDemands(demandsData);
+  const fetchCustomerDemands = useCallback(async () => {
+    const demandsData = await getCustomerDemands(id);
+    setCustomerDemands(demandsData);
     return demandsData;
   }, [id]);
 
@@ -546,7 +546,7 @@ const SupplyChainConfigForm = ({
         fetchLanes(),
         fetchProductSiteConfigs(),
         fetchMarkets(),
-        fetchMarketDemands(),
+        fetchCustomerDemands(),
       ]);
 
       setError(null);
@@ -563,7 +563,7 @@ const SupplyChainConfigForm = ({
     fetchMarkets,
     fetchProducts,
     fetchLanes,
-    fetchMarketDemands,
+    fetchCustomerDemands,
     fetchSites,
     id,
     setValues,
@@ -923,15 +923,15 @@ const SupplyChainConfigForm = ({
         return (
           <CustomerManager
             customers={markets}
-            demands={marketDemands}
+            demands={customerDemands}
             products={products}
             loading={loading}
             onAddCustomer={handleAddMarket}
             onUpdateCustomer={handleUpdateMarket}
             onDeleteCustomer={handleDeleteMarket}
-            onAddDemand={handleAddMarketDemand}
-            onUpdateDemand={handleUpdateMarketDemand}
-            onDeleteDemand={handleDeleteMarketDemand}
+            onAddDemand={handleAddCustomerDemand}
+            onUpdateDemand={handleUpdateCustomerDemand}
+            onDeleteDemand={handleDeleteCustomerDemand}
             navigationButtons={getNavigationButtons()}
           />
         );
@@ -1220,7 +1220,7 @@ const SupplyChainConfigForm = ({
     try {
       setLoading(true);
       await createMarket(id, customerData);
-      await Promise.all([fetchMarkets(), fetchMarketDemands()]);
+      await Promise.all([fetchMarkets(), fetchCustomerDemands()]);
       enqueueSnackbar('Customer added successfully', { variant: 'success' });
     } catch (err) {
       console.error('Error adding customer:', err);
@@ -1250,7 +1250,7 @@ const SupplyChainConfigForm = ({
     try {
       setLoading(true);
       await deleteMarket(id, customerId);
-      await Promise.all([fetchMarkets(), fetchMarketDemands()]);
+      await Promise.all([fetchMarkets(), fetchCustomerDemands()]);
       enqueueSnackbar('Customer deleted successfully', { variant: 'success' });
     } catch (err) {
       console.error('Error deleting customer:', err);
@@ -1261,12 +1261,12 @@ const SupplyChainConfigForm = ({
   };
 
   // Demand pattern CRUD (linked to customer via market_id)
-  const handleAddMarketDemand = async (demandData) => {
+  const handleAddCustomerDemand = async (demandData) => {
     if (!ensureEditableConfig()) return;
     try {
       setLoading(true);
-      await createMarketDemand(id, demandData);
-      await fetchMarketDemands();
+      await createCustomerDemand(id, demandData);
+      await fetchCustomerDemands();
       enqueueSnackbar('Demand pattern added successfully', { variant: 'success' });
     } catch (err) {
       console.error('Error adding demand pattern:', err);
@@ -1276,12 +1276,12 @@ const SupplyChainConfigForm = ({
     }
   };
 
-  const handleUpdateMarketDemand = async (demandId, demandData) => {
+  const handleUpdateCustomerDemand = async (demandId, demandData) => {
     if (!ensureEditableConfig()) return;
     try {
       setLoading(true);
-      await updateMarketDemand(id, demandId, demandData);
-      await fetchMarketDemands();
+      await updateCustomerDemand(id, demandId, demandData);
+      await fetchCustomerDemands();
       enqueueSnackbar('Demand pattern updated successfully', { variant: 'success' });
     } catch (err) {
       console.error('Error updating demand pattern:', err);
@@ -1291,12 +1291,12 @@ const SupplyChainConfigForm = ({
     }
   };
 
-  const handleDeleteMarketDemand = async (demandId) => {
+  const handleDeleteCustomerDemand = async (demandId) => {
     if (!ensureEditableConfig()) return;
     try {
       setLoading(true);
-      await deleteMarketDemand(id, demandId);
-      await fetchMarketDemands();
+      await deleteCustomerDemand(id, demandId);
+      await fetchCustomerDemands();
       enqueueSnackbar('Demand pattern deleted successfully', { variant: 'success' });
     } catch (err) {
       console.error('Error deleting demand pattern:', err);

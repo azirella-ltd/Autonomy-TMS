@@ -66,7 +66,7 @@ const SITE_TYPE_LABELS = {
   manufacturing_plant: 'Manufacturing Plant',
   vendor: 'Vendor',
   market_supply: 'Vendor',
-  market_demand: 'Customer',
+  customer: 'Customer',
   // Legacy TBG types
   retailer: 'Retailer',
   wholesaler: 'Wholesaler',
@@ -82,7 +82,7 @@ const SITE_TYPE_VARIANTS = {
   manufacturing_plant: 'warning',
   vendor: 'default',
   market_supply: 'default',
-  market_demand: 'secondary',
+  customer: 'secondary',
   // Legacy TBG types
   retailer: 'success',
   wholesaler: 'destructive',

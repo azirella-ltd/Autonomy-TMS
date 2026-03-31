@@ -41,7 +41,7 @@ const SITE_TYPE_VARIANTS = {
   inventory: 'info',
   manufacturer: 'warning',
   market_supply: 'default',
-  market_demand: 'secondary',
+  customer: 'secondary',
   // Legacy TBG types
   supplier: 'default',
   retailer: 'success',

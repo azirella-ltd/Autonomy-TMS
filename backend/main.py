@@ -1145,18 +1145,10 @@ def read_supply_chain_config_detail(
         )
         # product_site_configs migrated to AWS SC models (InvPolicy, ProductBom, VendorProduct)
         product_site_configs = []
-        markets = (
-            db.query(SupplyMarketModel)
-            .filter(SupplyMarketModel.config_id == config.id)
-            .order_by(SupplyMarketModel.id.asc())
-            .all()
-        )
-        market_demands = (
-            db.query(SupplyMarketDemandModel)
-            .filter(SupplyMarketDemandModel.config_id == config.id)
-            .order_by(SupplyMarketDemandModel.id.asc())
-            .all()
-        )
+        # markets and market_demands tables dropped (TBG legacy).
+        # Demand data now comes from Forecast table (AWS SC DM).
+        markets = []
+        market_demands = []
 
         # AWS SC DM: sites (DB: site), transportation_lanes (DB: transportation_lane)
         site_payloads = [_serialize_site(site) for site in sites]
@@ -1198,6 +1190,7 @@ def read_supply_chain_config_detail(
                 "transportation_lanes": transportation_lane_payloads,  # AWS SC DM standard
                 "markets": market_payloads,
                 "market_demands": market_demand_payloads,
+                "customer_demands": [],  # AWS SC DM terminology (markets/market_demands tables dropped)
             }
         )
         return payload
@@ -1515,35 +1508,34 @@ def read_supply_chain_markets(
     try:
         config = _get_supply_chain_config_or_404(db, config_id)
         _ensure_can_view_supply_chain_config(current_user, config)
-        markets = (
-            db.query(SupplyMarketModel)
-            .filter(SupplyMarketModel.config_id == config.id)
-            .order_by(SupplyMarketModel.id.asc())
-            .all()
-        )
-        return [_serialize_market(market) for market in markets]
+        # markets table dropped (TBG legacy) — return empty list
+        return []
     finally:
         db.close()
 
 
-@api.get("/supply-chain-config/{config_id}/market-demands")
-def read_supply_chain_market_demands(
+@api.get("/supply-chain-config/{config_id}/customer-demands")
+def read_supply_chain_customer_demands(
     config_id: int,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
+    """AWS SC DM: customer demands (market_demands table dropped — returns empty list)."""
     db = SyncSessionLocal()
     try:
         config = _get_supply_chain_config_or_404(db, config_id)
         _ensure_can_view_supply_chain_config(current_user, config)
-        demands = (
-            db.query(SupplyMarketDemandModel)
-            .filter(SupplyMarketDemandModel.config_id == config.id)
-            .order_by(SupplyMarketDemandModel.id.asc())
-            .all()
-        )
-        return [_serialize_market_demand(d) for d in demands]
+        return []
     finally:
         db.close()
+
+
+@api.get("/supply-chain-config/{config_id}/market-demands", deprecated=True)
+def read_supply_chain_market_demands(
+    config_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """DEPRECATED: Use /customer-demands instead."""
+    return read_supply_chain_customer_demands(config_id, current_user)
 
 
 @api.post("/supply-chain-config/{config_id}/validate")

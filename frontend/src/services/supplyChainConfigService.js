@@ -215,31 +215,37 @@ export const deleteMarket = async (configId, marketId) => {
   await api.delete(`${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/markets/${marketId}`);
 };
 
-// Customers CRUD
-export const getMarketDemands = async (configId) => {
+// Customers CRUD (AWS SC DM: TradingPartner with tpartner_type='customer')
+export const getCustomerDemands = async (configId) => {
   const response = await api.get(`${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/market-demands`);
   return response.data;
 };
 
-export const createMarketDemand = async (configId, demandData) => {
+export const createCustomerDemand = async (configId, demandData) => {
   const response = await api.post(
-    `${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/market-demands`, 
+    `${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/market-demands`,
     demandData
   );
   return response.data;
 };
 
-export const updateMarketDemand = async (configId, demandId, demandData) => {
+export const updateCustomerDemand = async (configId, demandId, demandData) => {
   const response = await api.put(
-    `${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/market-demands/${demandId}`, 
+    `${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/market-demands/${demandId}`,
     demandData
   );
   return response.data;
 };
 
-export const deleteMarketDemand = async (configId, demandId) => {
+export const deleteCustomerDemand = async (configId, demandId) => {
   await api.delete(`${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/market-demands/${demandId}`);
 };
+
+// DEPRECATED: Use getCustomerDemands, createCustomerDemand, etc.
+export const getMarketDemands = getCustomerDemands;
+export const createMarketDemand = createCustomerDemand;
+export const updateMarketDemand = updateCustomerDemand;
+export const deleteMarketDemand = deleteCustomerDemand;
 
 // Helper functions
 export const getSiteTypeDisplayName = (siteType, definitions = DEFAULT_SITE_TYPE_DEFINITIONS) => {
