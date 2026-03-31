@@ -2350,35 +2350,45 @@ class DecisionStreamService:
             if not cfg_ids:
                 return product_lookup, site_lookup
 
-            # Load products — index by ID, description, and SKU for fuzzy matching
+            # Load products — index by ID, description, SKU, and word combinations
             result = await self.db.execute(
-                select(Product.id, Product.description).where(
+                select(Product.id, Product.description, Product.product_group_name).where(
                     Product.config_id.in_(cfg_ids)
                 )
             )
-            for pid, desc in result.fetchall():
+            for pid, desc, group in result.fetchall():
                 product_lookup[pid.lower()] = pid
-                # Also index by base SKU (e.g., "FP006" → CFG129_FP006)
+                # Base SKU (e.g., "FP006" → CFG129_FP006)
                 for prefix_id in cfg_ids:
                     base = pid.replace(f"CFG{prefix_id}_", "")
                     if base != pid:
                         product_lookup[base.lower()] = pid
-                # Also index by description words for natural language matching
                 if desc:
+                    # Full description
                     product_lookup[desc.lower()] = pid
-                    # Index significant words from description (3+ chars)
+                    # Every word ≥3 chars (including "frozen", "turkey", etc.)
+                    desc_words = []
                     for word in desc.split():
                         w = word.strip(",.()-").lower()
-                        if len(w) >= 4 and w not in ("premium", "frozen", "block", "case"):
+                        if len(w) >= 3:
                             product_lookup[w] = pid
+                            desc_words.append(w)
+                    # Index 2-word combinations for phrase matching
+                    # "frozen turkey" → FP004, "beef patties" → FP002, etc.
+                    for i in range(len(desc_words) - 1):
+                        bigram = f"{desc_words[i]} {desc_words[i+1]}"
+                        product_lookup[bigram] = pid
+                # Product group name
+                if group:
+                    product_lookup[group.lower()] = pid
 
-            # Load sites — index by code AND human-readable name
+            # Load sites — index by code, human name, region, city, and keywords
             result = await self.db.execute(
-                select(Site.name, Site.type, Site.attributes).where(
+                select(Site.name, Site.type, Site.attributes, Site.master_type).where(
                     Site.config_id.in_(cfg_ids)
                 )
             )
-            for sname, stype, sattrs in result.fetchall():
+            for sname, stype, sattrs, smaster in result.fetchall():
                 site_lookup[sname.lower()] = sname
                 # Index by human-readable name from attributes
                 if sattrs and isinstance(sattrs, dict):
@@ -2386,15 +2396,35 @@ class DecisionStreamService:
                         display = sattrs.get(key)
                         if display:
                             site_lookup[display.lower()] = sname
-                            # Also index significant words (e.g., "Metro" → CUST_LAX)
+                            # Index ALL words ≥3 chars (no exclusion list)
                             for word in display.split():
                                 w = word.strip(",.()-").lower()
-                                if len(w) >= 4 and w not in ("foods", "group", "company", "services"):
+                                if len(w) >= 3:
                                     site_lookup[w] = sname
-                # Index from type field (e.g., "Supplier - Tyson Foods Inc")
+                    # Index region, city, state from attributes
+                    for key in ("region", "city", "state", "segment"):
+                        val = sattrs.get(key)
+                        if val and len(str(val)) >= 2:
+                            site_lookup[str(val).lower()] = sname
+                # Index from type field (e.g., "Customer - Phoenix, AZ" or "Supplier - Tyson Foods Inc")
                 if stype and " - " in str(stype):
                     display = str(stype).split(" - ", 1)[-1]
                     site_lookup[display.lower()] = sname
+                    # Also index individual parts (city name without state)
+                    for part in display.split(","):
+                        p = part.strip().lower()
+                        if len(p) >= 3:
+                            site_lookup[p] = sname
+                # Index by region code from site name pattern (RDC_NW → "nw", "northwest")
+                if sname.startswith("RDC_"):
+                    region = sname.replace("RDC_", "").lower()
+                    site_lookup[region] = sname
+                    region_names = {"nw": "northwest", "sw": "southwest", "ne": "northeast", "se": "southeast"}
+                    if region in region_names:
+                        site_lookup[region_names[region]] = sname
+                # Index customer by master type shorthand
+                if smaster == "CUSTOMER":
+                    site_lookup[f"customer {sname.replace('CUST_', '').lower()}"] = sname
 
         except Exception as e:
             logger.warning(f"Vocabulary load failed: {e}")
