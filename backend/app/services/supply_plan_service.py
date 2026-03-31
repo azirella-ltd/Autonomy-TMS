@@ -14,7 +14,8 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.models.supply_chain_config import SupplyChainConfig, MarketDemand, Site
+from app.models.supply_chain_config import SupplyChainConfig, Site
+from app.models.sc_entities import Forecast
 from app.services.deterministic_planner import (
     DeterministicPlanner,
     DemandForecast,
@@ -95,6 +96,16 @@ class SupplyPlanService:
             objectives.planning_horizon
         )
 
+        # Guard: if no demand forecasts, return empty plan
+        if not demand_forecasts:
+            return {
+                "orders": [],
+                "inventory_targets": [],
+                "scorecard": {"note": "No forecast data available for this config"},
+                "recommendations": [],
+                "num_scenarios": 0,
+            }
+
         # Step 2: Generate deterministic plan
         planner = DeterministicPlanner(
             self.session,
@@ -108,6 +119,16 @@ class SupplyPlanService:
             ordering_cost=100.0,
             holding_cost_rate=0.20
         )
+
+        # Guard: if planner generated no orders, return empty
+        if not orders and not inventory_targets:
+            return {
+                "orders": [],
+                "inventory_targets": [],
+                "scorecard": {"note": "No orders generated — check sourcing rules and network topology"},
+                "recommendations": [],
+                "num_scenarios": 0,
+            }
 
         # Step 3: Evaluate plan with Monte Carlo
         execution_results = self._evaluate_plan_monte_carlo(
@@ -145,54 +166,60 @@ class SupplyPlanService:
         horizon: int
     ) -> Dict[Tuple[int, int], DemandForecast]:
         """
-        Create demand forecasts from stochastic parameters.
+        Create demand forecasts from the Forecast table (AWS SC DM).
+
+        Aggregates weekly forecast P50 values by product×site to build
+        demand inputs for the deterministic planner. Uses actual ML-generated
+        or history-derived forecasts, not TBG-era market_demands patterns.
 
         Args:
-            stochastic_params: Stochastic parameters
-            horizon: Planning horizon
+            stochastic_params: Stochastic parameters for noise model
+            horizon: Planning horizon in weeks
 
         Returns:
-            {(item_id, node_id): DemandForecast}
+            {(product_id, site_id): DemandForecast}
         """
+        from sqlalchemy import func
+
         forecasts = {}
 
-        # Get market demands
-        market_demands = (
-            self.session.query(MarketDemand)
-            .filter(MarketDemand.config_id == self.config.id)
+        # Get average weekly demand per product×site from Forecast table
+        # Use P50 as the point forecast, compute std from P10/P90 spread
+        forecast_rows = (
+            self.session.query(
+                Forecast.product_id,
+                Forecast.site_id,
+                func.avg(Forecast.forecast_p50).label("avg_demand"),
+                func.avg(
+                    (Forecast.forecast_p90 - Forecast.forecast_p10) / 2.56
+                ).label("avg_std"),  # ~80% interval → σ
+                func.count().label("n"),
+            )
+            .filter(
+                Forecast.config_id == self.config.id,
+                Forecast.forecast_p50.isnot(None),
+                Forecast.forecast_p50 > 0,
+            )
+            .group_by(Forecast.product_id, Forecast.site_id)
             .all()
         )
 
-        for market_demand in market_demands:
-            # Extract mean demand
-            demand_pattern = market_demand.demand_pattern or {}
-            params = demand_pattern.get("parameters", {})
-            mean_demand = params.get("mean", 100.0)
+        for row in forecast_rows:
+            product_id = row.product_id
+            site_id = row.site_id
+            mean_demand = float(row.avg_demand or 100.0)
+            std_dev = float(row.avg_std) if row.avg_std and row.avg_std > 0 else mean_demand * stochastic_params.demand_variability
 
-            # Calculate standard deviation based on model
-            if stochastic_params.demand_model == "normal":
-                std_dev = mean_demand * stochastic_params.demand_variability
-            elif stochastic_params.demand_model == "poisson":
-                std_dev = np.sqrt(mean_demand)  # Poisson: variance = mean
-            else:
-                std_dev = mean_demand * stochastic_params.demand_variability
-
-            # Create weekly demand array (constant mean)
+            # Create weekly demand array
             weekly_demand = np.full(horizon, mean_demand)
-
-            # Total demand over horizon
             total_demand = mean_demand * horizon
 
-            # Use the product_id from the market demand record
-            item_id = market_demand.product_id or 1
-            node_id = market_demand.market_id or market_demand.id
-
-            forecasts[(item_id, node_id)] = DemandForecast(
-                item_id=item_id,
-                node_id=node_id,
+            forecasts[(product_id, site_id)] = DemandForecast(
+                item_id=product_id,
+                node_id=site_id,
                 weekly_demand=weekly_demand,
                 demand_std_dev=std_dev,
-                total_demand=total_demand
+                total_demand=total_demand,
             )
 
         return forecasts
