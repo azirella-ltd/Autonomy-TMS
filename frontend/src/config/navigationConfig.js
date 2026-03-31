@@ -837,6 +837,20 @@ export const NAVIGATION_CONFIG = [
     adminOnly: true,
     items: [
       {
+        label: 'Supply Chain Configs',
+        path: '/admin/tenant/supply-chain-configs',
+        icon: NetworkIcon,
+        requiredCapability: 'view_sc_configs',
+        description: 'Manage supply chain configurations, provisioning, and model confidence',
+      },
+      {
+        label: 'Decision Governance',
+        path: '/admin/governance',
+        icon: GovernanceIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Decision pipeline: AIIO thresholds, guardrails, planning envelope, audit trail',
+      },
+      {
         label: 'User Management',
         path: '/admin/users',
         icon: PeopleIcon,
@@ -849,12 +863,6 @@ export const NAVIGATION_CONFIG = [
         icon: AdminIcon,
         requiredCapability: 'manage_roles',
         description: 'Configure roles and permissions',
-      },
-      {
-        label: 'Supply Chain Configs',
-        path: '/admin/tenant/supply-chain-configs',
-        icon: NetworkIcon,
-        requiredCapability: 'view_sc_configs',
       },
       // Approval Templates and Exception Workflows removed:
       // AIIO principle — agents always act, no approval workflow needed.
@@ -921,13 +929,6 @@ export const NAVIGATION_CONFIG = [
         icon: TuneIcon,
         requiredCapability: 'manage_tenant_users',
         description: 'Set balanced scorecard weights for AI calibration',
-      },
-      {
-        label: 'Decision Governance',
-        path: '/admin/governance',
-        icon: GovernanceIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'Decision pipeline: AIIO thresholds, guardrails, planning envelope, audit trail',
       },
       {
         label: 'Planning Hierarchy',
