@@ -353,6 +353,160 @@ class ERPStagingRepository:
         return deleted
 
 
+    async def get_staged_entities(self, extraction_id: UUID) -> List[str]:
+        """Return list of entity names already staged for this extraction."""
+        result = await self.db.execute(
+            text(f"""
+                SELECT DISTINCT {self.entity_col}
+                FROM {self.schema}.rows
+                WHERE extraction_id = CAST(:eid AS uuid)
+            """),
+            {"eid": str(extraction_id)},
+        )
+        return [r[0] for r in result.fetchall()]
+
+    async def resume_extraction(self, extraction_id: UUID) -> UUID:
+        """Resume a failed extraction by marking it running again.
+
+        Returns the same extraction_id so callers can continue staging
+        entities that were not yet staged.
+        """
+        await self.db.execute(
+            text(f"""
+                UPDATE {self.schema}.extraction_runs
+                SET status = 'running', errors = NULL
+                WHERE id = CAST(:eid AS uuid)
+            """),
+            {"eid": str(extraction_id)},
+        )
+        logger.info("Resumed %s extraction %s", self.erp_type, extraction_id)
+        return extraction_id
+
+    async def get_last_failed_extraction(self) -> Optional[UUID]:
+        """Find the most recent failed extraction for this tenant."""
+        result = await self.db.execute(
+            text(f"""
+                SELECT id FROM {self.schema}.extraction_runs
+                WHERE tenant_id = :tid AND status = 'failed'
+                ORDER BY started_at DESC LIMIT 1
+            """),
+            {"tid": self.tenant_id},
+        )
+        row = result.fetchone()
+        return row[0] if row else None
+
+
+async def extract_with_retry(
+    repo: ERPStagingRepository,
+    entities: Dict[str, Any],
+    extract_fn,
+    max_retries: int = 3,
+    backoff_base: float = 5.0,
+    extraction_id: Optional[UUID] = None,
+    erp_variant: str = "unknown",
+    source_method: str = "api",
+    connection_id: Optional[int] = None,
+) -> Tuple[UUID, Dict[str, Any]]:
+    """Extract ERP entities with retry and resume from the failed entity.
+
+    On failure:
+      1. Records which entity failed and why
+      2. Waits with exponential backoff
+      3. Resumes from the entity that failed (not from the beginning)
+
+    Args:
+        repo: ERPStagingRepository instance
+        entities: Dict mapping entity_name → extraction callable or DataFrame
+        extract_fn: async fn(entity_name) → pd.DataFrame (extracts one entity)
+        max_retries: Max retry attempts per entity
+        backoff_base: Base seconds for exponential backoff
+        extraction_id: If resuming a prior failed extraction, pass its ID
+        erp_variant: ERP variant (s4hana, ecc, d365_fo, etc.)
+        source_method: How data is extracted (api, csv, rfc, odata)
+        connection_id: ERP connection ID
+
+    Returns:
+        (extraction_id, summary_dict)
+    """
+    import asyncio
+
+    # Start new or resume existing extraction
+    if extraction_id:
+        already_staged = set(await repo.get_staged_entities(extraction_id))
+        await repo.resume_extraction(extraction_id)
+        logger.info(
+            "Resuming extraction %s: %d entities already staged, %d remaining",
+            extraction_id, len(already_staged), len(entities) - len(already_staged),
+        )
+    else:
+        extraction_id = await repo.start_extraction(
+            erp_variant=erp_variant,
+            source_method=source_method,
+            connection_id=connection_id,
+        )
+        already_staged = set()
+
+    results = {"staged": {}, "failed": {}, "skipped": []}
+
+    for entity_name in entities:
+        if entity_name in already_staged:
+            results["skipped"].append(entity_name)
+            continue
+
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                df = await extract_fn(entity_name)
+                if df is not None and not df.empty:
+                    count = await repo.stage_entity(extraction_id, entity_name, df)
+                    await repo.db.commit()
+                    results["staged"][entity_name] = count
+                else:
+                    results["staged"][entity_name] = 0
+                last_error = None
+                break  # Success — move to next entity
+            except Exception as e:
+                last_error = str(e)
+                if attempt < max_retries:
+                    wait = backoff_base * (2 ** (attempt - 1))
+                    logger.warning(
+                        "Extraction %s entity %s failed (attempt %d/%d): %s — retrying in %.0fs",
+                        extraction_id, entity_name, attempt, max_retries, e, wait,
+                    )
+                    try:
+                        await repo.db.rollback()
+                    except Exception:
+                        pass
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(
+                        "SOC II ALERT: Extraction %s entity %s FAILED after %d attempts: %s",
+                        extraction_id, entity_name, max_retries, e,
+                    )
+                    results["failed"][entity_name] = last_error
+
+        if last_error:
+            # Entity exhausted retries — record failure but continue with remaining entities
+            logger.warning(
+                "Continuing extraction after %s failure — %d entities remaining",
+                entity_name, len(entities) - len(results["staged"]) - len(results["failed"]),
+            )
+
+    # Complete extraction
+    error_msg = None
+    if results["failed"]:
+        error_msg = f"{len(results['failed'])} entities failed: {', '.join(results['failed'].keys())}"
+
+    await repo.complete_extraction(
+        extraction_id=extraction_id,
+        build_summary=results,
+        error=error_msg,
+    )
+    await repo.db.commit()
+
+    return extraction_id, results
+
+
 def _serialize(v) -> Any:
     if pd.isna(v):
         return None
