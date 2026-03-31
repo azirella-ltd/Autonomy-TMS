@@ -1793,9 +1793,10 @@ class DecisionStreamService:
                     if cost_delay and cost_delay > 0:
                         reasoning_parts.append(f"Cost of delay: ${cost_delay:,.0f}/day")
                     # Add financial estimate from quantity + generic cost assumptions
-                    if not revenue and not cost_delay and alloc_qty:
+                    _alloc_qty = proposed.get("quantity", 0) if proposed else 0
+                    if not revenue and not cost_delay and _alloc_qty:
                         try:
-                            qty_val = float(alloc_qty)
+                            qty_val = float(_alloc_qty)
                             # Estimate: $2/unit holding cost/week, $5/unit stockout cost/week
                             holding_exp = qty_val * 2.0
                             stockout_exp = qty_val * 5.0

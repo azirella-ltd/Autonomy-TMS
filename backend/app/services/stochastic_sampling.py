@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 from app.models.supply_chain_config import (
     SupplyChainConfig,
     TransportationLane,
-    MarketDemand,
     Site as Node,
 )
+from app.models.sc_entities import Forecast
 
 
 class StochasticParameters:
@@ -65,6 +65,9 @@ def sample_demand(
     """
     Sample demand scenarios for planning horizon.
 
+    Uses Forecast table (P50 median forecast) to derive mean demand per
+    product, then generates stochastic samples around it.
+
     Args:
         session: Database session
         config: Supply chain configuration
@@ -72,21 +75,33 @@ def sample_demand(
         horizon: Number of periods to sample
 
     Returns:
-        Dictionary mapping {market_demand_id: demand_samples[horizon]}
+        Dictionary mapping {product_id: demand_samples[horizon]}
     """
-    market_demands = (
-        session.query(MarketDemand)
-        .filter(MarketDemand.config_id == config.id)
+    from sqlalchemy import func
+
+    # Get average P50 forecast per product from the Forecast table
+    forecast_means = (
+        session.query(
+            Forecast.product_id,
+            func.avg(Forecast.forecast_p50).label("mean_demand"),
+        )
+        .filter(
+            Forecast.config_id == config.id,
+            Forecast.forecast_p50.isnot(None),
+        )
+        .group_by(Forecast.product_id)
         .all()
     )
 
+    if not forecast_means:
+        logger.warning("No forecasts found for config %s — demand sampling returns empty", config.id)
+        return {}
+
     demand_samples = {}
 
-    for market_demand in market_demands:
-        # Extract mean demand from demand_pattern
-        demand_pattern = market_demand.demand_pattern or {}
-        parameters_dict = demand_pattern.get("parameters", {})
-        mean_demand = parameters_dict.get("mean", 100.0)
+    for row in forecast_means:
+        product_id = row.product_id
+        mean_demand = float(row.mean_demand or 100.0)
 
         if parameters.demand_model == "normal":
             # Normal distribution with specified variability
@@ -109,9 +124,10 @@ def sample_demand(
             samples = lognorm.rvs(s=sigma, scale=np.exp(mu), size=horizon)
 
         elif parameters.demand_model == "auto":
-            # Auto-detect best distribution from demand pattern data
+            # Auto-detect best distribution from forecast data
             # Insight: Kravanja (2026) — fitting the actual distribution yields
             # better tail estimates than assuming Normal
+            demand_pattern = {"parameters": {"mean": mean_demand}}
             samples = _auto_sample_demand(
                 demand_pattern, mean_demand, horizon, parameters
             )
@@ -120,7 +136,7 @@ def sample_demand(
             # Default to constant demand
             samples = np.full(horizon, mean_demand)
 
-        demand_samples[market_demand.id] = samples
+        demand_samples[product_id] = samples
 
     return demand_samples
 
