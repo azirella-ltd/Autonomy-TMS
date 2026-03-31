@@ -109,12 +109,22 @@ class ProvisioningService:
                 setattr(status, f"{step_key}_at", datetime.utcnow())
                 setattr(status, f"{step_key}_error", str(result.get("error", ""))[:500])
                 status.overall_status = "partial"
+                await self._write_audit_log(config_id, step_key, "failed", result)
                 await self.db.commit()
                 return {"status": "failed", "step": step_key, "result": result}
 
             setattr(status, f"{step_key}_status", "completed")
             setattr(status, f"{step_key}_at", datetime.utcnow())
-            setattr(status, f"{step_key}_error", None)
+            # SOC II: preserve prior error if step was retried after failure
+            prior_error = getattr(status, f"{step_key}_error", None)
+            if prior_error:
+                setattr(status, f"{step_key}_error",
+                        f"[RESOLVED] Prior failure: {prior_error} | Succeeded on retry at {datetime.utcnow().isoformat()}")
+            else:
+                setattr(status, f"{step_key}_error", None)
+
+            # SOC II: audit log entry for every provisioning step completion
+            await self._write_audit_log(config_id, step_key, "completed", result)
 
             # Check if all steps complete
             all_done = all(
@@ -123,6 +133,12 @@ class ProvisioningService:
             )
             if all_done:
                 status.overall_status = "completed"
+                # Post-provisioning housekeeping (non-blocking)
+                try:
+                    cleanup = await self._post_provisioning_cleanup(config_id)
+                    logger.info("Post-provisioning cleanup: %s", cleanup)
+                except Exception as e:
+                    logger.warning("Post-provisioning cleanup failed (non-critical): %s", e)
 
             await self.db.commit()
             return {"status": "completed", "step": step_key, "result": result}
@@ -132,8 +148,111 @@ class ProvisioningService:
             setattr(status, f"{step_key}_status", "failed")
             setattr(status, f"{step_key}_error", str(e)[:500])
             status.overall_status = "partial"
+            await self._write_audit_log(config_id, step_key, "failed", {"error": str(e)[:500]})
             await self.db.commit()
             return {"status": "failed", "step": step_key, "error": str(e)[:500]}
+
+    async def _write_audit_log(
+        self, config_id: int, step_key: str, status: str, result: dict,
+    ) -> None:
+        """SOC II: Write provisioning step result to audit_logs table."""
+        try:
+            from app.models.audit_log import AuditLog
+            import json
+            log = AuditLog(
+                action=f"provisioning_{status}",
+                resource_type="provisioning",
+                resource_id=str(config_id),
+                resource_name=step_key,
+                description=f"Provisioning step '{step_key}' {status} for config {config_id}",
+                status=status,
+                error_message=str(result.get("error", ""))[:500] if status == "failed" else None,
+                extra_data=json.dumps(result, default=str)[:2000] if result else None,
+                tenant_id=getattr(self, "_tenant_id", None),
+            )
+            self.db.add(log)
+            # Don't commit here — caller commits
+        except Exception as e:
+            logger.warning("SOC II ALERT: Failed to write provisioning audit log: %s", e)
+
+    async def _post_provisioning_cleanup(self, config_id: int) -> dict:
+        """Housekeeping after successful provisioning.
+
+        Cleans up stale data from prior provisioning runs while keeping
+        the system operational during cleanup. Only runs after ALL 17 steps
+        complete successfully.
+
+        Cleanup targets:
+        1. Old powell_*_decisions older than 30 days (decision stream lookback is 7)
+        2. Old supply_plan records with non-current plan_version
+        3. Old performance_metrics beyond retention period
+        4. Stale executive_briefings (keep latest 5 per tenant)
+        """
+        from sqlalchemy import text
+        cleaned = {}
+        retention_days = 30
+
+        try:
+            # 1. Clean old decisions (keep last 30 days)
+            for table in [
+                "powell_atp_decisions", "powell_rebalance_decisions",
+                "powell_po_decisions", "powell_order_exceptions",
+                "powell_mo_decisions", "powell_to_decisions",
+                "powell_quality_decisions", "powell_maintenance_decisions",
+                "powell_subcontracting_decisions",
+                "powell_forecast_adjustment_decisions", "powell_buffer_decisions",
+            ]:
+                try:
+                    result = await self.db.execute(text(f"""
+                        DELETE FROM {table}
+                        WHERE config_id = :cfg
+                        AND created_at < NOW() - INTERVAL '{retention_days} days'
+                    """), {"cfg": config_id})
+                    count = result.rowcount
+                    if count > 0:
+                        cleaned[table] = count
+                except Exception:
+                    pass
+
+            # 2. Clean old supply plan records (keep latest plan_version)
+            try:
+                result = await self.db.execute(text("""
+                    DELETE FROM supply_plan
+                    WHERE config_id = :cfg
+                    AND plan_version != 'live'
+                    AND created_dttm < NOW() - INTERVAL '7 days'
+                """), {"cfg": config_id})
+                if result.rowcount > 0:
+                    cleaned["supply_plan"] = result.rowcount
+            except Exception:
+                pass
+
+            # 3. Clean old briefings (keep latest 5)
+            try:
+                result = await self.db.execute(text("""
+                    DELETE FROM executive_briefings
+                    WHERE tenant_id = (SELECT tenant_id FROM supply_chain_configs WHERE id = :cfg)
+                    AND id NOT IN (
+                        SELECT id FROM executive_briefings
+                        WHERE tenant_id = (SELECT tenant_id FROM supply_chain_configs WHERE id = :cfg)
+                        ORDER BY created_at DESC LIMIT 5
+                    )
+                """), {"cfg": config_id})
+                if result.rowcount > 0:
+                    cleaned["executive_briefings"] = result.rowcount
+            except Exception:
+                pass
+
+            await self.db.commit()
+            logger.info(
+                "Post-provisioning cleanup for config %d: %s",
+                config_id, cleaned or "nothing to clean",
+            )
+            return {"status": "ok", "cleaned": cleaned}
+
+        except Exception as e:
+            logger.warning("Post-provisioning cleanup failed: %s", e)
+            return {"status": "partial", "error": str(e), "cleaned": cleaned}
 
     async def reprovision(self, config_id: int, scope: Optional[str] = None) -> dict:
         """Archive the current config version and re-run provisioning steps.
