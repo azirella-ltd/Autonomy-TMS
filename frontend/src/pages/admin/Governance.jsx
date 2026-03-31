@@ -68,7 +68,7 @@ const Governance = () => {
   const loadPipeline = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get(`/governance/pipeline${tenantParam}`);
+      const res = await api.get(`/v1/governance/pipeline${tenantParam}`);
       setPipeline(res.data);
       setPolicies(res.data.policies || []);
       setDirectives(res.data.active_directives || []);
@@ -81,14 +81,14 @@ const Governance = () => {
 
   const loadAudit = useCallback(async () => {
     try {
-      const res = await api.get(`/governance/audit${tenantParam}&limit=100`);
+      const res = await api.get(`/v1/governance/audit${tenantParam}&limit=100`);
       setAuditLogs(res.data || []);
     } catch { setAuditLogs([]); }
   }, [tenantParam]);
 
   const loadDecisions = useCallback(async () => {
     try {
-      const res = await api.get(`/governance/decisions${tenantParam}&limit=100`);
+      const res = await api.get(`/v1/governance/decisions${tenantParam}&limit=100`);
       setDecisions(res.data || []);
     } catch { setDecisions([]); }
   }, [tenantParam]);
@@ -106,9 +106,9 @@ const Governance = () => {
   const savePolicy = async (policy) => {
     try {
       if (policy.id) {
-        await api.put(`/governance/policies/${policy.id}`, policy);
+        await api.put(`/v1/governance/policies/${policy.id}`, policy);
       } else {
-        await api.post(`/governance/policies${tenantParam}`, policy);
+        await api.post(`/v1/governance/policies${tenantParam}`, policy);
       }
       setEditingPolicy(null);
       loadPipeline();
@@ -121,7 +121,7 @@ const Governance = () => {
   const deletePolicy = async (id) => {
     if (!window.confirm('Delete this policy?')) return;
     try {
-      await api.delete(`/governance/policies/${id}`);
+      await api.delete(`/v1/governance/policies/${id}`);
       loadPipeline();
     } catch (err) {
       alert(`Failed to delete: ${err.response?.data?.detail || err.message}`);
@@ -131,7 +131,7 @@ const Governance = () => {
   // Simulate pipeline
   const runSimulation = async () => {
     try {
-      const res = await api.post(`/governance/pipeline/simulate${tenantParam}`, simForm);
+      const res = await api.post(`/v1/governance/pipeline/simulate${tenantParam}`, simForm);
       setSimResult(res.data);
     } catch (err) {
       setSimResult({ error: err.response?.data?.detail || err.message });
@@ -142,7 +142,7 @@ const Governance = () => {
   const createDirective = async () => {
     if (!newDirective?.objective) return;
     try {
-      await api.post(`/governance/directives${tenantParam}`, newDirective);
+      await api.post(`/v1/governance/directives${tenantParam}`, newDirective);
       setNewDirective(null);
       loadPipeline();
     } catch (err) {

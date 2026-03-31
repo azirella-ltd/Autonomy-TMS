@@ -99,7 +99,12 @@ export const getDefaultLandingPath = (user) => {
     return "/insights/actions";
   }
 
-  // Tenant admins, executives, DEMO_ALL, and all other users
+  // Tenant admins land on Supply Chain Configs — their primary admin task
+  if (isTenantAdmin(user)) {
+    return "/admin/tenant/supply-chain-configs";
+  }
+
+  // Executives, DEMO_ALL, and all other operational users
   // land on Executive Dashboard — the operational overview
   return "/executive-dashboard";
 };

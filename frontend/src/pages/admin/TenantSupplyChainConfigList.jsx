@@ -16,7 +16,6 @@ import { useCapabilities } from '../../hooks/useCapabilities';
 import { isTenantAdmin as isTenantAdminUser, isSystemAdmin as isSystemAdminUser } from '../../utils/authUtils';
 import SupplyChainConfigList from '../../components/supply-chain-config/SupplyChainConfigList';
 import SupplyChainConfigSankey from '../../components/supply-chain-config/SupplyChainConfigSankey';
-import { TrainingPanel } from './Training';
 import { Sparkles, Package, TrendingUp, BarChart3, Truck, Wrench, Clock } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -162,7 +161,6 @@ const TenantSupplyChainConfigList = () => {
         />
         <ModelConfidencePanel />
       </div>
-      {canEdit && <TrainingPanel />}
     </div>
   );
 };

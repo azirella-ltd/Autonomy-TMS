@@ -874,13 +874,7 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'manage_tenant_users',
         description: 'Unified hub for all external context sources',
       },
-      {
-        label: 'Market Intelligence',
-        path: '/admin/external-signals',
-        icon: LayersIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'Outside-in planning signals: weather, economics, energy, geopolitical, sentiment, regulatory',
-      },
+      // Market Intelligence removed as separate nav entry — it's a card inside Context Engine.
       {
         label: 'ERP Data Management',
         path: '/admin/erp-data',
@@ -902,12 +896,14 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'manage_tenant_users',
         description: 'Choose which SCOR metrics to display and set custom targets',
       },
+      // Email Signals, Knowledge Base — already cards inside Context Engine.
+      // Model Setup, System Monitoring — internal/technical, not tenant admin facing.
       {
-        label: 'Email Signals',
-        path: '/admin/email-signals',
-        icon: MailIcon,
+        label: 'BSC Configuration',
+        path: '/admin/bsc-config',
+        icon: TuneIcon,
         requiredCapability: 'manage_tenant_users',
-        description: 'GDPR-safe email ingestion for supply chain intelligence',
+        description: 'Cost vs service weights and AI autonomy thresholds',
       },
       {
         label: 'Experiential Knowledge',
@@ -917,41 +913,12 @@ export const NAVIGATION_CONFIG = [
         description: 'Planner behavioral patterns — override-driven knowledge for RL training',
       },
       {
-        label: 'Knowledge Base',
-        path: '/admin/knowledge-base',
-        icon: BookOpenIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'Upload documents for AI agent context (RAG)',
-      },
-      {
-        label: 'BSC Configuration',
-        path: '/admin/bsc-config',
-        icon: TuneIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'Set balanced scorecard weights for AI calibration',
-      },
-      {
         label: 'Planning Hierarchy',
         path: '/admin/tenant/planning-hierarchy',
         icon: HierarchyIcon,
         requiredCapability: 'manage_tenant_users',
-        description: 'Configure MPS/MRP/S&OP planning levels',
+        description: 'S&OP / MPS / Execution planning levels (auto-derived from master data)',
       },
-      {
-        label: 'Model Setup',
-        path: '/admin/model-setup',
-        icon: SettingsIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'AI model architecture and training configuration',
-      },
-      {
-        label: 'System Monitoring',
-        path: '/admin/monitoring',
-        icon: MonitoringIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'System health, telemetry, and performance monitoring',
-      },
-      // Synthetic Data Wizard removed: not implemented (blank page).
     ],
   },
 
