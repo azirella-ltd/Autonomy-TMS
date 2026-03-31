@@ -1828,9 +1828,13 @@ def _seed_planning_hierarchy_config(db, config_id: int, tenant_id: int) -> int:
     from sqlalchemy import text as sqt
 
     # Check if already populated
-    existing = db.execute(sqt(
-        "SELECT count(*) FROM planning_hierarchy_config WHERE config_id = :cfg"
-    ), {"cfg": config_id}).scalar()
+    try:
+        existing = db.execute(sqt(
+            "SELECT count(*) FROM planning_hierarchy_config WHERE config_id = :cfg"
+        ), {"cfg": config_id}).scalar() or 0
+    except Exception:
+        existing = 0
+    logger.info("Planning hierarchy check: %d existing rows for config %d", existing, config_id)
     if existing > 0:
         return 0  # Idempotent
 
@@ -1848,63 +1852,40 @@ def _seed_planning_hierarchy_config(db, config_id: int, tenant_id: int) -> int:
     if site_depth == 0 and product_depth == 0:
         return 0  # No hierarchy data — nothing to map
 
-    # Map planning types to the hierarchy levels that actually exist
-    # S&OP uses the highest level, Execution uses the lowest
-    from app.models.planning_hierarchy import (
-        PlanningHierarchyConfig, PlanningType, TimeBucketType,
-    )
-
-    # Determine site/product level names from what exists (lowercase for enum)
+    # Use raw SQL to bypass ORM enum case issues
+    # Postgres enums are lowercase; Python enum .value is lowercase
     top_site = site_levels[0][0].lower() if site_levels else "region"
-    mid_site = site_levels[len(site_levels)//2][0].lower() if len(site_levels) > 2 else "site"
     bottom_site = site_levels[-1][0].lower() if site_levels else "site"
-
     top_product = product_levels[0][0].lower() if product_levels else "category"
     mid_product = product_levels[len(product_levels)//2][0].lower() if len(product_levels) > 2 else "family"
     bottom_product = product_levels[-1][0].lower() if product_levels else "product"
 
-    configs = [
-        PlanningHierarchyConfig(
-            tenant_id=tenant_id, config_id=config_id,
-            planning_type=PlanningType.SOP,
-            site_hierarchy_level=top_site,
-            product_hierarchy_level=top_product,
-            time_bucket=TimeBucketType.MONTH,
-            horizon_months=18, frozen_periods=0, slushy_periods=3,
-            update_frequency_hours=168,
-            name="S&OP Planning",
-            description=f"Strategic at {top_site} × {top_product}",
-            display_order=1, is_active=True,
-        ),
-        PlanningHierarchyConfig(
-            tenant_id=tenant_id, config_id=config_id,
-            planning_type=PlanningType.MPS,
-            site_hierarchy_level=bottom_site,
-            product_hierarchy_level=mid_product,
-            time_bucket=TimeBucketType.WEEK,
-            horizon_months=6, frozen_periods=2, slushy_periods=4,
-            update_frequency_hours=24,
-            name="Master Production Schedule",
-            description=f"Tactical at {bottom_site} × {mid_product}",
-            display_order=2, is_active=True,
-        ),
-        PlanningHierarchyConfig(
-            tenant_id=tenant_id, config_id=config_id,
-            planning_type=PlanningType.EXECUTION,
-            site_hierarchy_level=bottom_site,
-            product_hierarchy_level=bottom_product,
-            time_bucket=TimeBucketType.DAY,
-            horizon_months=1, frozen_periods=0, slushy_periods=0,
-            update_frequency_hours=1,
-            name="Execution",
-            description=f"Real-time at {bottom_site} × {bottom_product}",
-            display_order=3, is_active=True,
-        ),
+    rows = [
+        ("sop", top_site, top_product, "month", 18, 0, 3, 168, "strategic", "S&OP Planning", f"Strategic at {top_site} × {top_product}", 1),
+        ("mps", bottom_site, mid_product, "week", 6, 2, 4, 24, "tactical", "Master Production Schedule", f"Tactical at {bottom_site} × {mid_product}", 2),
+        ("execution", bottom_site, bottom_product, "day", 1, 0, 0, 1, "execution", "Execution", f"Real-time at {bottom_site} × {bottom_product}", 3),
     ]
-    for c in configs:
-        db.add(c)
-    db.flush()
-    return len(configs)
+    for r in rows:
+        db.execute(sqt("""
+            INSERT INTO planning_hierarchy_config
+                (tenant_id, config_id, planning_type, site_hierarchy_level, product_hierarchy_level,
+                 time_bucket, horizon_months, frozen_periods, slushy_periods, update_frequency_hours,
+                 powell_policy_class, consistency_tolerance,
+                 name, description, display_order, is_active, created_at, updated_at)
+            VALUES (:tid, :cfg,
+                    CAST(:pt AS planning_type_enum), CAST(:sl AS site_hierarchy_level_enum),
+                    CAST(:pl AS product_hierarchy_level_enum), CAST(:tb AS time_bucket_type_enum),
+                    :hm, :fp, :sp, :uf, :ppc, 0.1,
+                    :name, :desc, :do, true, NOW(), NOW())
+        """), {
+            "tid": tenant_id, "cfg": config_id,
+            "pt": r[0], "sl": r[1], "pl": r[2], "tb": r[3],
+            "hm": r[4], "fp": r[5], "sp": r[6], "uf": r[7], "ppc": r[8],
+            "name": r[9], "desc": r[10], "do": r[11],
+        })
+    db.commit()
+    logger.info("Planning hierarchy: seeded %d configs for config %d", len(rows), config_id)
+    return len(rows)
 
 
 def _seed_metric_configuration(db, config_id: int, tenant_id: int) -> int:
@@ -1927,21 +1908,14 @@ def _seed_metric_configuration(db, config_id: int, tenant_id: int) -> int:
     ), {"tid": tenant_id}).scalar()
 
     if existing > 0:
-        # BSC config exists — update display_name_format if missing
-        db.execute(sqt("""
-            UPDATE tenant_bsc_config SET
-                display_name_format = COALESCE(display_name_format, 'name')
-            WHERE tenant_id = :tid
-        """), {"tid": tenant_id})
-        db.flush()
         return 0  # Already seeded
 
     # Create BSC config with standard weights
     db.execute(sqt("""
         INSERT INTO tenant_bsc_config
             (tenant_id, config_id, cost_weight, service_weight,
-             urgency_threshold, likelihood_threshold, display_name_format)
-        VALUES (:tid, :cfg, 0.4, 0.6, 0.65, 0.70, 'name')
+             urgency_threshold, likelihood_threshold)
+        VALUES (:tid, :cfg, 0.4, 0.6, 0.65, 0.70)
     """), {"tid": tenant_id, "cfg": config_id})
     db.flush()
     return 1
