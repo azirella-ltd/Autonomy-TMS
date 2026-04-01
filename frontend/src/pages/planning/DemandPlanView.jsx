@@ -414,23 +414,56 @@ const DemandPlanView = () => {
                   <option value="month">Month</option>
                 </select>
               </div>
-              {dimensions.product?.categories?.length > 0 && (
+              {/* Product hierarchy drilldown: Category → Family → Product */}
+              {(dimensions.product?.categories?.length > 0 || dimensions.product?.families?.length > 0) && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
-                  <select className="border rounded px-2 py-1.5 text-sm w-44"
-                    value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setFamilyFilter(''); setProductFilter(''); }}>
-                    <option value="">All Categories</option>
-                    {dimensions.product.categories.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-              )}
-              {dimensions.product?.families?.length > 0 && (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Family</label>
-                  <select className="border rounded px-2 py-1.5 text-sm w-44"
-                    value={familyFilter} onChange={e => { setFamilyFilter(e.target.value); setProductFilter(''); }}>
-                    <option value="">All Families</option>
-                    {dimensions.product.families.map(f => <option key={f} value={f}>{f}</option>)}
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Product</label>
+                  {/* Breadcrumb */}
+                  {(categoryFilter || familyFilter) && (
+                    <div className="flex items-center gap-1 mb-1 text-xs">
+                      <button className="text-primary hover:underline"
+                        onClick={() => { setCategoryFilter(''); setFamilyFilter(''); setProductFilter(''); }}>
+                        All
+                      </button>
+                      {categoryFilter && (
+                        <span className="flex items-center gap-1">
+                          <span className="text-muted-foreground">/</span>
+                          <button className={familyFilter ? 'text-primary hover:underline' : 'font-semibold'}
+                            onClick={() => { setFamilyFilter(''); setProductFilter(''); }}>
+                            {categoryFilter}
+                          </button>
+                        </span>
+                      )}
+                      {familyFilter && (
+                        <span className="flex items-center gap-1">
+                          <span className="text-muted-foreground">/</span>
+                          <span className="font-semibold">{familyFilter}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {/* Next level selector */}
+                  <select className="border rounded px-2 py-1.5 text-sm w-52"
+                    value=""
+                    onChange={e => {
+                      if (!e.target.value) return;
+                      if (!categoryFilter) {
+                        setCategoryFilter(e.target.value); setFamilyFilter(''); setProductFilter('');
+                      } else if (!familyFilter) {
+                        setFamilyFilter(e.target.value); setProductFilter('');
+                      } else {
+                        setProductFilter(e.target.value);
+                      }
+                    }}>
+                    <option value="">
+                      {!categoryFilter ? 'Select category...' : !familyFilter ? `Drill into ${categoryFilter}...` : `Select product...`}
+                    </option>
+                    {!categoryFilter && dimensions.product.categories.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                    {categoryFilter && !familyFilter && dimensions.product.families.map(f => (
+                      <option key={f} value={f}>{f}</option>
+                    ))}
                   </select>
                 </div>
               )}

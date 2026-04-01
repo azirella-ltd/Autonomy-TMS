@@ -838,7 +838,7 @@ def get_aggregated_forecast(
                 "category": category,
                 "family": family,
                 "product_id": product_id,
-                "site_type": site_type,
+                "geo_id": geo_id,
                 "site_id": site_id,
             },
         },
