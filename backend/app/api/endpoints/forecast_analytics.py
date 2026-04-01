@@ -24,6 +24,49 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/pipeline/status")
+def get_pipeline_status(
+    config_id: int = Query(...),
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get the current state of the 10-stage forecasting pipeline."""
+    from app.services.forecast_pipeline_orchestrator import ForecastPipelineOrchestrator
+    orch = ForecastPipelineOrchestrator(db, config_id, current_user.tenant_id)
+    return orch.get_pipeline_status()
+
+
+@router.post("/pipeline/run")
+def run_full_pipeline(
+    config_id: int = Query(...),
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Run the full 10-stage forecasting pipeline."""
+    from app.services.forecast_pipeline_orchestrator import ForecastPipelineOrchestrator
+    orch = ForecastPipelineOrchestrator(db, config_id, current_user.tenant_id)
+    return orch.run_full_pipeline()
+
+
+@router.post("/pipeline/run/{stage}")
+def run_pipeline_stage(
+    stage: str,
+    config_id: int = Query(...),
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Run a single pipeline stage."""
+    from app.services.forecast_pipeline_orchestrator import ForecastPipelineOrchestrator, PipelineStage
+    try:
+        ps = PipelineStage(stage)
+    except ValueError:
+        from fastapi import HTTPException
+        raise HTTPException(400, f"Invalid stage: {stage}")
+    orch = ForecastPipelineOrchestrator(db, config_id, current_user.tenant_id)
+    result = orch.run_stage(ps)
+    return orch._result_to_dict(result)
+
+
 @router.get("/eda")
 def get_eda_analysis(
     config_id: int = Query(...),

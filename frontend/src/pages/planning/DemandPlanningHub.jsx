@@ -21,7 +21,7 @@ import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   TrendingUp, Pencil, Radio, Megaphone, Users,
-  Recycle, AlertTriangle, BarChart3,
+  Recycle, AlertTriangle, BarChart3, Workflow,
 } from 'lucide-react';
 
 // Lazy-load existing page components as tab content
@@ -33,9 +33,11 @@ const ConsensusPlanning = lazy(() => import('./ConsensusPlanning'));
 const ProductLifecycle = lazy(() => import('./ProductLifecycle'));
 const ForecastExceptions = lazy(() => import('./ForecastExceptions'));
 const ForecastAnalytics = lazy(() => import('./ForecastAnalytics'));
+const ForecastPipeline = lazy(() => import('./ForecastPipeline'));
 
 const TABS = [
   { key: 'forecast', label: 'Forecast', icon: TrendingUp },
+  { key: 'pipeline', label: 'Pipeline', icon: Workflow },
   { key: 'analytics', label: 'Analytics', icon: BarChart3 },
   { key: 'editor', label: 'Editor', icon: Pencil },
   { key: 'sensing', label: 'Sensing', icon: Radio },
@@ -88,6 +90,9 @@ export default function DemandPlanningHub() {
         <Suspense fallback={<TabLoading />}>
           <TabsContent value="forecast" className="mt-0 pt-4">
             <DemandPlanView />
+          </TabsContent>
+          <TabsContent value="pipeline" className="mt-0 pt-4">
+            <ForecastPipeline />
           </TabsContent>
           <TabsContent value="analytics" className="mt-0 pt-4">
             <ForecastAnalytics />
