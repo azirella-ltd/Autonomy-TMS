@@ -103,10 +103,10 @@ const AdjustmentHistoryTab = ({ configId }) => {
       if (filters.source !== '__all__') params.append('source', filters.source);
       if (filters.status !== '__all__') params.append('status', filters.status);
 
-      const response = await api.get(`/api/v1/forecast-adjustments/table?${params.toString()}`);
+      const response = await api.get(`/v1/forecast-adjustments/table?${params.toString()}`);
       // Fallback: if the endpoint returns the table data, we use the /history approach
       // The adjustments list endpoint returns all adjustments
-      const historyResponse = await api.get(`/api/v1/forecast-adjustments?limit=200`);
+      const historyResponse = await api.get(`/v1/forecast-adjustments?limit=200`);
       setAdjustments(historyResponse.data || []);
     } catch (err) {
       console.error('Failed to load adjustment history:', err);
@@ -123,7 +123,7 @@ const AdjustmentHistoryTab = ({ configId }) => {
   const handleRevert = async (adjustmentId) => {
     setRevertingId(adjustmentId);
     try {
-      await api.delete(`/api/v1/forecast-adjustments/${adjustmentId}`);
+      await api.delete(`/v1/forecast-adjustments/${adjustmentId}`);
       setAdjustments(prev =>
         prev.map(a => a.id === adjustmentId ? { ...a, status: 'reverted' } : a)
       );
@@ -456,7 +456,7 @@ const VersionComparisonTab = ({ configId }) => {
       const params = new URLSearchParams();
       if (configId) params.append('config_id', configId);
       params.append('limit', '50');
-      const response = await api.get(`/api/v1/forecast-adjustments/versions?${params.toString()}`);
+      const response = await api.get(`/v1/forecast-adjustments/versions?${params.toString()}`);
       setVersions(response.data || []);
     } catch (err) {
       console.error('Failed to load versions:', err);
@@ -475,7 +475,7 @@ const VersionComparisonTab = ({ configId }) => {
     setComparing(true);
     try {
       const response = await api.get(
-        `/api/v1/forecast-adjustments/versions/compare?version_a=${versionA}&version_b=${versionB}`
+        `/v1/forecast-adjustments/versions/compare?version_a=${versionA}&version_b=${versionB}`
       );
       setComparison(response.data);
     } catch (err) {
@@ -493,7 +493,7 @@ const VersionComparisonTab = ({ configId }) => {
       const periodEnd = new Date(now);
       periodEnd.setMonth(periodEnd.getMonth() + 3);
 
-      await api.post('/api/v1/forecast-adjustments/versions', {
+      await api.post('/v1/forecast-adjustments/versions', {
         ...newVersion,
         config_id: configId ? parseInt(configId) : null,
         period_start: now.toISOString(),

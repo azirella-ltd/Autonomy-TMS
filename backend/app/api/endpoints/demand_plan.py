@@ -401,7 +401,15 @@ def get_demand_plan_summary(
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_user),
     config_id: Optional[int] = None,
+    category: Optional[str] = Query(None),
+    family: Optional[str] = Query(None),
+    geo_id: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
 ):
+    from app.models.supply_chain_config import Site
+    from app.models.sc_entities import Product
+    from sqlalchemy import text as sqt
+
     effective_config_id = config_id or (current_user.default_config_id if current_user else None)
 
     def _base():
@@ -410,19 +418,51 @@ def get_demand_plan_summary(
             return and_(f, Forecast.config_id == effective_config_id)
         return f
 
-    total_forecasts = db.query(func.count(Forecast.id)).filter(_base()).scalar() or 0
-    product_count = db.query(func.count(distinct(Forecast.product_id))).filter(_base()).scalar() or 0
-    site_count = db.query(func.count(distinct(Forecast.site_id))).filter(_base()).scalar() or 0
-    start_date, end_date = db.query(func.min(Forecast.forecast_date), func.max(Forecast.forecast_date)).filter(_base()).first()
+    query_base = db.query(Forecast).filter(_base())
+
+    # Apply hierarchy filters
+    if category and effective_config_id:
+        pids = [p[0] for p in db.query(Product.id).filter(
+            Product.config_id == effective_config_id, Product.category == category).all()]
+        if pids:
+            query_base = query_base.filter(Forecast.product_id.in_(pids))
+    if family and effective_config_id:
+        pids = [p[0] for p in db.query(Product.id).filter(
+            Product.config_id == effective_config_id, Product.family == family).all()]
+        if pids:
+            query_base = query_base.filter(Forecast.product_id.in_(pids))
+    if site_id:
+        query_base = query_base.filter(Forecast.site_id == site_id)
+    elif geo_id and effective_config_id:
+        try:
+            geo_sites = db.execute(sqt("""
+                WITH RECURSIVE geo_tree AS (
+                    SELECT id FROM geography WHERE id = :gid
+                    UNION ALL
+                    SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
+                )
+                SELECT s.id FROM site s
+                WHERE s.config_id = :cfg AND s.geo_id IN (SELECT id FROM geo_tree)
+            """), {"gid": geo_id, "cfg": effective_config_id}).fetchall()
+            sids = [s[0] for s in geo_sites]
+            if sids:
+                query_base = query_base.filter(Forecast.site_id.in_(sids))
+        except Exception:
+            pass
+
+    total_forecasts = query_base.with_entities(func.count(Forecast.id)).scalar() or 0
+    product_count = query_base.with_entities(func.count(distinct(Forecast.product_id))).scalar() or 0
+    site_count = query_base.with_entities(func.count(distinct(Forecast.site_id))).scalar() or 0
+    start_date, end_date = query_base.with_entities(func.min(Forecast.forecast_date), func.max(Forecast.forecast_date)).first()
 
     # Compute average demand per forecast period (meaningful metric)
-    avg_demand = db.query(func.avg(Forecast.forecast_p50)).filter(_base()).scalar() or 0.0
-    avg_demand_median = db.query(func.avg(Forecast.forecast_median)).filter(_base()).scalar()
+    avg_demand = query_base.with_entities(func.avg(Forecast.forecast_p50)).scalar() or 0.0
+    avg_demand_median = query_base.with_entities(func.avg(Forecast.forecast_median)).scalar()
     if not avg_demand_median:
         avg_demand_median = avg_demand
 
     # Count distinct forecast periods (weeks) for context
-    period_count = db.query(func.count(distinct(Forecast.forecast_date))).filter(_base()).scalar() or 0
+    period_count = query_base.with_entities(func.count(distinct(Forecast.forecast_date))).scalar() or 0
 
     return {
         "total_forecasts": int(total_forecasts),

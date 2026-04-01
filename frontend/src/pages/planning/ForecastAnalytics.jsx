@@ -37,16 +37,16 @@ export default function ForecastAnalytics() {
     if (!effectiveConfigId) return;
     setLoading(true);
     try {
-      const [edaRes, accRes, methRes, drvRes] = await Promise.all([
+      const [edaRes, accRes, methRes, drvRes] = await Promise.allSettled([
         api.get('/v1/forecast-analytics/eda', { params: { config_id: effectiveConfigId } }),
         api.get('/v1/forecast-analytics/accuracy', { params: { config_id: effectiveConfigId } }),
         api.get('/v1/forecast-analytics/methods', { params: { config_id: effectiveConfigId } }),
         api.get('/v1/forecast-analytics/drivers', { params: { config_id: effectiveConfigId } }),
       ]);
-      setEda(edaRes.data);
-      setAccuracy(accRes.data);
-      setMethods(methRes.data);
-      setDrivers(drvRes.data);
+      if (edaRes.status === 'fulfilled') setEda(edaRes.value.data);
+      if (accRes.status === 'fulfilled') setAccuracy(accRes.value.data);
+      if (methRes.status === 'fulfilled') setMethods(methRes.value.data);
+      if (drvRes.status === 'fulfilled') setDrivers(drvRes.value.data);
     } catch (err) {
       console.error('Failed to load analytics:', err);
     } finally {

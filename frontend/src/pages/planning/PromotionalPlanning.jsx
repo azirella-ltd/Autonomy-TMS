@@ -57,7 +57,7 @@ export default function PromotionalPlanning() {
       const params = {};
       if (statusFilter) params.status = statusFilter;
       if (typeFilter) params.promotion_type = typeFilter;
-      const res = await api.get('/promotions/', { params });
+      const res = await api.get('/v1/promotions/', { params });
       setPromotions(res.data);
     } catch (e) {
       setError('Failed to load promotions');
@@ -71,14 +71,14 @@ export default function PromotionalPlanning() {
     const start = new Date(y, m, 1).toISOString().split('T')[0];
     const end = new Date(y, m + 1, 0).toISOString().split('T')[0];
     try {
-      const res = await api.get('/promotions/calendar', { params: { start_date: start, end_date: end } });
+      const res = await api.get('/v1/promotions/calendar', { params: { start_date: start, end_date: end } });
       setCalendar(res.data);
     } catch (e) { /* ignore */ }
   }, [calMonth]);
 
   const loadDashboard = useCallback(async () => {
     try {
-      const res = await api.get('/promotions/dashboard');
+      const res = await api.get('/v1/promotions/dashboard');
       setDashboard(res.data);
     } catch (e) { /* ignore */ }
   }, []);
@@ -108,7 +108,7 @@ export default function PromotionalPlanning() {
       if (form.channel_ids) {
         try { payload.channel_ids = JSON.parse(form.channel_ids); } catch { /* skip */ }
       }
-      await api.post('/promotions/', payload);
+      await api.post('/v1/promotions/', payload);
       setDialogOpen(false);
       setForm({ name: '', promotion_type: 'price_discount', description: '', start_date: '', end_date: '', product_ids: '', site_ids: '', channel_ids: '', expected_uplift_pct: '', budget: '', notes: '' });
       loadPromotions();

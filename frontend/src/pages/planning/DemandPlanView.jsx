@@ -102,6 +102,10 @@ const DemandPlanView = () => {
     try {
       const params = {};
       if (effectiveConfigId) params.config_id = effectiveConfigId;
+      if (categoryFilter) params.category = categoryFilter;
+      if (familyFilter) params.family = familyFilter;
+      if (geoFilter) params.geo_id = geoFilter;
+      if (siteFilter) params.site_id = siteFilter;
       const response = await api.get('/demand-plan/summary', { params });
       setSummary(response.data);
     } catch (error) {
