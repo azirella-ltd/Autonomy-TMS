@@ -200,7 +200,14 @@ def get_current_demand_plan(
                     SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
                 )
                 SELECT CAST(s.id AS TEXT) FROM site s
-                WHERE s.config_id = :cfg AND s.geo_id IN (SELECT id FROM geo_tree)
+                WHERE s.config_id = :cfg AND (
+                    s.geo_id IN (SELECT id FROM geo_tree)
+                    OR s.id IN (
+                        SELECT tl.from_site_id FROM transportation_lane tl
+                        JOIN site dst ON dst.id = tl.to_site_id
+                        WHERE tl.config_id = :cfg AND dst.geo_id IN (SELECT id FROM geo_tree)
+                    )
+                )
             """), {"gid": geo_id, "cfg": effective_config_id}).fetchall()
             sids = [s[0] for s in geo_sites]
             if sids:
@@ -474,7 +481,14 @@ def get_demand_plan_summary(
                     SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
                 )
                 SELECT CAST(s.id AS TEXT) FROM site s
-                WHERE s.config_id = :cfg AND s.geo_id IN (SELECT id FROM geo_tree)
+                WHERE s.config_id = :cfg AND (
+                    s.geo_id IN (SELECT id FROM geo_tree)
+                    OR s.id IN (
+                        SELECT tl.from_site_id FROM transportation_lane tl
+                        JOIN site dst ON dst.id = tl.to_site_id
+                        WHERE tl.config_id = :cfg AND dst.geo_id IN (SELECT id FROM geo_tree)
+                    )
+                )
             """), {"gid": geo_id, "cfg": effective_config_id}).fetchall()
             sids = [s[0] for s in geo_sites]
             if sids:
@@ -771,7 +785,14 @@ def get_aggregated_forecast(
                     SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
                 )
                 SELECT CAST(s.id AS TEXT) FROM site s
-                WHERE s.config_id = :cfg AND s.geo_id IN (SELECT id FROM geo_tree)
+                WHERE s.config_id = :cfg AND (
+                    s.geo_id IN (SELECT id FROM geo_tree)
+                    OR s.id IN (
+                        SELECT tl.from_site_id FROM transportation_lane tl
+                        JOIN site dst ON dst.id = tl.to_site_id
+                        WHERE tl.config_id = :cfg AND dst.geo_id IN (SELECT id FROM geo_tree)
+                    )
+                )
             """), {"gid": geo_id, "cfg": config_id}).fetchall()
             sids = [str(s[0]) for s in geo_sites]
             if sids:
