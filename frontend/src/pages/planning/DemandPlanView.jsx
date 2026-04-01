@@ -60,6 +60,14 @@ const DemandPlanView = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  // Hierarchy filters (dynamic from DAG)
+  const [dimensions, setDimensions] = useState(null);
+  const [timeBucket, setTimeBucket] = useState('week');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [familyFilter, setFamilyFilter] = useState('');
+  const [siteTypeFilter, setSiteTypeFilter] = useState('');
+  const [aggData, setAggData] = useState(null);
+
   // Hydrate filters from Talk To Me query routing
   useEffect(() => {
     const filters = location.state?.filters;
@@ -269,6 +277,33 @@ const DemandPlanView = () => {
     fetchDemandPlan(); // Reload original data
   };
 
+  // Load hierarchy dimensions from DAG
+  useEffect(() => {
+    if (!effectiveConfigId) return;
+    api.get('/demand-plan/hierarchy-dimensions', { params: { config_id: effectiveConfigId } })
+      .then(res => setDimensions(res.data))
+      .catch(() => setDimensions(null));
+  }, [effectiveConfigId]);
+
+  // Load aggregated forecast with hierarchy filters
+  useEffect(() => {
+    if (!effectiveConfigId) return;
+    const params = {
+      config_id: effectiveConfigId,
+      time_bucket: timeBucket,
+      category: categoryFilter || undefined,
+      family: familyFilter || undefined,
+      product_id: productFilter || undefined,
+      site_type: siteTypeFilter || undefined,
+      site_id: siteFilter || undefined,
+      start_date: startDate || undefined,
+      end_date: endDate || undefined,
+    };
+    api.get('/demand-plan/aggregated', { params })
+      .then(res => setAggData(res.data))
+      .catch(() => setAggData(null));
+  }, [effectiveConfigId, timeBucket, categoryFilter, familyFilter, productFilter, siteTypeFilter, siteFilter, startDate, endDate]);
+
   const formatNumber = (num) => {
     if (!num) return '0';
     return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -346,6 +381,105 @@ const DemandPlanView = () => {
         <Alert variant="success" className="mb-4" onClose={() => setSuccess(null)}>
           {success}
         </Alert>
+      )}
+
+      {/* Hierarchy Filters — dynamic from DAG */}
+      {dimensions && (
+        <Card className="mb-4">
+          <CardContent className="pt-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Time Bucket</label>
+                <select className="border rounded px-2 py-1.5 text-sm w-24"
+                  value={timeBucket} onChange={e => setTimeBucket(e.target.value)}>
+                  <option value="day">Day</option>
+                  <option value="week">Week</option>
+                  <option value="month">Month</option>
+                </select>
+              </div>
+              {dimensions.product?.categories?.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                  <select className="border rounded px-2 py-1.5 text-sm w-44"
+                    value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setFamilyFilter(''); setProductFilter(''); }}>
+                    <option value="">All Categories</option>
+                    {dimensions.product.categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
+              {dimensions.product?.families?.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Family</label>
+                  <select className="border rounded px-2 py-1.5 text-sm w-44"
+                    value={familyFilter} onChange={e => { setFamilyFilter(e.target.value); setProductFilter(''); }}>
+                    <option value="">All Families</option>
+                    {dimensions.product.families.map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+              )}
+              {dimensions.site?.types?.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Site Type</label>
+                  <select className="border rounded px-2 py-1.5 text-sm w-44"
+                    value={siteTypeFilter} onChange={e => { setSiteTypeFilter(e.target.value); setSiteFilter(''); }}>
+                    <option value="">All Site Types</option>
+                    {dimensions.site.types.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              )}
+              {dimensions.site?.sites?.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Site</label>
+                  <select className="border rounded px-2 py-1.5 text-sm w-48"
+                    value={siteFilter} onChange={e => setSiteFilter(e.target.value)}>
+                    <option value="">All Sites</option>
+                    {dimensions.site.sites.map(s => <option key={s.id} value={s.id}>{s.name} ({s.type})</option>)}
+                  </select>
+                </div>
+              )}
+              {(categoryFilter || familyFilter || siteTypeFilter || siteFilter) && (
+                <Button variant="ghost" size="sm" onClick={() => {
+                  setCategoryFilter(''); setFamilyFilter(''); setSiteTypeFilter(''); setSiteFilter(''); setProductFilter('');
+                }}>
+                  Clear Filters
+                </Button>
+              )}
+              {aggData?.summary && (
+                <div className="ml-auto text-xs text-muted-foreground">
+                  {aggData.summary.total_products} products × {aggData.summary.total_sites} sites
+                  {' '}| {aggData.summary.total_records.toLocaleString()} records
+                  {' '}| Bucket: {timeBucket}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Aggregated Chart (from hierarchy filters) */}
+      {aggData?.series?.length > 0 && (
+        <Card className="mb-4">
+          <CardContent className="pt-4">
+            <h3 className="text-sm font-semibold mb-2">
+              Demand Forecast
+              {categoryFilter && ` — ${categoryFilter}`}
+              {familyFilter && ` — ${familyFilter}`}
+              {siteTypeFilter && ` @ ${siteTypeFilter}`}
+            </h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={aggData.series}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <RechartsTooltip contentStyle={{ fontSize: 11 }} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Line type="monotone" dataKey="p10" stroke="#82ca9d" name="P10 (Low)" dot={false} />
+                <Line type="monotone" dataKey="p50" stroke="#8884d8" name="P50 (Forecast)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="p90" stroke="#ffc658" name="P90 (High)" dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
       )}
 
       {/* Summary Cards */}

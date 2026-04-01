@@ -509,3 +509,194 @@ async def _trigger_conformal_forecast_hook(
             logger.info(f"Conformal forecast hook: {result}")
     except Exception as exc:
         logger.error(f"Conformal forecast hook failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Hierarchical aggregation — dynamic dimensions from DAG
+# ---------------------------------------------------------------------------
+
+@router.get("/hierarchy-dimensions")
+def get_hierarchy_dimensions(
+    config_id: int = Query(...),
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Return available hierarchy dimensions for filtering, derived from the DAG.
+
+    Dimensions are dynamic — they come from actual product/site data in the config,
+    not hardcoded lists.
+    """
+    from app.models.supply_chain_config import Site
+    from app.models.sc_entities import Product
+
+    # Product dimensions
+    categories = db.query(distinct(Product.category)).filter(
+        Product.config_id == config_id, Product.category.isnot(None),
+    ).all()
+    families = db.query(distinct(Product.family)).filter(
+        Product.config_id == config_id, Product.family.isnot(None),
+    ).all()
+
+    # Site dimensions — use site type and name
+    site_types = db.query(distinct(Site.type)).filter(
+        Site.config_id == config_id, Site.is_external == False,
+    ).all()
+    sites = db.query(Site.id, Site.name, Site.type).filter(
+        Site.config_id == config_id, Site.is_external == False,
+    ).all()
+
+    # Site regions from hierarchy (if available)
+    regions = []
+    try:
+        from app.models.planning_hierarchy import SiteHierarchyNode
+        region_rows = db.query(distinct(SiteHierarchyNode.name)).filter(
+            SiteHierarchyNode.tenant_id == current_user.tenant_id,
+            SiteHierarchyNode.hierarchy_level == "REGION",
+        ).all()
+        regions = [r[0] for r in region_rows if r[0]]
+    except Exception:
+        pass
+
+    return {
+        "product": {
+            "categories": sorted([c[0] for c in categories if c[0]]),
+            "families": sorted([f[0] for f in families if f[0]]),
+        },
+        "site": {
+            "types": sorted([t[0] for t in site_types if t[0]]),
+            "sites": [{"id": s[0], "name": s[1], "type": s[2]} for s in sites],
+            "regions": sorted(regions),
+        },
+        "time_buckets": ["day", "week", "month"],
+    }
+
+
+@router.get("/aggregated")
+def get_aggregated_forecast(
+    config_id: int = Query(...),
+    time_bucket: str = Query("week", description="day, week, or month"),
+    category: Optional[str] = Query(None, description="Product category filter"),
+    family: Optional[str] = Query(None, description="Product family filter"),
+    product_id: Optional[str] = Query(None, description="Specific product"),
+    site_type: Optional[str] = Query(None, description="Site type filter"),
+    site_id: Optional[str] = Query(None, description="Specific site"),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Aggregate forecasts by time bucket with hierarchy filtering.
+
+    Supports drilldown: All → Category → Family → Product
+                        All Sites → Site Type → Individual Site
+
+    Returns time series suitable for charting with P10/P50/P90 bands.
+    """
+    from app.models.supply_chain_config import Site
+    from app.models.sc_entities import Product
+    from sqlalchemy import text
+
+    # Build product filter
+    product_filters = []
+    if product_id:
+        product_filters.append(f"f.product_id = '{product_id}'")
+    else:
+        if category:
+            # Get product_ids in this category
+            prods = db.query(Product.id).filter(
+                Product.config_id == config_id, Product.category == category,
+            ).all()
+            pids = [p[0] for p in prods]
+            if pids:
+                pid_list = ",".join(f"'{p}'" for p in pids)
+                product_filters.append(f"f.product_id IN ({pid_list})")
+            else:
+                return {"series": [], "summary": {"total_records": 0}}
+        if family:
+            prods = db.query(Product.id).filter(
+                Product.config_id == config_id, Product.family == family,
+            ).all()
+            pids = [p[0] for p in prods]
+            if pids:
+                pid_list = ",".join(f"'{p}'" for p in pids)
+                product_filters.append(f"f.product_id IN ({pid_list})")
+            else:
+                return {"series": [], "summary": {"total_records": 0}}
+
+    # Build site filter
+    site_filters = []
+    if site_id:
+        site_filters.append(f"f.site_id = {site_id}")
+    elif site_type:
+        sites = db.query(Site.id).filter(
+            Site.config_id == config_id, Site.type == site_type,
+        ).all()
+        sids = [str(s[0]) for s in sites]
+        if sids:
+            site_filters.append(f"f.site_id IN ({','.join(sids)})")
+
+    # Time bucket truncation
+    trunc_map = {"day": "day", "week": "week", "month": "month"}
+    trunc = trunc_map.get(time_bucket, "week")
+
+    # Build WHERE clause
+    where_parts = [f"f.config_id = {config_id}", "f.forecast_p50 IS NOT NULL"]
+    where_parts.extend(product_filters)
+    where_parts.extend(site_filters)
+    if start_date:
+        where_parts.append(f"f.forecast_date >= '{start_date}'")
+    if end_date:
+        where_parts.append(f"f.forecast_date <= '{end_date}'")
+
+    where_clause = " AND ".join(where_parts)
+
+    sql = f"""
+        SELECT
+            date_trunc('{trunc}', f.forecast_date) AS bucket,
+            SUM(f.forecast_p10) AS p10,
+            SUM(f.forecast_p50) AS p50,
+            SUM(f.forecast_p90) AS p90,
+            COUNT(*) AS record_count,
+            COUNT(DISTINCT f.product_id) AS product_count,
+            COUNT(DISTINCT f.site_id) AS site_count
+        FROM forecast f
+        WHERE {where_clause}
+        GROUP BY date_trunc('{trunc}', f.forecast_date)
+        ORDER BY bucket
+    """
+
+    try:
+        result = db.execute(text(sql))
+        rows = result.fetchall()
+    except Exception as e:
+        logger.warning("Aggregated forecast query failed: %s", e)
+        return {"series": [], "summary": {"total_records": 0, "error": str(e)}}
+
+    series = []
+    for row in rows:
+        series.append({
+            "date": row[0].strftime("%Y-%m-%d") if row[0] else None,
+            "p10": round(float(row[1] or 0), 1),
+            "p50": round(float(row[2] or 0), 1),
+            "p90": round(float(row[3] or 0), 1),
+            "records": row[4],
+            "products": row[5],
+            "sites": row[6],
+        })
+
+    return {
+        "series": series,
+        "summary": {
+            "total_records": sum(s["records"] for s in series),
+            "total_products": max((s["products"] for s in series), default=0),
+            "total_sites": max((s["sites"] for s in series), default=0),
+            "time_bucket": time_bucket,
+            "filters": {
+                "category": category,
+                "family": family,
+                "product_id": product_id,
+                "site_type": site_type,
+                "site_id": site_id,
+            },
+        },
+    }
