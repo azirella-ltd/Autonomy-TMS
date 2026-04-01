@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_current_active_user, require_tenant_admin
+from app.db.session import get_db
+from app.api.deps import get_current_active_user, require_tenant_admin
 from app.services.promotional_planning_service import PromotionalPlanningService
 
 router = APIRouter(prefix="/promotions", tags=["promotional-planning"])
