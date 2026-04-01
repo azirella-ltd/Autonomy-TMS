@@ -369,3 +369,73 @@ class ForecastExceptionDetector:
     @staticmethod
     def _severity_to_priority(severity: str) -> int:
         return {"CRITICAL": 90, "HIGH": 70, "MEDIUM": 50, "LOW": 30}.get(severity, 50)
+
+    def reevaluate_open_exceptions(
+        self,
+        config_id: Optional[int],
+        threshold_percent: float = 20.0,
+    ) -> Dict[str, int]:
+        """Re-evaluate open exceptions against current forecast vs actual data.
+
+        Auto-resolves exceptions where variance has dropped below threshold.
+        Updates variance for exceptions that are still triggered.
+
+        Returns {"resolved": N, "still_open": N, "updated": N}
+        """
+        from app.models.forecast_exception import ForecastException
+        result = {"resolved": 0, "still_open": 0, "updated": 0}
+
+        # Get all open exceptions
+        open_exceptions = (
+            self.db.query(ForecastException)
+            .filter(
+                ForecastException.status.in_(["open", "NEW", "acknowledged", "investigating"]),
+            )
+        )
+        if config_id:
+            open_exceptions = open_exceptions.filter(ForecastException.config_id == config_id)
+
+        for exc in open_exceptions.all():
+            # Re-calculate variance for this product/site/period
+            key = (exc.product_id, str(exc.site_id))
+            forecast_qty = self._load_forecast_aggregates(
+                exc.config_id, exc.period_start, exc.period_end, [exc.product_id]
+            ).get(key, 0)
+            actual_qty = self._load_actual_aggregates(
+                exc.config_id, exc.period_start, exc.period_end, [exc.product_id]
+            ).get(key, 0)
+
+            if forecast_qty <= 0:
+                result["still_open"] += 1
+                continue
+
+            _, new_var_pct, _ = self._calculate_variance(forecast_qty, actual_qty)
+
+            if abs(new_var_pct) < threshold_percent:
+                # Variance below threshold — auto-resolve
+                exc.status = "resolved"
+                exc.resolution_action = "auto_resolved"
+                exc.resolution_notes = (
+                    f"Auto-resolved: variance dropped from {exc.variance_percent:.1f}% to {new_var_pct:.1f}%"
+                )
+                exc.variance_percent = round(new_var_pct, 1)
+                exc.resolved_at = datetime.utcnow()
+                exc.updated_at = datetime.utcnow()
+                result["resolved"] += 1
+            else:
+                # Still above threshold — update variance
+                exc.variance_percent = round(new_var_pct, 1)
+                exc.forecast_quantity = forecast_qty
+                exc.actual_quantity = actual_qty
+                exc.variance_quantity = round(actual_qty - forecast_qty, 1)
+                exc.updated_at = datetime.utcnow()
+                result["still_open"] += 1
+                result["updated"] += 1
+
+        self.db.flush()
+        if result["resolved"] > 0:
+            logger.info(
+                "Exception re-evaluation: %d resolved, %d still open (config %s)",
+                result["resolved"], result["still_open"], config_id,
+            )
+        return result

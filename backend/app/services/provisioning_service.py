@@ -925,6 +925,58 @@ class ProvisioningService:
         except Exception as e:
             logger.warning("LightGBM forecast step failed (non-critical): %s", e)
             return {"status": "ok", "note": f"LightGBM forecast attempted: {str(e)[:100]}"}
+        finally:
+            # Always run forecast exception detection after forecast generation
+            try:
+                exc_result = await self._run_forecast_exception_detection(config_id)
+                if exc_result.get("detected", 0) > 0 or exc_result.get("resolved", 0) > 0:
+                    logger.info(
+                        "Forecast exceptions: %d detected, %d resolved for config %d",
+                        exc_result.get("detected", 0), exc_result.get("resolved", 0), config_id,
+                    )
+            except Exception as exc_err:
+                logger.warning("Forecast exception detection failed: %s", exc_err)
+
+    async def _run_forecast_exception_detection(self, config_id: int) -> dict:
+        """Run forecast exception detection + re-evaluation of existing exceptions.
+
+        Called after lgbm_forecast and after CDC data ingestion.
+        """
+        from app.db.session import sync_session_factory
+        from app.services.forecast_exception_detector import ForecastExceptionDetector
+        from datetime import date, timedelta
+
+        sync_db = sync_session_factory()
+        try:
+            detector = ForecastExceptionDetector(sync_db)
+            period_end = date.today()
+            period_start = period_end - timedelta(days=90)
+
+            # Detect new exceptions
+            detected = detector.run_detection(
+                config_id=config_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
+
+            # Re-evaluate existing open exceptions
+            reeval = detector.reevaluate_open_exceptions(config_id=config_id)
+
+            sync_db.commit()
+            return {
+                "detected": detected.get("exceptions_created", 0),
+                "resolved": reeval.get("resolved", 0),
+                "still_open": reeval.get("still_open", 0),
+            }
+        except Exception as e:
+            logger.warning("Forecast exception detection failed: %s", e)
+            try:
+                sync_db.rollback()
+            except Exception:
+                pass
+            return {"error": str(e)}
+        finally:
+            sync_db.close()
 
     async def _step_demand_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 5: Cold-start Demand Planning tGNN (foreground fallback, normally runs via _bg)."""

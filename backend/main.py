@@ -6484,6 +6484,8 @@ api.include_router(shipment_tracking_router, prefix="/shipment-tracking", tags=[
 api.include_router(inventory_visibility_router, prefix="/inventory-visibility", tags=["inventory-visibility", "material-visibility"])
 api.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations", "planning"])
 api.include_router(demand_plan_router, prefix="/demand-plan", tags=["demand-plan", "planning"])
+from app.api.endpoints.forecast_analytics import router as forecast_analytics_router
+api.include_router(forecast_analytics_router, prefix="/forecast-analytics", tags=["forecast-analytics", "planning"])
 api.include_router(collaboration_router, prefix="/collaboration", tags=["collaboration", "sprint5"])
 
 # Inline Comments API
