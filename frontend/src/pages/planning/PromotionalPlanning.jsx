@@ -53,13 +53,15 @@ export default function PromotionalPlanning() {
 
   const loadPromotions = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const params = {};
       if (statusFilter) params.status = statusFilter;
       if (typeFilter) params.promotion_type = typeFilter;
       const res = await api.get('/v1/promotions/', { params });
-      setPromotions(res.data);
+      setPromotions(res.data || []);
     } catch (e) {
+      console.error('Promotions load error:', e);
       setError('Failed to load promotions');
     }
     setLoading(false);

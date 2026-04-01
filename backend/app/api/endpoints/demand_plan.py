@@ -772,6 +772,7 @@ def get_aggregated_forecast(
 
     # Build site filter (geography-based drilldown)
     site_filters = []
+    sids = []  # Track resolved site IDs for actuals query reuse
     if site_id:
         site_filters.append(f"f.site_id = {site_id}")
     elif geo_id:
@@ -856,17 +857,37 @@ def get_aggregated_forecast(
             "sites": row[6],
         }
 
-    # Overlay actuals from outbound_order_line (fulfilled demand)
+    # Overlay actuals from outbound_order_line (real fulfilled demand)
     try:
-        actual_where = where_clause.replace("f.config_id", "ool.config_id").replace(
-            "f.product_id", "ool.product_id"
-        ).replace("f.site_id", "ool.site_id").replace(
-            "f.forecast_date", "oo.order_date"
-        ).replace("f.forecast_p50 IS NOT NULL", "1=1")
+        actual_parts = [f"ool.config_id = {config_id}"]
+        # Mirror product filters
+        if product_id:
+            actual_parts.append(f"ool.product_id = '{product_id}'")
+        elif product_node_id:
+            pids = _resolve_product_node_ids(db, product_node_id, current_user.tenant_id)
+            if pids:
+                actual_parts.append(f"ool.product_id IN ({','.join(repr(p) for p in pids)})")
+        elif category:
+            prods = db.query(Product.id).filter(Product.config_id == config_id, Product.category == category).all()
+            if prods:
+                actual_parts.append(f"ool.product_id IN ({','.join(repr(p[0]) for p in prods)})")
+        # Mirror site filters — use ship_from_site_id on outbound_order
+        if site_id:
+            actual_parts.append(f"oo.ship_from_site_id = {site_id}")
+        elif geo_id:
+            # Reuse the sids we already computed for the forecast query
+            if sids:
+                actual_parts.append(f"CAST(oo.ship_from_site_id AS TEXT) IN ({','.join(repr(s) for s in sids)})")
+        if start_date:
+            actual_parts.append(f"oo.order_date >= '{start_date}'")
+        if end_date:
+            actual_parts.append(f"oo.order_date <= '{end_date}'")
+
+        actual_where = " AND ".join(actual_parts)
         actual_sql = f"""
             SELECT
                 date_trunc('{trunc}', oo.order_date) AS bucket,
-                SUM(ool.ordered_quantity) AS actual_demand
+                SUM(COALESCE(ool.shipped_quantity, ool.ordered_quantity)) AS actual_demand
             FROM outbound_order_line ool
             JOIN outbound_order oo ON oo.id = ool.order_id
             WHERE {actual_where}
@@ -879,14 +900,13 @@ def get_aggregated_forecast(
             if d in series_map:
                 series_map[d]["actual"] = round(float(arow[1] or 0), 1)
             elif d:
-                # Actuals exist for a date without forecast
                 series_map[d] = {
                     "date": d, "p10": None, "p50": None, "p90": None,
                     "actual": round(float(arow[1] or 0), 1),
                     "records": 0, "products": 0, "sites": 0,
                 }
     except Exception as e:
-        logger.debug("Actuals overlay failed (non-critical): %s", e)
+        logger.warning("Actuals overlay failed: %s", e)
 
     series = sorted(series_map.values(), key=lambda x: x["date"] or "")
 

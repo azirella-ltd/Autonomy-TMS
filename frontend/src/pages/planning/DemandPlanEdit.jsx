@@ -913,7 +913,7 @@ const DemandPlanEdit = () => {
       const params = {};
       if (selectedConfig) params.config_id = selectedConfig;
       if (timeGranularity) params.granularity = timeGranularity;
-      const response = await api.get('/api/v1/forecasts/export', { params, responseType: 'blob' });
+      const response = await api.get('/v1/forecasts/export', { params, responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }));
       const a = document.createElement('a');
       a.href = url;
@@ -944,7 +944,7 @@ const DemandPlanEdit = () => {
       const formData = new FormData();
       formData.append('file', file);
       if (selectedConfig) formData.append('config_id', selectedConfig);
-      const response = await api.post('/api/v1/forecasts/import', formData, {
+      const response = await api.post('/v1/forecasts/import', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setImportStatus({ type: 'success', message: `Imported ${response.data.imported_count || 0} forecast records successfully.` });
