@@ -1191,72 +1191,92 @@ class ProvisioningService:
             return {"status": "ok", "note": f"Backtest attempted: {str(e)[:200]}"}
 
     async def _step_supply_plan(self, config_id: int) -> dict:
-        """Step 11: Generate initial supply plan with default stochastic parameters."""
+        """Step 11: Generate Plan of Record from conformal-calibrated forecasts.
+
+        NO Monte Carlo simulation — uncertainty is already quantified by
+        conformal prediction intervals (P10/P50/P90). The Plan of Record
+        uses P50 as the planned quantity, with P10/P90 as the uncertainty band.
+
+        The Digital Twin (stochastic simulation) is used only for TRM training
+        data, NOT for plan generation.
+        """
         try:
-            from app.services.supply_plan_service import SupplyPlanService
-            from app.services.stochastic_sampling import StochasticParameters
-            from app.services.monte_carlo_planner import PlanObjectives
-            from app.models.supply_chain_config import SupplyChainConfig
             from app.db.session import sync_session_factory
+            from sqlalchemy import text as sqt
             sync_db = sync_session_factory()
             try:
-                config = sync_db.query(SupplyChainConfig).get(config_id)
-                if not config:
-                    return {"status": "skipped", "reason": "Config not found"}
-
-                stochastic_params = StochasticParameters()
-                objectives = PlanObjectives()
-
-                service = SupplyPlanService(sync_db, config)
-                result = service.generate_supply_plan(
-                    stochastic_params=stochastic_params,
-                    objectives=objectives,
-                    num_scenarios=100,
-                )
-
-                # Tag Monte Carlo results (NOT the Plan of Record)
-                from sqlalchemy import text as sqt
+                # Clean old plan of record
                 sync_db.execute(sqt("""
-                    UPDATE supply_plan SET plan_version = 'monte_carlo'
-                    WHERE config_id = :cfg AND (plan_version IS NULL OR plan_version = '')
+                    DELETE FROM supply_plan
+                    WHERE config_id = :cfg AND plan_version = 'live' AND source = 'plan_of_record'
+                """), {"cfg": config_id})
+
+                # Clean any legacy Monte Carlo data
+                sync_db.execute(sqt("""
+                    DELETE FROM supply_plan
+                    WHERE config_id = :cfg AND plan_version IN ('monte_carlo', '')
                     AND source = 'supply_plan_service'
                 """), {"cfg": config_id})
 
-                # Create Plan of Record from forecast P50 (the agent's recommended plan)
-                # Strict separation: live = what the business operates on
-                sync_db.execute(sqt("""
-                    DELETE FROM supply_plan WHERE config_id = :cfg AND plan_version = 'live'
-                    AND source = 'plan_of_record'
-                """), {"cfg": config_id})
+                # Create Plan of Record from conformal-calibrated forecast P50
+                # One row per product × site × week = the operating plan
                 por_result = sync_db.execute(sqt("""
                     INSERT INTO supply_plan
                         (config_id, product_id, site_id, plan_date, plan_type,
-                         forecast_quantity, demand_quantity, planned_order_quantity,
-                         planned_order_date, plan_version, source, planner_name, created_dttm)
+                         forecast_quantity, demand_quantity,
+                         opening_inventory, safety_stock,
+                         planned_order_quantity, planned_order_date,
+                         plan_version, source, planner_name, created_dttm)
                     SELECT
-                        config_id, product_id, CAST(site_id AS INTEGER),
-                        date_trunc('week', forecast_date)::date,
+                        f.config_id,
+                        f.product_id,
+                        CAST(f.site_id AS INTEGER),
+                        date_trunc('week', f.forecast_date)::date AS plan_date,
                         'demand_plan',
-                        AVG(forecast_p50), AVG(forecast_p50), AVG(forecast_p50),
-                        date_trunc('week', forecast_date)::date,
-                        'live', 'plan_of_record', 'demand_agent', NOW()
-                    FROM forecast
-                    WHERE config_id = :cfg AND forecast_p50 IS NOT NULL
-                    AND forecast_date >= CURRENT_DATE - INTERVAL '90 days'
-                    GROUP BY config_id, product_id, site_id, date_trunc('week', forecast_date)
+                        AVG(f.forecast_p50) AS forecast_qty,
+                        AVG(f.forecast_p50) AS demand_qty,
+                        -- Opening inventory from latest inv_level
+                        COALESCE((
+                            SELECT il.on_hand_qty FROM inv_level il
+                            WHERE il.config_id = f.config_id
+                            AND il.product_id = f.product_id
+                            AND CAST(il.site_id AS TEXT) = f.site_id
+                            ORDER BY il.inventory_date DESC LIMIT 1
+                        ), 0) AS opening_inv,
+                        -- Safety stock from inv_policy or estimate
+                        COALESCE((
+                            SELECT ip.safety_stock_qty FROM inv_policy ip
+                            WHERE ip.config_id = f.config_id
+                            AND ip.product_id = f.product_id
+                            AND CAST(ip.site_id AS TEXT) = f.site_id
+                            AND ip.is_active = true LIMIT 1
+                        ), AVG(f.forecast_p50) * 0.3) AS safety_stock,
+                        AVG(f.forecast_p50) AS planned_order_qty,
+                        date_trunc('week', f.forecast_date)::date,
+                        'live',
+                        'plan_of_record',
+                        'demand_agent',
+                        NOW()
+                    FROM forecast f
+                    WHERE f.config_id = :cfg
+                    AND f.forecast_p50 IS NOT NULL
+                    AND f.forecast_date >= CURRENT_DATE - INTERVAL '30 days'
+                    GROUP BY f.config_id, f.product_id, f.site_id,
+                             date_trunc('week', f.forecast_date)
                 """), {"cfg": config_id})
-                por_count = por_result.rowcount
 
+                por_count = por_result.rowcount
                 sync_db.commit()
-                mc_count = len(result.get("orders", []))
+
                 logger.info(
-                    "Supply plan: %d Monte Carlo scenarios + %d Plan of Record rows for config %d",
-                    mc_count, por_count, config_id,
+                    "Supply plan: %d Plan of Record rows from conformal P50 for config %d (no Monte Carlo)",
+                    por_count, config_id,
                 )
                 return {
                     "status": "ok",
-                    "monte_carlo_plans": mc_count,
                     "plan_of_record_rows": por_count,
+                    "method": "conformal_p50",
+                    "note": "No Monte Carlo — uncertainty quantified by conformal P10/P90 intervals",
                 }
             finally:
                 sync_db.close()
