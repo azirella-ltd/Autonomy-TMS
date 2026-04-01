@@ -631,6 +631,55 @@ class ProvisioningService:
                     config_id,
                 )
 
+            # Build geography hierarchy from site/trading partner addresses
+            # (AWS SC DM geography table with parent_geo_id hierarchy)
+            try:
+                from app.services.geography_hierarchy_builder import build_geography_hierarchy
+                company_id = getattr(config, "company_id", None) or db.execute(
+                    sqt("SELECT company_id FROM site WHERE config_id = :cfg AND company_id IS NOT NULL LIMIT 1"),
+                    {"cfg": config_id},
+                ).scalar()
+                if company_id:
+                    geo_result = build_geography_hierarchy(db, config_id, company_id)
+                    if geo_result.get("cities", 0) > 0:
+                        logger.info(
+                            "Warm start: geography hierarchy — %d countries, %d regions, %d states, %d cities",
+                            geo_result["countries"], geo_result["regions"],
+                            geo_result["states"], geo_result["cities"],
+                        )
+                    db.commit()
+            except Exception as e:
+                logger.warning("Geography hierarchy building failed: %s", e)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+
+            # Seed channel segmentation if not present
+            try:
+                existing_segs = db.execute(sqt(
+                    "SELECT count(*) FROM segmentation WHERE company_id = :cid AND segment_type = 'channel'"
+                ), {"cid": company_id or ""}).scalar() or 0
+                if existing_segs == 0 and company_id:
+                    for sid, name, cls, desc in [
+                        ("SEG-FOOD", "Foodservice", "foodsvc", "Restaurant and institutional"),
+                        ("SEG-RETL", "Retail", "retail", "Grocery and supermarket"),
+                        ("SEG-ONLN", "Online", "online", "Direct online ordering"),
+                    ]:
+                        db.execute(sqt(
+                            "INSERT INTO segmentation (id, company_id, name, segment_type, description, classification, priority, service_level_target, is_active, source) "
+                            "VALUES (:id, :cid, :name, 'channel', :desc, :cls, 1, 0.95, true, 'provisioning') "
+                            "ON CONFLICT (id) DO NOTHING"
+                        ), {"id": f"{company_id}-{sid}", "cid": company_id, "name": name, "cls": cls, "desc": desc})
+                    db.commit()
+                    logger.info("Warm start: seeded default channel segments")
+            except Exception as e:
+                logger.warning("Channel segmentation seeding failed: %s", e)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+
             # Auto-populate planning hierarchy config from DAG topology
             # (maps planning types to site/product levels derived from master data)
             try:
