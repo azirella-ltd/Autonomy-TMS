@@ -283,25 +283,21 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: null,
         isSectionHeader: true,
       },
-      {
-        label: 'Master Production Schedule',
-        path: '/planning/mps',
-        icon: CalendarIcon,
-        requiredCapability: 'view_mps',
-      },
+      // MPS merged into Supply & Production Plan — no separate nav entry.
+      // Forecast Analytics merged into Demand Planning → Analytics tab.
       {
         label: 'Demand Planning',
         path: '/planning/demand-planning',
         icon: ForecastIcon,
         requiredCapability: 'view_demand_planning',
-        description: 'Forecast, Sensing, Shaping, Consensus, Life Cycle, Exceptions',
+        description: 'Forecast, Pipeline, Analytics, Sensing, Shaping, Consensus, Exceptions',
       },
       {
-        label: 'Supply Planning',
+        label: 'Supply & Production Plan',
         path: '/planning/supply-planning',
         icon: ViewIcon,
         requiredCapability: 'view_supply_plan',
-        description: 'Plan Generation, Sourcing, Net Requirements, Lot Sizing, RCCP',
+        description: 'Plan of Record, Sourcing, Net Requirements, Capacity, Agent Directives',
       },
       {
         label: 'Inventory Planning',
@@ -316,13 +312,6 @@ export const NAVIGATION_CONFIG = [
         icon: AssessmentIcon,
         requiredCapability: 'view_capacity_planning',
         description: 'Utilization, Bottleneck, Rough-Cut, Processes, Maintenance, Heatmap',
-      },
-      {
-        label: 'Forecast Analytics',
-        path: '/planning/forecast-analytics',
-        icon: AnalyticsIcon,
-        requiredCapability: 'view_forecasting',
-        description: 'Pipeline, Accuracy, Drift, Distributions, Backtesting',
       },
 
       // --- OPERATIONAL PLANNING (0-3 month horizon) ---

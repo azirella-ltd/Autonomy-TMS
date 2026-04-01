@@ -877,11 +877,7 @@ const AppContent = () => {
             />
             <Route
               path="/planning/forecast-analytics"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_forecasting">
-                  <ForecastAnalyticsHub />
-                </CapabilityProtectedRoute>
-              }
+              element={<Navigate to="/planning/demand-planning?tab=analytics" replace />}
             />
 
             {/* Tactical Planning (legacy individual routes — still accessible for deep links) */}
