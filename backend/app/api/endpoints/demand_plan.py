@@ -124,11 +124,18 @@ def get_current_demand_plan(
     current_user: User = Depends(deps.get_current_user),
     product_id: Optional[str] = None,
     site_id: Optional[str] = None,
+    category: Optional[str] = Query(None, description="Product category filter"),
+    family: Optional[str] = Query(None, description="Product family filter"),
+    geo_id: Optional[str] = Query(None, description="Geography node ID (drills into children)"),
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
     config_id: Optional[int] = None,
     limit: int = Query(1000, le=10000),
 ):
+    from app.models.supply_chain_config import Site
+    from app.models.sc_entities import Product
+    from sqlalchemy import text as sqt
+
     query = db.query(Forecast).filter(_active_filter())
 
     # Config scope — use explicit param, fall back to user's default
@@ -143,8 +150,36 @@ def get_current_demand_plan(
 
     if product_id:
         query = query.filter(Forecast.product_id == product_id)
+    elif category:
+        pids = [p[0] for p in db.query(Product.id).filter(
+            Product.config_id == effective_config_id, Product.category == category).all()]
+        if pids:
+            query = query.filter(Forecast.product_id.in_(pids))
+    elif family:
+        pids = [p[0] for p in db.query(Product.id).filter(
+            Product.config_id == effective_config_id, Product.family == family).all()]
+        if pids:
+            query = query.filter(Forecast.product_id.in_(pids))
+
     if site_id:
         query = query.filter(Forecast.site_id == site_id)
+    elif geo_id:
+        # Recursive geography drilldown
+        try:
+            geo_sites = db.execute(sqt("""
+                WITH RECURSIVE geo_tree AS (
+                    SELECT id FROM geography WHERE id = :gid
+                    UNION ALL
+                    SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
+                )
+                SELECT s.id FROM site s
+                WHERE s.config_id = :cfg AND s.geo_id IN (SELECT id FROM geo_tree)
+            """), {"gid": geo_id, "cfg": effective_config_id}).fetchall()
+            sids = [s[0] for s in geo_sites]
+            if sids:
+                query = query.filter(Forecast.site_id.in_(sids))
+        except Exception:
+            pass
     if start_date:
         query = query.filter(Forecast.forecast_date >= start_date)
     if end_date:

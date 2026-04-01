@@ -109,7 +109,7 @@ const DemandPlanView = () => {
     }
   };
 
-  // Fetch current demand plan
+  // Fetch current demand plan (respects hierarchy filters)
   const fetchDemandPlan = async () => {
     setLoading(true);
     setError(null);
@@ -117,6 +117,9 @@ const DemandPlanView = () => {
       const params = {
         product_id: productFilter || undefined,
         site_id: siteFilter || undefined,
+        category: categoryFilter || undefined,
+        family: familyFilter || undefined,
+        geo_id: geoFilter || undefined,
         start_date: startDate || undefined,
         end_date: endDate || undefined,
         limit: 1000,
@@ -176,29 +179,12 @@ const DemandPlanView = () => {
     fetchDemandPlan();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-fetch table when hierarchy filters change
+  // Re-fetch table+summary when hierarchy filters change
   useEffect(() => {
     if (!effectiveConfigId) return;
-    // Derive product/site filters from hierarchy selections
-    if (dimensions) {
-      // If category or family selected, get matching product IDs
-      if (categoryFilter || familyFilter) {
-        // The aggregated endpoint handles product filtering;
-        // for the table, we pass the first matching product as a hint
-        // (full filtering is done server-side via the aggregated endpoint)
-      }
-      // If geo selected, get matching site IDs from dimensions
-      if (geoFilter && dimensions.sites) {
-        const geoSites = dimensions.sites.filter(s =>
-          s.geo_id === geoFilter ||
-          dimensions.geography?.some(g => g.parent_id === geoFilter && g.id === s.geo_id)
-        );
-        if (geoSites.length === 1) {
-          setSiteFilter(String(geoSites[0].id));
-        }
-      }
-    }
-  }, [categoryFilter, familyFilter, geoFilter, dimensions, effectiveConfigId]);
+    fetchDemandPlan();
+    fetchSummary();
+  }, [categoryFilter, familyFilter, geoFilter, siteFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Open edit dialog for a forecast
   const handleEditClick = (forecast, index) => {
@@ -695,29 +681,7 @@ const DemandPlanView = () => {
 
       {loading && <Progress className="mb-4" />}
 
-      {/* Forecast Chart */}
-      {chartData.length > 0 && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Demand Forecast Trend (P10/P50/Median/P90)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <RechartsTooltip />
-                <Legend />
-                <Line type="monotone" dataKey="p10" stroke="#82ca9d" name="P10 (Low)" />
-                <Line type="monotone" dataKey="p50" stroke="#8884d8" name="P50 (Most Likely)" strokeWidth={2} />
-                <Line type="monotone" dataKey="median" stroke="#1f77b4" name="Forecast Median" strokeDasharray="4 3" />
-                <Line type="monotone" dataKey="p90" stroke="#ffc658" name="P90 (High)" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      )}
+      {/* Chart is now the aggregated chart above (responds to hierarchy filters) */}
 
       {/* Forecast Table */}
       <Card>
