@@ -417,9 +417,20 @@ class ForecastPipelineOrchestrator:
             handler = getattr(self, f"_stage_{stage.value}", None)
             if handler:
                 try:
+                    # Ensure clean transaction state before each stage query
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass
                     handler(result)
-                except Exception:
+                except Exception as e:
                     result.status = "unknown"
+                    result.metrics = {"error": str(e)[:100]}
+                    logger.debug("Pipeline infer stage %s failed: %s", stage.value, e)
+                    try:
+                        self.db.rollback()
+                    except Exception:
+                        pass
             stages[stage.value] = self._result_to_dict(result)
 
         return {
