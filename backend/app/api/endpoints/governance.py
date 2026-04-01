@@ -106,7 +106,7 @@ class PipelineSimulation(BaseModel):
 
 def _resolve_tenant_id(user: User, tenant_id_param: Optional[int] = None) -> int:
     """Super user can specify tenant_id; tenant admin uses their own."""
-    if user.is_system_admin:
+    if user.is_superuser:
         if tenant_id_param:
             return tenant_id_param
         raise HTTPException(400, "System admin must specify tenant_id parameter")
