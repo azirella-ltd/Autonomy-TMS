@@ -63,11 +63,11 @@ export default function ProductLifecycle() {
     setLoading(true);
     try {
       const [lcRes, sumRes, npiRes, eolRes, dashRes] = await Promise.allSettled([
-        api.get('/v1/product-lifecycle/lifecycles', { params: stageFilter ? { stage: stageFilter } : {} }),
-        api.get('/v1/product-lifecycle/lifecycle-summary'),
-        api.get('/v1/product-lifecycle/npi'),
-        api.get('/v1/product-lifecycle/eol'),
-        api.get('/v1/product-lifecycle/dashboard'),
+        api.get('/product-lifecycle/lifecycles', { params: stageFilter ? { stage: stageFilter } : {} }),
+        api.get('/product-lifecycle/lifecycle-summary'),
+        api.get('/product-lifecycle/npi'),
+        api.get('/product-lifecycle/eol'),
+        api.get('/product-lifecycle/dashboard'),
       ]);
       if (lcRes.status === 'fulfilled') setLifecycles(lcRes.value.data);
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data);
@@ -106,7 +106,7 @@ export default function ProductLifecycle() {
       if (npiForm.product_ids) { try { payload.product_ids = JSON.parse(npiForm.product_ids); } catch { /* skip */ } }
       if (npiForm.site_ids) { try { payload.site_ids = JSON.parse(npiForm.site_ids); } catch { /* skip */ } }
       if (npiForm.demand_ramp_curve) { try { payload.demand_ramp_curve = JSON.parse(npiForm.demand_ramp_curve); } catch { /* skip */ } }
-      await api.post('/v1/product-lifecycle/npi', payload);
+      await api.post('/product-lifecycle/npi', payload);
       setNpiDialogOpen(false);
       setNpiForm({ project_name: '', project_code: '', target_launch_date: '', product_ids: '', site_ids: '', demand_ramp_curve: '', initial_forecast_qty: '', investment: '', expected_revenue_yr1: '', risk_assessment: '', notes: '' });
       loadAll();
@@ -126,7 +126,7 @@ export default function ProductLifecycle() {
       if (eolForm.product_ids) { try { payload.product_ids = JSON.parse(eolForm.product_ids); } catch { /* skip */ } }
       if (eolForm.successor_product_ids) { try { payload.successor_product_ids = JSON.parse(eolForm.successor_product_ids); } catch { /* skip */ } }
       if (eolForm.demand_phaseout_curve) { try { payload.demand_phaseout_curve = JSON.parse(eolForm.demand_phaseout_curve); } catch { /* skip */ } }
-      await api.post('/v1/product-lifecycle/eol', payload);
+      await api.post('/product-lifecycle/eol', payload);
       setEolDialogOpen(false);
       setEolForm({ product_ids: '', successor_product_ids: '', last_buy_date: '', last_manufacture_date: '', last_ship_date: '', demand_phaseout_curve: '', estimated_write_off: '', notes: '' });
       loadAll();

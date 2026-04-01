@@ -133,7 +133,7 @@ export default function DemoSystemBuilder() {
   const handleStartPipeline = async () => {
     setError(null);
     try {
-      const res = await api.post('/v1/deployment/pipelines', config);
+      const res = await api.post('/deployment/pipelines', config);
       setPipelineId(res.data.id);
       setPipelineData(res.data);
       setPolling(true);

@@ -112,8 +112,8 @@ export default function MetricConfigPage() {
     setLoading(true);
     try {
       const [configRes, catRes] = await Promise.all([
-        api.get('/v1/hierarchical-metrics/config'),
-        api.get('/v1/hierarchical-metrics/catalogue'),
+        api.get('/hierarchical-metrics/config'),
+        api.get('/hierarchical-metrics/catalogue'),
       ]);
       const cfg = configRes.data?.data || configRes.data;
       const cat = catRes.data?.data || catRes.data;
@@ -145,7 +145,7 @@ export default function MetricConfigPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put('/v1/hierarchical-metrics/config', { dashboard });
+      await api.put('/hierarchical-metrics/config', { dashboard });
       toast.success('Metric configuration saved');
       setDirty(false);
     } catch (err) {

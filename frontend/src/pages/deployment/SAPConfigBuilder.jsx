@@ -419,7 +419,7 @@ export default function SAPConfigBuilder() {
   useEffect(() => {
     const fetchConnections = async () => {
       try {
-        const res = await api.get('/v1/sap-data/connections');
+        const res = await api.get('/sap-data/connections');
         setConnections(res.data.connections || []);
       } catch (err) {
         console.error('Failed to load connections:', err);
@@ -443,7 +443,7 @@ export default function SAPConfigBuilder() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.post('/v1/sap-data/build-config/start', {
+      const res = await api.post('/sap-data/build-config/start', {
         connection_id: formData.connection_id,
         config_name: formData.config_name,
         company_filter: formData.company_filter || null,

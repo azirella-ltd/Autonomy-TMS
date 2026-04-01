@@ -40,10 +40,10 @@ export default function ForecastAnalytics() {
     setLoading(true);
     try {
       const [edaRes, accRes, methRes, drvRes] = await Promise.allSettled([
-        api.get('/v1/forecast-analytics/eda', { params: { config_id: cfgId } }),
-        api.get('/v1/forecast-analytics/accuracy', { params: { config_id: cfgId } }),
-        api.get('/v1/forecast-analytics/methods', { params: { config_id: cfgId } }),
-        api.get('/v1/forecast-analytics/drivers', { params: { config_id: cfgId } }),
+        api.get('/forecast-analytics/eda', { params: { config_id: cfgId } }),
+        api.get('/forecast-analytics/accuracy', { params: { config_id: cfgId } }),
+        api.get('/forecast-analytics/methods', { params: { config_id: cfgId } }),
+        api.get('/forecast-analytics/drivers', { params: { config_id: cfgId } }),
       ]);
       if (edaRes.status === 'fulfilled') setEda(edaRes.value.data);
       if (accRes.status === 'fulfilled') setAccuracy(accRes.value.data);

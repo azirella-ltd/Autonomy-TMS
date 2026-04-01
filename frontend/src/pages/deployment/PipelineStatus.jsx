@@ -210,7 +210,7 @@ export default function PipelineStatus() {
     try {
       const params = { limit: 50, offset: 0 };
       if (statusFilter) params.status = statusFilter;
-      const res = await api.get('/v1/deployment/pipelines', { params });
+      const res = await api.get('/deployment/pipelines', { params });
       setPipelines(res.data.pipelines || []);
       setTotal(res.data.total || 0);
       setError(null);

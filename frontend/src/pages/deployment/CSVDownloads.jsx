@@ -184,7 +184,7 @@ export default function CSVDownloads() {
 
   const fetchCompleted = useCallback(async () => {
     try {
-      const res = await api.get('/v1/deployment/pipelines', {
+      const res = await api.get('/deployment/pipelines', {
         params: { status: 'completed', limit: 50 }
       });
       setPipelines(res.data.pipelines || []);
