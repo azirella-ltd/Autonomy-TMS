@@ -521,20 +521,7 @@ const DemandPlanView = () => {
                   </div>
                 );
               })()}
-              {/* Individual site (within geo selection) */}
-              {dimensions.sites?.length > 0 && (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Site</label>
-                  <select className="border rounded px-2 py-1.5 text-sm w-48"
-                    value={siteFilter} onChange={e => setSiteFilter(e.target.value)}>
-                    <option value="">All Sites</option>
-                    {dimensions.sites
-                      .filter(s => !geoFilter || s.geo_id === geoFilter ||
-                        dimensions.geography?.some(g => g.parent_id === geoFilter && g.id === s.geo_id))
-                      .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
-              )}
+              {/* Sites dropdown removed — geography drilldown handles site selection */}
               {(categoryFilter || familyFilter || geoFilter || siteFilter) && (
                 <Button variant="ghost" size="sm" onClick={() => {
                   setCategoryFilter(''); setFamilyFilter(''); setGeoFilter(''); setSiteFilter(''); setProductFilter('');

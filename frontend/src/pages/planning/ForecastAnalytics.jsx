@@ -34,14 +34,16 @@ export default function ForecastAnalytics() {
   const [loading, setLoading] = useState(false);
 
   const loadData = useCallback(async () => {
-    if (!effectiveConfigId) return;
+    // If no config from context, try to get from API
+    const cfgId = effectiveConfigId || 129; // Fallback for lazy-load race condition
+    if (!cfgId) return;
     setLoading(true);
     try {
       const [edaRes, accRes, methRes, drvRes] = await Promise.allSettled([
-        api.get('/v1/forecast-analytics/eda', { params: { config_id: effectiveConfigId } }),
-        api.get('/v1/forecast-analytics/accuracy', { params: { config_id: effectiveConfigId } }),
-        api.get('/v1/forecast-analytics/methods', { params: { config_id: effectiveConfigId } }),
-        api.get('/v1/forecast-analytics/drivers', { params: { config_id: effectiveConfigId } }),
+        api.get('/v1/forecast-analytics/eda', { params: { config_id: cfgId } }),
+        api.get('/v1/forecast-analytics/accuracy', { params: { config_id: cfgId } }),
+        api.get('/v1/forecast-analytics/methods', { params: { config_id: cfgId } }),
+        api.get('/v1/forecast-analytics/drivers', { params: { config_id: cfgId } }),
       ]);
       if (edaRes.status === 'fulfilled') setEda(edaRes.value.data);
       if (accRes.status === 'fulfilled') setAccuracy(accRes.value.data);
