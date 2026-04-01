@@ -66,8 +66,9 @@ const DemandPlanView = () => {
   // Hierarchy filters (dynamic from DAG)
   const [dimensions, setDimensions] = useState(null);
   const [timeBucket, setTimeBucket] = useState('week');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [familyFilter, setFamilyFilter] = useState('');
+  const [productNodeId, setProductNodeId] = useState(''); // product_hierarchy_node ID
+  const [categoryFilter, setCategoryFilter] = useState(''); // legacy fallback
+  const [familyFilter, setFamilyFilter] = useState(''); // legacy fallback
   const [geoFilter, setGeoFilter] = useState('');  // geography node ID
   const [aggData, setAggData] = useState(null);
 
@@ -102,10 +103,10 @@ const DemandPlanView = () => {
     try {
       const params = {};
       if (effectiveConfigId) params.config_id = effectiveConfigId;
-      if (categoryFilter) params.category = categoryFilter;
-      if (familyFilter) params.family = familyFilter;
+      if (productNodeId) params.product_node_id = productNodeId;
+      else if (categoryFilter) params.category = categoryFilter;
+      else if (familyFilter) params.family = familyFilter;
       if (geoFilter) params.geo_id = geoFilter;
-      if (siteFilter) params.site_id = siteFilter;
       const response = await api.get('/demand-plan/summary', { params });
       setSummary(response.data);
     } catch (error) {
@@ -120,9 +121,9 @@ const DemandPlanView = () => {
     try {
       const params = {
         product_id: productFilter || undefined,
-        site_id: siteFilter || undefined,
-        category: categoryFilter || undefined,
-        family: familyFilter || undefined,
+        product_node_id: productNodeId || undefined,
+        category: !productNodeId ? (categoryFilter || undefined) : undefined,
+        family: !productNodeId ? (familyFilter || undefined) : undefined,
         geo_id: geoFilter || undefined,
         start_date: startDate || undefined,
         end_date: endDate || undefined,
@@ -188,7 +189,7 @@ const DemandPlanView = () => {
     if (!effectiveConfigId) return;
     fetchDemandPlan();
     fetchSummary();
-  }, [categoryFilter, familyFilter, geoFilter, siteFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [productNodeId, categoryFilter, familyFilter, geoFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Open edit dialog for a forecast
   const handleEditClick = (forecast, index) => {
@@ -308,11 +309,11 @@ const DemandPlanView = () => {
     const params = {
       config_id: effectiveConfigId,
       time_bucket: timeBucket,
-      category: categoryFilter || undefined,
-      family: familyFilter || undefined,
+      product_node_id: productNodeId || undefined,
+      category: !productNodeId ? (categoryFilter || undefined) : undefined,
+      family: !productNodeId ? (familyFilter || undefined) : undefined,
       product_id: productFilter || undefined,
       geo_id: geoFilter || undefined,
-      site_id: siteFilter || undefined,
       start_date: startDate || undefined,
       end_date: endDate || undefined,
     };
@@ -414,59 +415,57 @@ const DemandPlanView = () => {
                   <option value="month">Month</option>
                 </select>
               </div>
-              {/* Product hierarchy drilldown: Category → Family → Product */}
-              {(dimensions.product?.categories?.length > 0 || dimensions.product?.families?.length > 0) && (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Product</label>
-                  {/* Breadcrumb */}
-                  {(categoryFilter || familyFilter) && (
-                    <div className="flex items-center gap-1 mb-1 text-xs">
-                      <button className="text-primary hover:underline"
-                        onClick={() => { setCategoryFilter(''); setFamilyFilter(''); setProductFilter(''); }}>
-                        All
-                      </button>
-                      {categoryFilter && (
-                        <span className="flex items-center gap-1">
-                          <span className="text-muted-foreground">/</span>
-                          <button className={familyFilter ? 'text-primary hover:underline' : 'font-semibold'}
-                            onClick={() => { setFamilyFilter(''); setProductFilter(''); }}>
-                            {categoryFilter}
-                          </button>
-                        </span>
-                      )}
-                      {familyFilter && (
-                        <span className="flex items-center gap-1">
-                          <span className="text-muted-foreground">/</span>
-                          <span className="font-semibold">{familyFilter}</span>
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {/* Next level selector */}
-                  <select className="border rounded px-2 py-1.5 text-sm w-52"
-                    value=""
-                    onChange={e => {
-                      if (!e.target.value) return;
-                      if (!categoryFilter) {
-                        setCategoryFilter(e.target.value); setFamilyFilter(''); setProductFilter('');
-                      } else if (!familyFilter) {
-                        setFamilyFilter(e.target.value); setProductFilter('');
-                      } else {
-                        setProductFilter(e.target.value);
-                      }
-                    }}>
-                    <option value="">
-                      {!categoryFilter ? 'Select category...' : !familyFilter ? `Drill into ${categoryFilter}...` : `Select product...`}
-                    </option>
-                    {!categoryFilter && dimensions.product.categories.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                    {categoryFilter && !familyFilter && (dimensions.product.category_families?.[categoryFilter] || []).map(f => (
-                      <option key={f} value={f}>{f}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Product hierarchy drilldown (AWS SC DM product_hierarchy_node tree) */}
+              {dimensions.product_tree?.length > 0 && (() => {
+                const tree = dimensions.product_tree;
+                const childrenOf = (parentId) => tree.filter(n => n.parent_id === parentId);
+                const findNode = (id) => tree.find(n => n.id === id);
+
+                // Build breadcrumb
+                const breadcrumb = [];
+                let cur = productNodeId ? findNode(parseInt(productNodeId)) : null;
+                while (cur) {
+                  breadcrumb.unshift(cur);
+                  cur = cur.parent_id ? findNode(cur.parent_id) : null;
+                }
+
+                const children = productNodeId
+                  ? childrenOf(parseInt(productNodeId))
+                  : tree.filter(n => !n.parent_id);
+
+                return (
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Product</label>
+                    {breadcrumb.length > 0 && (
+                      <div className="flex items-center gap-1 mb-1 text-xs">
+                        <button className="text-primary hover:underline"
+                          onClick={() => { setProductNodeId(''); setCategoryFilter(''); setFamilyFilter(''); setProductFilter(''); }}>
+                          All
+                        </button>
+                        {breadcrumb.map((n, i) => (
+                          <span key={n.id} className="flex items-center gap-1">
+                            <span className="text-muted-foreground">/</span>
+                            <button
+                              className={i === breadcrumb.length - 1 ? 'font-semibold' : 'text-primary hover:underline'}
+                              onClick={() => { setProductNodeId(String(n.id)); setProductFilter(''); }}>
+                              {n.name}
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {children.length > 0 && (
+                      <select className="border rounded px-2 py-1.5 text-sm w-52" value=""
+                        onChange={e => { if (e.target.value) { setProductNodeId(e.target.value); setProductFilter(''); } }}>
+                        <option value="">
+                          {productNodeId ? `Drill into ${findNode(parseInt(productNodeId))?.name || ''}...` : 'Select product group...'}
+                        </option>
+                        {children.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })()}
               {/* Geography drilldown (AWS SC DM geography table) */}
               {dimensions.geography?.length > 0 && (() => {
                 const childrenOf = (parentId) => dimensions.geography.filter(g => g.parent_id === parentId);
@@ -522,9 +521,9 @@ const DemandPlanView = () => {
                 );
               })()}
               {/* Sites dropdown removed — geography drilldown handles site selection */}
-              {(categoryFilter || familyFilter || geoFilter || siteFilter) && (
+              {(productNodeId || categoryFilter || familyFilter || geoFilter) && (
                 <Button variant="ghost" size="sm" onClick={() => {
-                  setCategoryFilter(''); setFamilyFilter(''); setGeoFilter(''); setSiteFilter(''); setProductFilter('');
+                  setProductNodeId(''); setCategoryFilter(''); setFamilyFilter(''); setGeoFilter(''); setProductFilter('');
                 }}>
                   Clear Filters
                 </Button>
@@ -547,8 +546,11 @@ const DemandPlanView = () => {
           <CardContent className="pt-4">
             <h3 className="text-sm font-semibold mb-2">
               Demand Forecast
-              {categoryFilter && ` — ${categoryFilter}`}
-              {familyFilter && ` — ${familyFilter}`}
+              {productNodeId && dimensions?.product_tree && (() => {
+                const node = dimensions.product_tree.find(n => n.id === parseInt(productNodeId));
+                return node ? ` — ${node.name}` : '';
+              })()}
+              {!productNodeId && categoryFilter && ` — ${categoryFilter}`}
               {geoFilter && ` @ ${dimensions?.geography?.find(g => g.id === geoFilter)?.name || geoFilter}`}
             </h3>
             <ResponsiveContainer width="100%" height={350}>

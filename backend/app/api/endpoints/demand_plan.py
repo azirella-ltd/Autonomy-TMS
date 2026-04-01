@@ -27,6 +27,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _resolve_product_node_ids(db: Session, node_id: int, tenant_id: int) -> List[str]:
+    """Resolve a product hierarchy node to all descendant product IDs.
+
+    Walks the product_hierarchy_node tree recursively and collects
+    product_id from leaf nodes (PRODUCT level).
+    """
+    from sqlalchemy import text as sqt
+    try:
+        rows = db.execute(sqt("""
+            WITH RECURSIVE tree AS (
+                SELECT id, product_id FROM product_hierarchy_node WHERE id = :nid AND tenant_id = :tid
+                UNION ALL
+                SELECT n.id, n.product_id FROM product_hierarchy_node n
+                JOIN tree t ON n.parent_id = t.id
+            )
+            SELECT product_id FROM tree WHERE product_id IS NOT NULL
+        """), {"nid": node_id, "tid": tenant_id}).fetchall()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []
+
+
 def _apply_scope_filters(query, db, current_user, config_id=None):
     """Apply user scope filtering to a Forecast query."""
     allowed_sites, allowed_products = resolve_user_scope_sync(current_user)
@@ -123,9 +145,10 @@ def get_current_demand_plan(
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_user),
     product_id: Optional[str] = None,
+    product_node_id: Optional[int] = Query(None, description="Product hierarchy node ID"),
     site_id: Optional[str] = None,
-    category: Optional[str] = Query(None, description="Product category filter"),
-    family: Optional[str] = Query(None, description="Product family filter"),
+    category: Optional[str] = Query(None, description="Product category filter (legacy)"),
+    family: Optional[str] = Query(None, description="Product family filter (legacy)"),
     geo_id: Optional[str] = Query(None, description="Geography node ID (drills into children)"),
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -150,6 +173,10 @@ def get_current_demand_plan(
 
     if product_id:
         query = query.filter(Forecast.product_id == product_id)
+    elif product_node_id:
+        pids = _resolve_product_node_ids(db, product_node_id, current_user.tenant_id)
+        if pids:
+            query = query.filter(Forecast.product_id.in_(pids))
     elif category:
         pids = [p[0] for p in db.query(Product.id).filter(
             Product.config_id == effective_config_id, Product.category == category).all()]
@@ -401,6 +428,7 @@ def get_demand_plan_summary(
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_user),
     config_id: Optional[int] = None,
+    product_node_id: Optional[int] = Query(None, description="Product hierarchy node ID"),
     category: Optional[str] = Query(None),
     family: Optional[str] = Query(None),
     geo_id: Optional[str] = Query(None),
@@ -421,12 +449,16 @@ def get_demand_plan_summary(
     query_base = db.query(Forecast).filter(_base())
 
     # Apply hierarchy filters
-    if category and effective_config_id:
+    if product_node_id:
+        pids = _resolve_product_node_ids(db, product_node_id, current_user.tenant_id)
+        if pids:
+            query_base = query_base.filter(Forecast.product_id.in_(pids))
+    elif category and effective_config_id:
         pids = [p[0] for p in db.query(Product.id).filter(
             Product.config_id == effective_config_id, Product.category == category).all()]
         if pids:
             query_base = query_base.filter(Forecast.product_id.in_(pids))
-    if family and effective_config_id:
+    elif family and effective_config_id:
         pids = [p[0] for p in db.query(Product.id).filter(
             Product.config_id == effective_config_id, Product.family == family).all()]
         if pids:
@@ -605,21 +637,20 @@ def get_hierarchy_dimensions(
     from app.models.sc_entities import Product, Geography, Segmentation
     from sqlalchemy import text
 
-    # Product dimensions — hierarchical: category → families within category
-    categories = db.query(distinct(Product.category)).filter(
-        Product.config_id == config_id, Product.category.isnot(None),
-    ).all()
-
-    # Category → family mapping (only show families that belong to the category)
-    cat_family_map = {}
-    cat_fam_rows = db.query(Product.category, Product.family).filter(
-        Product.config_id == config_id,
-        Product.category.isnot(None), Product.family.isnot(None),
-    ).distinct().all()
-    for cat, fam in cat_fam_rows:
-        cat_family_map.setdefault(cat, []).append(fam)
-    for cat in cat_family_map:
-        cat_family_map[cat] = sorted(cat_family_map[cat])
+    # Product hierarchy tree (from AWS SC DM product_hierarchy_node)
+    from app.models.planning_hierarchy import ProductHierarchyNode
+    product_tree = []
+    try:
+        phn_rows = db.query(ProductHierarchyNode).filter(
+            ProductHierarchyNode.tenant_id == current_user.tenant_id,
+        ).order_by(ProductHierarchyNode.hierarchy_level, ProductHierarchyNode.name).all()
+        for n in phn_rows:
+            product_tree.append({
+                "id": n.id, "name": n.name, "parent_id": n.parent_id,
+                "level": n.hierarchy_level, "product_id": n.product_id,
+            })
+    except Exception as e:
+        logger.warning("Product hierarchy tree load failed: %s", e)
 
     # Geography hierarchy (from AWS SC DM geography table via site.geo_id)
     # Build tree: Country → Region → State → City
@@ -659,10 +690,7 @@ def get_hierarchy_dimensions(
         pass
 
     return {
-        "product": {
-            "categories": sorted([c[0] for c in categories if c[0]]),
-            "category_families": cat_family_map,
-        },
+        "product_tree": product_tree,
         "geography": geo_tree,
         "sites": [{"id": s[0], "name": s[1], "type": s[2], "geo_id": s[3]} for s in sites],
         "channels": channels,
@@ -674,8 +702,9 @@ def get_hierarchy_dimensions(
 def get_aggregated_forecast(
     config_id: int = Query(...),
     time_bucket: str = Query("week", description="day, week, or month"),
-    category: Optional[str] = Query(None, description="Product category filter"),
-    family: Optional[str] = Query(None, description="Product family filter"),
+    product_node_id: Optional[int] = Query(None, description="Product hierarchy node ID"),
+    category: Optional[str] = Query(None, description="Product category filter (legacy)"),
+    family: Optional[str] = Query(None, description="Product family filter (legacy)"),
     product_id: Optional[str] = Query(None, description="Specific product"),
     geo_id: Optional[str] = Query(None, description="Geography node ID (drills into children)"),
     site_id: Optional[str] = Query(None, description="Specific site"),
@@ -687,10 +716,7 @@ def get_aggregated_forecast(
 ):
     """Aggregate forecasts by time bucket with hierarchy filtering.
 
-    Supports drilldown: All → Category → Family → Product
-                        All Sites → Site Type → Individual Site
-
-    Returns time series suitable for charting with P10/P50/P90 bands.
+    Supports drilldown via product_hierarchy_node tree and geography tree.
     """
     from app.models.supply_chain_config import Site
     from app.models.sc_entities import Product
@@ -700,6 +726,13 @@ def get_aggregated_forecast(
     product_filters = []
     if product_id:
         product_filters.append(f"f.product_id = '{product_id}'")
+    elif product_node_id:
+        pids = _resolve_product_node_ids(db, product_node_id, current_user.tenant_id)
+        if pids:
+            pid_list = ",".join(f"'{p}'" for p in pids)
+            product_filters.append(f"f.product_id IN ({pid_list})")
+        else:
+            return {"series": [], "summary": {"total_records": 0}}
     else:
         if category:
             # Get product_ids in this category
