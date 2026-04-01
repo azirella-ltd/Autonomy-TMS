@@ -18,6 +18,7 @@ import {
   Card, Badge,
 } from '../../components/common';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
+import ScenarioPanel from '../../components/planning/ScenarioPanel';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   TrendingUp, Pencil, Radio, Megaphone, Users,
@@ -71,6 +72,9 @@ export default function DemandPlanningHub() {
     <div className="space-y-4">
       {/* Role time series header */}
       <RoleTimeSeries roleKey="demand_planner" configId={effectiveConfigId} compact />
+
+      {/* Scenario panel — available across all planning tabs */}
+      <ScenarioPanel />
 
       {/* Tab navigation */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>

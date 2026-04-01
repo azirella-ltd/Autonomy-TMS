@@ -41,6 +41,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import ScenarioPanel from '../../components/planning/ScenarioPanel';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import BranchPicker from '../../components/planning/BranchPicker';
 import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
@@ -720,6 +721,9 @@ const SupplyPlanGeneration = () => {
           <h1 className="text-2xl font-bold">Supply Plan Generation</h1>
         </div>
       </div>
+
+      {/* Scenario panel */}
+      <ScenarioPanel className="mb-4" />
 
       {error && (
         <Alert variant="destructive" className="mb-4" onClose={() => setError(null)}>

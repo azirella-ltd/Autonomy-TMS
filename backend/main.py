@@ -6486,6 +6486,8 @@ api.include_router(recommendations_router, prefix="/recommendations", tags=["rec
 api.include_router(demand_plan_router, prefix="/demand-plan", tags=["demand-plan", "planning"])
 from app.api.endpoints.forecast_analytics import router as forecast_analytics_router
 api.include_router(forecast_analytics_router, prefix="/forecast-analytics", tags=["forecast-analytics", "planning"])
+from app.api.endpoints.scenario_planning import router as scenario_planning_router
+api.include_router(scenario_planning_router, prefix="/scenario-planning", tags=["scenario-planning"])
 api.include_router(collaboration_router, prefix="/collaboration", tags=["collaboration", "sprint5"])
 
 # Inline Comments API
