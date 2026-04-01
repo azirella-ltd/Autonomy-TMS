@@ -1213,8 +1213,51 @@ class ProvisioningService:
                     objectives=objectives,
                     num_scenarios=100,
                 )
+
+                # Tag Monte Carlo results (NOT the Plan of Record)
+                from sqlalchemy import text as sqt
+                sync_db.execute(sqt("""
+                    UPDATE supply_plan SET plan_version = 'monte_carlo'
+                    WHERE config_id = :cfg AND (plan_version IS NULL OR plan_version = '')
+                    AND source = 'supply_plan_service'
+                """), {"cfg": config_id})
+
+                # Create Plan of Record from forecast P50 (the agent's recommended plan)
+                # Strict separation: live = what the business operates on
+                sync_db.execute(sqt("""
+                    DELETE FROM supply_plan WHERE config_id = :cfg AND plan_version = 'live'
+                    AND source = 'plan_of_record'
+                """), {"cfg": config_id})
+                por_result = sync_db.execute(sqt("""
+                    INSERT INTO supply_plan
+                        (config_id, product_id, site_id, plan_date, plan_type,
+                         forecast_quantity, demand_quantity, planned_order_quantity,
+                         planned_order_date, plan_version, source, planner_name, created_dttm)
+                    SELECT
+                        config_id, product_id, CAST(site_id AS INTEGER),
+                        date_trunc('week', forecast_date)::date,
+                        'demand_plan',
+                        AVG(forecast_p50), AVG(forecast_p50), AVG(forecast_p50),
+                        date_trunc('week', forecast_date)::date,
+                        'live', 'plan_of_record', 'demand_agent', NOW()
+                    FROM forecast
+                    WHERE config_id = :cfg AND forecast_p50 IS NOT NULL
+                    AND forecast_date >= CURRENT_DATE - INTERVAL '90 days'
+                    GROUP BY config_id, product_id, site_id, date_trunc('week', forecast_date)
+                """), {"cfg": config_id})
+                por_count = por_result.rowcount
+
                 sync_db.commit()
-                return {"status": "ok", "plans_generated": len(result.get("orders", []))}
+                mc_count = len(result.get("orders", []))
+                logger.info(
+                    "Supply plan: %d Monte Carlo scenarios + %d Plan of Record rows for config %d",
+                    mc_count, por_count, config_id,
+                )
+                return {
+                    "status": "ok",
+                    "monte_carlo_plans": mc_count,
+                    "plan_of_record_rows": por_count,
+                }
             finally:
                 sync_db.close()
         except Exception as e:
