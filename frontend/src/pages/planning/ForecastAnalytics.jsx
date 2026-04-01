@@ -33,15 +33,33 @@ export default function ForecastAnalytics() {
   const [drivers, setDrivers] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Hierarchy filters (same as Forecast tab)
+  const [dimensions, setDimensions] = useState(null);
+  const [productNodeId, setProductNodeId] = useState('');
+  const [geoFilter, setGeoFilter] = useState('');
+
+  const cfgId = effectiveConfigId || 129;
+
+  // Load hierarchy dimensions
+  useEffect(() => {
+    if (!cfgId) return;
+    api.get('/demand-plan/hierarchy-dimensions', { params: { config_id: cfgId } })
+      .then(res => setDimensions(res.data))
+      .catch(() => {});
+  }, [cfgId]);
+
   const loadData = useCallback(async () => {
-    // If no config from context, try to get from API
-    const cfgId = effectiveConfigId || 129; // Fallback for lazy-load race condition
     if (!cfgId) return;
     setLoading(true);
+    const filterParams = {
+      config_id: cfgId,
+      product_node_id: productNodeId || undefined,
+      geo_id: geoFilter || undefined,
+    };
     try {
       const [edaRes, accRes, methRes, drvRes] = await Promise.allSettled([
-        api.get('/forecast-analytics/eda', { params: { config_id: cfgId } }),
-        api.get('/forecast-analytics/accuracy', { params: { config_id: cfgId } }),
+        api.get('/forecast-analytics/eda', { params: filterParams }),
+        api.get('/forecast-analytics/accuracy', { params: filterParams }),
         api.get('/forecast-analytics/methods', { params: { config_id: cfgId } }),
         api.get('/forecast-analytics/drivers', { params: { config_id: cfgId } }),
       ]);
@@ -54,7 +72,7 @@ export default function ForecastAnalytics() {
     } finally {
       setLoading(false);
     }
-  }, [effectiveConfigId]);
+  }, [cfgId, productNodeId, geoFilter]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -72,6 +90,88 @@ export default function ForecastAnalytics() {
           Refresh
         </Button>
       </div>
+
+      {/* Hierarchy filters */}
+      {dimensions && (
+        <Card className="mb-4">
+          <CardContent className="pt-3 pb-3">
+            <div className="flex flex-wrap items-end gap-4">
+              {/* Product hierarchy breadcrumb */}
+              {dimensions.product_tree?.length > 0 && (() => {
+                const tree = dimensions.product_tree;
+                const findNode = (id) => tree.find(n => n.id === id);
+                const childrenOf = (pid) => tree.filter(n => n.parent_id === pid);
+                const breadcrumb = [];
+                let cur = productNodeId ? findNode(parseInt(productNodeId)) : null;
+                while (cur) { breadcrumb.unshift(cur); cur = cur.parent_id ? findNode(cur.parent_id) : null; }
+                const children = productNodeId ? childrenOf(parseInt(productNodeId)) : tree.filter(n => !n.parent_id);
+                return (
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Product</label>
+                    {breadcrumb.length > 0 && (
+                      <div className="flex items-center gap-1 mb-1 text-xs">
+                        <button className="text-primary hover:underline" onClick={() => setProductNodeId('')}>All</button>
+                        {breadcrumb.map((n, i) => (
+                          <span key={n.id} className="flex items-center gap-1">
+                            <span className="text-muted-foreground">/</span>
+                            <button className={i === breadcrumb.length - 1 ? 'font-semibold' : 'text-primary hover:underline'}
+                              onClick={() => setProductNodeId(String(n.id))}>{n.name}</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {children.length > 0 && (
+                      <select className="border rounded px-2 py-1.5 text-sm w-48" value=""
+                        onChange={e => { if (e.target.value) setProductNodeId(e.target.value); }}>
+                        <option value="">{productNodeId ? 'Drill deeper...' : 'Select product group...'}</option>
+                        {children.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })()}
+              {/* Geography breadcrumb */}
+              {dimensions.geography?.length > 0 && (() => {
+                const findGeo = (id) => dimensions.geography.find(g => g.id === id);
+                const childrenOf = (pid) => dimensions.geography.filter(g => g.parent_id === pid);
+                const breadcrumb = [];
+                let cur = geoFilter ? findGeo(geoFilter) : null;
+                while (cur) { breadcrumb.unshift(cur); cur = cur.parent_id ? findGeo(cur.parent_id) : null; }
+                const children = geoFilter ? childrenOf(geoFilter) : dimensions.geography.filter(g => !g.parent_id);
+                return (
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Geography</label>
+                    {breadcrumb.length > 0 && (
+                      <div className="flex items-center gap-1 mb-1 text-xs">
+                        <button className="text-primary hover:underline" onClick={() => setGeoFilter('')}>All</button>
+                        {breadcrumb.map((g, i) => (
+                          <span key={g.id} className="flex items-center gap-1">
+                            <span className="text-muted-foreground">/</span>
+                            <button className={i === breadcrumb.length - 1 ? 'font-semibold' : 'text-primary hover:underline'}
+                              onClick={() => setGeoFilter(g.id)}>{g.name}</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {children.length > 0 && (
+                      <select className="border rounded px-2 py-1.5 text-sm w-48" value=""
+                        onChange={e => { if (e.target.value) setGeoFilter(e.target.value); }}>
+                        <option value="">{geoFilter ? 'Drill deeper...' : 'Select region...'}</option>
+                        {children.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })()}
+              {(productNodeId || geoFilter) && (
+                <Button variant="ghost" size="sm" onClick={() => { setProductNodeId(''); setGeoFilter(''); }}>
+                  Clear Filters
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>

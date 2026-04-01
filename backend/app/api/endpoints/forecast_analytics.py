@@ -71,23 +71,59 @@ def run_pipeline_stage(
 def get_eda_analysis(
     config_id: int = Query(...),
     product_id: Optional[str] = Query(None),
+    product_node_id: Optional[int] = Query(None, description="Product hierarchy node ID"),
+    geo_id: Optional[str] = Query(None, description="Geography node ID"),
     site_id: Optional[str] = Query(None),
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """Exploratory Data Analysis — demand distribution, seasonality, trend.
 
-    Returns statistical summary and decomposition of demand history.
+    Supports same product/geography hierarchy drilldown as the Forecast tab.
     """
-    # Get demand history
+    from app.api.endpoints.demand_plan import _resolve_product_node_ids
+
     filters = ["f.config_id = :cfg", "f.forecast_p50 IS NOT NULL"]
     params = {"cfg": config_id}
+
+    # Product hierarchy filter
     if product_id:
         filters.append("f.product_id = :pid")
         params["pid"] = product_id
+    elif product_node_id:
+        pids = _resolve_product_node_ids(db, product_node_id, current_user.tenant_id)
+        if pids:
+            pid_list = ",".join(f"'{p}'" for p in pids)
+            filters.append(f"f.product_id IN ({pid_list})")
+
+    # Geography filter (includes serving DCs via transportation lanes)
     if site_id:
         filters.append("f.site_id = :sid")
         params["sid"] = site_id
+    elif geo_id:
+        try:
+            geo_sites = db.execute(text("""
+                WITH RECURSIVE geo_tree AS (
+                    SELECT id FROM geography WHERE id = :gid
+                    UNION ALL
+                    SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
+                )
+                SELECT CAST(s.id AS TEXT) FROM site s
+                WHERE s.config_id = :cfg AND (
+                    s.geo_id IN (SELECT id FROM geo_tree)
+                    OR s.id IN (
+                        SELECT tl.from_site_id FROM transportation_lane tl
+                        JOIN site dst ON dst.id = tl.to_site_id
+                        WHERE tl.config_id = :cfg AND dst.geo_id IN (SELECT id FROM geo_tree)
+                    )
+                )
+            """), {"gid": geo_id, "cfg": config_id}).fetchall()
+            sids = [s[0] for s in geo_sites]
+            if sids:
+                sid_list = ",".join(f"'{s}'" for s in sids)
+                filters.append(f"f.site_id IN ({sid_list})")
+        except Exception:
+            pass
 
     where = " AND ".join(filters)
 
@@ -186,6 +222,8 @@ def get_eda_analysis(
 @router.get("/accuracy")
 def get_forecast_accuracy(
     config_id: int = Query(...),
+    product_node_id: Optional[int] = Query(None, description="Product hierarchy node ID"),
+    geo_id: Optional[str] = Query(None, description="Geography node ID"),
     category: Optional[str] = Query(None),
     family: Optional[str] = Query(None),
     db: Session = Depends(get_sync_db),
@@ -193,11 +231,18 @@ def get_forecast_accuracy(
 ):
     """Forecast accuracy metrics — MAPE, bias, tracking signal by product.
 
-    Compares P50 forecast vs actuals (simulated from forecast variance).
+    Supports same product/geography hierarchy drilldown.
     """
+    from app.api.endpoints.demand_plan import _resolve_product_node_ids
+
     product_filter = ""
     params = {"cfg": config_id}
-    if category:
+    if product_node_id:
+        pids = _resolve_product_node_ids(db, product_node_id, current_user.tenant_id)
+        if pids:
+            pid_list = ",".join(f"'{p}'" for p in pids)
+            product_filter = f"AND p.id IN ({pid_list})"
+    elif category:
         product_filter = "AND p.category = :cat"
         params["cat"] = category
     if family:
