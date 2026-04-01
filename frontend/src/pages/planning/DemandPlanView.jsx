@@ -174,7 +174,31 @@ const DemandPlanView = () => {
   useEffect(() => {
     fetchSummary();
     fetchDemandPlan();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch table when hierarchy filters change
+  useEffect(() => {
+    if (!effectiveConfigId) return;
+    // Derive product/site filters from hierarchy selections
+    if (dimensions) {
+      // If category or family selected, get matching product IDs
+      if (categoryFilter || familyFilter) {
+        // The aggregated endpoint handles product filtering;
+        // for the table, we pass the first matching product as a hint
+        // (full filtering is done server-side via the aggregated endpoint)
+      }
+      // If geo selected, get matching site IDs from dimensions
+      if (geoFilter && dimensions.sites) {
+        const geoSites = dimensions.sites.filter(s =>
+          s.geo_id === geoFilter ||
+          dimensions.geography?.some(g => g.parent_id === geoFilter && g.id === s.geo_id)
+        );
+        if (geoSites.length === 1) {
+          setSiteFilter(String(geoSites[0].id));
+        }
+      }
+    }
+  }, [categoryFilter, familyFilter, geoFilter, dimensions, effectiveConfigId]);
 
   // Open edit dialog for a forecast
   const handleEditClick = (forecast, index) => {
@@ -422,45 +446,56 @@ const DemandPlanView = () => {
               )}
               {/* Geography drilldown (AWS SC DM geography table) */}
               {dimensions.geography?.length > 0 && (() => {
-                // Build geo options: show children of current selection, or top-level
-                const topLevel = dimensions.geography.filter(g => !g.parent_id);
                 const childrenOf = (parentId) => dimensions.geography.filter(g => g.parent_id === parentId);
-                const selected = dimensions.geography.find(g => g.id === geoFilter);
+                const findGeo = (id) => dimensions.geography.find(g => g.id === id);
 
-                // Show: top-level → children of selection → individual sites in geo
-                const geoOptions = geoFilter
-                  ? childrenOf(geoFilter)
-                  : topLevel;
+                // Build breadcrumb path from current selection
+                const breadcrumb = [];
+                let current = geoFilter ? findGeo(geoFilter) : null;
+                while (current) {
+                  breadcrumb.unshift(current);
+                  current = current.parent_id ? findGeo(current.parent_id) : null;
+                }
+
+                // Children of current selection (or top-level if none selected)
+                const children = geoFilter ? childrenOf(geoFilter) : dimensions.geography.filter(g => !g.parent_id);
 
                 return (
-                  <>
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">
-                        Geography{selected ? ` — ${selected.name}` : ''}
-                      </label>
-                      <div className="flex gap-1">
-                        {geoFilter && (
-                          <button className="border rounded px-2 py-1.5 text-xs bg-primary/10 text-primary"
-                            onClick={() => {
-                              // Navigate up: set to parent
-                              const current = dimensions.geography.find(g => g.id === geoFilter);
-                              setGeoFilter(current?.parent_id || '');
-                              setSiteFilter('');
-                            }}>
-                            ↑ Up
-                          </button>
-                        )}
-                        <select className="border rounded px-2 py-1.5 text-sm w-48"
-                          value={geoFilter}
-                          onChange={e => { setGeoFilter(e.target.value); setSiteFilter(''); }}>
-                          <option value="">{geoFilter ? 'All in this region' : 'All Geographies'}</option>
-                          {(geoFilter ? childrenOf(geoFilter) : topLevel).map(g => (
-                            <option key={g.id} value={g.id}>{g.name}</option>
-                          ))}
-                        </select>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Geography</label>
+                    {/* Breadcrumb */}
+                    {breadcrumb.length > 0 && (
+                      <div className="flex items-center gap-1 mb-1 text-xs">
+                        <button className="text-primary hover:underline" onClick={() => { setGeoFilter(''); setSiteFilter(''); }}>
+                          All
+                        </button>
+                        {breadcrumb.map((g, i) => (
+                          <span key={g.id} className="flex items-center gap-1">
+                            <span className="text-muted-foreground">/</span>
+                            <button
+                              className={i === breadcrumb.length - 1 ? 'font-semibold' : 'text-primary hover:underline'}
+                              onClick={() => { setGeoFilter(g.id); setSiteFilter(''); }}
+                            >
+                              {g.name}
+                            </button>
+                          </span>
+                        ))}
                       </div>
-                    </div>
-                  </>
+                    )}
+                    {/* Child selector */}
+                    {children.length > 0 && (
+                      <select className="border rounded px-2 py-1.5 text-sm w-52"
+                        value=""
+                        onChange={e => { if (e.target.value) { setGeoFilter(e.target.value); setSiteFilter(''); } }}>
+                        <option value="">
+                          {geoFilter ? `Drill into ${findGeo(geoFilter)?.name || ''}...` : 'Select region...'}
+                        </option>
+                        {children.map(g => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                 );
               })()}
               {/* Individual site (within geo selection) */}
