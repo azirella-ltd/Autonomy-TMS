@@ -461,7 +461,7 @@ const DemandPlanView = () => {
                     {!categoryFilter && dimensions.product.categories.map(c => (
                       <option key={c} value={c}>{c}</option>
                     ))}
-                    {categoryFilter && !familyFilter && dimensions.product.families.map(f => (
+                    {categoryFilter && !familyFilter && (dimensions.product.category_families?.[categoryFilter] || []).map(f => (
                       <option key={f} value={f}>{f}</option>
                     ))}
                   </select>

@@ -605,13 +605,21 @@ def get_hierarchy_dimensions(
     from app.models.sc_entities import Product, Geography, Segmentation
     from sqlalchemy import text
 
-    # Product dimensions
+    # Product dimensions — hierarchical: category → families within category
     categories = db.query(distinct(Product.category)).filter(
         Product.config_id == config_id, Product.category.isnot(None),
     ).all()
-    families = db.query(distinct(Product.family)).filter(
-        Product.config_id == config_id, Product.family.isnot(None),
-    ).all()
+
+    # Category → family mapping (only show families that belong to the category)
+    cat_family_map = {}
+    cat_fam_rows = db.query(Product.category, Product.family).filter(
+        Product.config_id == config_id,
+        Product.category.isnot(None), Product.family.isnot(None),
+    ).distinct().all()
+    for cat, fam in cat_fam_rows:
+        cat_family_map.setdefault(cat, []).append(fam)
+    for cat in cat_family_map:
+        cat_family_map[cat] = sorted(cat_family_map[cat])
 
     # Geography hierarchy (from AWS SC DM geography table via site.geo_id)
     # Build tree: Country → Region → State → City
@@ -653,7 +661,7 @@ def get_hierarchy_dimensions(
     return {
         "product": {
             "categories": sorted([c[0] for c in categories if c[0]]),
-            "families": sorted([f[0] for f in families if f[0]]),
+            "category_families": cat_family_map,
         },
         "geography": geo_tree,
         "sites": [{"id": s[0], "name": s[1], "type": s[2], "geo_id": s[3]} for s in sites],
