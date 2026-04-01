@@ -41,7 +41,10 @@ import {
   ShieldCheck,
   GitBranch,
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import {
+  ComposedChart, LineChart, Line, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import { api } from '../../services/api';
 import LevelPeggingGantt from '../../components/planning/LevelPeggingGantt';
 
@@ -503,17 +506,51 @@ const DemandPlanView = () => {
               {familyFilter && ` — ${familyFilter}`}
               {geoFilter && ` @ ${dimensions?.geography?.find(g => g.id === geoFilter)?.name || geoFilter}`}
             </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={aggData.series}>
-                <CartesianGrid strokeDasharray="3 3" />
+            <ResponsiveContainer width="100%" height={350}>
+              <ComposedChart data={aggData.series}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} />
-                <RechartsTooltip contentStyle={{ fontSize: 11 }} />
+                <RechartsTooltip
+                  contentStyle={{ fontSize: 11, borderRadius: 6 }}
+                  formatter={(value, name) => [value?.toLocaleString() ?? '—', name]}
+                />
                 <Legend wrapperStyle={{ fontSize: 10 }} />
-                <Line type="monotone" dataKey="p10" stroke="#82ca9d" name="P10 (Low)" dot={false} />
-                <Line type="monotone" dataKey="p50" stroke="#8884d8" name="P50 (Forecast)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="p90" stroke="#ffc658" name="P90 (High)" dot={false} />
-              </LineChart>
+                {/* Confidence band: P10-P90 shaded area */}
+                <Area
+                  type="monotone" dataKey="p90" stroke="none"
+                  fill="#8884d8" fillOpacity={0.12} name="P90 (High)"
+                  dot={false} activeDot={false}
+                />
+                <Area
+                  type="monotone" dataKey="p10" stroke="none"
+                  fill="#ffffff" fillOpacity={1} name="P10 (Low)"
+                  dot={false} activeDot={false}
+                />
+                {/* P50 forecast line */}
+                <Line
+                  type="monotone" dataKey="p50" stroke="#6366f1"
+                  strokeWidth={2.5} name="Forecast (P50)" dot={false}
+                />
+                {/* P10/P90 boundary lines */}
+                <Line
+                  type="monotone" dataKey="p10" stroke="#86efac"
+                  strokeWidth={1} strokeDasharray="4 3" name="P10 (Low)"
+                  dot={false}
+                />
+                <Line
+                  type="monotone" dataKey="p90" stroke="#fbbf24"
+                  strokeWidth={1} strokeDasharray="4 3" name="P90 (High)"
+                  dot={false}
+                />
+                {/* Actuals overlay */}
+                <Line
+                  type="monotone" dataKey="actual" stroke="#ef4444"
+                  strokeWidth={2} name="Actual Demand"
+                  dot={{ r: 2, fill: '#ef4444' }}
+                  connectNulls={false}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>

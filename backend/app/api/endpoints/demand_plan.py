@@ -680,6 +680,7 @@ def get_aggregated_forecast(
 
     where_clause = " AND ".join(where_parts)
 
+    # Forecast query
     sql = f"""
         SELECT
             date_trunc('{trunc}', f.forecast_date) AS bucket,
@@ -702,17 +703,54 @@ def get_aggregated_forecast(
         logger.warning("Aggregated forecast query failed: %s", e)
         return {"series": [], "summary": {"total_records": 0, "error": str(e)}}
 
-    series = []
+    # Build series with forecast data
+    series_map = {}
     for row in rows:
-        series.append({
-            "date": row[0].strftime("%Y-%m-%d") if row[0] else None,
+        d = row[0].strftime("%Y-%m-%d") if row[0] else None
+        series_map[d] = {
+            "date": d,
             "p10": round(float(row[1] or 0), 1),
             "p50": round(float(row[2] or 0), 1),
             "p90": round(float(row[3] or 0), 1),
+            "actual": None,
             "records": row[4],
             "products": row[5],
             "sites": row[6],
-        })
+        }
+
+    # Overlay actuals from outbound_order_line (fulfilled demand)
+    try:
+        actual_where = where_clause.replace("f.config_id", "ool.config_id").replace(
+            "f.product_id", "ool.product_id"
+        ).replace("f.site_id", "ool.site_id").replace(
+            "f.forecast_date", "oo.order_date"
+        ).replace("f.forecast_p50 IS NOT NULL", "1=1")
+        actual_sql = f"""
+            SELECT
+                date_trunc('{trunc}', oo.order_date) AS bucket,
+                SUM(ool.ordered_quantity) AS actual_demand
+            FROM outbound_order_line ool
+            JOIN outbound_order oo ON oo.id = ool.order_id
+            WHERE {actual_where}
+            GROUP BY date_trunc('{trunc}', oo.order_date)
+            ORDER BY bucket
+        """
+        actual_result = db.execute(text(actual_sql))
+        for arow in actual_result.fetchall():
+            d = arow[0].strftime("%Y-%m-%d") if arow[0] else None
+            if d in series_map:
+                series_map[d]["actual"] = round(float(arow[1] or 0), 1)
+            elif d:
+                # Actuals exist for a date without forecast
+                series_map[d] = {
+                    "date": d, "p10": None, "p50": None, "p90": None,
+                    "actual": round(float(arow[1] or 0), 1),
+                    "records": 0, "products": 0, "sites": 0,
+                }
+    except Exception as e:
+        logger.debug("Actuals overlay failed (non-critical): %s", e)
+
+    series = sorted(series_map.values(), key=lambda x: x["date"] or "")
 
     return {
         "series": series,
