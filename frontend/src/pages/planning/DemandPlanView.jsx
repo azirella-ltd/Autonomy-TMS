@@ -65,7 +65,7 @@ const DemandPlanView = () => {
   const [timeBucket, setTimeBucket] = useState('week');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [familyFilter, setFamilyFilter] = useState('');
-  const [siteTypeFilter, setSiteTypeFilter] = useState('');
+  const [geoFilter, setGeoFilter] = useState('');  // geography node ID
   const [aggData, setAggData] = useState(null);
 
   // Hydrate filters from Talk To Me query routing
@@ -294,7 +294,7 @@ const DemandPlanView = () => {
       category: categoryFilter || undefined,
       family: familyFilter || undefined,
       product_id: productFilter || undefined,
-      site_type: siteTypeFilter || undefined,
+      geo_id: geoFilter || undefined,
       site_id: siteFilter || undefined,
       start_date: startDate || undefined,
       end_date: endDate || undefined,
@@ -302,7 +302,7 @@ const DemandPlanView = () => {
     api.get('/demand-plan/aggregated', { params })
       .then(res => setAggData(res.data))
       .catch(() => setAggData(null));
-  }, [effectiveConfigId, timeBucket, categoryFilter, familyFilter, productFilter, siteTypeFilter, siteFilter, startDate, endDate]);
+  }, [effectiveConfigId, timeBucket, categoryFilter, familyFilter, productFilter, geoFilter, siteFilter, startDate, endDate]);
 
   const formatNumber = (num) => {
     if (!num) return '0';
@@ -417,29 +417,66 @@ const DemandPlanView = () => {
                   </select>
                 </div>
               )}
-              {dimensions.site?.types?.length > 0 && (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Site Type</label>
-                  <select className="border rounded px-2 py-1.5 text-sm w-44"
-                    value={siteTypeFilter} onChange={e => { setSiteTypeFilter(e.target.value); setSiteFilter(''); }}>
-                    <option value="">All Site Types</option>
-                    {dimensions.site.types.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-              )}
-              {dimensions.site?.sites?.length > 0 && (
+              {/* Geography drilldown (AWS SC DM geography table) */}
+              {dimensions.geography?.length > 0 && (() => {
+                // Build geo options: show children of current selection, or top-level
+                const topLevel = dimensions.geography.filter(g => !g.parent_id);
+                const childrenOf = (parentId) => dimensions.geography.filter(g => g.parent_id === parentId);
+                const selected = dimensions.geography.find(g => g.id === geoFilter);
+
+                // Show: top-level → children of selection → individual sites in geo
+                const geoOptions = geoFilter
+                  ? childrenOf(geoFilter)
+                  : topLevel;
+
+                return (
+                  <>
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">
+                        Geography{selected ? ` — ${selected.name}` : ''}
+                      </label>
+                      <div className="flex gap-1">
+                        {geoFilter && (
+                          <button className="border rounded px-2 py-1.5 text-xs bg-primary/10 text-primary"
+                            onClick={() => {
+                              // Navigate up: set to parent
+                              const current = dimensions.geography.find(g => g.id === geoFilter);
+                              setGeoFilter(current?.parent_id || '');
+                              setSiteFilter('');
+                            }}>
+                            ↑ Up
+                          </button>
+                        )}
+                        <select className="border rounded px-2 py-1.5 text-sm w-48"
+                          value={geoFilter}
+                          onChange={e => { setGeoFilter(e.target.value); setSiteFilter(''); }}>
+                          <option value="">{geoFilter ? 'All in this region' : 'All Geographies'}</option>
+                          {(geoFilter ? childrenOf(geoFilter) : topLevel).map(g => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+              {/* Individual site (within geo selection) */}
+              {dimensions.sites?.length > 0 && (
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1">Site</label>
                   <select className="border rounded px-2 py-1.5 text-sm w-48"
                     value={siteFilter} onChange={e => setSiteFilter(e.target.value)}>
                     <option value="">All Sites</option>
-                    {dimensions.site.sites.map(s => <option key={s.id} value={s.id}>{s.name} ({s.type})</option>)}
+                    {dimensions.sites
+                      .filter(s => !geoFilter || s.geo_id === geoFilter ||
+                        dimensions.geography?.some(g => g.parent_id === geoFilter && g.id === s.geo_id))
+                      .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
               )}
-              {(categoryFilter || familyFilter || siteTypeFilter || siteFilter) && (
+              {(categoryFilter || familyFilter || geoFilter || siteFilter) && (
                 <Button variant="ghost" size="sm" onClick={() => {
-                  setCategoryFilter(''); setFamilyFilter(''); setSiteTypeFilter(''); setSiteFilter(''); setProductFilter('');
+                  setCategoryFilter(''); setFamilyFilter(''); setGeoFilter(''); setSiteFilter(''); setProductFilter('');
                 }}>
                   Clear Filters
                 </Button>
@@ -464,7 +501,7 @@ const DemandPlanView = () => {
               Demand Forecast
               {categoryFilter && ` — ${categoryFilter}`}
               {familyFilter && ` — ${familyFilter}`}
-              {siteTypeFilter && ` @ ${siteTypeFilter}`}
+              {geoFilter && ` @ ${dimensions?.geography?.find(g => g.id === geoFilter)?.name || geoFilter}`}
             </h3>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={aggData.series}>

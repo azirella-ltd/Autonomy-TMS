@@ -527,7 +527,8 @@ def get_hierarchy_dimensions(
     not hardcoded lists.
     """
     from app.models.supply_chain_config import Site
-    from app.models.sc_entities import Product
+    from app.models.sc_entities import Product, Geography, Segmentation
+    from sqlalchemy import text
 
     # Product dimensions
     categories = db.query(distinct(Product.category)).filter(
@@ -537,23 +538,40 @@ def get_hierarchy_dimensions(
         Product.config_id == config_id, Product.family.isnot(None),
     ).all()
 
-    # Site dimensions — use site type and name
-    site_types = db.query(distinct(Site.type)).filter(
-        Site.config_id == config_id, Site.is_external == False,
-    ).all()
-    sites = db.query(Site.id, Site.name, Site.type).filter(
-        Site.config_id == config_id, Site.is_external == False,
+    # Geography hierarchy (from AWS SC DM geography table via site.geo_id)
+    # Build tree: Country → Region → State → City
+    geo_tree = []
+    try:
+        company_id_row = db.execute(text(
+            "SELECT company_id FROM site WHERE config_id = :cfg AND company_id IS NOT NULL LIMIT 1"
+        ), {"cfg": config_id}).fetchone()
+        if company_id_row:
+            geo_rows = db.execute(text("""
+                SELECT id, description, parent_geo_id, state_prov, city
+                FROM geography WHERE company_id = :cid
+                ORDER BY parent_geo_id NULLS FIRST, description
+            """), {"cid": company_id_row[0]}).fetchall()
+            for g in geo_rows:
+                geo_tree.append({
+                    "id": g[0], "name": g[1], "parent_id": g[2],
+                    "state": g[3], "city": g[4],
+                })
+    except Exception:
+        pass
+
+    # Sites with geo linkage
+    sites = db.query(Site.id, Site.name, Site.type, Site.geo_id).filter(
+        Site.config_id == config_id,
     ).all()
 
-    # Site regions from hierarchy (if available)
-    regions = []
+    # Channel segmentation (AWS SC DM segmentation table)
+    channels = []
     try:
-        from app.models.planning_hierarchy import SiteHierarchyNode
-        region_rows = db.query(distinct(SiteHierarchyNode.name)).filter(
-            SiteHierarchyNode.tenant_id == current_user.tenant_id,
-            SiteHierarchyNode.hierarchy_level == "REGION",
+        seg_rows = db.query(Segmentation).filter(
+            Segmentation.segment_type == "channel",
+            Segmentation.is_active == True,
         ).all()
-        regions = [r[0] for r in region_rows if r[0]]
+        channels = [{"id": s.id, "name": s.name, "classification": s.classification} for s in seg_rows]
     except Exception:
         pass
 
@@ -562,11 +580,9 @@ def get_hierarchy_dimensions(
             "categories": sorted([c[0] for c in categories if c[0]]),
             "families": sorted([f[0] for f in families if f[0]]),
         },
-        "site": {
-            "types": sorted([t[0] for t in site_types if t[0]]),
-            "sites": [{"id": s[0], "name": s[1], "type": s[2]} for s in sites],
-            "regions": sorted(regions),
-        },
+        "geography": geo_tree,
+        "sites": [{"id": s[0], "name": s[1], "type": s[2], "geo_id": s[3]} for s in sites],
+        "channels": channels,
         "time_buckets": ["day", "week", "month"],
     }
 
@@ -578,8 +594,9 @@ def get_aggregated_forecast(
     category: Optional[str] = Query(None, description="Product category filter"),
     family: Optional[str] = Query(None, description="Product family filter"),
     product_id: Optional[str] = Query(None, description="Specific product"),
-    site_type: Optional[str] = Query(None, description="Site type filter"),
+    geo_id: Optional[str] = Query(None, description="Geography node ID (drills into children)"),
     site_id: Optional[str] = Query(None, description="Specific site"),
+    channel: Optional[str] = Query(None, description="Channel segmentation filter"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     db: Session = Depends(get_sync_db),
@@ -623,17 +640,30 @@ def get_aggregated_forecast(
             else:
                 return {"series": [], "summary": {"total_records": 0}}
 
-    # Build site filter
+    # Build site filter (geography-based drilldown)
     site_filters = []
     if site_id:
         site_filters.append(f"f.site_id = {site_id}")
-    elif site_type:
-        sites = db.query(Site.id).filter(
-            Site.config_id == config_id, Site.type == site_type,
-        ).all()
-        sids = [str(s[0]) for s in sites]
-        if sids:
-            site_filters.append(f"f.site_id IN ({','.join(sids)})")
+    elif geo_id:
+        # Find all sites within this geography node and its descendants
+        # Uses recursive CTE to walk the geography tree
+        try:
+            geo_sites = db.execute(text("""
+                WITH RECURSIVE geo_tree AS (
+                    SELECT id FROM geography WHERE id = :gid
+                    UNION ALL
+                    SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
+                )
+                SELECT s.id FROM site s
+                WHERE s.config_id = :cfg AND s.geo_id IN (SELECT id FROM geo_tree)
+            """), {"gid": geo_id, "cfg": config_id}).fetchall()
+            sids = [str(s[0]) for s in geo_sites]
+            if sids:
+                site_filters.append(f"f.site_id IN ({','.join(sids)})")
+            else:
+                return {"series": [], "summary": {"total_records": 0}}
+        except Exception as e:
+            logger.warning("Geography filter failed: %s", e)
 
     # Time bucket truncation
     trunc_map = {"day": "day", "week": "week", "month": "month"}
