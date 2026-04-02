@@ -49,6 +49,7 @@ import {
 import { api } from '../services/api';
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import SupplyChainConfigSankey from '../components/supply-chain-config/SupplyChainConfigSankey';
+import ERPComparisonPanel from '../components/planning/ERPComparisonPanel';
 import GartnerMetricCard from '../components/metrics/GartnerMetricCard';
 import CompositeMetricCard from '../components/metrics/CompositeMetricCard';
 import RoleTimeSeries from '../components/charts/RoleTimeSeries';
@@ -853,6 +854,9 @@ const ExecutiveDashboard = () => {
           <ROICard data={roi} />
         </div>
       </div>
+
+      {/* ERP vs Autonomy Comparison */}
+      <ERPComparisonPanel className="mb-6" />
 
       {/* Row 2: Supply Chain Flow (same component as admin SC config page) */}
       <SupplyChainConfigSankey />

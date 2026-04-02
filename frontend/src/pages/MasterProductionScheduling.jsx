@@ -17,6 +17,7 @@ import { Calendar, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../services/api';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import ScenarioPanel from '../components/planning/ScenarioPanel';
+import ERPComparisonPanel from '../components/planning/ERPComparisonPanel';
 import { cn } from '../lib/utils/cn';
 
 export default function MasterProductionScheduling() {
@@ -95,6 +96,7 @@ export default function MasterProductionScheduling() {
       </div>
 
       <ScenarioPanel className="mb-4" />
+      <ERPComparisonPanel className="mb-4" />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>

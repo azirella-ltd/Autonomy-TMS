@@ -23,6 +23,7 @@ import {
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import ScenarioPanel from '../../components/planning/ScenarioPanel';
+import ERPComparisonPanel from '../../components/planning/ERPComparisonPanel';
 
 export default function SupplyPlanGeneration() {
   const { effectiveConfigId } = useActiveConfig();
@@ -83,6 +84,7 @@ export default function SupplyPlanGeneration() {
       </div>
 
       <ScenarioPanel className="mb-4" />
+      <ERPComparisonPanel className="mb-4" />
 
       {/* Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
