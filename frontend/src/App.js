@@ -87,6 +87,7 @@ import PurchaseOrders from "./pages/planning/PurchaseOrders.jsx";
 import Invoices from "./pages/planning/Invoices.jsx";
 import TransferOrders from "./pages/planning/TransferOrders.jsx";
 import SupplyPlanGeneration from "./pages/planning/SupplyPlanGeneration.jsx";
+import PlanComparison from "./pages/planning/ScenarioComparison.jsx";
 import ATPCTPView from "./pages/planning/ATPCTPView.jsx";
 import SourcingAllocation from "./pages/planning/SourcingAllocation.jsx";
 import KPIMonitoring from "./pages/planning/KPIMonitoring.jsx";
@@ -856,6 +857,14 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_supply_plan">
                   <SupplyPlanningHub />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/scenario-comparison"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_supply_plan">
+                  <PlanComparison />
                 </CapabilityProtectedRoute>
               }
             />
