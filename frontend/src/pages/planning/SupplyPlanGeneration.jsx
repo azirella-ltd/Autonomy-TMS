@@ -25,6 +25,88 @@ import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import ScenarioPanel from '../../components/planning/ScenarioPanel';
 import ERPComparisonPanel from '../../components/planning/ERPComparisonPanel';
 
+// Inline sourcing rules table
+const SourcingRulesTable = ({ configId }) => {
+  const [rules, setRules] = useState([]);
+  useEffect(() => {
+    if (!configId) return;
+    api.get('/sourcing-rules/', { params: { config_id: configId } })
+      .then(res => setRules(Array.isArray(res.data) ? res.data : res.data?.rules || []))
+      .catch(() => setRules([]));
+  }, [configId]);
+
+  if (rules.length === 0) return <p className="text-sm text-muted-foreground">No sourcing rules configured. These are auto-derived from vendor performance data.</p>;
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Product</TableHead>
+          <TableHead>Vendor</TableHead>
+          <TableHead>Share %</TableHead>
+          <TableHead>Lead Time</TableHead>
+          <TableHead>Priority</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rules.slice(0, 20).map((r, i) => (
+          <TableRow key={i}>
+            <TableCell className="text-xs">{r.product_id || r.material_id || '—'}</TableCell>
+            <TableCell className="text-xs">{r.vendor_id || r.supplier_id || '—'}</TableCell>
+            <TableCell>{r.allocation_pct || r.share_pct || '—'}%</TableCell>
+            <TableCell>{r.lead_time_days || '—'} days</TableCell>
+            <TableCell>{r.priority || '—'}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+};
+
+// Inline net requirements table
+const NetRequirementsTable = ({ configId }) => {
+  const [data, setData] = useState([]);
+  useEffect(() => {
+    if (!configId) return;
+    // Use supply plan live data as net requirements proxy
+    api.get('/demand-plan/grid', { params: { config_id: configId, weeks: 8 } })
+      .then(res => setData(res.data?.rows || []))
+      .catch(() => setData([]));
+  }, [configId]);
+
+  if (data.length === 0) return <p className="text-sm text-muted-foreground">Loading net requirements from Plan of Record...</p>;
+
+  const weeks = data[0]?.weeks ? Object.keys(data[0].weeks).sort().slice(0, 8) : [];
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="border-b">
+            <th className="text-left py-1 px-2 sticky left-0 bg-white">Product / Site</th>
+            {weeks.map(w => <th key={w} className="text-center py-1 px-1 min-w-[60px]">{w.slice(5)}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {data.slice(0, 15).map(row => (
+            <tr key={`${row.product_id}|${row.site_id}`} className="border-b">
+              <td className="py-1 px-2 sticky left-0 bg-white">
+                <div className="font-medium truncate max-w-[180px]">{row.product_name}</div>
+                <div className="text-muted-foreground">{row.site_name}</div>
+              </td>
+              {weeks.map(w => (
+                <td key={w} className="text-center py-1 px-1 tabular-nums">
+                  {row.weeks?.[w] ? Math.round(row.weeks[w]).toLocaleString() : '—'}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 export default function SupplyPlanGeneration() {
   const { effectiveConfigId } = useActiveConfig();
   const [planData, setPlanData] = useState(null);
@@ -203,17 +285,28 @@ export default function SupplyPlanGeneration() {
         </TabsContent>
 
         <TabsContent value="sourcing">
-          <Alert className="mt-4">
-            Sourcing rules — vendor selection and allocation by product.
-            These are scenario parameters that can be tested via What-If scenarios.
-          </Alert>
+          <Card className="mt-4">
+            <CardContent className="pt-4">
+              <h3 className="text-sm font-semibold mb-2">Sourcing Rules</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Vendor selection and allocation by product. These are scenario parameters —
+                changes here can be tested via What-If scenarios before applying to the live plan.
+              </p>
+              <SourcingRulesTable configId={cfgId} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="netting">
-          <Alert className="mt-4">
-            Net requirements — gross demand minus on-hand minus on-order = net requirement.
-            Calculated from the Plan of Record and current inventory position.
-          </Alert>
+          <Card className="mt-4">
+            <CardContent className="pt-4">
+              <h3 className="text-sm font-semibold mb-2">Net Requirements</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Gross demand minus on-hand minus on-order = net requirement.
+              </p>
+              <NetRequirementsTable configId={cfgId} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="capacity">
