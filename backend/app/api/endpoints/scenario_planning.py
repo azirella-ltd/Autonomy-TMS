@@ -186,6 +186,93 @@ def compare_scenarios(
     }
 
 
+@router.get("/erp-comparison")
+def compare_erp_vs_autonomy(
+    config_id: int = Query(...),
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Compare ERP baseline plan vs Autonomy AI-generated plan.
+
+    Shows the value the AI plan provides over the ERP's MRP/MPS output.
+    """
+    def _plan_metrics(plan_version):
+        row = db.execute(text("""
+            SELECT
+                count(*) AS total_orders,
+                count(DISTINCT product_id) AS products,
+                count(DISTINCT site_id) AS sites,
+                SUM(planned_order_quantity) AS total_qty,
+                AVG(planned_order_quantity) AS avg_qty,
+                count(DISTINCT plan_date) AS periods,
+                MIN(plan_date) AS start_date,
+                MAX(plan_date) AS end_date
+            FROM supply_plan
+            WHERE config_id = :cfg AND plan_version = :ver
+        """), {"cfg": config_id, "ver": plan_version}).fetchone()
+        if not row or not row[0]:
+            return None
+        return {
+            "total_orders": row[0],
+            "products": row[1],
+            "sites": row[2],
+            "total_planned_qty": round(float(row[3] or 0), 0),
+            "avg_order_qty": round(float(row[4] or 0), 1),
+            "periods": row[5],
+            "start_date": row[6].isoformat() if row[6] else None,
+            "end_date": row[7].isoformat() if row[7] else None,
+        }
+
+    erp = _plan_metrics("erp_baseline")
+    autonomy = _plan_metrics("live")
+
+    if not erp or not autonomy:
+        return {
+            "erp_baseline": erp,
+            "autonomy_plan": autonomy,
+            "comparison": None,
+            "note": "Need both ERP baseline and Autonomy plan for comparison",
+        }
+
+    # Compute deltas
+    comparison = {}
+    for key in ["total_orders", "products", "total_planned_qty", "avg_order_qty", "periods"]:
+        e_val = erp.get(key, 0)
+        a_val = autonomy.get(key, 0)
+        delta = a_val - e_val
+        delta_pct = round(delta / e_val * 100, 1) if e_val and e_val != 0 else 0
+        comparison[key] = {
+            "erp": e_val, "autonomy": a_val,
+            "delta": round(delta, 1), "delta_pct": delta_pct,
+        }
+
+    # Inventory comparison (latest inv_level vs safety stock)
+    try:
+        inv = db.execute(text("""
+            SELECT
+                AVG(on_hand_qty) AS avg_inventory,
+                AVG(safety_stock_qty) AS avg_safety_stock,
+                AVG(CASE WHEN safety_stock_qty > 0
+                    THEN on_hand_qty / safety_stock_qty ELSE NULL END) AS dos_ratio,
+                SUM(on_hand_qty) AS total_inventory
+            FROM inv_level
+            WHERE config_id = :cfg AND on_hand_qty IS NOT NULL
+            AND inventory_date = (SELECT MAX(inventory_date) FROM inv_level WHERE config_id = :cfg)
+        """), {"cfg": config_id}).fetchone()
+        if inv and inv[0]:
+            comparison["avg_inventory"] = round(float(inv[0]), 0)
+            comparison["total_inventory"] = round(float(inv[3] or 0), 0)
+            comparison["dos_ratio"] = round(float(inv[2] or 0), 2)
+    except Exception:
+        pass
+
+    return {
+        "erp_baseline": erp,
+        "autonomy_plan": autonomy,
+        "comparison": comparison,
+    }
+
+
 @router.post("/{scenario_id}/promote")
 def promote_scenario(
     scenario_id: int,

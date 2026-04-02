@@ -1224,59 +1224,119 @@ class ProvisioningService:
                     INSERT INTO supply_plan
                         (config_id, product_id, site_id, plan_date, plan_type,
                          forecast_quantity, demand_quantity,
-                         opening_inventory, safety_stock,
                          planned_order_quantity, planned_order_date,
                          plan_version, source, planner_name, created_dttm)
                     SELECT
-                        f.config_id,
-                        f.product_id,
-                        CAST(f.site_id AS INTEGER),
-                        date_trunc('week', f.forecast_date)::date AS plan_date,
-                        'demand_plan',
-                        AVG(f.forecast_p50) AS forecast_qty,
-                        AVG(f.forecast_p50) AS demand_qty,
-                        -- Opening inventory from latest inv_level
-                        COALESCE((
-                            SELECT il.on_hand_qty FROM inv_level il
-                            WHERE il.config_id = f.config_id
-                            AND il.product_id = f.product_id
-                            AND CAST(il.site_id AS TEXT) = f.site_id
-                            ORDER BY il.inventory_date DESC LIMIT 1
-                        ), 0) AS opening_inv,
-                        -- Safety stock from inv_policy or estimate
-                        COALESCE((
-                            SELECT ip.safety_stock_qty FROM inv_policy ip
-                            WHERE ip.config_id = f.config_id
-                            AND ip.product_id = f.product_id
-                            AND CAST(ip.site_id AS TEXT) = f.site_id
-                            AND ip.is_active = true LIMIT 1
-                        ), AVG(f.forecast_p50) * 0.3) AS safety_stock,
-                        AVG(f.forecast_p50) AS planned_order_qty,
+                        f.config_id, f.product_id, CAST(f.site_id AS INTEGER),
                         date_trunc('week', f.forecast_date)::date,
-                        'live',
-                        'plan_of_record',
-                        'demand_agent',
-                        NOW()
+                        'demand_plan',
+                        AVG(f.forecast_p50), AVG(f.forecast_p50),
+                        AVG(f.forecast_p50),
+                        date_trunc('week', f.forecast_date)::date,
+                        'live', 'plan_of_record', 'demand_agent', NOW()
                     FROM forecast f
-                    WHERE f.config_id = :cfg
-                    AND f.forecast_p50 IS NOT NULL
+                    WHERE f.config_id = :cfg AND f.forecast_p50 IS NOT NULL
                     AND f.forecast_date >= CURRENT_DATE - INTERVAL '30 days'
-                    GROUP BY f.config_id, f.product_id, f.site_id,
-                             date_trunc('week', f.forecast_date)
+                    GROUP BY f.config_id, f.product_id, f.site_id, date_trunc('week', f.forecast_date)
                 """), {"cfg": config_id})
 
                 por_count = por_result.rowcount
                 sync_db.commit()
 
+                # Create ERP Baseline from existing PO/MO/TO transactional data
+                # This is the ERP system's current plan — our AI plan is compared against it
+                sync_db.execute(sqt("""
+                    DELETE FROM supply_plan
+                    WHERE config_id = :cfg AND plan_version = 'erp_baseline'
+                """), {"cfg": config_id})
+
+                erp_result = sync_db.execute(sqt("""
+                    INSERT INTO supply_plan
+                        (config_id, product_id, site_id, plan_date, plan_type,
+                         planned_order_quantity, planned_order_date,
+                         supplier_id, from_site_id,
+                         plan_version, source, planner_name, created_dttm)
+                    SELECT
+                        po.config_id,
+                        poli.product_id,
+                        po.destination_site_id,
+                        date_trunc('week', po.requested_delivery_date)::date,
+                        'po_request',
+                        SUM(poli.quantity),
+                        date_trunc('week', po.order_date)::date,
+                        po.vendor_id,
+                        po.supplier_site_id,
+                        'erp_baseline', 'erp_extraction', 'erp_mrp',
+                        NOW()
+                    FROM purchase_order po
+                    JOIN purchase_order_line_item poli ON poli.po_id = po.id
+                    WHERE po.config_id = :cfg
+                    AND po.requested_delivery_date >= CURRENT_DATE - INTERVAL '90 days'
+                    GROUP BY po.config_id, poli.product_id, po.destination_site_id,
+                             date_trunc('week', po.requested_delivery_date),
+                             date_trunc('week', po.order_date),
+                             po.vendor_id, po.supplier_site_id
+                """), {"cfg": config_id})
+                erp_po_count = erp_result.rowcount
+
+                # Production orders as MO baseline
+                erp_mo_result = sync_db.execute(sqt("""
+                    INSERT INTO supply_plan
+                        (config_id, product_id, site_id, plan_date, plan_type,
+                         planned_order_quantity, planned_order_date,
+                         plan_version, source, planner_name, created_dttm)
+                    SELECT
+                        config_id, item_id, site_id,
+                        date_trunc('week', COALESCE(planned_completion_date, planned_start_date))::date,
+                        'mo_request',
+                        planned_quantity,
+                        date_trunc('week', planned_start_date)::date,
+                        'erp_baseline', 'erp_extraction', 'erp_mrp',
+                        NOW()
+                    FROM production_orders
+                    WHERE config_id = :cfg
+                    AND planned_start_date IS NOT NULL
+                    AND planned_start_date >= CURRENT_DATE - INTERVAL '90 days'
+                """), {"cfg": config_id})
+                erp_mo_count = erp_mo_result.rowcount
+
+                # Transfer orders as TO baseline (header-level, no product_id)
+                erp_to_result = sync_db.execute(sqt("""
+                    INSERT INTO supply_plan
+                        (config_id, site_id, plan_date, plan_type,
+                         planned_order_quantity, planned_order_date,
+                         from_site_id,
+                         plan_version, source, planner_name, created_dttm)
+                    SELECT
+                        config_id, destination_site_id,
+                        date_trunc('week', COALESCE(estimated_delivery_date, order_date))::date,
+                        'to_request',
+                        1,
+                        date_trunc('week', order_date)::date,
+                        source_site_id,
+                        'erp_baseline', 'erp_extraction', 'erp_mrp',
+                        NOW()
+                    FROM transfer_order
+                    WHERE config_id = :cfg
+                    AND order_date >= CURRENT_DATE - INTERVAL '90 days'
+                """), {"cfg": config_id})
+                erp_to_count = erp_to_result.rowcount
+
+                sync_db.commit()
+
                 logger.info(
-                    "Supply plan: %d Plan of Record rows from conformal P50 for config %d (no Monte Carlo)",
-                    por_count, config_id,
+                    "Supply plan: %d POR + %d ERP baseline (PO=%d, MO=%d, TO=%d) for config %d",
+                    por_count, erp_po_count + erp_mo_count + erp_to_count,
+                    erp_po_count, erp_mo_count, erp_to_count, config_id,
                 )
                 return {
                     "status": "ok",
                     "plan_of_record_rows": por_count,
-                    "method": "conformal_p50",
-                    "note": "No Monte Carlo — uncertainty quantified by conformal P10/P90 intervals",
+                    "erp_baseline_rows": erp_po_count + erp_mo_count + erp_to_count,
+                    "erp_baseline_po": erp_po_count,
+                    "erp_baseline_mo": erp_mo_count,
+                    "erp_baseline_to": erp_to_count,
+                    "method": "conformal_p50 + erp_extraction",
                 }
             finally:
                 sync_db.close()
