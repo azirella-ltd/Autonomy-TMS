@@ -537,6 +537,29 @@ def _get_suggested_action(decision, decision_type: str) -> str:
     return "Review decision"
 
 
+def _safe_effective_from(decision, decision_type: str) -> Optional[str]:
+    try:
+        return _get_effective_dates(decision, decision_type)[0]
+    except Exception as e:
+        logger.debug("effective_from failed for %s: %s", decision_type, e)
+        try:
+            ca = getattr(decision, "created_at", None)
+            if ca and hasattr(ca, "date"):
+                return ca.date().isoformat()
+            if ca and hasattr(ca, "isoformat"):
+                return ca.isoformat()[:10]
+        except Exception:
+            pass
+        return None
+
+
+def _safe_period_days(decision, decision_type: str) -> Optional[int]:
+    try:
+        return _get_effective_dates(decision, decision_type)[1]
+    except Exception:
+        return 7
+
+
 def _get_effective_dates(decision, decision_type: str) -> Tuple[Optional[str], int]:
     """Extract the effective start date and period duration (days) for a decision.
 
@@ -1601,8 +1624,8 @@ class DecisionStreamService:
                         "decision_reasoning": _humanize_ids(raw_reasoning, product_names, site_names) if raw_reasoning else None,
                         "suggested_action": _humanize_ids(_get_suggested_action(row, type_key), product_names, site_names),
                         "deep_link": DEEP_LINK_MAP.get(type_key, "/insights/actions"),
-                        "effective_from": _get_effective_dates(row, type_key)[0],
-                        "period_days": _get_effective_dates(row, type_key)[1],
+                        "effective_from": _safe_effective_from(row, type_key),
+                        "period_days": _safe_period_days(row, type_key),
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                         "editable_values": _get_editable_values(row, type_key),
                         "context": {

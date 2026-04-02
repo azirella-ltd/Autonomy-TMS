@@ -908,6 +908,129 @@ def get_aggregated_forecast(
     except Exception as e:
         logger.warning("Actuals overlay failed: %s", e)
 
+
+@router.get("/grid")
+def get_plan_grid(
+    config_id: int = Query(...),
+    time_bucket: str = Query("week"),
+    product_node_id: Optional[int] = Query(None),
+    geo_id: Optional[str] = Query(None),
+    weeks: int = Query(12, le=52, description="Number of weeks to show"),
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Kinaxis-style MPS grid: product×site rows × week columns.
+
+    Returns the Plan of Record pivoted for grid display.
+    Each row = one product at one site.
+    Each column = one week with planned quantity.
+    """
+    from app.models.supply_chain_config import Site
+    from app.models.sc_entities import Product
+
+    # Build filters
+    product_filter = ""
+    site_filter = ""
+    params = {"cfg": config_id, "weeks": weeks}
+
+    if product_node_id:
+        pids = _resolve_product_node_ids(db, product_node_id, current_user.tenant_id)
+        if pids:
+            product_filter = f"AND sp.product_id IN ({','.join(repr(p) for p in pids)})"
+
+    if geo_id:
+        try:
+            geo_sites = db.execute(text("""
+                WITH RECURSIVE geo_tree AS (
+                    SELECT id FROM geography WHERE id = :gid
+                    UNION ALL
+                    SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
+                )
+                SELECT CAST(s.id AS TEXT) FROM site s
+                WHERE s.config_id = :cfg AND (
+                    s.geo_id IN (SELECT id FROM geo_tree)
+                    OR s.id IN (
+                        SELECT tl.from_site_id FROM transportation_lane tl
+                        JOIN site dst ON dst.id = tl.to_site_id
+                        WHERE tl.config_id = :cfg AND dst.geo_id IN (SELECT id FROM geo_tree)
+                    )
+                )
+            """), {"gid": geo_id, "cfg": config_id}).fetchall()
+            sids = [s[0] for s in geo_sites]
+            if sids:
+                site_filter = f"AND CAST(sp.site_id AS TEXT) IN ({','.join(repr(s) for s in sids)})"
+        except Exception:
+            pass
+
+    # Get weeks (columns)
+    week_rows = db.execute(text(f"""
+        SELECT DISTINCT plan_date FROM supply_plan
+        WHERE config_id = :cfg AND plan_version = 'live'
+        AND plan_date >= CURRENT_DATE - INTERVAL '4 weeks'
+        {product_filter} {site_filter}
+        ORDER BY plan_date
+        LIMIT :weeks
+    """), params).fetchall()
+    week_dates = [r[0].strftime("%Y-%m-%d") for r in week_rows]
+
+    if not week_dates:
+        return {"columns": [], "rows": [], "total_rows": 0}
+
+    # Week labels (W01, W02, ...)
+    columns = []
+    for d in week_dates:
+        from datetime import datetime as dt
+        parsed = dt.strptime(d, "%Y-%m-%d")
+        columns.append({
+            "date": d,
+            "label": f"W{parsed.isocalendar()[1]:02d}",
+            "month": parsed.strftime("%b"),
+        })
+
+    # Get product×site rows with pivoted weekly quantities
+    grid_rows = db.execute(text(f"""
+        SELECT
+            sp.product_id,
+            SPLIT_PART(p.description, ' - ', 1) AS product_name,
+            p.category, p.family,
+            sp.site_id,
+            s.name AS site_name,
+            sp.plan_date,
+            sp.planned_order_quantity
+        FROM supply_plan sp
+        JOIN product p ON p.id = sp.product_id
+        JOIN site s ON s.id = sp.site_id
+        WHERE sp.config_id = :cfg AND sp.plan_version = 'live'
+        AND sp.plan_date >= CURRENT_DATE - INTERVAL '4 weeks'
+        {product_filter} {site_filter}
+        ORDER BY p.category, p.family, sp.product_id, sp.site_id, sp.plan_date
+    """), params).fetchall()
+
+    # Pivot into rows
+    row_map = {}
+    for r in grid_rows:
+        key = f"{r[0]}|{r[4]}"
+        if key not in row_map:
+            row_map[key] = {
+                "product_id": r[0],
+                "product_name": r[1],
+                "category": r[2],
+                "family": r[3],
+                "site_id": r[4],
+                "site_name": r[5],
+                "weeks": {},
+            }
+        d = r[6].strftime("%Y-%m-%d")
+        row_map[key]["weeks"][d] = round(float(r[7] or 0), 0)
+
+    rows = list(row_map.values())
+
+    return {
+        "columns": columns,
+        "rows": rows,
+        "total_rows": len(rows),
+    }
+
     series = sorted(series_map.values(), key=lambda x: x["date"] or "")
 
     return {
