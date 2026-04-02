@@ -17,6 +17,7 @@ import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '../../components/common';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
+import ScenarioPanel from '../../components/planning/ScenarioPanel';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   Gauge, AlertTriangle, Target, Factory,
@@ -61,6 +62,7 @@ export default function CapacityPlanningHub() {
   return (
     <div className="space-y-4">
       <RoleTimeSeries roleKey="capacity_planner" configId={effectiveConfigId} compact />
+      <ScenarioPanel />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent flex-wrap">

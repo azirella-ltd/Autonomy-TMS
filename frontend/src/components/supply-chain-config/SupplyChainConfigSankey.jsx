@@ -529,21 +529,23 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     const loadDetails = async () => {
       try {
         setDetailLoading(true);
-        const [detail, productsData, sitesData, lanesData, pscData] = await Promise.all([
+        const [detail, productsData, sitesData, lanesData, pscData] = await Promise.allSettled([
           getSupplyChainConfigById(selectedConfigId),
-          getProducts(selectedConfigId), // AWS SC DM: Product
-          getSites(selectedConfigId), // AWS SC DM: Site (was getNodes)
+          getProducts(selectedConfigId),
+          getSites(selectedConfigId),
           getLanes(selectedConfigId),
           getProductSiteConfigs(selectedConfigId),
         ]);
         if (!ignore) {
-          setConfigDetail(detail);
-          setProducts(Array.isArray(productsData) ? productsData : []);
-          setSites(Array.isArray(sitesData) ? sitesData : []);
-          setLanes(Array.isArray(lanesData) ? lanesData : []);
-          setProductSiteConfigs(Array.isArray(pscData) ? pscData : []);
-          setDetailError(null);
-          setActiveTab('diagram');
+          setConfigDetail(detail.status === 'fulfilled' ? detail.value : null);
+          setProducts(productsData.status === 'fulfilled' && Array.isArray(productsData.value) ? productsData.value : []);
+          setSites(sitesData.status === 'fulfilled' && Array.isArray(sitesData.value) ? sitesData.value : []);
+          setLanes(lanesData.status === 'fulfilled' && Array.isArray(lanesData.value) ? lanesData.value : []);
+          setProductSiteConfigs(pscData.status === 'fulfilled' && Array.isArray(pscData.value) ? pscData.value : []);
+          // Only show error if the core data (detail + sites + lanes) all failed
+          const coreOk = detail.status === 'fulfilled' && sitesData.status === 'fulfilled' && lanesData.status === 'fulfilled';
+          setDetailError(coreOk ? null : 'Unable to load the configuration details right now.');
+          if (coreOk) setActiveTab('diagram');
         }
       } catch (error) {
         console.error('Failed to load supply chain config detail for Sankey diagram', error);

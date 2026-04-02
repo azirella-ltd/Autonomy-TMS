@@ -17,6 +17,7 @@ import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '../../components/common';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
+import ScenarioPanel from '../../components/planning/ScenarioPanel';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   Shield, LineChart, BarChart3, Crosshair,
@@ -62,6 +63,7 @@ export default function InventoryPlanningHub() {
   return (
     <div className="space-y-4">
       <RoleTimeSeries roleKey="inventory_planner" configId={effectiveConfigId} compact />
+      <ScenarioPanel />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent flex-wrap">

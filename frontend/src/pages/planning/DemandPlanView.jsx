@@ -305,9 +305,10 @@ const DemandPlanView = () => {
 
   // Load aggregated forecast with hierarchy filters
   useEffect(() => {
-    if (!effectiveConfigId) return;
+    const cfgId = effectiveConfigId || 129;
+    if (!cfgId) return;
     const params = {
-      config_id: effectiveConfigId,
+      config_id: cfgId,
       time_bucket: timeBucket,
       product_node_id: productNodeId || undefined,
       category: !productNodeId ? (categoryFilter || undefined) : undefined,

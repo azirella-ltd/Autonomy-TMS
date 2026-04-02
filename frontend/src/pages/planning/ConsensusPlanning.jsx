@@ -292,6 +292,16 @@ const ConsensusPlanning = () => {
         </Button>
       </div>
 
+      {/* Onboarding guidance */}
+      {(!plans || plans.length <= 3) && (
+        <Alert className="mb-4">
+          <strong>How Consensus Planning works:</strong> Create a planning cycle (e.g., "Q3 Demand Consensus").
+          Stakeholders from Sales, Marketing, Finance, and Operations each submit their forecast version.
+          The team votes on the best version or creates a blended consensus. The approved consensus becomes
+          the official demand plan used for supply planning.
+        </Alert>
+      )}
+
       {success && <Alert variant="success" className="mb-4">{success}</Alert>}
       {error && <Alert variant="error" className="mb-4" onClose={() => setError(null)}>{error}</Alert>}
 
