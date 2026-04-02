@@ -1322,6 +1322,25 @@ class ProvisioningService:
                 """), {"cfg": config_id})
                 erp_to_count = erp_to_result.rowcount
 
+                # Apply lifecycle and promotional adjustments to the Plan of Record
+                try:
+                    from app.services.demand_forecasting.forecast_adjustments import (
+                        apply_lifecycle_adjustments,
+                        apply_promotional_adjustments,
+                        apply_hierarchy_reconciliation,
+                    )
+                    lc_result = apply_lifecycle_adjustments(sync_db, config_id)
+                    promo_result = apply_promotional_adjustments(sync_db, config_id, config.tenant_id)
+                    recon_result = apply_hierarchy_reconciliation(sync_db, config_id, config.tenant_id)
+                    logger.info(
+                        "Forecast adjustments: lifecycle=%d, promos=%d, reconciliation=%s",
+                        lc_result.get("adjusted_rows", 0),
+                        promo_result.get("adjusted_rows", 0),
+                        recon_result.get("status", "?"),
+                    )
+                except Exception as adj_err:
+                    logger.warning("Forecast adjustments failed (non-critical): %s", adj_err)
+
                 sync_db.commit()
 
                 logger.info(

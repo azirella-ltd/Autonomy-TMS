@@ -570,6 +570,10 @@ async def startup_event():
             # Register governance sweeper jobs (auto-apply, escalation, directive expiry)
             register_governance_jobs(scheduler_service)
 
+            # Register planning cascade jobs (S&OP weekly, MPS daily, execution hourly)
+            from app.services.planning_cascade_jobs import register_planning_cascade_jobs
+            register_planning_cascade_jobs(scheduler_service)
+
             # Register executive briefing scheduler (hourly check for scheduled generation)
             from app.services.executive_briefing_jobs import register_executive_briefing_jobs
             register_executive_briefing_jobs(scheduler_service)

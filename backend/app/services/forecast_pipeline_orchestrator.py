@@ -288,20 +288,29 @@ class ForecastPipelineOrchestrator:
         result.records_processed = sum(r[1] for r in methods)
 
     def _stage_model_select(self, result: StageResult):
-        """Stage 5: Model selection."""
-        # In production, this would compare holdout MAPE/RMSE per product
-        # For now, report the dominant method
-        dominant = self.db.execute(text("""
-            SELECT forecast_method, count(*) as cnt
-            FROM forecast WHERE config_id = :cfg AND forecast_p50 IS NOT NULL
-            GROUP BY forecast_method ORDER BY cnt DESC LIMIT 1
-        """), {"cfg": self.config_id}).fetchone()
-
-        result.metrics = {
-            "selected_method": dominant[0] if dominant else "exponential_smoothing",
-            "selection_criteria": "holdout_mape",
-            "note": "Full model comparison requires training multiple methods on holdout sets",
-        }
+        """Stage 5: Model selection — compare methods on holdout set."""
+        try:
+            from app.services.demand_forecasting.model_comparison import ModelComparisonService
+            svc = ModelComparisonService(self.db, self.config_id)
+            comp_result = svc.run_comparison()
+            result.metrics = {
+                "products_compared": comp_result.get("products_compared", 0),
+                "method_wins": comp_result.get("method_wins", {}),
+                "avg_best_mape": comp_result.get("avg_best_mape", 0),
+                "selection_criteria": "holdout_mape_80_20_split",
+            }
+            result.records_processed = comp_result.get("products_compared", 0)
+        except Exception as e:
+            # Fallback: report dominant method
+            dominant = self.db.execute(text("""
+                SELECT forecast_method, count(*) as cnt
+                FROM forecast WHERE config_id = :cfg AND forecast_p50 IS NOT NULL
+                GROUP BY forecast_method ORDER BY cnt DESC LIMIT 1
+            """), {"cfg": self.config_id}).fetchone()
+            result.metrics = {
+                "selected_method": dominant[0] if dominant else "exponential_smoothing",
+                "note": f"Full comparison failed: {str(e)[:60]}",
+            }
 
     def _stage_forecast_gen(self, result: StageResult):
         """Stage 6: Forecast generation."""
