@@ -47,7 +47,7 @@ export default function ForecastPipeline() {
   const [expandedStage, setExpandedStage] = useState(null);
 
   const loadStatus = useCallback(async () => {
-    const cfgId = effectiveConfigId || 129;
+    const cfgId = effectiveConfigId;
     if (!cfgId) return;
     setLoading(true);
     try {
@@ -63,7 +63,7 @@ export default function ForecastPipeline() {
   useEffect(() => { loadStatus(); }, [loadStatus]);
 
   const runFullPipeline = async () => {
-    const cfgId = effectiveConfigId || 129;
+    const cfgId = effectiveConfigId;
     setRunning(true);
     try {
       const res = await api.post('/forecast-analytics/pipeline/run', null, { params: { config_id: cfgId } });
@@ -76,7 +76,7 @@ export default function ForecastPipeline() {
   };
 
   const runStage = async (stage) => {
-    const cfgId = effectiveConfigId || 129;
+    const cfgId = effectiveConfigId;
     try {
       await api.post(`/forecast-analytics/pipeline/run/${stage}`, null, { params: { config_id: cfgId } });
       loadStatus();

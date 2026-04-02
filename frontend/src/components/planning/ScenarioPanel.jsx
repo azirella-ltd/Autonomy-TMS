@@ -31,7 +31,7 @@ export default function ScenarioPanel({ className }) {
   const [compareResult, setCompareResult] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', scenario_type: 'WHAT_IF' });
 
-  const cfgId = effectiveConfigId || 129;
+  const cfgId = effectiveConfigId;
 
   const load = useCallback(async () => {
     if (!cfgId) return;

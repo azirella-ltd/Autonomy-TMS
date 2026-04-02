@@ -188,3 +188,62 @@ warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_t
 - Makefile auto-detects Compose V2 vs V1
 - `.env` changes need `docker compose up -d --force-recreate backend`
 - Seeding (`make db-bootstrap`): Default TBG configs, users, tenants, showcase scenarios
+
+---
+
+## Architecture Decisions (April 2026)
+
+### AIIO Model — Agents Always Act
+- Agents generate ALL plans automatically during provisioning
+- No "Create MPS Plan" or "Generate Supply Plan" buttons
+- Users inspect, override (with reasoning), and scenario-test
+- Governance pipeline controls WHAT agents can do autonomously
+
+### Plan Separation (Strict)
+| plan_version | Purpose | Who creates |
+|--|--|--|
+| `live` | Plan of Record — what the business operates on | Demand Agent (conformal P50) |
+| `erp_baseline` | ERP's current plan — comparison baseline | Extracted from PO/MO/TO |
+| `decision_action` | User overrides from Decision Stream | Human via AIIO override |
+
+- **No Monte Carlo** in supply planning — uncertainty quantified by conformal P10/P90
+- Digital Twin simulation ONLY for TRM training data, not plan generation
+- Scenarios use separate `config_id` branches
+
+### Planning Cascade (Auto-Execution)
+- **S&OP** (weekly Monday 6am): GraphSAGE network optimization
+- **MPS/Supply Plan** (daily 5am): Plan of Record refresh from conformal P50
+- **Execution** (every 4h): TRM decision cycle at each site
+- **Exceptions** (daily 6am): Forecast exception detection + re-evaluation
+
+### Hierarchy Drilldown (All Views)
+- **Geography**: AWS SC DM `geography` table with `parent_geo_id` tree
+  - Includes serving DCs via transportation lanes (not just physical location)
+- **Product**: `product_hierarchy_node` tree (Category → Family → Product)
+- **Both** use breadcrumb navigation with drilldown
+- Applied to: Demand Plan, Analytics, Supply Plan, Decision Stream
+
+### Governance Pipeline
+- Step 0: Planning envelope (adjust-before-create via Glenday Sieve)
+- Step 1: Impact scoring (5 dimensions)
+- Step 2: AIIO mode assignment (AUTOMATE/INFORM/INSPECT)
+- Step 3: Guardrail directive override
+- Agents referred to by function name, not technology
+- Controls are per-site with "apply to all sites" option
+
+### Frontend API Paths
+- Dockerfile sets `REACT_APP_API_BASE_URL=/api/v1`
+- Axios `baseURL` is already `/api/v1`
+- All frontend API calls use PLAIN paths (e.g., `/promotions/`, NOT `/v1/promotions/`)
+- Adding `/v1/` causes double prefix → 404
+
+### Admin Navigation
+Supply Chain Configs → Decision Governance → User Management → Role Management →
+Context Engine → ERP Data Management → Stochastic Parameters → Metric Configuration →
+BSC Configuration → Experiential Knowledge → Planning Hierarchy
+
+### Tactical Planning Navigation
+Demand Planning → Supply & Production Plan → Inventory Planning → Capacity Planning
+- MPS merged into Supply & Production Plan
+- Forecast Analytics merged into Demand Planning → Analytics tab
+- Seeding (`make db-bootstrap`): Default TBG configs, users, tenants, showcase scenarios

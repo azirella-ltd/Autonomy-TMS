@@ -113,7 +113,7 @@ export default function SupplyPlanGeneration() {
   const [loading, setLoading] = useState(false);
   const [timeBucket, setTimeBucket] = useState('week');
   const [tab, setTab] = useState('plan');
-  const cfgId = effectiveConfigId || 129;
+  const cfgId = effectiveConfigId;
 
   const loadPlan = useCallback(async () => {
     if (!cfgId) return;

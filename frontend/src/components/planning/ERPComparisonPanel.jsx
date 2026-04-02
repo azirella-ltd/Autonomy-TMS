@@ -33,7 +33,7 @@ export default function ERPComparisonPanel({ className }) {
   const { effectiveConfigId } = useActiveConfig();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const cfgId = effectiveConfigId || 129;
+  const cfgId = effectiveConfigId;
 
   const load = useCallback(async () => {
     if (!cfgId) return;

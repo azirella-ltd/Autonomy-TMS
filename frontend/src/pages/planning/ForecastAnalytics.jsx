@@ -38,7 +38,7 @@ export default function ForecastAnalytics() {
   const [productNodeId, setProductNodeId] = useState('');
   const [geoFilter, setGeoFilter] = useState('');
 
-  const cfgId = effectiveConfigId || 129;
+  const cfgId = effectiveConfigId;
 
   // Load hierarchy dimensions
   useEffect(() => {

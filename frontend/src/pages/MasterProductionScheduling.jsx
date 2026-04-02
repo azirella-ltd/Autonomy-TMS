@@ -27,7 +27,7 @@ export default function MasterProductionScheduling() {
   const [weeks, setWeeks] = useState(12);
   const [expandedCategories, setExpandedCategories] = useState(new Set());
   const [tab, setTab] = useState('grid');
-  const cfgId = effectiveConfigId || 129;
+  const cfgId = effectiveConfigId;
 
   const loadGrid = useCallback(async () => {
     if (!cfgId) return;

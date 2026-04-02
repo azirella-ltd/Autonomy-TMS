@@ -1322,6 +1322,34 @@ class ProvisioningService:
                 """), {"cfg": config_id})
                 erp_to_count = erp_to_result.rowcount
 
+                # Also load PLAF (MRP planned orders) from SAP staging if available
+                try:
+                    plaf_count = sync_db.execute(sqt("""
+                        INSERT INTO supply_plan
+                            (config_id, product_id, site_id, plan_date, plan_type,
+                             planned_order_quantity, planned_order_date,
+                             plan_version, source, planner_name, created_dttm)
+                        SELECT
+                            :cfg,
+                            'CFG' || :cfg || '_' || (r.row_data->>'MATNR'),
+                            (SELECT s.id FROM site s WHERE s.config_id = :cfg AND s.name = r.row_data->>'PLWRK' LIMIT 1),
+                            TO_DATE(r.row_data->>'PEDTR', 'YYYYMMDD'),
+                            CASE WHEN r.row_data->>'BESKZ' = 'F' THEN 'po_request' ELSE 'mo_request' END,
+                            CAST(r.row_data->>'GSMNG' AS FLOAT),
+                            TO_DATE(COALESCE(r.row_data->>'PSTTR', r.row_data->>'PEDTR'), 'YYYYMMDD'),
+                            'erp_baseline', 'sap_plaf', 'sap_mrp',
+                            NOW()
+                        FROM sap_staging.rows r
+                        WHERE r.sap_table = 'PLAF'
+                        AND r.row_data->>'GSMNG' IS NOT NULL
+                        AND CAST(r.row_data->>'GSMNG' AS FLOAT) > 0
+                    """), {"cfg": config_id}).rowcount
+                    if plaf_count > 0:
+                        erp_po_count += plaf_count
+                        logger.info("PLAF: %d SAP planned orders loaded as erp_baseline", plaf_count)
+                except Exception as plaf_err:
+                    logger.debug("PLAF load skipped: %s", plaf_err)
+
                 # Apply lifecycle and promotional adjustments to the Plan of Record
                 try:
                     from app.services.demand_forecasting.forecast_adjustments import (
