@@ -71,6 +71,8 @@ D365_ENTITY_FIELD_MAPPINGS: Dict[str, Dict[str, Tuple[str, str]]] = {
         "IsActive": ("product_bom", "is_active"),
         "BOMQuantity": ("product_bom", "bom_quantity"),
         "BOMUnitSymbol": ("product_bom", "bom_uom"),
+        "BOMType": ("product_bom", "bom_usage"),  # Extension: 1=Planning, 3=Sales
+        "BOMApproved": ("product_bom", "is_approved"),
     },
     "BillOfMaterialsLines": {
         "BOMId": ("product_bom", "bom_id"),

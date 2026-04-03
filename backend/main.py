@@ -1040,7 +1040,8 @@ async def get_active_supply_chain_config(
         user_obj = db.query(UserModel).filter(UserModel.id == current_user.get("id")).first()
         if user_obj and user_obj.default_config_id:
             cfg = db.query(SupplyChainConfig).filter(
-                SupplyChainConfig.id == user_obj.default_config_id
+                SupplyChainConfig.id == user_obj.default_config_id,
+                SupplyChainConfig.is_active == True,
             ).first()
             if cfg:
                 return _serialize_supply_chain_config(cfg)
@@ -1305,91 +1306,198 @@ def update_supply_chain_config_basic(
         db.close()
 
 
+def _cascade_delete_config(db, config_id: int):
+    """Delete a config and ALL dependent records using dynamic FK introspection.
+
+    Strategy:
+    1. Query information_schema to discover every table with an FK to product,
+       site, or transportation_lane — these are the tables that block deletion
+       of core entities.
+    2. Also maintain an explicit list of config_id-bearing tables to catch
+       tables that only reference the config (not product/site).
+    3. Use SAVEPOINTs (begin_nested) so a missing table doesn't abort the
+       whole transaction.
+    4. Delete in correct dependency order: FK children → core entities → config.
+    """
+    from sqlalchemy import text
+
+    cid = {"cid": config_id}
+
+    def _safe_execute(stmt, params=None):
+        """Execute inside a savepoint so failures don't abort the transaction."""
+        nested = db.begin_nested()
+        try:
+            db.execute(text(stmt), params or cid)
+            nested.commit()
+        except Exception:
+            nested.rollback()
+
+    # ── 0. Discover every FK dependency on product / site / transportation_lane ──
+    fk_query = text("""
+        SELECT DISTINCT tc.table_schema, tc.table_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.constraint_column_usage AS ccu
+            ON ccu.constraint_name = tc.constraint_name
+            AND ccu.table_schema   = tc.table_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND ccu.table_name IN ('product', 'site', 'transportation_lane')
+          AND tc.table_name NOT IN ('product', 'site', 'transportation_lane',
+                                     'supply_chain_configs')
+    """)
+    fk_rows = db.execute(fk_query).fetchall()
+
+    # For each discovered table, try to delete rows belonging to this config.
+    for schema, table in fk_rows:
+        qualified = f'"{schema}"."{table}"' if schema != "public" else f'"{table}"'
+        # Most tables have config_id directly
+        _safe_execute(f"DELETE FROM {qualified} WHERE config_id = :cid")
+        # Some use supply_chain_config_id
+        _safe_execute(f"DELETE FROM {qualified} WHERE supply_chain_config_id = :cid")
+        # Fallback: delete via subquery on product/site belonging to this config
+        for ref_col, ref_tbl in [
+            ("product_id", "product"), ("site_id", "site"),
+            ("from_site_id", "site"), ("to_site_id", "site"),
+            ("item_id", "product"), ("component_product_id", "product"),
+            ("ship_from_site_id", "site"), ("ship_to_site_id", "site"),
+            ("origin_site_id", "site"), ("customer_site_id", "site"),
+            ("supplier_site_id", "site"), ("destination_site_id", "site"),
+            ("source_site_id", "site"), ("refurbishment_site_id", "site"),
+            ("subcontractor_site_id", "site"), ("receiving_site_id", "site"),
+            ("market_demand_site_id", "site"),
+        ]:
+            _safe_execute(
+                f"DELETE FROM {qualified} WHERE {ref_col} IN "
+                f"(SELECT id FROM {ref_tbl} WHERE config_id = :cid)"
+            )
+
+    # ── 1. Explicit config_id tables (catches tables without product/site FK) ──
+    # Ordered: children-with-FKs-to-other-children first, then parents.
+    explicit_tables = [
+        # Powell / TRM decision & training
+        "powell_atp_decisions", "powell_buffer_decisions", "powell_exception_resolution",
+        "powell_forecast_adjustment_decisions", "powell_hierarchical_constraints",
+        "powell_maintenance_decisions", "powell_mo_decisions", "powell_order_exceptions",
+        "powell_po_decisions", "powell_policy_parameters", "powell_quality_decisions",
+        "powell_rebalance_decisions", "powell_stochastic_solution", "powell_subcontracting_decisions",
+        "powell_to_decisions", "powell_training_config", "powell_value_function", "powell_allocations",
+        "powell_training_run",
+        "trm_atp_decision_log", "trm_order_tracking_decision_log", "trm_po_decision_log",
+        "trm_rebalancing_decision_log", "trm_replay_buffer", "trm_safety_stock_decision_log",
+        "trm_training_config", "trm_site_training_config", "trm_base_model",
+        # Forecast / exceptions
+        "forecast_exception_comment", "exception_escalation_log",
+        "forecast_exception", "forecast_exception_rule",
+        "forecast_pipeline_run", "forecast_pipeline_config", "forecast_versions", "forecast",
+        # Supply plan
+        "supply_plan_results", "supply_plan_comparisons", "supply_plan_exports",
+        "supply_plan_requests", "supply_plan",
+        "supply_commit", "supply_demand_pegging", "supply_baseline_pack", "solver_baseline_pack",
+        # Sourcing
+        "sourcing_schedule_details", "sourcing_schedule", "sourcing_rules",
+        # Inventory
+        "inv_level", "inv_policy", "inv_projection",
+        # Orders — line items before headers
+        "outbound_order_line_schedule", "outbound_order_line_status",
+        "outbound_order_line", "outbound_order_status", "outbound_order",
+        "inbound_order_line", "inbound_order",
+        "purchase_order_line_item", "purchase_order",
+        "transfer_order_line_item", "transfer_order",
+        "production_order_components", "production_orders",
+        "turnaround_order_line_item", "turnaround_order",
+        "subcontracting_order_line_item", "subcontracting_order",
+        "shipment_lot", "shipment_stop", "shipment",
+        "goods_receipt_line_item", "goods_receipt",
+        "maintenance_order", "quality_order", "service_order", "project_order",
+        # ATP / CTP
+        "atp_projection", "ctp_projection", "aatp_consumption_record",
+        # Production / BOM
+        "product_bom", "production_capacity", "production_process",
+        "reservation",
+        # MPS — items before plans
+        "mps_key_material_requirements", "mps_capacity_checks", "mps_plan_items",
+        # Planning / MRP / S&OP / RCCP
+        "planning_cycles", "planning_feedback_signal", "planning_hierarchy_config",
+        "planning_policy_envelope",
+        "scenario_decision_record", "planning_scenario",
+        "consensus_plan_comments", "consensus_plan_votes", "consensus_plan_versions",
+        "consensus_plans",
+        "mrp_net_requirements", "mrp_run", "order_aggregation_policy",
+        "bill_of_resources", "rccp_runs",
+        # Agent / training / governance
+        "agent_decision_metrics", "agent_stochastic_params", "agent_action",
+        "supply_chain_training_artifacts", "tactical_tgnn_checkpoints",
+        "data_drift_alerts", "data_drift_records",
+        "decision_governance_policies", "guardrail_directives",
+        "decision_embeddings",
+        # Capacity / site planning
+        "resource_capacity_constraint", "resource_capacity",
+        "site_planning_config", "capacity_resource_plans",
+        # Suppliers
+        "supplier_performance", "vendor_lead_times", "vendor_products",
+        "vendor_lead_time", "vendor_product", "trading_partners",
+        "supply_planning_parameters",
+        # Product lifecycle
+        "product_lifecycle",
+        # Demand collaboration
+        "demand_collaboration_event", "demand_collaboration",
+        # Demand plan
+        "demand_plan", "demand_plan_version",
+        # Risk / misc
+        "risk_predictions", "risk_alerts", "watchlists",
+        "round_metric",
+        "aggregated_order", "allocation_commit", "authority_definitions",
+        "collaboration_scenarios", "config_deltas", "config_lineage",
+        "config_provisioning_status", "exception_workflow_template",
+        "items", "market_demands", "markets",
+        "sap_ingestion_jobs", "user_directives",
+        # Monte Carlo — children first
+        "monte_carlo_risk_alerts", "monte_carlo_time_series", "monte_carlo_scenarios",
+        # Chat / KB
+        "chat_messages", "agent_suggestions", "what_if_analyses",
+        "kb_chunks", "kb_documents",
+        # Comments
+        "comment_attachments", "comment_mentions", "comments",
+        # Analytics
+        "agent_decisions", "performance_metrics", "sop_worklist_items",
+    ]
+    explicit_alt = [
+        ("capacity_plans", "supply_chain_config_id"),
+        ("monte_carlo_runs", "supply_chain_config_id"),
+        ("mps_plans", "supply_chain_config_id"),
+        ("scenarios", "supply_chain_config_id"),
+    ]
+
+    for table in explicit_tables:
+        _safe_execute(f'DELETE FROM "{table}" WHERE config_id = :cid')
+    for table, col in explicit_alt:
+        _safe_execute(f'DELETE FROM "{table}" WHERE "{col}" = :cid')
+
+    # ── 2. Self-referencing / cross-table FKs on the config ──
+    db.execute(text("UPDATE supply_chain_configs SET base_config_id = NULL WHERE base_config_id = :cid"), cid)
+    db.execute(text("UPDATE supply_chain_configs SET parent_config_id = NULL WHERE parent_config_id = :cid"), cid)
+    db.execute(text("UPDATE users SET default_config_id = NULL WHERE default_config_id = :cid"), cid)
+
+    # ── 3. Core entities (product/site/lane) ──
+    db.execute(text("DELETE FROM transportation_lane WHERE config_id = :cid"), cid)
+    db.execute(text("DELETE FROM product WHERE config_id = :cid"), cid)
+    db.execute(text("DELETE FROM site WHERE config_id = :cid"), cid)
+
+    # ── 4. The config itself ──
+    db.execute(text("DELETE FROM supply_chain_configs WHERE id = :cid"), cid)
+
+
 @api.delete("/supply-chain-config/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_supply_chain_config(
     config_id: int,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Delete a supply chain configuration and all its child entities."""
-    from sqlalchemy import text
-
     db = SyncSessionLocal()
     try:
         config = _get_supply_chain_config_or_404(db, config_id)
         _ensure_can_manage_supply_chain_config(current_user, config)
 
-        cid = {"cid": config_id}
-
-        # All tables with config_id FK to supply_chain_configs (ordered: dependents first).
-        # Column is config_id unless noted otherwise.
-        config_ref_tables = [
-            # Powell decision tables
-            "powell_atp_decisions", "powell_buffer_decisions", "powell_exception_resolution",
-            "powell_forecast_adjustment_decisions", "powell_hierarchical_constraints",
-            "powell_maintenance_decisions", "powell_mo_decisions", "powell_order_exceptions",
-            "powell_po_decisions", "powell_policy_parameters", "powell_quality_decisions",
-            "powell_rebalance_decisions", "powell_stochastic_solution", "powell_subcontracting_decisions",
-            "powell_to_decisions", "powell_training_config", "powell_value_function", "powell_allocations",
-            # TRM decision logs
-            "trm_atp_decision_log", "trm_order_tracking_decision_log", "trm_po_decision_log",
-            "trm_rebalancing_decision_log", "trm_replay_buffer", "trm_safety_stock_decision_log",
-            # Planning tables
-            "forecast", "forecast_exception", "forecast_exception_rule", "forecast_pipeline_run",
-            "forecast_pipeline_config", "forecast_versions",
-            "supply_plan", "supply_plan_requests", "supply_commit", "supply_demand_pegging",
-            "supply_baseline_pack", "solver_baseline_pack",
-            "sourcing_schedule_details", "sourcing_schedule", "sourcing_rules",
-            "inv_level", "inv_policy", "inv_projection",
-            "inbound_order", "inbound_order_line", "outbound_order_line",
-            "atp_projection", "ctp_projection", "aatp_consumption_record",
-            "product_bom", "production_capacity", "production_orders", "production_process",
-            "purchase_order", "transfer_order", "maintenance_order", "turnaround_order",
-            "project_order", "reservation",
-            # MPS/MRP/S&OP
-            "planning_cycles", "planning_feedback_signal", "planning_hierarchy_config",
-            "planning_policy_envelope", "consensus_plans",
-            "mrp_run", "order_aggregation_policy",
-            # Agent/training
-            "agent_decision_metrics", "supply_chain_training_artifacts", "tactical_tgnn_checkpoints",
-            "data_drift_alerts", "data_drift_records",
-            # Misc
-            "aggregated_order", "allocation_commit", "authority_definitions",
-            "collaboration_scenarios", "config_deltas", "config_lineage",
-            "config_provisioning_status", "exception_workflow_template",
-            "items", "market_demands", "markets", "risk_alerts",
-            "sap_ingestion_jobs", "user_directives", "watchlists",
-        ]
-        # Tables with non-standard config FK column name
-        config_ref_alt = [
-            ("capacity_plans", "supply_chain_config_id"),
-            ("monte_carlo_runs", "supply_chain_config_id"),
-            ("mps_plans", "supply_chain_config_id"),
-            ("scenarios", "supply_chain_config_id"),
-        ]
-
-        for table in config_ref_tables:
-            try:
-                db.execute(text(f"DELETE FROM {table} WHERE config_id = :cid"), cid)
-            except Exception:
-                pass  # Table may not exist in all deployments
-        for table, col in config_ref_alt:
-            try:
-                db.execute(text(f"DELETE FROM {table} WHERE {col} = :cid"), cid)
-            except Exception:
-                pass
-
-        # Self-referencing FKs
-        db.execute(text("UPDATE supply_chain_configs SET base_config_id = NULL WHERE base_config_id = :cid"), cid)
-        db.execute(text("UPDATE supply_chain_configs SET parent_config_id = NULL WHERE parent_config_id = :cid"), cid)
-        db.execute(text("UPDATE users SET default_config_id = NULL WHERE default_config_id = :cid"), cid)
-
-        # Core entities
-        db.execute(text("DELETE FROM transportation_lane WHERE config_id = :cid"), cid)
-        db.execute(text("DELETE FROM product WHERE config_id = :cid"), cid)
-        db.execute(text("DELETE FROM site WHERE config_id = :cid"), cid)
-
-        # Finally delete the config itself
-        db.execute(text("DELETE FROM supply_chain_configs WHERE id = :cid"), cid)
+        _cascade_delete_config(db, config_id)
 
         db.commit()
         return None

@@ -147,10 +147,9 @@ class SiteAgentConfig:
     escalation_consistency_threshold: float = 0.70
 
     # Site tGNN (Layer 1.5) — Intra-site cross-TRM coordination
-    # When True, Site tGNN runs hourly inference to modulate UrgencyVector
-    # before the 6-phase decision cycle, learning causal cross-TRM relationships.
-    # Feature-flagged OFF by default; zero overhead when disabled.
-    enable_site_tgnn: bool = False
+    # Runs hourly inference to modulate UrgencyVector before the 6-phase
+    # decision cycle, learning causal cross-TRM relationships.
+    # Cold-start safe: returns neutral (zero) adjustments when no model exists.
 
     # Site capability filtering — determines which TRMs are active.
     # Extracted from DAG topology (Site.master_type, Site.type).
@@ -259,17 +258,17 @@ class SiteAgent:
             self.authorization_service = AuthorizationService(db=db_session)
 
         # Site tGNN (Layer 1.5) — intra-site cross-TRM coordination
+        # Always instantiated; cold-start safe (neutral output when no model exists)
         self._site_tgnn_service = None
-        if config.enable_site_tgnn:
-            try:
-                from app.services.powell.site_tgnn_inference_service import SiteTGNNInferenceService
-                self._site_tgnn_service = SiteTGNNInferenceService(
-                    site_key=config.site_key,
-                    config_id=getattr(config, "config_id", 0),
-                    active_trms=self.active_trms,
-                )
-            except Exception as e:
-                logger.warning(f"Site tGNN init failed (continuing without): {e}")
+        try:
+            from app.services.powell.site_tgnn_inference_service import SiteTGNNInferenceService
+            self._site_tgnn_service = SiteTGNNInferenceService(
+                site_key=config.site_key,
+                config_id=getattr(config, "config_id", 0),
+                active_trms=self.active_trms,
+            )
+        except Exception as e:
+            logger.warning(f"Site tGNN init failed (continuing without): {e}")
 
         # Per-agent stochastic parameters (loaded from agent_stochastic_params table)
         # Dict of trm_type → param_name → distribution JSON dict

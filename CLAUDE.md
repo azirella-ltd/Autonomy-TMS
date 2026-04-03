@@ -116,10 +116,13 @@ make llm-check             # Check LLM connectivity
 
 **Four Pillars**: AI Agents (TRM/GNN/LLM), Conformal Prediction, Digital Twin, Causal AI
 
-**Three-Tier AI**:
-- S&OP GraphSAGE → policy parameters θ (weekly)
-- Execution tGNN → priority allocations (daily)
-- 11 Narrow TRMs → execution decisions (<10ms): ATP, Rebalancing, PO, OrderTracking, MO, TO, Quality, Maintenance, Subcontracting, ForecastAdjustment, InventoryBuffer
+**Five-Layer Agent Coordination** (context flows down, escalation flows up):
+- Layer 4 — S&OP GraphSAGE → policy parameters θ, guardrails, KPI targets (weekly)
+- Layer 2 — Network tGNN → inter-site directives, priority allocations (daily)
+- Layer 1.5 — Site tGNN → intra-site cross-TRM urgency modulation (hourly, always on)
+- Layer 1 — 11 TRMs → execution decisions (<10ms): ATP, Rebalancing, PO, OrderTracking, MO, TO, Quality, Maintenance, Subcontracting, ForecastAdjustment, InventoryBuffer
+- AAP (Layer 3) — cross-authority agent negotiation (seconds-minutes)
+- Escalation Arbiter — persistent drift detection routes up: CDC retrain → tGNN refresh → S&OP review
 
 **Key Backend Paths**:
 - Planning: `services/aws_sc_planning/` (planner, demand, inventory targets, net requirements)

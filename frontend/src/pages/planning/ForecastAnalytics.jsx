@@ -44,7 +44,19 @@ export default function ForecastAnalytics() {
   useEffect(() => {
     if (!cfgId) return;
     api.get('/demand-plan/hierarchy-dimensions', { params: { config_id: cfgId } })
-      .then(res => setDimensions(res.data))
+      .then(res => {
+        setDimensions(res.data);
+        // Auto-select root product node if not already set
+        if (!productNodeId && res.data?.product_tree?.length > 0) {
+          const root = res.data.product_tree.find(n => !n.parent_id);
+          if (root) setProductNodeId(String(root.id));
+        }
+        // Auto-select root geography node if not already set
+        if (!geoFilter && res.data?.geography?.length > 0) {
+          const root = res.data.geography.find(g => !g.parent_id);
+          if (root) setGeoFilter(root.id);
+        }
+      })
       .catch(() => {});
   }, [cfgId]);
 

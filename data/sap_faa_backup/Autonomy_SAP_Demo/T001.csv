@@ -1,0 +1,182 @@
+BUKRS,BUTXT,LAND1,WAERS
+IT77,Country Template IT,IT,EUR
+MX03,Country Template MX,MX,MXN
+0001,SAP A.G.,DE,EUR
+0003,SAP US (IS-HT-SW),US,USD
+0MB1,IS-B Musterbank Deutschl.,DE,EUR
+1010,Company Code 1010,DE,EUR
+1710,Company Code 1710,US,USD
+AE01,Country Template AE,AE,AED
+AR01,Country Template AR,AR,ARS
+ARG1,Country Template AR,AR,ARS
+AT01,Country Template AT,AT,EUR
+AU01,Country Template AU,AU,AUD
+BE01,Country Template BE,BE,EUR
+BR01,Country Template BR,BR,BRL
+CA01,Country Template CA,CA,CAD
+CH01,Country Template CH,CH,CHF
+CL01,Country Template CL,CL,CLP
+CN01,Country Template CN,CN,CNY
+CO01,Country Template CO,CO,COP
+COPY,Copy from CC.0001,DE,EUR
+CZ01,Country Template CZ,CZ,CZK
+DE01,Country Template DE,DE,EUR
+DE02,Country Template DE,DE,EUR
+DK01,Country Template DK,DK,DKK
+EG01,Country Template Egypt,,EGP
+ES01,Country Template ES,ES,EUR
+FI01,Country Template FI,FI,EUR
+FR01,Country Template FR,FR,EUR
+GB01,Country Template GB,GB,GBP
+HK01,Country Template HK,HK,HKD
+HU01,Country Template HU,HU,HUF
+ID01,Country Template ID,ID,IDR
+IE01,Country Template IE,IE,EUR
+IN01,"India Model Company, IN",IN,INR
+IT01,Country Template IT,IT,EUR
+IT77,Country Template IT,IT,EUR
+JP01,Country Template JP,JP,JPY
+KR01,Country Template KR,KR,KRW
+KW01,Country Template KW,KW,KWD
+KZ01,Country Template KZ,KZ,KZT
+LU01,Country Template LU,LU,EUR
+MCA1,MCA Bank Backpack (bal.),DE,USD
+MCA2,MCA Bank Backpack (doc.),DE,USD
+MCA3,MCA Bank 4-pack (bal.),DE,CHF
+MCA4,MCA Bank 4-pack (doc.),DE,CHF
+MX01,Country Template MX,MX,MXN
+MX03,Country Template MX,MX,MXN
+MY01,Country Template MY,MY,MYR
+NL01,Country Template NL,NL,EUR
+NO01,Country Template NO,NO,NOK
+NZ01,Country Template NZ,NZ,NZD
+PE01,Country Template PE,PE,PEN
+PH01,Country Template PH,PH,PHP
+PL01,Country Template PL,PL,PLN
+PT01,Country Template PT,PT,EUR
+PT02,Country Template PT (SNC),PT,EUR
+QA01,Country Template QA,QA,QAR
+RECO,Sondereigentum (WEG),DE,EUR
+REOB,Referenz Objektmandate,DE,EUR
+RERF,WEG Referenzbuchungskreis,DE,EUR
+RU01,Country Template RU,RU,RUB
+SE01,Country Template SE,SE,SEK
+SG01,SAP Asia,SG,SGD
+SK01,Country Template SK,SK,EUR
+SLE0,Musterbank,,EUR
+TH01,Country Template TH,TH,THB
+TR01,Country Template TR,TR,TRY
+TW01,Country Template TW,TW,TWD
+UA01,Country Template UA,UA,UAH
+US01,Country Template US,US,USD
+VE01,Country Template VE,VE,VEB
+ZA01,Country Template ZA,ZA,ZAR
+1010,Company Code 1010,DE,EUR
+1710,Company Code 1710,US,USD
+6410,Company Code 6410,ZA,ZAR
+6310,Company Code 6310,TW,TWD
+3610,Company Code 3610,TR,TRY
+6810,Company Code 6810,TH,THB
+2710,Company Code 2710,SK,EUR
+6110,Company Code 6110,SG,SGD
+1910,Company Code 1910,SE,SEK
+5910,Company Code 5910,SA,SAR
+1610,Company Code 1610,RU,RUB
+2810,Company Code 2810,RO,RON
+3510,Company Code 3510,PT,EUR
+2610,Company Code 2610,PL,PLN
+5810,Company Code 5810,PH,PHP
+6910,Company Code 6910,NZ,NZD
+4410,Company Code 4410,NO,NOK
+3710,Company Code 3710,NL,EUR
+5410,Company Code 5410,MY,MYR
+5510,Company Code 5510 (MX),MX,MXN
+7K10,Company Code 7K10,LU,EUR
+4310,Company Code 4310,KR,KRW
+1510,Company Code 1510,JP,JPY
+2310,Company Code 2310,IT,EUR
+1810,Company Code 1810,IN,INR
+4210,Company Code 4210,IE,EUR
+5110,Company Code 5110,ID,IDR
+2110,SAP Hungary kft.,HU,HUF
+6210,Company Code 6210,HK,HKD
+1110,Company Code 1110,GB,GBP
+1210,Company Code 1210,FR,EUR
+4510,Company Code 4510,FI,EUR
+2410,Company Code 2410,ES,EUR
+3210,Company Code 3210,DK,DKK
+2010,Company Code 2010,CZ,CZK
+1310,Company Code 1310,CN,CNY
+2210,Company Code 2210,CH,CHF
+2910,Company Code 2910,CA,CAD
+1410,Company Code 1410,BR,BRL
+2510,Company Code 2510,BE,EUR
+3010,Company Code 3010,AU,AUD
+3910,Company Code 3910,AT,EUR
+0001,SAP SE,DE,EUR
+0003,SAP US (IS-HT-SW),US,USD
+0MB1,IS-B Musterbank Deutschl.,DE,EUR
+AE01,Country Template AE,AE,AED
+AR01,Country Template AR,AR,ARS
+AT01,Country Template AT,AT,EUR
+AU01,Country Template AU,AU,AUD
+BE01,Country Template BE,BE,EUR
+BR01,Country Template BR,BR,BRL
+CA01,Country Template CA,CA,CAD
+CH01,Country Template CH,CH,CHF
+CL01,Country Template CL,CL,CLP
+CN01,Country Template CN,CN,CNY
+CO01,Country Template CO,CO,COP
+CZ01,Country Template CZ,CZ,CZK
+DE01,Country Template DE,DE,EUR
+DE02,Country Template DE,DE,EUR
+DK01,Country Template DK,DK,DKK
+EG01,Country Template Egypt,EG,EGP
+ES01,Country Template ES,ES,EUR
+FI01,Country Template FI,FI,EUR
+FR01,Country Template FR,FR,EUR
+GB01,Country Template GB,GB,GBP
+HK01,Country Template HK,HK,HKD
+HU01,Country Template HU,HU,HUF
+ID01,Country Template ID,ID,IDR
+IE01,Country Template IE,IE,EUR
+IN01,"India Model Company, IN",IN,INR
+IT01,Country Template IT,IT,EUR
+JP01,Country Template JP,JP,JPY
+KR01,Country Template KR,KR,KRW
+KW01,Country Template KW,KW,KWD
+KZ01,Country Template KZ,KZ,KZT
+LU01,Country Template LU,LU,EUR
+MCA1,MCA Bank Backpack (bal.),DE,USD
+MCA2,MCA Bank Backpack (doc.),DE,USD
+MCA3,MCA Bank 4-pack (bal.),DE,CHF
+MCA4,MCA Bank 4-pack (doc.),DE,CHF
+MX01,Country Template MX,MX,MXN
+MY01,Country Template MY,MY,MYR
+NL01,Country Template NL,NL,EUR
+NO01,Country Template NO,NO,NOK
+NZ01,Country Template NZ,NZ,NZD
+PE01,Country Template PE,PE,PEN
+PH01,Country Template PH,PH,PHP
+PL01,Country Template PL,PL,PLN
+PT01,Country Template PT,PT,EUR
+PT02,Country Template PT (SNC),PT,EUR
+QA01,Country Template QA,QA,QAR
+RECO,Sondereigentum (WEG),DE,EUR
+REOB,Referenz Objektmandate,DE,EUR
+RERF,WEG Referenzbuchungskreis,DE,EUR
+RS01,Country template RS,RS,RSD
+RU01,Country Template RU,RU,RUB
+SE01,Country Template SE,SE,SEK
+SG01,SAP Asia,SG,SGD
+SK01,Country Template SK,SK,EUR
+SLE0,Musterbank,DE,EUR
+TH01,Country Template TH,TH,THB
+TR01,Country Template TR,TR,TRY
+TW01,Country Template TW,TW,TWD
+UA01,Country Template UA,UA,UAH
+US01,Country Template US,US,USD
+VE01,Country Template VE,VE,VEB
+ZA01,Country Template ZA,ZA,ZAR
+3310,Company Code 3310,AE,AED
+HR01,Country Template HR,HR,EUR

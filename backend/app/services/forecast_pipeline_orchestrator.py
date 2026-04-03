@@ -331,15 +331,35 @@ class ForecastPipelineOrchestrator:
         }
 
     def _stage_reconcile(self, result: StageResult):
-        """Stage 7: Hierarchy reconciliation."""
+        """Stage 7: Hierarchy reconciliation.
+
+        Middle-out disaggregation uses planning BOM ratios (product_bom.ratio
+        where bom_usage = 'planning') to split family-level forecasts to SKU
+        level.  When no planning BOM exists for a parent, falls back to equal
+        split across children.
+        """
         # Check if product hierarchy exists for reconciliation
         hierarchy_depth = self.db.execute(text(
             "SELECT count(DISTINCT hierarchy_level) FROM product_hierarchy_node WHERE tenant_id = :tid"
         ), {"tid": self.tenant_id}).scalar() or 0
 
+        reconciliation_method = "middle_out" if hierarchy_depth >= 3 else "bottom_up"
+        bom_ratio_count = 0
+        products_reconciled = 0
+        equal_split_count = 0
+
+        if reconciliation_method == "middle_out":
+            products_reconciled, bom_ratio_count, equal_split_count = (
+                self._apply_middle_out_reconciliation()
+            )
+
+        result.records_processed = products_reconciled
         result.metrics = {
             "hierarchy_depth": hierarchy_depth,
-            "reconciliation_method": "middle_out" if hierarchy_depth >= 3 else "bottom_up",
+            "reconciliation_method": reconciliation_method,
+            "products_reconciled": products_reconciled,
+            "bom_ratio_splits": bom_ratio_count,
+            "equal_splits": equal_split_count,
             "note": "Reconciliation aligns forecasts across category → family → product levels",
         }
 
@@ -382,6 +402,170 @@ class ForecastPipelineOrchestrator:
             "published_at": datetime.utcnow().isoformat(),
             "downstream_notified": ["supply_planning", "inventory_planning", "mps"],
         }
+
+    # ── Middle-out reconciliation ─────────────────────────────────
+
+    def _build_planning_bom_ratio_map(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Build parent → children ratio map from planning BOMs.
+
+        Returns:
+            Dict mapping parent product_id to list of
+            {"component_product_id": str, "ratio": float}.
+        """
+        rows = self.db.execute(text("""
+            SELECT product_id, component_product_id, ratio
+            FROM product_bom
+            WHERE config_id = :cfg
+              AND bom_usage = 'planning'
+              AND (is_deleted IS NULL OR is_deleted = 'false')
+              AND ratio IS NOT NULL
+              AND ratio > 0
+            ORDER BY product_id, component_product_id
+        """), {"cfg": self.config_id}).fetchall()
+
+        ratio_map: Dict[str, List[Dict[str, Any]]] = {}
+        for product_id, component_product_id, ratio in rows:
+            ratio_map.setdefault(product_id, []).append({
+                "component_product_id": component_product_id,
+                "ratio": float(ratio),
+            })
+        return ratio_map
+
+    def _apply_middle_out_reconciliation(self) -> tuple:
+        """Apply middle-out reconciliation using planning BOM ratios.
+
+        For each family-level forecast, disaggregates to SKU level using
+        planning BOM ratios.  Falls back to equal split when no planning
+        BOM exists for a parent product.
+
+        Returns:
+            (products_reconciled, bom_ratio_count, equal_split_count)
+        """
+        ratio_map = self._build_planning_bom_ratio_map()
+
+        # Get hierarchy: parent → children from product_hierarchy_node
+        parent_children = self.db.execute(text("""
+            SELECT phn_parent.product_id AS parent_product_id,
+                   phn_child.product_id  AS child_product_id
+            FROM product_hierarchy_node phn_child
+            JOIN product_hierarchy_node phn_parent
+              ON phn_child.parent_node_id = phn_parent.node_id
+             AND phn_child.tenant_id = phn_parent.tenant_id
+            WHERE phn_child.tenant_id = :tid
+              AND phn_child.product_id IS NOT NULL
+              AND phn_parent.product_id IS NOT NULL
+        """), {"tid": self.tenant_id}).fetchall()
+
+        # Build hierarchy map: parent_product_id → [child_product_id, ...]
+        hierarchy: Dict[str, List[str]] = {}
+        for parent_pid, child_pid in parent_children:
+            hierarchy.setdefault(parent_pid, []).append(child_pid)
+
+        if not hierarchy:
+            return (0, 0, 0)
+
+        # Get family-level forecasts (products that are parents in the hierarchy)
+        parent_ids = list(hierarchy.keys())
+        # Fetch forecasts for parent products
+        family_forecasts = self.db.execute(text("""
+            SELECT product_id, site_id, forecast_date,
+                   forecast_p10, forecast_p50, forecast_p90,
+                   forecast_method
+            FROM forecast
+            WHERE config_id = :cfg
+              AND product_id = ANY(:pids)
+              AND forecast_p50 IS NOT NULL
+        """), {"cfg": self.config_id, "pids": parent_ids}).fetchall()
+
+        products_reconciled = 0
+        bom_ratio_count = 0
+        equal_split_count = 0
+
+        for row in family_forecasts:
+            parent_pid = row[0]
+            site_id = row[1]
+            forecast_date = row[2]
+            p10, p50, p90 = float(row[3] or 0), float(row[4] or 0), float(row[5] or 0)
+            method = row[6]
+
+            children = hierarchy.get(parent_pid, [])
+            if not children:
+                continue
+
+            # Determine ratios: planning BOM or equal split
+            bom_entries = ratio_map.get(parent_pid)
+            if bom_entries:
+                # Use planning BOM ratios — normalise so they sum to 1
+                # Filter to children that are actually in the hierarchy
+                child_set = set(children)
+                relevant = [e for e in bom_entries if e["component_product_id"] in child_set]
+                if relevant:
+                    total_ratio = sum(e["ratio"] for e in relevant)
+                    splits = {
+                        e["component_product_id"]: e["ratio"] / total_ratio
+                        for e in relevant
+                    }
+                    # Any children without a BOM entry get 0 (they are not part of
+                    # the planning split)
+                    bom_ratio_count += 1
+                else:
+                    # BOM exists but no entries match hierarchy children — equal split
+                    splits = {c: 1.0 / len(children) for c in children}
+                    equal_split_count += 1
+            else:
+                # No planning BOM — equal split
+                splits = {c: 1.0 / len(children) for c in children}
+                equal_split_count += 1
+
+            # Upsert child forecasts (no unique constraint, so check-then-update/insert)
+            for child_pid, fraction in splits.items():
+                child_p10 = round(p10 * fraction, 2)
+                child_p50 = round(p50 * fraction, 2)
+                child_p90 = round(p90 * fraction, 2)
+                rec_method = f"reconciled_{method or 'middle_out'}"
+
+                existing = self.db.execute(text("""
+                    SELECT id FROM forecast
+                    WHERE config_id = :cfg AND product_id = :pid
+                      AND site_id = :sid AND forecast_date = :fd
+                    LIMIT 1
+                """), {
+                    "cfg": self.config_id, "pid": child_pid,
+                    "sid": site_id, "fd": forecast_date,
+                }).fetchone()
+
+                if existing:
+                    self.db.execute(text("""
+                        UPDATE forecast
+                        SET forecast_p10 = :p10, forecast_p50 = :p50,
+                            forecast_p90 = :p90, forecast_method = :method
+                        WHERE id = :fid
+                    """), {
+                        "p10": child_p10, "p50": child_p50, "p90": child_p90,
+                        "method": rec_method, "fid": existing[0],
+                    })
+                else:
+                    self.db.execute(text("""
+                        INSERT INTO forecast
+                            (config_id, product_id, site_id, forecast_date,
+                             forecast_p10, forecast_p50, forecast_p90,
+                             forecast_method)
+                        VALUES (:cfg, :pid, :sid, :fd, :p10, :p50, :p90, :method)
+                    """), {
+                        "cfg": self.config_id, "pid": child_pid,
+                        "sid": site_id, "fd": forecast_date,
+                        "p10": child_p10, "p50": child_p50, "p90": child_p90,
+                        "method": rec_method,
+                    })
+                products_reconciled += 1
+
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+        return (products_reconciled, bom_ratio_count, equal_split_count)
 
     # ── Helpers ────────────────────────────────────────────────────
 

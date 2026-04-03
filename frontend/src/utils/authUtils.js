@@ -86,6 +86,13 @@ export const getDefaultLandingPath = (user) => {
     return "/admin/tenants";
   }
 
+  // Tenant admins land on Supply Chain Configs — their primary admin task.
+  // Check BEFORE decision_level so tenant admins always go to admin pages
+  // regardless of any decision_level value they may have.
+  if (getUserType(user) === "tenantadmin") {
+    return "/admin/tenant/supply-chain-configs";
+  }
+
   // Route by decision level for role-specific landing pages
   const level = user?.decision_level;
   if (level === 'SOP_DIRECTOR') {
@@ -97,11 +104,6 @@ export const getDefaultLandingPath = (user) => {
   if (level === 'ATP_ANALYST' || level === 'PO_ANALYST' ||
       level === 'REBALANCING_ANALYST' || level === 'ORDER_TRACKING_ANALYST') {
     return "/insights/actions";
-  }
-
-  // Tenant admins land on Supply Chain Configs — their primary admin task
-  if (isTenantAdmin(user)) {
-    return "/admin/tenant/supply-chain-configs";
   }
 
   // Executives, DEMO_ALL, and all other operational users

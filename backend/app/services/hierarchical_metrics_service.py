@@ -1283,32 +1283,74 @@ class HierarchicalMetricsService:
                 .filter(InvLevel.config_id == config.id)
                 .all()
             )
+            inv_map = {(r.product_id, r.site_id): float(r.on_hand_qty or 0) for r in inv_rows}
+
+            # Query all active policies — both ss_quantity-based and ss_days-based
+            from sqlalchemy import or_
             pol_rows = (
-                self.db.query(InvPolicy.product_id, InvPolicy.site_id, InvPolicy.ss_quantity)
+                self.db.query(
+                    InvPolicy.product_id, InvPolicy.site_id,
+                    InvPolicy.ss_quantity, InvPolicy.ss_days, InvPolicy.ss_policy,
+                )
                 .filter(
                     InvPolicy.config_id == config.id,
                     InvPolicy.is_active.in_(["true", "Y", "yes", "1"]),
-                    InvPolicy.ss_quantity.isnot(None),
-                    InvPolicy.ss_quantity > 0,
+                    or_(
+                        InvPolicy.ss_quantity > 0,
+                        InvPolicy.ss_days > 0,
+                    ),
                 )
                 .all()
             )
-            if pol_rows:
-                inv_map = {(r.product_id, r.site_id): float(r.on_hand_qty or 0) for r in inv_rows}
-                n_pol = len(pol_rows)
-                above = sum(1 for r in pol_rows if inv_map.get((r.product_id, r.site_id), 0) >= float(r.ss_quantity))
+
+            # For ss_days policies (doc_dem, doc_fcst), compute effective SS from
+            # average daily forecast quantity per product-site
+            avg_daily_demand = {}
+            days_policies = [r for r in pol_rows if r.ss_quantity is None or float(r.ss_quantity or 0) == 0]
+            if days_policies:
+                from app.models.sc_entities import Forecast as ForecastModel
+                from sqlalchemy import func as sqf_demand
+                demand_rows = (
+                    self.db.query(
+                        ForecastModel.product_id,
+                        ForecastModel.site_id,
+                        sqf_demand.avg(ForecastModel.forecast_quantity),
+                    )
+                    .filter(ForecastModel.config_id == config.id)
+                    .group_by(ForecastModel.product_id, ForecastModel.site_id)
+                    .all()
+                )
+                # forecast_quantity is typically weekly; convert to daily
+                for row in demand_rows:
+                    if row[2] and row[2] > 0:
+                        avg_daily_demand[(row[0], row[1])] = float(row[2]) / 7.0
+
+            # Build effective safety stock map
+            def _effective_ss(r):
+                if r.ss_quantity and float(r.ss_quantity) > 0:
+                    return float(r.ss_quantity)
+                if r.ss_days and r.ss_days > 0:
+                    daily = avg_daily_demand.get((r.product_id, r.site_id), 0)
+                    return r.ss_days * daily
+                return 0.0
+
+            ss_map = [(r, _effective_ss(r)) for r in pol_rows]
+            ss_map = [(r, ess) for r, ess in ss_map if ess > 0]
+
+            if ss_map:
+                n_pol = len(ss_map)
+                above = sum(1 for r, ess in ss_map if inv_map.get((r.product_id, r.site_id), 0) >= ess)
                 metrics["safety_stock_fill_rate"] = round(above / n_pol * 100, 1)
                 ci_lo, ci_hi = _wilson_ci(above, n_pol)
                 metrics["_ci_safety_stock_fill_rate"] = {"ci_lower": ci_lo, "ci_upper": ci_hi, "n": n_pol}
 
             # ── BLA: Buffer Level Adequacy ──
-            if pol_rows:
+            if ss_map:
                 ratios = []
-                for r in pol_rows:
+                for r, ess in ss_map:
                     oh = inv_map.get((r.product_id, r.site_id), 0)
-                    ss = float(r.ss_quantity)
-                    if ss > 0:
-                        ratios.append(min(oh / ss, 3.0))
+                    if ess > 0:
+                        ratios.append(min(oh / ess, 3.0))
                 if ratios:
                     mean_val, ci_lo, ci_hi = _mean_ci(ratios)
                     metrics["buffer_level_adequacy"] = round(sum(ratios) / len(ratios), 2)

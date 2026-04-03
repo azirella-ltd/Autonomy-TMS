@@ -24,6 +24,7 @@
 13. [Personas & Governance Experience](#13-personas--governance-experience)
 14. [Implementation Status](#14-implementation-status)
 15. [Key Files Reference](#15-key-files-reference)
+16. [ERP Write-back via MCP — Agent-to-ERP Decision Execution](#16-erp-write-back-via-mcp--agent-to-erp-decision-execution)
 
 ---
 
@@ -32,12 +33,12 @@
 AIIO is the core principle governing how AI agent decisions interact with
 human planners. Every decision falls into one of four modes:
 
-| Mode | Agent Action | Human Action | Timing |
-|------|-------------|--------------|--------|
-| **Automate** | Execute immediately | None required | Real-time |
-| **Inform** | Execute immediately | Acknowledge receipt | Post-execution |
-| **Inspect** | Hold for review window | Accept, reject, or override before deadline | Pre-execution |
-| **Override** | Already executed | Retroactively correct with mandatory reason | Post-execution |
+| Mode | Agent Action | Human Action | ERP Write-back Timing |
+|------|-------------|--------------|----------------------|
+| **Automate** | Execute decision | None required, but can reverse | After adaptive delay (short: 5-15 min) |
+| **Inform** | Execute decision, notify | Acknowledge, can override before write-back | After adaptive delay (moderate: 15-60 min) |
+| **Inspect** | Hold for review | Accept, reject, or override before deadline | After explicit approval + delay |
+| **Override** | Already executed and written to ERP | Retroactively correct with mandatory reason → compensating ERP write-back | Immediate reversal |
 
 ### Core Principles
 
@@ -874,6 +875,216 @@ Human overrides GNN directive for Site-East
 
 ---
 
+## 16. ERP Write-back via MCP — Agent-to-ERP Decision Execution
+
+### 16.1 Architecture: Two-Phase ERP Integration
+
+Autonomy interacts with ERPs in two distinct phases:
+
+| Phase | Mechanism | Purpose | When |
+|-------|-----------|---------|------|
+| **Provisioning** | Bulk extraction (RFC/OData/REST) | Initial data load: master + transactional | One-time onboarding |
+| **Live Operations** | MCP (Model Context Protocol) | Ongoing CDC reads + agent write-back | Continuous post-provisioning |
+
+The MCP layer provides a single protocol for bidirectional communication with
+any ERP: SAP S/4HANA, Dynamics 365, Odoo, NetSuite, SAP B1, and Infor.
+
+### 16.2 Inbound: CDC via MCP Polling
+
+```
+ERP MCP Server
+    ↓ poll (1-5 min intervals)
+MCPClientSession (connection pooled per tenant+ERP)
+    ↓ raw records
+DeltaClassifier (hash-based change detection)
+    ↓ new / changed / deleted
+ContextEngine (single router)
+    ├── HiveSignalBus (TRM signals: DEMAND_SURGE, PO_EXPEDITE, etc.)
+    ├── Decision Stream WebSocket (real-time UI push)
+    └── audit.mcp_call_log (SOC II)
+```
+
+The Context Engine maps ERP entity changes to HiveSignalType signals:
+
+| ERP Change | AWS SC Entity | HiveSignal |
+|------------|--------------|------------|
+| New sales order | outbound_order | DEMAND_SURGE |
+| SO cancelled | outbound_order | DEMAND_DROP |
+| New PO | inbound_order | PO_EXPEDITE |
+| PO delayed | inbound_order | PO_DEFERRED |
+| MO completed | manufacturing_order | MO_RELEASED |
+| Inventory change | inventory_level | BUFFER_DECREASED |
+| Material master update | product | ALLOCATION_REFRESH |
+
+### 16.3 Outbound: Agent Decision Write-back
+
+When a TRM agent makes a decision (e.g., "create a purchase order for 500 units
+of material X"), that decision must eventually be written back to the ERP to
+close the loop. This is the **write-back** path.
+
+**Critical design principle: NO decision is written to the ERP immediately.**
+
+Every decision — regardless of AIIO mode — goes through an adaptive delay
+before ERP write-back. This delay gives humans a window to inspect and
+override before the decision becomes an ERP document.
+
+```
+TRM Decision (ACTIONED)
+    ↓
+DecisionGovernanceService.compute_writeback_delay()
+    ↓ delay_minutes (5-480, based on urgency + confidence)
+OversightScheduleService.compute_eligible_at()
+    ↓ eligible_at (business-hours-aware timestamp)
+mcp_pending_writeback table (status='scheduled')
+    ↓
+Decision Stream shows countdown timer
+    │
+    ├── Human overrides → status='cancelled', compensating action if needed
+    │
+    └── Timer expires → process_pending_writebacks() executes
+         ↓
+         MCPWritebackService.execute_decision(force_immediate=True)
+         ↓
+         MCP tool call → ERP document created
+         ↓
+         audit.mcp_call_log + Decision Stream notification
+```
+
+### 16.4 Adaptive Write-back Delay
+
+The delay is computed from the governance policy using urgency and confidence:
+
+```
+delay = base * (1 - urgency * u_weight) * (2 - confidence * c_weight)
+clamped to [min_delay, max_delay]
+```
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `writeback_base_delay_minutes` | 30 | Starting point |
+| `writeback_min_delay_minutes` | 5 | Floor — even urgent+confident decisions wait |
+| `writeback_max_delay_minutes` | 480 (8h) | Ceiling — prevents indefinite hold |
+| `writeback_urgency_weight` | 1.0 | How much urgency shortens the delay |
+| `writeback_confidence_weight` | 1.0 | How much confidence shortens the delay |
+
+**Example delays with default settings:**
+
+| Urgency | Confidence | Result |
+|---------|------------|--------|
+| 0.9 | 0.9 | **5 min** (floor) |
+| 0.7 | 0.8 | **11 min** |
+| 0.5 | 0.5 | **23 min** |
+| 0.3 | 0.4 | **34 min** |
+| 0.1 | 0.1 | **51 min** |
+
+These settings are **per governance policy** — they can vary by action type,
+site, and tenant. A $50 forecast adjustment might have a 5-minute floor,
+while a $500K purchase order might have a 120-minute base.
+
+### 16.5 Business-Hours-Aware Delay (Human Oversight)
+
+The adaptive delay is meaningless if it expires while no human is available to
+review. The oversight schedule ensures the countdown **only ticks during
+business hours**.
+
+**Example:**
+- Decision at 4:50pm Friday, 30-minute delay
+- Business hours: Mon-Fri 08:00-17:00, timezone America/Chicago
+- 10 minutes consumed Friday (4:50-5:00)
+- Paused Saturday + Sunday
+- 20 minutes resume Monday morning (8:00-8:20)
+- **eligible_at = Monday 8:20am CT**
+
+**Configuration (per-tenant, Governance → Oversight Schedule tab):**
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `timezone` | UTC | IANA timezone (e.g., America/Chicago) |
+| `respect_business_hours` | true | Pause countdown outside hours |
+| `extend_delay_over_weekends` | true | Pause on non-operating days |
+| `max_calendar_delay_hours` | 72 | Cap to prevent indefinite hold over long weekends |
+| Weekly schedule | Mon-Fri 08:00-17:00 | Per day-of-week operating window |
+| Holiday calendar | (empty) | Specific non-operating dates |
+
+### 16.6 Urgent Bypass
+
+Some decisions genuinely cannot wait for business hours. A stockout at a
+critical DC at 2am needs agent action, not a 14-hour hold.
+
+When `urgent_bypass_enabled = true` (default) and the decision's urgency
+exceeds `urgent_bypass_threshold` (default 0.85), the delay countdown
+**ignores business hours** and uses raw clock time. The decision still has
+the adaptive delay (minimum 5 minutes), is still visible in Decision Stream,
+and is still audited — but it doesn't wait for morning.
+
+**On-call notification:** When an urgent decision bypasses hours, the system
+sends a targeted WebSocket notification to the designated on-call user via
+Decision Stream with severity level (critical/high/medium based on urgency).
+
+### 16.7 Post-Execution Override and Reversal
+
+**Humans always retain override authority, even after ERP execution.**
+
+There are two override windows:
+
+1. **Pre-execution (during delay):** User overrides in Decision Stream →
+   write-back cancelled, no ERP document created.
+
+2. **Post-execution (after write-back):** User issues a **compensating
+   action** — a new ERP document that reverses the original:
+
+| Original Decision | Compensating Action |
+|-------------------|-------------------|
+| PO created | PO cancelled (deletion indicator) |
+| Production order released | Production order TECO'd |
+| Stock transfer (311) | Reverse transfer (312) |
+| SO ATP confirmation | Confirmation cleared |
+| Subcontracting PO | PO cancelled |
+
+**Post-execution overrides ALWAYS require a mandatory reason** — this feeds
+into the Bayesian override effectiveness posterior (Layer 4) and the TRM
+retraining pipeline.
+
+The reversal is executed via the same MCP channel as the original, audited
+with `tool_name = "REVERSAL:<original_tool>"` and a new correlation_id.
+
+### 16.8 Decision Stream Write-back Events
+
+| WebSocket Event | Trigger | User Actions |
+|----------------|---------|-------------|
+| `mcp_writeback_scheduled` | Decision enters delay | Override, Ask Why |
+| `mcp_writeback_executed` | Write-back completes | Reverse, Ask Why |
+| `mcp_writeback_reversed` | Reversal completes | View audit trail |
+| `mcp_writeback_pending` | INSPECT awaiting approval | Approve, Reject, Modify |
+| `oncall_notification` | After-hours urgent | Review, Override, Acknowledge |
+
+### 16.9 Supported ERP MCP Servers
+
+| ERP | MCP Server | Status |
+|-----|-----------|--------|
+| SAP S/4HANA | btp-sap-odata-to-mcp-server | Production |
+| SAP S/4HANA | hana-mcp-server | Production |
+| Dynamics 365 | Official Microsoft D365 ERP MCP | GA (Feb 2026) |
+| Odoo | mcp-server-odoo (PyPI) | Production |
+| SAP B1 | sap-b1-mcp-server (npm) | Production |
+| NetSuite | Oracle AI Connector Service | Production (Mar 2026) |
+| Infor | Custom (ION API wrapper) | Planned |
+
+### 16.10 Key Files
+
+| File | Purpose |
+|------|---------|
+| `integrations/mcp/client.py` | MCPClientSession, MCPConnectionPool |
+| `integrations/mcp/writeback_service.py` | Write-back, reversal, pending executor, on-call |
+| `integrations/mcp/context_engine.py` | Inbound CDC router |
+| `integrations/mcp/adapters/sap_s4.py` | SAP S/4HANA adapter |
+| `models/operating_schedule.py` | Schedule, holidays, oversight config |
+| `models/decision_governance.py` | Governance policy (writeback_* fields) |
+| `services/oversight_schedule_service.py` | Business-hours compute_eligible_at() |
+| `services/decision_governance_service.py` | compute_writeback_delay() |
+
+---
+
 ## Appendix A: Glossary
 
 | Term | Definition |
@@ -884,7 +1095,12 @@ Human overrides GNN directive for Site-East
 | **Balanced Scorecard** | Four-quadrant metric framework (Financial, Customer, Operational, Strategic) |
 | **CDT** | Conformal Decision Theory — distribution-free risk bounds on every TRM decision |
 | **CDC** | Change Data Capture — event-driven metric deviation detection |
-| **Governance Policy** | Configurable per-customer rules for impact thresholds and hold windows |
+| **Compensating Action** | ERP document that reverses a prior write-back (e.g., PO cancellation reverses PO creation) |
+| **Context Engine** | Single router that classifies inbound MCP changes and emits HiveSignals |
+| **Governance Policy** | Configurable per-customer rules for impact thresholds, hold windows, and write-back delays |
+| **MCP** | Model Context Protocol — Anthropic-originated protocol for tool-based AI-to-system communication |
+| **Oversight Schedule** | Tenant's weekly business hours + holidays, controlling when write-back delays count down |
+| **Write-back Delay** | Adaptive cooling period before agent decisions become ERP documents; urgency/confidence-scaled |
 | **Impact Score** | Composite 0-100 score (financial + scope + reversibility + confidence + override rate) |
 | **Nonconformity Score** | How unusual a prediction context is vs training data |
 | **Override Delta** | `human_actual_reward - agent_counterfactual_reward` |

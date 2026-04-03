@@ -703,10 +703,37 @@ def get_hierarchy_dimensions(
     except Exception:
         pass
 
+    # Distinct products and sites that appear in forecasts (for table filter dropdowns)
+    forecast_products = []
+    forecast_sites = []
+    try:
+        fp_rows = db.execute(text("""
+            SELECT DISTINCT f.product_id,
+                   COALESCE(p.description, p.id, f.product_id) AS product_name
+            FROM forecast f
+            LEFT JOIN product p ON p.id = f.product_id AND p.config_id = f.config_id
+            WHERE f.config_id = :cfg AND f.forecast_p50 IS NOT NULL
+            ORDER BY product_name
+        """), {"cfg": config_id}).fetchall()
+        forecast_products = [{"id": r[0], "name": r[1]} for r in fp_rows]
+
+        fs_rows = db.execute(text("""
+            SELECT DISTINCT f.site_id, s.name AS site_name, s.type AS site_type, s.geo_id
+            FROM forecast f
+            JOIN site s ON CAST(s.id AS TEXT) = f.site_id AND s.config_id = f.config_id
+            WHERE f.config_id = :cfg AND f.forecast_p50 IS NOT NULL
+            ORDER BY s.name
+        """), {"cfg": config_id}).fetchall()
+        forecast_sites = [{"id": r[0], "name": r[1], "type": r[2], "geo_id": r[3]} for r in fs_rows]
+    except Exception as e:
+        logger.warning("Forecast product/site list failed: %s", e)
+
     return {
         "product_tree": product_tree,
         "geography": geo_tree,
         "sites": [{"id": s[0], "name": s[1], "type": s[2], "geo_id": s[3]} for s in sites],
+        "forecast_products": forecast_products,
+        "forecast_sites": forecast_sites,
         "channels": channels,
         "time_buckets": ["day", "week", "month"],
     }
@@ -907,6 +934,18 @@ def get_aggregated_forecast(
                 }
     except Exception as e:
         logger.warning("Actuals overlay failed: %s", e)
+
+    # Build response
+    series = sorted(series_map.values(), key=lambda x: x["date"] or "")
+    total_records = sum(s.get("records", 0) for s in series)
+    return {
+        "series": series,
+        "summary": {
+            "total_records": total_records,
+            "buckets": len(series),
+            "time_bucket": time_bucket,
+        },
+    }
 
 
 @router.get("/grid")

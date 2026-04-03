@@ -128,13 +128,16 @@ export default function InventorySegmentation() {
     setError(null);
     try {
       // Fetch product inventory data for segmentation
-      const [invRes, fcstRes] = await Promise.all([
-        api.get('/inventory/levels', { params: { config_id: effectiveConfigId, limit: 500 } }),
-        api.get('/demand-plan', { params: { config_id: effectiveConfigId, limit: 500 } }),
+      const [invRes, fcstRes] = await Promise.allSettled([
+        api.get('/inventory-projection/projections', { params: { config_id: effectiveConfigId, limit: 500 } }),
+        api.get('/demand-plan/current', { params: { config_id: effectiveConfigId, limit: 500 } }),
       ]);
+      // Unwrap allSettled results
+      const invData = invRes.status === 'fulfilled' ? invRes.value : { data: [] };
+      const fcstData = fcstRes.status === 'fulfilled' ? fcstRes.value : { data: [] };
 
-      const invLevels = invRes.data?.levels || invRes.data || [];
-      const forecasts = fcstRes.data?.forecasts || fcstRes.data || [];
+      const invLevels = invData.data?.levels || invData.data || [];
+      const forecasts = fcstData.data?.forecasts || fcstData.data || [];
 
       // Build product-level aggregates from inventory + forecast data
       const productMap = {};

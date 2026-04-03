@@ -53,7 +53,7 @@ CDC data:
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, Tuple
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -364,9 +364,13 @@ class D365ConfigBuilder:
         from app.models.supply_chain_config import Site
 
         site_map: Dict[str, Any] = {}  # SiteId → Site
+        seen_sites: Set[str] = set()
 
         for s in sites_data:
             site_id = s.get("SiteId", "")
+            if site_id in seen_sites:
+                continue
+            seen_sites.add(site_id)
             site = Site(
                 config_id=config.id,
                 name=site_id,
@@ -392,9 +396,13 @@ class D365ConfigBuilder:
         from app.models.sc_entities import Product
 
         product_map: Dict[str, Any] = {}  # ItemNumber → Product
+        seen_products: Set[str] = set()
 
         for p in products_data:
             item_no = p.get("ItemNumber", "")
+            if item_no in seen_products:
+                continue
+            seen_products.add(item_no)
             product = Product(
                 config_id=config.id,
                 name=item_no[:100],
@@ -577,9 +585,14 @@ class D365ConfigBuilder:
     async def _build_trading_partners(self, config, vendors, customers, result):
         from app.models.sc_entities import TradingPartner
 
+        seen_tp: Set[str] = set()
         for v in vendors:
+            v_acct = v.get('VendorAccountNumber', '')
+            if v_acct in seen_tp:
+                continue
+            seen_tp.add(v_acct)
             tp = TradingPartner(
-                id=f"D365_V_{v.get('VendorAccountNumber', '')}",
+                id=f"D365_V_{v_acct}",
                 tpartner_type="vendor",
                 description=v.get("VendorOrganizationName", v.get("VendorAccountNumber", ""))[:200],
                 company_id=f"D365_{self.tenant_id}",
@@ -588,9 +601,14 @@ class D365ConfigBuilder:
             self.db.add(tp)
             result.trading_partners_created += 1
 
+        seen_cust: Set[str] = set()
         for c in customers:
+            c_acct = c.get('CustomerAccount', '')
+            if c_acct in seen_cust:
+                continue
+            seen_cust.add(c_acct)
             tp = TradingPartner(
-                id=f"D365_C_{c.get('CustomerAccount', '')}",
+                id=f"D365_C_{c_acct}",
                 tpartner_type="customer",
                 description=c.get("CustomerName", c.get("CustomerAccount", ""))[:200],
                 company_id=f"D365_{self.tenant_id}",
@@ -606,23 +624,62 @@ class D365ConfigBuilder:
     # ------------------------------------------------------------------
 
     async def _build_boms(self, config, bom_headers, bom_lines, product_map, result):
+        """Build ProductBom records from D365 BillOfMaterialsHeaders/Lines.
+
+        D365 BOM types (BOMType field on header):
+          0 = Item (Manufacturing/Production) — skip
+          1 = Planning BOM
+          2 = Formula — skip (process manufacturing variant of production)
+          3 = Sales BOM
+
+        BOMApproved field: 'Yes' means active BOM version.
+        Extract Planning (type 1) and Sales (type 3) BOMs only.
+        """
         from app.models.sc_entities import ProductBom
+        from datetime import datetime
+
+        # Map D365 BOM type to bom_usage
+        _D365_BOM_TYPE_USAGE = {
+            "1": "planning", 1: "planning",
+            "3": "sales", 3: "sales",
+            "Planning": "planning",
+            "SalesBOM": "sales", "Sales": "sales",
+        }
 
         header_map = {h.get("BOMId"): h for h in bom_headers}
+        seen_bom_keys: Set[Tuple] = set()
 
         for line in bom_lines:
             bom_id = line.get("BOMId")
             header = header_map.get(bom_id, {})
+
+            # Determine bom_usage from header BOMType
+            bom_type = header.get("BOMType", header.get("BillOfMaterialsType", ""))
+            bom_usage = _D365_BOM_TYPE_USAGE.get(bom_type)
+            if not bom_usage:
+                continue  # Skip production/formula BOMs
+
             parent_item = header.get("ItemNumber", "")
             child_item = line.get("ItemNumber", "")
             parent_prod = product_map.get(parent_item)
             child_prod = product_map.get(child_item)
             if parent_prod and child_prod:
+                # Dedup: skip duplicate (product_id, component_product_id)
+                bom_key = (parent_prod.id, child_prod.id)
+                if bom_key in seen_bom_keys:
+                    continue
+                seen_bom_keys.add(bom_key)
+                comp_qty = float(line.get("Quantity", line.get("BOMLineQuantity", 1)))
                 bom = ProductBom(
                     product_id=parent_prod.id,
                     component_product_id=child_prod.id,
-                    quantity=float(line.get("Quantity", 1)),
+                    component_quantity=comp_qty,
+                    component_uom=str(line.get("UnitId", "EA") or "EA"),
+                    bom_usage=bom_usage,
+                    is_active="true" if header.get("BOMApproved") in ("Yes", True) else "false",
                     config_id=config.id,
+                    source="D365_BOM",
+                    source_update_dttm=datetime.utcnow(),
                 )
                 self.db.add(bom)
                 result.boms_created += 1
@@ -640,11 +697,16 @@ class D365ConfigBuilder:
         from app.models.sc_entities import InvLevel, InvPolicy
 
         # On-hand inventory
+        seen_inv_levels: Set[str] = set()
         for inv in inv_onhand:
             item = inv.get("ItemNumber", "")
             product = product_map.get(item)
             if not product:
                 continue
+            # Dedup: skip duplicate product_id for inv levels
+            if product.id in seen_inv_levels:
+                continue
+            seen_inv_levels.add(product.id)
             level = InvLevel(
                 product_id=product.id,
                 config_id=config.id,
@@ -655,11 +717,16 @@ class D365ConfigBuilder:
             result.inv_levels_created += 1
 
         # Coverage settings → inventory policies
+        seen_inv_policies: Set[str] = set()
         for cs in coverage:
             item = cs.get("ItemNumber", "")
             product = product_map.get(item)
             if not product:
                 continue
+            # Dedup: skip duplicate product_id for inv policies
+            if product.id in seen_inv_policies:
+                continue
+            seen_inv_policies.add(product.id)
             coverage_code = cs.get("CoverageCode", "")
             policy = InvPolicy(
                 product_id=product.id,
@@ -723,10 +790,14 @@ class D365ConfigBuilder:
             result.warnings.append("No sites available — skipping purchase orders")
             return
 
+        seen_po: Set[str] = set()
         for header in po_headers:
             po_number = header.get("PurchaseOrderNumber", "")
             if not po_number:
                 continue
+            if po_number in seen_po:
+                continue
+            seen_po.add(po_number)
 
             vendor_account = header.get("VendorAccountNumber", "")
             if not vendor_account:
@@ -859,10 +930,14 @@ class D365ConfigBuilder:
             result.warnings.append("No sites available — skipping outbound orders")
             return
 
+        seen_so: Set[str] = set()
         for header in so_headers:
             so_number = header.get("SalesOrderNumber", "")
             if not so_number:
                 continue
+            if so_number in seen_so:
+                continue
+            seen_so.add(so_number)
 
             customer_account = header.get("CustomerAccountNumber", "")
             if not customer_account:
@@ -1943,11 +2018,18 @@ class D365ConfigBuilder:
         if not vendor_prices:
             return
 
+        seen_vp: Set[Tuple[str, str]] = set()
         for vp in vendor_prices:
             vendor_account = vp.get("VendorAccountNumber", "")
             item_number = vp.get("ItemNumber", "")
             if not vendor_account or not item_number:
                 continue
+
+            # Dedup: skip duplicate (vendor, item) combos
+            vp_key = (vendor_account, item_number)
+            if vp_key in seen_vp:
+                continue
+            seen_vp.add(vp_key)
 
             product = product_map.get(item_number)
             if not product:
@@ -2006,6 +2088,7 @@ class D365ConfigBuilder:
             result.warnings.append("No sites available — skipping sourcing rules")
             return
 
+        seen_sr: Set[str] = set()
         for avl in approved_vendors:
             item_number = avl.get("ItemNumber", "")
             vendor_account = avl.get("VendorAccountNumber", "")
@@ -2030,6 +2113,11 @@ class D365ConfigBuilder:
 
             tpartner_id = f"D365_V_{vendor_account}"
             rule_id = f"D365_SR_{item_number}_{vendor_account}_{source_list_num}"
+
+            # Dedup: skip duplicate rule_id
+            if rule_id in seen_sr:
+                continue
+            seen_sr.add(rule_id)
 
             sourcing_rule = SourcingRules(
                 id=rule_id,

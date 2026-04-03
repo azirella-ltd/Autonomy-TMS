@@ -57,8 +57,157 @@ from app.services.sap_field_mapping_service import (
     create_field_mapping_service,
 )
 from app.services.extraction_audit_service import ExtractionAuditReport
+from app.services.sap_expected_schema import EXPECTED_SCHEMA
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# SchemaFieldResolver — resolves SAP field names via schema profile
+# ---------------------------------------------------------------------------
+
+class SchemaFieldResolver:
+    """Resolves SAP field references using the Schema Discovery Agent's profile.
+
+    When a schema_profile is provided (from sap_connections.schema_profile),
+    field lookups use the discovered mappings. Falls back to hardcoded defaults
+    from sap_expected_schema.py when no profile exists (backward compatible).
+
+    Usage:
+        resolver = SchemaFieldResolver(schema_profile)
+        col = resolver.get_col("product", "product_id")  # returns "MATNR"
+        col = resolver.get_col("product", "base_uom")    # returns "MEINS"
+    """
+
+    def __init__(self, schema_profile: Optional[Dict[str, Any]] = None):
+        self.profile = schema_profile
+        # Pre-build a fast lookup: (entity, aws_field) → (table, sap_column)
+        self._col_cache: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        self._join_cache: Dict[Tuple[str, str], Optional[Dict[str, Any]]] = {}
+        if self.profile:
+            self._build_cache_from_profile()
+
+    def _build_cache_from_profile(self):
+        """Pre-build lookup caches from the schema profile."""
+        entities = self.profile.get("entities", {})
+        for entity_name, ep in entities.items():
+            field_matches = ep.get("field_matches", {})
+            primary_table = ep.get("primary_table", "")
+            for aws_field, fm in field_matches.items():
+                matched_table = fm.get("matched_table", "")
+                matched_field = fm.get("matched_field", "")
+                match_type = fm.get("match_type", "not_found")
+                if match_type == "not_found" or not matched_field:
+                    continue
+                table = matched_table or primary_table
+                self._col_cache[(entity_name, aws_field)] = (table, matched_field)
+
+                # Cache join info
+                join_path = fm.get("join_path")
+                if join_path:
+                    self._join_cache[(entity_name, aws_field)] = join_path
+                elif matched_table and matched_table != primary_table:
+                    # Field is in a different table — check expected schema for join info
+                    exp = EXPECTED_SCHEMA.get(entity_name, {}).get("fields", {}).get(aws_field, {})
+                    if exp.get("join"):
+                        self._join_cache[(entity_name, aws_field)] = {
+                            "from_field": exp["join"],
+                            "to_table": matched_table,
+                            "to_field": exp["join"],
+                        }
+
+    def get_col(self, entity: str, aws_field: str) -> str:
+        """Return the SAP column name for a logical AWS SC DM field.
+
+        If the profile has a mapping, return the discovered column name.
+        Otherwise fall back to the hardcoded default from EXPECTED_SCHEMA.
+
+        Args:
+            entity: Entity name (e.g., "product", "product_bom", "site")
+            aws_field: AWS SC DM field name (e.g., "product_id", "base_uom")
+
+        Returns:
+            SAP column name (e.g., "MATNR", "MEINS")
+        """
+        # Try profile cache first
+        if self._col_cache:
+            cached = self._col_cache.get((entity, aws_field))
+            if cached:
+                return cached[1]  # return the column name
+
+        # Fall back to expected schema defaults
+        exp_entity = EXPECTED_SCHEMA.get(entity, {})
+        exp_field = exp_entity.get("fields", {}).get(aws_field, {})
+        return exp_field.get("sap_field", "")
+
+    def get_table_and_col(self, entity: str, aws_field: str) -> Tuple[str, str]:
+        """Return (table, column) for a logical field.
+
+        Args:
+            entity: Entity name
+            aws_field: AWS SC DM field name
+
+        Returns:
+            Tuple of (SAP table name, SAP column name)
+        """
+        # Try profile cache first
+        if self._col_cache:
+            cached = self._col_cache.get((entity, aws_field))
+            if cached:
+                return cached
+
+        # Fall back to expected schema defaults
+        exp_entity = EXPECTED_SCHEMA.get(entity, {})
+        exp_field = exp_entity.get("fields", {}).get(aws_field, {})
+        table = exp_field.get("table", exp_entity.get("primary_table", ""))
+        col = exp_field.get("sap_field", "")
+        return (table, col)
+
+    def get_join_info(self, entity: str, aws_field: str) -> Optional[Dict[str, Any]]:
+        """Return join info if a field requires a table join.
+
+        Returns None if the field is in the primary table.
+        """
+        if self._join_cache:
+            return self._join_cache.get((entity, aws_field))
+
+        # Fall back to expected schema
+        exp_entity = EXPECTED_SCHEMA.get(entity, {})
+        exp_field = exp_entity.get("fields", {}).get(aws_field, {})
+        if exp_field.get("table") and exp_field.get("join"):
+            return {
+                "from_field": exp_field["join"],
+                "to_table": exp_field["table"],
+                "to_field": exp_field["join"],
+            }
+        return None
+
+    def get_field_table(self, entity: str, aws_field: str) -> str:
+        """Return the table where a field lives (may differ from primary table).
+
+        Useful for knowing if a field requires data from a joined table.
+        """
+        table, _ = self.get_table_and_col(entity, aws_field)
+        return table
+
+    def resolve_from_row(self, entity: str, aws_field: str,
+                         row_data: dict, joined_data: Optional[dict] = None) -> Any:
+        """Get a field value from row data, using profile mapping.
+
+        If the profile says the field is in a different table,
+        looks in joined_data instead.
+        """
+        col = self.get_col(entity, aws_field)
+        if not col:
+            return None
+
+        # Check if field is in a joined table
+        join_info = self.get_join_info(entity, aws_field)
+        if join_info and joined_data is not None:
+            return joined_data.get(col)
+
+        return row_data.get(col)
+
 
 # ---------------------------------------------------------------------------
 # UN M49 region reference — loaded once from bundled JSON
@@ -243,11 +392,12 @@ class SAPConfigBuilder:
     SupplyChainConfig with all entities.
     """
 
-    def __init__(self, db: AsyncSession, tenant_id: int):
+    def __init__(self, db: AsyncSession, tenant_id: int, schema_profile: Optional[Dict[str, Any]] = None):
         self.db = db
         self.tenant_id = tenant_id
         self.mapper = SupplyChainMapper()
         self._field_mapping_service = create_field_mapping_service(db, tenant_id)
+        self.resolver = SchemaFieldResolver(schema_profile)
 
         # Extracted data (DataFrames)
         self._data: Dict[str, pd.DataFrame] = {}
@@ -1033,12 +1183,21 @@ class SAPConfigBuilder:
             logger.warning("Config has no tenant_id — skipping site_planning_config")
             return 0
 
+        # Deduplicate MARC by (MATNR, WERKS) — keep first row per combo
+        marc = marc.drop_duplicates(subset=["MATNR", "WERKS"], keep="first")
+
+        seen_keys = set()
         for _, row in marc.iterrows():
             mat_key = str(row.get("MATNR", "")).strip()
             site_key = str(row.get("WERKS", "")).strip()
 
             if mat_key not in self._products or site_key not in self._sites:
                 continue
+
+            dedup_key = (mat_key, site_key)
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
 
             product_id = f"{prefix}{mat_key}"
             site_id = self._sites[site_key].id
@@ -1648,6 +1807,7 @@ class SAPConfigBuilder:
             key = f"{self._config.id}_{geo_id}"
             seen[key] = {
                 "id": key,
+                "company_id": getattr(self, '_company_id', None),
                 "description": _clean(row.get("name")),
                 "address_1": _clean(row.get("street")),
                 "city": _clean(row.get("city")),
@@ -1862,11 +2022,15 @@ class SAPConfigBuilder:
         # Collect all site keys
         site_keys: Dict[str, str] = {}  # key → name
 
+        # Resolve T001W field names via schema profile
+        _site_id_col = self.resolver.get_col("site", "site_id") or "WERKS"
+        _site_name_col = self.resolver.get_col("site", "name") or "NAME1"
+
         site_adrnr: Dict[str, str] = {}  # plant key → ADRNR (address number)
-        if not t001w.empty and "WERKS" in t001w.columns:
+        if not t001w.empty and _site_id_col in t001w.columns:
             for _, row in t001w.iterrows():
-                key = str(row["WERKS"]).strip()
-                name = str(row.get("NAME1", key)).strip()
+                key = str(row[_site_id_col]).strip()
+                name = str(row.get(_site_name_col, key)).strip()
                 site_keys[key] = name
                 adrnr = str(row.get("ADRNR", "")).strip()
                 if adrnr and adrnr != "nan":
@@ -2004,6 +2168,7 @@ class SAPConfigBuilder:
 
             site = Site(
                 config_id=self._config.id,
+                company_id=getattr(self, '_company_id', None),
                 name=sp.key,
                 type=sp.name,
                 dag_type=dag_type,
@@ -2076,6 +2241,16 @@ class SAPConfigBuilder:
             for _, r in t005u.iterrows():
                 key = (str(r.get("LAND1", "")).strip(), str(r.get("BLAND", "")).strip())
                 region_names[key] = str(r.get("BEZEI", "")).strip()
+
+        # Clear existing hierarchy nodes for this tenant (full rebuild)
+        from sqlalchemy import delete
+        await self.db.execute(
+            delete(SiteHierarchyNode).where(SiteHierarchyNode.tenant_id == tenant_id)
+        )
+        await self.db.execute(
+            delete(ProductHierarchyNode).where(ProductHierarchyNode.tenant_id == tenant_id)
+        )
+        await self.db.flush()
 
         # Root: Company from T001
         if not t001.empty:
@@ -2530,20 +2705,27 @@ class SAPConfigBuilder:
         # returnable materials, etc. These don't belong in the SC planning network.
         _EXCLUDE_MTART = {"SERV", "DIEN", "NLAG", "VERP", "LEIH", "PIPE", "VEHI", "SWNV", "UNSF", "UNFR"}
 
+        # Resolve MARA field names via schema profile
+        _prod_id_col = self.resolver.get_col("product", "product_id") or "MATNR"
+        _prod_type_col = self.resolver.get_col("product", "product_type") or "MTART"
+        _prod_group_col = self.resolver.get_col("product", "product_group") or "MATKL"
+        _prod_uom_col = self.resolver.get_col("product", "base_uom") or "MEINS"
+        _prod_desc_col = "MAKTX"  # Already merged from MAKT
+
         # Get unique physical materials
         materials: Dict[str, Dict[str, Any]] = {}
         skipped_types: Dict[str, int] = {}
-        if not mara.empty and "MATNR" in mara.columns:
+        if not mara.empty and _prod_id_col in mara.columns:
             for _, row in mara.iterrows():
-                key = str(row["MATNR"]).strip()
-                mtart = str(row.get("MTART", "")).strip().upper()
+                key = str(row[_prod_id_col]).strip()
+                mtart = str(row.get(_prod_type_col, "")).strip().upper()
                 if mtart in _EXCLUDE_MTART:
                     skipped_types[mtart] = skipped_types.get(mtart, 0) + 1
                     continue
                 materials[key] = {
-                    "name": str(row.get("MAKTX", key)).strip(),
-                    "group": str(row.get("MATKL", "")).strip(),
-                    "uom": str(row.get("MEINS", "EA")).strip(),
+                    "name": str(row.get(_prod_desc_col, key)).strip(),
+                    "group": str(row.get(_prod_group_col, "")).strip(),
+                    "uom": str(row.get(_prod_uom_col, "EA")).strip(),
                     "type": mtart,
                 }
         if skipped_types:
@@ -2604,11 +2786,13 @@ class SAPConfigBuilder:
             preview.warnings.append("No APO TRLANE data — lanes inferred from source list + PO history")
 
         # Source 2: EORD source list (vendor → plant)
+        _tl_vendor_col = self.resolver.get_col("transportation_lane", "source_partner_id") or "LIFNR"
+        _tl_dest_col = self.resolver.get_col("transportation_lane", "destination_site_id") or "WERKS"
         eord = self._data.get("EORD", pd.DataFrame())
-        if not eord.empty and "LIFNR" in eord.columns:
+        if not eord.empty and _tl_vendor_col in eord.columns:
             for _, row in eord.iterrows():
-                src = str(row["LIFNR"]).strip()
-                dst = str(row["WERKS"]).strip()
+                src = str(row[_tl_vendor_col]).strip()
+                dst = str(row[_tl_dest_col]).strip()
                 key = (src, dst)
                 if key not in lanes:
                     lanes[key] = LanePreview(
@@ -2617,15 +2801,19 @@ class SAPConfigBuilder:
                     )
 
         # Source 3: Historical EKPO (vendor-plant PO patterns)
+        _po_num_col = self.resolver.get_col("purchase_order", "po_number") or "EBELN"
+        _po_vendor_col = self.resolver.get_col("purchase_order", "vendor_id") or "LIFNR"
+        _po_site_col = self.resolver.get_col("purchase_order", "site_id") or "WERKS"
         ekpo = self._data.get("EKPO", pd.DataFrame())
         ekko = self._data.get("EKKO", pd.DataFrame())
         if not ekpo.empty and not ekko.empty:
+            ekko_cols = [c for c in [_po_num_col, _po_vendor_col] if c in ekko.columns]
             merged = ekpo.merge(
-                ekko[["EBELN", "LIFNR"]].drop_duplicates(),
-                on="EBELN", how="left",
-            )
-            if "LIFNR" in merged.columns and "WERKS" in merged.columns:
-                po_flows = merged.groupby(["LIFNR", "WERKS"]).size()
+                ekko[ekko_cols].drop_duplicates(),
+                on=_po_num_col, how="left",
+            ) if len(ekko_cols) == 2 else pd.DataFrame()
+            if _po_vendor_col in merged.columns and _po_site_col in merged.columns:
+                po_flows = merged.groupby([_po_vendor_col, _po_site_col]).size()
                 for (vendor, plant), count in po_flows.items():
                     if count >= 3:  # threshold
                         key = (str(vendor).strip(), str(plant).strip())
@@ -3197,19 +3385,67 @@ class SAPConfigBuilder:
                 # Without MAST, we cannot create correct BOMs — skip entirely
                 # rather than creating self-referential entries
 
-            # Enrich with header base quantity from STKO
+            # Enrich with header base quantity and BOM usage type from STKO
             base_qty_map = {}
+            bom_usage_map = {}  # STLNR → bom_usage string
+            _stlan_to_usage = {"3": "sales", "5": "planning"}
+
+            # Resolve where STLAN (bom_usage_type) lives — may be in STKO or MAST
+            stlan_table, stlan_col = self.resolver.get_table_and_col("product_bom", "bom_usage_type")
+            bmeng_col = self.resolver.get_col("product_bom", "header_quantity") or "BMENG"
+
+            # Build STLNR → STLAN map from whichever table has it
+            stlnr_to_stlan: Dict[str, str] = {}
+            if stlan_table == "MAST" and not mast.empty and stlan_col in mast.columns:
+                # Schema profile says STLAN is in MAST (e.g., SAP FAA)
+                for _, row in mast.iterrows():
+                    bom_nr = _norm_stlnr(row.get("STLNR", ""))
+                    stlan_val = str(row.get(stlan_col, "")).strip()
+                    if stlan_val:
+                        stlnr_to_stlan[bom_nr] = stlan_val
+                logger.info(f"BOM usage (STLAN) resolved from MAST.{stlan_col}: {len(stlnr_to_stlan)} entries")
+            elif not stko.empty and "STLNR" in stko.columns:
+                # Default: STLAN is in STKO
+                effective_stlan_col = stlan_col if stlan_col in stko.columns else "STLAN"
+                if effective_stlan_col in stko.columns:
+                    for _, row in stko.iterrows():
+                        bom_nr = _norm_stlnr(row["STLNR"])
+                        stlan_val = str(row.get(effective_stlan_col, "")).strip()
+                        if stlan_val:
+                            stlnr_to_stlan[bom_nr] = stlan_val
+                    logger.info(f"BOM usage (STLAN) resolved from STKO.{effective_stlan_col}: {len(stlnr_to_stlan)} entries")
+
+            # Also try MAST as fallback if STKO didn't have STLAN
+            if not stlnr_to_stlan and not mast.empty and "STLAN" in mast.columns:
+                for _, row in mast.iterrows():
+                    bom_nr = _norm_stlnr(row.get("STLNR", ""))
+                    stlan_val = str(row.get("STLAN", "")).strip()
+                    if stlan_val:
+                        stlnr_to_stlan[bom_nr] = stlan_val
+                logger.info(f"BOM usage (STLAN) fallback from MAST.STLAN: {len(stlnr_to_stlan)} entries")
+
             if not stko.empty and "STLNR" in stko.columns:
                 for _, row in stko.iterrows():
                     bom_nr = _norm_stlnr(row["STLNR"])
-                    base_qty_map[bom_nr] = float(pd.to_numeric(row.get("BMENG", 1), errors="coerce") or 1)
+                    base_qty_map[bom_nr] = float(pd.to_numeric(row.get(bmeng_col, 1), errors="coerce") or 1)
+
+            # Map STLAN values to bom_usage strings
+            for bom_nr, stlan_val in stlnr_to_stlan.items():
+                if stlan_val in _stlan_to_usage:
+                    bom_usage_map[bom_nr] = _stlan_to_usage[stlan_val]
+
+            # Resolve STPO field names via schema profile
+            _stpo_comp_col = self.resolver.get_col("product_bom", "component_product_id") or "IDNRK"
+            _stpo_qty_col = self.resolver.get_col("product_bom", "component_quantity") or "MENGE"
+            _stpo_scrap_col = self.resolver.get_col("product_bom", "scrap_pct") or "AUSCH"
+            _stpo_ratio_col = self.resolver.get_col("product_bom", "planning_proportion") or "ANTEI"
 
             # Create BOM entries (only when MAST is available)
             if bom_parent_map:
                 seen_bom_pairs: set = set()
                 for _, row in stpo.iterrows():
                     bom_nr = _norm_stlnr(row["STLNR"])
-                    component_mat = str(row.get("IDNRK", "")).strip()
+                    component_mat = str(row.get(_stpo_comp_col, "")).strip()
                     parent_mat = bom_parent_map.get(bom_nr)
 
                     if not parent_mat or not component_mat:
@@ -3226,8 +3462,11 @@ class SAPConfigBuilder:
                     seen_bom_pairs.add(pair_key)
 
                     base_qty = base_qty_map.get(bom_nr, 1.0)
-                    comp_qty = float(pd.to_numeric(row.get("MENGE", 1), errors="coerce") or 1)
-                    scrap_pct = float(pd.to_numeric(row.get("AUSCH", 0), errors="coerce") or 0)
+                    comp_qty = float(pd.to_numeric(row.get(_stpo_qty_col, 1), errors="coerce") or 1)
+                    scrap_pct = float(pd.to_numeric(row.get(_stpo_scrap_col, 0), errors="coerce") or 0)
+
+                    usage = bom_usage_map.get(bom_nr)
+                    ratio_val = float(pd.to_numeric(row.get(_stpo_ratio_col, 0), errors="coerce") or 0) or None
 
                     bom = ProductBom(
                         config_id=self._config.id,
@@ -3235,6 +3474,8 @@ class SAPConfigBuilder:
                         component_product_id=f"{prefix}{component_mat}",
                         component_quantity=comp_qty / base_qty if base_qty else comp_qty,
                         scrap_percentage=scrap_pct,
+                        bom_usage=usage,
+                        ratio=ratio_val,
                         source="SAP_STPO",
                     )
                     self.db.add(bom)
@@ -3725,11 +3966,42 @@ class SAPConfigBuilder:
         if vbap.empty:
             return 0
 
+        # Dedup staging data (multiple extraction runs may create duplicates)
+        if not vbak.empty:
+            vbeln_col = [c for c in vbak.columns if c.upper() == "VBELN"]
+            if vbeln_col:
+                vbak = vbak.drop_duplicates(subset=[vbeln_col[0]], keep="first")
+        if not vbap.empty:
+            vbeln_col = [c for c in vbap.columns if c.upper() == "VBELN"]
+            posnr_col = [c for c in vbap.columns if c.upper() == "POSNR"]
+            dedup_cols = [c for c in (vbeln_col + posnr_col) if c]
+            if dedup_cols:
+                vbap = vbap.drop_duplicates(subset=dedup_cols, keep="first")
+
+        # Delete any existing outbound orders for this config (re-build safety)
+        from sqlalchemy import text as sql_text
+        await self.db.execute(sql_text(
+            "DELETE FROM outbound_order_line WHERE config_id = :cid"
+        ), {"cid": self._config.id})
+        await self.db.execute(sql_text(
+            "DELETE FROM outbound_order WHERE config_id = :cid"
+        ), {"cid": self._config.id})
+        await self.db.flush()
+
+        # Resolve sales order field names via schema profile
+        _so_num_col = self.resolver.get_col("sales_order", "sales_order") or "VBELN"
+        _so_date_col = self.resolver.get_col("sales_order", "order_date") or "ERDAT"
+        _so_cust_col = self.resolver.get_col("sales_order", "sold_to_party") or "KUNNR"
+        _so_prod_col = self.resolver.get_col("sales_order", "product_id") or "MATNR"
+        _so_site_col = self.resolver.get_col("sales_order", "site_id") or "WERKS"
+        _so_qty_col = self.resolver.get_col("sales_order", "requested_qty") or "KWMENG"
+        _so_item_col = self.resolver.get_col("sales_order", "item_number") or "POSNR"
+
         # Build SO header map
         so_map: Dict[str, pd.Series] = {}
-        if not vbak.empty and "VBELN" in vbak.columns:
+        if not vbak.empty and _so_num_col in vbak.columns:
             for _, row in vbak.iterrows():
-                so_map[str(row.get("VBELN", "")).strip()] = row
+                so_map[str(row.get(_so_num_col, "")).strip()] = row
 
         first_plant_id = self._get_first_plant_site_id()
         created_headers: set = set()
@@ -3738,9 +4010,9 @@ class SAPConfigBuilder:
         for _, item in vbap.iterrows():
             if count >= max_records:
                 break
-            vbeln = str(item.get("VBELN", "")).strip()
-            matnr = str(item.get("MATNR", "")).strip()
-            werks = str(item.get("WERKS", "")).strip()
+            vbeln = str(item.get(_so_num_col, "")).strip()
+            matnr = str(item.get(_so_prod_col, "")).strip()
+            werks = str(item.get(_so_site_col, "")).strip()
 
             product_id = self._get_product_id(matnr)
             if not product_id:
@@ -3754,18 +4026,18 @@ class SAPConfigBuilder:
             gbstk = str(so.get("GBSTK", "A")).strip() if not so.empty else "A"
             status = self._gbstk_to_outbound_status(gbstk)
 
-            order_date_str = str(so.get("ERDAT", "")).strip() if not so.empty else ""
+            order_date_str = str(so.get(_so_date_col, "")).strip() if not so.empty else ""
             delivery_date_str = str(so.get("VDATU", "")).strip() if not so.empty else ""
             order_date = self._parse_sap_date(order_date_str)
             delivery_date = self._parse_sap_date(delivery_date_str) or order_date or datetime.utcnow().date()
 
-            qty = float(pd.to_numeric(item.get("KWMENG", 0), errors="coerce") or 0)
+            qty = float(pd.to_numeric(item.get(_so_qty_col, 0), errors="coerce") or 0)
             net_value = float(pd.to_numeric(item.get("NETWR", 0), errors="coerce") or 0)
             currency = str(so.get("WAERK", "USD")).strip() if not so.empty else "USD"
-            customer_id = str(so.get("KUNNR", "")).strip() if not so.empty else ""
+            customer_id = str(so.get(_so_cust_col, "")).strip() if not so.empty else ""
 
             # Create parent OutboundOrder header (once per SO)
-            order_id = f"SAP-SO-{vbeln}"
+            order_id = f"CFG{self._config.id}-SO-{vbeln}"
             if order_id not in created_headers:
                 total_value = float(pd.to_numeric(so.get("NETWR", 0), errors="coerce") or 0) if not so.empty else 0
                 ob_header = OutboundOrder(
@@ -3789,7 +4061,7 @@ class SAPConfigBuilder:
 
             ob = OutboundOrderLine(
                 order_id=order_id,
-                line_number=int(pd.to_numeric(item.get("POSNR", 1), errors="coerce") or 1),
+                line_number=int(pd.to_numeric(item.get(_so_item_col, 1), errors="coerce") or 1),
                 product_id=product_id,
                 site_id=site_id,
                 ordered_quantity=qty,
@@ -3813,30 +4085,62 @@ class SAPConfigBuilder:
         if ekko.empty:
             return 0
 
+        # Dedup staging data
+        if not ekko.empty:
+            ebeln_col = [c for c in ekko.columns if c.upper() == "EBELN"]
+            if ebeln_col:
+                ekko = ekko.drop_duplicates(subset=[ebeln_col[0]], keep="first")
+        if not ekpo.empty:
+            ebeln_col = [c for c in ekpo.columns if c.upper() == "EBELN"]
+            ebelp_col = [c for c in ekpo.columns if c.upper() == "EBELP"]
+            dedup_cols = [c for c in (ebeln_col + ebelp_col) if c]
+            if dedup_cols:
+                ekpo = ekpo.drop_duplicates(subset=dedup_cols, keep="first")
+
+        # Delete any existing inbound orders for this config (re-build safety)
+        from sqlalchemy import text as sql_text
+        await self.db.execute(sql_text(
+            "DELETE FROM inbound_order_line WHERE config_id = :cid"
+        ), {"cid": self._config.id})
+        await self.db.execute(sql_text(
+            "DELETE FROM inbound_order WHERE config_id = :cid"
+        ), {"cid": self._config.id})
+        await self.db.flush()
+
+        # Resolve PO field names via schema profile
+        _po_num_col = self.resolver.get_col("purchase_order", "po_number") or "EBELN"
+        _po_date_col = self.resolver.get_col("purchase_order", "order_date") or "BEDAT"
+        _po_item_col = self.resolver.get_col("purchase_order", "item_number") or "EBELP"
+        _po_prod_col = self.resolver.get_col("purchase_order", "product_id") or "MATNR"
+        _po_site_col = self.resolver.get_col("purchase_order", "site_id") or "WERKS"
+        _po_qty_col = self.resolver.get_col("purchase_order", "order_quantity") or "MENGE"
+        _po_price_col = self.resolver.get_col("purchase_order", "net_price") or "NETPR"
+        _po_delcomp_col = self.resolver.get_col("purchase_order", "delivery_complete") or "ELIKZ"
+
         first_plant_id = self._get_first_plant_site_id()
         count = 0
 
         for _, po in ekko.iterrows():
             if count >= max_records:
                 break
-            ebeln = str(po.get("EBELN", "")).strip()
+            ebeln = str(po.get(_po_num_col, "")).strip()
 
-            order_date = self._parse_sap_date(str(po.get("BEDAT", "")).strip())
+            order_date = self._parse_sap_date(str(po.get(_po_date_col, "")).strip())
 
             # Get line items
-            items = ekpo[ekpo["EBELN"].astype(str).str.strip() == ebeln] if not ekpo.empty and "EBELN" in ekpo.columns else pd.DataFrame()
+            items = ekpo[ekpo[_po_num_col].astype(str).str.strip() == ebeln] if not ekpo.empty and _po_num_col in ekpo.columns else pd.DataFrame()
             if items.empty:
                 continue
 
             first_item = items.iloc[0]
-            werks = str(first_item.get("WERKS", "")).strip()
+            werks = str(first_item.get(_po_site_col, "")).strip()
             dest_site_id = self._get_site_id(werks) or first_plant_id
             if not dest_site_id:
                 continue
 
             # Determine header status from line items' ELIKZ
-            if "ELIKZ" in items.columns:
-                elikz_vals = items["ELIKZ"].astype(str).str.strip()
+            if _po_delcomp_col in items.columns:
+                elikz_vals = items[_po_delcomp_col].astype(str).str.strip()
                 all_received = (elikz_vals == "X").all()
                 any_received = (elikz_vals == "X").any()
             else:
@@ -3850,10 +4154,10 @@ class SAPConfigBuilder:
             else:
                 ib_status = "CONFIRMED"
 
-            total_qty = float(pd.to_numeric(items["MENGE"], errors="coerce").fillna(0).sum()) if "MENGE" in items.columns else 0
+            total_qty = float(pd.to_numeric(items[_po_qty_col], errors="coerce").fillna(0).sum()) if _po_qty_col in items.columns else 0
 
             ib_order = InboundOrder(
-                id=f"SAP-PO-{ebeln}",
+                id=f"CFG{self._config.id}-PO-{ebeln}",
                 order_type="PURCHASE",
                 ship_to_site_id=dest_site_id,
                 status=ib_status,
@@ -3867,18 +4171,18 @@ class SAPConfigBuilder:
             self.db.add(ib_order)
 
             for _, pi in items.iterrows():
-                matnr = str(pi.get("MATNR", "")).strip()
+                matnr = str(pi.get(_po_prod_col, "")).strip()
                 product_id = self._get_product_id(matnr)
                 if not product_id:
                     continue
 
-                line_status = self._elikz_to_inbound_status(str(pi.get("ELIKZ", "")))
-                qty = float(pd.to_numeric(pi.get("MENGE", 0), errors="coerce") or 0)
-                net_price = float(pd.to_numeric(pi.get("NETPR", 0), errors="coerce") or 0)
+                line_status = self._elikz_to_inbound_status(str(pi.get(_po_delcomp_col, "")))
+                qty = float(pd.to_numeric(pi.get(_po_qty_col, 0), errors="coerce") or 0)
+                net_price = float(pd.to_numeric(pi.get(_po_price_col, 0), errors="coerce") or 0)
 
                 ib_line = InboundOrderLine(
-                    order_id=f"SAP-PO-{ebeln}",
-                    line_number=int(pd.to_numeric(pi.get("EBELP", 1), errors="coerce") or 1),
+                    order_id=f"CFG{self._config.id}-PO-{ebeln}",
+                    line_number=int(pd.to_numeric(pi.get(_po_item_col, 1), errors="coerce") or 1),
                     product_id=product_id,
                     to_site_id=dest_site_id,
                     order_type="PURCHASE",
@@ -3975,7 +4279,7 @@ class SAPConfigBuilder:
 
             aufnr_clean = aufnr.lstrip("0") or "0"
             mo = ProductionOrder(
-                order_number=f"SAP-MO-{aufnr_clean}",
+                order_number=f"CFG{self._config.id}-MO-{aufnr_clean}",
                 item_id=product_id,
                 site_id=site_id,
                 config_id=self._config.id,
@@ -4060,7 +4364,7 @@ class SAPConfigBuilder:
 
             lot_clean = prueflos.lstrip("0") or "0"
             qo = QualityOrder(
-                quality_order_number=f"SAP-QI-{lot_clean}",
+                quality_order_number=f"CFG{self._config.id}-QI-{lot_clean}",
                 site_id=site_id,
                 config_id=self._config.id,
                 tenant_id=self.tenant_id,
@@ -4139,7 +4443,7 @@ class SAPConfigBuilder:
 
             to_clean = tession.lstrip("0") or "0"
             to = TransferOrder(
-                to_number=f"SAP-TO-{to_clean}",
+                to_number=f"CFG{self._config.id}-TO-{to_clean}",
                 source_site_id=source_site_id,
                 destination_site_id=dest_site_id,
                 config_id=self._config.id,
@@ -4236,7 +4540,7 @@ class SAPConfigBuilder:
 
             equnr_clean = equnr.lstrip("0") or "0"
             mo = MaintenanceOrder(
-                maintenance_order_number=f"SAP-PM-{equnr_clean}",
+                maintenance_order_number=f"CFG{self._config.id}-PM-{equnr_clean}",
                 asset_id=equnr,
                 asset_name=eqktx or f"Equipment {equnr_clean}",
                 asset_type=eqtyp or None,
@@ -4378,9 +4682,9 @@ class SAPConfigBuilder:
 
             # PO reference for GR
             ebeln = str(row.get("EBELN", "")).strip()
-            order_ref = f"SAP-PO-{ebeln}" if ebeln else f"SAP-MSEG-{mblnr}"
+            order_ref = f"CFG{self._config.id}-PO-{ebeln}" if ebeln else f"CFG{self._config.id}-MSEG-{mblnr}"
 
-            shipment_id = f"SAP-GMA-{mblnr}-{zeile}"
+            shipment_id = f"CFG{self._config.id}-GMA-{mblnr}-{zeile}"
 
             shipment = Shipment(
                 id=shipment_id,
@@ -4460,7 +4764,7 @@ class SAPConfigBuilder:
         # Aggregate yield by AUFNR
         for aufnr, grp in afru.groupby(afru["AUFNR"].astype(str).str.strip()):
             aufnr_clean = aufnr.lstrip("0") or "0"
-            order_number = f"SAP-MO-{aufnr_clean}"
+            order_number = f"CFG{self._config.id}-MO-{aufnr_clean}"
 
             yield_qty = float(pd.to_numeric(grp.get("LMNGA", pd.Series()), errors="coerce").fillna(0).sum())
             scrap_qty = float(pd.to_numeric(grp.get("XMNGA", pd.Series()), errors="coerce").fillna(0).sum())
@@ -4554,9 +4858,9 @@ class SAPConfigBuilder:
                 posnr = str(item_row.get("POSNR", str(line_idx))).strip()
                 vbeln_clean = vbeln.lstrip("0") or "0"
                 shipment = Shipment(
-                    id=f"SAP-DLV-{vbeln_clean}-{posnr}",
+                    id=f"CFG{self._config.id}-DLV-{vbeln_clean}-{posnr}",
                     description=f"Derived from LIKP/LIPS delivery {vbeln}",
-                    order_id=f"SAP-DLV-{vbeln_clean}",
+                    order_id=f"CFG{self._config.id}-DLV-{vbeln_clean}",
                     order_line_number=int(pd.to_numeric(posnr, errors="coerce") or line_idx),
                     product_id=product_id,
                     quantity=lfimg,
@@ -4636,9 +4940,9 @@ class SAPConfigBuilder:
             ebeln_clean = ebeln.lstrip("0") or "0"
             ebelp_clean = ebelp.lstrip("0") or "0"
             shipment = Shipment(
-                id=f"SAP-GR-{ebeln_clean}-{ebelp_clean}",
+                id=f"CFG{self._config.id}-GR-{ebeln_clean}-{ebelp_clean}",
                 description=f"Derived GR from EKBE PO history: PO {ebeln}",
-                order_id=f"SAP-PO-{ebeln_clean}",
+                order_id=f"CFG{self._config.id}-PO-{ebeln_clean}",
                 order_line_number=int(pd.to_numeric(ebelp, errors="coerce") or 1),
                 product_id=product_id or f"UNKNOWN-{matnr}",
                 quantity=menge,
@@ -4703,7 +5007,7 @@ class SAPConfigBuilder:
                 continue
 
             vbeln_clean = vbeln.lstrip("0") or "0"
-            order_id = f"SAP-SO-{vbeln_clean}"
+            order_id = f"CFG{self._config.id}-SO-{vbeln_clean}"
 
             if vbeln in delivered_sos:
                 new_status = "FULFILLED"
@@ -4790,7 +5094,7 @@ class SAPConfigBuilder:
             lt = lt_days if lt_days and lt_days > 0 else 2
             # Create one TO per lane with up to 5 representative products
             for prod_id in available_products[:5]:
-                to_num = f"SAP-TO-DERIVED-{from_sid}-{to_sid}-{prod_id[:20]}"
+                to_num = f"CFG{self._config.id}-TO-D-{from_sid}-{to_sid}-{prod_id[:20]}"
                 to = TransferOrder(
                     to_number=to_num,
                     source_site_id=from_sid,
@@ -5222,7 +5526,7 @@ class SAPConfigBuilder:
 
             req_date = self._parse_sap_date(str(row.get("BADAT", "")).strip())
             bnfpo = str(row.get("BNFPO", "10")).strip()
-            order_id = f"SAP-REQ-{banfn}"
+            order_id = f"CFG{self._config.id}-REQ-{banfn}"
 
             # Create header only once per requisition
             if banfn not in seen_reqs:
@@ -5284,7 +5588,7 @@ class SAPConfigBuilder:
             if not ebeln or not ebelp:
                 continue
 
-            order_id = f"SAP-PO-{ebeln}"
+            order_id = f"CFG{self._config.id}-PO-{ebeln}"
             line_number = int(pd.to_numeric(ebelp, errors="coerce") or 0)
             if line_number == 0:
                 continue
@@ -5364,7 +5668,7 @@ class SAPConfigBuilder:
 
             # Look up existing trading partner by business key patterns
             tp_key = None
-            for key in [f"CUST-{kunnr}", f"SAP-CUST-{kunnr}", kunnr]:
+            for key in [f"CUST-{kunnr}", f"CFG{self._config.id}-CUST-{kunnr}", kunnr]:
                 if key in self._trading_partners:
                     tp_key = key
                     break
@@ -5630,7 +5934,7 @@ class SAPConfigBuilder:
                     continue
 
                 lot_clean = prueflos.lstrip("0") or "0"
-                qo_number = f"SAP-QI-{lot_clean}"
+                qo_number = f"CFG{self._config.id}-QI-{lot_clean}"
 
                 # Find the parent QualityOrder
                 result = await self.db.execute(
@@ -5697,7 +6001,7 @@ class SAPConfigBuilder:
 
                 qm_clean = qmnum.lstrip("0") or "0"
                 qo = QualityOrder(
-                    quality_order_number=f"SAP-QN-{qm_clean}",
+                    quality_order_number=f"CFG{self._config.id}-QN-{qm_clean}",
                     site_id=site_id,
                     config_id=self._config.id,
                     tenant_id=self.tenant_id,
@@ -5825,9 +6129,9 @@ class SAPConfigBuilder:
             await self.db.execute(sql_text(
                 "INSERT INTO process_header (id, description, status, source) "
                 "VALUES (:hid, :desc, 'ACTIVE', 'SAP_IMPORT')"
-            ), {"hid": f"SAP-ROUTING-{self._config.id}", "desc": "SAP imported routing operations"})
+            ), {"hid": f"CFG{self._config.id}-ROUTING", "desc": "SAP imported routing operations"})
             await self.db.flush()
-            default_header_id = f"SAP-ROUTING-{self._config.id}"
+            default_header_id = f"CFG{self._config.id}-ROUTING"
 
         count = 0
         for _, row in afvc.iterrows():
@@ -5895,7 +6199,7 @@ class SAPConfigBuilder:
             waers = str(row.get("WAERS", "")).strip()
 
             aufnr_clean = aufnr.lstrip("0") or "0"
-            order_number = f"SAP-MO-{aufnr_clean}"
+            order_number = f"CFG{self._config.id}-MO-{aufnr_clean}"
 
             # Update extra_data on existing production order
             result = await self.db.execute(sql_text(
@@ -6125,7 +6429,7 @@ class SAPConfigBuilder:
             budat = self._parse_sap_date(str(row.get("BUDAT", "")).strip())
 
             ebeln_clean = ebeln.lstrip("0") or "0"
-            order_id = f"SAP-PO-{ebeln_clean}"
+            order_id = f"CFG{self._config.id}-PO-{ebeln_clean}"
             line_num = int(pd.to_numeric(ebelp, errors="coerce") or 10)
 
             # Try to find and update the matching inbound order line
@@ -6568,7 +6872,7 @@ class SAPConfigBuilder:
                     continue
 
                 vbeln_clean = vbeln.lstrip("0") or "0"
-                order_id = f"SAP-SO-{vbeln_clean}"
+                order_id = f"CFG{self._config.id}-SO-{vbeln_clean}"
                 line_num = int(pd.to_numeric(posnr, errors="coerce") or 10)
                 sched_num = int(pd.to_numeric(etenr, errors="coerce") or 1)
 
@@ -6620,7 +6924,7 @@ class SAPConfigBuilder:
                 lmeng = float(pd.to_numeric(row.get("LMENG", 0), errors="coerce") or 0)
 
                 vbeln_clean = vbeln.lstrip("0") or "0"
-                order_id = f"SAP-SO-{vbeln_clean}"
+                order_id = f"CFG{self._config.id}-SO-{vbeln_clean}"
                 entry = {
                     "line": int(pd.to_numeric(posnr, errors="coerce") or 10),
                     "schedule": int(pd.to_numeric(etenr, errors="coerce") or 1),
@@ -6690,7 +6994,7 @@ class SAPConfigBuilder:
                 continue
 
             vbeln_clean = vbeln.lstrip("0") or "0"
-            order_id = f"SAP-SO-{vbeln_clean}"
+            order_id = f"CFG{self._config.id}-SO-{vbeln_clean}"
 
             gbstk = str(row.get("GBSTK", "")).strip()
             lfstk = str(row.get("LFSTK", "")).strip()
@@ -6782,7 +7086,7 @@ class SAPConfigBuilder:
                 continue
 
             vbeln_clean = vbeln.lstrip("0") or "0"
-            order_id = f"SAP-SO-{vbeln_clean}"
+            order_id = f"CFG{self._config.id}-SO-{vbeln_clean}"
             line_num = int(pd.to_numeric(posnr, errors="coerce") or 10)
 
             gbsta = str(row.get("GBSTA", "")).strip()
@@ -6970,5 +7274,21 @@ class SAPConfigBuilder:
         )
         self.db.add(config)
         await self.db.flush()
+
+        # Create/upsert company record for geography FK
+        self._company_id = f"SAP_T{self.tenant_id}_C{config.id}"
+        t001 = self._data.get("T001", pd.DataFrame())
+        company_name = config_name
+        if not t001.empty and "BUTXT" in t001.columns:
+            company_name = str(t001.iloc[0].get("BUTXT", config_name)).strip() or config_name
+        await self.db.execute(
+            sql_text(
+                "INSERT INTO company (id, description) VALUES (:cid, :cname) "
+                "ON CONFLICT (id) DO UPDATE SET description = :cname"
+            ),
+            {"cid": self._company_id, "cname": company_name},
+        )
+        await self.db.flush()
+
         logger.info(f"Created SC config: {config.name} (id={config.id})")
         return config

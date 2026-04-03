@@ -7,7 +7,7 @@ that modulate the UrgencyVector before the 6-phase decision cycle executes.
 Key behaviors:
 - Cold start: Returns neutral output (zero adjustments) when no model is trained
 - Hidden state persists across hourly ticks for temporal continuity
-- Feature disabled: Zero overhead when enable_site_tgnn=False (not instantiated)
+- Always instantiated; cold-start safe (neutral output when no model exists)
 - Thread-safe: All tensor ops are inference-only (torch.no_grad)
 
 Architecture reference: TRM_HIVE_ARCHITECTURE.md Section 16.3.5

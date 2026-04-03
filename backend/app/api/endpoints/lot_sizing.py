@@ -4,10 +4,13 @@ Lot Sizing API Endpoints
 Provides lot sizing calculation and comparison capabilities.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import math
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import Dict, List
+from sqlalchemy import select, func, and_, case, distinct
+from typing import Dict, List, Optional
+from datetime import date
 
 from app.db.session import get_db
 from app.models.user import User
@@ -663,6 +666,166 @@ async def export_lot_sizing_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=lot_sizing_comparison.csv"}
     )
+
+
+# ============================================================================
+# Order Sizing Analysis (from live supply plan)
+# ============================================================================
+
+@router.get("/order-analysis")
+async def get_order_sizing_analysis(
+    config_id: int = Query(..., description="Supply chain config ID"),
+    plan_version: str = Query("live", description="Plan version"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Analyze order sizing from the live supply plan.
+
+    Returns summary metrics, order size distribution, and per-product breakdown
+    for the lot sizing analysis page.
+    """
+    from app.models.sc_entities import SupplyPlan, Product
+
+    # Verify user has access to this config
+    user_config_id = current_user.default_config_id if current_user else None
+    if user_config_id and user_config_id != config_id:
+        raise HTTPException(status_code=403, detail="Access denied to this config")
+
+    base_filter = and_(
+        SupplyPlan.config_id == config_id,
+        SupplyPlan.plan_version == plan_version,
+        SupplyPlan.planned_order_quantity > 0,
+    )
+
+    # --- Summary statistics ---
+    summary_stmt = select(
+        func.count(SupplyPlan.id).label("total_orders"),
+        func.avg(SupplyPlan.planned_order_quantity).label("avg_order_qty"),
+        func.min(SupplyPlan.planned_order_quantity).label("min_order_qty"),
+        func.max(SupplyPlan.planned_order_quantity).label("max_order_qty"),
+        func.sum(SupplyPlan.planned_order_quantity).label("total_qty"),
+        func.min(SupplyPlan.plan_date).label("date_start"),
+        func.max(SupplyPlan.plan_date).label("date_end"),
+        func.count(distinct(SupplyPlan.product_id)).label("product_count"),
+        func.count(distinct(SupplyPlan.site_id)).label("site_count"),
+    ).where(base_filter)
+    summary_result = await db.execute(summary_stmt)
+    summary = summary_result.one()
+
+    total_orders = summary.total_orders or 0
+    if total_orders == 0:
+        return {
+            "summary": {
+                "total_orders": 0,
+                "avg_order_qty": 0,
+                "min_order_qty": 0,
+                "max_order_qty": 0,
+                "total_qty": 0,
+                "orders_per_week": 0,
+                "product_count": 0,
+                "site_count": 0,
+            },
+            "distribution": [],
+            "by_product": [],
+        }
+
+    # Calculate orders per week
+    date_start = summary.date_start
+    date_end = summary.date_end
+    weeks_span = max(1, ((date_end - date_start).days + 1) / 7)
+    orders_per_week = round(total_orders / weeks_span, 1)
+
+    # --- Order size distribution (histogram buckets) ---
+    max_qty = float(summary.max_order_qty)
+    min_qty = float(summary.min_order_qty)
+    bucket_count = 10
+    bucket_size = max(1, (max_qty - min_qty) / bucket_count)
+
+    # Use CASE to bucket orders
+    dist_stmt = select(
+        func.floor((SupplyPlan.planned_order_quantity - min_qty) / bucket_size).label("bucket"),
+        func.count(SupplyPlan.id).label("count"),
+    ).where(base_filter).group_by("bucket").order_by("bucket")
+    dist_result = await db.execute(dist_stmt)
+    dist_rows = dist_result.all()
+
+    distribution = []
+    for row in dist_rows:
+        bucket_idx = int(row.bucket) if row.bucket is not None else 0
+        bucket_idx = min(bucket_idx, bucket_count - 1)  # Clamp max value bucket
+        range_start = round(min_qty + bucket_idx * bucket_size)
+        range_end = round(min_qty + (bucket_idx + 1) * bucket_size)
+        distribution.append({
+            "range": f"{range_start}-{range_end}",
+            "range_start": range_start,
+            "range_end": range_end,
+            "count": row.count,
+        })
+
+    # --- Per-product breakdown ---
+    product_stmt = select(
+        SupplyPlan.product_id,
+        func.count(SupplyPlan.id).label("order_count"),
+        func.avg(SupplyPlan.planned_order_quantity).label("avg_qty"),
+        func.sum(SupplyPlan.planned_order_quantity).label("total_qty"),
+        func.min(SupplyPlan.planned_order_quantity).label("min_qty"),
+        func.max(SupplyPlan.planned_order_quantity).label("max_qty"),
+        func.min(SupplyPlan.plan_date).label("first_order"),
+        func.max(SupplyPlan.plan_date).label("last_order"),
+    ).where(base_filter).group_by(SupplyPlan.product_id).order_by(
+        func.sum(SupplyPlan.planned_order_quantity).desc()
+    )
+    product_result = await db.execute(product_stmt)
+    product_rows = product_result.all()
+
+    # Resolve product names
+    product_ids = [r.product_id for r in product_rows]
+    product_names = {}
+    if product_ids:
+        name_stmt = select(Product.id, Product.product_name).where(Product.id.in_(product_ids))
+        name_result = await db.execute(name_stmt)
+        product_names = {r.id: r.product_name for r in name_result.all()}
+
+    by_product = []
+    for row in product_rows:
+        days_span = max(1, (row.last_order - row.first_order).days) if row.order_count > 1 else 0
+        avg_days_between = round(days_span / max(1, row.order_count - 1), 1) if row.order_count > 1 else 0
+
+        # Theoretical EOQ: sqrt(2*D*S/H) — use defaults if no cost data
+        annual_demand = float(row.total_qty) * (365 / max(1, days_span)) if days_span > 0 else float(row.total_qty)
+        ordering_cost = 500.0  # Default ordering cost
+        holding_cost_rate = 0.25  # 25% of unit value per year
+        unit_cost = 50.0  # Default unit cost
+        holding_cost = holding_cost_rate * unit_cost
+        eoq = round(math.sqrt(2 * annual_demand * ordering_cost / holding_cost), 0) if holding_cost > 0 else 0
+
+        by_product.append({
+            "product_id": row.product_id,
+            "product_name": product_names.get(row.product_id, row.product_id),
+            "order_count": row.order_count,
+            "avg_qty": round(float(row.avg_qty), 0),
+            "total_qty": round(float(row.total_qty), 0),
+            "min_qty": round(float(row.min_qty), 0),
+            "max_qty": round(float(row.max_qty), 0),
+            "avg_days_between": avg_days_between,
+            "eoq": eoq,
+        })
+
+    return {
+        "summary": {
+            "total_orders": total_orders,
+            "avg_order_qty": round(float(summary.avg_order_qty), 0),
+            "min_order_qty": round(float(summary.min_order_qty), 0),
+            "max_order_qty": round(float(summary.max_order_qty), 0),
+            "total_qty": round(float(summary.total_qty), 0),
+            "orders_per_week": orders_per_week,
+            "product_count": summary.product_count,
+            "site_count": summary.site_count,
+        },
+        "distribution": distribution,
+        "by_product": by_product,
+    }
 
 
 @router.post("/capacity-check/export/csv")

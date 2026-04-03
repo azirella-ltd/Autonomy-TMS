@@ -1,27 +1,23 @@
 /**
  * Bottleneck Analysis — Constraint identification, what-if relaxation, and capacity scenario modeling.
  *
- * Sub-processes:
- *   - Identify binding constraints across work centers
- *   - Evaluate relaxation options (overtime, outsourcing, shift extension)
- *   - Model capacity-constrained production scenarios
- *   - Track constraint history and trending
+ * For inventory-only configs (DCs), shows throughput constraints (orders/day vs capacity).
+ * For manufacturing configs, shows work center utilization.
+ * All data from /resource-capacity/utilization/analysis endpoint — no synthetic fallbacks.
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card, CardContent, CardHeader, CardTitle, Button, Badge, Alert,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell, Spinner,
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
-  Input, Label, Modal,
 } from '../../components/common';
 import {
-  AlertTriangle, RefreshCw, Gauge, Clock, Factory, TrendingUp,
-  Plus, ArrowRight, Zap, DollarSign,
+  AlertTriangle, RefreshCw, Gauge, Clock, Warehouse,
+  ArrowRight,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  LineChart, Line, Legend, ReferenceLine,
+  ReferenceLine,
 } from 'recharts';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
@@ -43,9 +39,7 @@ function getUtilLevel(pct) {
 const RELAXATION_OPTIONS = [
   { key: 'overtime', label: 'Add Overtime', description: 'Extend shift by 2 hours', capacity_gain: 25, cost_per_unit: 1.5, lead_time_impact: 0 },
   { key: 'shift', label: 'Add Shift', description: 'Add a second/third shift', capacity_gain: 100, cost_per_unit: 1.2, lead_time_impact: 0 },
-  { key: 'outsource', label: 'Outsource', description: 'Route to external manufacturer', capacity_gain: 50, cost_per_unit: 1.8, lead_time_impact: 7 },
-  { key: 'weekend', label: 'Weekend Work', description: 'Run Saturday/Sunday', capacity_gain: 40, cost_per_unit: 1.6, lead_time_impact: 0 },
-  { key: 'rebalance', label: 'Rebalance Load', description: 'Shift work to under-utilized centers', capacity_gain: 20, cost_per_unit: 1.05, lead_time_impact: 1 },
+  { key: 'rebalance', label: 'Rebalance Load', description: 'Shift work to under-utilized sites', capacity_gain: 20, cost_per_unit: 1.05, lead_time_impact: 1 },
 ];
 
 export default function BottleneckAnalysis() {
@@ -53,8 +47,6 @@ export default function BottleneckAnalysis() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [resources, setResources] = useState([]);
-  const [scenarioOpen, setScenarioOpen] = useState(false);
-  const [selectedResource, setSelectedResource] = useState(null);
   const [scenarioResults, setScenarioResults] = useState(null);
 
   useEffect(() => {
@@ -67,51 +59,16 @@ export default function BottleneckAnalysis() {
     try {
       const res = await api.get('/resource-capacity/utilization/analysis', { params: { config_id: effectiveConfigId } });
       const data = res.data?.utilization || res.data || [];
-
-      if (data.length > 0) {
-        setResources(data.map(r => ({
-          ...r,
-          utilization_pct: r.utilization_pct || r.utilization || Math.round(Math.random() * 40 + 60),
-          available_hours: r.available_hours || 40,
-          required_hours: r.required_hours || 0,
-          queue_hours: r.queue_hours || 0,
-        })));
-      } else {
-        // Synthetic data for demonstration
-        setResources(Array.from({ length: 12 }, (_, i) => {
-          const util = 50 + Math.random() * 50;
-          const avail = 40 + Math.floor(Math.random() * 20);
-          return {
-            resource_id: `WC-${String(i + 1).padStart(2, '0')}`,
-            resource_name: ['Assembly Line A', 'CNC Mill #1', 'Paint Booth', 'Packaging Line B',
-              'Weld Station 3', 'Test Cell 2', 'Molding Press #4', 'Assembly Line B',
-              'Laser Cutter', 'Surface Treatment', 'Quality Lab', 'Final Assembly'][i],
-            site_name: ['Plant 1', 'Plant 1', 'Plant 1', 'Plant 2', 'Plant 2', 'Plant 2',
-              'Plant 3', 'Plant 3', 'Plant 3', 'Plant 1', 'Plant 2', 'Plant 3'][i],
-            utilization_pct: Math.round(util),
-            available_hours: avail,
-            required_hours: Math.round(avail * util / 100),
-            queue_hours: Math.round(Math.random() * 15),
-            products_affected: 2 + Math.floor(Math.random() * 10),
-            cost_per_hour: 50 + Math.round(Math.random() * 150),
-          };
-        }));
-      }
+      setResources(data.map(r => ({
+        ...r,
+        utilization_pct: r.utilization_pct || r.utilization || 0,
+        available_hours: r.available_hours || 0,
+        required_hours: r.required_hours || 0,
+        queue_hours: r.queue_hours || 0,
+      })));
     } catch (err) {
       setError(err.response?.data?.detail || err.message);
-      // Use synthetic data on error
-      setResources(Array.from({ length: 8 }, (_, i) => ({
-        resource_id: `WC-${i + 1}`,
-        resource_name: `Work Center ${i + 1}`,
-        site_name: `Plant ${1 + (i % 3)}`,
-        utilization_pct: Math.round(60 + Math.random() * 40),
-        available_hours: 40,
-        required_hours: Math.round(24 + Math.random() * 20),
-        queue_hours: Math.round(Math.random() * 12),
-        products_affected: 3 + Math.floor(Math.random() * 8),
-        cost_per_hour: 75 + Math.round(Math.random() * 100),
-      })));
-      setError(null);
+      setResources([]);
     } finally {
       setLoading(false);
     }
@@ -132,22 +89,10 @@ export default function BottleneckAnalysis() {
     avg_util: resources.length > 0 ? Math.round(resources.reduce((s, r) => s + r.utilization_pct, 0) / resources.length) : 0,
   }), [resources]);
 
-  // Trending data (synthetic 12 weeks)
-  const trendData = useMemo(() => {
-    return Array.from({ length: 12 }, (_, w) => {
-      const base = summary.avg_util - 5 + Math.random() * 10;
-      return {
-        week: `W${w + 1}`,
-        avg_util: Math.round(base),
-        bottleneck_count: Math.max(0, Math.round(summary.critical + (Math.random() - 0.5) * 3)),
-      };
-    });
-  }, [summary]);
-
   const runScenario = (resource, option) => {
     const currentUtil = resource.utilization_pct;
     const newCapacity = resource.available_hours * (1 + option.capacity_gain / 100);
-    const newUtil = Math.round(resource.required_hours / newCapacity * 100);
+    const newUtil = newCapacity > 0 ? Math.round(resource.required_hours / newCapacity * 100) : 0;
     const costDelta = Math.round(
       (newCapacity - resource.available_hours) * (resource.cost_per_hour || 100) * option.cost_per_unit
     );
@@ -165,6 +110,16 @@ export default function BottleneckAnalysis() {
   };
 
   if (loading) return <div className="flex justify-center py-16"><Spinner /></div>;
+
+  if (!loading && resources.length === 0 && !error) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <Warehouse className="h-10 w-10 mx-auto mb-3 opacity-50" />
+        <p className="font-medium">No capacity data available</p>
+        <p className="text-sm mt-1">Resource capacity records have not been provisioned for this configuration.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -195,7 +150,7 @@ export default function BottleneckAnalysis() {
         </Card>
         <Card>
           <CardContent className="pt-4 text-center">
-            <Factory className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
+            <Warehouse className="h-5 w-5 mx-auto mb-1 text-muted-foreground" />
             <div className="text-2xl font-bold">{summary.avg_util}%</div>
             <div className="text-xs text-muted-foreground">Avg Utilization</div>
           </CardContent>
@@ -211,7 +166,7 @@ export default function BottleneckAnalysis() {
           </div>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer width="100%" height={Math.max(200, sortedByUtil.length * 28)}>
             <BarChart data={sortedByUtil} layout="vertical">
               <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} />
               <YAxis type="category" dataKey="resource_name" tick={{ fontSize: 10 }} width={120} />
@@ -228,63 +183,43 @@ export default function BottleneckAnalysis() {
         </CardContent>
       </Card>
 
-      {/* Trend + What-If */}
-      <div className="grid grid-cols-2 gap-4">
-        <Card>
-          <CardHeader><CardTitle className="text-sm">12-Week Utilization Trend</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={trendData}>
-                <XAxis dataKey="week" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} domain={[50, 100]} />
-                <Tooltip />
-                <Legend />
-                <ReferenceLine y={85} stroke="#f59e0b" strokeDasharray="3 3" />
-                <Line type="monotone" dataKey="avg_util" name="Avg Util %" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="bottleneck_count" name="Bottlenecks" stroke="#ef4444" strokeWidth={1.5} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Scenario Results */}
-        <Card>
-          <CardHeader><CardTitle className="text-sm">What-If Scenario Result</CardTitle></CardHeader>
-          <CardContent>
-            {scenarioResults ? (
-              <div className="space-y-3">
-                <div className="text-sm font-medium">{scenarioResults.resource} — {scenarioResults.option}</div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Utilization:</span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={scenarioResults.before_util >= 85 ? 'destructive' : 'secondary'}>{scenarioResults.before_util}%</Badge>
-                      <ArrowRight className="h-3 w-3" />
-                      <Badge variant={scenarioResults.after_util >= 85 ? 'warning' : 'success'}>{scenarioResults.after_util}%</Badge>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Capacity:</span>
-                    <div>{scenarioResults.capacity_before}h → {scenarioResults.capacity_after}h (+{scenarioResults.freed_hours}h)</div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Cost Impact:</span>
-                    <div className="text-amber-600">+${scenarioResults.cost_delta.toLocaleString()}/wk</div>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Lead Time:</span>
-                    <div>{scenarioResults.lead_time_impact > 0 ? `+${scenarioResults.lead_time_impact} days` : 'No change'}</div>
+      {/* What-If Scenario Result */}
+      <Card>
+        <CardHeader><CardTitle className="text-sm">What-If Scenario Result</CardTitle></CardHeader>
+        <CardContent>
+          {scenarioResults ? (
+            <div className="space-y-3">
+              <div className="text-sm font-medium">{scenarioResults.resource} — {scenarioResults.option}</div>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Utilization:</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={scenarioResults.before_util >= 85 ? 'destructive' : 'secondary'}>{scenarioResults.before_util}%</Badge>
+                    <ArrowRight className="h-3 w-3" />
+                    <Badge variant={scenarioResults.after_util >= 85 ? 'warning' : 'success'}>{scenarioResults.after_util}%</Badge>
                   </div>
                 </div>
+                <div>
+                  <span className="text-muted-foreground">Capacity:</span>
+                  <div>{scenarioResults.capacity_before}h → {scenarioResults.capacity_after}h (+{scenarioResults.freed_hours}h)</div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Cost Impact:</span>
+                  <div className="text-amber-600">+${scenarioResults.cost_delta.toLocaleString()}/wk</div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Lead Time:</span>
+                  <div>{scenarioResults.lead_time_impact > 0 ? `+${scenarioResults.lead_time_impact} days` : 'No change'}</div>
+                </div>
               </div>
-            ) : (
-              <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-                Select a bottleneck resource and relaxation option to model scenarios
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+              Select a bottleneck resource and relaxation option to model scenarios
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Bottleneck Detail Table */}
       <Card>
@@ -300,7 +235,6 @@ export default function BottleneckAnalysis() {
                   <TableHead className="text-right">Available</TableHead>
                   <TableHead className="text-right">Required</TableHead>
                   <TableHead className="text-right">Queue</TableHead>
-                  <TableHead className="text-right">Products</TableHead>
                   <TableHead>Relaxation Options</TableHead>
                 </TableRow>
               </TableHeader>
@@ -308,17 +242,16 @@ export default function BottleneckAnalysis() {
                 {bottlenecks.map(r => (
                   <TableRow key={r.resource_id}>
                     <TableCell className="font-medium">{r.resource_name}</TableCell>
-                    <TableCell>{r.site_name}</TableCell>
+                    <TableCell>{r.site_name || r.site_id || '—'}</TableCell>
                     <TableCell className="text-right">
                       <Badge variant={r.utilization_pct >= 95 ? 'destructive' : 'warning'}>{r.utilization_pct}%</Badge>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{r.available_hours}h</TableCell>
                     <TableCell className="text-right tabular-nums">{r.required_hours}h</TableCell>
                     <TableCell className="text-right tabular-nums">{r.queue_hours}h</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.products_affected}</TableCell>
                     <TableCell>
                       <div className="flex gap-1 flex-wrap">
-                        {RELAXATION_OPTIONS.slice(0, 3).map(opt => (
+                        {RELAXATION_OPTIONS.map(opt => (
                           <Button
                             key={opt.key}
                             variant="outline"
@@ -335,7 +268,7 @@ export default function BottleneckAnalysis() {
                 ))}
                 {bottlenecks.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No bottleneck resources identified (all below 85%)
                     </TableCell>
                   </TableRow>

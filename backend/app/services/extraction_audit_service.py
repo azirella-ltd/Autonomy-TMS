@@ -145,9 +145,9 @@ class ExtractionAuditReport:
         await db.execute(
             sql_text(
                 "INSERT INTO config_provisioning_status (config_id, extraction_audit) "
-                "VALUES (:cid, :audit::jsonb) "
+                "VALUES (:cid, CAST(:audit AS jsonb)) "
                 "ON CONFLICT (config_id) DO UPDATE "
-                "SET extraction_audit = :audit::jsonb"
+                "SET extraction_audit = CAST(:audit AS jsonb)"
             ),
             {"cid": self.config_id, "audit": audit_json},
         )

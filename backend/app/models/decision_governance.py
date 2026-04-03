@@ -75,6 +75,25 @@ class DecisionGovernancePolicy(Base):
     escalate_after_minutes = Column(Integer, default=480,
                                     comment="Escalate if no response after this many minutes (8h)")
 
+    # ── MCP write-back delay (adaptive cooling period) ──
+    # ALL decisions get a delay before ERP write-back, not just INSPECT.
+    # Delay scales with urgency (inverse) and confidence (inverse):
+    #   delay = base × (1 - urgency) × (2 - confidence)
+    # High urgency + high confidence → short delay (act fast, high certainty)
+    # Low urgency + low confidence → long delay (no rush, let human review)
+    writeback_enabled = Column(Boolean, default=True,
+                               comment="Enable MCP write-back for this action type")
+    writeback_base_delay_minutes = Column(Integer, default=30,
+                                          comment="Base delay before ERP write-back (minutes)")
+    writeback_min_delay_minutes = Column(Integer, default=5,
+                                         comment="Floor: minimum delay even for urgent+confident decisions")
+    writeback_max_delay_minutes = Column(Integer, default=480,
+                                         comment="Ceiling: max delay for low-urgency/low-confidence (8h)")
+    writeback_urgency_weight = Column(Float, default=1.0,
+                                      comment="How much urgency reduces delay (0=ignore, 1=full, 2=double)")
+    writeback_confidence_weight = Column(Float, default=1.0,
+                                         comment="How much confidence reduces delay (0=ignore, 1=full, 2=double)")
+
     # ── Impact dimension weights (should sum ≈ 1.0) ──
     weight_financial = Column(Float, default=0.30,
                               comment="Weight for financial magnitude dimension")
@@ -118,6 +137,12 @@ class DecisionGovernancePolicy(Base):
             "max_hold_minutes": self.max_hold_minutes,
             "auto_apply_on_expiry": self.auto_apply_on_expiry,
             "escalate_after_minutes": self.escalate_after_minutes,
+            "writeback_enabled": self.writeback_enabled,
+            "writeback_base_delay_minutes": self.writeback_base_delay_minutes,
+            "writeback_min_delay_minutes": self.writeback_min_delay_minutes,
+            "writeback_max_delay_minutes": self.writeback_max_delay_minutes,
+            "writeback_urgency_weight": self.writeback_urgency_weight,
+            "writeback_confidence_weight": self.writeback_confidence_weight,
             "weight_financial": self.weight_financial,
             "weight_scope": self.weight_scope,
             "weight_reversibility": self.weight_reversibility,

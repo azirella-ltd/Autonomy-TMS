@@ -7,7 +7,7 @@ import {
   Tooltip,
 } from '@mui/material';
 import { Add, Launch, CheckCircle, Archive, Timeline } from '@mui/icons-material';
-import api from '../../services/api';
+import { api } from '../../services/api';
 
 const STAGES = ['concept', 'development', 'launch', 'growth', 'maturity', 'decline', 'eol', 'discontinued'];
 const STAGE_COLORS = {

@@ -386,7 +386,7 @@ D365_SC_ENTITIES: Dict[str, List[str]] = {
     # BOMs
     "BillOfMaterialsHeaders": [
         "BOMId", "ProductNumber", "SiteId", "BOMName", "IsActive",
-        "BOMQuantity", "BOMUnitSymbol",
+        "BOMQuantity", "BOMUnitSymbol", "BOMType", "BOMApproved",
     ],
     "BillOfMaterialsLines": [
         "BOMId", "LineNumber", "ItemNumber", "BOMLineQuantity",

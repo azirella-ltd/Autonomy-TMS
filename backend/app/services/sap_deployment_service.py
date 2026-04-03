@@ -129,6 +129,7 @@ class SAPConnectionConfig:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     file_table_mapping: Optional[list] = None
+    schema_profile: Optional[dict] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -199,6 +200,7 @@ class SAPConnectionConfig:
             created_at=row.created_at,
             updated_at=row.updated_at,
             file_table_mapping=getattr(row, "file_table_mapping", None),
+            schema_profile=getattr(row, "schema_profile", None),
         )
 
 

@@ -1,0 +1,1366 @@
+KUNNR,NAME1,LAND1,ORT01,PSTLZ,STRAS,REGIO
+0010100065,Inlandskunde DE 65,DE,Schöntal,74214,Lindenstraße 2,BW
+0010100066,Inlandskunde DE 66,DE,Chemnitz,09119,Platnerstraße 45,SN
+0017100023,Domestic US Customer 23,US,Houma,70363-5455,100 Boundary Rd,LA
+0017100024,Domestic US Customer 24,US,Kearney,68847-5457,1 East 24th St,NE
+0017100028,Domestic US Customer 28,US,Kearney,68847-5457,18 East 24th St,NE
+0017100029,Domestic US Customer 29,US,Kearney,68847-5457,19 East 24th St,NE
+0017100021,Domestic US Customer 21,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0017100065,Domestic US Customer 65,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0017100066,Domestic US Customer 66,US,Chula Vista,91910-1007,15 N 4th Ave,CA
+0010100001,Inlandskunde DE 1,DE,Schöntal,74214,Lindenstraße 2,BW
+0010100002,Inlandskunde DE 2,DE,Chemnitz,09119,Platnerstraße 45,SN
+0010100003,Inlandskunde DE 3,DE,Budenheim,55257,Römerstraße 1230,RP
+0010100004,Inlandskunde DE 4,DE,Wetzlar,35578,Lahnbergweg 23,HE
+0010100006,Inlandskunde DE 6 (Retouren),DE,Hamburg,22767,Holstenstraße 1142,HH
+0010100008,Inlandskunde DE 8,DE,Wetzlar,35578,Lahnbergweg 83,HE
+0010100009,Inlandskunde DE 9,DE,Wetzlar,35578,Lahnbergweg 93,HE
+0010100014,PAYER - Zentrale Walldorf,DE,Walldorf,69190,Robert-Bosch-Straße 3,BW
+0010100012,Inlandskunde Invoice List,DE,Heidelberg,69120,Ladenburger Strasse 22,BW
+0010100013,Inlandskunde Invoice List,DE,Bensheim,64625,Albert-Einstein-Straße 3,BW
+0010100005,Inlandskunde DE 5 (CMS),DE,Steinhagen,33803,Heinrichstraße 1020,NW
+0010100273,Domestic DE CPD,DE,Saarbrücken,66119,,
+0010100050,Ausländischer Kunde 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0010100051,Ausländischer Kunde 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0010100100,Inlandskunde DE 100 (SEPA),DE,Saarbrücken,66119,Lohmeyerstraße 1420,SL
+0010100007,"Inland-Lohnbearbeiter A , DE",DE,Alleringersleben,39343,Hauptstraße 12,ST
+0010200001,Supplier/Customer for Intrastat (HU,HU,Budapest,1032,1139 Váci út 71 60,
+0010100060,Foreign DE Customer 60 (HU),HU,Budapest,2030,Gellért Irodaház 800,
+0010100011,SAP SE,DE,Walldorf,69190,Dietmar-Hopp-Allee 7,BW
+0010100010,Inlandskunde DE 10,DE,Schöntal,74214,Lindenstraße 10,BW
+EWM10-CU01,EWM-Kunde 01 (Inland),DE,Leipzig,04249,Knautnaundorfer Straße 204,SN
+EWM10-CU02,EWM-Kunde 02 (Inland),DE,Hamburg,22525,Rondenburg 12,HH
+EWM10-CU03,EWM-Kunde 03 (Inland),DE,München,81514,Balaustraße 75,BY
+0010411010,Werk 1010 als Geschäftspartner,DE,Walldorf,69190,Dietmar-Hopp-Alle 1,BW
+0010100080,Inlandskunde DE 80,DE,Schöntal,74214,Lindenstraße 2,BW
+0010100081,Inlandskunde DE 81,DE,Schöntal,74214,Lindenstraße 2,BW
+0010100023,Inlandskunde DE 23,DE,Budenheim,55257,Römerstraße 1230,RP
+0010100024,Inlandskunde DE 24,DE,Wetzlar,35578,Lahnbergweg 23,HE
+0010100028,Inlandskunde DE 28,DE,Wetzlar,35578,Lahnbergweg 83,HE
+0010100029,Inlandskunde DE 29,DE,Wetzlar,35578,Lahnbergweg 93,HE
+0010100021,Inlandskunde DE 21,DE,Schöntal,74214,Lindenstraße 2,BW
+0010100120,Inlandskunde DE 120 (SEPA) FICA,DE,Saarbrücken,66119,Lohmeyerstraße 1420,SL
+0010300010,Inlandslieferant DE 1,DE,Haltern am See,45721,Hullerner Straße 23,NW
+0010154801,JIT Company,DE,Hallbergmoos,85399,Zeppelinstraße 2,BY
+0010401010,Buchungskreis 1010 als Geschäftspar,DE,Walldorf,69190,Dietmar-Hopp-Allee 1,BW
+0010154802,JIT Company,DE,Hallbergmoos,85399,Zeppelinstraße 2,BY
+DVCUST_DE,Digital Vehicle Customer Company,DE,Hallbergmoos,85399,Zeppelinstraße 2,BY
+0010186001,TM Inlandskunde DE 1,DE,Hamburg,20148,Tesdorpfstrasse 8,HH
+0010186002,TM Inlandskunde DE 2,DE,Berlin,10178,Rosenthaler Str. 30,BE
+0010186003,Franz Hero,DE,Hamburg,20148,Tesdorpfstrasse 8,HH
+0010186004,Jan Gilg,DE,Berlin,10178,Rosenthaler Str. 30,BE
+0010186005,TM Inlandskunde DE 1,DE,Hamburg,20148,Tesdorpfstrasse 8,HH
+0010100065,Inlandskunde DE 65,DE,Schöntal,74214,Lindenstraße 2,BW
+0010100066,Inlandskunde DE 66,DE,Chemnitz,09119,Platnerstraße 45,SN
+0017100100,Domestic US Customer Direct Debit,US,San Diego,92128-1096,17 Caminito Pasadero,CA
+0017100001,Domestic US Customer 1,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0017100002,Domestic US Customer 2,US,Chula Vista,91910-1007,15 N 4th Ave,CA
+0017100003,Domestic Customer US 3,US,Houma,70363-5455,100 Boundary Rd,LA
+0017100004,Domestic Customer US 4,US,Kearney,68847-5457,1 East 24th St,NE
+0017100006,Domestic Customer US 6 (Returns),US,Wichita,67202-3723,100 S Main St,KS
+0017100008,Domestic US Customer 8,US,Kearney,68847-5457,18 East 24th St,NE
+0017100009,Domestic US Customer 9,US,Kearney,68847-5457,19 East 24th St,NE
+0017100014,PAYER - Central,US,Atlanta,30315-1402,100 Augusta Ave SE,GA
+0017100012,Domestic Customer Invoice List,US,Atlanta,30315-1402,22 Augusta Ave SE,GA
+0017100013,Domestic Customer Invoice List,US,Atlanta,30315-1402,2 Augusta Ave SE,GA
+0017100005,Domestic US Customer 5 (CMS),US,Billings,59101-2614,1000 2nd Ave N,MT
+0017100273,Domestic US CPD,US,WICHITA,67208-2915,,
+0017100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0017100051,Foreign Customer 51 (CA),CA,Calgary,T1X 0L3,3201 17 Ave E,AB
+0017100007,Domestic US Subcontractor A,US,Blacksburg,24060-7206,200 GILES RD,VA
+0017100011,SAP SE,US,Newtown Square,19073-3299,3999 West Chester Pike,PA
+0017100010,Domestic US Customer 10,US,Atlanta,30315-1402,1000 Augusta Ave SE,GA
+EWM17-CU01,EWM Domestic Customer 01,US,Atlanta,30344,500 Main Street,GA
+EWM17-CU02,EWM Domestic Customer 02,US,Atlanta,30344,100 Piedmont Avenue Southeast,GA
+EWM17-CU03,EWM Domestic Customer 03,US,Palo Alto,94304,800 Sand Hill Road,CA
+0017411710,Plant 1710 as Business Partner,US,Palo Alto,94304-1355,3475 Deer Creek,CA
+0017100080,Domestic US Customer 80,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0017100081,Domestic US Customer 81,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0017100023,Domestic US Customer 23,US,Houma,70363-5455,100 Boundary Rd,LA
+0017100024,Domestic US Customer 24,US,Kearney,68847-5457,1 East 24th St,NE
+0017100028,Domestic US Customer 28,US,Kearney,68847-5457,18 East 24th St,NE
+0017100029,Domestic US Customer 29,US,Kearney,68847-5457,19 East 24th St,NE
+0017100021,Domestic US Customer 21,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0017300010,Domestic US Supplier 10,US,Muncie,47305-2757,198 S Ohio Ave,IN
+0017258001,JV Operator US,US,Mariposa,95338,5181 CA-49,CA
+0017258002,Domestic US JV Partner 1,US,Brownwood,76801,320 Riverside Park Dr.,TX
+0017258003,Domestic US JV Partner 2,US,Flagstaff,86004,2515E Butler Ave,AZ
+0017154801,JIT Company,US,Newtown Square,19073,3999 West Chester Pike,PA
+0017401710,SAP SE,US,Palo Alto,94304-1355,3475 Deer Creek,CA
+0017154802,JIT Company,US,Newtown Square,19073,3999 West Chester Pike,PA
+DVCUST_US,Digital Vehicle Customer Company,US,Newtown Square,19073,3999 West Chester Pike,PA
+0017186001,TM Domestic US Customer 1,US,San Ramon,94583-0001,2700 Camino Ramon,CA
+0017186002,TM Domestic US Customer 2,US,Plano,75025-0008,7500 Windrose Avenue,TX
+0017186003,Franz Hero,US,San Ramon,94583-0001,2700 Camino Ramon,CA
+0017186004,Jan Gilg,US,Plano,75025-0008,7500 Windrose Avenue,TX
+0017186005,TM Domestic US Customer 1,US,San Ramon,94583-0001,2700 Camino Ramon,CA
+0017100065,Domestic US Customer 65,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0017100066,Domestic US Customer 66,US,Chula Vista,91910-1007,15 N 4th Ave,CA
+0064100001,Domestic Customer ZA 1,ZA,Cape Town,7446,4 Waterford Place,WC
+0064100002,Domestic Customer ZA 2,ZA,Cape Town,7446,5 Waterford Place,WC
+0064100003,Domestic ZA Customer 3,ZA,Cape Town,7446,1230 Waterford Place,WC
+0064100004,Domestic ZA Customer 4,ZA,Cape Town,7446,23 Waterford Place,WC
+0064100006,Domestic ZA Customer 6 (Returns),ZA,Cape Town,7446,1142 Waterford Place,WC
+0064100008,Domestic ZA Customer 8,ZA,Cape Town,7446,83 Waterford Place,WC
+0064100009,Domestic ZA Customer 9,ZA,Cape Town,7446,93 Waterford Place,WC
+0064100014,Domestic ZA Customer 14,ZA,Cape Town,7446,95 Waterford Place,WC
+0064100012,Domestic Customer ZA 12,ZA,Cape Town,7446,6 Waterford Place,WC
+0064100013,Domestic Customer ZA 13,ZA,Cape Town,7446,7 Waterford Place,WC
+0064100005,Domestic ZA Customer 5 (CMS),ZA,Johannesburg,1619,1 Marignane Drive,GP
+0064100273,Domestic Customer ZA CPD,ZA,Johannesburg,2148,,
+0064100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0064100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0064100007,"Domestic subcontractor A, ZA",ZA,Kimberly,8580,12 North Circular Road,NC
+0064100011,SAP SE,ZA,Johannesburg,1619,7 Masabalala Yengwa Avenue,GP
+0064100010,Domestic Customer ZA 10,ZA,Cape Town,7446,10 Waterford Place,WC
+EWM64-CU01,Domestic Customer EWM 1 (Domestic),ZA,Durban,7446,75 Aurora Drive,ZN
+EWM64-CU02,Domestic Customer EWM 2 (Domestic),ZA,Durban,7446,2 Aurora Drive,ZN
+EWM64-CU03,Domestic Customer EWM 3 (Domestic),ZA,Durban,7446,12 Aurora Drive,ZN
+0064416410,Plant 6410 as Business Partner,ZA,Johannesburg,2148,1 Woodmead Drive,GP
+0064300010,Domestic ZA Supplier 10,ZA,Durban,7446,69 Aurora Drive,ZN
+0064154801,JIT Company,ZA,Durban,4001,4711 Hunter Street,ZN
+0064100080,Domestic Customer ZA 80 (Ariba Netw,ZA,Kimberley,8580,10 North Circular Road,NC
+0064100081,Domestic Customer ZA 81 (Ariba Netw,ZA,Cape Town,7507,2350 Kamp Street,WC
+0064406410,Company code 6410 as a business par,ZA,Johannesburg,1619,1 Marignane Drive,GP
+0063100100,國內客戶 Direct Debit,TW,臺北,11550,17 忠孝東路6段,TPE
+0063100001,國內客戶01,TW,臺北,11530,2 忠孝東路6段,TPE
+0063100002,國內客戶02,TW,臺北,11557,45 忠孝東路6段,TPE
+0063100003,Domestic TW Customer 3,TW,Taipei,100,"7 7F., No.4, Sec. 1, Zhongxiao W. R",TPE
+0063100004,Domestic TW Customer 4,TW,Taipei,100,"17 17F., No.4, Sec. 2, Zhongxiao W.",TPE
+0063100006,Domestic TW Customer 6 (Return),TW,Taipei,100,"5 5F., No.4, Sec. 3, Zhongxiao W. R",TPE
+0063100008,Domestic TW Customer 8,TW,Taipei,100,"9 9F., No.4, Sec. 4, Zhongxiao W. R",TPE
+0063100009,Domestic TW Customer 9,TW,Taipei,100,"6 6F., No.4, Sec. 5, Zhongxiao W. R",TPE
+0063100014,PAYER,TW,Taipei,100,"3 6F., No.4, Sec. 5, Zhongxiao W. R",TPE
+0063100012,Invoice List,TW,Taipei,100,"22 6F., No.4, Sec. 5, Zhongxiao W.",TPE
+0063100013,Invoice List,TW,Taipei,100,"3 6F., No.4, Sec. 5, Zhongxiao W. R",TPE
+0063109901,張 龍,TW,Taipei,100,"21 6F., No.4, Sec. 5, Zhongxiao W.",TPE
+0063100005,Domestic Customer TW 5 (CMS),TW,Taipei,100,"3 3F., No.4, Sec. 6, Zhongxiao W. R",TPE
+0063100273,Domestic Customer TW CPD,TW,臺北,110,,
+0063100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 5,BY
+0063100007,國內外包商,TW,臺北,110,99 臺北市信義區松壽路,TPE
+0063100011,SAP SE,TW,Taipei,110060,122 台北市民生東路3段156號18樓D室,TPE
+0063100010,Inlandskunde TW 10,TW,New Taipei City,74214,10 Zhongzheng Rd,
+EWM63-CU01,EWM Domestic Customer 01,TW,臺北,11530,204 忠孝東路6段,TPE
+EWM63-CU02,EWM Domestic Customer 02,TW,臺北,11557,12 忠孝東路6段,TPE
+EWM63-CU03,EWM Domestic Customer 03,TW,臺北,11550,75 忠孝東路6段,TPE
+0063416310,Plant 6310 as Business Partner,TW,Taipei,100,"1 3F., No.4, Sec. 6, Zhongxiao W. R",
+0063300010,Domestic TW Supplier 10,TW,Taipei,115025,"2 6F., No.4, Sec. 5, Zhongxiao W. R",TPE
+0063154801,JIT Company,TW,Taipei,115025,"7 7F., No.4, Sec. 1, Zhongxiao W. R",TPE
+0063100080,Domestic Customer TW 80,TW,Taipei,115025,"80 7F., No.4, Sec. 1, Zhongxiao W.",TPE
+0063406310,Company Code 6310 as Business Partn,TW,台北,11530,33 忠孝東路6段,TPE
+0036100100,Domestic TR Customer DD,TR,Istanbul,34768,Saray Mah. Site Yolu Sok 46,
+0036100001,Domestic TR Customer 1,TR,Istanbul,34768,Saray Mah. Site Yolu Sok 5,
+0036100002,Domestic TR Customer 2,TR,Istanbul,34768,Saray Mah. Site Yolu Sok 36,
+0036100003,Domestic Customer TR 3,TR,Istanbul,34768,Saray Mah. Site 300,
+0036100004,Domestic Customer TR 4,TR,Istanbul,34768,Saray Mah. Site 400,
+0036100006,Domestic Customer TR 6 (Returns),TR,Istanbul,34768,Saray Mah. Site 600,
+0036100008,Domestic Customer TR 8,TR,Istanbul,34768,Saray Mah. Site 800,
+0036100009,Domestic Customer TR 9,TR,Istanbul,34768,Saray Mah. Site 900,
+0036100014,PAYER - Central,TR,Istanbul,34768,Saray Mah. Site 140,
+0036100012,Domestic Customer Invoice List,TR,Istanbul,34768,Saray Mah. Site 120,
+0036100013,Domestic Customer Invoice List,TR,Istanbul,34768,Saray Mah. Site 130,
+0036100005,Domestic Customer TR 5 (CMS),TR,SzegedShangHaiRiyadhMumbaiMelbourne,34335,Nispetiye Cad. B3 Kule 800,
+0036100273,Domestic TR CPD,TR,Istanbul,34768,Saray Mah. Site 2,
+0036100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0036100007,Domestic TR Subcontractor A,TR,Istanbul,34768,Saray Mah. Site Yolu Sok. 5,
+0036100011,SAP SE,TR,Riyadh,73000,King Fahad Raod 1,
+0036100010,Domestic TR Customer 10,TR,Istanbul,99904,King Fahad Raod 10,
+0036154801,JIT Company,TR,lstanbul,34768,Saray Mah. Site Yolu Sok 5,
+0036100080,Domestic TR Customer 80,TR,Istanbul,34768,Saray Mah. Site Yolu Sok. 5,
+0036100081,Domestic TR Customer 81,TR,Istanbul,34768,Saray Mah. Site Yolu Sok. 5,
+0036403610,Company Code 3610 as Business Partn,TR,Riyadh,46000,"Near Al Ghurair City, Deira 47",
+0036413610,Customer as Plant 3610,TR,Istanbul,34768,Saray Mah. Site Yolu Sok. 5,
+0068100001,Inlandskunde TH 1,TH,Bangkok,12400,2 Prachachun Road,10
+0068100002,Inlandskunde TH 2,TH,Bangkok,12400,2 Prachachun Road,10
+0068100003,Domestic Customer TH 3,TH,Bangkok,12400,181 Prachachun Road,10
+0068100004,Domestic Customer TH 4,TH,Bangkok,12400,182 Prachachun Road,10
+0068100006,Domestic Customer TH 6 (Returns),TH,Bangkok,12400,183 Prachachun Road,10
+0068100008,Domestic Customer TH 8,TH,Bangkok,12400,184 Prachachun Road,10
+0068100009,Domestic Customer TH 9,TH,Bangkok,12400,185 Prachachun Road,10
+0068100014,PAYER - Central,TH,Bangkok,12400,186 Prachachun Road,10
+0068100012,Domestic Customer TH 12,TH,Bangkok,12400,191 Prachachun Road,10
+0068100013,Domestic Customer TH 13,TH,Bangkok,12400,192 Prachachun Road,10
+0068100005,Inlandskunde TH 5 (CMS),TH,Bangkok,12400,181 Prachachun Road,10
+0068100273,Domestic TH CPD,TH,Bangkok,12400,177 Prachachun Road,10
+0068100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0068100007,"Inland-Lohnbearbeiter A , TH",TH,Bangkok,12400,12 Prachachun Road,10
+0068100011,SAP SE,TH,Bangkok,69190,7 Dietmar-Hopp-Allee,
+0068100010,Inlandskunde TH 10,TH,Bangkok,12400,10 Prachachun Road,
+0068300010,Domestic TH Supplier 10,TH,Bangkok,12400,181 Prachachun Road,10
+0068154801,JIT Company,TH,Bangkok,12400,187 Prachachun Road,10
+0068100080,Inlandskunde TH 80,TH,Bangkok,12400,2 Prachachun Road,10
+0068100081,Inlandskunde TH 81,TH,Bangkok,12400,2 Prachachun Road,10
+0068406810,Company Code 6810 as Business Partn,TH,Bangkok,12400,188 Prachachun Road,10
+0068416810,Werk 6810 als Geschäftspartner,TH,Bangkok,12400,1 Prachachun Road,10
+0027100001,Domestic SK Customer 1,SK,Bratislava,821 09,Mlynské nivy 47,102
+0027100002,Domestic SK Customer 1,SK,Žilina,100 21,Kamenná 2827/4,511
+0027100003,Domestic SK Customer 3,SK,Trenčín,911 05,Zlatovská 1783,309
+0027100004,Domestic SK Customer 4,SK,Senec,903 01,Bélu Bartóka 36,108
+0027100006,Domestic SK Customer 6 (Return),SK,Nitra,949 01,Vašinova 61,403
+0027100008,"Inland subcontractor A, SK",SK,Bratislava,811 09,Pribinova 10,101
+0027100009,Domestic SK Customer 9,SK,Pezinok,902 03,Myslenická 1,107
+0027100014,Domestic SK Customer 14,SK,Trenčín,911 05,Bratislavská 117/48,309
+0027100012,Domestic SK Customer 12,SK,Nitra,949 01,Štúrova 155,403
+0027100013,Domestic SK Customer 13,SK,Senica,905 01,Dlhá 248/43,205
+0027100005,Domestic SK Customer 5 (CMS),SK,Levice,934 01,Pionierska 2,402
+0027100273,Domestic Customer SK CPD,SK,Žilina,100 21,Vojtecha Tvrdého 793/21,511
+0027100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0027100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0027100100,Domestic customer SK 100 (SEPA),SK,Senica,905 01,Dlhá 36,205
+0027100007,CUST-SUBCON,SK,Trnava,917 08,Slovenská 26,309
+0027200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0027100060,Foreign SK Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0027100011,SAP SE,SK,Banská Bystrica,974 01,T.Vansovej 10,601
+0027100010,Domestic SK Customer 10,SK,Bratislava,821 08,Sartorisova 8,102
+0027300010,Domestic SK Supplier 10,SK,Nitra,949 01,Dlhá 18,403
+0027154801,JIT Company,SK,Hallbergmoos,853 99,Zeppelinstraße 2,102
+0027100080,Domestic SK Customer 80,SK,Bratislava,811 01,Fialkové údolie 49/A,101
+0027100081,"ZSE Energia, a.s.",SK,Bratislava,816 47,Čulenova 06,101
+0027402710,Company Code 2710 as Business Partn,SK,Žilina,100 21,Na Šefranici 27,511
+0027412710,Plant 2710 as Business Partner,SK,Bratislava,811 08,Cukrová 14,101
+0061100100,Domestic SG Customer Direct Debit,SG,Singapore,658064,17 Bukit Batok Crescent,SG
+0061100001,Domestic SG Customer 1,SG,Singapore,658064,2 Bukit Batok Crescent,SG
+0061100002,Domestic SG Customer 2,SG,Singapore,658064,45 Bukit Batok Crescent,SG
+0061100003,Domestic SG Customer 3,SG,Singapore,658064,100 Victoria Str.,SG
+0061100004,Domestic SG Customer 4,SG,Singapore,658064,1 Victoria Str.,SG
+0061100006,Domestic SG Customer 6 (Returns),SG,Singapore,658064,10 Victoria Str.,SG
+0061100008,Domestic SG Customer 8,SG,Singapore,658064,83 Victoria Str.,SG
+0061100009,Domestic SG Customer 9,SG,Singapore,658064,93 Victoria Str.,SG
+0061100014,Domestic SG Customer 14,SG,Singapore,658064,3 Victoria Str.,SG
+0061100012,Domestic SG Customer 12,SG,Singapore,658064,22 Victoria Str.,SG
+0061100013,Domestic SG Customer 13,SG,Singapore,658064,3 Victoria Str.,SG
+0061100005,Domestic SG Customer 5 (CMS),SG,SINGAPORE,208057,Pitt Str,SG
+0061100273,Domestic SG CPD,SG,Singapore,123205,,
+0061100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0061100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0061100007,Domestic SG Subcontractor A,SG,SINGAPORE,123205,1000 Punt Road 6,SG
+0061100011,SAP SE,SG,Singapore,208057,30 Pitt Str,SG
+0061100010,Domestic SG Customer 10,SG,Singapore,117440,2 Pasir Panjang Road,SG
+EWM61-CU01,EWM-Kunde 01 (Inland),SG,Singapore,123205,75 Punt Rd 6,SG
+EWM61-CU02,EWM-Kunde 02 (Inland),SG,Singapore,123205,2 Punt Rd 6,SG
+EWM61-CU03,EWM-Kunde 03 (Inland),SG,Singapore,123205,12 Punt Rd 6,SG
+0061416110,Plant 6110 as Business Partner,SG,Singapore,123205,1002 Punt Road 6,SG
+0061300010,Domestic SG Customer 1,SG,Singapore,658064,2 Bukit Batok Crescent,SG
+0061154801,JIT Company,SG,Singapore,658064,7 Victoria Str.,SG
+0061100080,Domestic SG Customer 80,SG,Singapore,117440,2 Pasir Panjang Road,SG
+0061100081,Domestic SG Customer 81,SG,Singapore,117440,2 Pasir Panjang Road,SG
+0061406110,Company Code 6110 as Business Partn,SG,SINGAPORE,123205,3500 Punt Road 6,SG
+0019100001,Domestic SE Customer 1,SE,Stockholm,111 34,Sveavägen 44,AB
+0019100002,Domestic SE Customer 2,SE,Stockholm,111 34,Sveavägen 45,AB
+0019100003,Domestic Customer SE 3,SE,Stockholm,111 34,Sveavägen 1230,AB
+0019100004,Domestic Customer SE 4,SE,Stockholm,111 34,Sveavägen 23,AB
+0019100006,Domestic Customer SE 6 (Returns),SE,Stockholm,111 34,Sveavägen 1142,AB
+0019100008,Domestic Customer SE 8,SE,Stockholm,111 34,Sveavägen 83,AB
+0019100009,Domestic Customer SE 9,SE,Stockholm,111 34,Sveavägen 93,AB
+0019100014,Domestic Customer SE 14,SE,Stockholm,111 34,Sveavägen 94,AB
+0019100012,Domestic SE Customer 12,SE,Stockholm,111 34,Sveavägen 44,AB
+0019100013,Domestic SE Customer 13,SE,Stockholm,111 34,Sveavägen 44,AB
+0019100005,Domestic SE Customer 5,SE,Huddinge,141 34,Mellansjövägen 26,
+0019100273,Domestic SE Customer CPD,SE,Stockholm,111 34,,
+0019100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0019100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0019100007,"Inland-Lohnbearbeiter A , SE",SE,Stockholm,111 43,Sveavägen 12,AB
+0019200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0019100060,Foreign SE Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0019100011,SAP SE,SE,Stockholm,141 34,Forelltorget 1 7,
+0019100010,Domestic Customer SE 10,SE,Stockholm,111 34,Sveavägen 10,AB
+EWM19-CU01,Domestic SE Customer 1 (EWM),SE,Malmö,213 73,Thomsons väg 204,M
+EWM19-CU02,Domestic SE Customer 2 (EWM),SE,Stockholm,116 45,Katarinavägen 12,AB
+EWM19-CU03,Domestic SE Customer 3 (EWM),SE,Göteborg,411 36,Kungsportsavenyen 75,I
+0019411910,Plant 1910 as Business Partner,SE,Stockholm,111 34,Sveavägen 44,AB
+0019300010,Domestic SE vendor 10,SE,Stockholm,111 34,Sveavägen 58,AB
+0019154801,JIT Company,SE,Stockholm,111 34,Sveavägen 48,AB
+0019100080,Domestic SE Customer 80,SE,Stockholm,111 34,Sveavägen 44,AB
+0019100081,Wasa Cleaning,SE,Hägersten,126 30,Västberga Allé 9,AB
+0019401910,Buchungskreis 1910 als Geschäftspar,SE,Stockholm,111 34,Sveavägen 44 1,
+0059100100,Domestic SA Customer DD,SA,Riyadh,11564,46 King Fahad Road,
+0059100001,Domestic SA Customer 1,SA,Riyadh,11564,2 King Fahad Road,
+0059100002,Domestic SA Customer 2,SA,Riyadh,11564,45 King Fahad Road,
+0059100003,Domestic Customer SA 3,SA,Abu Dhabi,99041,300 Saadiyat Island,
+0059100004,Domestic Customer SA 4,SA,Abu Dhabi,99041,400 Saadiyat Island,
+0059100006,Domestic Customer SA 6 (Returns),SA,Abu Dhabi,99041,600 Saadiyat Island,
+0059100008,Domestic Customer SA 8,SA,Abu Dhabi,99041,800 Saadiyat Island,
+0059100009,Domestic Customer SA 9,SA,Abu Dhabi,99041,900 Saadiyat Island,
+0059100014,PAYER - Central,SA,Abu Dhabi,99041,140 Saadiyat Island,
+0059100012,Domestic Customer Invoice List,SA,Abu Dhabi,99041,120 Saadiyat Island,
+0059100013,Domestic Customer Invoice List,SA,Abu Dhabi,99041,130 Saadiyat Island,
+0059100005,Domestic Customer SA 5 (CMS),SA,Riyadh,99041,500 King Fahad Raod,
+0059100273,Domestic SA CPD,SA,Abu Dhabi,99041,2 Saadiyat Island,
+0059100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0059100007,Domestic SA Subcontractor A,SA,Riyadh,11564,12 King Fahad Road,
+0059100011,SAP SE,SA,Riyadh,73000,1 King Fahad Raod,
+0059100010,Domestic SA Customer 10,SA,Riyadh,99041,10 King Fahad Raod,
+0059300010,Domestic SA Supplier 10,SA,Riyadh,11564,12 King Fahad Road,
+0016100001,Domestic Customer RU 1,RU,Moscow,111024,Shosse Entuziastov 9,77
+0016100002,Domestic Customer RU 2,RU,Moscow,119571,Leninskiy Prospect 119,77
+0016100003,Domestic Customer RU 3,RU,Sankt-Peterburg,191023,Nevskiy prospect 56,78
+0016100004,Domestic Customer RU 4,RU,Samara,443095,"Moscowskoye shosse, 16y kilometr 3",63
+0016100006,Domestic Customer RU 6 (Returns),RU,Moscow,103031,Stoleshnikov pereulok 10 korpus,77
+0016100008,Domestic Customer RU 8,RU,Moscow,121096,Kastanayevskaya 7,77
+0016100009,Domestic Customer RU 9,RU,Nizhniy Novgorod,603152,Kaschenko 6,52
+0016100014,Domestic Customer RU 14 (Invoice Li,RU,Moscow,103031,Stoleshnikov pereulok 9,77
+0016100012,Domestic Customer RU 12 (Invoice Li,RU,Moscow,103031,shosse Entuziastov 2,77
+0016100013,Domestic Customer RU 13 (Invoice Li,RU,Moscow,103031,Stoleshnikov pereulok 3,77
+0016100005,Domestic Customer RU 5 (CMS),RU,Moscow,115054,Kosmodamianskya naberezhnaya 52/7,77
+0016100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0016100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0016100007,"Domestic Subcontractor A, (RU)",RU,Moscow,125167,Leningradskiy pRUspect 39,77
+0016100011,Domestic RU Customer 11 (CMS Extend,RU,Moskau,103031,Stoleshnikov pereulok 1,77
+0016100010,Domestic Customer RU 10,RU,Moscow,103031,Nizhniy pereulok 15,77
+EWM16-CU01,EWM-Kunde 01 (Inland),RU,Samara,443095,"Moscowskoye shosse, 16y kilomet 204",63
+EWM16-CU02,EWM-Kunde 02 (Inland),RU,Nizhniy Novgorod,603152,Kaschenko 12,52
+EWM16-CU03,EWM-Kunde 03 (Inland),RU,Moskau,443088,Stoleshnikov pereulok 75,77
+0016411610,Plant 1610 as Business Partner,RU,Moskau,115054,Kosmodamianskaya nab. 52/2,77
+0016300010,Domestic RU Supplier 10,RU,Moscow,103051,Sadovo-Samotechnaya 8,77
+0028100001,Domestic RO Customer 1,RO,Bucuresti,010042,Nicolae Balcescu 5,B
+0028100002,Domestic RO Customer 2,RO,Cluj-Napoca,400616,Henri Barbusse 44,CJ
+0028100003,Domestic RO Customer 3,RO,Sibiu,550260,Ana Ipatescu 49,SB
+0028100004,Domestic RO Customer 4,RO,Timisoara,300351,Petre Domosneanu 2,TM
+0028100006,Domestic RO Customer 6 (Return),RO,Cluj-Napoca,400572,Fabricii de zahar 7,CJ
+0028100008,"Inland subcontractor A, RO",RO,Timisoara,300011,Constantin Brediceanu 10,TM
+0028100009,Domestic RO Customer 9,RO,Bucuresti,031247,Vlaicu Voda 14,B
+0028100014,Domestic RO Customer 14 (Payer Cent,RO,Timisoara,300080,Gheorghe Lazar 8,TM
+0028100012,Domestic Customer Invoice List 12,RO,Cluj-Napoca,400440,Aurel Suciu 20,CJ
+0028100013,Domestic Customer Invoice List 13,RO,Timisoara,300551,Studentilor 1,TM
+0028100005,Domestic RO Customer 5 (CMS),RO,Bucuresti,021718,Soseaua Iancului 39,B
+0028100273,Domestic RO Customer CPD,RO,Cluj-Napoca,400489,Republicii 99,CJ
+0028100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0028100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0028100100,Domestic RO Customer 100 (SEPA),RO,Bucuresti,060275,Calea Giulesti 14,B
+0028100007,Domestic RO Subcontractor A,RO,Sibiu,550316,Stefan cel Mare 193,SB
+0028200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0028100060,Foreign RO Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0028100011,Domestic RO Customer 11 (CMS Extend,RO,Bucuresti,060833,Aleea Cetatuia 1,B
+0028100010,Domestic RO Customer 10,RO,Bucuresti,310158,Calea Victoriei 103-105,B
+0028300010,Domestic Suplier RO 10,RO,Timisoara,300406,Mircea cel Batrin 91,TM
+0028154801,JIT Company,RO,Bucuresti,060136,Gen. Ion Culcer 6,B
+0028100080,Domestic RO Customer 80 (Ariba Sale,RO,Bucuresti,024102,Delea Veche 24,B
+0028100081,Domestic RO Customer 81 (Ariba Sale,RO,Bucuresti,060333,Roma 2,B
+0028402810,Company Code 2810 as Business Partn,RO,Bucuresti,013714,Tipografilor 11-15,B
+0028412810,Werk 2810 als Geschäftspartner,RO,Bucuresti,013714,Tipografilor 11,B
+0035100001,Domestic PT Customer 1,PT,Lisbon,1500-023,Rua Adelaide Cabete 2,
+0035100002,Domestic PT Customer 2,PT,Oporto,4200-315,Rua Grupo 10 de Maio 10,
+0035100003,Domestic PT Customer 3,PT,Lisbon,1500-609,Rua 1 do Bairro da Boavista 1230,35
+0035100004,Domestic PT Customer 4,PT,Oporto,4099-033,Largo Professor Abel Salazar 23,81
+0035100006,Domestic PT Customer 6 (Returns),PT,Lisbon,1100-500,Rua Santo Atónio da Sé 1142,35
+0035100008,Domestic PT Customer 8,PT,Oporto,4350-334,Rua 1 1,81
+0035100009,Domestic PT Customer 9,PT,Lisbon,1750-394,Rua 3 3,35
+0035100014,Domestic PT Customer 14 (Payer Cent,PT,Oporto,4350-368,Rua 10 10,81
+0035100012,Domestic PT Customer 12 (Invoice Li,PT,Lisbon,1900-387,Rua 4 de Agosto 22,35
+0035100013,Domestic PT Customer 13 (Invoice Li,PT,Lisbon,1150-113,Rua Convento da Encarnação 32,35
+0035100005,Domestic PT Customer 5 (CMS),PT,Lisbon,1900-003,Rua Abade Faria 1020,
+0035100273,Domestic Customer PT CPD,PT,Lisbon,1200-388,,
+0035100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0035100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0026100001,Domestic Customer PL 1,PL,Warszawa,00-034,Słoneczna 6,14
+0026100002,Domestic Customer PL 2,PL,Kraków,25-614,Krótka 50,12
+0026100003,Domestic Customer PL 3,PL,Szczecin,87-860,Nowa 8,32
+0026100004,Domestic Customer PL 4,PL,Gdańsk,90-303,Siekierkowska 37,22
+0026100006,Domestic PL 6 (Returns),PL,Warszawa,00-185,Krakowska 11,14
+0026100008,Domestic PL 8,PL,Gdańsk,90-415,Wołoska 7,22
+0026100009,Domestic PL 9,PL,Poznań,43-100,Wawelska 45,30
+0026100014,PAYER - Central Warszawa,PL,Warszawa,02-675,Wołoska 5,22
+0026100012,Invoice List,PL,Warszawa,00-034,Słoneczna 7,14
+0026100013,Invoice List,PL,Warszawa,00-034,Słoneczna 8,14
+0026100005,Domestic PL Customer 5 (CMS),PL,Warszawa,00-044,Wronia 6,14
+0026100273,Domestic Customer PL CPD,PL,Warszawa,00-034,Słoneczna 10,14
+0026100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0026100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0026100007,"Domestic Subcontractor A, (PL)",PL,Warszawa,00-055,Długa 18,14
+0026200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0026100060,Foreign PL Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0026100011,SAP SE,PL,Warszwa,00-510,Dietmar-Hopp-Allee 7,14
+0026100010,Domestic PL Customer 10,PL,Warszawa,03-252,Bliska 10,14
+0026300010,Domestic Vendor (Customer) PL 10,PL,Wieliczka,32-020,Reformacka 25,12
+0026154801,JIT Company,PL,Wrocław,50-001,Gwarna 1,02
+0026100080,Inlandskunde PL 80,PL,Warsaw,05-075,Dluga 640,14
+0026100081,Inlandskunde PL 81,PL,Warsaw,00-124,Jana Pawła II 12,14
+0026402610,Company Code 2610 as Business Partn,PL,Warszawa,03-252,Dietmar-Hopp-Alle 1,14
+0058100100,Domestic PH Customer Direct Debit,PH,Makati,5154,17 Aldgate Valley Rd,
+0058100001,Domestic PH Customer 1,PH,Makati,5154,200 Aldgate Valley Rd,
+0058100002,Domestic PH Customer 2,PH,Makati,5154,15 Aldgate Valley Rd,
+0058100003,Domestic Customer PH 3,PH,Makati,5154,300 Aldgate Valley Rd,
+0058100004,Domestic Customer PH 4,PH,Makati,5154,400 Aldgate Valley Rd,
+0058100006,Domestic Customer PH 6 (Returns),PH,Makati,5154,600 Aldgate Valley Rd,
+0058100008,Domestic Customer PH 8,PH,Makati,5154,800 Aldgate Valley Rd,
+0058100009,Domestic Customer PH 9,PH,Makati,5154,900 Aldgate Valley Rd,
+0058100014,Domestic Customer PH 14,PH,Makati,5154,700 Aldgate Valley Rd,
+0058100012,Domestic Customer PH 12,PH,Makati,5154,700 Aldgate Valley Rd,
+0058100013,Domestic Customer PH 13,PH,Makati,5154,700 Aldgate Valley Rd,
+0058100005,Domestic Customer PH 5 (CMS),PH,Makati,5154,500 Aldgate Valley Rd,
+0058100273,Domestic PH CPD,PH,Makati,5154,,
+0058100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0058100007,Domestic PH Subcontractor,PH,Makati,5154,34 Aldgate Valley Rd,
+0058100011,SAP SE,PH,Makati,5154,500 Aldgate Valley Rd,
+0058100010,Domestic PH Customer 10,PH,Makati,5158,508 Aldgate Valley Rd,
+EWM58-CU01,EWM Domestic Customer 01,PH,Makati,5154,10 Aldgate Valley Rd,
+EWM58-CU02,EWM Domestic Customer 02,PH,Makati,5154,30 Aldgate Valley Rd,
+EWM58-CU03,EWM Domestic Customer 03,PH,Makati,5154,40 Aldgate Valley Rd,
+0058415810,Customer as Plant 5810,PH,Makati,5154,300 Aldgate Valley Rd,
+0058300010,Domestic PH Supplier 10,PH,Makati,5154,2 Aldgate Valley Rd,
+0058154801,JIT Company,PH,Makati,5154,100 Aldgate Valley Rd,
+0058100080,Domestic Customer PH 80,PH,Makati,5154,80 Aldgate Valley Rd,
+0058100081,Domestic Customer PH 81,PH,Makati,5154,80 Aldgate Valley Rd,
+0069100100,Domestic Customer NZ Direct Debit,NZ,Taupo,3330,17 Tongariro Street,
+0069100001,Domestic Customer NZ 1,NZ,Taupo,3330,61 Tongariro Street,
+0069100002,Domestic Customer NZ 2,NZ,Taupo,3330,45 Tongariro Street,
+0069100003,Domestic Customer NZ 3,NZ,Auckland,1069,"155 Level 1, 155 Queen Street",
+0069100004,Domestic Customer NZ 4,NZ,Auckland,1069,"156 Level 1, 156 Queen Street",
+0069100006,Domestic Customer NZ 6 (Returns),NZ,Auckland,1069,"157 Level 1, 157 Queen Street",
+0069100008,Domestic Customer NZ 8,NZ,Auckland,1069,"158 Level 1, 158 Queen Street",
+0069100009,Domestic Customer NZ 9,NZ,Auckland,1069,"159 Level 1, 159 Queen Street",
+0069100014,PAYER,NZ,Auckland,1069,"159 Level 1, 159 Queen Street",
+0069100012,Invoice List,NZ,Auckland,1069,"159 Level 1, 159 Queen Street",
+0069100013,Invoice List,NZ,Auckland,1069,"159 Level 1, 159 Queen Street",
+0069100005,Domestic Customer NZ 5 (CMS),NZ,Auckland,1069,"156 Level 3, 156 Queen Street",
+0069100273,Domestic NZ CPD,NZ,Wellington,2517,,
+0069100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,
+0069100007,Domestic NZ Subcontractor,NZ,Auckland,1010,44 Lorne Street,AUK
+0069100011,SAP SE,NZ,Auckland,1069,151 Queen St,AUK
+0069100010,Inlandskunde NZ 10,NZ,Auckland,1069,10 Queen Street,
+EWM69-CU01,EWM Domestic Customer 01,NZ,Taupo,3330,204 Tongariro Street,
+EWM69-CU02,EWM Domestic Customer 02,NZ,Taupo,3330,12 Tongariro Street,
+EWM69-CU03,EWM Domestic Customer 03,NZ,Taupo,3330,75 Tongariro Street,
+0069416910,Customer as Plant 6910,NZ,Auckland,1069,"156 Level 3, 156 Queen Street",
+0069300010,Domestic NZ Supplier 10,NZ,Taupo,3330,23 Tongariro Street,
+0069154801,JIT Company,NZ,Taupo,3330,61 Tongariro Street,
+0069100080,Domestic Customer NZ 80,NZ,Auckland,1069,"155 Level 1, 155 Queen Street",AUK
+0044100001,Domestic Customer NO 1,NO,Oslo,0910,Dronnning Eufemias gate 6,03
+0044100002,Domestic Customer NO 2,NO,Stavanger,4035,Forusbeen 50,11
+0044100003,Domestic Customer NO 3,NO,Lysaker,1366,Oksenøyveien 8,02
+0044100004,Domestic Customer NO 4,NO,Bergen,5004,Carl sunds gate 37,12
+0044100006,Domestic Customer NO 6 (Returns),NO,Oslo,1166,Midtåsen 11,03
+0044100008,Domestic Customer NO 8,NO,Bergen,5008,Vestre Strømkaien 7,12
+0044100009,Domestic Customer NO 9,NO,Trondheim,7030,Abels gate 9,50
+0044100014,Domestic Customer NO 14,NO,Hvalstad,1395,Nye Vakås vei 2,02
+0044100012,Domestic NO Customer 12,NO,Kristiansand,4628,Mjåvannsvegen 22,09
+0044100013,Domestic NO Customer 13,NO,Nyborg,5131,Salhusvegen 3,14
+0044100005,Domestic Customer NO 5 (CMS),NO,Ulset,5116,Åsane Senter 37,12
+0044100273,Domestic Customer NO CPD,NO,Oslo,1166,,
+0044100050,Foreign Customer NO 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0044100051,Foreign Customer NO 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0044100007,Domestic Subcontractor NO 7,NO,Drammen,3015,Nedre Storgate 6,06
+0044100011,SAP SE,NO,Stavanger,4050,Forus 2,11
+0044100010,Domestic Customer NO 10,NO,Oslo,0910,Dronnning Eufemias gate 6,03
+0044300010,Domestic NO Supplier 10,NO,Bergen,5006,Carl sunds gate 39,03
+0044258001,JV Operator NO,NO,Oslo,1166,Midtåsen 23,03
+0044258002,Domestic NO JV Partner 1,NO,Oslo,0910,Dronnning Eufemias gate 6,03
+0044258003,Domestic NO JV Partner 2,NO,Stavanger,4035,Forusbeen 50,11
+0044154801,JIT Company,NO,Oslo,1180,Midtåsen 2,03
+0044100080,Domestic Customer NO (Ariba Sourcin,NO,Trondheim,7011,Kongens gate 14,50
+0044100081,Domestic Customer NO (Ariba Sourcin,NO,Oslo,0164,Universitetsgata 1,03
+0044404410,Company Code 4410 as Business Partn,NO,Lysaker,1324,Lysaker Torg 5,02
+0044414410,Plant 4410 as Business Partner,NO,Lysaker,1324,Lysaker Torg 5,02
+0037103799,Public Sector Customers,NL,Den Haag,2563 AA,Laan van Meerdervoort 213,ZH
+0037199999,BP-Consumer for Dunning,NL,Groningen,9711 AP,Emmaplein 2,GE
+0037100001,Binnenlandse klant NL 1,NL,Apeldoorn,7322 HR,Korfstraat 2,GE
+0037100002,Binnenlandse klant NL 2,NL,Arnhem,3012 CL,Keizersgracht 45,GE
+0037100003,Domestic NL 3,NL,Duivendrecht,1114 AJ,Piter Braaijweg 2,NH
+0037100004,Domestic NL 4,NL,Diemen,1112 XN,Diemerhof 10,NH
+0037100006,Domestic NL 6 (Returns),NL,Amsterdam Zuid-Oost,1101 HE,De Entree 123,NH
+0037100008,Domestic NL 8,NL,Apeldoorn,7322 HR,Korfstraat 13,GE
+0037100009,Domestic NL 9,NL,Apeldoorn,7322 HR,Korfstraat 14,GE
+0037100014,Domestic NL Customer 14 (Payer Cent,NL,Veldhoven,5508 RN,Zandven 8,NB
+0037100012,Domestic Customer Invoice List NL 1,NL,Rotterdam,3023 KL,Hooidrift 2,ZH
+0037100013,Domestic Customer Invoice List NL 1,NL,Amsterdam,1082 MD,Claude Debussylaan 15,NH
+0037100005,Domestic NL Customer 5 (CMS),NL,Apeldoorn,7322 HR,Korfstraat 2,GE
+0037100273,Domestic Customer NL CPD,NL,Leeuwarden,8918 CB,De Fennen 1,FR
+0037100050,Export Customer (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0037100051,Foreign Trade Customer (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0037100100,Domestic NL Customer 100 (SEPA),NL,Utrecht,3511 CE,Stationshal 12,UT
+0037100007,Domestic Subcontractor #A (NL),NL,Apeldoorn,7322 HR,Korfstraat 12,GE
+0037200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0037100060,Foreign NL Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0037100011,Domestic NL Customer 11 (CMS-Extend,NL,Zwolle,8011 PB,Sassenstraat 33,OV
+0037100010,Domestic NL Customer 10,NL,Eindhoven,5688 AA,Zandoever 2,NB
+EWM37-CU01,Domestic Customer EWM 1 (Domestic),NL,Utrecht,3533 HE,Park Oog in Al 204,UT
+EWM37-CU02,Domestic Customer EWM 2 (Domestic),NL,Rotterdam,3066 GS,Crooswijksesingel 12,ZH
+EWM37-CU03,Domestic Customer EWM 3 (Domestic),NL,Amsterdam,1016 DV,Keizersgracht 75,NH
+0037413710,Plant 3710 as Business Partner,NL,'s-Hertogenbosch,5232 BE,Amerikastraat 10,NB
+0037300010,Domestic Supplier NL 10,NL,Landgraaf,6372 XG,Casinolaan 3,LI
+0037154801,JIT Company,NL,Rotterdam,3011 AX,Pompenburg 2,ZH
+0037100080,Domestic NL Customer 80 (Ariba Netw,NL,Leeuwarden,8938 AR,Mercuriusweg 10,FR
+0037100081,Domestic NL Customer 81 (Ariba Netw,NL,Emmen,7822 AJ,Duindoorn 10,DR
+0037403710,Company Code 3710 as Business Partn,NL,Amsterdam,1071 DG,Waterstraat 1,NH
+0054100100,Domestic MY Customer DD,MY,Kuala Lumpur,54500,22 Jalan Ampang,14
+0054100001,Domestic MY Customer 1,MY,Kuala Lumpur,54500,2 Jalan Ampang,14
+0054100002,Domestic MY Customer 2,MY,Kuala Lumpur,54500,45 Jalan Tun Perak,14
+0054100003,Domestic Customer MY 3,MY,Kuala Lumpur,54500,300 Jalan Tun Perak,14
+0054100004,Domestic Customer MY 4,MY,Kuala Lumpur,54500,400 Jalan Tun Perak,14
+0054100006,Domestic Customer MY 6 (Returns),MY,Kuala Lumpur,54500,600 Jalan Tun Perak,14
+0054100008,Domestic Customer MY 8,MY,Kuala Lumpur,54500,800 Jalan Tun Perak,14
+0054100009,Domestic Customer MY 9,MY,Kuala Lumpur,54500,900 Jalan Tun Perak,14
+0054100014,Domestic Customer MY 14,MY,Kuala Lumpur,54500,900 Jalan Tun Perak,14
+0054100012,Domestic Customer MY 12,MY,Kuala Lumpur,54500,400 Jalan Tun Perak,14
+0054100013,Domestic Customer MY 13,MY,Kuala Lumpur,54500,400 Jalan Tun Perak,14
+0054100005,Domestic Customer MY 5 (CMS),MY,Kuala Lumpur,54500,500 Jalan Tun Perak,14
+0054100273,Domestic MY CPD,MY,Kuala Lumpur,54500,2 Jalan Ampang,14
+0054100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0054100007,"Inland-Lohnbearbeiter A , MY",MY,Kuala Lumpur,50470,12 Jalan Tun Sambanthan,14
+0054100011,SAP SE,MY,Kuala Lumpur,54500,47 Jalan Ampang,14
+0054100010,Domestic Customer MY 10,MY,Kuala Lumpur,54508,47 Jalan Ampang,14
+EWM54-CU01,EWM Domestic Customer 01,MY,Kuala Lumpur,54500,204 Jalan Ampang,14
+EWM54-CU02,EWM Domestic Customer 02,MY,Kuala Lumpur,54500,12 Jalan Tun Perak,14
+EWM54-CU03,EWM Domestic Customer 03,MY,Kuala Lumpur,54500,75 Jalan Ampang,14
+0054415410,Customer as Plant 5410,MY,Kuala Lumpur,54500,500 Jalan Tun Perak,14
+0054300010,Domestic MY Supplier 10,MY,Kuala Lumpur,54500,400 Jalan Tun Perak,14
+0054258001,JV Operator MY,MY,Kuala Lumpur,54500,400 Jalan Tun Perak,14
+0054258002,Domestic MY JV Partner 1,MY,Kuala Lumpur,54500,320 Jalan Tun Perak,14
+0054258003,Domestic MY JV Partner 2,MY,Kuala Lumpur,54500,250 Jalan Tun Perak,14
+0054154801,JIT Company,MY,Kuala Lumpur,54500,750 Jalan Tun Perak,14
+0054100080,Domestic Customer MY 80,MY,Kuala Lumpur,54500,80 Jalan Tun Perak,14
+0054100081,Domestic Customer MY 81,MY,Kuala Lumpur,54500,80 Jalan Tun Perak,14
+0054405410,Company Code 5410 as Business Partn,MY,Kuala Lumpur,54500,47 Jalan Ampang,
+0055100001,Domestic MX Customer 1,MX,Mexico City,01210,Calle de la Paz 100,CMX
+0055100002,Domestic MX Customer 2,MX,Mexico City,03100,Avenida Santa Fe 50,CMX
+0055100003,Domestic Customer MX 3,MX,Mexico City,01210,Calle de la Paz 100,CMX
+0055100004,Domestic Customer MX 4,MX,Mexico City,03100,Avenida Santa Fe 50,CMX
+0055100006,Domestic Customer MX 6 (Returns),MX,Puebla,72810,Calle Hidalgo 17,PUE
+0055100008,Domestic Customer MX 8,MX,Mexico City,01210,Calle de la Paz 110,CMX
+0055100009,Domestic Customer MX 9,MX,Mexico City,01210,Calle de la Paz 120,CMX
+0055100014,Domestic Customer MX 14,MX,Mexico City,01210,Calle de la Paz 130,CMX
+0055100012,Domestic Customer MX 12,MX,Mexico City,01210,Calle de la Paz 100,CMX
+0055100013,Domestic Customer MX 13,MX,Mexico City,01210,Calle de la Paz 110,CMX
+0055100005,Domestic MX Customer 5 (CMS),MX,Mexico City,01210,Calle de la Paz 1020,CMX
+0055100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0055100051,Foreign Customer 51 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0055100007,Domestic MX Subcontractor A,MX,Mexico City,01210,Calle de la Paz 100,CMX
+0055100011,SAP SE,MX,Mexico City,01210,Calle de la Paz 100,CMX
+0055100010,Domestic MX Customer 10,MX,Mexico City,01210,Calle de la Paz 100,CMX
+EWM55-CU01,EWM Domestic Customer 01,MX,Mexico City,01210,Calle de la Paz 100,CMX
+EWM55-CU02,EWM Domestic Customer 02,MX,Mexico City,03100,Avenida Santa Fe 50,CMX
+EWM55-CU03,EWM Domestic Customer 03,MX,Puebla,72810,Calle Hidalgo 17,PUE
+0055415510,Plant 5510 as Business Partner,MX,Mexico City,01210,Calle de la Paz 1,CMX
+0055300010,Domestic MX Supplier 10,MX,Mexico City,01210,Calle de la Paz 398,CMX
+0055154801,JIT Company,MX,Mexico City,06500,Reforma 2,CMX
+0055405510,Company Code 5510 as Business Partn,MX,Mexico City,01210,Calle de la Paz 100,CMX
+7K100001,Domestic LU Customer 1,LU,Luxembourg,1623,3 Rue Genistre,
+7K100002,Domestic LU Customer 2,LU,Esch-sur-Alzette,4303,8 Rue des Remparts,
+7K100003,Domestic LU Customer 3,LU,Luxembourg,1623,1230 Rue Genistre,LU
+7K100004,Domestic LU Customer 4,LU,Luxembourg,1623,23 Rue Genistre,LU
+7K100006,Domestic LU Customer 6 (Returns),LU,Luxembourg,1623,1142 Rue Genistre,LU
+7K100008,Domestic LU Customer 8,LU,Luxembourg,1623,83 Rue Genistre,LU
+7K100009,Domestic LU Customer 9,LU,Luxembourg,1623,93 Rue Genistre,LU
+7K100014,Domestic LU Customer 14 (Payer Cent,LU,Luxembourg,1150,3 Route d'Arlon,LU
+7K100012,Domestic LU Customer 12 (Invoice Li,LU,Luxembourg,1445,22 rue Thomas Edison Strassen,
+7K100013,Domestic LU Customer 13 (Invoice Li,LU,Capellen,8308,3 Parc d‘activités,
+7K100005,Domestic LU Customer 5,LU,Luxembourg,1623,557 Rue Genistre,
+7K100273,Domestic Customer LU CPD,LU,Luxembourg,1623,,
+7K100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+7K100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+7K100100,Domestic Customer LU 100 (SEPA),LU,Luxembourg,1623,300 Rue Genistre,
+7K100007,Domestic LU Subcontractor A,LU,Luxembourg City,1660,12 Grand-Rue,
+7K200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+7K100060,Foreign LU Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+7K100011,SAP SE,LU,Luxembourg,1623,557 Rue Genistre,
+7K100010,Domestic LU Customer 10,LU,Luxembourg,1623,30 Rue Genistre,
+EWM7K-CU01,EWM-Customer 01 (Inland),LU,Luxembourg,1623,204 Rue Genistre,
+EWM7K-CU02,EWM-Customer 02 (Inland),LU,Luxembourg,1623,12 Rue Genistre,
+EWM7K-CU03,EWM-Customer 03 (Inland),LU,Luxembourg,1623,75 Rue Genistre,
+7K417K10,Plant 7K10 as Business Partner,LU,Luxembourg City,1660,16 Grand-Rue,
+7K300010,Domestic Supplier LU 10,LU,Luxembourg,1911,23 Rue du Laboratoire,
+0037258001,JV Operator NL,NL,Amsterdam,1072 EZ,Ceintuurbaan 22,NH
+0037258002,Domestic NL JV Partner 1,NL,Groningen,9728 JC,Galenuslaan 12,GR
+0037258003,Domestic NL JV Partner 2,NL,Utrecht,3454 JD,Rijksstraatweg 11,UT
+7K154801,JIT LU Company,LU,Luxembourg,1115,2 Boulevard Konrad Adenauer,
+7K100080,Domestic Customer LU 80 (Ariba Netw,LU,Luxembourg,1623,3 Rue Genistre,
+7K100081,Domestic Customer LU 81 (Ariba Netw,LU,Luxembourg,1463,13 Rue du Fort Elisabeth,
+7K407K10,Company Code 7K10 as Business Partn,LU,Luxembourg City,1660,16 Grand-Rue,
+0043100100,내수 고객 Direct Debit,KR,서울특별시,03101,90 500 강남구 도곡1동,11
+0043100001,내수 고객 1,KR,서울특별시,03101,2 400 강남구 논현2동,11
+0043100002,내수 고객 2,KR,서울특별시,03101,45 500 강남구 도곡1동,11
+0043100003,Domestic KR Customer 3,KR,서울특별시,03187,3 강남구 개포동,11
+0043100004,Domestic KR Customer 4,KR,서울특별시,03187,4 강남구 개포동,11
+0043100006,Domestic KR Customer 6 (Returns),KR,서울특별시,03187,6 강남구 개포동,11
+0043100008,Domestic KR Customer 8,KR,서울특별시,03187,8 강남구 개포동,11
+0043100009,Domestic KR Customer 9,KR,서울특별시,03187,9 강남구 개포동,11
+0043100014,Domestic KR Customer 14,KR,서울특별시,03187,14 강남구 개포동,11
+0043100012,Domestic Customer KR 12,KR,서울특별시,03187,3 강남구 개포동,11
+0043100013,Domestic Customer KR 13,KR,서울특별시,03187,3 강남구 개포동,11
+0043100005,Domestic KR Customer 5 (CMS),KR,SEOUL,03047,"359 Yeouidaebang-ro, Yeongdeungpo-g",
+0043100273,Inlandskunde KR CPD,KR,서울특별시,03187,,
+0043100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 2,BY
+0043100007,Domestic Subcontractor 07,KR,서울특별시,03106,12 300 강남구 대치2동,11
+0043100011,SAP SE,KR,SEOUL,03047,"359 Yeouidaebang-ro, Yeongdeungpo-g",
+0043154801,JIT Company,KR,서울특별시,03187,10 강남구 개포동,11
+0043100080,Domestic KR Customer 80,KR,서울특별시,03107,80 800 강남구 논현2동,11
+0043100081,Domestic KR Customer 81,KR,서울특별시,03107,80 800 강남구 논현2동,11
+0043404310,Company code 4310 as a business par,KR,SEOUL,03047,"359 Yeouidaebang-ro, Yeongdeungpo-g",
+0043414310,내수 고객 01,KR,서울특별시,03105,12 800 강남구 논현2동,11
+0015100100,国内得意先 Direct Debit,JP,東京都,100-6008,千代田区霞が関霞が関ビル６階 90,13
+0015100001,国内得意先 1,JP,東京都,100-6006,千代田区霞が関霞が関ビル６階 2,13
+0015100002,国内得意先 2,JP,東京都,100-6007,千代田区霞が関霞が関ビル７階 45,13
+0015100003,Domestic JP Customer 3,JP,北海道,002-8065,札幌市北区拓北五条 3,01
+0015100004,Domestic JP Customer 4,JP,千葉県,260-0855,千葉市中央区市場町 4,12
+0015100006,Domestic JP Customer 6 (Returns),JP,大阪府,534-0013,大阪市都島区内代町 6,27
+0015100008,Domestic JP Customer 8,JP,北海道,002-8065,札幌市北区拓北五条 8,01
+0015100009,Domestic JP Customer 9,JP,北海道,002-8065,札幌市北区拓北五条 9,01
+0015100014,Domestic JP Customer 14,JP,北海道,002-8065,札幌市北区拓北五条 14,01
+0015100012,Domestic Customer JP 12,JP,北海道,002-8065,札幌市北区拓北五条 12,01
+0015100013,Domestic Customer JP 13,JP,北海道,002-8065,札幌市北区拓北五条 13,01
+0015100005,Domestic JP Customer 5 (CMS),JP,大阪府,534-0013,大阪市都島区内代町 5,27
+0015100273,Domestic JP CPD,JP,東京都,100-6001,,
+0015100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 2,BY
+0015100007,国内得意先 07,JP,東京都,100-6001,千代田区霞が関霞が関ビル１階 12,13
+0015100011,SAP SE,JP,千代田区,102-8022,麹町 1-6-4,13
+0015100010,Domestic JP Customer 10,JP,北海道,002-8065,札幌市北区拓北五条 10,01
+EWM15-CU01,EWM Domestic Customer 01,JP,東京都,100-6006,千代田区霞が関霞が関ビル６階 204,13
+EWM15-CU02,EWM Domestic Customer 02,JP,東京都,100-6007,千代田区霞が関霞が関ビル７階 12,13
+EWM15-CU03,EWM Domestic Customer 03,JP,東京都,100-6008,千代田区霞が関霞が関ビル６階 75,13
+0015411510,国内得意先 1510,JP,東京都,100-6001,千代田区霞が関霞が関ビル１階 1,13
+0015300010,国内得意先 10,JP,東京都,100-6001,千代田区霞が関霞が関ビル１階 12,13
+0015154801,JIT Company,JP,大阪府,534-0013,大阪市都島区内代町 6,27
+0015100080,Domestic JP Customer 80,JP,北海道,002-8065,札幌市北区拓北五条 80,01
+0015100081,Domestic JP Customer 81,JP,北海道,002-8065,札幌市北区拓北五条 81,01
+0015401510,Company Code 1510 as Business Partn,JP,東京都,100-6008,千代田区霞が関霞が関ビル８階 47,
+0023100001,Domestic Customer IT 1,IT,Turin,10125,Corso Regina Margherita 135,MI
+0023100002,Domestic Customer IT 2,IT,Rome,00149,Viale dell'Industria 45,RM
+0023100003,Domestic Customer IT 3,IT,Milan,55257,Corso Regina Margherita 1230,MI
+0023100004,Domestic Customer IT 4,IT,Milan,35578,Corso Regina Margherita 23,MI
+0023100006,Domestic Customer IT 6 (Retouren),IT,Milan,22767,Corso Regina Margherita 1142,MI
+0023100008,Domestic Customer IT 8,IT,Milan,35578,Corso Regina Margherita 83,MI
+0023100009,Domestic Customer IT 9,IT,Milan,35578,Corso Regina Margherita 93,MI
+0023100014,PAYER - Central,IT,Milan,69190,Corso Regina Margherita 3,MI
+0023100012,Customer Invoice List,IT,Milan,69120,Corso Regina Margherita 22,MI
+0023100013,Customer Invoice List,IT,Milan,64625,Corso Regina Margherita 3,MI
+0023100005,Domestic Customer IT 5,IT,Milan,20139,Via Bernardo Quaranta 45,MI
+0023100273,Domestic IT CPD,IT,Milan,20100,,
+0023100050,Non Domestic customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0023100051,Non Domestic customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0023100100,Customer IT 100 (SEPA),IT,Milan,66119,Corso Regina Margherita 1420,MI
+0023100007,"Subcontractor Domestic Customer 7,",IT,Firenze,50122,Piazza Annigoni 9,FI
+0023200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0023100060,Foreign IT Customer 60 (IT),DE,Schöntal,74214,Lindenstraße 2,BW
+0023100011,SAP SE,IT,Rome,00149,Viale dell'Industria 7,RM
+0023100010,Domestic customer IT 10,IT,Rome,00147,Via Aristide Leonori 10,RM
+EWM23-CU01,EWM-CUST 01 (Domestic),IT,Ancona,60131,Via Vecchia del Pinocchio 22,AN
+EWM23-CU02,EWM-CUST 02 (Domestic),IT,Siena,53035,Via delle Rose 10,SI
+EWM23-CU03,EWM-CUST 03 (Domestic),IT,Milan,20124,Via Gustavo Fara 26,MI
+0023412310,Werk 2310 als Geschäftspartner,IT,Milan,89077,Via F.lli Rossetti 1,MI
+0023300010,Inlandslieferant IT 1,IT,Milan,20159,Via Benigno Crespi 23,MI
+0023154801,JIT Company,IT,Rome,00147,Via Aristide Leonori 2,RM
+0023100080,Domestic Customer IT 80,IT,Rome,00100,Via Cristoforo Colombo 714,RM
+0023100081,Domestic Customer IT 80,IT,Rome,00100,Via Cristoforo Colombo 714,RM
+0023402310,Buchungskreis 2310 als Geschäftspar,IT,Milano,20100,"Viale Certosa, 12 1",MI
+0018100100,Domestic IN Customer Direct Debit,IN,Bangalore,560099,"2 5th Block, 3rd Cross, Peenya Indu",DN
+0018100001,Domestic Customer IN 1,IN,Bangalore,560099,"2 5th Block, 3rd Cross, Peenya Indu",DN
+0018100002,Domestic Customer IN 2,IN,Bangalore,560099,"45 5th Block, 3rd Cross, Peenya Ind",DN
+0018100003,Domestic Customer IN 3,IN,Mumbai,400101,400 Kandivli,MH
+0018100004,Domestic Customer IN 4,IN,Mumbai,400101,400 Kandivli,MH
+0018100006,Domestic Customer IN 6 (Returns),IN,Mumbai,400101,600 Kandivli,MH
+0018100008,Domestic Customer IN 8,IN,Mumbai,400101,800 Kandivli,MH
+0018100009,Domestic Customer IN 9,IN,Mumbai,400101,900 Kandivli,MH
+0018100014,PAYER,IN,Mumbai,400101,900 Kandivli,MH
+0018100012,Invoice List,IN,Mumbai,400101,900 Kandivli,MH
+0018100013,Invoice List,IN,Mumbai,400101,900 Kandivli,MH
+0018100005,Domestic IN Customer 5,IN,Mumbai,400101,1020 Kandivli,DN
+0018100273,Domestic IN CPD,IN,Mumbai,400101,,
+0018100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0018100007,Domestic IN Subcontractor,IN,Mumbai,400101,12 Kandivli,MH
+0018100011,SAP SE,IN,Mubai,691900,7 Dietmar-Hopp-Allee,DN
+0018100010,Domestic Customer IN 10,IN,Mumbai,400101,400 Kandivli,MH
+0018154801,JIT Company,IN,Mumbai,400101,101 Kandivli,MH
+0018100080,Domestic Customer IN 80,IN,Mumbai,400037,"88 5th Block,Antop Hill",DN
+0018401810,Company code 1810 as a business par,IN,Mumbai,400037,"21 5th Block,Antop Hill",AN
+0018411810,Werk 1810 als Geschäftspartner,IN,Mumbai,400035,"188 15th Block,Antop Hill",AN
+0042100001,Domestic customer IE 1,IE,Dublin,24,1012 Kingswood Avenue,D
+0042100002,Domestic customer IE 2,IE,Galway,EC5,1 Parkmore Business Park East,G
+0042100003,Domestic Customer IE 3,IE,Dublin,24,1230 Kingswood Avenue,D
+0042100004,Domestic Customer IE 4,IE,Galway,EC5,23 Parkmore Business Park East,G
+0042100006,Domestic Customer IE 6 (Returns),IE,Dublin,24,1142 Kingswood Avenue,D
+0042100008,Domestic Customer IE 8,IE,Galway,EC5,83 Parkmore Business Park East,G
+0042100009,Domestic Customer IE 9,IE,Dublin,24,93 Kingswood Avenue,D
+0042100014,PAYER - Central Dublin,IE,Galway,EC5,83 Parkmore Business Park East,G
+0042100012,Domestic Customer Invoice List,IE,Dublin,24,93 Kingswood Avenue,D
+0042100013,Domestic Customer Invoice List,IE,Galway,EC5,83 Parkmore Business Park East,G
+0042100005,Domestic IE Customer 5 (CMS),IE,Dublin,33803,1020 High Street,D
+0042100273,Domestic IE CPD,IE,Dublin,D16,,
+0042100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0042100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0042100100,Domestic Customer IE 100 (SEPA),IE,Dublin,D16,17 Citywest Business Campus,D
+0042100007,"Domestic Subcontractor A, (IE)",IE,Dublin,D16,12 Citywest Business Campus,D
+0042200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0042100060,Foreign IE Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0042100011,SAP SE,IE,Dublin,D16,7 High Street,D
+0042100010,Domestic Customer IE 10,IE,Dublin,D16,10 Citywest Business Campus,D
+EWM42-CU01,Domestic EWM-Customer 01,IE,Galway,NE2,20 Sandy Road,G
+EWM42-CU02,Domestic EWM-Customer 02,IE,Limerick,V94,21 Mill Road,LK
+EWM42-CU03,Domestic EWM-Customer 03,IE,Cork,T23,22 Middle Glanmire Road,CO
+0042414210,Plant 4210 as Business Partner,IE,Dublin,D16,2 Citywest Business Campus,D
+0042300010,Domestic IE Supplier 10,IE,Dublin,D16,23 Citywest Business Campus,D
+0042154801,JIT Company,IE,Dublin,D16,2 Citywest Business Campus,D
+0042100080,Domestic IE Customer 80,IE,Dublin,D16,2 Citywest Business Campus,D
+0042100081,Domestic IE Customer 81,IE,Dublin,D16,2 Citywest Business Campus,D
+0042404210,Company Code 4210 as Business Partn,IE,Dublin,D16,1 High Street,D
+0051100100,Domestic ID Customer Direct Debit,ID,Jakarta,12950,530 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100001,Domestic ID Customer 1,ID,Jakarta,12950,510 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100002,Domestic ID Customer 2,ID,Jakarta,12950,520 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100003,Domestic ID Customer 3,ID,Jakarta,12950,700 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100004,Domestic ID Customer 4,ID,Jakarta,12950,750 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100006,Domestic ID Customer 6 (Returns),ID,Jakarta,12950,800 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100008,Domestic ID Customer 8,ID,Jakarta,12950,850 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100009,Domestic ID Customer 9,ID,Jakarta,12950,900 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100014,PAYER - Central,ID,Jakarta,12950,900 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100012,Domestic Customer Invoice List,ID,Jakarta,69120,22 Jl. Dr. Ide Anak Agung Gde Agung,JK
+0051100013,Domestic Customer Invoice List,ID,Jakarta,64625,3 Jl. Dr. Ide Anak Agung Gde Agung,JK
+0051100005,Domestic ID Customer 5 (CMS),ID,Jakarta,12950,660 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100273,Domestic Customer ID CPD,ID,Jakarta,12950,600 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0051100051,Foreign Customer 51 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0051100007,Domestic ID Subcontractor,ID,Jakarta,12950,1000 Jl. Dr. Ide Anak Agung Gde Agu,JK
+0051100011,SAP SE,ID,Jakarta,12950,1300 Jl. Dr. Ide Anak Agung Gde Agu,JK
+0051100010,Domestic ID Customer 10,ID,Jakarta,12950,1200 Jl. Dr. Ide Anak Agung Gde Agu,JK
+0051300010,Domestic ID Supplier 10,ID,Jakarta,12950,198 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051154801,JIT Company,ID,Jakarta,12950,198 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100080,Domestic ID Customer 80,ID,Jakarta,12950,590 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051100081,Domestic ID Customer 81,ID,Jakarta,12950,590 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0051405110,Company Code 5110 as Business Partn,ID,Jakarta,12950,1100 Jl. Dr. Ide Anak Agung Gde Agu,JK
+0051415110,Plant 5110 as Business Partner,ID,Jakarta,12950,550 Jl. Dr. Ide Anak Agung Gde Agun,JK
+0062100100,Domestic HK Customer Direct Debit,HK,Hong Kong,999077,17 Pedder Street,HK
+0062100001,Domestic HK Customer 1,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100002,Domestic HK Customer 2,HK,Hong Kong,999077,45 Pedder Street,HK
+0062100003,Domestic HK Customer 3,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100004,Domestic HK Customer 4,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100006,Domestic HK Customer 6 (Returns),HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100008,Domestic HK Customer 8,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100009,Domestic HK Customer 9,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100014,Domestic HK Customer 14,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100012,Inlandskunde Invoice List,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100013,Inlandskunde Invoice List,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100005,Domestic HK Customer 5 (CMS),HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100273,Domestic HK CPD,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0062100007,"Inland-Lohnbearbeiter A , HK",HK,Hong Kong,999077,12 Tai Po Road,HK
+0062100011,SAP SE,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100010,Domestic Customer HK 10,HK,Hong Kong,999077,"47 Tat Chee Avenue,Kowloon",HK
+EWM62-CU01,EWM Domestic Customer 01,HK,Hong Kong,999077,"10 Tat Chee Avenue,Kowloon",HK
+EWM62-CU02,EWM Domestic Customer 02,HK,Hong Kong,999077,30 Pedder Street,HK
+EWM62-CU03,EWM Domestic Customer 03,HK,Hong Kong,999077,40 Pedder Street,HK
+0062416210,Customer as Plant 6210,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062300010,Domestic HK Supplier 10,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062154801,JIT Company,HK,Hong Kong,999077,"47 Tat Chee Avenue,Kowloon",HK
+0062100080,Domestic HK Customer 80,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062100081,Domestic HK Customer 81,HK,Hong Kong,999077,"2 Tat Chee Avenue,Kowloon",HK
+0062406210,Company Code 6210 as Business Partn,HK,Hong Kong,999077,"47 Tat Chee Avenue,Kowloon",
+0011100001,Domestic Customer GB 1,GB,London,SW1A 2AA,2 High Street,LND
+0011100002,Domestic Customer GB 2,GB,London,SW1A 2AA,45 High Street,LND
+0011100003,Domestic GB Customer 3,GB,London,SW1A 2AA,1230 High Street,LND
+0011100004,Domestic GB Customer 4,GB,London,SW1A 2AA,23 High Street,LND
+0011100006,Domestic GB Customer 6 (Returns),GB,London,SW1A 2AA,1142 High Street,LND
+0011100008,Domestic GB Customer 8,GB,London,SW1A 2AA,1182 High Street,LND
+0011100009,Domestic GB Customer 9,GB,London,SW1A 2AA,1172 High Street,LND
+0011100014,PAYER - Central London,GB,London,SW1A 2AA,1172 High Street,LND
+0011100012,Domestic GB Customer Invoice List,GB,London,SW1A 2AA,999 High Street,LND
+0011100013,Domestic GB Customer Invoice List,GB,London,SW1A 2AA,777 High Street,LND
+0011100005,Domestic GB Customer 5 (CMS),GB,London,SW1A 2AA,1020 High Street,LND
+0011100273,Domestic GB Customer CPD,GB,London,SW1A 2AA,,
+0011100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0011100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0011100100,Foreign UK Customer 100 (SEPA),DE,Schöntal,74214,Lindenstraße 4,BW
+0011100007,"Inland subcontractor A, GB",GB,London,SW1A 2AA,75 High Street,LND
+0011200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0011100060,Foreign GB Customer 60 (GB),DE,Schöntal,74214,Lindenstraße 2,BW
+0011100011,SAP SE,GB,London,EC4R 9AF,47 King William St,
+0011100010,Domestic GB Customer 10,GB,London,SW1A 2AA,10 High Street,LND
+EWM11-CU01,EWM Domestic Customer 01,GB,London,EC4V 6DB,204 New Bridge,LND
+EWM11-CU02,EWM Domestic Customer 02,GB,London,EC4V 6DB,2 New Bridge,LND
+EWM11-CU03,EWM Domestic Customer 03,GB,London,EC4V 6DB,75 New Bridge,LND
+0011411110,Plant 1110 as Business Partner,GB,London,LS2 9JT,778 Hope street,LND
+0011300010,Domestic Customer GB 10,GB,London,SW1A 2AA,2 High Street,LND
+0011258001,JV Operator GB,GB,London,SW1A 2AA,2 High Street,LND
+0011258002,Domestic GB JV Partner 1,GB,London,SW1A 2AA,2 High Street,LND
+0011258003,Domestic GB JV Partner 2,GB,London,SW1A 2AA,2 High Street,LND
+0011154801,JIT Company,GB,London,SW1A 2AA,1172 High Street,LND
+0011100080,Domestic GB Customer 80,GB,Leeds,LS2 9JT,2 Moorland Ave,
+0011401110,Company code 1110 as a business par,GB,London,SW1A 2AA,1 High Street,LND
+0012100030,Client FR WTH,FR,Toulouse,31000,2367 Rue de la Paix,
+0012100001,Client Domestique FR 1,FR,Toulouse,31000,2367 Rue de Rivoli,
+0012100002,Client Domestique FR 2,FR,Perpignan,66000,7855 Rue Poussin,
+0012100003,client domestique FR 3,FR,Paris,75012,3 Boulevard Voltaire,75
+0012100004,client domestique FR 4,FR,Garches,92380,33 rue de Suresnes,92
+0012100006,client domestique FR 6 (retour),FR,Pau,64000,21 Avenue Henri IV,76
+0012100008,client domestique FR 8,FR,Lyon,69123,14 Rue de Savoie,69
+0012100009,client domestique FR 9,FR,Bordeaux,33063,27 Rue Monbazon,33
+0012100014,client domestique FR 14,FR,Bordeaux,33063,30 Rue Monbazon,33
+0012100012,Client Domestique FR 12,FR,Paris,75012,5 Boulevard Voltaire,75
+0012100013,Client Domestique FR 13,FR,Toulouse,31000,2368 Rue de Rivoli,
+0012100005,client domestique FR 5 (CMS),FR,Paris,75011,121 Saint Vincent,75
+0012100273,client domestique FR CPD,FR,Lyon,69000,2 Victor Hugo,69
+0012100050,Non-domestic customer 50 (US),US,Baton Rouge,70817-3609,1300 Confederate Ave,LA
+0012100051,Non-domestic customer 51 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0012100100,Client domestique FR 100 (SEPA),FR,Paris,75012,23 Philippe Auguste,75
+0012100007,CLIENT DOMESTIQUE FR 7,FR,Paris,75016,2 Grande armée,75
+0012200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0012100060,Foreign FR Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0012100011,SAP SE,FR,Levallois,92300,33 rue d'Alsace,92
+0012100010,Client Domestique FR 10,FR,Toulouse,31000,2367 Rue de Rivoli,
+EWM12-CU01,Domestic FR Customer 1 (EWM),FR,Nice,06000,204 Promenade des Anglais,06
+EWM12-CU02,Domestic FR Customer 2 (EWM),FR,Bordeaux,33000,12 Place de la Victoire,33
+EWM12-CU03,Domestic FR Customer 3 (EWM),FR,Marseille,13001,75 Quai des Belges,13
+0012411210,Plant 1210 as Business Partner,FR,Lyon,69000,123 Allée des Mimosas,69
+0012300010,Fournisseur Domestique FR 10,FR,Perpignan,66000,223 Rue du crédit,15
+0012154801,JIT Company,FR,Levallois-Perret,92300,35 Rue d'Alsace,92
+0012100080,Domestic Customer FR 80 (Ariba Netw,FR,Paris,75012,10 Cours de Vincennes,75
+0012100081,Domestic Customer FR 81 (Ariba Netw,FR,Lille,59800,22 Place de la Gare,59
+0012401210,Company Code 1210 as Business Partn,FR,Lyon,69000,123 Allée des mimosas,69
+0045100001,Domestic Customer FI 1,FI,Helsinki,00100,Keskuskatu 2,
+0045100002,Domestic Customer FI 2,FI,Oulu,90100,Isokatu 45,
+0045100003,Domestic Customer FI 3,FI,Turku,20100,Uudenmaankatu 10,
+0045100004,Domestic Customer FI 4,FI,Tampere,33100,Hämeenkatu 10,
+0045100006,Domestic FI 6 (Returns),FI,Helsinki,00100,Mannerheimintie 20,
+0045100008,Domestic FI Customer 8,FI,Oulu,90100,Koulukatu 21,
+0045100009,Domestic FI Customer 9,FI,Tampere,33100,Aleksanterinkatu 12,
+0045100014,Domestic FI Customer 14,FI,Helsinki,00100,Mannerheimintie 42,
+0045100012,Domestic FI Customer 12,FI,Helsinki,00100,Mannerheimintie 22,
+0045100013,Domestic FI Customer 13,FI,Helsinki,00100,Mannerheimintie 3,
+0045100005,Inlandskunde FI 5 (CMS),FI,Helsinki,33803,Heinrichstraße 1020,
+0045100273,Domestic FI CPD,FI,Helsinki,66119,,
+0045100050,Export Customer (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0045100051,Foreign Trade Customer (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0045100100,Inlandskunde FI 100 (SEPA),FI,Helsinki,66119,Lohmeyerstraße 1420,
+0045100007,"Inland-Lohnbearbeiter A , FI",FI,Helsinki,39343,Hauptstraße 12,
+0045200001,Supplier/Customer for Intrastat (HU,HU,Budapest,1032,1139 Váci út 71 60,
+0045100060,Foreign FI Customer 60 (HU),HU,Budapest,2030,Gellért Irodaház 800,
+0045100011,SAP SE,FI,Oulu,69190,Dietmar-Hopp-Allee 7,
+0045100010,Domestic Customer FI 10,FI,Tampere,33100,Itsenäisyydenkatu 10,
+0045300010,Inlandslieferant FI 1,FI,Haltern am See,45721,Hullerner Straße 23,
+0045154801,JIT Company,FI,Helsinki,00100,Keskuskatu 2,
+0045100080,Domestic customer FI 80,FI,Oulu,90100,Torikatu 2,
+0045100081,Domestic customer FI 81,FI,Oulu,90100,Torikatu 2,
+0045404510,Buchungskreis 4510 als Geschäftspar,FI,Helsinki,69190,Dietmar-Hopp-Allee 1,
+0024100001,Cliente Local ES 1,ES,Barcelona,08018,Carrer de Josep Pla B1 2,08
+0024100002,Cliente Local ES 2,ES,Barcelona,08018,Carrer Pujades 45,08
+0024100003,Domestic Customer ES 3,ES,Barcelona,08018,Carrer Bilbao 1230,08
+0024100004,Domestic Customer ES 4,ES,Barcelona,08018,Carrer Bilbao 23,08
+0024100006,Domestic Customer ES 6,ES,Barcelona,08018,Carrer Bilbao 1142,08
+0024100008,Domestic Customer ES 8,ES,Barcelona,08018,Carrer Bilbao 83,08
+0024100009,Domestic Customer ES 9,ES,Barcelona,08018,Carrer Bilbao 93,08
+0024100014,PAYER - Central,ES,Barcelona,08018,Carrer Bilbao 3,08
+0024100012,Domestic Customer Invoice List,ES,Barcelona,08018,Carrer Bilbao 22,08
+0024100013,Domestic Customer Invoice List,ES,Barcelona,08018,Carrer Bilbao 3,08
+0024100005,Cliente Local ES 5 (CMS),ES,Barcelona,08018,Carrer de Josep Pla B1 1020,08
+0024100273,Domestic DE CPD,ES,León,24080,,
+0024100050,Cliente Extranjero 50 (US),US,San Jose,95117-1554,440 Nolden ave,CA
+0024100051,Cliente Extranjero 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0024100100,Cliente Local ES 100 (SEPA),ES,Barcelona,08018,Carrer de Josep Pla B1 1420,08
+0024100007,Subcontratista Doméstico ES 1,ES,Barcelona,08025,Carrer Valencia 12,08
+0024200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,
+0024100060,Foreign ES Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0024100011,SAP SE,ES,Madrid,28043,Torrelaguna 7,28
+0024100010,Cliente Local ES 10,ES,Barcelona,08018,Carrer de Josep Pla B1 10,08
+EWM24-CU01,EWM Domestic Customer 01,ES,Barcelona,08019,Granada 204,08
+EWM24-CU02,EWM Domestic Customer 02,ES,Madrid,28001,Las perlas 12,28
+EWM24-CU03,EWM Domestic Customer 03,ES,Sevilla,52062,Callejon Tiburon 75,41
+0024412410,Plant 2410 as Business Partner,ES,Barcelona,08018,Carrer de Josep Pla B1 1420,08
+0024300010,Proveedor Local ES 10,ES,Madrid,28001,Gran Via 23,28
+0024154801,JIT Company,ES,Barcelona,08018,Carrer de Josep Pla B1 8,08
+0024100080,Cliente ES 80,ES,Barcelona,08018,Carrer de Josep Pla B1 2,08
+0024100081,Cliente ES 81,ES,Barcelona,08018,Carrer de Josep Pla C2 3,08
+0024402410,Company Code 2410 as Business Partn,ES,Barcelona,08018,Carrer de Josep Pla B1 999,08
+0032100001,Inlandskunde DK 1,DK,København,2100,Sterbrogade 80 2,84
+0032100002,Inlandskunde DK 2,DK,København,2100,Sterbrogade 60 45,84
+0032100003,Indenlandske kunde DK 3,DK,København,2100,Sterbrogade 30 3,84
+0032100004,Indenlandske kunde DK 4,DK,København,2100,Sterbrogade 40 4,84
+0032100006,Indenlandske kunde DK 6 (afkast),DK,København,2100,Sterbrogade 60 6,84
+0032100008,Indenlandske kunde DK 8,DK,København,2100,Sterbrogade 80 8,84
+0032100009,Indenlandske kunde DK 9,DK,København,2100,Sterbrogade 90 9,84
+0032100014,PAYER - headquarters,DK,København,2100,Sterbrogade 140 14,84
+0032100012,Inlandskunde Invoice List,DK,København,2100,Sterbrogade 30 12,84
+0032100013,Inlandskunde Invoice List,DK,København,2100,Sterbrogade 30 13,84
+0032100005,Domestic Customer DK 5 (CMS),DK,Kobenhavn,2200,Vermlandsgade 1020,84
+0032100273,Domestic DK CPD,DK,Kobenhavn,2100,,
+0032100050,Udenlandske kunde 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0032100051,Udenlandske kunde 50 (DE),DE,Schöntal,74214,Lindenstraße 10,BW
+0032100100,Inlandskunde DK 100 (SEPA),DK,Kopenhavn,2100,Vermlandsgade 1420,84
+0032100007,Domestic DK Subcontractor A,DK,Kobenhavn,2100,Vermlandsgade 12,84
+0032200001,Supplier/Customer for Intrastat (HU,HU,Budapest,1032,1139 Váci út 71 60,
+0032100060,Foreign DK Customer 60 (HU),HU,Budapest,2030,Gellért Irodaház 800,
+0032100011,SAP SE,DK,Kobenhavn,2100,Sterbrogade 11 7,84
+0032100010,Foreign customer DK 10,DK,København,2100,Vermlandsgade 10,84
+0032300010,Inlandslieferant DK 1,DK,Kobenhavn,2100,Vermlandsgade 23,84
+0032154801,JIT Company,DK,Kopenhavn,2100,Vermlandsgade 2,84
+0032100080,Domestic customer DK 80,DK,Kobenhavn,1630,Langegade 2,85
+0032100081,Domestic customer DK 81,DK,Kobenhavn,1630,Langegade 2,85
+0032403210,Buchungskreis 3210 als Geschäftspar,DK,Kobenhavn,2100,Vermlandsgade 1,81
+0020100001,Domestic CZ Customer 1,CZ,Brno,603 00,Křižíkovského 516/51,64
+0020100002,Domestic CZ Customer 2,CZ,Praha,158 00,Pekařská 638/5,10
+0020100003,Domestic CZ Customer 3,CZ,Praha,158 00,Bucharova 2817/9,10
+0020100004,Domestic CZ Customer 4,CZ,Praha,140 00,Vyskočilova 1481/4,10
+0020100006,Domestic CZ Customer 6 (Return),CZ,Most,434 01,Žatecká 142,42
+0020100008,"Inland subcontractor A, CZ",CZ,Pardubice,530 02,Semtín 103,53
+0020100009,Domestic CZ Customer 9,CZ,Plzeň,301 00,U Prazdroje 100/7,32
+0020100014,Domestic CZ Customer 14,CZ,Ostrava,702 00,28. října 1517/137,80
+0020100012,Domestic CZ Customer 12,CZ,Praha,100 00,Černokostelecká 1220/78,10
+0020100013,Domestic CZ Customer 13,CZ,Brno,639 00,Pražákova 836/68,64
+0020100005,Domestic CZ Customer 5 (CMS),CZ,Ústí nad Labem,400 01,Bílinská 3490/6,42
+0020100273,Domestic Customer CZ CPD,CZ,Karlovy Vary,360 01,Vítězná 2117/21,41
+0020100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0020100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0020100007,Domestic CZ Subcontractor A,CZ,Chrastava,463 31,Nádražní 33,51
+0020200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0020100060,Foreign CZ Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0020100011,SAP SE,CZ,Ostrava,700 30,Dr. Martínka 1617/10,80
+0020100010,Domestic CZ Customer 10,CZ,Jenišov,362 11,Daimlerova 202,41
+0020300010,Domestic CZ Customer 10,CZ,Praha,190 00,Kbelská 120,10
+0020154801,JIT Company,CZ,Praha,110 01,Archeologická 1121,10
+0020100080,Domestic CZ Customer 80,CZ,České Budějovice,370 07,Lidická třída 1263/211,31
+0020100081,Domestic CZ Customer 81,CZ,Prague,155 00,Slanska 56,10
+0020402010,Company Code 2010 as Business Partn,CZ,Praha,160 00,Evropská 116,10
+0020412010,Werk 2010 als Geschäftspartner,CZ,Brno,612 00,Palackého tř. 537/163,64
+0013100100,本国客户 Direct Debit,CN,上海,200001,801 南京西路387号,SH
+0013100001,本国客户01,CN,上海,200001,800 南京西路387号,SH
+0013100002,本国客户02,CN,上海,200002,200 南京西路3881号,SH
+0013100003,Domestic Customer CN 3,CN,上海,200000,300 南京西路1030号,SH
+0013100004,Domestic Customer CN 4,CN,上海,200000,400 南京西路1040号,SH
+0013100006,Domestic Customer CN 6 (Returns),CN,上海,200000,600 南京西路1060号,SH
+0013100008,Domestic Customer CN 8,CN,上海,200000,800 南京西路1080号,SH
+0013100009,Domestic Customer CN 9,CN,上海,200000,900 南京西路1090号,SH
+0013100014,Domestic Customer CN 14,CN,上海,200000,1400 南京西路10140号,SH
+0013100012,Domestic Customer CN 12,CN,上海,200000,12 南京西路1080号,SH
+0013100013,Domestic Customer CN 13,CN,上海,200000,13 南京西路1080号,SH
+0013100005,Domestic Customer CN 5 (CMS),CN,上海,200000,400 南京西路1140号,SH
+0013100273,Domestic CN CPD,CN,上海,200001,,
+0013100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0013100007,国内外包商,CN,上海,200002,99 南京西路188号,SH
+0013100011,SAP SE,CN,上海,200040,47 南京西路1717号,SH
+0013100010,Domestic CN Customer 10,CN,上海,200000,350 南京西路1350号,SH
+EWM13-CU01,EWM Domestic Customer 01,CN,上海,200001,204 南京西路200号,SH
+EWM13-CU02,EWM Domestic Customer 02,CN,上海,200001,12 南京西路202号,SH
+EWM13-CU03,EWM Domestic Customer 03,CN,上海,200001,75 南京西路204号,SH
+0013411310,Customer as Plant 1310,CN,上海,200000,400 南京西路1140号,SH
+0013300010,Domestic CN Supplier 10,CN,上海,200000,1000 南京西路1350号,SH
+0013154801,JIT Company,CN,上海,200000,140 南京西路10140号,SH
+0013100080,Inlandskunde CN 80,CN,上海,200000,2 南京西路1800号,SH
+0013100081,Inlandskunde CN 81,CN,上海,200000,2 南京西路1800号,SH
+0013401310,Company code 1310 as a business par,CN,ShangHai,210000,1001 ChenHui,SH
+0022100001,Domestic Customer CH 1,CH,Interlaken,3800,Bahnhofstrasse 20,BE
+0022100002,Domestic Customer CH 2,CH,Bern,3011,Bundesplatz 2,BE
+0022100003,Domestic CH 3,CH,Biel,2500,Leugenestrasse 8,BE
+0022100004,Domestic CH 4,CH,Tägerwilen,8274,Bahnstrasse 7,TG
+0022100006,Domestic CH 6 (Returns),CH,Zürich,8001,Schützengasse 16,ZH
+0022100008,Domestic Customer CH 8,CH,Biel,2500,Leugenestrasse 16,BE
+0022100009,Domestic Customer CH 9,CH,Basel,4058,Claraplatz 30,BS
+0022100014,Domestic CH 14,CH,Biel,2500,Leugenestrasse 10,BE
+0022100012,Domestic Customer CH 12,CH,Interlaken,3800,Bahnhofstrasse 22,BE
+0022100013,Domestic Customer CH 13,CH,Bern,3011,Bundesplatz 3,BE
+0022100005,Domestic CH Customer 5,CH,Biel,2500,Leugenestrasse 6,BE
+0022100273,Domestic Customer CH CPD,CH,Zürich,8001,,
+0022100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0022100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0022100100,Domestic Customer CH 100 (SEPA),CH,Regensdorf,8105,Althardtstr 80,ZH
+0022100007,Domestic CH Subcontractor,CH,Basel,4058,Claraplatz 2,BS
+0022100011,SAP SE,CH,BIEL,2500,Leugenestrasse 6,BE
+0022100010,Domestic Customer CH 10,CH,Interlaken,3800,Bahnhofstrasse 10,BE
+EWM22-CU01,EWM-Kunde 01 (Inland),CH,Zürich,8001,Bundesplatz 204,ZH
+EWM22-CU02,EWM-Kunde 02 (Inland),CH,Biel,2500,Leugenestrasse 12,SG
+EWM22-CU03,EWM-Kunde 03 (Inland),CH,Bern,3011,Schützengasse 75,BE
+0022412210,Plant 2210 as Business Partner,CH,Biel,2504,Grillenweg 16,BE
+0022300010,Domestic CH Supplier 10,CH,Bern,3007,Eigerstrasse 222,BE
+0022154801,JIT Company,CH,Bern,3007,Eigerstrasse 2,BE
+0022100080,Domestic Customer CH (Ariba Sourcin,CH,Lausanne,1018,Avenue de Gratta-Paille 2,VD
+0022100081,Domestic Customer CH 81 (Ariba Sour,CH,Wil,9500,Grabenstrasse 7,SG
+0022402210,Company Code 2210 as Business Partn,CH,Biel,2504,Schützengasse 16,BE
+0029100100,Domestic US Customer Direct Debit,CA,Quebec,J4X 2B3,18971 North Street,QC
+0029100001,Domestic US Customer 1,CA,Toronto,M4B 3C3,198 North Street,ON
+0029100002,Domestic US Customer 2,CA,Halifax,H1X 2S5,121 North Street,NS
+0029100003,Domestic Customer CA 3,CA,Montreal,H3C 6C1,100 Decarie,QC
+0029100004,Domestic Customer CA 4,CA,Toronto,N2J 0A6,1 Yonge Street,ON
+0029100006,Domestic Customer CA 6 (Returns),CA,Quebec,J0T 2B2,100 St-Louis,QC
+0029100008,Domestic CA Customer 8,CA,Montreal,H3C 6C1,18 Decarie,QC
+0029100009,Domestic CA Customer 9,CA,Toronto,N2J 0A6,19 Yonge Street,ON
+0029100014,PAYER - Central,CA,Toronto,N2J 0A6,100 Yonge Street,ON
+0029100012,Domestic Customer Invoice List,CA,Toronto,N2J 0A6,22 Yonge Street,ON
+0029100013,Domestic Customer Invoice List,CA,Toronto,N2J 0A6,2 Yonge Street,ON
+0029100005,Domestic CA Customer 5 (CMS),CA,Billings,H3C 6C1,1000 Maisonneuve,QC
+0029100273,Domestic CA CPD,CA,TORONTO,N2J 0A6,,
+0029100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0029100051,Foreign Customer 51 (US),US,San Jose,95117-1554,459 Nolden ave,CA
+0029100007,Domestic CA Subcontractor A,CA,Toronto,H3C 6C1,200 Maisonneuve,ON
+0029100011,SAP SE,CA,Montreal,H3C 2M1,111 Duke Street,QC
+0029100010,Domestic CA Customer 10,CA,Toronto,M5K 1G8,1000 Finch Street,ON
+EWM29-CU02,EWM Domestic Customer 02,CA,Montreal,J3X 2E7,100 Piedmont Avenue Southeast,QC
+EWM29-CU03,EWM Domestic Customer 03,CA,Halifax,M3D 3E7,800 Sand Hill Road,NS
+EWM29_CU01,EWM Domestic Customer 01,CA,Toronto,L5N 2R7,500 Main Street,ON
+0029412910,Plant 2910 as Business Partner,CA,Toronto,M4B 3C3,3475 North Street,ON
+0029300010,Domestic CA Supplier 10,CA,Toronto,M4B 3C3,198 North Street,ON
+0029258001,JV Operator CA,CA,Toronto,M4B 3C3,3999 North Street,ON
+0029258002,Domestic CA JV Partner 1,CA,Halifax,H1X 2S5,1001 South Street,NS
+0029258003,Domestic CA JV Partner 2,CA,Montreal,J4X 2B3,18971 Rembrandt,QC
+0029154801,JIT Company,CA,Toronto,N3J 0B6,1601 Yonge,ON
+0029100080,Domestic CA Customer 80,CA,Toronto,M5K 1G8,200 Augusta Ave SE,ON
+0029402910,SAP SE,CA,Toronto,M1W 3W7,16586 Mountain House,ON
+0014100001,Domestic BR Customer 1,BR,São Paulo,04087-922,Alameda dos Anapurus 1790,SP
+0014100002,Domestic BR Customer 2,BR,Rio de Janeiro,22793-343,Praça Maria Clara Machado 10A,RJ
+0014100100,Domestic US Customer Direct Debit,BR,São Paulo,05265-060,Rua Seis 10A,SP
+0014100030,Domestic Customer 30 for Withholdin,BR,São Paulo,01256-150,Rua Macaubal 10A,SP
+0014100003,Domestic BR Customer 3,BR,Porto Alegre,91795-030,Acesso Quatro 10A,RS
+0014100004,Domestic BR Customer 4,BR,Belo Horizonte,31995-170,Rua Assa-peixe 10A,MG
+0014100006,Domestic BR Customer 6 (Returns),BR,Manaus,69027-063,Beco São Luiz de Gonzaga 10A,AM
+0014100008,Domestic BR Customer 8,BR,São Paulo,02029-901,Avenida Zaki Narchi 1369,SP
+0014100009,Domestic BR Customer 9,BR,São Paulo,01311-923,Avenida Paulista 1313,SP
+0014100014,Domestic BR Customer 14,BR,São Paulo,03608-090,Rua Cacéia 10A,SP
+0014100012,Domestic Customer Invoice List,BR,São Paulo,05427-050,Rua João Elias Saada 10A,SP
+0014100013,Domestic Customer Invoice List,BR,São Paulo,04754-902,Avenida Mário Lopes Leão 1500,SP
+0014100005,Domestic BR Customer 5 (CMS),BR,Curitiba,82320-400,Rua Serafim Lucca 10A,PR
+0014100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0014100051,Foreign Customer 51 (CA),CA,Calgary,T1X 0L3,3201 17 Ave E,AB
+0014100011,Domestic BR Customer 11 (CMS Extend,BR,São Paulo,08421-280,Rua Irani Bastos Malta 10A,SP
+0014100010,Domestic BR Customer 10,BR,São Paulo,08431-233,Rua Navio Negreiro 10A,SP
+0014100007,Domestic BR Subcontractor A,BR,Cuiabá,78055-065,Rua Vilhena 10A,MT
+0025100052,Foreign BE Customer 52 (HU),HU,Budapest,2030,Gellért Irodaház 1500,BU
+0025100001,Domestic BE Customer 1,BE,Brussel,1000,Diestsestraat 200,BRU
+0025100002,Domestic BE Customer 2,BE,Brussel,1000,Diestsestraat 300,BRU
+0025100003,Domestic BE Customer 3,BE,Brussel,1000,Rue du Midi 1230,BRU
+0025100004,Domestic BE Customer 4,BE,Brussel,1000,Boulevard Anspach 23,BRU
+0025100008,Domestic BE Customer 8,BE,Herenthout,2270,Atealaan 83,VAN
+0025100009,Domestic BE Customer 9,BE,Oudenaarde,9700,Rothstraat 93,VOV
+0025100014,Domestic BE Customer 14 (Payer Cent,BE,Kortrijk,8500,President Kennedylaan 3,VWV
+0025100012,Domestic BE Customer 12 (Invoice Li,BE,Liège,4000,Pl. de la République Française 22,WLG
+0025100013,Domestic BE Customer 13 (Invoice Li,BE,Gent,9000,Martelaarslaan 3,VOV
+0025100006,Domestic BE Customer 6 (Returns),BE,Brussel,1000,Rue des Bouchers 1142,BRU
+0025100005,Domestic BE Customer 5 (CMS),BE,Brussel,1000,Boulevard de Waterloo 20,BRU
+0025100273,Domestic BE Customer (CPD),BE,Antwerpen,2000,,
+0025100050,Foreign BE Customer 50 (US),US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0025100051,Foreign BE Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0025100100,Domestic BE Customer 100 (SEPA),BE,Gent,9000,Ottergemsesteenweg 238,VOV
+0025100007,Domestic BE Subcontractor A,BE,Genk,3600,Weststraat 200,VLI
+0025200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0025100060,Foreign BE Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0025100011,SAP SE,BE,Brussel,1000,Boulevard de Waterloo 7,BRU
+0025100010,Domestic BE Customer 10,BE,Brussel,1000,Diestsestraat 1000,BRU
+EWM25-CU01,Domestic BE Customer 1 (EWM),BE,Waregem,8790,Stationsstraat 500,VWV
+EWM25-CU02,Domestic BE Customer 2 (EWM),BE,Namur,5000,Place Wiertz 100,WNA
+EWM25-CU03,Domestic BE Customer 3 (EWM),BE,Leuven,3000,Vital Decosterstraat 800,VBR
+0025412510,Plant 2510 as Business Partner,BE,Brussel,1140,Olympiadenlaan 2,BRU
+0025300010,Domestic BE Supplier 10,BE,Antwerp,2018,Van Eycklei 23,VAN
+0025154801,JIT BE Company,BE,Genk,3600,Vennestraat 2,VLI
+0025100080,Domestic BE Customer 80 (Ariba Netw,BE,Bruxelles,1500,Rue Haute 23,BRU
+0025100081,Domestic BE Customer 81 (Ariba Netw,BE,Wellen,3832,Beursstraat 12,VLI
+0025402510,Company Code 2510 as Business Partn,BE,Brussels,1140,Olympiadenlaan 2,BRU
+0030100100,Domestic AU Customer Direct Debit,AU,Darwin,2517,2 Gardiner Street,NSW
+0030100001,Domestic Customer AU 1,AU,Darwin,2517,2 Gardiner Street,NSW
+0030100002,Domestic Customer AU 2,AU,Alice Springs,2517,45 Gardiner Street,NT
+0030100003,Domestic Customer AU 3,AU,Brisbane,2517,300 Gardiner Street,ACT
+0030100004,Domestic Customer AU 4,AU,Perth Fremantle,2517,400 Gardiner Street,SA
+0030100006,Domestic Customer AU 6 (Returns),AU,Mackay,2517,600 Gardiner Street,TAS
+0030100008,Domestic Customer AU 8,AU,Brisbane,2517,800 Gardiner Street,ACT
+0030100009,Domestic Customer AU 9,AU,Brisbane,2517,900 Gardiner Street,ACT
+0030100014,Domestic Customer AU 14,AU,Brisbane,2517,1400 Gardiner Street,ACT
+0030100012,Domestic Customer AU 12,AU,Perth Fremantle,2517,12 Gardiner Street,SA
+0030100013,Domestic Customer AU 13,AU,Perth Fremantle,2517,13 Gardiner Street,SA
+0030100005,Domestic Customer AU 5 (CMS),AU,Brisbane,2517,500 Gardiner Street,ACT
+0030100273,Domestic AU CPD,AU,Brisbane,2517,,
+0030100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0030100007,Domestic AU Subcontractor,AU,Alice Springs,2517,12 Gardiner Street,TAS
+0030100011,SAP SE,AU,Brisbane,2517,500 Gardiner Street,ACT
+0030100010,Domestic Customer AU 10,AU,Sydney,1793,10 Locked Bag 1793,NSW
+EWM30-CU01,EWM Domestic Customer 01,AU,Perth,6151,204 Angelo,SA
+EWM30-CU02,EWM Domestic Customer 02,AU,Melbourne,3004,12 St. Kilda,VIC
+EWM30-CU03,EWM Domestic Customer 03,AU,Brisbane,4000,75 Adelaide,ACT
+0030413010,Customer as Plant 3010,AU,Alice Springs,2517,12 Gardiner Street,TAS
+0030300010,Domestic AU Supplier 10,AU,Alice Springs,2517,12 Gardiner Street,TAS
+0030258001,JV Operator AU,AU,Darwin,2517,2 Gardiner Street,NSW
+0030258002,Domestic AU JV Partner 1,AU,Alice Springs,2517,45 Gardiner Street,NT
+0030258003,Domestic AU JV Partner 2,AU,Darwin,2517,2 Gardiner Street,NSW
+0030154801,JIT Company,AU,Brisbane,2517,555 Gardiner Street,ACT
+0030100080,Domestic Customer AU 80,AU,Brisbane,2517,80 Gardiner Street,ACT
+0030100081,Domestic Customer AU 81,AU,Brisbane,2517,80 Gardiner Street,ACT
+0030403010,Company Code 3010 as Business Partn,AU,Darwin,2517,47 Gardiner Street,
+0039100001,Domestic Customer AT 1,AT,Wien,1010,Singerstraße 80,9
+0039100002,Domestic Customer AT 2,AT,Wien,1010,Singerstraße 150,9
+0039100003,Domestic Customer AT 3,AT,Wien,1010,Singerstraße 80,9
+0039100004,Domestic Customer AT 4,AT,Wien,1010,Singerstraße 70,9
+0039100006,Domestic Customer AT 6,AT,Wien,1010,Singerstraße 150,9
+0039100008,Domestic Customer AT 8,AT,Wien,1010,Singerstraße 4,9
+0039100009,Domestic Customer AT 9,AT,Innsbruck,6010,Bahnhofstrasse 25,7
+0039100014,Domestic Customer AT 14,AT,Wien,1010,Singerstraße 82,9
+0039100012,Domestic Customer AT 12,AT,Wien,1010,Singerstraße 82,9
+0039100013,Domestic Customer AT 13,AT,Wien,1010,Singerstraße 72,9
+0039100005,Customer domestic 05 AT,AT,Wien,1020,Franzensbrückenstrasse 2,9
+0039100273,Domestic Customer AT CPD,AT,Innsbruck,6020,Singerstraße,7
+0039100050,Foreign Customer 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0039100051,Foreign Customer 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0039100100,Customer Services AT 100 (SEPA),AT,Wien,1020,Franzensbrückenstrasse 1420,9
+0039100007,"Inland-Lohnbearbeiter A , AT",AT,Wien,1010,Wagnerstraße 12,9
+0039200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0039100060,Foreign AT Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0039100011,SAP SE,AT,Wien,1020,Lassallestrasse 2,9
+0039100010,Customer domestic 10 AT,AT,Innsbruck,6020,Singerstraße 10,7
+0039300010,Domestic Vendor AT 10,AT,Graz,8010,Modecenterstrasse 35,6
+0039258001,JV Operator AT,AT,Wien,1010,Singerstraße 84,9
+0039258002,Domestic AT JV Partner 1,AT,Innsbruck,6010,Bahnhofstrasse 27,7
+0039258003,Domestic AT JV Partner 2,AT,Wien,1020,Lassallestraße 4,9
+0039154801,JIT Company,AT,Perschling,3142,Haselbacher Straße 14,9
+0039100080,Inlandskunde AT 80,AT,Salzburg,5020,Wiedener Hauptstraße 80,5
+0039100081,Inlandskunde AT 81,AT,Linz,4020,Langgasse 5,4
+0039403910,Company Code 3910 as Business Partn,AT,Wien,1234,Dietmar-Hopp-Allee 1,9
+0039413910,Plant 3910 as Business Partner,AT,Wien,1234,Lassallestrasse 1,9
+0033100100,Domestic AE Customer DD,AE,Abu Dhabi,999041,46 AI Firdous,
+0033100001,Domestic UAE Customer 1,AE,Abu Dhabi,999041,2 Saadiyat Island,
+0033100002,Domestic UAE Customer 2,AE,Abu Dhabi,999041,45 AI Firdous,
+0033100003,Domestic Customer AE 3,AE,Abu Dhabi,999041,300 Saadiyat Island,
+0033100004,Domestic Customer AE 4,AE,Abu Dhabi,999041,400 Saadiyat Island,
+0033100006,Domestic Customer AE 6 (Returns),AE,Abu Dhabi,999041,600 Saadiyat Island,
+0033100008,Domestic Customer AE 8,AE,Abu Dhabi,999041,800 Saadiyat Island,
+0033100009,Domestic Customer AE 9,AE,Abu Dhabi,999041,900 Saadiyat Island,
+0033100014,PAYER - Central,AE,Abu Dhabi,999041,140 Saadiyat Island,
+0033100012,Domestic Customer Invoice List,AE,Abu Dhabi,999041,120 Saadiyat Island,
+0033100013,Domestic Customer Invoice List,AE,Abu Dhabi,999041,130 Saadiyat Island,
+0033100005,Domestic Customer AE 5 (CMS),AE,Abu Dhabi,999041,500 Saadiyat Island,
+0033100273,Domestic UAE CPD,AE,Abu Dhabi,999041,2 Saadiyat Island,
+0033100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0033100007,"Inland-Lohnbearbeiter A , AE",AE,Abu Dhabi,118353,12 Al khaleej Al Arabi Road,
+0033100011,SAP SE,AE,Dubai,73000,1 Al Bourooj,
+EWM33-CU01,EWM Domestic Customer 01,AE,Abu Dhabi,118353,10 Al khaleej Al Arabi Road,AZ
+EWM33-CU02,EWM Domestic Customer 02,AE,Abu Dhabi,118353,30 Al khaleej Al Arabi Road,AZ
+EWM33-CU03,EWM Domestic Customer 03,AE,Dubai,118353,40 Sheikh Zayed Road,DU
+0033413310,Customer as Plant 3310,AE,Abu Dhabi,999041,2 Saadiyat Island,
+0033300010,Domestic AE Supplier 10,AE,Abu Dhabi,999041,23 Saadiyat Island,AZ
+0033100010,Domestic UAE Customer 10,AE,Abu Dhabi,999041,10 Saadiyat Island,
+0033154801,JIT Company,AE,Dubai,73000,2 Al Bourooj,
+0033100080,Domestic AE Customer 80,AE,Abu Dhabi,999041,80 Saadiyat Island,
+0033403310,Company Code 3310 as Business Partn,AE,Abu Dhabi,999041,47 Saadiyat Island,
+0059154801,JIT Company,SA,Riyadh,11564,2 King Fahad Road,
+0059100080,Domestic SA Customer 80,SA,Riyadh,11564,80 King Fahad Road,
+0035100100,Domestic PT Customer 100 (SEPA),PT,Lisbon,1200-359,Rua 1º de Dezembro 17,35
+0035100007,Domestic US Subcontractor A,PT,Lisbon,1149-038,Largo do Chafariz de Dentro 12,
+0035200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0035100060,Foreign PT Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0035100011,SAP SE,PT,Lisbon,1400-201,Rua Igreja 7,
+0035100010,Domestic PT Customer 10,PT,Lisbon,1900-387,Rua 4 de Agosto 10,
+0035300010,Domestic PT Supplier 10,PT,Lisbon,1900-387,Rua Nova do Carvalho 15,10
+0035403510,Company Code 3510 as Business Partn,PT,Lisbon,1150-113,Rua Convento da Encarnação 1,
+0021100001,Domestic HU Customer 1,HU,Budapest,2030,Gellért Irodaház 800,
+0021100002,Domestic HU Customer 2,HU,Budapest,2030,Gellért Irodaház 500,
+0021100003,Domestic Customer HU 3,HU,Budapest,2030,Gellért Irodaház 1230,
+0021100004,Domestic Customer HU 4,HU,Budapest,2030,Gellért Irodaház 1240,
+0021100006,Domestic Customer HU 6 (Returns),HU,Budapest,2030,Gellért Irodaház 1360,
+0021100008,Domestic Customer HU 8,HU,Budapest,2030,Gellért Irodaház 1280,
+0021100009,Domestic Customer HU 9,HU,Budapest,2030,Gellért Irodaház 1290,
+0021100014,PAYER,HU,Budapest,2030,Gellért Irodaház 1290,
+0021100012,Invoice List,HU,Budapest,2030,Gellért Irodaház 1290,
+0021100013,Invoice List,HU,Budapest,2030,Gellért Irodaház 1290,
+0021100005,Domestic HU Customer 5 (CMS),HU,Budapest,2030,Gellért Irodaház 1500,
+0021100273,Domestic HU CPD,HU,Budapest,1124,,
+0021100050,Foreign Customer 50 (US),US,Houma,70363-5455,100 Boundary Rd,LA
+0021100051,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0021100100,Domestic HU Customer 100 (SEPA),HU,Budapest,2030,Gellért Irodaház 2000,
+0021100007,Domestic HU Subcontractor,HU,Budapest,2030,Gellért Irodaház 1245,
+0010154801,JIT Company,DE,Hallbergmoos,85399,Zeppelinstraße 2,BY
+0017411710,Plant 1710 US,US,Palo Alto,94304,3475 Deer Creek,CA
+0010100003,Inlandskunde DE 3,DE,Budenheim,55257,Römerstraße 1230,RP
+0010100004,Inlandskunde DE 4,DE,Wetzlar,35578,Lahnbergweg 23,HE
+0010100006,Inlandskunde DE 6 (Retouren),DE,Hamburg,22767,Holstenstraße 1142,HH
+0010100008,Inlandskunde DE 8,DE,Wetzlar,35578,Lahnbergweg 83,HE
+0010100009,Inlandskunde DE 9,DE,Wetzlar,35578,Lahnbergweg 93,HE
+0010100005,Inlandskunde DE 5 (CMS),DE,Steinhagen,33803,Heinrichstraße 1020,NW
+0010100273,Inlandskunde DE CPD,DE,Saarbrücken,66119,,
+0010100050,Ausländischer Kunde 50 (US),US,Baton Rouge,70817-3609,15400 Confederate Ave,LA
+0010100014,PAYER - Zentrale Walldorf,DE,Walldorf,69190,Robert-Bosch-Straße 3,BW
+0010100100,Inlandskunde DE 100 (SEPA),DE,Saarbrücken,66119,Lohmeyerstraße 1420,SL
+0010100007,"Inland-Lohnbearbeiter A , DE",DE,Alleringersleben,39343,Hauptstraße 12,ST
+0010100060,Foreign DE Customer 60 (HU),HU,Budapest,2030,Gellért Irodaház 800,
+0010100012,Inlandskunde Invoice List,DE,Heidelberg,69120,Ladenburger Strasse 22,BW
+USCU_S04,Fit Cycles,US,PORTLAND,04101,,ME
+0017186003,US TM Customer3,US,Fort Worth,76104,500 Bryan Avenue,TX
+0010100013,Inlandskunde Invoice List,DE,Bensheim,64625,Albert-Einstein-Straße 3,BW
+0010100051,Ausländischer Kunde 51 (FR),FR,Bordeaux,33063,60 Rue de Belfort,33
+0010200001,Supplier/Customer for Intrastat (HU,HU,Budapest,1032,1139 Váci út 71 60,
+0010300010,Inlandslieferant DE 1,DE,Haltern am See,45721,Hullerner Straße 23,NW
+DVCUST_DE,Digital Vehicle Customer Company,DE,Hallbergmoos,85399,Zeppelinstraße 2,BY
+0001000010,Shipping Point 1710 - Address Name,US,Palo Alto,94304-1355,3475 Deer Creek,CA
+0010100002,Inlandskunde DE 2,DE,Chemnitz,09119,Platnerstraße 45,SN
+0010401010,Buchungskreis 1010 als Geschäftspar,DE,Walldorf,69190,Dietmar-Hopp-Allee 1,BW
+0017100014,PAYER - Central,US,Atlanta,30315-1402,100 Augusta Ave SE,GA
+0010100011,SAP SE,DE,Walldorf,69190,Dietmar-Hopp-Allee 7,BW
+0010411010,Werk 1010 als Geschäftspartner,DE,Walldorf,69190,Dietmar-Hopp-Alle 1,BW
+0017100001,Domestic US Customer 1,US,Atlanta,30315-1402,200 Augusta Ave SE,CA
+0017100273,Domestic US CPD,US,WICHITA,67208-2915,,
+0017154801,JIT Company,US,Newtown Square,19073,3999 West Chester Pike,PA
+DVCUST_US,Digital Vehicle Customer Company,US,Newtown Square,19073,3999 West Chester Pike,PA
+0017401710,SAP SE,US,Palo Alto,94304-1355,3475 Deer Creek,CA
+0017186004,US TM Customer4,US,Santa Cruz,95064,1656 High St,CA
+0017186005,US TM Customer5,US,Hollister,95023,1804 McCray,CA
+0017186006,US TM Customer6,US,Pescadero,94060,2500 Rossi Road,CA
+0003000030,Company test,DE,Heidelberg,69115,,
+0017100002,Domestic US Customer 2,US,Chula Vista,91910-1007,15 N 4th Ave,CA
+0012345678,Cust,US,Mountain View,94043-1315,,
+0001000149,SAP SE,DE,Potsdam,14469,Konrad-Zuse-Ring 1,
+0017100003,Domestic Customer US 3,US,Houma,70363-5455,100 Boundary Rd,LA
+0010100001,Inlandskunde DE 1,DE,Schöntal,74214,Lindenstraße 2,08
+0017100004,Domestic Customer US 4,US,Kearney,68847-5457,1 East 24th St,NE
+0017100005,Domestic US Customer 5 (CMS),US,Billings,59101-2614,1000 2nd Ave N,MT
+0017100051,Foreign Customer 51 (CA),CA,Calgary,T1X 0L3,3201 17 Ave E,AB
+0017100100,Domestic US Customer Direct Debit,US,San Diego,92128-1096,17 Caminito Pasadero,CA
+0017100006,Domestic Customer US 6 (Returns),US,Wichita,67202-3723,100 S Main St,KS
+0017300010,Domestic US Supplier 10,US,Muncie,47305-2757,198 S Ohio Ave,IN
+USCU_L01,Skymart Corp,US,New york,10007,,NY
+USCU_L02,Toys4U,US,Wilmington,19801,,DE
+USCU_L03,Viadox,US,Baltimore,21202,,MD
+USCU_L04,Quotex,US,RALEIGH,27603,,NC
+USCU_L05,Bluestar Corp,US,CHARLESTON,29401,,SC
+USCU_L06,Dexon,US,NASHVILLE,37201,,TN
+USCU_L07,Interlude Inc,US,MIAMI,33128,,FL
+USCU_L08,Veracity,US,ATLANTA,30303,,GA
+USCU_L09,Bigmart,US,DETROIT,48226,,MI
+USCU_L10,CostClub,US,PUBLIC SQUARE,44114,,OH
+USCU_S01,Performance Bikes,US,Pittsburgh,15219,,PA
+USCU_S02,Custom Sports,US,Boston,02109,,MA
+USCU_S03,Eastside Bikes,US,Greensburg,15601,,PA
+0017186007,US TM Customer7,US,San Francisco,94103,7531 Market Street,CA
+USCU_S05,Greater Hartford Area,US,HARTFORD,06103,,CT
+USCU_S08,Velocity Cycles,US,CHARLESTON,29401,,SC
+USCU_S07,Westend Cycles,US,RALEIGH,27603,,NC
+USCU_S06,Hub & Spokes Inc,US,MANHATTAN,10017,,NY
+USCU_S09,Greenhigh Bikes,US,NASHVILLE,37201,,TN
+USCU_S10,Turbo Bikes,US,MIAMI,33128,,FL
+USCU_S11,Bike World,US,ATLANTA,30303,,GA
+USCU_S12,Century Cycles,US,RICHMOND,23218,,VA
+USCU_S13,Rolling Bike Shop,US,MONTGOMERY,36104,,AL
+USCU_S14,Cityscape Cycles,US,CHICAGO,60602,,IL
+USCU_S15,Northside Bikes,US,DES MOINES,50306,,IA
+USCU_S16,Gogo Bikes,US,Milwaukee,53202,,WI
+USCU_S17,Bikepros,US,Minneapolis,55432,,MN
+0017186001,US TM Customer1,US,Sacramento,95020,890 5th Street,CA
+0017186002,US TM Customer2,US,Arlington,76017,1135 W Arkansas Lane,TX
+0017186008,US TM Customer8,US,Sacramento,95837,8900 Airport Boulevard,CA
+0017186009,US TM Customer9,US,Stockton,95206,9801 Park Avenue,CA
+0017186010,US TM Customer10,US,Los Angeles,90015,111 Rossi Road,CA
+0017186011,US TM Customer11,US,Long Beach,90813,8989 Market Street,CA
+0017186012,US TM Customer12,US,San Diego,92101,2222 Airport Boulevard,CA
+0001000119,Energy Bar Future Company,DE,,,,
+0010100080,Inlandskunde DE 80,DE,Schöntal,74214,Lindenstraße 2,BW
+0010100081,Inlandskunde DE 81,DE,Schöntal,74214,Lindenstraße 2,BW
+BP1710,Plant 1,US,Palo Alto,94304,3475 Deer Creek,CA
+0017258001,JV Operator US,US,Mariposa,95338,5181 CA-49,CA
+0017258002,Domestic US JV Partner 1,US,Brownwood,76801,320 Riverside Park Dr.,TX
+0017258003,Domestic US JV Partner 2,US,Flagstaff,86004,2515E Butler Ave,AZ
+0017100080,Domestic US Customer 80,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+0017100081,Domestic US Customer 81,US,Atlanta,30315-1402,200 Augusta Ave SE,GA
+MDG_CU02,ABC Company 02,US,New Delphi,,,
+0001000140,Wind Power Plant,DE,Unterföhring,85774,Johanneskirchner Straße 18,09
+0001000143,Power Plant,DE,Unterföhring,85774,Johanneskirchner Straße 18,09
+0017300001,Domestic US Supplier 1,US,Muncie,47305-2757,198 S Ohio Ave,IN
+0017100050,Foreign Customer 50 (DE),DE,Gerbrunn,97218,Hauptstraße 1,BY
+0017100007,Domestic US Subcontractor A,US,Blacksburg,24060-7206,200 GILES RD,VA
+0017100008,Domestic US Customer 8,US,Kearney,68847-5457,18 East 24th St,NE
+EWM17-CU01,EWM Domestic Customer 01,US,Atlanta,30344,500 Main Street,GA
+EWM17-CU02,EWM Domestic Customer 02,US,Atlanta,30344,100 Piedmont Avenue Southeast,GA
+0010154802,JIT Company,DE,Hallbergmoos,85399,Zeppelinstraße 2,BY
+EWM17-CU03,EWM Domestic Customer 03,US,Palo Alto,94304,800 Sand Hill Road,CA
+0010100010,Inlandskunde DE 10,DE,Schöntal,74214,Lindenstraße 10,BW
+EWM10-CU01,EWM-Kunde 01 (Inland),DE,Leipzig,04249,Knautnaundorfer Straße 204,SN
+EWM10-CU02,EWM-Kunde 02 (Inland),DE,Hamburg,22525,Rondenburg 12,HH
+EWM10-CU03,EWM-Kunde 03 (Inland),DE,München,81514,Balaustraße 75,BY
+BP1010,WERK 1,DE,Walldorf,69190,Neurottstr. 16,BW
+0001000150,Pepsico,US,Purchase,10577-1444,700 Anderson Hill Rd,NY
+0003000040,Test BP for Credit Rating,US,New york,08001,2E New,NY
+0001000161,Sun Bank,US,,08753-8320,975 Hooper,
+0001000151,Amazon Co Ltd,US,Tucson,85705-3717,1135 W Miracle Mile,
+0001000152,"Facebook, Inc.",US,Menlo Park,94025-1456,1 Hacker Way Bldg 10,
+0001000153,Google Inc,US,Santa Clara,95054-2729,2055 Laurelwood Rd Ste 13,
+0001000154,Pfizer Inc.,US,New York,10017-5703,235 E 42ND St Rm 107,
+0001000155,Sap LLC,US,Gaithersburg,20879-4634,8313 Tea Rose Dr,
+0001000156,Reids,US,Hartford,06112-2305,681 Albany Ave,
+0001000157,L L Association,US,Checotah,74426-6308,417518 Bettys Ln,
+0001000158,KFC Corporation (de),US,Louisville,40213-1970,1900 Colonel Sanders Ln,
+0001000159,Queen,US,Oakland,94610-2737,3338 Grand Ave,
+0001000160,Microsoft Corporation,US,Redmond,98052-8300,1 Microsoft Way,
+0001000162,Xerox,US,Norwalk,06851-1056,Merritt,
+0003000041,Demo Customer as Company B,US,New York,08008,26W New York,NY
+0003000050,Moonstone Company D002,US,New York,,,NY
+MDG_CU01,ABC Customer 01,US,New York,,,
+0017100009,Domestic US Customer 9,US,Kearney,68847-5457,19 East 24th St,NE
+0017411720,Plant 1720 US,US,Sacramento,95834,3936 El Centro Rd,CA
+0003000000,ABC Customer 02,DE,Frankfurt,,,
+MDGC_MULT1,ABC Customer 02,DE,Frankfurt,,,
+0001000230,Cyber Company SE,CH,Basel,4051,Steinenberg 7,
+0001000049,MDG Bupa,DE,Walldorf,69111,Hauptstr. 10,
+0001000050,MDG Bupa Copy,DE,Walldorf,69111,Hauptstr. 10,
+0003000011,Demo Company as Customer A,DE,Heidelburg,,,
+MDG_CU04,ABC Company 04,US,DC,,,
+MDG_CU05,ABC Company 05,US,Los Angeles,,,
+0017100010,Domestic US Customer 10,US,Atlanta,30315-1402,1000 Augusta Ave SE,GA
+0003000020,Demo Company,DE,Karlsruhe,76131,,
+0010100023,Inlandskunde DE 23,DE,Budenheim,55257,Römerstraße 1230,RP
+0010100024,Inlandskunde DE 24,DE,Wetzlar,35578,Lahnbergweg 23,HE
+0010100028,Inlandskunde DE 28,DE,Wetzlar,35578,Lahnbergweg 83,HE
+0010100029,Inlandskunde DE 29,DE,Wetzlar,35578,Lahnbergweg 93,HE
+0010100021,Inlandskunde DE 21,DE,Schöntal,74214,Lindenstraße 2,BW
+0010100120,Inlandskunde DE 120 (SEPA) FICA,DE,Saarbrücken,66119,Lohmeyerstraße 1420,SL
+0017300095,US - Sales Commission Recipient,US,Muncie,47305-2757,198 S Ohio Ave,IN
+0017154802,JIT Company,US,Newtown Square,19073,3999 West Chester Pike,PA
+0017100011,SAP SE,US,Newtown Square,19073-3299,3999 West Chester Pike,PA
+0017100012,Domestic Customer Invoice List,US,Atlanta,30315-1402,22 Augusta Ave SE,GA
+0017000009,Copenhagen municipality,DK,Copenhagen,6979,Anderson str 1,
+BP_US_01,John Miller,US,PALO ALTO,94304,3410 Hillview Ave,CA
+0001000180,name,RO,bucharest,,,
+0001000189,Venus Hair Cosmetics,ES,Valencia,46003,c Mar 64,
+0001000190,Venus Hair,ES,Valencia,46003,c Mar 64,
+0001000191,Earth Communications,DE,Heilbronn,74072,Lerchenstr 117,
+0001000192,Mars Travel Agency,ES,Murcia,30003,c Obispo Frutos 12,
+0001000193,Uranus Chemie,DE,Ubstadt-Weiher,76690,Hauptstr 6,
+0001000198,Venus Hair Cosmetics,ES,Valencia,46003,c Mar 64,46
+0001000200,Mars Travel Agency,ES,Murcia,30003,c Obispo Frutos 12,30
+0001000201,Taucher Neptun,DE,Hamburg,20457,Afrikastr 328,02
+0001000199,Venus Hair,ES,Valencia,46003,c Mar 64,46
+0001000202,Venus Hair Cosmetics,ES,Valencia,46003,c Mar 64,46
+0001000203,Venus Hair,ES,Valencia,46003,c Mar 64,46
+0001000204,Mars Travel Agency,ES,Murcia,30003,c Obispo Frutos 12,30
+0001000205,Taucher Neptun,DE,Hamburg,20457,Afrikastr 328,02
+0001000209,Venus Hair Cosmetics,ES,Valencia,46003,c Mar 64,46
+0001000210,Venus Hair,ES,Valencia,46003,c Mar 64,46
+0001000211,Mars Travel Agency,ES,Murcia,30003,c Obispo Frutos 12,30
+0001000212,Taucher Neptun,DE,Hamburg,20457,Afrikastr 328,02
+BP1001621,FLOG_CUST,US,los Angeles,56784,,CA
+BP1001660,Plant FORP as Business Partner,US,Palo Alto,94304-1355,Deer Creek,CA
+BP1003882,FLOG_CUST_REMOTE,US,Palo Alto,56784,,CA
+BP1001650,FLOG-SUPP,US,Houston,56784,5th Avenue,CA
+0017300084,Domestic US Supplier 84 (EDI),US,Louisville,40202-3202,416 West Jefferson,KY
+MDG_CU03,ABC Company 03,US,New York,,,
+VENFLPO,VENFLPO,US,Houston,56784,,CA
+0001000239, Name 1,DE,Heidelberg,11569,Rheinstrasse 8,
+0017100013,Domestic Customer Invoice List,US,Atlanta,30315-1402,2 Augusta Ave SE,GA
+0001000259,sprachlos,DE,rot-malsch,69120,Rathausstr 66,
+0001000260,bike amundsen,US,atlanta,10345,44 plaza,
+0001000263,Customer SRV 1710 ICO Inc.,US,Palo Alto,94304,105 Hillview Avenue,CA
+0017537006,Associate or Joint Venture,US,Los Angeles,90210,11-15 Tipografilor,
+0001000261,E-Bike Center,DE,Stuttgart,70123,Unter den Linden 333,
+0001000262,E-Bike Rental,DE,Konstanz,70334,Am See 22,
+0001000269,Titan Screws,US,Cottonwood,96022,22119 River St,CA
+0001000270,Pluto Windpark,US,Brainerd,56401,2211 Wide Ave,
+0001000271,Venus Computer,US,Phoenix,97535,12 Rose St,
+0001000272,Mars Electronics,US,Montgomery,17752-1418,30 Broad St,PA
+0001000273,Earth Communications,US,Molino,32577,78 Cherry St,
+0001000274,Windpark Eco Supplies Inc,US,Washington,07882,55 Industrial Square,
+0001000275,Postfossil Energies Ltd,US,Grand Rapids,49546,231 West Street,
+0001000276,Jupiter Jones,US,Sacramento,95818-4403,2517 9th Ave,CA
+0001000277,Sunrise Solar,US,Garden City,67846,1240 Shannon Ave,
+0001000278,Mercury International,US,Somerset,42503-5342,708 Cemetery Rd,KY
+0001000285,Venus Hair,ES,Valencia,46003,c Mar 64,
+0001000286,Venus Hair Cosmetics,ES,Valencia,46003,c Mar 64,
+0001000289,Mars Travel Agency,ES,Murcia,30003,c Obispo Frutos 12,
+0001000443,SAP SE,DE,Walldorf,69190,Dietmar-Hopp-Allee 16,BW
+0001000444,Venus Hair Cosmetics,ES,Valencia,46003,c Mar 64,
+0001000445,Mars Travel Agency,ES,Murcia,30003,c Obispo Frutos 12,
+0001000446,Earth Communications,DE,Heilbronn,74072,Lerchenstr 117,
+0001000447,Taucher Neptun,DE,Hamburg,20457,Afrikastr 328,
+0001000448,Abcnus Chemie,DE,Ubstadt-Weiher,76690,Hauptstr 6,
+0001000449,Venus Hair,ES,Valencia,46003,c Mar 64,
+0010186001,TM Inlandskunde DE 1,DE,Hamburg,20148,Tesdorpfstrasse 8,HH
+0010186002,TM Inlandskunde DE 2,DE,Berlin,10178,Rosenthaler Str. 30,BE
+0010186003,Franz Hero,DE,Hamburg,20148,Tesdorpfstrasse 8,HH
+0010186004,Jan Gilg,DE,Berlin,10178,Rosenthaler Str. 30,BE
+0010186005,TM Inlandskunde DE 1,DE,Hamburg,20148,Tesdorpfstrasse 8,HH
+0021200001,Supplier/Customer for Intrastat (DE,DE,Heidelberg,69115,Bergheimer Str. 13,BW
+0021100060,Foreign HU Customer 60 (DE),DE,Schöntal,74214,Lindenstraße 2,BW
+0021100011,SAP SE,HU,Budapest,1031,Záhony u 7,
+0021100010,Domestic HU Customer 10,HU,Budapest,2030,Gellért Irodaház 900,
+EWM21-CU01,EWM Domestic Customer 01,HU,Budapest,2030,Gellért Irodaház 500,
+EWM21-CU02,EWM Domestic Customer 02,HU,Budapest,2030,Gellért Irodaház 500,
+EWM21-CU03,EWM Domestic Customer 03,HU,Budapest,2030,Gellért Irodaház 500,
+0021412110,Customer as Plant 2110,HU,Budapest,2030,Gellért Irodaház 1,
+0021300010,Domestic HU Supplier 10,HU,Budapest,1203,Gellért Irodaház 120,
+0021154801,JIT Company,HU,Budapest,2030,Gellért Irodaház 1290,
+0021100080,Domestic Customer HU 80,HU,Budapest,2030,Gellért Irodaház 18,
+0021100081,Domestic Customer HU 81,HU,Budapest,2030,Gellért Irodaház 18,

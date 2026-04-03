@@ -294,6 +294,91 @@ class DecisionGovernanceService:
         return action
 
     # ------------------------------------------------------------------
+    # Adaptive MCP write-back delay
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def compute_writeback_delay(
+        policy: Optional[DecisionGovernancePolicy],
+        urgency: float,
+        confidence: float,
+        mode: ActionMode,
+    ) -> Optional[int]:
+        """
+        Compute adaptive delay (minutes) before an agent decision is written
+        back to the ERP via MCP.
+
+        ALL AIIO modes get a cooling period:
+        - AUTOMATE: short delay (still allows human override via Decision Stream)
+        - INFORM: moderate delay (user is notified, has time to react)
+        - INSPECT: uses existing hold_minutes (already held for explicit review)
+
+        Formula:
+            raw = base × (1 - urgency × urgency_weight) × (2 - confidence × confidence_weight)
+
+        High urgency + high confidence → minimal delay (act fast, high certainty)
+        Low urgency + low confidence  → maximum delay (no rush, uncertain outcome)
+
+        Returns:
+            Delay in minutes, or None if write-back is disabled for this policy.
+        """
+        if policy and not getattr(policy, 'writeback_enabled', True):
+            return None
+
+        # For INSPECT, the hold_minutes already serves as the delay
+        if mode == ActionMode.INSPECT:
+            return policy.hold_minutes if policy else 60
+
+        # Get policy params or defaults
+        base = (policy.writeback_base_delay_minutes if policy else 30) or 30
+        floor = (policy.writeback_min_delay_minutes if policy else 5) or 5
+        ceiling = (policy.writeback_max_delay_minutes if policy else 480) or 480
+        u_weight = (policy.writeback_urgency_weight if policy else 1.0) or 1.0
+        c_weight = (policy.writeback_confidence_weight if policy else 1.0) or 1.0
+
+        # Clamp inputs to [0, 1]
+        urgency = max(0.0, min(1.0, urgency))
+        confidence = max(0.0, min(1.0, confidence))
+
+        # Urgency factor: high urgency → small multiplier → short delay
+        urgency_factor = 1.0 - (urgency * u_weight)
+        urgency_factor = max(0.05, urgency_factor)  # Never fully zero
+
+        # Confidence factor: high confidence → small multiplier → short delay
+        confidence_factor = 2.0 - (confidence * c_weight)
+        confidence_factor = max(0.5, confidence_factor)  # Floor at 0.5
+
+        raw_delay = base * urgency_factor * confidence_factor
+
+        # Clamp to [floor, ceiling]
+        delay = int(max(floor, min(ceiling, raw_delay)))
+
+        logger.debug(
+            "Writeback delay: urgency=%.2f conf=%.2f base=%d → raw=%.1f → clamped=%d min",
+            urgency, confidence, base, raw_delay, delay,
+        )
+
+        return delay
+
+    @staticmethod
+    def compute_writeback_eligible_at(
+        policy: Optional[DecisionGovernancePolicy],
+        urgency: float,
+        confidence: float,
+        mode: ActionMode,
+    ) -> Optional[datetime]:
+        """Compute the datetime when a decision becomes eligible for ERP write-back.
+
+        Returns None if write-back is disabled.
+        """
+        delay = DecisionGovernanceService.compute_writeback_delay(
+            policy, urgency, confidence, mode,
+        )
+        if delay is None:
+            return None
+        return datetime.utcnow() + timedelta(minutes=delay)
+
+    # ------------------------------------------------------------------
     # Planning envelope: adjust before create (Glenday Sieve)
     # ------------------------------------------------------------------
 

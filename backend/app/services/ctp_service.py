@@ -462,13 +462,21 @@ class CTPService:
             available_capacity = max(0, capacity - commitments)
 
             # Component ATP: check BOM components at supplier sites via InvLevel
+            # Prefer sales BOM; fall back to any BOM if no sales entries exist
             component_atp = {}
             try:
                 bom_entries = (
                     self.db.query(ProductBOM)
                     .filter(ProductBOM.product_id == str(item_id))
+                    .filter(ProductBOM.bom_usage == 'sales')
                     .all()
                 )
+                if not bom_entries:
+                    bom_entries = (
+                        self.db.query(ProductBOM)
+                        .filter(ProductBOM.product_id == str(item_id))
+                        .all()
+                    )
                 for entry in bom_entries:
                     comp_id = entry.component_product_id
                     comp_inv = (
@@ -486,12 +494,20 @@ class CTPService:
             available_after_yield = int(available_capacity * yield_rate)
             ctp = available_after_yield
             if component_atp:
-                bom_entries_list = (
+                # Re-use sales-BOM-preferred query for ratio calculation
+                sales_bom = (
                     self.db.query(ProductBOM)
                     .filter(ProductBOM.product_id == str(item_id))
+                    .filter(ProductBOM.bom_usage == 'sales')
                     .all()
-                ) if not component_atp else []
-                for entry in (self.db.query(ProductBOM).filter(ProductBOM.product_id == str(item_id)).all()):
+                )
+                if not sales_bom:
+                    sales_bom = (
+                        self.db.query(ProductBOM)
+                        .filter(ProductBOM.product_id == str(item_id))
+                        .all()
+                    )
+                for entry in sales_bom:
                     qty_per = entry.component_quantity or 1
                     comp_avail = component_atp.get(entry.component_product_id, 0)
                     max_from_comp = int(comp_avail / qty_per) if qty_per > 0 else 0
@@ -871,12 +887,20 @@ class CTPService:
 
         Returns list of component constraints with shortfalls.
         """
-        # Query BOM for this product (parent)
+        # Query BOM for this product (parent) — prefer sales BOM for CTP
         bom_entries = (
             self.db.query(ProductBOM)
             .filter(ProductBOM.product_id == str(item_id))
+            .filter(ProductBOM.bom_usage == 'sales')
             .all()
         )
+        if not bom_entries:
+            # Fall back to any BOM if no sales-specific entries
+            bom_entries = (
+                self.db.query(ProductBOM)
+                .filter(ProductBOM.product_id == str(item_id))
+                .all()
+            )
 
         if not bom_entries:
             # No BOM (simple manufactured item, no components)

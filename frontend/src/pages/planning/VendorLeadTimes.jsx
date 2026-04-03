@@ -42,7 +42,7 @@ import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext'
  *
  * Manages supplier-specific lead times with hierarchical override logic.
  *
- * Backend API: /api/v1/vendor-lead-time/*
+ * Backend API: /vendor-lead-time/*
  * - Hierarchical resolution: Product > Product Group > Site > Region > Company
  * - Lead time variability for stochastic planning
  * - Effective date ranges
@@ -86,7 +86,7 @@ const VendorLeadTimes = () => {
     try {
       const params = {};
       if (searchQuery) params.tpartner_id = searchQuery;
-      const response = await api.get('/api/v1/vendor-lead-time/', { params });
+      const response = await api.get('/vendor-lead-time/', { params });
       setLeadTimes(response.data || []);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load vendor lead times');
@@ -164,9 +164,9 @@ const VendorLeadTimes = () => {
       };
 
       if (editingItem) {
-        await api.put(`/api/v1/vendor-lead-time/${editingItem.id}`, payload);
+        await api.put(`/vendor-lead-time/${editingItem.id}`, payload);
       } else {
-        await api.post('/api/v1/vendor-lead-time/', payload);
+        await api.post('/vendor-lead-time/', payload);
       }
       setDialogOpen(false);
       fetchLeadTimes();
@@ -178,7 +178,7 @@ const VendorLeadTimes = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this vendor lead time?')) return;
     try {
-      await api.delete(`/api/v1/vendor-lead-time/${id}`);
+      await api.delete(`/vendor-lead-time/${id}`);
       fetchLeadTimes();
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to delete lead time');
@@ -192,7 +192,7 @@ const VendorLeadTimes = () => {
         product_id: resolveForm.product_id || null,
         site_id: resolveForm.site_id ? parseInt(resolveForm.site_id) : null,
       };
-      const response = await api.post('/api/v1/vendor-lead-time/resolve', payload);
+      const response = await api.post('/vendor-lead-time/resolve', payload);
       setResolveResult(response.data);
     } catch (err) {
       setResolveResult({ error: err.response?.data?.detail || 'Resolution failed' });

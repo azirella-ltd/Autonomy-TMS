@@ -299,7 +299,19 @@ const DemandPlanView = () => {
   useEffect(() => {
     if (!effectiveConfigId) return;
     api.get('/demand-plan/hierarchy-dimensions', { params: { config_id: effectiveConfigId } })
-      .then(res => setDimensions(res.data))
+      .then(res => {
+        setDimensions(res.data);
+        // Auto-select root product node if not already set
+        if (!productNodeId && res.data?.product_tree?.length > 0) {
+          const root = res.data.product_tree.find(n => !n.parent_id);
+          if (root) setProductNodeId(String(root.id));
+        }
+        // Auto-select root geography node if not already set
+        if (!geoFilter && res.data?.geography?.length > 0) {
+          const root = res.data.geography.find(g => !g.parent_id);
+          if (root) setGeoFilter(root.id);
+        }
+      })
       .catch(() => setDimensions(null));
   }, [effectiveConfigId]);
 
@@ -321,7 +333,7 @@ const DemandPlanView = () => {
     api.get('/demand-plan/aggregated', { params })
       .then(res => setAggData(res.data))
       .catch(() => setAggData(null));
-  }, [effectiveConfigId, timeBucket, categoryFilter, familyFilter, productFilter, geoFilter, siteFilter, startDate, endDate]);
+  }, [effectiveConfigId, timeBucket, productNodeId, categoryFilter, familyFilter, productFilter, geoFilter, siteFilter, startDate, endDate]);
 
   const formatNumber = (num) => {
     if (!num) return '0';
@@ -654,20 +666,63 @@ const DemandPlanView = () => {
         <CardContent className="pt-4">
           <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
             <div>
-              <Label>Product ID</Label>
-              <Input
+              <Label>Product</Label>
+              <select className="w-full border rounded px-2 py-1.5 text-sm mt-1"
                 value={productFilter}
-                onChange={(e) => setProductFilter(e.target.value)}
-                className="mt-1"
-              />
+                onChange={(e) => setProductFilter(e.target.value)}>
+                <option value="">All Products</option>
+                {(dimensions?.forecast_products || [])
+                  .filter(p => {
+                    // Respect product hierarchy filter: if productNodeId is set,
+                    // only show products under that node
+                    if (!productNodeId || !dimensions?.product_tree) return true;
+                    const nodeId = parseInt(productNodeId);
+                    // Find all leaf product_ids under this node
+                    const tree = dimensions.product_tree;
+                    const collectIds = (parentId) => {
+                      const ids = [];
+                      const node = tree.find(n => n.id === parentId);
+                      if (node?.product_id) ids.push(node.product_id);
+                      tree.filter(n => n.parent_id === parentId).forEach(child => {
+                        ids.push(...collectIds(child.id));
+                      });
+                      return ids;
+                    };
+                    const allowedIds = collectIds(nodeId);
+                    return allowedIds.length === 0 || allowedIds.includes(p.id);
+                  })
+                  .map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))
+                }
+              </select>
             </div>
             <div>
-              <Label>Site ID</Label>
-              <Input
+              <Label>Site</Label>
+              <select className="w-full border rounded px-2 py-1.5 text-sm mt-1"
                 value={siteFilter}
-                onChange={(e) => setSiteFilter(e.target.value)}
-                className="mt-1"
-              />
+                onChange={(e) => setSiteFilter(e.target.value)}>
+                <option value="">All Sites</option>
+                {(dimensions?.forecast_sites || [])
+                  .filter(s => {
+                    // Respect geo filter: only show sites within selected geography
+                    if (!geoFilter || !dimensions?.geography) return true;
+                    const geoTree = dimensions.geography;
+                    const collectGeoIds = (parentId) => {
+                      const ids = [parentId];
+                      geoTree.filter(g => g.parent_id === parentId).forEach(child => {
+                        ids.push(...collectGeoIds(child.id));
+                      });
+                      return ids;
+                    };
+                    const allowedGeoIds = collectGeoIds(geoFilter);
+                    return allowedGeoIds.includes(s.geo_id);
+                  })
+                  .map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.type})</option>
+                  ))
+                }
+              </select>
             </div>
             <div>
               <Label>Start Date</Label>

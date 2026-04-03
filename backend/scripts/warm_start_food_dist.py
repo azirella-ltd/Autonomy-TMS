@@ -475,13 +475,13 @@ async def phase4_stress_test(
 # Phase 5: Enable Site tGNN in demo config
 # ---------------------------------------------------------------------------
 
-async def phase5_enable_site_tgnn() -> Dict[str, Any]:
-    """Phase 5: Enable the Site tGNN feature flag for CDC_WEST.
+async def phase5_ensure_site_config() -> Dict[str, Any]:
+    """Phase 5: Ensure site_agent_configs row exists for CDC_WEST.
 
-    Updates the site_agent_configs table to set enable_site_tgnn=True
-    for the Food Dist config so the demo shows Layer 1.5 in action.
+    Site tGNN is always enabled (no feature flag). This phase just ensures
+    the config row exists so the SiteAgent can load its settings.
     """
-    print_phase(5, "Enable Site tGNN in Demo Config")
+    print_phase(5, "Ensure Site Agent Config Row")
     start = time.time()
 
     try:
@@ -490,63 +490,29 @@ async def phase5_enable_site_tgnn() -> Dict[str, Any]:
 
         db = sync_session_factory()
         try:
-            # Ensure table exists (no-op if already present)
-            db.execute(text("""
-                CREATE TABLE IF NOT EXISTS site_agent_configs (
-                    id SERIAL PRIMARY KEY,
-                    config_id INTEGER NOT NULL,
-                    site_key VARCHAR(100) NOT NULL,
-                    enable_site_tgnn BOOLEAN NOT NULL DEFAULT false,
-                    agent_mode VARCHAR(20) NOT NULL DEFAULT 'copilot',
-                    use_trm_adjustments BOOLEAN NOT NULL DEFAULT true,
-                    master_type VARCHAR(50),
-                    sc_site_type VARCHAR(50),
-                    tenant_id INTEGER,
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    updated_at TIMESTAMP DEFAULT NOW(),
-                    UNIQUE (config_id, site_key)
-                )
-            """))
-            db.commit()
-
             # Check if site_agent_configs row exists
             row = db.execute(text(
-                "SELECT id, enable_site_tgnn FROM site_agent_configs "
+                "SELECT id FROM site_agent_configs "
                 "WHERE config_id = :cid AND site_key = :sk"
             ), {"cid": FOOD_DIST_CONFIG_ID, "sk": FOOD_DIST_SITE_KEY}).fetchone()
 
             if row:
-                if row[1]:
-                    print_result("Status", "Already enabled")
-                else:
-                    db.execute(text(
-                        "UPDATE site_agent_configs SET enable_site_tgnn = true "
-                        "WHERE config_id = :cid AND site_key = :sk"
-                    ), {"cid": FOOD_DIST_CONFIG_ID, "sk": FOOD_DIST_SITE_KEY})
-                    db.commit()
-                    print_result("Status", "Enabled (updated existing row)")
+                print_result("Status", "Config row already exists")
             else:
                 # Insert new config row
                 db.execute(text(
                     "INSERT INTO site_agent_configs "
-                    "(config_id, site_key, enable_site_tgnn, agent_mode, use_trm_adjustments) "
-                    "VALUES (:cid, :sk, true, 'copilot', true)"
+                    "(config_id, site_key, agent_mode, use_trm_adjustments) "
+                    "VALUES (:cid, :sk, 'copilot', true)"
                 ), {"cid": FOOD_DIST_CONFIG_ID, "sk": FOOD_DIST_SITE_KEY})
                 db.commit()
-                print_result("Status", "Enabled (created new row)")
-
-            # Verify
-            verify = db.execute(text(
-                "SELECT enable_site_tgnn FROM site_agent_configs "
-                "WHERE config_id = :cid AND site_key = :sk"
-            ), {"cid": FOOD_DIST_CONFIG_ID, "sk": FOOD_DIST_SITE_KEY}).fetchone()
-            print_result("Verified", f"enable_site_tgnn={verify[0] if verify else 'NOT FOUND'}")
+                print_result("Status", "Created new config row")
 
         finally:
             db.close()
 
         print(f"\n  Phase 5 complete [{elapsed_str(start)}]")
-        return {"phase": 5, "status": "enabled", "duration": time.time() - start}
+        return {"phase": 5, "status": "ok", "duration": time.time() - start}
 
     except Exception as e:
         logger.error(f"Could not enable Site tGNN: {e}")
@@ -698,9 +664,9 @@ async def main():
             periods_per_episode=args.periods,
         )
 
-    # Phase 5: Enable Site tGNN
+    # Phase 5: Ensure site agent config row
     if 5 in phases:
-        all_results[5] = await phase5_enable_site_tgnn()
+        all_results[5] = await phase5_ensure_site_config()
 
     # Phase 6: Seed demo data
     if 6 in phases:

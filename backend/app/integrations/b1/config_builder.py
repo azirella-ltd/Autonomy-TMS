@@ -374,6 +374,11 @@ class B1ConfigBuilder:
                 res_count = await self._build_resources(resources, resource_caps)
                 result.resources_created = res_count
 
+            # BOMs: Sales + Template BOMs → product_bom
+            if product_trees or product_tree_lines:
+                bom_count = await self._build_boms(product_trees, product_tree_lines)
+                result.boms_created = bom_count
+
             # Batch / Serial enrichment on products
             batch_details = data.get("BatchNumberDetails", [])
             serial_details = data.get("SerialNumberDetails", [])
@@ -566,6 +571,102 @@ class B1ConfigBuilder:
     def _get_first_site_id(self) -> Optional[int]:
         """Return the first available site id as fallback."""
         return next(iter(self._site_ids.values()), None)
+
+    # ------------------------------------------------------------------
+    # Master: ProductTrees → product_bom (Sales + Template BOMs only)
+    # ------------------------------------------------------------------
+
+    async def _build_boms(
+        self,
+        product_trees: List[Dict],
+        product_tree_lines: List[Dict],
+    ) -> int:
+        """Map B1 ProductTrees + ProductTreeLines → ProductBom.
+
+        B1 BOM types (ProductTrees.TreeType):
+          tT_Production   = 'P' / 'btt_ProductionTree'
+          tT_Sales        = 'S' / 'btt_SalesTree'
+          tT_Assembly     = 'A' / 'btt_AssemblyTree'
+          tT_Template     = 'T' / 'btt_TemplateTree'
+
+        We extract Sales and Template BOMs only (for CTP/planning).
+        Production BOMs are already handled by the manufacturing process.
+        """
+        from app.models.sc_entities import ProductBom
+
+        # Map TreeType values to bom_usage tags
+        _TREE_TYPE_TO_USAGE = {
+            "S": "sales", "btt_SalesTree": "sales",
+            "T": "template", "btt_TemplateTree": "template",
+        }
+
+        # Build tree_code → (bom_usage, tree header) lookup from ProductTrees
+        tree_map: Dict[str, Dict] = {}
+        for pt in product_trees:
+            tree_type = str(pt.get("TreeType", "")).strip()
+            usage = _TREE_TYPE_TO_USAGE.get(tree_type)
+            if not usage:
+                continue  # Skip Production and Assembly BOMs
+            tree_code = str(pt.get("TreeCode") or pt.get("ItemCode", "")).strip()
+            if tree_code:
+                tree_map[tree_code] = {"bom_usage": usage, "header": pt}
+
+        if not tree_map:
+            logger.info("  BOMs: no Sales/Template BOMs found")
+            return 0
+
+        # Build TreeCode → lines lookup
+        tree_lines: Dict[str, List[Dict]] = {}
+        for line in product_tree_lines:
+            tree_code = str(line.get("TreeCode") or line.get("Father", "")).strip()
+            if tree_code in tree_map:
+                tree_lines.setdefault(tree_code, []).append(line)
+
+        count = 0
+        prefix = f"CFG{self._config_id}_"
+        seen_bom_keys: Set[Tuple[str, str]] = set()
+
+        for tree_code, info in tree_map.items():
+            parent_product_id = self._product_id_map.get(tree_code)
+            if not parent_product_id:
+                continue
+
+            base_qty = float(info["header"].get("Quantity", 1) or 1)
+            if base_qty == 0:
+                base_qty = 1.0
+
+            for line in tree_lines.get(tree_code, []):
+                item_code = str(line.get("ItemCode", "")).strip()
+                component_id = self._product_id_map.get(item_code)
+                if not component_id or component_id == parent_product_id:
+                    continue
+
+                # Dedup: skip duplicate (product_id, component_product_id)
+                bom_key = (parent_product_id, component_id)
+                if bom_key in seen_bom_keys:
+                    continue
+                seen_bom_keys.add(bom_key)
+
+                comp_qty = float(line.get("Quantity", 1) or 1)
+                ratio_val = float(line.get("Ratio", 0) or 0) or None
+
+                self.db.add(ProductBom(
+                    config_id=self._config_id,
+                    product_id=parent_product_id,
+                    component_product_id=component_id,
+                    component_quantity=comp_qty / base_qty,
+                    component_uom=str(line.get("Uom", "EA") or "EA"),
+                    bom_usage=info["bom_usage"],
+                    ratio=ratio_val,
+                    is_active="true",
+                    source="B1_ProductTree",
+                    source_update_dttm=datetime.utcnow(),
+                ))
+                count += 1
+
+        await self.db.flush()
+        logger.info("  BOMs: %d Sales/Template BOM components created", count)
+        return count
 
     # ------------------------------------------------------------------
     # Transactional: Purchase Orders → purchase_order + purchase_order_line_item

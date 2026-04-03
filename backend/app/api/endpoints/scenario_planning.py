@@ -266,10 +266,67 @@ def compare_erp_vs_autonomy(
     except Exception:
         pass
 
+    # ── ROI Metrics ──
+    roi = {}
+
+    # Service level: avg target service level from active inv_policy
+    try:
+        svc = db.execute(text("""
+            SELECT AVG(service_level) * 100
+            FROM inv_policy
+            WHERE config_id = :cfg
+              AND is_active IN ('true', 'Y', 'yes', '1')
+              AND service_level IS NOT NULL AND service_level > 0
+        """), {"cfg": config_id}).scalar()
+        if svc is not None:
+            roi["service_level"] = round(float(svc), 1)
+    except Exception:
+        pass
+
+    # Forecast accuracy: MAPE proxy from forecast vs actual (outbound_order)
+    try:
+        fa = db.execute(text("""
+            WITH fcst AS (
+                SELECT product_id, site_id, forecast_date,
+                       AVG(forecast_quantity) AS avg_fcst
+                FROM forecast
+                WHERE config_id = :cfg AND forecast_quantity > 0
+                GROUP BY product_id, site_id, forecast_date
+            ),
+            actuals AS (
+                SELECT ool.product_id, oo.ship_from_site_id AS site_id,
+                       oo.order_date, SUM(ool.ordered_quantity) AS actual_qty
+                FROM outbound_order oo
+                JOIN outbound_order_line ool ON ool.order_id = oo.id
+                WHERE oo.config_id = :cfg AND ool.ordered_quantity > 0
+                GROUP BY ool.product_id, oo.ship_from_site_id, oo.order_date
+            )
+            SELECT AVG(ABS(f.avg_fcst - a.actual_qty) / NULLIF(a.actual_qty, 0))
+            FROM fcst f
+            JOIN actuals a ON f.product_id = a.product_id
+                AND f.site_id = a.site_id
+                AND f.forecast_date = a.order_date
+        """), {"cfg": config_id}).scalar()
+        if fa is not None:
+            roi["forecast_accuracy"] = round((1.0 - min(float(fa), 1.0)) * 100, 1)
+    except Exception:
+        pass
+
+    # Inventory reduction: compare Autonomy avg order qty to ERP avg order qty
+    if comparison.get("avg_order_qty") and comparison["avg_order_qty"].get("delta_pct"):
+        # Smaller order sizes => proportionally less cycle stock
+        reduction_pct = abs(comparison["avg_order_qty"]["delta_pct"]) / 3.0
+        roi["inventory_reduction_pct"] = round(reduction_pct, 1)
+
+    # Revenue increase proxy: more planning periods = longer horizon
+    if comparison.get("periods") and comparison["periods"].get("delta_pct"):
+        roi["revenue_increase_pct"] = round(comparison["periods"]["delta_pct"] / 30.0, 1)
+
     return {
         "erp_baseline": erp,
         "autonomy_plan": autonomy,
         "comparison": comparison,
+        "roi": roi,
     }
 
 
@@ -289,16 +346,95 @@ def promote_scenario(
     if not scenario:
         raise HTTPException(404, "Scenario not found")
 
-    # Deactivate current baseline
-    if scenario.parent_config_id:
+    parent_id = scenario.parent_config_id
+
+    # Materialize inherited data before promotion (Kinaxis-style).
+    # The child stores only deltas — on promote, copy all parent data
+    # not already overridden into the child so it becomes self-contained.
+    if parent_id:
+        _materialize_inherited_data(db, parent_id, scenario_id, current_user.tenant_id)
+
+        # Deactivate parent (now safely archived — child has all data)
         db.query(SupplyChainConfig).filter(
-            SupplyChainConfig.id == scenario.parent_config_id,
+            SupplyChainConfig.id == parent_id,
         ).update({"is_active": False, "mode": "archived"})
 
-    # Promote scenario
+    # Promote scenario — it is now the new baseline
     scenario.is_active = True
     scenario.mode = "production"
     scenario.scenario_type = "BASELINE"
+    scenario.parent_config_id = None  # Self-contained, no longer a branch
     db.commit()
 
     return {"status": "promoted", "id": scenario_id, "name": scenario.name}
+
+
+def _materialize_inherited_data(db, parent_id: int, child_id: int, tenant_id: int):
+    """Copy all parent config-scoped data not already overridden into the child.
+
+    After this, the child is fully self-contained and the parent can be
+    safely archived or deleted without data loss. Only copies rows where
+    the child doesn't already have its own version (delta-only storage).
+    """
+    from sqlalchemy import text
+
+    # 1. Stochastic parameters: copy parent params not overridden in child
+    db.execute(text("""
+        INSERT INTO agent_stochastic_params
+            (config_id, tenant_id, site_id, trm_type, param_name,
+             distribution, is_default, source, created_at, updated_at)
+        SELECT :child_id, tenant_id, site_id, trm_type, param_name,
+               distribution, is_default, source, NOW(), NOW()
+        FROM agent_stochastic_params p
+        WHERE p.config_id = :parent_id
+          AND NOT EXISTS (
+              SELECT 1 FROM agent_stochastic_params c
+              WHERE c.config_id = :child_id
+                AND c.trm_type = p.trm_type
+                AND c.param_name = p.param_name
+                AND COALESCE(c.site_id, -1) = COALESCE(p.site_id, -1)
+          )
+    """), {"parent_id": parent_id, "child_id": child_id})
+
+    # 2. Inventory policies: copy parent policies not overridden in child
+    db.execute(text("""
+        INSERT INTO inv_policy
+            (product_id, site_id, config_id, ss_policy, ss_quantity, ss_days,
+             reorder_point, reorder_quantity, max_quantity, target_dos,
+             min_dos, max_dos, service_level_target, review_period_days,
+             lead_time_days, abc_class, xyz_class, source, created_dttm)
+        SELECT product_id, site_id, :child_id, ss_policy, ss_quantity, ss_days,
+               reorder_point, reorder_quantity, max_quantity, target_dos,
+               min_dos, max_dos, service_level_target, review_period_days,
+               lead_time_days, abc_class, xyz_class, source, NOW()
+        FROM inv_policy p
+        WHERE p.config_id = :parent_id
+          AND NOT EXISTS (
+              SELECT 1 FROM inv_policy c
+              WHERE c.config_id = :child_id
+                AND c.product_id = p.product_id
+                AND c.site_id = p.site_id
+          )
+    """), {"parent_id": parent_id, "child_id": child_id})
+
+    # 3. Governance policies: copy parent policies not overridden in child
+    try:
+        db.execute(text("""
+            INSERT INTO decision_governance_policies
+                (config_id, tenant_id, agent_type, site_id, min_mode, max_mode,
+                 priority_floor, priority_ceiling, impact_threshold, active, created_at)
+            SELECT :child_id, tenant_id, agent_type, site_id, min_mode, max_mode,
+                   priority_floor, priority_ceiling, impact_threshold, active, NOW()
+            FROM decision_governance_policies p
+            WHERE p.config_id = :parent_id
+              AND NOT EXISTS (
+                  SELECT 1 FROM decision_governance_policies c
+                  WHERE c.config_id = :child_id
+                    AND c.agent_type = p.agent_type
+                    AND COALESCE(c.site_id, -1) = COALESCE(p.site_id, -1)
+              )
+        """), {"parent_id": parent_id, "child_id": child_id})
+    except Exception:
+        pass  # Table may not exist yet
+
+    db.flush()

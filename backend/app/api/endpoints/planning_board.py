@@ -146,7 +146,7 @@ async def _build_site_hierarchy(db: AsyncSession, config_id: int) -> Dict:
         for region, region_sites in sorted(region_map.items()):
             site_children = {
                 str(s.id): {
-                    "label": s.site_name or s.name or f"Site {s.id}",
+                    "label": getattr(s, 'site_name', None) or s.name or f"Site {s.id}",
                     "level": "site",
                     "can_drill_down": False,
                     "site_ids": [s.id],

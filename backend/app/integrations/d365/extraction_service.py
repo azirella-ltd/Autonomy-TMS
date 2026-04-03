@@ -18,7 +18,7 @@ D365 Contoso demo data (USMF legal entity) provides:
 """
 
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -355,8 +355,12 @@ class D365ConfigBuilder:
         mfg_sites = {po.get("SiteId") for po in prod_orders if po.get("SiteId")}
 
         site_map = {}
+        seen_sites: Set[str] = set()
         for s in sites:
             site_id = s.get("SiteId", "")
+            if site_id in seen_sites:
+                continue
+            seen_sites.add(site_id)
             master_type = "MANUFACTURER" if site_id in mfg_sites else "INVENTORY"
             site = Site(
                 config_id=config.id,
@@ -385,8 +389,12 @@ class D365ConfigBuilder:
         from app.models.sc_entities import Product
 
         product_map = {}
+        seen_products: Set[str] = set()
         for p in products:
             item_number = p.get("ItemNumber", "")
+            if item_number in seen_products:
+                continue
+            seen_products.add(item_number)
             product = Product(
                 config_id=config.id,
                 name=item_number[:100],
@@ -404,8 +412,12 @@ class D365ConfigBuilder:
     async def _build_trading_partner_sites(self, config, vendors, customers, site_map, result):
         from app.models.sc_entities import Site
 
+        seen_vendors: Set[str] = set()
         for v in vendors[:50]:
             vendor_id = v.get("VendorAccountNumber", "")
+            if vendor_id in seen_vendors:
+                continue
+            seen_vendors.add(vendor_id)
             site = Site(
                 config_id=config.id,
                 name=vendor_id[:50],
@@ -418,8 +430,12 @@ class D365ConfigBuilder:
             site_map[f"V_{vendor_id}"] = site
             result["trading_partners_created"] += 1
 
+        seen_customers: Set[str] = set()
         for c in customers[:50]:
             cust_id = c.get("CustomerAccount", "")
+            if cust_id in seen_customers:
+                continue
+            seen_customers.add(cust_id)
             site = Site(
                 config_id=config.id,
                 name=cust_id[:50],
@@ -491,6 +507,7 @@ class D365ConfigBuilder:
         for bh in bom_headers:
             bom_product_map[bh.get("BOMId")] = bh.get("ProductNumber")
 
+        seen_bom_keys: Set[Tuple] = set()
         for line in bom_lines:
             bom_id = line.get("BOMId")
             parent_item = bom_product_map.get(bom_id)
@@ -502,6 +519,12 @@ class D365ConfigBuilder:
             component = product_map.get(component_item)
             if not parent or not component:
                 continue
+
+            # Dedup: skip duplicate (parent, component) combos
+            bom_key = (parent.id, component.id)
+            if bom_key in seen_bom_keys:
+                continue
+            seen_bom_keys.add(bom_key)
 
             bom = ProductBOM(
                 config_id=config.id,
@@ -518,6 +541,7 @@ class D365ConfigBuilder:
             SitePlanningConfig, D365_COVERAGE_CODE_MAP, PlanningMethod, LotSizingRule,
         )
 
+        seen_inv_levels: Set[Tuple] = set()
         for inv in inv_on_hand:
             item = inv.get("ItemNumber")
             wh = inv.get("WarehouseId") or inv.get("SiteId")
@@ -525,6 +549,12 @@ class D365ConfigBuilder:
             site = site_map.get(wh)
             if not product or not site:
                 continue
+
+            # Dedup: skip duplicate (product_id, site_id) for inv levels
+            inv_key = (product.id, site.id)
+            if inv_key in seen_inv_levels:
+                continue
+            seen_inv_levels.add(inv_key)
 
             level = InvLevel(
                 config_id=config.id,
@@ -537,6 +567,7 @@ class D365ConfigBuilder:
             result["inv_levels_created"] += 1
 
         spc_count = 0
+        seen_spc_keys: Set[Tuple] = set()
         for cov in coverage:
             item = cov.get("ItemNumber")
             site_id = cov.get("SiteId")
@@ -544,6 +575,12 @@ class D365ConfigBuilder:
             site = site_map.get(site_id)
             if not product or not site:
                 continue
+
+            # Dedup: skip duplicate (product_id, site_id) for coverage/SPC
+            spc_key = (product.id, site.id)
+            if spc_key in seen_spc_keys:
+                continue
+            seen_spc_keys.add(spc_key)
 
             # Extract D365 ItemCoverageSettings fields
             coverage_code = int(cov.get("CoverageCode", 0) or 0)

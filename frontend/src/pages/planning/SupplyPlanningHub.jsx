@@ -11,13 +11,14 @@
  *   Lead Times        — Supplier lead time management
  */
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '../../components/common';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { api } from '../../services/api';
 import {
   Play, ListChecks, Store, Calculator, Layers,
   Gauge, Clock,
@@ -31,15 +32,18 @@ const LotSizingAnalysis = lazy(() => import('./LotSizingAnalysis'));
 const CapacityCheck = lazy(() => import('./CapacityCheck'));
 const VendorLeadTimes = lazy(() => import('./VendorLeadTimes'));
 
-const TABS = [
+const ALL_TABS = [
   { key: 'generation', label: 'Plan Generation', icon: Play },
   { key: 'directives', label: 'Directives', icon: ListChecks },
   { key: 'sourcing', label: 'Sourcing', icon: Store },
-  { key: 'netting', label: 'Net Requirements', icon: Calculator },
-  { key: 'lot_sizing', label: 'Lot Sizing', icon: Layers },
-  { key: 'capacity', label: 'Capacity Check', icon: Gauge },
+  { key: 'netting', label: 'Net Requirements', icon: Calculator, manufacturerOnly: true },
+  { key: 'lot_sizing', label: 'Lot Sizing', icon: Layers, manufacturerOnly: true },
+  { key: 'capacity', label: 'Capacity Check', icon: Gauge, manufacturerOnly: true },
   { key: 'lead_times', label: 'Lead Times', icon: Clock },
 ];
+
+/** Tabs that require at least one manufacturer site in the config */
+const MANUFACTURER_ONLY_KEYS = new Set(['netting', 'lot_sizing', 'capacity']);
 
 const TabLoading = () => (
   <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>
@@ -49,8 +53,38 @@ export default function SupplyPlanningHub() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const { effectiveConfigId } = useActiveConfig();
+  const [hasManufacturer, setHasManufacturer] = useState(true); // default true to avoid flash
   const initialTab = searchParams.get('tab') || location.state?.tab || 'generation';
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  // Fetch config to check for manufacturer sites
+  useEffect(() => {
+    if (!effectiveConfigId) return;
+    let cancelled = false;
+    api.get(`/supply-chain-config/${effectiveConfigId}`)
+      .then(res => {
+        if (cancelled) return;
+        const defs = res.data?.site_type_definitions || [];
+        const hasMfg = defs.some(d =>
+          (d.master_type || '').toLowerCase() === 'manufacturer'
+        );
+        setHasManufacturer(hasMfg);
+      })
+      .catch(() => { /* keep default */ });
+    return () => { cancelled = true; };
+  }, [effectiveConfigId]);
+
+  const visibleTabs = useMemo(
+    () => hasManufacturer ? ALL_TABS : ALL_TABS.filter(t => !MANUFACTURER_ONLY_KEYS.has(t.key)),
+    [hasManufacturer]
+  );
+
+  // If active tab got hidden, reset to first visible tab
+  useEffect(() => {
+    if (!visibleTabs.some(t => t.key === activeTab)) {
+      setActiveTab(visibleTabs[0]?.key || 'generation');
+    }
+  }, [visibleTabs, activeTab]);
 
   useEffect(() => {
     if (searchParams.get('tab') !== activeTab) {
@@ -64,7 +98,7 @@ export default function SupplyPlanningHub() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent flex-wrap">
-          {TABS.map(tab => (
+          {visibleTabs.map(tab => (
             <TabsTrigger
               key={tab.key}
               value={tab.key}

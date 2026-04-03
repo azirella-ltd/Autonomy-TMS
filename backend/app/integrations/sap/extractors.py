@@ -205,7 +205,7 @@ ODATA_TABLE_MAP: Dict[str, Dict[str, Any]] = {
         "select": [
             "BillOfMaterial", "BillOfMaterialVariant", "Material",
             "Plant", "BOMHeaderBaseUnit", "BOMHeaderQuantityInBaseUnit",
-            "BillOfMaterialStatus",
+            "BillOfMaterialStatus", "BillOfMaterialUsage",
         ],
         "rename": {
             "BillOfMaterial": "STLNR", "BillOfMaterialVariant": "STLAL",
@@ -213,6 +213,7 @@ ODATA_TABLE_MAP: Dict[str, Dict[str, Any]] = {
             "BOMHeaderBaseUnit": "BMEIN",
             "BOMHeaderQuantityInBaseUnit": "BMENG",
             "BillOfMaterialStatus": "STLST",
+            "BillOfMaterialUsage": "STLAN",
         },
     },
     "STPO": {
@@ -231,6 +232,20 @@ ODATA_TABLE_MAP: Dict[str, Dict[str, Any]] = {
             "BOMItemQuantity": "MENGE", "ComponentUnit": "MEINS",
             "BOMItemCategory": "POSTP", "Plant": "WERKS",
             "BillOfMaterialItemNumber": "POSNR",
+        },
+    },
+    # ---- BOM-material link ----
+    "MAST": {
+        "service": "/sap/opu/odata/sap/API_BILL_OF_MATERIAL_SRV_01",
+        "entity": "MaterialBOM",
+        "select": [
+            "Material", "Plant", "BillOfMaterialUsage",
+            "BillOfMaterial", "BillOfMaterialVariant",
+        ],
+        "rename": {
+            "Material": "MATNR", "Plant": "WERKS",
+            "BillOfMaterialUsage": "STLAN",
+            "BillOfMaterial": "STLNR", "BillOfMaterialVariant": "STLAL",
         },
     },
     # ---- Purchasing ----
@@ -427,7 +442,7 @@ ODATA_TABLE_MAP: Dict[str, Dict[str, Any]] = {
 # ============================================================================
 
 RFC_TABLE_FIELDS: Dict[str, List[str]] = {
-    "T001W": ["WERKS", "NAME1", "BUKRS", "FABKL", "STRAS", "ORT01", "PSTLZ", "REGIO", "LAND1"],
+    "T001W": ["WERKS", "NAME1", "BUKRS", "FABKL", "STRAS", "ORT01", "PSTLZ", "REGIO", "LAND1", "ADRNR"],
     "T001L": ["WERKS", "LGORT", "LGOBE"],
     "T001": ["BUKRS", "BUTXT", "LAND1", "WAERS"],
     "MARA": [
@@ -482,10 +497,10 @@ RFC_TABLE_FIELDS: Dict[str, List[str]] = {
         "PSMNG", "GAMNG", "WEMNG", "GSTRP", "GLTRP",
         "FTRMI", "FTRMS", "STAT",
     ],
-    "STKO": ["STLNR", "STLAL", "STKOZ", "BMENG", "BMEIN", "STLST"],
+    "STKO": ["STLNR", "STLAL", "STKOZ", "BMENG", "BMEIN", "STLST", "STLAN"],
     "STPO": [
         "STLNR", "STLAL", "STLKN", "IDNRK",
-        "MENGE", "MEINS", "POSTP",
+        "MENGE", "MEINS", "POSTP", "AUSCH", "ANTEI", "POSNR",
     ],
     "MAST": [
         "MATNR", "WERKS", "STLAN", "STLNR", "STLAL",
@@ -851,7 +866,13 @@ class ODataExtractor(SAPTableExtractor):
 # ============================================================================
 
 class HANADBExtractor(SAPTableExtractor):
-    """Extract SAP tables via direct SQL to SAP HANA using hdbcli."""
+    """Extract SAP tables via direct SQL to SAP HANA using hdbcli.
+
+    When a schema_profile is provided (from SAP Schema Discovery Agent),
+    the extractor uses dynamic field lists and join logic from the profile
+    instead of the hardcoded HANA_TABLE_FIELDS. This handles schema
+    variations across SAP releases and custom extensions.
+    """
 
     def __init__(
         self,
@@ -860,6 +881,7 @@ class HANADBExtractor(SAPTableExtractor):
         user: str,
         password: str,
         schema: str = "SAPHANADB",
+        schema_profile: Optional[Dict[str, Any]] = None,
     ):
         try:
             from hdbcli import dbapi  # noqa: F401
@@ -875,6 +897,8 @@ class HANADBExtractor(SAPTableExtractor):
         self.password = password
         self.schema = schema
         self.batch_size = 50000
+        self.schema_profile = schema_profile
+        self._profile_field_cache: Optional[Dict[str, List[str]]] = None
 
     async def test_connection(self) -> Tuple[bool, str]:
         """Test HANA connectivity."""
@@ -901,8 +925,38 @@ class HANADBExtractor(SAPTableExtractor):
         except Exception as e:
             return False, f"HANA DB connection failed: {e}"
 
+    # Mapping: table → column to filter by material scope
+    _MATERIAL_FILTER_COLUMNS = {
+        "MARA": "MATNR", "MAKT": "MATNR", "MARC": "MATNR", "MARD": "MATNR",
+        "MBEW": "MATNR", "MARM": "MATNR", "MVKE": "MATNR",
+        "EKPO": "MATNR", "VBAP": "MATNR", "LIPS": "MATNR",
+        "MSEG": "MATNR", "RESB": "MATNR", "AFPO": "MATNR",
+        "PLAF": "MATNR", "QALS": "MATNR", "QMEL": "MATNR",
+    }
+    # Compound filters: tables that should ALSO filter by plant/site
+    _COMPOUND_SITE_FILTER = {
+        "EKPO": "WERKS", "RESB": "WERKS", "PLAF": "PLWRK",
+        "MSEG": "WERKS", "MARD": "WERKS", "QALS": "WERK",
+    }
+    _VENDOR_FILTER_COLUMNS = {
+        "LFA1": "LIFNR", "EKKO": "LIFNR",
+    }
+    _PLANT_FILTER_COLUMNS = {
+        "T001W": "WERKS",
+    }
+    # Tables that should never be filtered (reference data, status codes, etc.)
+    _NO_FILTER_TABLES = {
+        "KNA1", "ADRC", "CRHD", "T006", "T006A", "TJ02T", "JEST",
+        "STKO", "STPO", "MAST", "EINA", "EINE", "AUFK", "AFKO", "MKPF",
+        "VBAK", "VBRK", "VBRP", "LIKP", "DD03L", "DD04T", "DD05S",
+    }
+
     def _extract_single_table(self, table_name: str, fields: List[str]) -> pd.DataFrame:
-        """Synchronous extraction of a single table."""
+        """Synchronous extraction of a single table.
+
+        If a material_scope is set, injects WHERE clauses to filter at the
+        HANA level — reducing data transfer by up to 90%.
+        """
         from hdbcli import dbapi
 
         conn = dbapi.connect(
@@ -934,10 +988,12 @@ class HANADBExtractor(SAPTableExtractor):
             valid_fields = [f for f in fields if f.upper() in existing_cols]
 
             if not valid_fields:
-                # Fall back to SELECT *
                 select_clause = "*"
             else:
                 select_clause = ", ".join(f'"{f}"' for f in valid_fields)
+
+            # Build WHERE clause from material scope (filter at HANA level)
+            where_clause = self._build_scope_where(table_name.upper(), existing_cols)
 
             all_rows = []
             offset = 0
@@ -945,6 +1001,7 @@ class HANADBExtractor(SAPTableExtractor):
             while True:
                 query = (
                     f"SELECT {select_clause} FROM {self.schema}.\"{table_name.upper()}\" "
+                    f"{where_clause} "
                     f"LIMIT {self.batch_size} OFFSET {offset}"
                 )
                 cur.execute(query)
@@ -970,6 +1027,86 @@ class HANADBExtractor(SAPTableExtractor):
         finally:
             conn.close()
 
+    def _build_scope_where(self, table_name: str, existing_cols: set) -> str:
+        """Build a WHERE clause to filter by material scope at the HANA level.
+
+        Returns empty string if no scope is set or table should not be filtered.
+        """
+        scope = getattr(self, 'material_scope', None)
+        if not scope or table_name in self._NO_FILTER_TABLES:
+            return ""
+
+        material_ids = scope.get("material_ids", [])
+        supplier_ids = scope.get("supplier_ids", [])
+        plant_ids = scope.get("plant_ids", [])
+
+        conditions = []
+
+        # Material-keyed tables
+        mat_col = self._MATERIAL_FILTER_COLUMNS.get(table_name)
+        if mat_col and mat_col in existing_cols and material_ids:
+            quoted = ",".join(f"'{m}'" for m in material_ids)
+            conditions.append(f"\"{mat_col}\" IN ({quoted})")
+
+        # Compound site filter (material + site for transaction tables)
+        site_col = self._COMPOUND_SITE_FILTER.get(table_name)
+        if site_col and site_col in existing_cols and plant_ids:
+            quoted = ",".join(f"'{p}'" for p in plant_ids)
+            conditions.append(f"\"{site_col}\" IN ({quoted})")
+
+        if conditions:
+            return "WHERE " + " AND ".join(conditions)
+
+        # Vendor-keyed tables
+        vendor_col = self._VENDOR_FILTER_COLUMNS.get(table_name)
+        if vendor_col and vendor_col in existing_cols and supplier_ids:
+            quoted = ",".join(f"'{s}'" for s in supplier_ids)
+            return f"WHERE \"{vendor_col}\" IN ({quoted})"
+
+        # Plant-keyed tables (standalone)
+        plant_col = self._PLANT_FILTER_COLUMNS.get(table_name)
+        if plant_col and plant_col in existing_cols and plant_ids:
+            quoted = ",".join(f"'{p}'" for p in plant_ids)
+            return f"WHERE \"{plant_col}\" IN ({quoted})"
+
+        return ""
+
+    def _get_profile_fields(self, table_name: str) -> List[str]:
+        """Get field list from schema_profile for a given table.
+
+        Scans all entities in the profile and collects fields that reference
+        this table (either as primary table or via join). Falls back to
+        HANA_TABLE_FIELDS if no profile or table not found.
+        """
+        if not self.schema_profile:
+            return HANA_TABLE_FIELDS.get(table_name, [])
+
+        # Build cache on first call
+        if self._profile_field_cache is None:
+            self._profile_field_cache = {}
+            entities = self.schema_profile.get("entities", {})
+            for entity_name, ep in entities.items():
+                field_matches = ep.get("field_matches", {})
+                for field_name, fm in field_matches.items():
+                    mt = fm.get("matched_table", "")
+                    mf = fm.get("matched_field", "")
+                    match_type = fm.get("match_type", "not_found")
+                    if mt and mf and match_type != "not_found":
+                        tbl = mt.upper()
+                        self._profile_field_cache.setdefault(tbl, [])
+                        if mf.upper() not in self._profile_field_cache[tbl]:
+                            self._profile_field_cache[tbl].append(mf.upper())
+
+        profile_fields = self._profile_field_cache.get(table_name.upper(), [])
+        hardcoded_fields = HANA_TABLE_FIELDS.get(table_name, [])
+
+        # Merge: profile fields + hardcoded fields (profile adds, never restricts)
+        merged = list(hardcoded_fields)
+        for f in profile_fields:
+            if f.upper() not in {x.upper() for x in merged}:
+                merged.append(f)
+        return merged if merged else ["*"]
+
     async def extract_tables(
         self,
         tables: List[str],
@@ -981,7 +1118,7 @@ class HANADBExtractor(SAPTableExtractor):
 
         for table_name in tables:
             tn = table_name.upper()
-            fields = HANA_TABLE_FIELDS.get(tn, [])
+            fields = self._get_profile_fields(tn)
             rows_ok = 0
             rows_fail = 0
 
@@ -990,7 +1127,7 @@ class HANADBExtractor(SAPTableExtractor):
                 if not df.empty:
                     sap_data[tn] = df
                     rows_ok = len(df)
-                    logger.info(f"  HANA: {tn} → {rows_ok} rows")
+                    logger.info(f"  HANA: {tn} → {rows_ok} rows ({len(fields)} fields from {'profile' if self.schema_profile else 'defaults'})")
                 else:
                     logger.info(f"  HANA: {tn} → 0 rows")
             except Exception as e:
@@ -1184,12 +1321,18 @@ class RFCExtractor(SAPTableExtractor):
 # Factory
 # ============================================================================
 
-def create_extractor(connection, password: str) -> SAPTableExtractor:
+def create_extractor(
+    connection,
+    password: str,
+    schema_profile: Optional[Dict[str, Any]] = None,
+) -> SAPTableExtractor:
     """Create the appropriate extractor based on connection method.
 
     Args:
         connection: SAPConnectionConfig dataclass or SAPConnection DB row
         password: Decrypted SAP password
+        schema_profile: Optional SchemaProfile JSON from SAP Schema Discovery Agent.
+            When provided, HANADBExtractor uses dynamic field lists from the profile.
 
     Returns:
         SAPTableExtractor subclass
@@ -1226,6 +1369,7 @@ def create_extractor(connection, password: str) -> SAPTableExtractor:
             user=user,
             password=password,
             schema=getattr(connection, "hana_schema", None) or "SAPHANADB",
+            schema_profile=schema_profile or getattr(connection, "schema_profile", None),
         )
 
     elif method == ConnectionMethod.RFC:

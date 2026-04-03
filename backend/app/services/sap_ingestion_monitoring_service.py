@@ -195,6 +195,9 @@ class IngestionJob:
     save_csv: bool = False
     update_tenant_data: bool = True
 
+    # BOM-scoped extraction: approved material scope
+    material_scope: Optional[Dict[str, Any]] = field(default=None)
+
     # DB-stored progress (overrides computed property when set)
     _progress_override: Optional[float] = field(default=None, repr=False)
 
@@ -468,6 +471,15 @@ class SAPIngestionMonitoringService:
             elif isinstance(table_status_raw, str):
                 table_status = json.loads(table_status_raw)
 
+        # Parse material_scope JSON
+        material_scope_raw = getattr(row, "material_scope", None)
+        material_scope = None
+        if material_scope_raw:
+            if isinstance(material_scope_raw, dict):
+                material_scope = material_scope_raw
+            elif isinstance(material_scope_raw, str):
+                material_scope = json.loads(material_scope_raw)
+
         job = IngestionJob(
             id=row.id,
             tenant_id=row.tenant_id,
@@ -487,6 +499,7 @@ class SAPIngestionMonitoringService:
             error_message=getattr(row, "error_message", None),
             save_csv=bool(getattr(row, "save_csv", False)),
             update_tenant_data=bool(getattr(row, "update_tenant_data", True) if getattr(row, "update_tenant_data", None) is not None else True),
+            material_scope=material_scope,
         )
         job._progress_override = getattr(row, "progress_percent", None) or 0.0
         return job
@@ -622,6 +635,20 @@ class SAPIngestionMonitoringService:
             save_csv=save_csv,
             update_tenant_data=update_tenant_data,
         )
+
+    async def set_material_scope(self, job_id: int, material_scope: Dict[str, Any]) -> bool:
+        """Store the approved material scope on a pending job."""
+        result = await self.db.execute(
+            text("""
+                UPDATE sap_ingestion_jobs
+                SET material_scope = :scope, updated_at = NOW()
+                WHERE id = :jid AND tenant_id = :tid AND status = 'pending'
+                RETURNING id
+            """),
+            {"scope": json.dumps(material_scope), "jid": job_id, "tid": self.tenant_id}
+        )
+        await self.db.commit()
+        return result.rowcount > 0
 
     async def cancel_job(self, job_id: int) -> bool:
         """Cancel a running or pending job."""

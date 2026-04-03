@@ -1030,9 +1030,14 @@ class SAPDataStagingService:
             comp_qty = float(row.get("component_quantity", 1))
             scrap = float(row.get("scrap_percentage", 0))
 
+            bom_usage = str(row.get("bom_usage", "")).strip() or None
+            ratio = float(row.get("ratio", 0) or 0) or None
+
             if existing:
                 existing.component_quantity = comp_qty
                 existing.scrap_percentage = scrap
+                existing.bom_usage = bom_usage
+                existing.ratio = ratio
                 existing.source = "SAP_STPO"
                 existing.source_update_dttm = datetime.utcnow()
                 updated += 1
@@ -1048,6 +1053,8 @@ class SAPDataStagingService:
                     alternate_group=int(row.get("alternate_group", 1)),
                     priority=int(row.get("priority", 1)),
                     is_active=row.get("is_active", "true"),
+                    bom_usage=bom_usage,
+                    ratio=ratio,
                     source="SAP_STPO",
                     source_update_dttm=datetime.utcnow(),
                 ))

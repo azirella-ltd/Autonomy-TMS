@@ -182,14 +182,102 @@ Six systems: Counterfactual Computation, Propensity-Score Matching, Bayesian Ove
 
 **TRM Hive Model**: Each site's TRM agents form a self-organizing hive. Site-specific composition based on `master_type` (manufacturers: 11, DCs: 7, retailers: 6, market: 1). See `site_capabilities.py`.
 
-**Multi-Site Coordination Stack** (5 layers):
-- Layer 1 — Intra-Hive (<10ms): UrgencyVector + HiveSignalBus
-- Layer 1.5 — Site tGNN (hourly): Learned cross-TRM causal coordination (~25K params)
-- Layer 2 — Network tGNN (daily): Inter-site directives
-- Layer 3 — AAP Cross-Authority (seconds-minutes): Authorization requests
-- Layer 4 — S&OP Consensus Board (weekly): Policy parameters
+#### Multi-Site Coordination Stack (5 layers)
 
-**Digital Twin Training Pipeline** (7 phases): Individual BC → Simulation RL (PPO) → Multi-head coordinated traces → Site tGNN training → Stochastic stress-testing → Copilot calibration → Autonomous CDC relearning.
+Context, guardrails, and targets flow **down** from strategic to execution. Feedback, outcomes, and escalations flow **up** from execution to strategic.
+
+**Layer 1 — Intra-Hive (<10ms): Stigmergic Coordination**
+- `hive_signal.py`: 25 typed signals across 5 castes (Scout, Forager, Nurse, Guard, Builder)
+- `HiveSignalBus`: Shared ring buffer (200 signals) with exponential decay (pheromone model)
+- `UrgencyVector`: 11-slot shared array (one per TRM), thread-safe, decay threshold 0.05
+- Decay math: `strength(t) = urgency × exp(-0.693 × elapsed_min / half_life_min)`
+- Signal half-life default 30 min (intra-hive), 12 hours (inter-hive)
+- TRMs emit signals on condition detection → other TRMs read active signals when deciding
+
+**Layer 1.5 — Site tGNN (hourly): Learned Cross-TRM Causal Coordination**
+- `site_tgnn.py`: GATv2+GRU, ~25K params, 22 directed causal edges, <5ms inference
+- Always enabled (no feature flag). Cold-start returns neutral output (zero adjustments)
+- Runs BEFORE each decision cycle — modulates UrgencyVector with [-0.3, +0.3] adjustments
+- Training: 3-phase (BC from oracle → PPO in digital twin [stub] → calibration from outcomes)
+- Provisioning step 14. Checkpoints tenant/config/site scoped
+- `site_tgnn_inference_service.py`: Loads checkpoint, persists GRU hidden state across ticks
+- `site_tgnn_oracle.py`: MultiTRMCoordinationOracle generates 500+ BC samples per site
+
+**Layer 2 — Network tGNN (daily): Inter-Site Directives**
+- `inter_hive_signal.py`: 8 inter-hive signal types with 12-hour half-lives
+- `directive_broadcast_service.py`: Broadcasts tGNNSiteDirective to each site's SiteAgent
+- `tactical_hive_coordinator.py`: 3 parallel specialized tGNNs (demand, supply, inventory) with lateral convergence (re-run if signals deviate >5%)
+- Inter-hive signals mapped to local HiveSignalTypes when injected into site bus
+
+**Layer 3 — AAP Cross-Authority (seconds-minutes): Agentic Authorization Protocol**
+- `authorization_protocol.py`: Three-phase protocol — EVALUATE → REQUEST → AUTHORIZE
+- `authorization_service.py`: Production service with DB persistence (`authorization_models.py`)
+- `strategy_a2a_responder.py`: Routes authorization requests to domain-specific TRM evaluators
+  - MO TRM: spare capacity ≥20% → AUTHORIZE; 5-20% → COUNTER_OFFER; <5% → DENY
+  - PO TRM: active expedites vs threshold
+  - Rebalancing TRM: source surplus above safety stock
+- Authority boundaries per TRM role: UNILATERAL / REQUIRES_AUTHORIZATION / FORBIDDEN
+- Balanced Scorecard net-benefit scoring: auto-AUTHORIZE if benefit > 1.1× threshold
+- Counter-offer mechanism with revised BSC for resource contention
+- `negotiation_service.py`: Carrier/supplier negotiation workflow
+
+**Layer 4 — S&OP Consensus Board (weekly): Policy Parameters**
+- S&OP GraphSAGE computes network-wide policy parameters θ
+- Parameters cascade: safety_stock_multiplier, criticality_score, bottleneck_risk, resilience_score, demand_forecast, exception_probability
+- `site_agent.py` `apply_directive()`: Injects inter-hive signals + extracts S&OP params → pushes to TRMs via `apply_network_context()`
+
+#### Downward Flow: Context, Targets, Guardrails
+
+```
+S&OP GraphSAGE (weekly) → policy parameters θ
+    ↓
+Network tGNN (daily) → tGNNSiteDirective per site
+    ↓ (directive_broadcast_service.py)
+SiteAgent.apply_directive():
+    1. Inject inter-hive signals into local HiveSignalBus
+    2. Extract S&OP params (safety_stock_multiplier, criticality, etc.)
+    3. Push params to TRMs via apply_network_context()
+    ↓
+Site tGNN (hourly) → modulate UrgencyVector [-0.3, +0.3]
+    ↓
+11 TRM Agents → execution decisions (<10ms)
+```
+
+#### Upward Flow: Feedback, Escalation, Override
+
+```
+TRM detects persistent drift (48h lookback, ≥20 decisions)
+    ↑ (escalation_arbiter.py)
+Escalation Arbiter evaluates:
+    - Direction, magnitude, consistency of adjustments
+    - Cross-site pattern (>30% of sites = strategic)
+    ↑
+Routing:
+    - Horizontal (CDC retrain): single site/TRM drift
+    - Operational (tGNN refresh): magnitude 20-35%, <30% sites
+    - Strategic (S&OP review): magnitude >35%, >30% sites
+    ↑
+Human Override → Experiential Knowledge → agent retraining
+```
+
+#### Key Implementation Files
+
+| Component | File | Lines |
+|-----------|------|-------|
+| Hive signals | `services/powell/hive_signal.py` | ~250 |
+| Hive feedback | `services/powell/hive_feedback.py` | |
+| Site tGNN model | `models/gnn/site_tgnn.py` | ~270 |
+| Site tGNN trainer | `services/powell/site_tgnn_trainer.py` | ~650 |
+| Site tGNN oracle | `services/powell/site_tgnn_oracle.py` | ~630 |
+| Site tGNN inference | `services/powell/site_tgnn_inference_service.py` | ~400 |
+| Inter-hive signals | `services/powell/inter_hive_signal.py` | ~150 |
+| Directive broadcast | `services/powell/directive_broadcast_service.py` | ~300 |
+| Tactical coordinator | `services/powell/tactical_hive_coordinator.py` | |
+| AAP protocol | `services/authorization_protocol.py` | ~500 |
+| AAP service | `services/authorization_service.py` | |
+| A2A responder | `services/strategy_a2a_responder.py` | |
+| Escalation arbiter | `services/powell/escalation_arbiter.py` | ~330 |
+| Site agent | `services/powell/site_agent.py` | ~1750 |
 
 **ERP-Aware Heuristic Library**: 3,908 lines, 11 TRM types × 3 ERPs. Location: `backend/app/services/powell/heuristic_library/`.
 
@@ -304,3 +392,21 @@ Hybrid TRM + Claude Skills architecture. TRMs primary (~95%, <10ms), Claude Skil
 **Status**: SUBSTANTIALLY COMPLETE (Feb 2026). See [ARCHITECTURAL_REFACTORING_PLAN.md](../ARCHITECTURAL_REFACTORING_PLAN.md).
 
 Completed: AWS SC 100%, 96+ pages, terminology renames, TRM Hive, AAP, CDC→Relearning, SAP integration, Claude Skills, Two-Tier Navigation, User Management CRUD, 16-step provisioning, decision_level rename.
+
+---
+
+## MCP Live Operations Layer (Apr 2026)
+
+**Purpose**: Bidirectional ERP communication via Model Context Protocol for ongoing operations. Bulk extraction retained for provisioning only.
+
+**Inbound (CDC)**: MCP polls ERP every 1-5 min → DeltaClassifier → ContextEngine → HiveSignalBus (TRM signals).
+
+**Outbound (Write-back)**: TRM decisions → adaptive delay (urgency/confidence-scaled, business-hours-aware) → MCP tool call → ERP document (PO/MO/TO/SO update).
+
+**Key Design**: No decision is written to ERP immediately. Every decision gets an adaptive cooling period. Countdown only ticks during business hours. Humans can override pre-execution (cancel) or post-execution (compensating reversal). On-call notification for after-hours urgent decisions.
+
+**Adapters**: SAP S/4HANA, Odoo, D365 F&O. Planned: SAP B1, NetSuite, Infor.
+
+**Files**: `integrations/mcp/` (client, config, audit, context_engine, writeback_service, scheduler, adapters/), `models/operating_schedule.py`, `services/oversight_schedule_service.py`.
+
+**Docs**: [AGENT_GUARDRAILS_AND_AIIO.md](internal/AGENT_GUARDRAILS_AND_AIIO.md) Section 16.

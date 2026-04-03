@@ -117,6 +117,7 @@ INFOR_FIELD_MAPPINGS: Dict[str, Dict[str, Tuple[str, str]]] = {
         "WAPC": ("product_bom", "scrap_percentage"),
         "FDAT": ("product_bom", "eff_start_date"),
         "TDAT": ("product_bom", "eff_end_date"),
+        "STRT": ("product_bom", "structure_type"),  # 001=Standard, 002=Phantom
     },
     "InventoryBalance": {
         "ITNO": ("inv_level", "product_id"),

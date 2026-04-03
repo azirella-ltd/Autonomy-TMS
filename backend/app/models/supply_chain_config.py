@@ -113,6 +113,7 @@ class SupplyChainConfig(Base):
     uses_delta_storage = Column(Boolean, nullable=False, default=True)
     version = Column(Integer, nullable=False, default=1)
     snapshot_data = Column(JSON, nullable=True)  # Full snapshot for materialized configs
+    attributes = Column(JSON, nullable=True, default=dict)  # Flexible metadata (build state, extraction audit, etc.)
     branched_at = Column(DateTime, nullable=True)
     committed_at = Column(DateTime, nullable=True)
 

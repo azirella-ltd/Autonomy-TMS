@@ -1,0 +1,39 @@
+LIFNR,NAME1,LAND1,ORT01,PSTLZ,STRAS,REGIO
+0010200001,Supplier/Customer for Intrastat (HU,HU,Budapest,1032,1139 Váci út 71 60,
+0010300001,Inlandslieferant DE 1,DE,Haltern am See,45721,Hullerner Straße 23,NW
+0010300002,Inlandslieferant DE 2,DE,Gotha,99867,Kirchhög 78,TH
+0010300007,"Inland-Lohnbearbeiter A, DE",DE,Alleringersleben,39343,Hauptstraße 12,ST
+0010200001,Supplier/Customer for Intrastat (HU,HU,Budapest,1032,1139 Váci út 71 60,
+EWM10-SU01,EWM-Lieferant 01,DE,Berlin,13089,Blankenburger Straße 8,BE
+0017300001,Domestic US Supplier 1,US,Muncie,47305-2757,198 S Ohio Ave,IN
+0017300002,Domestic US Supplier 2,US,Bismarck,58504-5573,121 E Sweet Ave,ND
+0017300003,Domestic US Supplier 3 (with ERS),US,San Diego,92128-6167,18861 Caminito Cantilena,CA
+0017300006,Domestic US Supplier 6 (Returns),US,Wichita,67202-3723,100 S Main St,KS
+0017300007,Domestic US Subcontractor A,US,Blacksburg,24060-7206,200 GILES RD,VA
+EWM17-SU01,EWM Supplier 01,US,Atlanta,30344,100 Main Street,GA
+0017300016,Domestic US Supplier Financing 2,US,San Diego,92128,120 Caminito Pasadero,CA
+0017300050,Foreign Supplier US 50 (CA),CA,Toronto,M4B 3C3,3999 North Street,ON
+0017300051,Foreign Supplier US 51 (DE),DE,Haltern am See,45721,Hullerner Straße 23,NW
+0010300006,Inlandslieferant DE 6 (Retouren),DE,Hamburg,22767,Holstenstraße 1142,HH
+0017300002,Domestic US Supplier 2,US,Bismarck,58504-5573,121 E Sweet Ave,ND
+0017300007,Domestic US Subcontractor A,US,Blacksburg,24060-7206,200 GILES RD,VA
+EWM17-SU01,EWM Supplier 01,US,Atlanta,30344,100 Main Street,GA
+USSU-VSF01,EV Parts Inc.,US,New York,10029,12 Madisson Avenue,NY
+USSU-VSF02,WaveCrest Labs,US,Norwalk,06851,10 Newton Ave.,CT
+USSU-VSF04,USSU-VSF04,US,CHICAGO,60606,,IL
+USSU-VSF05,VF Vendor 05,US,PHILADELPHIA,19141,,PA
+USSU-VSF06,VF Vendor 06,US,NORWALK,06851,,CT
+USSU-VSF07,VF Vendor 07,US,PHILADELPHIA,19148,,PA
+USSU-VSF08,VF Vendor 08,US,MANVILLE,08835,,NJ
+0010300002,Inlandslieferant DE 2,DE,Gotha,99867,Kirchhög 78,TH
+0010300006,Inlandslieferant DE 6 (Retouren),DE,Hamburg,22767,Holstenstraße 1142,HH
+EWM10-SU01,EWM-Lieferant 01,DE,Berlin,13089,Blankenburger Straße 8,BE
+0010300007,"Inland-Lohnbearbeiter A, DE",DE,Alleringersleben,39343,Hauptstraße 12,ST
+0010300001,Inlandslieferant DE 1,DE,Haltern am See,45721,Hullerner Straße 23,NW
+0017300003,Domestic US Supplier 3 (with ERS),US,San Diego,92128-6167,18861 Caminito Cantilena,CA
+0017300001,Domestic US Supplier 1,US,Muncie,47305-2757,198 S Ohio Ave,IN
+0017300006,Domestic US Supplier 6 (Returns),US,Wichita,67202-3723,100 S Main St,KS
+0017300050,Foreign Supplier US 50 (CA),CA,Toronto,M4B 3C3,3999 North Street,ON
+0017300051,Foreign Supplier US 51 (DE),DE,Haltern am See,45721,Hullerner Straße 23,NW
+0017300084,Domestic US Supplier 84 (EDI),US,Louisville,40202-3202,416 West Jefferson,KY
+0017300016,Domestic US Supplier Financing 2,US,San Diego,92128,120 Caminito Pasadero,CA

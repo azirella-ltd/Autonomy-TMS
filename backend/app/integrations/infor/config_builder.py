@@ -298,6 +298,12 @@ class InforConfigBuilder:
             result.inv_movements_applied = await _safe("InvMovements", self._apply_inv_movements(
                 data.get("InventoryTransaction", [])))
 
+            # Phase 5b: Demand-derived planning BOMs (Infor has no native planning BOM)
+            planning_bom_count = await _safe("PlanningBOMs",
+                self._build_demand_derived_planning_boms(
+                    data.get("Forecast", []), data.get("BillOfMaterial", [])))
+            result.boms_created += planning_bom_count
+
             # Derivation fallbacks for empty entities
             derived_counts = await self._run_derivation_fallbacks(data)
 
@@ -709,7 +715,13 @@ class InforConfigBuilder:
         return count
 
     async def _build_boms(self, bom_lines: List[Dict]) -> int:
-        """BillOfMaterial → ProductBOM."""
+        """BillOfMaterial → ProductBom.
+
+        Infor M3 has Standard and Phantom BOMs. There is no native planning
+        BOM in M3, so all standard BOMs are tagged as production BOMs
+        (bom_usage not set). A demand-derived planning BOM step runs
+        afterwards via _build_demand_derived_planning_boms().
+        """
         count = 0
         for line in bom_lines:
             prno = str(line.get("PRNO", "")).strip()
@@ -722,13 +734,19 @@ class InforConfigBuilder:
             if not product_id or not component_id:
                 continue
 
+            # M3 STRT (structure type): 001=Standard, 002=Phantom
+            # Standard BOMs → no bom_usage (production); Phantom → skip for planning
+            strt = str(line.get("STRT", "001")).strip()
+            if strt == "002":
+                continue  # Skip phantom BOMs
+
             await self.db.execute(text("""
                 INSERT INTO product_bom (config_id, product_id, component_product_id,
                     component_quantity, component_uom, scrap_percentage,
-                    eff_start_date, eff_end_date, is_active)
+                    eff_start_date, eff_end_date, is_active, source)
                 VALUES (:config_id, :product_id, :component_id,
                     :qty, :uom, :scrap,
-                    :start_date, :end_date, 'true')
+                    :start_date, :end_date, 'true', 'Infor_BOM')
                 ON CONFLICT DO NOTHING
             """), {
                 "config_id": self._config_id,
@@ -743,6 +761,81 @@ class InforConfigBuilder:
             count += 1
 
         logger.info("  BOMs: %d components created", count)
+        return count
+
+    async def _build_demand_derived_planning_boms(
+        self,
+        forecast_data: List[Dict],
+        bom_lines: List[Dict],
+    ) -> int:
+        """Derive planning BOMs from demand history when no native planning BOM exists.
+
+        For Infor M3 (which lacks planning BOMs), we compute proportional
+        ratios from demand/forecast data to create planning BOM entries.
+        These are tagged bom_usage='planning', source='demand_derived'.
+
+        The ratio field represents the proportional demand split for each
+        finished good that uses a common component (co-product planning).
+        """
+        if not forecast_data or not bom_lines:
+            return 0
+
+        # Build component → list of parent products from existing BOMs
+        component_parents: Dict[str, List[str]] = {}
+        for line in bom_lines:
+            prno = str(line.get("PRNO", "")).strip()
+            mtno = str(line.get("MTNO", "")).strip()
+            if prno and mtno:
+                parent_id = self._product_id_map.get(prno)
+                comp_id = self._product_id_map.get(mtno)
+                if parent_id and comp_id:
+                    component_parents.setdefault(comp_id, []).append(parent_id)
+
+        # Aggregate demand by product
+        demand_totals: Dict[str, float] = {}
+        for fc in forecast_data:
+            itno = str(fc.get("ITNO", fc.get("ItemNumber", ""))).strip()
+            pid = self._product_id_map.get(itno)
+            if pid:
+                qty = _safe_float(fc.get("FCQT", fc.get("ForecastQty")), 0)
+                demand_totals[pid] = demand_totals.get(pid, 0) + qty
+
+        count = 0
+        total_demand = sum(demand_totals.values())
+        if total_demand <= 0:
+            return 0
+
+        # For each component with multiple parents, create planning BOM
+        # entries with ratio based on demand proportions
+        for comp_id, parents in component_parents.items():
+            if len(parents) < 2:
+                continue  # Only relevant for shared components
+
+            parent_demands = {p: demand_totals.get(p, 0) for p in parents}
+            parent_total = sum(parent_demands.values())
+            if parent_total <= 0:
+                continue
+
+            for parent_id in parents:
+                ratio = parent_demands[parent_id] / parent_total
+                if ratio <= 0:
+                    continue
+
+                await self.db.execute(text("""
+                    INSERT INTO product_bom (config_id, product_id, component_product_id,
+                        component_quantity, ratio, bom_usage, is_active, source)
+                    VALUES (:config_id, :product_id, :component_id,
+                        1.0, :ratio, 'planning', 'true', 'demand_derived')
+                    ON CONFLICT DO NOTHING
+                """), {
+                    "config_id": self._config_id,
+                    "product_id": parent_id,
+                    "component_id": comp_id,
+                    "ratio": round(ratio, 4),
+                })
+                count += 1
+
+        logger.info("  Demand-derived planning BOMs: %d entries created", count)
         return count
 
     # ── Phase 3: Inventory ───────────────────────────────────────────────

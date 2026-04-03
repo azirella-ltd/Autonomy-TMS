@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   Card,
   CardContent,
@@ -9,705 +10,542 @@ import {
   Input,
   Spinner,
   Modal,
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
+  Textarea,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
 } from '../../components/common';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import {
-  CheckCircle,
-  TrendingUp,
-  Calculator,
+  Package,
   RefreshCw,
-  Search,
+  Edit3,
+  Save,
+  X,
   AlertTriangle,
-  Info,
-  ShieldCheck,
+  CheckCircle,
+  Users,
+  BarChart3,
+  Layers,
 } from 'lucide-react';
-import { Line, Bar } from 'react-chartjs-2';
 import { api } from '../../services/api';
 
+/* ------------------------------------------------------------------ */
+/*  Allocation Override Page (AIIO model — agent already allocated)    */
+/* ------------------------------------------------------------------ */
+
 const ATPCTPView = () => {
+  const { effectiveConfigId } = useActiveConfig();
+
+  // Data
+  const [allocations, setAllocations] = useState([]);
+  const [atpData, setAtpData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
 
-  // Filters
-  const [productId, setProductId] = useState('');
-  const [siteId, setSiteId] = useState('');
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
+  // Hierarchy filters
+  const [dimensions, setDimensions] = useState(null);
+  const [productNodeId, setProductNodeId] = useState('');
+  const [geoFilter, setGeoFilter] = useState('');
 
-  // ATP data
-  const [atpAvailability, setAtpAvailability] = useState(null);
-  const [calculateAtpDialogOpen, setCalculateAtpDialogOpen] = useState(false);
-  const [atpRequest, setAtpRequest] = useState({
-    product_id: '',
-    site_id: '',
-    start_date: new Date(),
-    end_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
-    atp_rule: 'cumulative',
-  });
+  // Override state
+  const [overrideRowIdx, setOverrideRowIdx] = useState(null);
+  const [overrideQty, setOverrideQty] = useState('');
+  const [overridePriority, setOverridePriority] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  // CTP data
-  const [ctpAvailability, setCtpAvailability] = useState(null);
-  const [calculateCtpDialogOpen, setCalculateCtpDialogOpen] = useState(false);
-  const [ctpRequest, setCtpRequest] = useState({
-    product_id: '',
-    site_id: '',
-    start_date: new Date(),
-    end_date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-    include_production_capacity: true,
-    check_component_availability: true,
-    check_resource_capacity: true,
-  });
-
-  // Order promise
-  const [promiseDialogOpen, setPromiseDialogOpen] = useState(false);
-  const [promiseRequest, setPromiseRequest] = useState({
-    order_id: '',
-    order_line_number: 1,
-    product_id: '',
-    site_id: '',
-    customer_id: '',
-    requested_quantity: 0,
-    requested_date: new Date(),
-    allow_partial: true,
-    allow_substitute: false,
-    allow_backorder: true,
-  });
-  const [promiseResult, setPromiseResult] = useState(null);
-
-  const [activeTab, setActiveTab] = useState('atp');
-
+  // ---- Load hierarchy dimensions ----
   useEffect(() => {
-    if (productId && siteId) {
-      loadData();
-    }
-  }, [activeTab, productId, siteId, startDate, endDate]);
+    if (!effectiveConfigId) return;
+    api.get('/demand-plan/hierarchy-dimensions', { params: { config_id: effectiveConfigId } })
+      .then(res => setDimensions(res.data))
+      .catch(() => setDimensions(null));
+  }, [effectiveConfigId]);
 
-  const loadData = async () => {
+  // ---- Load allocations + ATP data ----
+  const loadData = useCallback(async () => {
+    if (!effectiveConfigId) return;
     setLoading(true);
     setError(null);
-
     try {
-      if (activeTab === 'atp') {
-        await loadAtpAvailability();
-      } else if (activeTab === 'ctp') {
-        await loadCtpAvailability();
-      }
+      const params = { config_id: effectiveConfigId };
+      if (productNodeId) params.product_node_id = productNodeId;
+      if (geoFilter) params.geo_id = geoFilter;
+
+      const [atpRes] = await Promise.all([
+        api.get('/inventory-projection/atp/availability', { params }),
+      ]);
+
+      const atp = atpRes.data;
+      setAtpData(atp);
+
+      // Build allocation rows from ATP response
+      // The ATP endpoint returns allocations per customer/product/site
+      const rows = atp.allocations || atp.future_atp || [];
+      setAllocations(rows.map((r, i) => ({
+        id: r.id || i,
+        customer: r.customer_name || r.customer_id || `Customer ${r.customer_id || i + 1}`,
+        customer_id: r.customer_id,
+        product: r.product_name || r.product_id || 'N/A',
+        product_id: r.product_id,
+        site: r.site_name || r.site_id || 'N/A',
+        site_id: r.site_id,
+        allocated_qty: r.allocated_qty ?? r.cumulative_atp ?? r.discrete_atp ?? 0,
+        requested_qty: r.requested_qty ?? r.demand_qty ?? 0,
+        fill_pct: r.fill_pct ?? (r.requested_qty ? ((r.allocated_qty || 0) / r.requested_qty * 100) : 100),
+        priority: r.priority ?? r.priority_tier ?? 'P3',
+        status: r.status || 'ACTIONED',
+        date: r.date || r.allocation_date,
+      })));
     } catch (err) {
-      setError(err.response?.data?.detail || err.message);
+      setError(err.response?.data?.detail || err.message || 'Failed to load allocation data');
+      setAllocations([]);
     } finally {
       setLoading(false);
     }
+  }, [effectiveConfigId, productNodeId, geoFilter]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // ---- Computed summary metrics ----
+  const totalAllocated = allocations.reduce((s, a) => s + (a.allocated_qty || 0), 0);
+  const totalRequested = allocations.reduce((s, a) => s + (a.requested_qty || 0), 0);
+  const availableToPromise = atpData?.current_atp ?? atpData?.total_available ?? 0;
+  const customersServed = new Set(allocations.map(a => a.customer_id || a.customer)).size;
+  const overallFillRate = totalRequested > 0 ? (totalAllocated / totalRequested * 100) : 0;
+
+  // ---- Override handlers ----
+  const startOverride = (idx) => {
+    const row = allocations[idx];
+    setOverrideRowIdx(idx);
+    setOverrideQty(String(row.allocated_qty));
+    setOverridePriority(row.priority || 'P3');
+    setOverrideReason('');
   };
 
-  const loadAtpAvailability = async () => {
-    const params = { product_id: productId, site_id: siteId };
-    if (startDate) params.start_date = startDate.toISOString().split('T')[0];
-    if (endDate) params.end_date = endDate.toISOString().split('T')[0];
-
-    const response = await api.get('/inventory-projection/atp/availability', { params });
-    setAtpAvailability(response.data);
+  const cancelOverride = () => {
+    setOverrideRowIdx(null);
+    setOverrideQty('');
+    setOverridePriority('');
+    setOverrideReason('');
   };
 
-  const loadCtpAvailability = async () => {
-    const params = { product_id: productId, site_id: siteId };
-    if (startDate) params.start_date = startDate.toISOString().split('T')[0];
-    if (endDate) params.end_date = endDate.toISOString().split('T')[0];
-
-    const response = await api.get('/inventory-projection/ctp/availability', { params });
-    setCtpAvailability(response.data);
-  };
-
-  const handleCalculateAtp = async () => {
+  const saveOverride = async () => {
+    if (!overrideReason.trim()) {
+      setError('Reasoning is required for allocation overrides (AIIO: OVERRIDDEN).');
+      return;
+    }
+    const row = allocations[overrideRowIdx];
+    setSaving(true);
+    setError(null);
     try {
-      setLoading(true);
-      const response = await api.post('/inventory-projection/atp/calculate', atpRequest);
-      alert(`ATP calculated successfully! ${response.data.length} periods generated.`);
-      setCalculateAtpDialogOpen(false);
-      setError(null);
-      await loadAtpAvailability();
+      await api.post('/demand-plan/override', {
+        config_id: effectiveConfigId,
+        product_id: row.product_id,
+        site_id: row.site_id,
+        customer_id: row.customer_id,
+        plan_version: 'decision_action',
+        override_type: 'allocation',
+        new_value: parseFloat(overrideQty),
+        priority: overridePriority,
+        reason: overrideReason.trim(),
+        status: 'OVERRIDDEN',
+      });
+      setSuccess('Allocation override saved as decision_action.');
+      cancelOverride();
+      await loadData();
     } catch (err) {
-      setError(err.response?.data?.detail || err.message);
+      setError(err.response?.data?.detail || err.message || 'Failed to save override');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const handleCalculateCtp = async () => {
-    try {
-      setLoading(true);
-      const response = await api.post('/inventory-projection/ctp/calculate', ctpRequest);
-      alert(`CTP calculated successfully! ${response.data.length} periods generated.`);
-      setCalculateCtpDialogOpen(false);
-      setError(null);
-      await loadCtpAvailability();
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ---- Hierarchy filter helpers ----
+  const renderProductFilter = () => {
+    if (!dimensions?.product_tree?.length) return null;
+    const tree = dimensions.product_tree;
+    const childrenOf = (parentId) => tree.filter(n => n.parent_id === parentId);
+    const findNode = (id) => tree.find(n => n.id === id);
 
-  const handlePromiseOrder = async () => {
-    try {
-      setLoading(true);
-      const response = await api.post('/inventory-projection/promise', promiseRequest);
-      setPromiseResult(response.data);
-      setError(null);
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message);
-    } finally {
-      setLoading(false);
+    const breadcrumb = [];
+    let cur = productNodeId ? findNode(parseInt(productNodeId)) : null;
+    while (cur) {
+      breadcrumb.unshift(cur);
+      cur = cur.parent_id ? findNode(cur.parent_id) : null;
     }
-  };
+    const children = productNodeId
+      ? childrenOf(parseInt(productNodeId))
+      : tree.filter(n => !n.parent_id);
 
-  const renderFilters = () => (
-    <Card className="mb-6">
-      <CardContent className="pt-4">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-          <div className="space-y-2">
-            <Label htmlFor="productId">Product ID *</Label>
-            <Input
-              id="productId"
-              type="number"
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              placeholder="Enter product ID"
-            />
+    return (
+      <div>
+        <label className="text-xs font-medium text-muted-foreground block mb-1">Product</label>
+        {breadcrumb.length > 0 && (
+          <div className="flex items-center gap-1 mb-1 text-xs">
+            <button className="text-primary hover:underline" onClick={() => setProductNodeId('')}>
+              All
+            </button>
+            {breadcrumb.map((n, i) => (
+              <span key={n.id} className="flex items-center gap-1">
+                <span className="text-muted-foreground">/</span>
+                <button
+                  className={i === breadcrumb.length - 1 ? 'font-semibold' : 'text-primary hover:underline'}
+                  onClick={() => setProductNodeId(String(n.id))}
+                >
+                  {n.name}
+                </button>
+              </span>
+            ))}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="siteId">Site ID *</Label>
-            <Input
-              id="siteId"
-              type="number"
-              value={siteId}
-              onChange={(e) => setSiteId(e.target.value)}
-              placeholder="Enter site ID"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="startDate">Start Date</Label>
-            <Input
-              id="startDate"
-              type="date"
-              value={startDate ? startDate.toISOString().split('T')[0] : ''}
-              onChange={(e) => setStartDate(e.target.value ? new Date(e.target.value) : null)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="endDate">End Date</Label>
-            <Input
-              id="endDate"
-              type="date"
-              value={endDate ? endDate.toISOString().split('T')[0] : ''}
-              onChange={(e) => setEndDate(e.target.value ? new Date(e.target.value) : null)}
-            />
-          </div>
-          <Button
-            onClick={loadData}
-            disabled={!productId || !siteId}
-            className="w-full"
-            leftIcon={<Search className="h-4 w-4" />}
+        )}
+        {children.length > 0 && (
+          <select
+            className="border rounded px-2 py-1.5 text-sm w-52"
+            value=""
+            onChange={e => { if (e.target.value) setProductNodeId(e.target.value); }}
           >
-            Search
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
-  const renderAtpTab = () => (
-    <div>
-      <div className="flex gap-2 mb-4">
-        <Button
-          onClick={() => setCalculateAtpDialogOpen(true)}
-          leftIcon={<Calculator className="h-4 w-4" />}
-        >
-          Calculate ATP
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => setPromiseDialogOpen(true)}
-          leftIcon={<CheckCircle className="h-4 w-4" />}
-        >
-          Promise Order
-        </Button>
+            <option value="">
+              {productNodeId ? `Drill into ${findNode(parseInt(productNodeId))?.name || ''}...` : 'Select product group...'}
+            </option>
+            {children.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+          </select>
+        )}
       </div>
+    );
+  };
 
-      {!productId || !siteId ? (
-        <Alert variant="info">
-          <Info className="h-4 w-4" />
-          <span className="ml-2">Please enter Product ID and Site ID to view ATP availability</span>
-        </Alert>
-      ) : atpAvailability ? (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Current ATP</p>
-                <p className="text-3xl font-bold text-green-600">
-                  {atpAvailability.current_atp?.toFixed(0) || 'N/A'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Available-to-Promise now
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Total Available</p>
-                <p className="text-3xl font-bold text-blue-600">
-                  {atpAvailability.total_available?.toFixed(0) || 'N/A'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Total quantity available
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Uncommitted Inventory</p>
-                <p className="text-3xl font-bold text-primary">
-                  {atpAvailability.uncommitted_inventory?.toFixed(0) || 'N/A'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Inventory not yet promised
-                </p>
-              </CardContent>
-            </Card>
+  const renderGeoFilter = () => {
+    if (!dimensions?.geography?.length) return null;
+    const childrenOf = (parentId) => dimensions.geography.filter(g => g.parent_id === parentId);
+    const findGeo = (id) => dimensions.geography.find(g => g.id === id);
+
+    const breadcrumb = [];
+    let current = geoFilter ? findGeo(geoFilter) : null;
+    while (current) {
+      breadcrumb.unshift(current);
+      current = current.parent_id ? findGeo(current.parent_id) : null;
+    }
+    const children = geoFilter ? childrenOf(geoFilter) : dimensions.geography.filter(g => !g.parent_id);
+
+    return (
+      <div>
+        <label className="text-xs font-medium text-muted-foreground block mb-1">Geography</label>
+        {breadcrumb.length > 0 && (
+          <div className="flex items-center gap-1 mb-1 text-xs">
+            <button className="text-primary hover:underline" onClick={() => setGeoFilter('')}>
+              All
+            </button>
+            {breadcrumb.map((g, i) => (
+              <span key={g.id} className="flex items-center gap-1">
+                <span className="text-muted-foreground">/</span>
+                <button
+                  className={i === breadcrumb.length - 1 ? 'font-semibold' : 'text-primary hover:underline'}
+                  onClick={() => setGeoFilter(g.id)}
+                >
+                  {g.name}
+                </button>
+              </span>
+            ))}
           </div>
-
-          {atpAvailability.future_atp && atpAvailability.future_atp.length > 0 && (
-            <Card>
-              <CardContent className="pt-4">
-                <h3 className="text-lg font-semibold mb-4">ATP Projection</h3>
-                <Line
-                  data={{
-                    labels: atpAvailability.future_atp.map((a) => a.date),
-                    datasets: [
-                      {
-                        label: 'Cumulative ATP',
-                        data: atpAvailability.future_atp.map((a) => a.cumulative_atp),
-                        borderColor: 'rgb(75, 192, 192)',
-                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                        tension: 0.1,
-                      },
-                      {
-                        label: 'Discrete ATP',
-                        data: atpAvailability.future_atp.map((a) => a.discrete_atp),
-                        borderColor: 'rgb(54, 162, 235)',
-                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                        tension: 0.1,
-                      },
-                    ],
-                  }}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: { position: 'top' },
-                      title: {
-                        display: true,
-                        text: 'ATP Over Time',
-                      },
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Quantity' },
-                      },
-                    },
-                  }}
-                />
-              </CardContent>
-            </Card>
-          )}
-        </>
-      ) : (
-        <Alert variant="info">
-          No ATP data available. Click "Calculate ATP" to generate.
-        </Alert>
-      )}
-    </div>
-  );
-
-  const renderCtpTab = () => (
-    <div>
-      <div className="mb-4">
-        <Button
-          onClick={() => setCalculateCtpDialogOpen(true)}
-          leftIcon={<Calculator className="h-4 w-4" />}
-        >
-          Calculate CTP
-        </Button>
+        )}
+        {children.length > 0 && (
+          <select
+            className="border rounded px-2 py-1.5 text-sm w-52"
+            value=""
+            onChange={e => { if (e.target.value) setGeoFilter(e.target.value); }}
+          >
+            <option value="">
+              {geoFilter ? `Drill into ${findGeo(geoFilter)?.name || ''}...` : 'Select region...'}
+            </option>
+            {children.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        )}
       </div>
+    );
+  };
 
-      {!productId || !siteId ? (
-        <Alert variant="info">
-          <Info className="h-4 w-4" />
-          <span className="ml-2">Please enter Product ID and Site ID to view CTP availability</span>
-        </Alert>
-      ) : ctpAvailability ? (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Card>
-              <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Current CTP</p>
-                <p className="text-3xl font-bold text-primary">
-                  {ctpAvailability.current_ctp?.toFixed(0) || 'N/A'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Capable-to-Promise now
-                </p>
-              </CardContent>
-            </Card>
-            <Card className="md:col-span-2">
-              <CardContent className="pt-4">
-                <h3 className="text-lg font-semibold mb-2">Capacity Constraints</h3>
-                {ctpAvailability.constraints && ctpAvailability.constraints.length > 0 ? (
-                  <div className="flex gap-2 flex-wrap">
-                    {ctpAvailability.constraints.map((c, idx) => (
-                      <Badge key={idx} variant="warning" className="flex items-center gap-1">
-                        <AlertTriangle className="h-3 w-3" />
-                        {c}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <Badge variant="success" className="flex items-center gap-1">
-                    <CheckCircle className="h-3 w-3" />
-                    No constraints
-                  </Badge>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+  // ---- Render ----
+  const formatNum = (n) => (n != null ? Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '--');
+  const formatPct = (n) => (n != null ? `${Number(n).toFixed(1)}%` : '--');
 
-          {ctpAvailability.future_ctp && ctpAvailability.future_ctp.length > 0 && (
-            <Card>
-              <CardContent className="pt-4">
-                <h3 className="text-lg font-semibold mb-4">CTP Projection</h3>
-                <Bar
-                  data={{
-                    labels: ctpAvailability.future_ctp.map((c) => c.date),
-                    datasets: [
-                      {
-                        label: 'CTP Quantity',
-                        data: ctpAvailability.future_ctp.map((c) => c.ctp_qty),
-                        backgroundColor: ctpAvailability.future_ctp.map((c) =>
-                          c.constrained
-                            ? 'rgba(255, 99, 132, 0.6)'
-                            : 'rgba(54, 162, 235, 0.6)'
-                        ),
-                      },
-                    ],
-                  }}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: { position: 'top' },
-                      title: {
-                        display: true,
-                        text: 'CTP Over Time (Red = Constrained)',
-                      },
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        title: { display: true, text: 'Quantity' },
-                      },
-                    },
-                  }}
-                />
-              </CardContent>
-            </Card>
-          )}
-        </>
-      ) : (
-        <Alert variant="info">
-          No CTP data available. Click "Calculate CTP" to generate.
-        </Alert>
-      )}
-    </div>
-  );
+  const getPriorityColor = (p) => {
+    const s = String(p).toUpperCase();
+    if (s === 'P1' || s === '1') return 'destructive';
+    if (s === 'P2' || s === '2') return 'warning';
+    return 'secondary';
+  };
+
+  const getStatusColor = (s) => {
+    if (s === 'OVERRIDDEN') return 'warning';
+    if (s === 'ACTIONED') return 'success';
+    return 'secondary';
+  };
+
+  const getFillColor = (pct) => {
+    if (pct >= 95) return 'text-green-600';
+    if (pct >= 80) return 'text-yellow-600';
+    return 'text-red-600';
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-bold">ATP/CTP Analysis</h1>
+      {/* Header */}
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <div className="flex items-center gap-2">
+            <Layers className="h-7 w-7 text-primary" />
+            <h1 className="text-2xl font-bold">Allocation Override</h1>
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">
+            Review agent-generated ATP allocations and override with reasoning
+          </p>
         </div>
         <Button
           variant="outline"
           onClick={loadData}
-          disabled={!productId || !siteId}
-          leftIcon={<RefreshCw className="h-4 w-4" />}
+          disabled={loading}
+          leftIcon={<RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />}
         >
           Refresh
         </Button>
       </div>
 
+      {/* Alerts */}
       {error && (
         <Alert variant="destructive" className="mb-4" onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
+      {success && (
+        <Alert variant="success" className="mb-4" onClose={() => setSuccess(null)}>
+          <CheckCircle className="h-4 w-4 inline mr-1" />
+          {success}
+        </Alert>
+      )}
 
-      {renderFilters()}
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="atp" className="flex items-center gap-2">
-            <CheckCircle className="h-4 w-4" />
-            ATP (Available-to-Promise)
-          </TabsTrigger>
-          <TabsTrigger value="ctp" className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            CTP (Capable-to-Promise)
-          </TabsTrigger>
-        </TabsList>
-
-        {loading ? (
-          <div className="flex justify-center p-8">
-            <Spinner size="lg" />
-          </div>
-        ) : (
-          <>
-            <TabsContent value="atp">{renderAtpTab()}</TabsContent>
-            <TabsContent value="ctp">{renderCtpTab()}</TabsContent>
-          </>
-        )}
-      </Tabs>
-
-      {/* Calculate ATP Dialog */}
-      <Modal
-        isOpen={calculateAtpDialogOpen}
-        onClose={() => setCalculateAtpDialogOpen(false)}
-        title="Calculate ATP"
-      >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="atpProductId">Product ID</Label>
-            <Input
-              id="atpProductId"
-              type="number"
-              value={atpRequest.product_id}
-              onChange={(e) =>
-                setAtpRequest({ ...atpRequest, product_id: parseInt(e.target.value) })
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="atpSiteId">Site ID</Label>
-            <Input
-              id="atpSiteId"
-              type="number"
-              value={atpRequest.site_id}
-              onChange={(e) =>
-                setAtpRequest({ ...atpRequest, site_id: parseInt(e.target.value) })
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="atpRule">ATP Rule</Label>
-            <Select
-              value={atpRequest.atp_rule}
-              onValueChange={(value) => setAtpRequest({ ...atpRequest, atp_rule: value })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select ATP rule" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="discrete">Discrete (Period-by-period)</SelectItem>
-                <SelectItem value="cumulative">Cumulative (Running total)</SelectItem>
-                <SelectItem value="rolling">Rolling (Moving window)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 mt-6">
-          <Button variant="outline" onClick={() => setCalculateAtpDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleCalculateAtp} disabled={loading}>
-            {loading ? <Spinner size="sm" className="mr-2" /> : null}
-            Calculate
-          </Button>
-        </div>
-      </Modal>
-
-      {/* Calculate CTP Dialog */}
-      <Modal
-        isOpen={calculateCtpDialogOpen}
-        onClose={() => setCalculateCtpDialogOpen(false)}
-        title="Calculate CTP"
-      >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="ctpProductId">Product ID</Label>
-            <Input
-              id="ctpProductId"
-              type="number"
-              value={ctpRequest.product_id}
-              onChange={(e) =>
-                setCtpRequest({ ...ctpRequest, product_id: parseInt(e.target.value) })
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ctpSiteId">Site ID</Label>
-            <Input
-              id="ctpSiteId"
-              type="number"
-              value={ctpRequest.site_id}
-              onChange={(e) =>
-                setCtpRequest({ ...ctpRequest, site_id: parseInt(e.target.value) })
-              }
-            />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 mt-6">
-          <Button variant="outline" onClick={() => setCalculateCtpDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleCalculateCtp} disabled={loading}>
-            {loading ? <Spinner size="sm" className="mr-2" /> : null}
-            Calculate
-          </Button>
-        </div>
-      </Modal>
-
-      {/* Promise Order Dialog */}
-      <Modal
-        isOpen={promiseDialogOpen}
-        onClose={() => {
-          setPromiseDialogOpen(false);
-          setPromiseResult(null);
-        }}
-        title="Promise Order"
-        size="lg"
-      >
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="orderId">Order ID</Label>
-              <Input
-                id="orderId"
-                value={promiseRequest.order_id}
-                onChange={(e) => setPromiseRequest({ ...promiseRequest, order_id: e.target.value })}
-              />
+      {/* Hierarchy Filters */}
+      {dimensions && (
+        <Card className="mb-6">
+          <CardContent className="pt-4">
+            <div className="flex flex-wrap items-end gap-6">
+              {renderProductFilter()}
+              {renderGeoFilter()}
+              {(productNodeId || geoFilter) && (
+                <Button variant="ghost" size="sm" onClick={() => { setProductNodeId(''); setGeoFilter(''); }}>
+                  Clear Filters
+                </Button>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="promiseProductId">Product ID</Label>
-              <Input
-                id="promiseProductId"
-                type="number"
-                value={promiseRequest.product_id}
-                onChange={(e) =>
-                  setPromiseRequest({ ...promiseRequest, product_id: parseInt(e.target.value) })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="promiseSiteId">Site ID</Label>
-              <Input
-                id="promiseSiteId"
-                type="number"
-                value={promiseRequest.site_id}
-                onChange={(e) =>
-                  setPromiseRequest({ ...promiseRequest, site_id: parseInt(e.target.value) })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="requestedQuantity">Requested Quantity</Label>
-              <Input
-                id="requestedQuantity"
-                type="number"
-                value={promiseRequest.requested_quantity}
-                onChange={(e) =>
-                  setPromiseRequest({
-                    ...promiseRequest,
-                    requested_quantity: parseFloat(e.target.value),
-                  })
-                }
-              />
-            </div>
-          </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {promiseResult && (
-            <Alert
-              variant={promiseResult.can_promise ? 'success' : 'warning'}
-              className="mt-4"
-            >
-              <div>
-                <h4 className="font-semibold text-lg">
-                  {promiseResult.can_promise
-                    ? 'Order Can Be Promised'
-                    : 'Cannot Fully Promise Order'}
-                </h4>
-                <p className="mt-1">
-                  Promised Quantity: {promiseResult.promised_quantity} | Promised Date:{' '}
-                  {promiseResult.promised_date} | Source: {promiseResult.promise_source}
-                </p>
-                <p className="text-sm mt-1">
-                  Confidence: {(promiseResult.confidence * 100).toFixed(0)}%
-                </p>
-                {promiseResult.risk_bound != null && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <Badge variant={promiseResult.risk_bound < 0.1 ? 'success' : promiseResult.risk_bound < 0.3 ? 'warning' : 'destructive'} className="gap-1">
-                      <ShieldCheck className="h-3 w-3" />
-                      Risk: {(promiseResult.risk_bound * 100).toFixed(1)}%
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">P(loss {'>'} threshold) from CDT</span>
-                  </div>
-                )}
-                {promiseResult.demand_interval && (
-                  <div className="mt-2 text-xs text-muted-foreground">
-                    Demand interval: [{promiseResult.demand_interval.lower?.toFixed(0)} — {promiseResult.demand_interval.upper?.toFixed(0)}]
-                    {promiseResult.demand_interval.coverage && (
-                      <span className="ml-1">({(promiseResult.demand_interval.coverage * 100).toFixed(0)}% coverage)</span>
-                    )}
-                  </div>
-                )}
-                {promiseResult.confidence_factors &&
-                  promiseResult.confidence_factors.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {promiseResult.confidence_factors.map((factor, idx) => (
-                        <Badge key={idx} variant="secondary">
-                          {factor}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-              </div>
-            </Alert>
-          )}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Package className="h-4 w-4 text-blue-500" />
+              <p className="text-sm text-muted-foreground">Total Allocated</p>
+            </div>
+            <p className="text-3xl font-bold text-blue-600">{formatNum(totalAllocated)}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              of {formatNum(totalRequested)} requested
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="h-4 w-4 text-green-500" />
+              <p className="text-sm text-muted-foreground">Available to Promise</p>
+            </div>
+            <p className="text-3xl font-bold text-green-600">{formatNum(availableToPromise)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Remaining ATP</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Users className="h-4 w-4 text-purple-500" />
+              <p className="text-sm text-muted-foreground">Customers Served</p>
+            </div>
+            <p className="text-3xl font-bold text-purple-600">{customersServed}</p>
+            <p className="text-xs text-muted-foreground mt-1">Unique customers</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2 mb-1">
+              <CheckCircle className="h-4 w-4 text-emerald-500" />
+              <p className="text-sm text-muted-foreground">Fill Rate</p>
+            </div>
+            <p className={`text-3xl font-bold ${getFillColor(overallFillRate)}`}>
+              {formatPct(overallFillRate)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">Overall allocation fill</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Allocation Table */}
+      {loading ? (
+        <div className="flex justify-center p-12">
+          <Spinner size="lg" />
         </div>
-        <div className="flex justify-end gap-2 mt-6">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setPromiseDialogOpen(false);
-              setPromiseResult(null);
-            }}
-          >
-            Close
-          </Button>
-          <Button onClick={handlePromiseOrder} disabled={loading}>
-            {loading ? <Spinner size="sm" className="mr-2" /> : null}
-            Promise
-          </Button>
-        </div>
-      </Modal>
+      ) : allocations.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+            <p className="text-muted-foreground">
+              No allocation data available.
+              {!effectiveConfigId && ' No active configuration detected.'}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Current Allocations</h3>
+              <span className="text-sm text-muted-foreground">{allocations.length} allocations</span>
+            </div>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Site</TableHead>
+                    <TableHead className="text-right">Allocated</TableHead>
+                    <TableHead className="text-right">Requested</TableHead>
+                    <TableHead className="text-right">Fill %</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allocations.map((row, idx) => (
+                    <React.Fragment key={row.id}>
+                      <TableRow className={overrideRowIdx === idx ? 'bg-amber-50' : ''}>
+                        <TableCell className="font-medium">{row.customer}</TableCell>
+                        <TableCell>{row.product}</TableCell>
+                        <TableCell>{row.site}</TableCell>
+                        <TableCell className="text-right font-mono">{formatNum(row.allocated_qty)}</TableCell>
+                        <TableCell className="text-right font-mono">{formatNum(row.requested_qty)}</TableCell>
+                        <TableCell className={`text-right font-mono ${getFillColor(row.fill_pct)}`}>
+                          {formatPct(row.fill_pct)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getPriorityColor(row.priority)}>{row.priority}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={getStatusColor(row.status)}>{row.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {overrideRowIdx !== idx && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => startOverride(idx)}
+                              leftIcon={<Edit3 className="h-3 w-3" />}
+                            >
+                              Override
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+
+                      {/* Inline override controls */}
+                      {overrideRowIdx === idx && (
+                        <TableRow className="bg-amber-50 border-t-0">
+                          <TableCell colSpan={9}>
+                            <div className="py-3 px-2 space-y-3">
+                              <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
+                                <AlertTriangle className="h-4 w-4" />
+                                Override Allocation — AIIO: OVERRIDDEN
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-1">
+                                  <Label htmlFor="override-qty">Adjusted Quantity</Label>
+                                  <Input
+                                    id="override-qty"
+                                    type="number"
+                                    value={overrideQty}
+                                    onChange={e => setOverrideQty(e.target.value)}
+                                    min={0}
+                                  />
+                                  <p className="text-xs text-muted-foreground">
+                                    Remaining ATP: {formatNum(availableToPromise + row.allocated_qty - (parseFloat(overrideQty) || 0))}
+                                  </p>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor="override-priority">Priority Override</Label>
+                                  <select
+                                    id="override-priority"
+                                    className="border rounded px-2 py-1.5 text-sm w-full"
+                                    value={overridePriority}
+                                    onChange={e => setOverridePriority(e.target.value)}
+                                  >
+                                    <option value="P1">P1 - Critical</option>
+                                    <option value="P2">P2 - High</option>
+                                    <option value="P3">P3 - Standard</option>
+                                    <option value="P4">P4 - Low</option>
+                                    <option value="P5">P5 - Opportunistic</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor="override-reason">
+                                    Reasoning <span className="text-red-500">*</span>
+                                  </Label>
+                                  <Textarea
+                                    id="override-reason"
+                                    value={overrideReason}
+                                    onChange={e => setOverrideReason(e.target.value)}
+                                    placeholder="Required: explain why this override is needed..."
+                                    rows={2}
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 justify-end">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={cancelOverride}
+                                  disabled={saving}
+                                  leftIcon={<X className="h-3 w-3" />}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={saveOverride}
+                                  disabled={saving || !overrideReason.trim()}
+                                  leftIcon={saving ? <Spinner size="sm" /> : <Save className="h-3 w-3" />}
+                                >
+                                  {saving ? 'Saving...' : 'Save Override'}
+                                </Button>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

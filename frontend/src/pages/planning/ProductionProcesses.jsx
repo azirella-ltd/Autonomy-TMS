@@ -68,7 +68,7 @@ const ProductionProcesses = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get('/api/v1/production-process/');
+      const response = await api.get('/production-process/');
       setProcesses(response.data || []);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load production processes');
@@ -161,9 +161,9 @@ const ProductionProcesses = () => {
       };
 
       if (editingItem) {
-        await api.put(`/api/v1/production-process/${editingItem.id}`, payload);
+        await api.put(`/production-process/${editingItem.id}`, payload);
       } else {
-        await api.post('/api/v1/production-process/', payload);
+        await api.post('/production-process/', payload);
       }
       setDialogOpen(false);
       fetchProcesses();
@@ -175,7 +175,7 @@ const ProductionProcesses = () => {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this production process?')) return;
     try {
-      await api.delete(`/api/v1/production-process/${id}`);
+      await api.delete(`/production-process/${id}`);
       fetchProcesses();
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to delete process');

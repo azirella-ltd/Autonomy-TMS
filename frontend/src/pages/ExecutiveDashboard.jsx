@@ -400,24 +400,23 @@ const SOPWorklistPreview = ({ items, onViewAll }) => {
 // ROI Card
 // =============================================================================
 
-const ROICard = ({ data }) => {
+const ROICard = ({ data, configId }) => {
   const [erpComp, setErpComp] = useState(null);
 
   useEffect(() => {
-    api.get('/scenario-planning/erp-comparison', { params: { config_id: 129 } })
+    if (!configId) return;
+    api.get('/scenario-planning/erp-comparison', { params: { config_id: configId } })
       .then(res => setErpComp(res.data))
       .catch(() => {});
-  }, []);
+  }, [configId]);
 
-  // Prefer ERP comparison data over legacy calculation
+  // Compute ROI metrics from ERP comparison data — no hardcoded fallbacks
   const comp = erpComp?.comparison || {};
-  const orderSizeReduction = comp.avg_order_qty?.delta_pct; // -89.6% = smaller batches = less inventory
-  const invRed = orderSizeReduction ? Math.abs(Math.round(orderSizeReduction / 3)) : data?.inventory_reduction_pct;
-  const svcLvl = data?.service_level || 98.4;
-  const fcstFrom = data?.forecast_accuracy_from || 72;
-  const fcstTo = data?.forecast_accuracy_to || 82;
-  const horizonImprovement = comp.periods?.delta_pct; // 273% more planning periods
-  const revInc = horizonImprovement ? Math.round(horizonImprovement / 30) : data?.revenue_increase_pct;
+  const roiData = erpComp?.roi || {};
+  const invRed = roiData.inventory_reduction_pct ?? data?.inventory_reduction_pct;
+  const svcLvl = roiData.service_level ?? data?.service_level;
+  const fcstAcc = roiData.forecast_accuracy ?? data?.forecast_accuracy;
+  const revInc = roiData.revenue_increase_pct ?? data?.revenue_increase_pct;
 
   return (
     <Card>
@@ -446,8 +445,8 @@ const ROICard = ({ data }) => {
             </p>
           </div>
           <div className="space-y-1">
-            <p className={`text-2xl font-bold ${fcstFrom != null ? 'text-green-600' : 'text-muted-foreground'}`}>
-              {fcstFrom != null && fcstTo != null ? `${fcstFrom}% → ${fcstTo}%` : '--'}
+            <p className={`text-2xl font-bold ${fcstAcc != null ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {fcstAcc != null ? `${fcstAcc}%` : '--'}
             </p>
             <p className="text-xs text-muted-foreground">
               Forecast accuracy
@@ -862,7 +861,7 @@ const ExecutiveDashboard = () => {
               </CardContent>
             </Card>
           )}
-          <ROICard data={roi} />
+          <ROICard data={roi} configId={activeConfigId} />
         </div>
       </div>
 

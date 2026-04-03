@@ -159,7 +159,7 @@ const WorkspaceShell = () => {
 
     // Tenant admin / System admin → Administration only (no Decision Stream)
     if (isTenantAdm || isSysAdm) {
-      const adminPath = isSysAdm ? '/admin/tenants' : '/admin/user-management';
+      const adminPath = isSysAdm ? '/admin/tenants' : '/admin/tenant/supply-chain-configs';
       // Replace tabs entirely — admin doesn't get Decision Stream
       const adminTab = {
         id: ADMIN_TAB_ID,

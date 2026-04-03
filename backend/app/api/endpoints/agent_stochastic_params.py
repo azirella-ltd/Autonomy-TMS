@@ -125,7 +125,50 @@ async def list_stochastic_params(
         .where(and_(*filters))
         .order_by(AgentStochasticParam.trm_type, AgentStochasticParam.param_name)
     )
-    rows = result.scalars().all()
+    branch_rows = result.scalars().all()
+
+    # Scenario branch delta-merge: read parent params, overlay branch overrides.
+    # Branch only stores deltas (params the user explicitly changed).
+    # At read time: parent params + branch overrides (branch wins on key match).
+    from app.models.supply_chain_config import SupplyChainConfig
+    cfg_result = await db.execute(
+        select(SupplyChainConfig.parent_config_id).where(SupplyChainConfig.id == config_id)
+    )
+    parent_id = cfg_result.scalar_one_or_none()
+
+    if parent_id:
+        # Fetch parent params
+        parent_filters = [AgentStochasticParam.config_id == parent_id]
+        if trm_type:
+            parent_filters.append(AgentStochasticParam.trm_type == trm_type)
+        if site_id is not None:
+            parent_filters.append(AgentStochasticParam.site_id == site_id)
+        else:
+            parent_filters.append(AgentStochasticParam.site_id.is_(None))
+        parent_result = await db.execute(
+            select(AgentStochasticParam)
+            .where(and_(*parent_filters))
+            .order_by(AgentStochasticParam.trm_type, AgentStochasticParam.param_name)
+        )
+        parent_rows = parent_result.scalars().all()
+
+        # Merge: branch overrides win on (trm_type, param_name, site_id) key
+        branch_keys = {
+            (r.trm_type, r.param_name, r.site_id): r for r in branch_rows
+        }
+        merged = {}
+        for r in parent_rows:
+            key = (r.trm_type, r.param_name, r.site_id)
+            merged[key] = branch_keys.pop(key, r)  # branch wins if present
+        # Add any branch-only params (new params not in parent)
+        merged.update(branch_keys)
+        rows = sorted(merged.values(), key=lambda r: (r.trm_type, r.param_name))
+    else:
+        rows = branch_rows
+
+    def _is_override(r):
+        """True if this row is a branch override (config_id matches the branch, not the parent)."""
+        return parent_id is not None and r.config_id == config_id
 
     return [
         StochasticParamResponse(
@@ -138,8 +181,8 @@ async def list_stochastic_params(
             param_name=r.param_name,
             param_label=PARAM_LABELS.get(r.param_name, r.param_name),
             distribution=r.distribution,
-            is_default=r.is_default,
-            source=r.source,
+            is_default=r.is_default if not _is_override(r) else False,
+            source="scenario_override" if _is_override(r) else r.source,
             created_at=r.created_at.isoformat() if r.created_at else None,
             updated_at=r.updated_at.isoformat() if r.updated_at else None,
         )
@@ -151,19 +194,66 @@ async def list_stochastic_params(
 def update_stochastic_param(
     param_id: int,
     update: StochasticParamUpdate,
+    branch_config_id: Optional[int] = Query(None, description="Branch config ID for copy-on-write"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Update a single stochastic parameter distribution.
 
-    Marks the parameter as manually edited (is_default=False, source='manual_edit').
-    Future industry changes will NOT overwrite this value.
+    Copy-on-write for scenario branches: if the param belongs to a parent config
+    and branch_config_id is provided, creates a new override record on the branch
+    instead of modifying the parent. This keeps the parent pristine and the branch
+    stores only deltas (Kinaxis-style scenario isolation).
     """
     param = db.query(AgentStochasticParam).filter(
         AgentStochasticParam.id == param_id,
     ).first()
     if not param:
         raise HTTPException(status_code=404, detail="Stochastic parameter not found")
+
+    # Copy-on-write: if this param belongs to a parent and we're editing on a branch,
+    # create a new record on the branch instead of modifying the parent
+    if branch_config_id and param.config_id != branch_config_id:
+        from app.models.supply_chain_config import SupplyChainConfig
+        branch = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == branch_config_id).first()
+        if branch and branch.parent_config_id == param.config_id:
+            # Check if branch override already exists
+            existing = db.query(AgentStochasticParam).filter(
+                AgentStochasticParam.config_id == branch_config_id,
+                AgentStochasticParam.trm_type == param.trm_type,
+                AgentStochasticParam.param_name == param.param_name,
+                AgentStochasticParam.site_id == param.site_id,
+            ).first()
+            if existing:
+                # Update existing branch override
+                param = existing
+            else:
+                # Create new branch override (copy-on-write)
+                new_param = AgentStochasticParam(
+                    config_id=branch_config_id,
+                    tenant_id=param.tenant_id,
+                    site_id=param.site_id,
+                    trm_type=param.trm_type,
+                    param_name=param.param_name,
+                    distribution=update.distribution,
+                    is_default=False,
+                    source="scenario_override",
+                )
+                db.add(new_param)
+                db.commit()
+                db.refresh(new_param)
+                param = new_param
+                return StochasticParamResponse(
+                    id=param.id, config_id=param.config_id, tenant_id=param.tenant_id,
+                    site_id=param.site_id, trm_type=param.trm_type,
+                    trm_label=TRM_LABELS.get(param.trm_type, param.trm_type),
+                    param_name=param.param_name,
+                    param_label=PARAM_LABELS.get(param.param_name, param.param_name),
+                    distribution=param.distribution, is_default=False,
+                    source="scenario_override",
+                    created_at=param.created_at.isoformat() if param.created_at else None,
+                    updated_at=param.updated_at.isoformat() if param.updated_at else None,
+                )
 
     param.distribution = update.distribution
     param.is_default = False

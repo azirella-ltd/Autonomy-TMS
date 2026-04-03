@@ -62,6 +62,9 @@ const Governance = () => {
   const [simResult, setSimResult] = useState(null);
   const [simForm, setSimForm] = useState({ action_type: 'po_creation', estimated_impact: 5000, confidence_level: 0.8 });
   const [newDirective, setNewDirective] = useState(null);
+  const [oversightConfig, setOversightConfig] = useState(null);
+  const [weekSchedule, setWeekSchedule] = useState([]);
+  const [holidays, setHolidays] = useState([]);
 
   const tenantParam = user?.is_system_admin ? `?tenant_id=${user?.viewing_tenant_id || 3}` : '';
 
@@ -238,6 +241,10 @@ const Governance = () => {
                 <FileText className="h-4 w-4" />
                 Decision Log
               </TabsTrigger>
+              <TabsTrigger value="oversight" className="flex items-center gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary">
+                <Settings className="h-4 w-4" />
+                Oversight Schedule
+              </TabsTrigger>
               <TabsTrigger value="audit" className="flex items-center gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary">
                 <History className="h-4 w-4" />
                 Audit Trail
@@ -307,6 +314,9 @@ const Governance = () => {
                   action_type: '', automate_below: 20, inform_below: 50,
                   hold_minutes: 60, weight_financial: 0.30, weight_scope: 0.20,
                   weight_reversibility: 0.20, weight_confidence: 0.15, weight_override_rate: 0.15,
+                  writeback_enabled: true, writeback_base_delay_minutes: 30,
+                  writeback_min_delay_minutes: 5, writeback_max_delay_minutes: 480,
+                  writeback_urgency_weight: 1.0, writeback_confidence_weight: 1.0,
                   is_active: true, priority: 100, name: '', description: '',
                 })} leftIcon={<Plus className="h-4 w-4" />}>
                   New Policy
@@ -352,6 +362,12 @@ const Governance = () => {
                               Inspect &ge; {policy.inform_below}
                             </span>
                             <Badge variant="secondary">Hold: {policy.hold_minutes}min</Badge>
+                            {policy.writeback_enabled !== false && (
+                              <Badge variant="outline">Writeback: {policy.writeback_min_delay_minutes ?? 5}-{policy.writeback_max_delay_minutes ?? 480}min</Badge>
+                            )}
+                            {policy.writeback_enabled === false && (
+                              <Badge variant="destructive">Writeback: OFF</Badge>
+                            )}
                           </div>
                         </div>
                         <div className="flex gap-1">
@@ -527,6 +543,180 @@ const Governance = () => {
             </Table>
           </TabsContent>
 
+          {/* ── Oversight Schedule Tab ─────────────────────── */}
+          <TabsContent value="oversight" className="p-4">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Human Oversight Schedule</h2>
+                <p className="text-sm text-muted-foreground">
+                  Write-back delays only count down during these hours. Decisions outside hours wait for the next operating window.
+                </p>
+              </div>
+              <Button variant="outline" onClick={async () => {
+                try {
+                  const res = await api.get(`/v1/governance/oversight${tenantParam}`);
+                  setOversightConfig(res.data.config || {
+                    timezone: 'UTC', respect_business_hours: true,
+                    urgent_bypass_enabled: true, urgent_bypass_threshold: 0.85,
+                    extend_delay_over_weekends: true, max_calendar_delay_hours: 72,
+                    oncall_enabled: false,
+                  });
+                  setWeekSchedule(res.data.schedule || []);
+                  setHolidays(res.data.holidays || []);
+                } catch { setOversightConfig({ timezone: 'UTC', respect_business_hours: true, urgent_bypass_enabled: true, urgent_bypass_threshold: 0.85, extend_delay_over_weekends: true, max_calendar_delay_hours: 72, oncall_enabled: false }); setWeekSchedule([]); }
+              }} leftIcon={<RefreshCw className="h-4 w-4" />}>
+                Load
+              </Button>
+            </div>
+
+            {oversightConfig && (
+              <div className="space-y-6">
+                {/* General Settings */}
+                <Card>
+                  <CardContent className="p-4 space-y-4">
+                    <h3 className="font-medium">General Settings</h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Timezone (IANA)</label>
+                        <Input value={oversightConfig.timezone || 'UTC'}
+                          onChange={(e) => setOversightConfig({ ...oversightConfig, timezone: e.target.value })}
+                          placeholder="America/Chicago" />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium mb-1 block">Max calendar delay (hours)</label>
+                        <Input type="number" value={oversightConfig.max_calendar_delay_hours ?? 72}
+                          onChange={(e) => setOversightConfig({ ...oversightConfig, max_calendar_delay_hours: parseInt(e.target.value) })} />
+                        <p className="text-xs text-muted-foreground mt-1">Cap to prevent indefinite hold over long weekends</p>
+                      </div>
+                      <div className="space-y-2 pt-5">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={oversightConfig.respect_business_hours !== false}
+                            onChange={(e) => setOversightConfig({ ...oversightConfig, respect_business_hours: e.target.checked })}
+                            className="rounded border-gray-300" />
+                          Respect business hours
+                        </label>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={oversightConfig.extend_delay_over_weekends !== false}
+                            onChange={(e) => setOversightConfig({ ...oversightConfig, extend_delay_over_weekends: e.target.checked })}
+                            className="rounded border-gray-300" />
+                          Pause over non-operating days
+                        </label>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Urgent Bypass */}
+                <Card>
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-medium">Urgent Bypass</h3>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={oversightConfig.urgent_bypass_enabled !== false}
+                          onChange={(e) => setOversightConfig({ ...oversightConfig, urgent_bypass_enabled: e.target.checked })}
+                          className="rounded border-gray-300" />
+                        Enabled
+                      </label>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Decisions with urgency above the threshold ignore business hours and execute after the raw delay.
+                      The write-back is still audited and visible in Decision Stream.
+                    </p>
+                    {oversightConfig.urgent_bypass_enabled !== false && (
+                      <div className="w-64">
+                        <label className="text-sm font-medium mb-1 block">Urgency threshold</label>
+                        <div className="flex items-center gap-2">
+                          <Input type="number" step="0.05" min="0.5" max="1.0"
+                            value={oversightConfig.urgent_bypass_threshold ?? 0.85}
+                            onChange={(e) => setOversightConfig({ ...oversightConfig, urgent_bypass_threshold: parseFloat(e.target.value) })} />
+                          <span className="text-sm text-muted-foreground">({Math.round((oversightConfig.urgent_bypass_threshold ?? 0.85) * 100)}%)</span>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Weekly Schedule */}
+                <Card>
+                  <CardContent className="p-4">
+                    <h3 className="font-medium mb-3">Weekly Operating Hours</h3>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-32">Day</TableHead>
+                          <TableHead>Operating</TableHead>
+                          <TableHead>Start</TableHead>
+                          <TableHead>End</TableHead>
+                          <TableHead>Hours</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, idx) => {
+                          const sched = weekSchedule.find(s => s.day_of_week === idx) || {
+                            day_of_week: idx,
+                            is_operating: idx < 5,
+                            start_time: '08:00',
+                            end_time: '17:00',
+                          };
+                          const updateDay = (field, value) => {
+                            const updated = weekSchedule.filter(s => s.day_of_week !== idx);
+                            updated.push({ ...sched, [field]: value });
+                            setWeekSchedule(updated);
+                          };
+                          const hours = sched.is_operating
+                            ? ((parseInt(sched.end_time?.split(':')[0] || 17) - parseInt(sched.start_time?.split(':')[0] || 8)))
+                            : 0;
+                          return (
+                            <TableRow key={day}>
+                              <TableCell className="font-medium">{day}</TableCell>
+                              <TableCell>
+                                <input type="checkbox" checked={sched.is_operating !== false}
+                                  onChange={(e) => updateDay('is_operating', e.target.checked)}
+                                  className="rounded border-gray-300" />
+                              </TableCell>
+                              <TableCell>
+                                <Input type="time" value={sched.start_time || '08:00'}
+                                  disabled={!sched.is_operating}
+                                  onChange={(e) => updateDay('start_time', e.target.value)}
+                                  className="w-28" />
+                              </TableCell>
+                              <TableCell>
+                                <Input type="time" value={sched.end_time || '17:00'}
+                                  disabled={!sched.is_operating}
+                                  onChange={(e) => updateDay('end_time', e.target.value)}
+                                  className="w-28" />
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{hours}h</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+
+                {/* Save button */}
+                <div className="flex justify-end">
+                  <Button onClick={async () => {
+                    try {
+                      await api.put(`/v1/governance/oversight${tenantParam}`, {
+                        config: oversightConfig,
+                        schedule: weekSchedule,
+                        holidays,
+                      });
+                    } catch (err) { console.error('Failed to save oversight config:', err); }
+                  }} leftIcon={<Save className="h-4 w-4" />}>
+                    Save Oversight Schedule
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!oversightConfig && (
+              <Alert>Click Load to view and configure the oversight schedule.</Alert>
+            )}
+          </TabsContent>
+
           {/* ── Audit Trail Tab ───────────────────────────── */}
           <TabsContent value="audit" className="p-4">
             <div className="flex justify-between items-center mb-4">
@@ -634,6 +824,83 @@ const Governance = () => {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* ── ERP Write-back Delay Settings ──────────────────── */}
+            <div className="col-span-2 border-t pt-4 mt-2">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold">ERP Write-back Delay</label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={editingPolicy.writeback_enabled !== false}
+                    onChange={(e) => setEditingPolicy({ ...editingPolicy, writeback_enabled: e.target.checked })}
+                    className="rounded border-gray-300" />
+                  Enabled
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">
+                Every agent decision waits before writing to the ERP. Higher urgency and higher confidence shorten the delay.
+                During the delay, users can override in Decision Stream.
+              </p>
+              {editingPolicy.writeback_enabled !== false && (
+                <>
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Base delay (min)</label>
+                      <Input type="number" min="1" max="1440" value={editingPolicy.writeback_base_delay_minutes ?? 30}
+                        onChange={(e) => setEditingPolicy({ ...editingPolicy, writeback_base_delay_minutes: parseInt(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Min delay (floor)</label>
+                      <Input type="number" min="0" max="60" value={editingPolicy.writeback_min_delay_minutes ?? 5}
+                        onChange={(e) => setEditingPolicy({ ...editingPolicy, writeback_min_delay_minutes: parseInt(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Max delay (ceiling)</label>
+                      <Input type="number" min="30" max="2880" value={editingPolicy.writeback_max_delay_minutes ?? 480}
+                        onChange={(e) => setEditingPolicy({ ...editingPolicy, writeback_max_delay_minutes: parseInt(e.target.value) })} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 mb-2">
+                    <div>
+                      <label className="text-xs text-muted-foreground">Urgency weight</label>
+                      <Input type="number" step="0.1" min="0" max="2" value={editingPolicy.writeback_urgency_weight ?? 1.0}
+                        onChange={(e) => setEditingPolicy({ ...editingPolicy, writeback_urgency_weight: parseFloat(e.target.value) })} />
+                      <p className="text-xs text-muted-foreground mt-0.5">Higher = urgency reduces delay more</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">Confidence weight</label>
+                      <Input type="number" step="0.1" min="0" max="2" value={editingPolicy.writeback_confidence_weight ?? 1.0}
+                        onChange={(e) => setEditingPolicy({ ...editingPolicy, writeback_confidence_weight: parseFloat(e.target.value) })} />
+                      <p className="text-xs text-muted-foreground mt-0.5">Higher = confidence reduces delay more</p>
+                    </div>
+                  </div>
+                  {/* Live preview */}
+                  <div className="bg-slate-50 rounded p-3 mt-3">
+                    <p className="text-xs font-medium mb-1">Delay Preview</p>
+                    <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                      {[
+                        { label: 'Urgent + Confident', u: 0.9, c: 0.9 },
+                        { label: 'Medium', u: 0.5, c: 0.5 },
+                        { label: 'Low urgency + Uncertain', u: 0.2, c: 0.3 },
+                      ].map(({ label, u, c }) => {
+                        const base = editingPolicy.writeback_base_delay_minutes ?? 30;
+                        const uw = editingPolicy.writeback_urgency_weight ?? 1.0;
+                        const cw = editingPolicy.writeback_confidence_weight ?? 1.0;
+                        const floor = editingPolicy.writeback_min_delay_minutes ?? 5;
+                        const ceil = editingPolicy.writeback_max_delay_minutes ?? 480;
+                        const raw = base * Math.max(0.05, 1 - u * uw) * Math.max(0.5, 2 - c * cw);
+                        const clamped = Math.round(Math.max(floor, Math.min(ceil, raw)));
+                        return (
+                          <div key={label} className="bg-white rounded p-2 text-center">
+                            <div className="font-medium text-foreground">{clamped} min</div>
+                            <div>{label}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

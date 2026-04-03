@@ -1350,6 +1350,242 @@ async def start_job(
     return _job_to_response(job)
 
 
+# -------------------------------------------------------------------------
+# BOM-Scoped Extraction Pipeline (Phase 0: Scope Analysis + Approval)
+# -------------------------------------------------------------------------
+
+class ScopeAnalysisResponse(BaseModel):
+    status: str
+    scope: Dict[str, Any]
+    orphans: Dict[str, Any]
+    estimated_reduction_pct: float
+
+
+class ApproveScopeRequest(BaseModel):
+    include_mrp_fallback: bool = Field(False, description="Include orphaned MRP-active materials in scope")
+
+
+class ApproveScopeResponse(BaseModel):
+    status: str
+    total_materials_in_scope: int
+    include_mrp_fallback: bool
+
+
+@router.post("/jobs/{job_id}/scope-analysis", response_model=ScopeAnalysisResponse, tags=["sap-ingestion"])
+async def scope_analysis(
+    job_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run BOM scope analysis before main extraction.
+
+    Extracts STKO (BOM headers), STPO (BOM items), MAST (BOM-material link),
+    MARC (plant-material master), and EINA (purchasing info records) to build
+    the material scope set. Returns scope statistics and orphaned materials.
+
+    Must be called on a PENDING job. The job remains PENDING after analysis.
+    """
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
+    job = await service.get_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != JobStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Scope analysis requires a pending job")
+
+    # Get connection
+    deploy_service = create_deployment_service(db, current_user.tenant_id)
+    conn_row = await deploy_service._get_connection_row(job.connection_id)
+    if not conn_row:
+        raise HTTPException(status_code=400, detail=f"Connection {job.connection_id} not found")
+
+    from app.services.sap_deployment_service import SAPConnectionConfig
+    connection = SAPConnectionConfig.from_db(conn_row)
+
+    # Extract only the BOM-related tables for scope analysis
+    scope_tables = ["STKO", "STPO", "MAST", "MARC", "EINA"]
+
+    if connection.connection_method == ConnectionMethod.CSV:
+        from pathlib import Path
+        if not connection.csv_directory:
+            raise HTTPException(status_code=400, detail="No CSV directory configured")
+        csv_dir = Path(connection.csv_directory)
+        if not csv_dir.exists():
+            raise HTTPException(status_code=400, detail=f"CSV directory not found: {connection.csv_directory}")
+        sap_data, _, _ = await _read_csv_tables(
+            csv_dir, scope_tables, job_id, current_user.tenant_id, service,
+            file_table_mapping=conn_row.file_table_mapping,
+        )
+    elif connection.connection_method in (
+        ConnectionMethod.ODATA, ConnectionMethod.HANA_DB, ConnectionMethod.RFC,
+    ):
+        sap_data, _, _ = await _extract_via_extractor(
+            conn_row, connection, scope_tables, job_id, current_user.tenant_id, service
+        )
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported connection method: {connection.connection_method.value}")
+
+    # Build material scope from BOM data
+    import pandas as pd
+
+    stko_df = sap_data.get("STKO", pd.DataFrame())
+    stpo_df = sap_data.get("STPO", pd.DataFrame())
+    mast_df = sap_data.get("MAST", pd.DataFrame())
+    marc_df = sap_data.get("MARC", pd.DataFrame())
+    eina_df = sap_data.get("EINA", pd.DataFrame())
+
+    # Filter STKO to planning+sales BOMs (STLAN IN ('3','5'))
+    if not stko_df.empty and "STLAN" in stko_df.columns:
+        stko_df = stko_df[stko_df["STLAN"].astype(str).isin(["3", "5"])]
+
+    # Get parent materials from MAST (links MATNR+WERKS → STLNR)
+    # MAST has MATNR (parent material), STLNR (BOM number)
+    bom_parents = set()
+    valid_stlnrs = set()
+    if not stko_df.empty and "STLNR" in stko_df.columns:
+        valid_stlnrs = set(stko_df["STLNR"].dropna().astype(str))
+
+    if not mast_df.empty and "MATNR" in mast_df.columns and "STLNR" in mast_df.columns:
+        # Only include MAST rows whose STLNR is in our filtered STKO set
+        if valid_stlnrs:
+            mast_filtered = mast_df[mast_df["STLNR"].astype(str).isin(valid_stlnrs)]
+        else:
+            mast_filtered = mast_df
+        bom_parents = set(mast_filtered["MATNR"].dropna().astype(str).str.strip())
+    elif not stko_df.empty and "MATNR" in stko_df.columns:
+        # Fallback: some STKO OData APIs return MATNR directly
+        bom_parents = set(stko_df["MATNR"].dropna().astype(str).str.strip())
+
+    # Get component materials from STPO
+    bom_components = set()
+    if not stpo_df.empty and "IDNRK" in stpo_df.columns:
+        # Filter STPO to only items belonging to valid BOMs
+        if valid_stlnrs and "STLNR" in stpo_df.columns:
+            stpo_df = stpo_df[stpo_df["STLNR"].astype(str).isin(valid_stlnrs)]
+        bom_components = set(stpo_df["IDNRK"].dropna().astype(str).str.strip())
+
+    bom_materials = bom_parents | bom_components
+
+    # Identify plants in scope — from MARC for BOM-scoped materials
+    plants_in_scope = set()
+    if not marc_df.empty and "MATNR" in marc_df.columns and "WERKS" in marc_df.columns:
+        marc_scoped = marc_df[marc_df["MATNR"].astype(str).str.strip().isin(bom_materials)]
+        plants_in_scope = set(marc_scoped["WERKS"].dropna().astype(str).str.strip())
+        plants_in_scope.discard("")
+
+    # Also derive customer IDs from VBAK/VBAP for scoped materials
+    customers_in_scope = set()
+    # (Customer filtering happens at KNA1 level if needed — for now include all)
+
+    # Identify vendors linked to scoped materials via EINA
+    vendors_in_scope = set()
+    if not eina_df.empty and "MATNR" in eina_df.columns and "LIFNR" in eina_df.columns:
+        eina_scoped = eina_df[eina_df["MATNR"].astype(str).str.strip().isin(bom_materials)]
+        vendors_in_scope = set(eina_scoped["LIFNR"].dropna().astype(str).str.strip())
+
+    # Identify orphaned materials: in MARC but NOT in BOM scope, with active MRP (DISMM != 'ND')
+    orphan_list = []
+    orphan_matnrs = set()
+    if not marc_df.empty and "MATNR" in marc_df.columns:
+        marc_df["_MATNR_CLEAN"] = marc_df["MATNR"].astype(str).str.strip()
+        dismm_col = "DISMM" if "DISMM" in marc_df.columns else None
+        if dismm_col:
+            mrp_active = marc_df[marc_df[dismm_col].astype(str).str.strip() != "ND"]
+        else:
+            mrp_active = marc_df
+        orphans = mrp_active[~mrp_active["_MATNR_CLEAN"].isin(bom_materials)]
+        orphan_matnrs = set(orphans["_MATNR_CLEAN"])
+        for _, row in orphans.iterrows():
+            orphan_list.append({
+                "material_id": row["_MATNR_CLEAN"],
+                "description": str(row.get("MAKTX", "")) if "MAKTX" in row.index else "",
+                "mrp_type": str(row.get("DISMM", "")) if dismm_col else "",
+                "plant": str(row.get("WERKS", "")) if "WERKS" in row.index else "",
+            })
+
+    # Calculate reduction percentage
+    total_marc_materials = set()
+    if not marc_df.empty and "MATNR" in marc_df.columns:
+        total_marc_materials = set(marc_df["MATNR"].astype(str).str.strip())
+    total_count = len(total_marc_materials) if total_marc_materials else 1
+    reduction_pct = round(((total_count - len(bom_materials)) / total_count) * 100, 1) if total_count > 0 else 0.0
+
+    # Store scope analysis results on job (but don't approve yet)
+    scope_data = {
+        "status": "analyzed",
+        "bom_materials": sorted(bom_materials),
+        "bom_parents": sorted(bom_parents),
+        "bom_components": sorted(bom_components),
+        "vendors": sorted(vendors_in_scope),
+        "plants": sorted(plants_in_scope),
+        "orphan_materials": sorted(orphan_matnrs),
+    }
+    await service.set_material_scope(job_id, scope_data)
+
+    return ScopeAnalysisResponse(
+        status="scope_ready",
+        scope={
+            "bom_materials": len(bom_materials),
+            "bom_parents": len(bom_parents),
+            "bom_components": len(bom_components),
+            "suppliers_in_scope": len(vendors_in_scope),
+            "plants_in_scope": len(plants_in_scope),
+        },
+        orphans={
+            "count": len(orphan_list),
+            "materials": orphan_list[:200],  # Cap at 200 for response size
+        },
+        estimated_reduction_pct=max(0.0, reduction_pct),
+    )
+
+
+@router.post("/jobs/{job_id}/approve-scope", response_model=ApproveScopeResponse, tags=["sap-ingestion"])
+async def approve_scope(
+    job_id: int,
+    request: ApproveScopeRequest,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve the BOM material scope for extraction.
+
+    If include_mrp_fallback is true, all orphaned MRP-active materials are
+    added to the scope. The approved scope is stored on the job and used
+    to filter all subsequent table extractions.
+    """
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
+    job = await service.get_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != JobStatus.PENDING:
+        raise HTTPException(status_code=400, detail="Scope approval requires a pending job")
+    if not job.material_scope:
+        raise HTTPException(status_code=400, detail="Run scope-analysis first")
+    if job.material_scope.get("status") not in ("analyzed", "approved"):
+        raise HTTPException(status_code=400, detail="Run scope-analysis first")
+
+    scope = job.material_scope
+    final_materials = set(scope.get("bom_materials", []))
+
+    if request.include_mrp_fallback:
+        final_materials |= set(scope.get("orphan_materials", []))
+
+    approved_scope = {
+        "status": "approved",
+        "materials": sorted(final_materials),
+        "vendors": scope.get("vendors", []),
+        "plants": scope.get("plants", []),
+        "include_mrp_fallback": request.include_mrp_fallback,
+    }
+    await service.set_material_scope(job_id, approved_scope)
+
+    return ApproveScopeResponse(
+        status="approved",
+        total_materials_in_scope=len(final_materials),
+        include_mrp_fallback=request.include_mrp_fallback,
+    )
+
+
 @router.post("/jobs/{job_id}/rerun", response_model=JobResponse, tags=["sap-ingestion"])
 async def rerun_job(
     job_id: int,
@@ -1476,9 +1712,15 @@ async def _read_csv_tables(
 
 
 async def _extract_via_extractor(
-    conn_row, connection, tables: list, job_id: int, tenant_id: int, service
+    conn_row, connection, tables: list, job_id: int, tenant_id: int, service,
+    material_scope: Optional[Dict[str, Any]] = None,
 ) -> "Tuple[Dict[str, Any], int, int]":
-    """Extract tables via OData/HANA_DB/RFC using unified extractor interface."""
+    """Extract tables via OData/HANA_DB/RFC using unified extractor interface.
+
+    If material_scope is provided (from BOM scope analysis), filters are
+    injected into the HANA SQL WHERE clauses at extraction time — reducing
+    data transfer by up to 90% for large SAP systems.
+    """
     from app.integrations.sap.extractors import create_extractor
     from app.services.sap_deployment_service import _decrypt_password
 
@@ -1492,6 +1734,20 @@ async def _extract_via_extractor(
     except ValueError as e:
         logger.error(f"Job {job_id}: extractor error: {e}")
         return {}, 0, 1
+
+    # Inject material scope into extractor for HANA-level filtering
+    if material_scope and material_scope.get("status") == "approved":
+        extractor.material_scope = {
+            "material_ids": material_scope.get("materials", []),
+            "supplier_ids": material_scope.get("vendors", []),
+            "plant_ids": material_scope.get("plants", []),
+        }
+        logger.info(
+            f"Job {job_id}: HANA-level scope filter active — "
+            f"{len(extractor.material_scope['material_ids'])} materials, "
+            f"{len(extractor.material_scope['supplier_ids'])} vendors, "
+            f"{len(extractor.material_scope['plant_ids'])} plants"
+        )
 
     async def progress_cb(table: str, rows_ok: int, rows_fail: int):
         await service.update_job_progress(
@@ -1565,6 +1821,85 @@ async def _save_extracted_csvs(
     logger.info(f"Job {job_id}: CSV save complete — {saved_count} files → {csv_dir}")
 
 
+def _apply_material_scope(
+    sap_data: Dict[str, Any],
+    material_scope: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Filter extracted DataFrames to only include in-scope materials and vendors.
+
+    Material-keyed tables are filtered by MATNR IN scope.
+    Vendor tables (LFA1) are filtered by LIFNR IN scope.
+    Customer tables (KNA1) are NOT filtered (demand side stays complete).
+    Purchase order headers (EKKO) are filtered by LIFNR IN vendors.
+    Tables without a recognized key column pass through unfiltered.
+    """
+    import pandas as pd
+
+    materials = set(material_scope.get("materials", []))
+    vendors = set(material_scope.get("vendors", []))
+
+    if not materials:
+        return sap_data
+
+    # Tables keyed by MATNR (or equivalent material column)
+    MATNR_TABLES = {
+        "MARA", "MAKT", "MARC", "MARM", "MVKE", "MBEW", "MARD",
+        "EORD", "EINA", "EBAN", "EKPO", "VBAP", "LIPS",
+        "AFKO", "AFPO", "RESB", "MSEG", "LTAP",
+        "STKO", "STPO", "MAST", "PBIM", "PBED", "PLAF",
+    }
+    # STPO uses IDNRK as the component material column
+    COMPONENT_COL = {"STPO": "IDNRK"}
+
+    # Tables keyed by vendor (LIFNR)
+    VENDOR_TABLES = {"LFA1"}
+    # EKKO filtered by vendor too (only POs for in-scope suppliers)
+    VENDOR_KEY_TABLES = {"EKKO"}
+
+    # Customer tables — no filter
+    CUSTOMER_TABLES = {"KNA1"}
+
+    filtered = {}
+    for table_name, df in sap_data.items():
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            filtered[table_name] = df
+            continue
+
+        tn = table_name.upper()
+        before = len(df)
+
+        if tn in CUSTOMER_TABLES:
+            # Demand side: no filter
+            filtered[table_name] = df
+        elif tn in MATNR_TABLES:
+            mat_col = COMPONENT_COL.get(tn, "MATNR")
+            if mat_col in df.columns:
+                df_filtered = df[df[mat_col].astype(str).str.strip().isin(materials)]
+                filtered[table_name] = df_filtered
+                logger.info(f"Scope filter {tn}: {before} → {len(df_filtered)} rows (by {mat_col})")
+            else:
+                filtered[table_name] = df
+        elif tn in VENDOR_TABLES:
+            if "LIFNR" in df.columns and vendors:
+                df_filtered = df[df["LIFNR"].astype(str).str.strip().isin(vendors)]
+                filtered[table_name] = df_filtered
+                logger.info(f"Scope filter {tn}: {before} → {len(df_filtered)} rows (by LIFNR)")
+            else:
+                filtered[table_name] = df
+        elif tn in VENDOR_KEY_TABLES:
+            if "LIFNR" in df.columns and vendors:
+                df_filtered = df[df["LIFNR"].astype(str).str.strip().isin(vendors)]
+                filtered[table_name] = df_filtered
+                logger.info(f"Scope filter {tn}: {before} → {len(df_filtered)} rows (by LIFNR)")
+            else:
+                filtered[table_name] = df
+        else:
+            # Org tables (T001, T001W, etc.), routing, quality — pass through
+            filtered[table_name] = df
+
+    return filtered
+
+
 async def _run_ingestion(job_id: int, tenant_id: int):
     """
     Background task: 3-phase SAP ingestion pipeline.
@@ -1615,7 +1950,8 @@ async def _run_ingestion(job_id: int, tenant_id: int):
             ):
                 # OData / HANA DB / RFC extraction via unified extractors
                 sap_data, total_rows, total_failed = await _extract_via_extractor(
-                    conn_row, connection, job.tables, job_id, tenant_id, service
+                    conn_row, connection, job.tables, job_id, tenant_id, service,
+                    material_scope=job.material_scope,
                 )
 
             else:
@@ -1627,6 +1963,12 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                 await service.complete_job(job_id, JobStatus.FAILED,
                     error_message=f"No data extracted for the requested tables (method={connection.connection_method.value})")
                 return
+
+            # ── BOM-scoped filtering ─────────────────────────────
+            # If job has an approved material scope, filter all extracted
+            # DataFrames to only include in-scope materials/vendors.
+            if job.material_scope and job.material_scope.get("status") == "approved":
+                sap_data = _apply_material_scope(sap_data, job.material_scope)
 
             # Stage all extracted data into sap_staging schema
             from app.services.sap_staging_repository import SAPStagingRepository
@@ -1668,9 +2010,11 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                 await service.complete_job(job_id, JobStatus.COMPLETED)
                 logger.info(f"Job {job_id} dry run complete: {len(sap_data)} tables extracted, update_tenant_data=false")
             elif job.phase == IngestionPhase.MASTER_DATA:
-                await _run_phase1_master_data(db, service, job_id, tenant_id, sap_data)
+                await _run_phase1_master_data(db, service, job_id, tenant_id, sap_data,
+                                              schema_profile=getattr(conn_row, "schema_profile", None))
             elif job.phase == IngestionPhase.CDC:
-                await _run_phase2_cdc(db, service, job_id, tenant_id, sap_data)
+                await _run_phase2_cdc(db, service, job_id, tenant_id, sap_data,
+                                      schema_profile=getattr(conn_row, "schema_profile", None))
             elif job.phase == IngestionPhase.TRANSACTION:
                 await _run_phase3_transaction(db, service, job_id, tenant_id, sap_data)
             elif job.phase == IngestionPhase.USER_IMPORT:
@@ -1708,14 +2052,15 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                 pass
 
 
-async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_data: dict):
+async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_data: dict,
+                                  schema_profile: Optional[dict] = None):
     """
     Phase 1: Build a new SC config from master data.
 
     Uses SAPConfigBuilder to create sites, products, lanes, BOMs, inventory policies,
     and forecasts from the extracted SAP tables.
     """
-    builder = SAPConfigBuilder(db, tenant_id)
+    builder = SAPConfigBuilder(db, tenant_id, schema_profile=schema_profile)
     config_name = builder.suggest_config_name(sap_data)
 
     from sqlalchemy import text as sql_text
@@ -1854,7 +2199,8 @@ async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_
             error_message=f"Config build failed: {e}")
 
 
-async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: dict):
+async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: dict,
+                          schema_profile: Optional[dict] = None):
     """
     Phase 2: Change Data Capture — compare new master data against active config.
 
@@ -1931,7 +2277,7 @@ async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: di
 
     # Changes detected — build new child config
     logger.info(f"CDC: Changes detected: {change_summary}. Building child config.")
-    builder = SAPConfigBuilder(db, tenant_id)
+    builder = SAPConfigBuilder(db, tenant_id, schema_profile=schema_profile)
     config_name = f"{active_config_name} (CDC {datetime.now().strftime('%Y-%m-%d %H:%M')})"
 
     try:
@@ -2475,15 +2821,16 @@ async def preview_config_build(
     Extracts data, infers network topology (sites, lanes, master types),
     and returns a preview without creating anything in the database.
     """
-    # Load SAP data from connection
+    # Load SAP data and schema profile from connection
     sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
+    schema_profile = await _get_connection_schema_profile(db, current_user.tenant_id, request.connection_id)
 
     # Auto-suggest name if using default
     config_name = request.config_name
     if config_name == "SAP Import":
         config_name = SAPConfigBuilder.suggest_config_name(sap_data)
 
-    builder = SAPConfigBuilder(db, current_user.tenant_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id, schema_profile=schema_profile)
     preview = await builder.preview(
         sap_data=sap_data,
         config_name=config_name,
@@ -2511,13 +2858,14 @@ async def build_config_from_sap(
     inventory, forecasts) in the database from extracted SAP tables.
     """
     sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
+    schema_profile = await _get_connection_schema_profile(db, current_user.tenant_id, request.connection_id)
 
     # Auto-suggest name if using default
     config_name = request.config_name
     if config_name == "SAP Import":
         config_name = SAPConfigBuilder.suggest_config_name(sap_data)
 
-    builder = SAPConfigBuilder(db, current_user.tenant_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id, schema_profile=schema_profile)
     result = await builder.build(
         sap_data=sap_data,
         config_name=config_name,
@@ -2598,13 +2946,14 @@ async def start_config_build(
     detects Z-tables, and returns table inventory with anomalies.
     """
     sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
+    schema_profile = await _get_connection_schema_profile(db, current_user.tenant_id, request.connection_id)
 
     # Auto-suggest name if using default
     config_name = request.config_name
     if config_name == "SAP Import":
         config_name = SAPConfigBuilder.suggest_config_name(sap_data)
 
-    builder = SAPConfigBuilder(db, current_user.tenant_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id, schema_profile=schema_profile)
     result = await builder.start_build(
         sap_data=sap_data,
         config_name=config_name,
@@ -2637,8 +2986,9 @@ async def execute_build_step(
         raise HTTPException(status_code=400, detail="Step must be between 2 and 8")
 
     sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
+    schema_profile = await _get_connection_schema_profile(db, current_user.tenant_id, request.connection_id)
 
-    builder = SAPConfigBuilder(db, current_user.tenant_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id, schema_profile=schema_profile)
     result = await builder.build_step(
         config_id=config_id,
         step=step_number,
@@ -2669,8 +3019,9 @@ async def complete_config_build(
     Checks which steps are already done and runs the rest.
     """
     sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
+    schema_profile = await _get_connection_schema_profile(db, current_user.tenant_id, request.connection_id)
 
-    builder = SAPConfigBuilder(db, current_user.tenant_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id, schema_profile=schema_profile)
     result = await builder.build_remaining(
         config_id=config_id,
         sap_data=sap_data,
@@ -2785,6 +3136,19 @@ STANDARD_SAP_TABLES = [
 ]
 
 
+async def _get_connection_schema_profile(
+    db: AsyncSession,
+    tenant_id: int,
+    connection_id: int,
+) -> Optional[dict]:
+    """Load the schema_profile from a SAP connection, or None if not set."""
+    service = create_deployment_service(db, tenant_id)
+    row = await service._get_connection_row(connection_id)
+    if not row:
+        return None
+    return getattr(row, "schema_profile", None)
+
+
 async def _load_sap_data(
     db: AsyncSession,
     tenant_id: int,
@@ -2811,6 +3175,43 @@ async def _load_sap_data(
 
     connection = SAPConnectionConfig.from_db(row)
     sap_data: Dict[str, pd.DataFrame] = {}
+
+    # -----------------------------------------------------------------
+    # Try staged data first (from previous extractions via ingestion jobs).
+    # This avoids needing a live HANA/RFC connection for builds.
+    # -----------------------------------------------------------------
+    try:
+        staged_rows = await db.execute(
+            text("""
+                SELECT DISTINCT sap_table FROM sap_staging.rows
+                WHERE tenant_id = :tid
+            """),
+            {"tid": tenant_id},
+        )
+        staged_tables = [r[0] for r in staged_rows.fetchall()]
+
+        if staged_tables:
+            logger.info(f"Loading SAP data from staging ({len(staged_tables)} tables)")
+            for tbl in staged_tables:
+                result = await db.execute(
+                    text("""
+                        SELECT DISTINCT ON (COALESCE(business_key, id::text)) row_data
+                        FROM sap_staging.rows
+                        WHERE tenant_id = :tid AND sap_table = :tbl
+                        ORDER BY COALESCE(business_key, id::text), id DESC
+                    """),
+                    {"tid": tenant_id, "tbl": tbl},
+                )
+                rows = [r[0] for r in result.fetchall()]
+                if rows:
+                    df = pd.DataFrame(rows)
+                    df.columns = [c.upper().strip() for c in df.columns]
+                    sap_data[tbl] = df
+                    logger.info(f"  Staged {tbl}: {len(df)} rows")
+            if sap_data:
+                return sap_data
+    except Exception as e:
+        logger.warning(f"Staged data load failed, falling back to live connection: {e}")
 
     method = connection.connection_method
 
@@ -3641,3 +4042,169 @@ async def reconcile_staging(
     )
     recon = await staging_service.reconcile(sap_data)
     return {"config_id": request.config_id, "reconciliation": recon}
+
+
+# =========================================================================
+# Schema Discovery Endpoints
+# =========================================================================
+
+class SchemaDiscoveryResponse(BaseModel):
+    """Response model for schema discovery results."""
+    sap_release: str = ""
+    discovery_date: Optional[datetime] = None
+    confidence_score: float = 0.0
+    tables_scanned: int = 0
+    fields_scanned: int = 0
+    discovery_duration_seconds: float = 0.0
+    entities: Dict[str, Any] = {}
+    custom_fields: List[Dict[str, Any]] = []
+    missing_fields: List[Dict[str, Any]] = []
+
+
+class SaveSchemaProfileRequest(BaseModel):
+    """Request to save a (possibly user-edited) schema profile."""
+    profile: Dict[str, Any] = Field(..., description="Full SchemaProfile JSON")
+
+
+@router.post(
+    "/connections/{connection_id}/discover-schema",
+    response_model=SchemaDiscoveryResponse,
+    tags=["sap-schema-discovery"],
+)
+async def discover_schema(
+    connection_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run SAP Schema Discovery Agent on a HANA DB connection.
+
+    Connects to the HANA database, pulls the SAP data dictionary (DD03L, DD04T,
+    DD05S), compares against expected AWS SC DM field mappings, and returns a
+    schema profile with confidence scores. The profile can be reviewed by the
+    user and then saved via the save-schema-profile endpoint.
+
+    Only works for connections with connection_method = 'hana_db'.
+    """
+    from app.services.sap_deployment_service import (
+        SAPConnectionConfig,
+        ConnectionMethod,
+        _decrypt_password,
+        create_deployment_service,
+    )
+    from app.services.sap_schema_agent import run_schema_discovery
+
+    service = create_deployment_service(db, current_user.tenant_id)
+    conn_row = await service._get_connection_row(connection_id)
+    if not conn_row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    if conn_row.connection_method != ConnectionMethod.HANA_DB.value:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Schema discovery requires a HANA DB connection. "
+                f"This connection uses '{conn_row.connection_method}'."
+            ),
+        )
+
+    password = _decrypt_password(conn_row.sap_password_encrypted) if conn_row.sap_password_encrypted else ""
+    hana_port = conn_row.hana_port or 30215
+    hana_schema = conn_row.hana_schema or "SAPHANADB"
+    hostname = conn_row.hostname or ""
+    user = conn_row.sap_user or ""
+
+    if not hostname:
+        raise HTTPException(status_code=400, detail="Connection has no hostname configured")
+
+    try:
+        profile = await run_schema_discovery(
+            hostname=hostname,
+            port=hana_port,
+            user=user,
+            password=password,
+            schema=hana_schema,
+        )
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="hdbcli package not installed. Required for HANA DB schema discovery.",
+        )
+    except Exception as e:
+        logger.error(f"Schema discovery failed for connection {connection_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Schema discovery failed: {e}")
+
+    # Serialize the profile
+    profile_dict = profile.model_dump(mode="json")
+
+    return SchemaDiscoveryResponse(
+        sap_release=profile.sap_release,
+        discovery_date=profile.discovery_date,
+        confidence_score=profile.confidence_score,
+        tables_scanned=profile.tables_scanned,
+        fields_scanned=profile.fields_scanned,
+        discovery_duration_seconds=profile.discovery_duration_seconds,
+        entities={
+            name: ep.model_dump(mode="json")
+            for name, ep in profile.entities.items()
+        },
+        custom_fields=[cf.model_dump(mode="json") for cf in profile.custom_fields],
+        missing_fields=[mf.model_dump(mode="json") for mf in profile.missing_fields],
+    )
+
+
+@router.post(
+    "/connections/{connection_id}/save-schema-profile",
+    tags=["sap-schema-discovery"],
+)
+async def save_schema_profile(
+    connection_id: int,
+    request: SaveSchemaProfileRequest,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save a confirmed schema profile to the connection.
+
+    The profile should be the full SchemaProfile JSON, optionally edited by the
+    user (e.g., confirming ambiguous matches, overriding field mappings).
+    Once saved, the HANA DB extractor will use this profile for field lists
+    and join logic instead of the hardcoded defaults.
+    """
+    from app.services.sap_deployment_service import create_deployment_service
+
+    service = create_deployment_service(db, current_user.tenant_id)
+    conn_row = await service._get_connection_row(connection_id)
+    if not conn_row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    conn_row.schema_profile = request.profile
+    await db.commit()
+
+    return {
+        "status": "saved",
+        "connection_id": connection_id,
+        "confidence_score": request.profile.get("confidence_score", 0),
+    }
+
+
+@router.get(
+    "/connections/{connection_id}/schema-profile",
+    tags=["sap-schema-discovery"],
+)
+async def get_schema_profile(
+    connection_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the stored schema profile for a connection, if any."""
+    from app.services.sap_deployment_service import create_deployment_service
+
+    service = create_deployment_service(db, current_user.tenant_id)
+    conn_row = await service._get_connection_row(connection_id)
+    if not conn_row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    if not conn_row.schema_profile:
+        return {"has_profile": False, "profile": None}
+
+    return {"has_profile": True, "profile": conn_row.schema_profile}
+

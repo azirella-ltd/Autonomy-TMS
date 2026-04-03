@@ -46,6 +46,7 @@ B1_FIELD_MAPPINGS: Dict[str, Dict[str, Tuple[str, str]]] = {
     "ProductTrees": {
         "TreeCode": ("product_bom", "product_id"),
         "Qauntity": ("product_bom", "component_quantity"),  # B1 typo is real
+        "TreeType": ("product_bom", "bom_usage"),  # Extension: btt_SalesTree → sales, btt_TemplateTree → template
     },
     "Orders": {
         "DocEntry": ("outbound_order", "id"),

@@ -23,7 +23,7 @@ Master type inference for Odoo:
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 
@@ -322,9 +322,14 @@ class OdooConfigBuilder:
         # Partners connect to the DAG via from_partner_id/to_partner_id on lanes.
 
         site_map: Dict[int, Any] = {}  # odoo_wh_id → Site
+        seen_wh: Set[int] = set()
 
         # Warehouses → INVENTORY or MANUFACTURER (internal sites only)
         for wh in warehouses:
+            wh_id = wh.get("id")
+            if wh_id in seen_wh:
+                continue
+            seen_wh.add(wh_id)
             master_type = "INVENTORY"
             if wh.get("id") in manufacturing_warehouse_ids or production_orders:
                 master_type = "MANUFACTURER"
@@ -347,7 +352,12 @@ class OdooConfigBuilder:
         from app.models.sc_entities import Product
 
         product_map: Dict[int, Any] = {}
+        seen_prod: Set[int] = set()
         for prod in products:
+            prod_id = prod.get("id")
+            if prod_id in seen_prod:
+                continue
+            seen_prod.add(prod_id)
             categ = prod.get("categ_id")
             categ_name = categ[1] if isinstance(categ, (list, tuple)) and len(categ) == 2 else ""
 
@@ -656,28 +666,46 @@ class OdooConfigBuilder:
                 result.lanes_created += 1
 
     async def _build_manufacturing(self, config, boms, bom_lines, workcenters, product_map, result):
-        """Step 7: Build BOM structures."""
-        from app.models.sc_entities import ProductBOM
+        """Step 7: Build BOM structures.
 
-        bom_product_map: Dict[int, int] = {}
+        Odoo BOM types (mrp.bom.type field):
+          'normal'  — Manufacturing BOM (skip — handled by production process)
+          'phantom' — Phantom/subassembly (skip — intermediate)
+          'kit'     — Kit BOM (extract as sales BOM for CTP)
+
+        Only Kit BOMs are extracted; they map to bom_usage='sales'.
+        """
+        from app.models.sc_entities import ProductBom
+        from datetime import datetime
+
+        # Build bom_id → (tmpl_id, bom_type) lookup
+        bom_info_map: Dict[int, Dict] = {}
         for bom in boms:
             tmpl_id = bom.get("product_tmpl_id")
             if isinstance(tmpl_id, (list, tuple)):
                 tmpl_id = tmpl_id[0]
-            bom_product_map[bom["id"]] = tmpl_id
+            bom_type = str(bom.get("type", "normal")).strip()
+            bom_info_map[bom["id"]] = {"tmpl_id": tmpl_id, "bom_type": bom_type}
 
+        seen_bom_keys: Set[Tuple] = set()
         for line in bom_lines:
             bom_id = line.get("bom_id")
             if isinstance(bom_id, (list, tuple)):
                 bom_id = bom_id[0]
 
+            bom_info = bom_info_map.get(bom_id)
+            if not bom_info:
+                continue
+
+            # Only extract kit BOMs (sales BOM equivalent)
+            if bom_info["bom_type"] != "kit":
+                continue
+
             component_id = line.get("product_id")
             if isinstance(component_id, (list, tuple)):
                 component_id = component_id[0]
 
-            parent_tmpl_id = bom_product_map.get(bom_id)
-            if not parent_tmpl_id:
-                continue
+            parent_tmpl_id = bom_info["tmpl_id"]
 
             # Find platform product for parent and component
             parent = product_map.get(parent_tmpl_id)
@@ -685,11 +713,22 @@ class OdooConfigBuilder:
             if not parent or not component:
                 continue
 
-            bom_rec = ProductBOM(
+            # Dedup: skip duplicate (product_id, component_product_id)
+            bom_key = (parent.id, component.id)
+            if bom_key in seen_bom_keys:
+                continue
+            seen_bom_keys.add(bom_key)
+
+            bom_rec = ProductBom(
                 config_id=config.id,
-                parent_product_id=parent.id,
-                child_product_id=component.id,
-                quantity_per=line.get("product_qty", 1.0),
+                product_id=parent.id,
+                component_product_id=component.id,
+                component_quantity=float(line.get("product_qty", 1.0)),
+                component_uom=str(line.get("product_uom_id", "EA") or "EA"),
+                bom_usage="sales",
+                is_active="true",
+                source="Odoo_mrp_bom",
+                source_update_dttm=datetime.utcnow(),
             )
             self.db.add(bom_rec)
             result.boms_created += 1
@@ -699,6 +738,7 @@ class OdooConfigBuilder:
         from app.models.aws_sc_planning import InvLevel, InvPolicy
 
         # Inventory levels from stock.quant
+        seen_inv_levels: Set[Tuple] = set()
         for q in quants:
             prod_id = q.get("product_id")
             if isinstance(prod_id, (list, tuple)):
@@ -711,6 +751,12 @@ class OdooConfigBuilder:
             wh_sites = [s for k, s in site_map.items() if isinstance(k, int)]
             if not wh_sites:
                 continue
+
+            # Dedup: skip duplicate (product_id, site_id) for inv levels
+            inv_key = (product.id, wh_sites[0].id)
+            if inv_key in seen_inv_levels:
+                continue
+            seen_inv_levels.add(inv_key)
 
             inv = InvLevel(
                 config_id=config.id,
@@ -726,6 +772,7 @@ class OdooConfigBuilder:
         from app.models.site_planning_config import SitePlanningConfig, PlanningMethod, LotSizingRule
 
         spc_count = 0
+        seen_spc_keys: Set[Tuple] = set()
         for op in orderpoints:
             prod_id = op.get("product_id")
             if isinstance(prod_id, (list, tuple)):
@@ -740,6 +787,12 @@ class OdooConfigBuilder:
             site = site_map.get(wh_id)
             if not site:
                 continue
+
+            # Dedup: skip duplicate (product_id, site_id) for inv policy + SPC
+            spc_key = (product.id, site.id)
+            if spc_key in seen_spc_keys:
+                continue
+            seen_spc_keys.add(spc_key)
 
             # Extract Odoo orderpoint fields
             min_qty = float(op.get("product_min_qty", 0) or 0)

@@ -1575,7 +1575,7 @@ class SupplyChainMapper:
             return pd.DataFrame()
         items = stpo_df.copy()
         if not stko_df.empty and "STLNR" in stko_df.columns:
-            hcols = [c for c in ["STLNR", "BMENG", "STLAL"] if c in stko_df.columns]
+            hcols = [c for c in ["STLNR", "BMENG", "STLAL", "STLAN"] if c in stko_df.columns]
             items = items.merge(stko_df[hcols].drop_duplicates(subset=["STLNR"]), on="STLNR", how="left")
         if not marc_df.empty and "STLNR" in marc_df.columns:
             pm = marc_df[["MATNR", "WERKS", "STLNR"]].dropna(subset=["STLNR"]).drop_duplicates(subset=["STLNR"])
@@ -1600,6 +1600,12 @@ class SupplyChainMapper:
         # is_key_material: stock items (POSTP='L') are key materials
         result["is_key_material"] = item_cat.isin(["L"]).map({True: "true", False: "false"})
         result["source"] = "SAP_STPO"
+        # Map STLAN (BOM usage type): 1=Production, 3=Sales, 5=Planning
+        stlan = _safe_col(items, "STLAN", "").astype(str).str.strip()
+        usage_map = {"3": "sales", "5": "planning"}
+        result["bom_usage"] = stlan.map(usage_map).fillna("")
+        # Ratio field for planning BOM proportions (ANTEI field on STPO)
+        result["ratio"] = pd.to_numeric(_safe_col(items, "ANTEI", 0), errors="coerce").fillna(0)
         result = result[result["product_id"].str.len() > 0]
         logger.info(f"Mapped {len(result)} BOM item records")
         return result

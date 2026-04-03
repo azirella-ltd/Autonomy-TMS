@@ -218,6 +218,9 @@ class Product(Base):
     family = Column(String(100), nullable=True, comment="Product family (e.g., Proteins, Dairy)")
     product_group_name = Column("product_group", String(100), nullable=True, comment="Product group (e.g., Chicken, Beef)")
 
+    # ERP-specific parameters (JSON blob for SAP MARC/MARM/etc. attributes)
+    sap_params = Column(JSON, nullable=True, comment="Extension: ERP-specific attributes (UOM conversions, weights, etc.)")
+
     # Relationships
     company = relationship("Company", back_populates="products")
     product_group = relationship("ProductHierarchy", back_populates="products")
@@ -471,6 +474,26 @@ class ProductBom(Base):
     # - High-value components
     # - Strategic materials with limited suppliers
     is_key_material = Column(String(10), default='false')  # 'true' or 'false' string values
+
+    # AWS SC DM fields
+    site_id = Column(Integer, ForeignKey("site.id"))
+    level = Column(Integer, comment="BOM level in explosion hierarchy")
+    component_line_number = Column(Integer)
+    component_quantity_uom = Column(String(20))
+    lifecycle_phase = Column(String(50))
+    assembly_cost = Column(Double)
+    assembly_cost_uom = Column(String(20))
+    description = Column(String(500))
+    alternative_product_id = Column(String(100))
+    alternate_group_id = Column(String(100))
+    alternate_product_qty = Column(Double)
+    alternate_product_qty_uom = Column(String(20))
+    ratio = Column(Double, comment="Proportional split ratio for co-products / by-products")
+    creation_date = Column(DateTime)
+    change_date = Column(DateTime)
+
+    # Extension: bom_usage indicates the context for this BOM
+    bom_usage = Column(String(20), nullable=True, comment="Extension: planning, sales, template")
 
     # Relationships
     product = relationship("Product", foreign_keys=[product_id], back_populates="bom_entries")

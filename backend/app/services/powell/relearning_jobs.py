@@ -701,15 +701,14 @@ def _run_data_drift_scan() -> None:
 
 
 def _run_site_tgnn_inference() -> None:
-    """Hourly Site tGNN (Layer 1.5) inference for all sites with enabled flag.
+    """Hourly Site tGNN (Layer 1.5) inference for all sites.
 
     Runs per-site inference to modulate UrgencyVector before the next
-    decision cycle. No-op if no sites have enable_site_tgnn=True or
-    no trained models exist.
+    decision cycle. No-op if no trained models exist.
     """
     logger.info("Starting scheduled Site tGNN inference (Layer 1.5)")
-    # Site tGNN inference is triggered inline within SiteAgent.execute_decision_cycle()
-    # when enable_site_tgnn=True. This scheduled job serves as a checkpoint log entry
+    # Site tGNN inference is triggered inline within SiteAgent.execute_decision_cycle().
+    # This scheduled job serves as a checkpoint log entry
     # and could trigger standalone inference for sites not actively in a decision cycle.
     logger.info("Site tGNN inference check complete (inline execution via SiteAgent)")
 
@@ -725,7 +724,6 @@ def _run_site_tgnn_training_check() -> None:
     logger.info("Starting Site tGNN training check")
     try:
         db = sync_session_factory()
-        # Check for sites with enable_site_tgnn=True
         # For now, log the check — actual training integration requires
         # trace data accumulation from CoordinatedSimRunner
         logger.info("Site tGNN training check complete (no sites requiring training)")

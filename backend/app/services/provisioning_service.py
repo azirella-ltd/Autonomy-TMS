@@ -876,14 +876,22 @@ class ProvisioningService:
 
             sync_db = sync_session_factory()
             try:
-                # Load demand history: product_id, site_id, forecast_date, p50
+                # Load demand history from ACTUAL demand (outbound_order_line),
+                # NOT from the forecast table (which would be circular training).
+                # Aggregated weekly by product×ship-from-site.
                 rows = sync_db.execute(
                     text("""
-                        SELECT f.product_id, f.site_id, f.forecast_date, f.forecast_p50
-                        FROM forecast f
-                        JOIN product p ON p.id = f.product_id
-                        WHERE p.config_id = :cid AND f.forecast_p50 IS NOT NULL
-                        ORDER BY f.product_id, f.site_id, f.forecast_date
+                        SELECT ool.product_id,
+                               CAST(oo.ship_from_site_id AS VARCHAR) AS site_id,
+                               date_trunc('week', oo.order_date)::date AS demand_date,
+                               SUM(COALESCE(ool.shipped_quantity, ool.ordered_quantity)) AS actual
+                        FROM outbound_order_line ool
+                        JOIN outbound_order oo ON oo.id = ool.order_id
+                        WHERE ool.config_id = :cid
+                          AND COALESCE(ool.shipped_quantity, ool.ordered_quantity) > 0
+                        GROUP BY ool.product_id, CAST(oo.ship_from_site_id AS VARCHAR),
+                                 date_trunc('week', oo.order_date)
+                        ORDER BY ool.product_id, site_id, demand_date
                     """),
                     {"cid": config_id},
                 ).fetchall()

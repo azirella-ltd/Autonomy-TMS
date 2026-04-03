@@ -1,20 +1,19 @@
 /**
  * Lot Sizing Analysis Page
  *
- * Interactive tool for comparing lot sizing algorithms and applying them to MPS plans
+ * Shows order sizing analysis from the live supply plan:
+ * - Summary cards (avg order qty, MOQ, frequency, total orders)
+ * - Order size distribution histogram
+ * - Product-level order analysis table with EOQ comparison
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   CardContent,
-  Button,
-  Alert,
   Badge,
-  Label,
-  Input,
-  Textarea,
   Spinner,
+  Alert,
   Table,
   TableHeader,
   TableBody,
@@ -23,11 +22,13 @@ import {
   TableCell,
 } from '../../components/common';
 import {
-  ArrowLeft,
-  Play,
-  Download,
+  Package,
+  TrendingUp,
+  Calendar,
+  ShoppingCart,
+  BarChart3,
+  ArrowUpDown,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -35,312 +36,279 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
-  Legend,
   ResponsiveContainer,
+  Cell,
 } from 'recharts';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 
 const LotSizingAnalysis = () => {
-  const navigate = useNavigate();
-
-  // State
-  const [loading, setLoading] = useState(false);
-  const [demandSchedule, setDemandSchedule] = useState('');
-  const [setupCost, setSetupCost] = useState(500);
-  const [holdingCost, setHoldingCost] = useState(2);
-  const [unitCost, setUnitCost] = useState(50);
-  const [fixedQuantity, setFixedQuantity] = useState(1000);
-  const [results, setResults] = useState(null);
+  const { effectiveConfigId, loading: configLoading } = useActiveConfig();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // Sample demand
-  const loadSampleDemand = () => {
-    const sample = [1200, 900, 1000, 1100, 1250, 1150, 1300, 950, 1050, 1100, 1200, 1000, 1150];
-    setDemandSchedule(sample.join(', '));
-  };
+  const [sortField, setSortField] = useState('total_qty');
+  const [sortDir, setSortDir] = useState('desc');
 
   useEffect(() => {
-    loadSampleDemand();
-  }, []);
+    if (!effectiveConfigId) return;
 
-  const handleRunAnalysis = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const demand = demandSchedule
-        .split(',')
-        .map((d) => parseFloat(d.trim()))
-        .filter((d) => !isNaN(d));
-
-      if (demand.length === 0) {
-        setError('Please enter a valid demand schedule (comma-separated numbers)');
-        return;
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await api.get('/lot-sizing/order-analysis', {
+          params: { config_id: effectiveConfigId, plan_version: 'live' },
+        });
+        setData(response.data);
+      } catch (err) {
+        console.error('Error fetching order sizing analysis:', err);
+        setError(err.response?.data?.detail || 'Failed to load order sizing analysis.');
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const response = await api.post('/lot-sizing/compare', {
-        demand_schedule: demand,
-        start_date: new Date().toISOString().split('T')[0],
-        period_days: 7,
-        setup_cost: parseFloat(setupCost),
-        holding_cost_per_unit_per_period: parseFloat(holdingCost),
-        unit_cost: parseFloat(unitCost),
-        fixed_quantity: parseFloat(fixedQuantity),
-        algorithms: ['LFL', 'EOQ', 'POQ', 'FOQ', 'PPB'],
-      });
+    fetchData();
+  }, [effectiveConfigId]);
 
-      setResults(response.data);
-    } catch (err) {
-      console.error('Error running lot sizing analysis:', err);
-      setError(err.response?.data?.detail || 'Failed to run analysis. Please try again.');
-    } finally {
-      setLoading(false);
+  const sortedProducts = useMemo(() => {
+    if (!data?.by_product) return [];
+    return [...data.by_product].sort((a, b) => {
+      const aVal = a[sortField] ?? 0;
+      const bVal = b[sortField] ?? 0;
+      return sortDir === 'desc' ? bVal - aVal : aVal - bVal;
+    });
+  }, [data, sortField, sortDir]);
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortField(field);
+      setSortDir('desc');
     }
   };
 
-  const formatCurrency = (value) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(value);
+  const formatNumber = (value) => {
+    if (value == null || isNaN(value)) return '--';
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
   };
 
-  const handleExportCSV = async () => {
-    try {
-      const demand = demandSchedule
-        .split(',')
-        .map((d) => parseFloat(d.trim()))
-        .filter((d) => !isNaN(d));
+  const SortHeader = ({ field, children }) => (
+    <TableHead
+      className="text-right cursor-pointer select-none hover:bg-muted/50"
+      onClick={() => handleSort(field)}
+    >
+      <div className="flex items-center justify-end gap-1">
+        {children}
+        {sortField === field && (
+          <ArrowUpDown className="h-3 w-3 text-muted-foreground" />
+        )}
+      </div>
+    </TableHead>
+  );
 
-      const response = await api.post(
-        '/lot-sizing/export/csv',
-        {
-          demand_schedule: demand,
-          start_date: new Date().toISOString().split('T')[0],
-          period_days: 7,
-          setup_cost: parseFloat(setupCost),
-          holding_cost_per_unit_per_period: parseFloat(holdingCost),
-          unit_cost: parseFloat(unitCost),
-          fixed_quantity: parseFloat(fixedQuantity),
-          algorithms: ['LFL', 'EOQ', 'POQ', 'FOQ', 'PPB'],
-        },
-        {
-          responseType: 'blob',
-        }
-      );
+  if (configLoading || loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'lot_sizing_comparison.csv');
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (err) {
-      console.error('Error exporting CSV:', err);
-      setError('Failed to export CSV. Please try again.');
-    }
-  };
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <Alert variant="destructive">
+          <strong>Error:</strong> {error}
+        </Alert>
+      </div>
+    );
+  }
+
+  if (!data || data.summary.total_orders === 0) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold">Order Sizing Analysis</h1>
+          <p className="text-sm text-muted-foreground">
+            Analyze order quantities in the current Plan of Record
+          </p>
+        </div>
+        <Alert variant="info">
+          No supply plan orders found. Run provisioning to generate the Plan of Record.
+        </Alert>
+      </div>
+    );
+  }
+
+  const { summary, distribution, by_product } = data;
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="mb-6">
-        <Button
-          variant="ghost"
-          onClick={() => navigate('/planning/mps')}
-          className="mb-4"
-          leftIcon={<ArrowLeft className="h-4 w-4" />}
-        >
-          Back to MPS
-        </Button>
-        <h1 className="text-2xl font-bold">Lot Sizing Analysis</h1>
+        <h1 className="text-2xl font-bold">Order Sizing Analysis</h1>
         <p className="text-sm text-muted-foreground">
-          Compare lot sizing algorithms and optimize production batch sizes
+          Order quantity analysis from the live Plan of Record across {summary.product_count} products and {summary.site_count} sites
         </p>
       </div>
 
-      {/* Input Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-7 gap-6 mb-6">
-        <Card className="lg:col-span-4">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <Card>
           <CardContent className="pt-4">
-            <h2 className="text-lg font-semibold mb-4">Demand Schedule</h2>
-            <Textarea
-              value={demandSchedule}
-              onChange={(e) => setDemandSchedule(e.target.value)}
-              placeholder="Enter weekly demand (comma-separated). Example: 1000, 1100, 950, 1200, ..."
-              rows={3}
-              className="mb-2"
-            />
-            <p className="text-xs text-muted-foreground mb-4">Enter demand quantities separated by commas</p>
-            <Button variant="outline" size="sm" onClick={loadSampleDemand}>
-              Load Sample Data
-            </Button>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Package className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Avg Order Qty</p>
+                <p className="text-2xl font-bold">{formatNumber(summary.avg_order_qty)}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3">
+        <Card>
           <CardContent className="pt-4">
-            <h2 className="text-lg font-semibold mb-4">Cost Parameters</h2>
-            <div className="space-y-4">
-              <div>
-                <Label>Setup Cost ($)</Label>
-                <Input type="number" value={setupCost} onChange={(e) => setSetupCost(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">Cost per production setup</p>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-100 rounded-lg">
+                <TrendingUp className="h-5 w-5 text-amber-600" />
               </div>
               <div>
-                <Label>Holding Cost ($/unit/period)</Label>
-                <Input type="number" value={holdingCost} onChange={(e) => setHoldingCost(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">Cost to hold one unit for one period</p>
+                <p className="text-xs text-muted-foreground">Min Order Qty</p>
+                <p className="text-2xl font-bold">{formatNumber(summary.min_order_qty)}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <Calendar className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <Label>Unit Cost ($)</Label>
-                <Input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">Production cost per unit</p>
+                <p className="text-xs text-muted-foreground">Orders / Week</p>
+                <p className="text-2xl font-bold">{summary.orders_per_week}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <ShoppingCart className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <Label>Fixed Order Quantity</Label>
-                <Input type="number" value={fixedQuantity} onChange={(e) => setFixedQuantity(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">For FOQ algorithm</p>
+                <p className="text-xs text-muted-foreground">Total Orders</p>
+                <p className="text-2xl font-bold">{formatNumber(summary.total_orders)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Run Button */}
-      <div className="flex justify-center gap-4 mb-6">
-        <Button size="lg" onClick={handleRunAnalysis} disabled={loading} leftIcon={loading ? <Spinner size="sm" /> : <Play className="h-5 w-5" />}>
-          {loading ? 'Analyzing...' : 'Run Lot Sizing Analysis'}
-        </Button>
-        {results && (
-          <Button variant="outline" size="lg" onClick={handleExportCSV} leftIcon={<Download className="h-5 w-5" />}>
-            Export CSV
-          </Button>
-        )}
-      </div>
-
-      {/* Error */}
-      {error && (
-        <Alert variant="destructive" className="mb-6" onClose={() => setError(null)}>
-          <strong>Error:</strong> {error}
-        </Alert>
+      {/* Order Size Distribution */}
+      {distribution.length > 0 && (
+        <Card className="mb-6">
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-semibold">Order Size Distribution</h2>
+            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={distribution}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="range" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} />
+                <RechartsTooltip
+                  formatter={(value) => [value, 'Orders']}
+                  labelFormatter={(label) => `Qty Range: ${label}`}
+                />
+                <Bar dataKey="count" name="Order Count" radius={[4, 4, 0, 0]}>
+                  {distribution.map((_, index) => (
+                    <Cell
+                      key={index}
+                      fill={index === distribution.length - 1 ? '#6366f1' : '#818cf8'}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Results */}
-      {results && (
-        <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <Card className="bg-green-50 border-green-200">
-              <CardContent className="pt-4">
-                <h3 className="text-lg font-semibold mb-2">Best Algorithm</h3>
-                <p className="text-3xl font-bold text-green-700">{results.best_algorithm}</p>
-                <p className="text-sm text-green-700">Total Cost: {formatCurrency(results.best_total_cost)}</p>
-              </CardContent>
-            </Card>
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="pt-4">
-                <h3 className="text-lg font-semibold mb-2">Cost Savings vs LFL</h3>
-                <p className="text-3xl font-bold text-blue-700">
-                  {results.cost_savings_vs_lfl ? formatCurrency(results.cost_savings_vs_lfl) : 'N/A'}
-                </p>
-                <p className="text-sm text-blue-700">
-                  {results.cost_savings_vs_lfl && results.results?.LFL
-                    ? `${((results.cost_savings_vs_lfl / results.results.LFL.total_cost) * 100).toFixed(1)}% reduction`
-                    : 'Baseline algorithm'}
-                </p>
-              </CardContent>
-            </Card>
+      {/* Product-level Order Analysis */}
+      <Card>
+        <CardContent className="pt-4">
+          <h2 className="text-lg font-semibold mb-4">Product Order Analysis</h2>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <SortHeader field="order_count">Orders</SortHeader>
+                  <SortHeader field="avg_qty">Avg Qty</SortHeader>
+                  <SortHeader field="total_qty">Total Qty</SortHeader>
+                  <SortHeader field="min_qty">Min</SortHeader>
+                  <SortHeader field="max_qty">Max</SortHeader>
+                  <SortHeader field="avg_days_between">Avg Days Between</SortHeader>
+                  <SortHeader field="eoq">EOQ</SortHeader>
+                  <TableHead className="text-right">EOQ vs Actual</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedProducts.map((row) => {
+                  const eoqDiff = row.eoq > 0
+                    ? ((row.avg_qty - row.eoq) / row.eoq * 100).toFixed(0)
+                    : null;
+                  const isOverEoq = eoqDiff !== null && parseFloat(eoqDiff) > 10;
+                  const isUnderEoq = eoqDiff !== null && parseFloat(eoqDiff) < -10;
+
+                  return (
+                    <TableRow key={row.product_id}>
+                      <TableCell>
+                        <div className="max-w-[200px] truncate" title={row.product_name}>
+                          {row.product_name}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">{row.order_count}</TableCell>
+                      <TableCell className="text-right font-medium">{formatNumber(row.avg_qty)}</TableCell>
+                      <TableCell className="text-right">{formatNumber(row.total_qty)}</TableCell>
+                      <TableCell className="text-right">{formatNumber(row.min_qty)}</TableCell>
+                      <TableCell className="text-right">{formatNumber(row.max_qty)}</TableCell>
+                      <TableCell className="text-right">
+                        {row.avg_days_between > 0 ? `${row.avg_days_between}d` : '--'}
+                      </TableCell>
+                      <TableCell className="text-right">{formatNumber(row.eoq)}</TableCell>
+                      <TableCell className="text-right">
+                        {eoqDiff !== null ? (
+                          <Badge variant={isOverEoq ? 'warning' : isUnderEoq ? 'info' : 'success'}>
+                            {eoqDiff > 0 ? '+' : ''}{eoqDiff}%
+                          </Badge>
+                        ) : (
+                          '--'
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
-
-          {/* Comparison Table */}
-          <Card className="mb-6">
-            <CardContent className="pt-4">
-              <h3 className="text-lg font-semibold mb-4">Algorithm Comparison</h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Algorithm</TableHead>
-                    <TableHead className="text-right">Total Cost</TableHead>
-                    <TableHead className="text-right">Setup Cost</TableHead>
-                    <TableHead className="text-right">Holding Cost</TableHead>
-                    <TableHead className="text-right">Orders</TableHead>
-                    <TableHead className="text-right">Avg Inventory</TableHead>
-                    <TableHead className="text-right">Savings vs LFL</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {Object.entries(results.results || {}).map(([algo, result]) => {
-                    const isBest = algo === results.best_algorithm;
-                    const savingsVsLfl = results.results.LFL
-                      ? ((results.results.LFL.total_cost - result.total_cost) / results.results.LFL.total_cost) * 100
-                      : 0;
-
-                    return (
-                      <TableRow key={algo} className={isBest ? 'bg-green-50' : ''}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <strong>{algo}</strong>
-                            {isBest && <Badge variant="success">Best</Badge>}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">{formatCurrency(result.total_cost)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(result.setup_cost_total)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(result.holding_cost_total)}</TableCell>
-                        <TableCell className="text-right">{result.number_of_orders}</TableCell>
-                        <TableCell className="text-right">{Math.round(result.average_inventory)}</TableCell>
-                        <TableCell className="text-right">
-                          {savingsVsLfl > 0 ? <Badge variant="success">{savingsVsLfl.toFixed(1)}%</Badge> : '-'}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Cost Comparison Chart */}
-          <Card className="mb-6">
-            <CardContent className="pt-4">
-              <h3 className="text-lg font-semibold mb-4">Cost Comparison</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart
-                  data={Object.entries(results.results || {}).map(([algo, result]) => ({
-                    algorithm: algo,
-                    setupCost: result.setup_cost_total,
-                    holdingCost: result.holding_cost_total,
-                    totalCost: result.total_cost,
-                  }))}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="algorithm" />
-                  <YAxis />
-                  <RechartsTooltip formatter={(value) => formatCurrency(value)} />
-                  <Legend />
-                  <Bar dataKey="setupCost" name="Setup Cost" fill="#8884d8" stackId="a" />
-                  <Bar dataKey="holdingCost" name="Holding Cost" fill="#82ca9d" stackId="a" />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Recommendations */}
-          <Alert variant="info">
-            <strong>Recommendation:</strong> The <strong>{results.best_algorithm}</strong> algorithm provides the lowest
-            total cost of {formatCurrency(results.best_total_cost)}.
-            {results.cost_savings_vs_lfl && (
-              <>
-                {' '}
-                This represents a savings of {formatCurrency(results.cost_savings_vs_lfl)} (
-                {((results.cost_savings_vs_lfl / (results.results?.LFL?.total_cost || 1)) * 100).toFixed(1)}%) compared
-                to Lot-for-Lot ordering.
-              </>
-            )}
-          </Alert>
-        </>
-      )}
+          <p className="text-xs text-muted-foreground mt-3">
+            EOQ calculated using default ordering cost ($500) and 25% annual holding cost rate.
+            Values within 10% of EOQ are considered well-sized.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 };

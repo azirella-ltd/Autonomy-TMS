@@ -67,6 +67,11 @@ const InventoryProjection = () => {
   // Order promises
   const [promises, setPromises] = useState([]);
 
+  // Hierarchy filters
+  const [dimensions, setDimensions] = useState(null);
+  const [productNodeId, setProductNodeId] = useState('');
+  const [geoFilter, setGeoFilter] = useState('');
+
   // Filters
   const [productId, setProductId] = useState('');
   const [siteId, setSiteId] = useState('');
@@ -112,6 +117,26 @@ const InventoryProjection = () => {
   });
 
   const [promiseResult, setPromiseResult] = useState(null);
+
+  // Load hierarchy dimensions
+  useEffect(() => {
+    if (!effectiveConfigId) return;
+    api.get('/demand-plan/hierarchy-dimensions', { params: { config_id: effectiveConfigId } })
+      .then(res => {
+        setDimensions(res.data);
+        // Auto-select root product node if not already set
+        if (!productNodeId && res.data?.product_tree?.length > 0) {
+          const root = res.data.product_tree.find(n => !n.parent_id);
+          if (root) setProductNodeId(String(root.id));
+        }
+        // Auto-select root geography node if not already set
+        if (!geoFilter && res.data?.geography?.length > 0) {
+          const root = res.data.geography.find(g => !g.parent_id);
+          if (root) setGeoFilter(root.id);
+        }
+      })
+      .catch(() => {});
+  }, [effectiveConfigId]);
 
   useEffect(() => {
     loadData();
@@ -583,18 +608,80 @@ const InventoryProjection = () => {
       <Card className="mb-6">
         <CardContent className="pt-4">
           <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+            {/* Product hierarchy dropdown */}
             <div className="space-y-2">
-              <Label htmlFor="productId">Product ID</Label>
-              <Input
-                id="productId"
-                type="number"
-                value={productId}
-                onChange={(e) => setProductId(e.target.value)}
-              />
+              <Label>Product</Label>
+              {dimensions?.product_tree?.length > 0 ? (() => {
+                const tree = dimensions.product_tree;
+                const findNode = (id) => tree.find(n => n.id === id);
+                const childrenOf = (pid) => tree.filter(n => n.parent_id === pid);
+                const breadcrumb = [];
+                let cur = productNodeId ? findNode(parseInt(productNodeId)) : null;
+                while (cur) { breadcrumb.unshift(cur); cur = cur.parent_id ? findNode(cur.parent_id) : null; }
+                const children = productNodeId ? childrenOf(parseInt(productNodeId)) : tree.filter(n => !n.parent_id);
+                return (
+                  <div>
+                    {breadcrumb.length > 0 && (
+                      <div className="flex items-center gap-1 mb-1 text-xs">
+                        <button className="text-primary hover:underline" onClick={() => setProductNodeId('')}>All</button>
+                        {breadcrumb.map((n, i) => (
+                          <span key={n.id} className="flex items-center gap-1">
+                            <span className="text-muted-foreground">/</span>
+                            <button className={i === breadcrumb.length - 1 ? 'font-semibold' : 'text-primary hover:underline'}
+                              onClick={() => setProductNodeId(String(n.id))}>{n.name}</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {children.length > 0 && (
+                      <select className="border rounded px-2 py-1.5 text-sm w-full" value=""
+                        onChange={e => { if (e.target.value) setProductNodeId(e.target.value); }}>
+                        <option value="">{productNodeId ? 'Drill deeper...' : 'Select product group...'}</option>
+                        {children.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })() : (
+                <Input id="productId" type="number" value={productId} onChange={(e) => setProductId(e.target.value)} placeholder="Product ID" />
+              )}
             </div>
+            {/* Geography hierarchy dropdown */}
             <div className="space-y-2">
-              <Label htmlFor="siteId">Site ID</Label>
-              <Input id="siteId" type="number" value={siteId} onChange={(e) => setSiteId(e.target.value)} />
+              <Label>Site / Geography</Label>
+              {dimensions?.geography?.length > 0 ? (() => {
+                const findGeo = (id) => dimensions.geography.find(g => g.id === id);
+                const childrenOf = (pid) => dimensions.geography.filter(g => g.parent_id === pid);
+                const breadcrumb = [];
+                let cur = geoFilter ? findGeo(geoFilter) : null;
+                while (cur) { breadcrumb.unshift(cur); cur = cur.parent_id ? findGeo(cur.parent_id) : null; }
+                const children = geoFilter ? childrenOf(geoFilter) : dimensions.geography.filter(g => !g.parent_id);
+                return (
+                  <div>
+                    {breadcrumb.length > 0 && (
+                      <div className="flex items-center gap-1 mb-1 text-xs">
+                        <button className="text-primary hover:underline" onClick={() => setGeoFilter('')}>All</button>
+                        {breadcrumb.map((g, i) => (
+                          <span key={g.id} className="flex items-center gap-1">
+                            <span className="text-muted-foreground">/</span>
+                            <button className={i === breadcrumb.length - 1 ? 'font-semibold' : 'text-primary hover:underline'}
+                              onClick={() => setGeoFilter(g.id)}>{g.name}</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {children.length > 0 && (
+                      <select className="border rounded px-2 py-1.5 text-sm w-full" value=""
+                        onChange={e => { if (e.target.value) setGeoFilter(e.target.value); }}>
+                        <option value="">{geoFilter ? 'Drill deeper...' : 'Select region...'}</option>
+                        {children.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })() : (
+                <Input id="siteId" type="number" value={siteId} onChange={(e) => setSiteId(e.target.value)} placeholder="Site ID" />
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="startDate">Start Date</Label>

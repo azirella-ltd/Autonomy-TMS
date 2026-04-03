@@ -10,6 +10,7 @@
  * human reviews via Accept / Override / Reject before submission.
  */
 import React, { useState, useEffect, useCallback } from 'react';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   Box,
   Paper,
@@ -63,7 +64,10 @@ const EMPTY_ORDER = {
 // Component
 // ---------------------------------------------------------------------------
 
-const SupplyWorklistPage = ({ configId, tenantId }) => {
+const SupplyWorklistPage = ({ configId: propConfigId, tenantId: propTenantId }) => {
+  const { effectiveConfigId } = useActiveConfig();
+  const configId = propConfigId || effectiveConfigId;
+  const tenantId = propTenantId;
   // Tab state
   const [activeTab, setActiveTab] = useState(0);
 

@@ -78,6 +78,12 @@ class SAPConnection(Base):
     # CSV file → SAP table mapping (populated during connection test)
     file_table_mapping = Column(JSON, nullable=True)
 
+    # Schema discovery profile (populated by SAP Schema Discovery Agent)
+    # Stores the full SchemaProfile as JSONB: field matches, confidence scores,
+    # join paths, Z-field discoveries. Extractors read from this instead of
+    # hardcoded field lists when present.
+    schema_profile = Column(JSON, nullable=True)
+
     # Metadata
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

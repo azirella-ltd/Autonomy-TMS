@@ -149,9 +149,10 @@ const QuantityWithInterval = ({ quantity, lowerBound, upperBound, showInterval =
   );
 };
 
-const SupplyAgentWorklist = ({ configId, tenantId }) => {
+const SupplyAgentWorklist = ({ configId: propConfigId, tenantId }) => {
   const { formatSupplier } = useDisplayPreferences();
   const { effectiveConfigId } = useActiveConfig();
+  const configId = propConfigId || effectiveConfigId;
   const [peggingTarget, setPeggingTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [worklistItems, setWorklistItems] = useState([]);

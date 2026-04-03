@@ -139,7 +139,7 @@ required_fields = [
     "tenant_id", "use_trm_adjustments", "agent_mode",
     "enable_hive_signals", "enable_authorization",
     "use_claude_skills", "skill_escalation_threshold",
-    "enable_vertical_escalation", "enable_site_tgnn",
+    "enable_vertical_escalation",
     "master_type", "sc_site_type",
 ]
 # Filter None (config_id check)

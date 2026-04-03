@@ -11,7 +11,7 @@
  *   Exceptions   — Anomaly detection & root cause
  */
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense, Component } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
@@ -36,6 +36,26 @@ const ForecastExceptions = lazy(() => import('./ForecastExceptions'));
 const ForecastAnalytics = lazy(() => import('./ForecastAnalytics'));
 const ForecastPipeline = lazy(() => import('./ForecastPipeline'));
 
+// Error boundary to catch lazy-load or render crashes
+class TabErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center">
+          <p className="text-red-600 font-medium mb-2">This tab failed to load</p>
+          <p className="text-sm text-muted-foreground mb-4">{this.state.error?.message || 'Unknown error'}</p>
+          <button className="text-primary text-sm underline" onClick={() => this.setState({ error: null })}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const TABS = [
   { key: 'forecast', label: 'Forecast', icon: TrendingUp },
   { key: 'pipeline', label: 'Pipeline', icon: Workflow },
@@ -43,9 +63,9 @@ const TABS = [
   { key: 'editor', label: 'Editor', icon: Pencil },
   { key: 'sensing', label: 'Sensing', icon: Radio },
   { key: 'shaping', label: 'Shaping', icon: Megaphone },
-  { key: 'consensus', label: 'Consensus', icon: Users },
   { key: 'lifecycle', label: 'Life Cycle', icon: Recycle },
   { key: 'exceptions', label: 'Exceptions', icon: AlertTriangle },
+  { key: 'consensus', label: 'Consensus', icon: Users },
 ];
 
 const TabLoading = () => (
@@ -91,6 +111,7 @@ export default function DemandPlanningHub() {
           ))}
         </TabsList>
 
+        <TabErrorBoundary>
         <Suspense fallback={<TabLoading />}>
           <TabsContent value="forecast" className="mt-0 pt-4">
             <DemandPlanView />
@@ -120,6 +141,7 @@ export default function DemandPlanningHub() {
             <ForecastExceptions />
           </TabsContent>
         </Suspense>
+        </TabErrorBoundary>
       </Tabs>
     </div>
   );

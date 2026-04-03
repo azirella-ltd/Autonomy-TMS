@@ -451,7 +451,7 @@ class GNNOrchestrationService:
         """Run Site tGNN (Layer 1.5) hourly inference for a single site.
 
         This is called hourly by the scheduler for each active SiteAgent
-        that has enable_site_tgnn=True. The Site tGNN modulates the
+        that has Site tGNN initialized. The Site tGNN modulates the
         UrgencyVector before the next decision cycle.
 
         Args:

@@ -9,7 +9,7 @@ import {
   Add, Edit, CheckCircle, Cancel, CalendarMonth, TrendingUp,
   Visibility, ChevronLeft, ChevronRight,
 } from '@mui/icons-material';
-import api from '../../services/api';
+import { api } from '../../services/api';
 
 const PROMO_TYPES = [
   'price_discount', 'bogo', 'bundle', 'display',

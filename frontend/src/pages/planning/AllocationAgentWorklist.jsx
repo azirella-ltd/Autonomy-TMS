@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
   Box,
   Paper,
@@ -212,7 +213,9 @@ const AllocationWithUncertainty = ({ allocated, requested, lowerBound, upperBoun
   );
 };
 
-const AllocationAgentWorklist = ({ configId, tenantId }) => {
+const AllocationAgentWorklist = ({ configId: propConfigId, tenantId }) => {
+  const { effectiveConfigId } = useActiveConfig();
+  const configId = propConfigId || effectiveConfigId;
   const [loading, setLoading] = useState(true);
   const [worklistItems, setWorklistItems] = useState([]);
   const [selectedCommit, setSelectedCommit] = useState(null);

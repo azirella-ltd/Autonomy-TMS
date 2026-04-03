@@ -714,14 +714,28 @@ class MultiStageCTPService:
         return self._sourcing_cache[key]
 
     def _get_bom(self, product_id: str) -> List[ProductBom]:
-        """Get BOM components for a product."""
+        """Get BOM components for a product.
+
+        Prefers sales BOM (bom_usage = 'sales') for CTP explosion.
+        Falls back to any BOM entries if no sales-specific records exist.
+        """
         if product_id not in self._bom_cache:
+            # Try sales BOM first
             bom = self.db.query(ProductBom).filter(
                 and_(
                     ProductBom.product_id == product_id,
                     ProductBom.config_id == self.config_id,
+                    ProductBom.bom_usage == 'sales',
                 )
             ).all()
+            if not bom:
+                # Fall back to any BOM
+                bom = self.db.query(ProductBom).filter(
+                    and_(
+                        ProductBom.product_id == product_id,
+                        ProductBom.config_id == self.config_id,
+                    )
+                ).all()
             self._bom_cache[product_id] = bom
         return self._bom_cache[product_id]
 
