@@ -1,10 +1,10 @@
-# MCP ERP Integration — Architecture and Per-ERP Capability Reference
+# MCP Integration — Client (ERP) and Server (Autonomy Intelligence)
 
 > **Autonomy Platform — Technical Reference**
 >
-> Model Context Protocol (MCP) as the universal live-operations layer for
-> bidirectional ERP communication. Covers architecture, per-ERP capabilities,
-> authentication, known limitations, and operational guidance.
+> Model Context Protocol (MCP) as the universal integration layer:
+> - **Client** (consuming): Autonomy connects to ERP MCP servers for CDC reads + write-back
+> - **Server** (providing): Autonomy exposes supply chain intelligence for any MCP-capable agent
 
 ---
 
@@ -26,6 +26,7 @@
 14. [SOC II Compliance](#14-soc-ii-compliance)
 15. [Operational Runbook](#15-operational-runbook)
 16. [Key Files](#16-key-files)
+17. [Autonomy MCP Server — Intelligence as a Service](#17-autonomy-mcp-server--intelligence-as-a-service)
 
 ---
 
@@ -569,3 +570,130 @@ The `MCPWritebackService` handles the full outbound lifecycle:
 | `migrations/versions/20260403_mcp_infrastructure.py` | MCP tables |
 | `migrations/versions/20260403_adaptive_writeback_delay.py` | Writeback delay columns |
 | `migrations/versions/20260403_operating_schedule.py` | Operating schedule tables |
+| `mcp_server/server.py` | Autonomy MCP server entry point (FastMCP) |
+| `mcp_server/tools/*.py` | Tool implementations (8 modules) |
+
+---
+
+## 17. Autonomy MCP Server — Intelligence as a Service
+
+While the client side (Sections 1-16) consumes ERP MCP servers, the Autonomy
+MCP **server** exposes the platform's unique supply chain intelligence to
+external agents and tools.
+
+### 17.1 Strategic Rationale
+
+ERPs expose raw data via MCP. Autonomy exposes **intelligence**:
+- Forecasts with calibrated uncertainty bounds (conformal P10/P50/P90)
+- Agent decisions with full reasoning chains and alternatives considered
+- Real-time ATP/CTP with multi-stage BOM traversal
+- Override authority with Bayesian effectiveness tracking
+- Network health with causal bottleneck analysis
+
+This makes Autonomy a supply chain intelligence **service** that any
+MCP-compatible agent can consume — Claude Code, Copilot, custom agents,
+customer BI tools, or other AI platforms.
+
+### 17.2 Deployment
+
+```
+Docker Compose:
+  backend (port 8000)     — REST API (existing)
+  mcp-server (port 8001)  — MCP server (new)
+  proxy (port 8088)       — Nginx: /api/* → backend, /mcp/* → mcp-server
+
+Transports:
+  HTTP (production)       — mcp.run(transport="http", port=8001)
+  STDIO (development)     — python -m app.mcp_server.server --stdio
+```
+
+### 17.3 Tools Provided
+
+#### Phase 1 — Read-Only, Low Risk
+
+| Tool | Purpose | Service Layer |
+|------|---------|--------------|
+| `get_decision_stream` | Query pending agent decisions (all 11 TRM types) | DecisionStreamService.get_decision_digest() |
+| `chat_with_decisions` | Natural-language Q&A about decisions | DecisionStreamService.chat() |
+| `check_availability` | Multi-stage ATP/CTP check | MultiStageCTPService.calculate_multi_stage_ctp() |
+| `ask_why` | Explain agent decision reasoning | Direct powell_*_decisions query |
+| `get_network_status` | DAG topology, lanes, active alerts | Direct site/lane/CDC queries |
+| `get_kpi_metrics` | BSC metrics: fill rate, touchless rate, MAPE | Aggregation queries |
+| `get_forecast` | Demand forecast with P10/P50/P90 intervals | Forecast table query |
+| `get_governance_status` | Active policies, directives, oversight schedule | Governance + oversight queries |
+
+#### Phase 2 — Write, AIIO-Governed
+
+| Tool | Purpose | Service Layer |
+|------|---------|--------------|
+| `promise_order` | ATP/CTP check + pegging chain creation (consumes ATP) | MultiStageCTPService.promise_order() |
+| `override_decision` | Override an agent decision (mandatory reason) | DecisionStreamService.act_on_decision() |
+| `reverse_erp_writeback` | Compensating ERP action for executed write-back | reverse_writeback() |
+
+#### Phase 3 — Compute-Heavy (Planned)
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `simulate_scenario` | What-if scenario evaluation | Needs rate limiting |
+| `create_guardrail_directive` | Executive governance instruction | Needs elevated auth |
+| `get_supply_plan` | Full plan of record | Large result set |
+
+### 17.4 Authentication
+
+The MCP server requires authentication. Options:
+
+1. **Bearer token (JWT)**: Same JWT as the REST API — validates via the existing auth middleware
+2. **API key**: Tenant-scoped API key stored in `mcp_server_config`
+3. **OAuth 2.1**: For production multi-tenant access (planned)
+
+Every tool requires `tenant_id` as a parameter — this is cross-checked against the authenticated identity. No cross-tenant access.
+
+### 17.5 Tenant Isolation
+
+- Every tool requires `tenant_id` as a mandatory parameter
+- DB queries always filter by `config_id` (which maps to tenant)
+- RLS enforced at the database level
+- MCP audit log captures tenant_id on every call
+
+### 17.6 Example Interactions
+
+**Claude Code asking about decisions:**
+```
+User: "What urgent decisions need attention for our Chicago DC?"
+→ Claude Code calls get_decision_stream(tenant_id=3, decision_level="execution")
+→ Returns 5 pending decisions with urgency > 0.7
+→ Claude Code calls ask_why(tenant_id=3, decision_id=1234, decision_type="po_creation")
+→ Returns reasoning: "Inventory below safety stock, supplier X has 3-day lead time..."
+```
+
+**Customer Copilot checking ATP:**
+```
+User: "Can we promise 500 units of SKU-A at DC-West by March 15?"
+→ Copilot calls check_availability(tenant_id=3, config_id=129, product_id="SKU-A", site_id="DC-West", quantity=500, target_date="2026-03-15")
+→ Returns: {is_feasible: true, ctp_qty: 450, promise_date: "2026-03-17", binding_stage: "component_availability"}
+→ Copilot: "We can fulfill 450 of the 500 units by March 17. The binding constraint is component availability."
+```
+
+**Human overriding via Slack bot:**
+```
+Planner: "Cancel that PO for 500 units — supplier just went bankrupt"
+→ Bot calls override_decision(tenant_id=3, decision_id=1234, decision_type="po_creation", action="cancel", reason="Supplier bankruptcy confirmed — redirecting to alternate vendor")
+→ Returns: {success: true, new_status: "OVERRIDDEN"}
+→ Bayesian posterior updated, TRM retraining queued
+```
+
+### 17.7 Key Files
+
+| File | Purpose |
+|------|---------|
+| `mcp_server/__init__.py` | Package docstring with phase roadmap |
+| `mcp_server/server.py` | FastMCP server creation + entry point |
+| `mcp_server/tools/db.py` | Async DB session helper |
+| `mcp_server/tools/decision_stream.py` | get_decision_stream, chat_with_decisions |
+| `mcp_server/tools/atp.py` | check_availability, promise_order |
+| `mcp_server/tools/reasoning.py` | ask_why |
+| `mcp_server/tools/network.py` | get_network_status |
+| `mcp_server/tools/kpi.py` | get_kpi_metrics |
+| `mcp_server/tools/forecast.py` | get_forecast |
+| `mcp_server/tools/governance.py` | get_governance_status |
+| `mcp_server/tools/override.py` | override_decision, reverse_erp_writeback |
