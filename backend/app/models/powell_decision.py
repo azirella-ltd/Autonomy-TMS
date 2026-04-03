@@ -110,6 +110,10 @@ class SiteAgentCheckpoint(Base):
     id = Column(Integer, primary_key=True, index=True)
     checkpoint_id = Column(String(64), unique=True, index=True, nullable=False)
 
+    # Tenant/config scoping
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"), nullable=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+
     # Checkpoint metadata
     site_key = Column(String(64), index=True)  # Null for shared models
     model_version = Column(String(32), nullable=False)

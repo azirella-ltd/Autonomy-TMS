@@ -1258,6 +1258,9 @@ class SAPConfigBuilder:
         if not self._config:
             raise ValueError(f"Config {config_id} not found")
 
+        # Set _company_id so geography and other steps can use it
+        self._company_id = f"SAP_T{self.tenant_id}_C{config_id}"
+
         # Load existing sites
         stmt = select(Site).where(Site.config_id == config_id)
         result = await self.db.execute(stmt)
@@ -1272,6 +1275,29 @@ class SAPConfigBuilder:
         for product in result.scalars().all():
             mat_key = product.id.replace(prefix, "") if product.id.startswith(prefix) else product.id
             self._products[mat_key] = product
+
+        # Load existing trading partners (needed for lane creation in step 9)
+        # TradingPartner.id is the raw SAP vendor/customer code (e.g. "0001000001")
+        # Collect all partner codes from the SAP data, then resolve their DB _id.
+        partner_codes: set = set()
+        lfa1 = self._data.get("LFA1", pd.DataFrame()) if self._data else pd.DataFrame()
+        kna1 = self._data.get("KNA1", pd.DataFrame()) if self._data else pd.DataFrame()
+        if not lfa1.empty and "LIFNR" in lfa1.columns:
+            partner_codes.update(str(v).strip() for v in lfa1["LIFNR"] if str(v).strip())
+        if not kna1.empty and "KUNNR" in kna1.columns:
+            partner_codes.update(str(v).strip() for v in kna1["KUNNR"] if str(v).strip())
+
+        if partner_codes:
+            for i in range(0, len(partner_codes), 500):
+                batch = list(partner_codes)[i : i + 500]
+                tp_result = await self.db.execute(
+                    select(TradingPartner.id, TradingPartner._id).where(
+                        TradingPartner.id.in_(batch)
+                    )
+                )
+                for biz_key, int_id in tp_result.fetchall():
+                    self._trading_partners[biz_key] = biz_key
+                    self._partner_ids[biz_key] = int_id
 
     # ------------------------------------------------------------------
     # Z-Table Detection
@@ -3450,13 +3476,31 @@ class SAPConfigBuilder:
 
                     if not parent_mat or not component_mat:
                         continue
-                    if parent_mat not in self._products or component_mat not in self._products:
+                    if parent_mat not in self._products:
                         continue
+                    # Auto-create component product if not in master
+                    # (BOM components may be raw materials not in the BOM-scoped product list)
+                    if component_mat not in self._products:
+                        comp_product_id = f"{prefix}{component_mat}"
+                        comp_desc = component_mat  # Name from MAKT if available
+                        comp_product = Product(
+                            id=comp_product_id,
+                            description=comp_desc,
+                            config_id=self._config.id,
+                            product_type="RAW",
+                            is_active="X",
+                            source="SAP_BOM_COMPONENT",
+                        )
+                        self.db.add(comp_product)
+                        self._products[component_mat] = comp_product
+                        await self.db.flush()
                     # Avoid self-referential BOMs
                     if parent_mat == component_mat:
                         continue
-                    # Deduplicate
-                    pair_key = (parent_mat, component_mat)
+                    # Deduplicate — include bom_usage so the same parent+component
+                    # can appear in both planning and sales BOMs
+                    usage = bom_usage_map.get(bom_nr)
+                    pair_key = (parent_mat, component_mat, usage)
                     if pair_key in seen_bom_pairs:
                         continue
                     seen_bom_pairs.add(pair_key)
@@ -3465,7 +3509,6 @@ class SAPConfigBuilder:
                     comp_qty = float(pd.to_numeric(row.get(_stpo_qty_col, 1), errors="coerce") or 1)
                     scrap_pct = float(pd.to_numeric(row.get(_stpo_scrap_col, 0), errors="coerce") or 0)
 
-                    usage = bom_usage_map.get(bom_nr)
                     ratio_val = float(pd.to_numeric(row.get(_stpo_ratio_col, 0), errors="coerce") or 0) or None
 
                     bom = ProductBom(
@@ -3760,8 +3803,13 @@ class SAPConfigBuilder:
         return None
 
     async def _step_transactional(self, result: "StepResult", opts: Dict[str, Any]) -> int:
-        """Execute step 9: Transactional Data (orders, production orders, quality orders)."""
+        """Execute step 8: Transactional Data (orders, production orders, quality orders)."""
         counts = await self._create_transactional_data(opts)
+
+        # Run derivation fallbacks (shipments from deliveries, etc.) — same as full build
+        derived_counts = await self._run_derivation_fallbacks(opts)
+        counts.update({f"derived_{k}": v for k, v in derived_counts.items()})
+
         total = sum(counts.values())
 
         result.sample_data.append(counts)

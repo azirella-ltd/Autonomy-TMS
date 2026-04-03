@@ -1084,16 +1084,29 @@ def get_cdt_readiness(
                 active.update(get_active_trms(mt or "INVENTORY", st))
             _db.close()
             if active:
-                # Map site_capabilities names → CDT registry names
+                # Map site_capabilities canonical names → CDT registry names
                 cap_to_cdt = {
                     "atp_executor": "atp",
                     "rebalancing": "inventory_rebalancing",
-                    "inventory_rebalancing": "inventory_rebalancing",
+                    "order_tracking": "order_tracking",
+                    "inventory_buffer": "inventory_buffer",
+                    "forecast_adjustment": "forecast_adjustment",
+                    "quality_disposition": "quality_disposition",
+                    "po_creation": "po_creation",
+                    "subcontracting": "subcontracting",
+                    "maintenance_scheduling": "maintenance_scheduling",
+                    "mo_execution": "mo_execution",
+                    "to_execution": "to_execution",
+                    # Identity mappings for already-CDT names
                     "atp": "atp",
+                    "inventory_rebalancing": "inventory_rebalancing",
                 }
                 all_trm_types = sorted(set(cap_to_cdt.get(t, t) for t in active))
-        except Exception:
-            pass  # Fall back to all 11
+        except Exception as topo_err:
+            logger.warning(
+                "CDT readiness: could not determine topology-aware TRM types for config %s, "
+                "falling back to all 11: %s", cid, topo_err,
+            )  # Fall back to all 11
 
     trm_labels = {
         "atp": "ATP Executor",

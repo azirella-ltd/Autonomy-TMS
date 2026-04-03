@@ -3162,6 +3162,7 @@ async def _load_sap_data(
     """
     import asyncio
     import pandas as pd
+    from sqlalchemy import text
     from app.services.sap_deployment_service import (
         _decrypt_password,
         SAPConnectionConfig,
@@ -3195,10 +3196,9 @@ async def _load_sap_data(
             for tbl in staged_tables:
                 result = await db.execute(
                     text("""
-                        SELECT DISTINCT ON (COALESCE(business_key, id::text)) row_data
-                        FROM sap_staging.rows
+                        SELECT row_data FROM sap_staging.rows
                         WHERE tenant_id = :tid AND sap_table = :tbl
-                        ORDER BY COALESCE(business_key, id::text), id DESC
+                        ORDER BY id DESC
                     """),
                     {"tid": tenant_id, "tbl": tbl},
                 )

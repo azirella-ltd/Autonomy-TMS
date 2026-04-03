@@ -283,6 +283,16 @@ class GenericTrainingOrchestrator:
                 }
                 result.models_trained += 1
                 result.sites_trained += 1
+
+                # Persist checkpoint row to powell_site_agent_checkpoints
+                self._persist_site_tgnn_checkpoint(
+                    site_key=site.site_key,
+                    checkpoint_path=train_result.get("checkpoint", ""),
+                    final_loss=train_result.get("final_loss", 0),
+                    epochs=epochs,
+                    num_samples=len(samples),
+                )
+
                 logger.info(
                     "Site tGNN BC: %s (config %d) — loss %.4f",
                     site.site_key, self.config_id,
@@ -344,6 +354,66 @@ class GenericTrainingOrchestrator:
             ))
 
         return samples
+
+    def _persist_site_tgnn_checkpoint(
+        self,
+        site_key: str,
+        checkpoint_path: str,
+        final_loss: float,
+        epochs: int,
+        num_samples: int,
+    ) -> None:
+        """Persist a site tGNN checkpoint row to powell_site_agent_checkpoints.
+
+        Deactivates any previous active checkpoint for this site_key + config_id.
+        """
+        import uuid
+        from app.db.session import sync_session_factory
+        from sqlalchemy import text as sqt
+
+        db = sync_session_factory()
+        try:
+            # Deactivate previous active checkpoints for this site + config
+            db.execute(sqt(
+                "UPDATE powell_site_agent_checkpoints SET is_active = false, retired_at = NOW() "
+                "WHERE site_key = :sk AND config_id = :c AND is_active = true"
+            ), {"sk": site_key, "c": self.config_id})
+
+            # Insert new checkpoint
+            ckpt_id = f"site_tgnn_{site_key}_{self.config_id}_{uuid.uuid4().hex[:8]}"
+            db.execute(sqt(
+                "INSERT INTO powell_site_agent_checkpoints "
+                "(checkpoint_id, config_id, tenant_id, site_key, model_version, "
+                " checkpoint_path, training_phase, training_samples, training_epochs, "
+                " training_loss, is_active, is_validated, created_at) "
+                "VALUES (:ckpt_id, :config_id, :tenant_id, :sk, :mv, "
+                " :cp, :tp, :ts, :te, :tl, true, false, NOW())"
+            ), {
+                "ckpt_id": ckpt_id,
+                "config_id": self.config_id,
+                "tenant_id": self.tenant_id,
+                "sk": site_key,
+                "mv": "v1",
+                "cp": checkpoint_path,
+                "tp": "behavioral_cloning",
+                "ts": num_samples,
+                "te": epochs,
+                "tl": final_loss,
+            })
+            db.commit()
+            logger.info(
+                "Persisted site tGNN checkpoint: site=%s, config=%d, id=%s",
+                site_key, self.config_id, ckpt_id,
+            )
+        except Exception as e:
+            db.rollback()
+            logger.error(
+                "Failed to persist site tGNN checkpoint for site=%s, config=%d: %s",
+                site_key, self.config_id, e,
+            )
+            # Non-fatal — the .pt file is saved, DB row is for tracking
+        finally:
+            db.close()
 
     # =========================================================================
     # GNN Training — S&OP GraphSAGE + Execution tGNN

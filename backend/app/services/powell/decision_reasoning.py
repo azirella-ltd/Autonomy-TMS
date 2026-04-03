@@ -1046,6 +1046,78 @@ def inventory_optimization_tgnn_reasoning(
     return " ".join(parts)
 
 
+def capacity_rccp_tgnn_reasoning(
+    *,
+    site_key: str,
+    planned_utilization: float,
+    capacity_buffer_pct: float,
+    feasibility_score: float,
+    bottleneck_risk: float,
+    overtime_exposure: float,
+    confidence: float,
+) -> str:
+    """Generate reasoning for a Capacity/RCCP Agent (tactical layer) inference output.
+
+    Produces one string per site describing utilization targets, capacity buffers,
+    plan feasibility, and bottleneck risk from the Capacity/RCCP Agent.
+    """
+    parts = [f"Capacity/RCCP Agent (tactical) for site {site_key}:"]
+
+    # Planned utilization
+    if planned_utilization > 0.90:
+        parts.append(
+            f"Very high target utilization ({planned_utilization:.0%}) — "
+            f"near or at capacity ceiling, limited flexibility for demand spikes."
+        )
+    elif planned_utilization > 0.75:
+        parts.append(
+            f"Moderate-high utilization ({planned_utilization:.0%}) — "
+            f"healthy operating range with some buffer."
+        )
+    elif planned_utilization > 0.50:
+        parts.append(f"Moderate utilization ({planned_utilization:.0%}).")
+    else:
+        parts.append(
+            f"Low utilization ({planned_utilization:.0%}) — "
+            f"significant spare capacity available."
+        )
+
+    # Capacity buffer
+    parts.append(f"Capacity buffer: {capacity_buffer_pct:.0%} excess capacity maintained.")
+
+    # Feasibility
+    if feasibility_score >= 0.9:
+        parts.append(f"Plan feasibility: high ({feasibility_score:.0%}) — plan is achievable.")
+    elif feasibility_score >= 0.6:
+        parts.append(f"Plan feasibility: moderate ({feasibility_score:.0%}) — some risk of overload.")
+    else:
+        parts.append(
+            f"Plan feasibility: LOW ({feasibility_score:.0%}) — "
+            f"current plan may not be achievable without overtime or outsourcing."
+        )
+
+    # Bottleneck risk
+    if bottleneck_risk >= 0.7:
+        parts.append(
+            f"HIGH bottleneck risk ({bottleneck_risk:.0%}) — "
+            f"this resource is a constraint. Consider capacity expansion or load leveling."
+        )
+    elif bottleneck_risk >= 0.4:
+        parts.append(f"Moderate bottleneck risk ({bottleneck_risk:.0%}).")
+    else:
+        parts.append(f"Low bottleneck risk ({bottleneck_risk:.0%}).")
+
+    # Overtime exposure
+    if overtime_exposure > 0:
+        parts.append(
+            f"Overtime exposure: {overtime_exposure:.2f}x premium cost "
+            f"due to load exceeding regular capacity."
+        )
+
+    parts.append(f"Model confidence: {confidence:.0%}.")
+    return " ".join(parts)
+
+
 def site_tgnn_reasoning(
     *,
     site_key: str,

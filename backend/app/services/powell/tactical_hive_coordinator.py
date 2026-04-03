@@ -1,14 +1,16 @@
 """
-Tactical Hive Coordinator — 3-Parallel tGNN Coordination Layer.
+Tactical Hive Coordinator — 4-Parallel tGNN Coordination Layer.
 
-Replaces the single ExecutionGNNInferenceService with three parallel
+Replaces the single ExecutionGNNInferenceService with four parallel
 specialized tGNNs that mutually condition each other via lateral context
-exchange (2-iteration lateral cycle).
+exchange (2-iteration lateral cycle), plus a joint inventory-capacity
+optimization post-pass.
 
 Architecture:
     Demand Planning tGNN ──────────────────────────┐
     Supply Planning tGNN  ─── lateral context ─────┤ merged_per_site
-    Inventory Optimization tGNN ───────────────────┘
+    Inventory Optimization tGNN ───────────────────┤
+    Capacity/RCCP tGNN ────────────────────────────┘
 
 Layer 2 of the 5-layer coordination stack:
     Layer 1:   Intra-Hive (HiveSignalBus) — <10ms, within site
@@ -49,6 +51,9 @@ from app.services.powell.supply_planning_tgnn_service import (
 from app.services.powell.inventory_optimization_tgnn_service import (
     InventoryOptimizationTGNNService, InventoryOptimizationTGNNOutput,
 )
+from app.services.powell.capacity_rccp_tgnn_service import (
+    CapacityRCCPTGNNService, CapacityRCCPTGNNOutput,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +81,32 @@ class TacticalHiveLateralContext:
     order_recommendation_by_site: Dict[str, float] = field(default_factory=dict)
     pipeline_coverage_by_site: Dict[str, float] = field(default_factory=dict)
 
-    # From Inventory Optimization tGNN → Demand + Supply
+    # From Inventory Optimization tGNN → Demand + Supply + Capacity
     stockout_probability_by_site: Dict[str, float] = field(default_factory=dict)
     buffer_adjustment_by_site: Dict[str, float] = field(default_factory=dict)
     rebalancing_urgency_by_site: Dict[str, float] = field(default_factory=dict)
+
+    # From Capacity/RCCP tGNN → Inventory + Supply
+    planned_utilization_by_site: Dict[str, float] = field(default_factory=dict)
+    capacity_buffer_by_site: Dict[str, float] = field(default_factory=dict)
+    bottleneck_risk_by_site: Dict[str, float] = field(default_factory=dict)
+
+    def to_capacity_lateral_array(self, site_keys: List[str]) -> Optional[np.ndarray]:
+        """Build [num_sites, 6] lateral context array for the Capacity tGNN.
+
+        Contains inventory and supply signals relevant to capacity planning.
+        """
+        if not site_keys:
+            return None
+        arr = np.zeros((len(site_keys), 6), dtype=np.float32)
+        for i, sk in enumerate(site_keys):
+            arr[i, 0] = float(self.stockout_probability_by_site.get(sk, 0.0))
+            arr[i, 1] = float(self.buffer_adjustment_by_site.get(sk, 0.0))
+            arr[i, 2] = float(self.rebalancing_urgency_by_site.get(sk, 0.0))
+            arr[i, 3] = float(self.supply_exception_prob_by_site.get(sk, 0.0))
+            arr[i, 4] = float(self.order_recommendation_by_site.get(sk, 0.0))
+            arr[i, 5] = float(self.pipeline_coverage_by_site.get(sk, 0.0))
+        return arr
 
     def to_demand_lateral_array(self, site_keys: List[str]) -> Optional[np.ndarray]:
         """Build [num_sites, 6] lateral context array for the Demand tGNN.
@@ -154,6 +181,10 @@ class TacticalHiveOutput:
     demand: DemandPlanningTGNNOutput
     supply: SupplyPlanningTGNNOutput
     inventory: InventoryOptimizationTGNNOutput
+    capacity: Optional[CapacityRCCPTGNNOutput] = None
+
+    # Joint inventory-capacity optimization results
+    joint_optimization: Optional[Dict[str, Dict[str, float]]] = None
 
     # Merged backward-compatible output (replaces exec_output in orchestrator)
     merged_per_site: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -163,7 +194,7 @@ class TacticalHiveOutput:
     lateral_convergence: Dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "config_id": self.config_id,
             "site_keys": self.site_keys,
             "computed_at": self.computed_at.isoformat(),
@@ -174,6 +205,11 @@ class TacticalHiveOutput:
             "inventory": self.inventory.to_dict(),
             "merged_per_site": self.merged_per_site,
         }
+        if self.capacity is not None:
+            d["capacity"] = self.capacity.to_dict()
+        if self.joint_optimization is not None:
+            d["joint_optimization"] = self.joint_optimization
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -216,18 +252,20 @@ class TacticalHiveCoordinator:
         demand_svc = DemandPlanningTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
         supply_svc = SupplyPlanningTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
         inventory_svc = InventoryOptimizationTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
+        capacity_svc = CapacityRCCPTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
 
         # --- Iteration 1: parallel inference with no lateral context ---
         logger.info(
             f"TacticalHiveCoordinator: starting iteration 1 for config {self.config_id}"
         )
-        demand_out, supply_out, inventory_out = await asyncio.gather(
+        demand_out, supply_out, inventory_out, capacity_out = await asyncio.gather(
             demand_svc.infer(sop_embeddings=sop_embeddings, force_recompute=force_recompute),
             supply_svc.infer(sop_embeddings=sop_embeddings, force_recompute=force_recompute),
             inventory_svc.infer(sop_embeddings=sop_embeddings, force_recompute=force_recompute),
+            capacity_svc.infer(sop_embeddings=sop_embeddings, force_recompute=force_recompute),
         )
 
-        lateral = self._build_lateral_context(demand_out, supply_out, inventory_out)
+        lateral = self._build_lateral_context(demand_out, supply_out, inventory_out, capacity_out)
 
         site_keys = demand_out.site_keys or supply_out.site_keys or inventory_out.site_keys
         convergence: Dict[str, float] = {sk: 0.0 for sk in site_keys}
@@ -242,8 +280,9 @@ class TacticalHiveCoordinator:
             demand_lat = lateral.to_demand_lateral_array(site_keys)
             supply_lat = lateral.to_supply_lateral_array(site_keys)
             inventory_lat = lateral.to_inventory_lateral_array(site_keys)
+            capacity_lat = lateral.to_capacity_lateral_array(site_keys)
 
-            demand_out2, supply_out2, inventory_out2 = await asyncio.gather(
+            demand_out2, supply_out2, inventory_out2, capacity_out2 = await asyncio.gather(
                 demand_svc.infer(
                     sop_embeddings=sop_embeddings,
                     lateral_context=demand_lat,
@@ -259,6 +298,11 @@ class TacticalHiveCoordinator:
                     lateral_context=inventory_lat,
                     force_recompute=True,
                 ),
+                capacity_svc.infer(
+                    sop_embeddings=sop_embeddings,
+                    lateral_context=capacity_lat,
+                    force_recompute=True,
+                ),
             )
 
             convergence = self._compute_convergence(
@@ -268,13 +312,34 @@ class TacticalHiveCoordinator:
                 site_keys,
             )
             demand_out, supply_out, inventory_out = demand_out2, supply_out2, inventory_out2
+            capacity_out = capacity_out2
             lateral_iterations = 2
             logger.info(
                 f"TacticalHiveCoordinator: iteration 2 complete. "
                 f"Avg convergence delta: {np.mean(list(convergence.values())):.4f}"
             )
 
-        merged = self.merge_outputs(demand_out, supply_out, inventory_out)
+        # --- RCCP validation ---
+        try:
+            capacity_out = await capacity_svc.validate_rccp(capacity_out)
+        except Exception as e:
+            logger.warning(f"RCCP validation failed: {e}")
+
+        # --- Joint inventory-capacity optimization (2-pass refinement) ---
+        joint_result = None
+        try:
+            from app.services.powell.joint_inventory_capacity_service import (
+                joint_inventory_capacity_optimization,
+            )
+            joint_result = await joint_inventory_capacity_optimization(
+                config_id=self.config_id,
+                inventory_output=inventory_out,
+                capacity_output=capacity_out,
+            )
+        except Exception as e:
+            logger.warning(f"Joint inventory-capacity optimization failed: {e}")
+
+        merged = self.merge_outputs(demand_out, supply_out, inventory_out, capacity_out)
 
         return TacticalHiveOutput(
             config_id=self.config_id,
@@ -283,6 +348,8 @@ class TacticalHiveCoordinator:
             demand=demand_out,
             supply=supply_out,
             inventory=inventory_out,
+            capacity=capacity_out,
+            joint_optimization=joint_result,
             merged_per_site=merged,
             lateral_iterations=lateral_iterations,
             lateral_convergence=convergence,
@@ -293,6 +360,7 @@ class TacticalHiveCoordinator:
         demand_out: DemandPlanningTGNNOutput,
         supply_out: SupplyPlanningTGNNOutput,
         inventory_out: InventoryOptimizationTGNNOutput,
+        capacity_out: Optional[CapacityRCCPTGNNOutput] = None,
     ) -> TacticalHiveLateralContext:
         """Extract cross-domain signals from iteration 1 outputs."""
         lateral = TacticalHiveLateralContext()
@@ -311,6 +379,12 @@ class TacticalHiveCoordinator:
         lateral.stockout_probability_by_site = dict(inventory_out.stockout_probability)
         lateral.buffer_adjustment_by_site = dict(inventory_out.buffer_adjustment_signal)
         lateral.rebalancing_urgency_by_site = dict(inventory_out.rebalancing_urgency)
+
+        # Capacity → others
+        if capacity_out is not None:
+            lateral.planned_utilization_by_site = dict(capacity_out.planned_utilization)
+            lateral.capacity_buffer_by_site = dict(capacity_out.capacity_buffer_pct)
+            lateral.bottleneck_risk_by_site = dict(capacity_out.bottleneck_risk)
 
         return lateral
 
@@ -337,6 +411,12 @@ class TacticalHiveCoordinator:
                 return True
             bullwhip = lateral.bullwhip_by_site.get(sk, 1.0)
             if abs(bullwhip - 1.0) > threshold:
+                return True
+            # Capacity signals
+            util = lateral.planned_utilization_by_site.get(sk, 0.0)
+            if abs(util - 0.7) > threshold:
+                return True
+            if abs(lateral.bottleneck_risk_by_site.get(sk, 0.0)) > threshold:
                 return True
 
         return False
@@ -381,9 +461,10 @@ class TacticalHiveCoordinator:
         demand_out: DemandPlanningTGNNOutput,
         supply_out: SupplyPlanningTGNNOutput,
         inventory_out: InventoryOptimizationTGNNOutput,
+        capacity_out: Optional[CapacityRCCPTGNNOutput] = None,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Merge three domain outputs into a unified per-site dict.
+        Merge four domain outputs into a unified per-site dict.
 
         The format is 100% backward-compatible with the dict expected by
         GNNOrchestrationService._merge_outputs() consumers and
@@ -394,40 +475,44 @@ class TacticalHiveCoordinator:
             exception_probability: float   (maps from supply_exception_probability)
             order_recommendation: float
             allocation_priority: float     (new — passed through)
-            confidence: float              (average of three domain confidences)
-            domain_confidence: dict        (new — per-domain confidence breakdown)
+            confidence: float              (average of domain confidences)
+            domain_confidence: dict        (per-domain confidence breakdown)
 
         Additional keys provided for new consumers:
             demand_volatility, bullwhip_coefficient,
             lead_time_risk, pipeline_coverage_days,
             buffer_adjustment_signal, rebalancing_urgency,
             stockout_probability, inventory_health,
-            rebalancing_candidates
+            rebalancing_candidates,
+            planned_utilization, capacity_buffer_pct,
+            feasibility_score, bottleneck_risk
         """
         merged: Dict[str, Dict[str, Any]] = {}
 
         all_site_keys = set(demand_out.site_keys) | set(supply_out.site_keys) | set(inventory_out.site_keys)
+        if capacity_out is not None:
+            all_site_keys |= set(capacity_out.site_keys)
 
         for site_key in all_site_keys:
             d_conf = demand_out.confidence.get(site_key, 0.5)
             s_conf = supply_out.confidence.get(site_key, 0.5)
             i_conf = inventory_out.confidence.get(site_key, 0.5)
-            avg_conf = (d_conf + s_conf + i_conf) / 3.0
+            c_conf = capacity_out.confidence.get(site_key, 0.5) if capacity_out else 0.5
+            avg_conf = (d_conf + s_conf + i_conf + c_conf) / 4.0
 
             merged[site_key] = {
                 # --- Backward-compatible keys ---
                 "demand_forecast": demand_out.demand_forecast.get(site_key, []),
-                # Map supply exception probability → exception_probability
-                # (maintains compatibility with tGNNSiteDirective.exception_probability)
                 "exception_probability": supply_out.supply_exception_probability.get(site_key, 0.0),
                 "order_recommendation": supply_out.order_recommendation.get(site_key, 0.0),
                 "allocation_priority": supply_out.allocation_priority.get(site_key, 0.5),
                 "confidence": avg_conf,
-                # --- Domain confidence breakdown (new) ---
+                # --- Domain confidence breakdown ---
                 "domain_confidence": {
                     "demand": d_conf,
                     "supply": s_conf,
                     "inventory": i_conf,
+                    "capacity": c_conf,
                 },
                 # --- Extended demand signals ---
                 "demand_volatility": demand_out.demand_volatility.get(site_key, 0.0),
@@ -441,10 +526,16 @@ class TacticalHiveCoordinator:
                 "stockout_probability": inventory_out.stockout_probability.get(site_key, 0.0),
                 "inventory_health": inventory_out.inventory_health.get(site_key, 0.5),
                 "rebalancing_candidates": inventory_out.rebalancing_candidates.get(site_key, []),
+                # --- Extended capacity signals ---
+                "planned_utilization": capacity_out.planned_utilization.get(site_key, 0.0) if capacity_out else 0.0,
+                "capacity_buffer_pct": capacity_out.capacity_buffer_pct.get(site_key, 0.0) if capacity_out else 0.0,
+                "feasibility_score": capacity_out.feasibility_score.get(site_key, 0.0) if capacity_out else 0.0,
+                "bottleneck_risk": capacity_out.bottleneck_risk.get(site_key, 0.0) if capacity_out else 0.0,
                 # --- Reasoning (per-domain) ---
                 "reasoning_demand": demand_out.reasoning.get(site_key, ""),
                 "reasoning_supply": supply_out.reasoning.get(site_key, ""),
                 "reasoning_inventory": inventory_out.reasoning.get(site_key, ""),
+                "reasoning_capacity": capacity_out.reasoning.get(site_key, "") if capacity_out else "",
             }
 
         return merged

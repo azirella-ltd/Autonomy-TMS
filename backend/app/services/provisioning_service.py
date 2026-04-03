@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # "completed"/"failed" when the real work finishes.
 _BACKGROUND_STEPS = {
     "sop_graphsage",
-    "demand_tgnn", "supply_tgnn", "inventory_tgnn",
+    "demand_tgnn", "supply_tgnn", "inventory_tgnn", "capacity_tgnn",
     "trm_training", "rl_training", "site_tgnn", "scenario_bootstrap",
 }
 
@@ -987,61 +987,96 @@ class ProvisioningService:
             sync_db.close()
 
     async def _step_demand_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
-        """Step 5: Cold-start Demand Planning tGNN (foreground fallback, normally runs via _bg)."""
-        from app.db.session import async_session_factory
-        try:
-            from app.services.powell.demand_planning_tgnn_service import DemandPlanningTGNNService
-            tenant_id = await self._resolve_tenant_id(config_id)
-            async with async_session_factory() as fresh_db:
-                svc = DemandPlanningTGNNService(db=fresh_db, config_id=config_id, tenant_id=tenant_id)
-                result = await svc.infer(sop_embeddings=None)
-            return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
-        except ImportError:
-            logger.info(
-                "DemandPlanningTGNNService not yet available — stubbing step for config %d", config_id
-            )
-            return {"status": "stubbed", "message": "DemandPlanningTGNNService not yet implemented"}
-        except Exception as e:
-            logger.warning("Demand tGNN step failed (non-critical): %s", e)
-            return {"status": "ok", "note": f"Demand tGNN attempted: {str(e)[:100]}"}
+        """Step 5: Train Demand Planning tGNN and persist checkpoint.
+
+        Trains a cold-start demand tGNN from historical forecast/order data,
+        saves the checkpoint to disk AND records it in tactical_tgnn_checkpoints.
+        SOC II: failures raise — no silent swallowing.
+        """
+        from app.services.powell.tactical_tgnn_training_service import TacticalTGNNTrainingService
+        tenant_id = await self._resolve_tenant_id(config_id)
+        result = await TacticalTGNNTrainingService.train_and_persist(
+            config_id=config_id, tenant_id=tenant_id, domain="demand_planning",
+        )
+        return result
 
     async def _step_supply_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
-        """Step 6: Cold-start Supply Planning tGNN (foreground fallback, normally runs via _bg)."""
-        from app.db.session import async_session_factory
-        try:
-            from app.services.powell.supply_planning_tgnn_service import SupplyPlanningTGNNService
-            tenant_id = await self._resolve_tenant_id(config_id)
-            async with async_session_factory() as fresh_db:
-                svc = SupplyPlanningTGNNService(db=fresh_db, config_id=config_id, tenant_id=tenant_id)
-                result = await svc.infer(sop_embeddings=None)
-            return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
-        except ImportError:
-            logger.info(
-                "SupplyPlanningTGNNService not yet available — stubbing step for config %d", config_id
-            )
-            return {"status": "stubbed", "message": "SupplyPlanningTGNNService not yet implemented"}
-        except Exception as e:
-            logger.warning("Supply tGNN step failed (non-critical): %s", e)
-            return {"status": "ok", "note": f"Supply tGNN attempted: {str(e)[:100]}"}
+        """Step 6: Train Supply Planning tGNN and persist checkpoint.
+
+        Trains a cold-start supply tGNN from supply plan/PO data,
+        saves the checkpoint to disk AND records it in tactical_tgnn_checkpoints.
+        SOC II: failures raise — no silent swallowing.
+        """
+        from app.services.powell.tactical_tgnn_training_service import TacticalTGNNTrainingService
+        tenant_id = await self._resolve_tenant_id(config_id)
+        result = await TacticalTGNNTrainingService.train_and_persist(
+            config_id=config_id, tenant_id=tenant_id, domain="supply_planning",
+        )
+        return result
 
     async def _step_inventory_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
-        """Step 7: Cold-start Inventory Optimization tGNN (foreground fallback, normally runs via _bg)."""
-        from app.db.session import async_session_factory
+        """Step 7: Train Inventory Optimization tGNN and persist checkpoint.
+
+        Trains a cold-start inventory tGNN from inventory level/policy data,
+        saves the checkpoint to disk AND records it in tactical_tgnn_checkpoints.
+        SOC II: failures raise — no silent swallowing.
+        """
+        from app.services.powell.tactical_tgnn_training_service import TacticalTGNNTrainingService
+        tenant_id = await self._resolve_tenant_id(config_id)
+        result = await TacticalTGNNTrainingService.train_and_persist(
+            config_id=config_id, tenant_id=tenant_id, domain="inventory_optim",
+        )
+        return result
+
+    async def _step_capacity_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
+        """Step 8: Train Capacity/RCCP tGNN and persist checkpoint.
+
+        Trains a cold-start capacity tGNN from manufacturing order/capacity data,
+        saves the checkpoint to disk AND records it in tactical_tgnn_checkpoints.
+        After training, runs joint inventory-capacity optimization.
+        SOC II: failures raise — no silent swallowing.
+        """
+        from app.services.powell.tactical_tgnn_training_service import TacticalTGNNTrainingService
+        tenant_id = await self._resolve_tenant_id(config_id)
+        result = await TacticalTGNNTrainingService.train_and_persist(
+            config_id=config_id, tenant_id=tenant_id, domain="capacity_rccp",
+        )
+
+        # Run joint inventory-capacity optimization if both checkpoints exist
         try:
+            from app.db.session import async_session_factory as AsyncSessionLocal
             from app.services.powell.inventory_optimization_tgnn_service import InventoryOptimizationTGNNService
-            tenant_id = await self._resolve_tenant_id(config_id)
-            async with async_session_factory() as fresh_db:
-                svc = InventoryOptimizationTGNNService(db=fresh_db, config_id=config_id, tenant_id=tenant_id)
-                result = await svc.infer(sop_embeddings=None)
-            return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
-        except ImportError:
-            logger.info(
-                "InventoryOptimizationTGNNService not yet available — stubbing step for config %d", config_id
-            )
-            return {"status": "stubbed", "message": "InventoryOptimizationTGNNService not yet implemented"}
+            from app.services.powell.capacity_rccp_tgnn_service import CapacityRCCPTGNNService
+            from app.services.powell.joint_inventory_capacity_service import joint_inventory_capacity_optimization
+
+            async with AsyncSessionLocal() as joint_db:
+                inv_svc = InventoryOptimizationTGNNService(joint_db, config_id, tenant_id=tenant_id)
+                cap_svc = CapacityRCCPTGNNService(joint_db, config_id, tenant_id=tenant_id)
+
+                inv_out = await inv_svc.infer()
+                cap_out = await cap_svc.infer()
+
+                # RCCP validation
+                cap_out = await cap_svc.validate_rccp(cap_out)
+
+                # Joint optimization
+                joint_result = await joint_inventory_capacity_optimization(
+                    config_id=config_id,
+                    inventory_output=inv_out,
+                    capacity_output=cap_out,
+                )
+                result["joint_optimization_sites"] = len(joint_result)
+                result["rccp_overloaded"] = sum(
+                    len(v) for v in cap_out.rccp_overloaded_resources.values()
+                )
         except Exception as e:
-            logger.warning("Inventory tGNN step failed (non-critical): %s", e)
-            return {"status": "ok", "note": f"Inventory tGNN attempted: {str(e)[:100]}"}
+            logger.warning(
+                "Joint inventory-capacity optimization skipped for config %d: %s",
+                config_id, e,
+            )
+            result["joint_optimization_sites"] = 0
+
+        return result
 
     async def _step_trm_training(self, config_id: int) -> dict:
         """Step 5: TRM Phase 1 BC (foreground fallback, normally runs via _bg).
@@ -1647,11 +1682,24 @@ class ProvisioningService:
                     )
 
                     # Pass 2: simulation bootstrap for uncalibrated TRM types
-                    if n_real < 11 and config_id and tenant_id:
+                    # Determine how many TRM types are applicable for this config's topology
+                    try:
+                        from app.services.powell.site_capabilities import get_active_trms
+                        from app.models.supply_chain_config import Site as _Site
+                        _sites = sync_db.query(_Site.master_type, _Site.type).filter(
+                            _Site.config_id == config_id, _Site.is_external == False
+                        ).all()
+                        _active = set()
+                        for _mt, _st in _sites:
+                            _active.update(get_active_trms(_mt or "INVENTORY", _st))
+                        n_applicable = len(_active) if _active else 11
+                    except Exception:
+                        n_applicable = 11
+                    if n_real < n_applicable and config_id and tenant_id:
                         logger.info(
-                            "CDT: %d/11 TRMs calibrated from real outcomes — "
+                            "CDT: %d/%d TRMs calibrated from real outcomes — "
                             "bootstrapping remainder from digital twin simulation",
-                            n_real,
+                            n_real, n_applicable,
                         )
                         sim_stats = run_simulation_calibration_bootstrap(
                             db=sync_db,
@@ -1660,8 +1708,8 @@ class ProvisioningService:
                             n_episodes=50,
                         )
                         logger.info(
-                            "CDT simulation bootstrap: %d/11 agents calibrated",
-                            sim_stats.get("agents_calibrated", 0),
+                            "CDT simulation bootstrap: %d/%d agents calibrated",
+                            sim_stats.get("agents_calibrated", 0), n_applicable,
                         )
                 finally:
                     sync_db.close()
@@ -2004,16 +2052,20 @@ class ProvisioningService:
         }
 
     async def _step_demand_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 5 background: Cold-start Demand Planning tGNN (delegates to foreground handler)."""
+        """Step 5 background: Train Demand Planning tGNN (delegates to foreground handler)."""
         return await self._step_demand_tgnn(config_id, db=db)
 
     async def _step_supply_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 6 background: Cold-start Supply Planning tGNN (delegates to foreground handler)."""
+        """Step 6 background: Train Supply Planning tGNN (delegates to foreground handler)."""
         return await self._step_supply_tgnn(config_id, db=db)
 
     async def _step_inventory_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 7 background: Cold-start Inventory Optimization tGNN (delegates to foreground handler)."""
+        """Step 7 background: Train Inventory Optimization tGNN (delegates to foreground handler)."""
         return await self._step_inventory_tgnn(config_id, db=db)
+
+    async def _step_capacity_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
+        """Step 8 background: Train Capacity/RCCP tGNN (delegates to foreground handler)."""
+        return await self._step_capacity_tgnn(config_id, db=db)
 
     async def _step_trm_training_bg(self, config_id: int, db: AsyncSession) -> dict:
         """Step 5 background: TRM Phase 1 BC for ALL active TRMs at all non-market sites."""
@@ -2201,20 +2253,49 @@ def _seed_metric_configuration(db, config_id: int, tenant_id: int) -> int:
 
 
 def _get_non_market_site_keys(db, config_id: int):
-    """Return (site_key, master_type, sc_site_type) tuples for non-market sites in config."""
+    """Return (site_key, master_type, sc_site_type) tuples for non-market sites in config.
+
+    Uses Site.name as site_key, Site.master_type, and Site.type (AWS SC site type).
+    Only returns internal (non-external) sites that are not vendor/customer.
+    """
     try:
         from sqlalchemy import select
         from app.models.supply_chain_config import Site
         stmt = select(Site).where(
             Site.config_id == config_id,
-            Site.master_type.notin_(["VENDOR", "CUSTOMER"]),
+            Site.is_external == False,
         )
+        # Handle both sync and async sessions
+        if hasattr(db, 'scalars'):
+            # Async session
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're already in an async context — use sync fallback
+                from app.db.session import sync_session_factory
+                sync_db = sync_session_factory()
+                try:
+                    from sqlalchemy import text as sqt
+                    rows = sync_db.execute(sqt(
+                        "SELECT name, master_type, type FROM site "
+                        "WHERE config_id = :c AND is_external = false "
+                        "AND LOWER(COALESCE(master_type, '')) NOT IN ('vendor', 'customer')"
+                    ), {"c": config_id}).fetchall()
+                    return [
+                        (row[0] or f"site_{config_id}", row[1] or "INVENTORY", row[2])
+                        for row in rows
+                    ]
+                finally:
+                    sync_db.close()
+        # Sync session path
         nodes = db.execute(stmt).scalars().all() if hasattr(db, "execute") else []
         return [
-            (n.node_id or f"site_{n.id}", n.master_type or "INVENTORY", getattr(n, "sc_site_type", None))
+            (n.name or f"site_{n.id}", n.master_type or "INVENTORY", n.type)
             for n in nodes
+            if (n.master_type or "").upper() not in ("VENDOR", "CUSTOMER")
         ]
-    except Exception:
+    except Exception as e:
+        logger.error("Failed to get non-market site keys for config %d: %s", config_id, e)
         return []
 
 

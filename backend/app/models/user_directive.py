@@ -155,7 +155,12 @@ class ConfigProvisioningStatus(Base):
     inventory_tgnn_at = Column(DateTime, nullable=True)
     inventory_tgnn_error = Column(Text, nullable=True)
 
-    # Step 8: TRM Phase 1 (Behavioral Cloning)
+    # Step 8: Capacity/RCCP tGNN (joint optimization with Inventory tGNN)
+    capacity_tgnn_status = Column(String(20), default="pending")
+    capacity_tgnn_at = Column(DateTime, nullable=True)
+    capacity_tgnn_error = Column(Text, nullable=True)
+
+    # Step 9: TRM Phase 1 (Behavioral Cloning)
     trm_training_status = Column(String(20), default="pending")
     trm_training_at = Column(DateTime, nullable=True)
     trm_training_error = Column(Text, nullable=True)
@@ -224,6 +229,7 @@ class ConfigProvisioningStatus(Base):
     STEPS = [
         "warm_start", "sop_graphsage", "cfa_optimization",
         "lgbm_forecast", "demand_tgnn", "supply_tgnn", "inventory_tgnn",
+        "capacity_tgnn",
         "trm_training", "rl_training", "backtest_evaluation",
         "supply_plan", "rccp_validation",
         "decision_seed", "site_tgnn", "conformal", "scenario_bootstrap", "briefing",
@@ -248,6 +254,7 @@ class ConfigProvisioningStatus(Base):
         "supply_tgnn": "Supply Planning Agent",
         "rccp_validation": "Rough-Cut Capacity Validation",
         "inventory_tgnn": "Inventory Optimization Agent",
+        "capacity_tgnn": "Capacity/RCCP Planning Agent",
         "trm_training": "Execution Role Agent Training",
         "rl_training": "Simulation RL Fine-Tuning",
         "backtest_evaluation": "Agent Backtest Evaluation",
@@ -267,7 +274,8 @@ class ConfigProvisioningStatus(Base):
         "demand_tgnn": ["lgbm_forecast", "sop_graphsage"],
         "supply_tgnn": ["lgbm_forecast", "sop_graphsage"],
         "inventory_tgnn": ["supply_tgnn"],
-        "trm_training": ["demand_tgnn", "supply_tgnn", "inventory_tgnn"],
+        "capacity_tgnn": ["inventory_tgnn"],
+        "trm_training": ["demand_tgnn", "supply_tgnn", "inventory_tgnn", "capacity_tgnn"],
         "rl_training": ["trm_training"],
         "backtest_evaluation": ["rl_training"],
         "supply_plan": ["cfa_optimization", "backtest_evaluation"],
