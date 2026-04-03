@@ -2,7 +2,7 @@
 ERP Integration API Endpoints
 
 Unified API for managing ERP connections, field mapping, data extraction,
-and ingestion monitoring across SAP, Odoo, and Dynamics 365 F&O.
+ingestion monitoring, and CSV CDC injection across all ERP types.
 
 Extends (not replaces) the existing SAP-specific endpoints at /sap-data.
 """
@@ -10,7 +10,7 @@ Extends (not replaces) the existing SAP-specific endpoints at /sap-data.
 import logging
 from typing import Optional, List
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -339,4 +339,109 @@ async def get_d365_extraction_plan():
             "entities": TRANSACTION_ENTITIES,
             "total_fields": sum(len(D365_SC_ENTITIES.get(e, [])) for e in TRANSACTION_ENTITIES),
         },
+    }
+
+
+# ── CSV CDC Injection ──────────────────────────────────────────────────────────
+
+@router.post("/csv-inject")
+async def inject_csv(
+    file: UploadFile = File(..., description="CSV file representing an ERP table export"),
+    config_id: int = Form(..., description="Supply chain config ID"),
+    table_name: Optional[str] = Form(None, description="SAP table name (auto-detected from filename if omitted)"),
+    erp_type: str = Form("sap", description="ERP type: sap, odoo, d365"),
+):
+    """Inject a CSV file through the full CDC pipeline for demo/testing.
+
+    Upload a CSV representing an ERP table export (e.g., VBAK.csv for sales
+    orders, EKKO.csv for purchase orders). The system will:
+
+    1. Parse and auto-detect the SAP table from filename or column patterns
+    2. Stage the raw data for audit
+    3. Run CDC analysis (new/changed/deleted vs existing DB state)
+    4. Emit HiveSignals to the Context Engine for TRM consumption
+    5. Broadcast CDC events to Decision Stream WebSocket
+    6. Return a summary with pending decisions
+
+    Supported tables: VBAK, VBAP, EKKO, EKPO, MARA, MARC, MARD, T001W,
+    LFA1, KNA1, LIKP, LIPS, AFKO, AFPO, MBEW, STKO, STPO
+
+    Example: Upload VBAK.csv with new sales orders → system detects demand
+    change → emits DEMAND_SURGE signal → ATP TRM evaluates → Decision Stream
+    shows "New demand detected, ATP allocation recommended"
+    """
+    from app.db.session import async_session_factory
+    from app.services.csv_cdc_injection_service import CSVCDCInjectionService
+
+    # Read file content
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    if len(content) > 50 * 1024 * 1024:  # 50MB limit
+        raise HTTPException(status_code=400, detail="File too large (max 50MB)")
+
+    async with async_session_factory() as db:
+        # Get tenant_id from config
+        from sqlalchemy import text as sql_text
+        result = await db.execute(
+            sql_text("SELECT tenant_id FROM supply_chain_configs WHERE id = :cid"),
+            {"cid": config_id},
+        )
+        row = result.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Config {config_id} not found")
+        tenant_id = row.tenant_id
+
+        service = CSVCDCInjectionService(db)
+        result = await service.inject_csv(
+            csv_content=content,
+            filename=file.filename or "unknown.csv",
+            tenant_id=tenant_id,
+            config_id=config_id,
+            table_name=table_name,
+            erp_type=erp_type,
+        )
+
+        await db.commit()
+        return result
+
+
+@router.get("/csv-inject/supported-tables")
+async def list_supported_tables():
+    """List all SAP tables supported for CSV injection."""
+    from app.services.csv_cdc_injection_service import SAP_TABLE_TO_ENTITY
+
+    tables = []
+    for table, (entity, key, tier) in sorted(SAP_TABLE_TO_ENTITY.items()):
+        tables.append({
+            "table_name": table,
+            "entity_type": entity,
+            "key_field": key,
+            "tier": tier,
+            "description": {
+                "VBAK": "Sales Order Headers",
+                "VBAP": "Sales Order Items",
+                "EKKO": "Purchase Order Headers",
+                "EKPO": "Purchase Order Items",
+                "MARA": "Material Master (General)",
+                "MAKT": "Material Descriptions",
+                "MARC": "Material Master (Plant)",
+                "MARD": "Material Stock (Storage Location)",
+                "MBEW": "Material Valuation",
+                "T001W": "Plants/Sites",
+                "LFA1": "Vendor Master",
+                "KNA1": "Customer Master",
+                "LIKP": "Delivery Headers",
+                "LIPS": "Delivery Items",
+                "AFKO": "Production Order Headers",
+                "AFPO": "Production Order Items",
+                "STKO": "BOM Headers",
+                "STPO": "BOM Items",
+            }.get(table, ""),
+        })
+
+    return {
+        "supported_tables": tables,
+        "usage": "POST /erp/csv-inject with multipart form: file=@VBAK.csv, config_id=129",
     }

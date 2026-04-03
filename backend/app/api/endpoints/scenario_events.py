@@ -122,6 +122,44 @@ def inject_event(
             parameters=request.parameters,
         )
         result["target_config_id"] = target_config_id
+
+        # Broadcast event injection to Decision Stream WebSocket
+        try:
+            from app.api.endpoints.decision_stream_ws import manager as ws_manager
+            import asyncio
+
+            event_labels = {
+                "demand_spike": "Demand Surge",
+                "drop_in_order": "Demand Drop",
+                "supplier_delay": "Supplier Delay",
+                "supplier_loss": "Supplier Loss",
+                "quality_hold": "Quality Hold",
+                "component_shortage": "Component Shortage",
+                "machine_breakdown": "Machine Breakdown",
+                "capacity_loss": "Capacity Reduction",
+                "shipment_delay": "Shipment Delay",
+                "lane_disruption": "Lane Disruption",
+            }
+            label = event_labels.get(request.event_type, request.event_type.replace("_", " ").title())
+            trm_types = result.get("trms_responding", [])
+
+            asyncio.create_task(ws_manager.broadcast_to_tenant(tenant_id, {
+                "type": "scenario_event_injected",
+                "data": {
+                    "event_type": request.event_type,
+                    "label": label,
+                    "config_id": target_config_id,
+                    "parameters": request.parameters,
+                    "trms_responding": trm_types,
+                    "message": (
+                        f"Scenario event injected: {label}. "
+                        f"{len(trm_types)} TRM agent(s) responding: {', '.join(trm_types)}."
+                    ),
+                },
+            }))
+        except Exception as e:
+            logger.debug("WebSocket broadcast for scenario event failed: %s", e)
+
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
