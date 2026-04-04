@@ -373,6 +373,9 @@ from .sc_extensions import (
     OutboundOrderLineStatus, SAPChangeLog, SAPChangeLogDetail,
 )
 
+# 34. Unified Training Corpus — single source of truth for all agent training data
+from .training_corpus import TrainingCorpusSample
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions

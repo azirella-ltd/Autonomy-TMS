@@ -3,6 +3,13 @@
 > **Audience**: Engineers, data scientists, solution architects.
 > Precise technical documentation of the full training pipeline: Phase 1 (BC),
 > Phase 2 (Offline RL / VFA fine-tuning), and the CDC → Relearning autonomous loop.
+>
+> **Also see**: [UNIFIED_TRAINING_CORPUS.md](architecture/UNIFIED_TRAINING_CORPUS.md) —
+> Authoritative reference for the training data pipeline. As of April 2026, all four
+> planning layers (Strategic, Tactical, Operational/Site, Execution/Role) train on a
+> single unified corpus anchored on the ERP baseline, with bottom-up aggregation from
+> TRM decisions up to strategic policy parameters. This supersedes the previous
+> architecture where each layer had its own synthetic data pipeline.
 
 ---
 

@@ -410,3 +410,24 @@ Completed: AWS SC 100%, 96+ pages, terminology renames, TRM Hive, AAP, CDC→Rel
 **Files**: `integrations/mcp/` (client, config, audit, context_engine, writeback_service, scheduler, adapters/), `models/operating_schedule.py`, `services/oversight_schedule_service.py`.
 
 **Docs**: [AGENT_GUARDRAILS_AND_AIIO.md](internal/AGENT_GUARDRAILS_AND_AIIO.md) Section 16.
+
+---
+
+## Unified Training Corpus (Apr 2026)
+
+**Purpose**: Single source of truth for all agent training data across the four planning layers (Strategic S&OP, Tactical tGNNs, Operational Site tGNN, Execution TRMs). Replaces the previous architecture of four independent synthetic data pipelines.
+
+**Anchor**: ERP baseline extracted at provisioning (open POs, MOs, TOs, inventory, sourcing rules). This is the tenant's real operating reality.
+
+**Generation**: ~500 perturbations around the baseline (demand +/-15%, lead times +/-20%, costs +/-10%, etc.). Each perturbation runs the Digital Twin with all 12 TRMs active. Every TRM decision is captured as a Layer 1 sample.
+
+**Aggregation**: Pure data transformation upward:
+- Layer 1 (TRM decisions) → Layer 1.5 (site × time window aggregates for Site tGNN) → Layer 2 (network × domain × period for Tactical tGNNs) → Layer 4 (network × theta* for S&OP GraphSAGE)
+
+**Continuous**: Real outcomes from `powell_*_decisions` append as new Layer 1 samples post-provisioning. Aggregator re-runs on new samples. All four layers retrain together when drift is detected.
+
+**Key property**: All four layers train on the same reality → no cross-layer disagreement.
+
+**Files**: `services/training_corpus/` (corpus_service, erp_baseline_extractor, perturbation_generator, simulation_runner, aggregator, theta_inference), `models/training_corpus.py`, migration `20260404_training_corpus.py`.
+
+**Docs**: [UNIFIED_TRAINING_CORPUS.md](internal/architecture/UNIFIED_TRAINING_CORPUS.md), [HOW_AGENTS_LEARN.md](external/HOW_AGENTS_LEARN.md).

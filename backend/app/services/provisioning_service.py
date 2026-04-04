@@ -715,8 +715,49 @@ class ProvisioningService:
         finally:
             db.close()
 
+    async def _step_training_corpus(self, config_id: int, db: AsyncSession = None) -> dict:
+        """Pre-training step: Build the unified training corpus from ERP baseline.
+
+        Extracts the ERP baseline, generates perturbations, runs Digital Twin
+        simulations with TRMs, and aggregates into Layer 1 / 1.5 / 2 / 4 samples.
+
+        All subsequent training steps (sop_graphsage, supply_tgnn, inventory_tgnn,
+        capacity_tgnn, site_tgnn, trm_training) consume samples from this corpus
+        instead of generating their own synthetic data.
+
+        See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md
+        """
+        from app.services.training_corpus import TrainingCorpusService
+
+        effective_db = db or self.db
+        service = TrainingCorpusService(effective_db)
+
+        # Resolve tenant_id
+        from sqlalchemy import text as sql_text
+        result = await effective_db.execute(
+            sql_text("SELECT tenant_id FROM supply_chain_configs WHERE id = :cid"),
+            {"cid": config_id},
+        )
+        row = result.fetchone()
+        tenant_id = row.tenant_id if row else 0
+
+        # Generate corpus (default 500 perturbations, 26-week horizon)
+        result = await service.create_corpus(
+            tenant_id=tenant_id,
+            config_id=config_id,
+            num_perturbations=500,
+            planning_horizon_weeks=26,
+        )
+        return result
+
     async def _step_sop_graphsage(self, config_id: int) -> dict:
-        """Step 2: Train S&OP GraphSAGE model (foreground fallback, normally runs via _bg)."""
+        """Step 2: Train S&OP GraphSAGE model on Layer 4 corpus samples.
+
+        Before April 2026 this step trained on synthetic random networks
+        via SoPGraphSAGEOracle. It now trains on samples aggregated from
+        actual TRM decisions in Digital Twin simulations of the tenant's
+        perturbed ERP baseline. See _step_training_corpus.
+        """
         from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
         orchestrator = GenericTrainingOrchestrator(config_id=config_id)
         result = await orchestrator.train_sop_graphsage()
