@@ -1,29 +1,43 @@
 """
-Tactical Hive Coordinator — 4-Parallel tGNN Coordination Layer.
+Tactical Hive Coordinator — 3-Parallel tGNN + Demand Features Layer.
 
-Replaces the single ExecutionGNNInferenceService with four parallel
-specialized tGNNs that mutually condition each other via lateral context
-exchange (2-iteration lateral cycle), plus a joint inventory-capacity
+Coordinates three supply-side tGNNs with lateral context exchange
+(2-iteration lateral cycle), plus a joint inventory-capacity
 optimization post-pass.
 
-Architecture:
-    Demand Planning tGNN ──────────────────────────┐
-    Supply Planning tGNN  ─── lateral context ─────┤ merged_per_site
-    Inventory Optimization tGNN ───────────────────┤
-    Capacity/RCCP tGNN ────────────────────────────┘
+Architecture (revised April 2026):
+    Forecast Baseline TRM ──── P10/P50/P90 ────┐
+    Forecast Adjustment TRM ─── adjustments ───┤ demand features
+                                               ↓ (injected as node features)
+    Supply Planning tGNN  ─── lateral context ─┤
+    Inventory Optimization tGNN ───────────────┤ merged_per_site
+    Capacity/RCCP tGNN ────────────────────────┘
+
+The Demand Planning tGNN has been REMOVED. Demand forecasting is a
+per-product tabular problem handled by the Forecast TRMs (LightGBM).
+The demand plan (P10/P50/P90) is injected as node features for the
+3 supply-side tGNNs. Cross-product effects are captured as LightGBM
+features, not graph message passing.
+
+Demand-derived features per site (computed analytically, not by GNN):
+  - demand_p50, demand_p10, demand_p90 (aggregated across products at site)
+  - demand_volatility: (P90 - P10) / P50
+  - demand_trend: period-over-period change
+  - bullwhip_coefficient: upstream / downstream forecast variance ratio
 
 Layer 2 of the 5-layer coordination stack:
     Layer 1:   Intra-Hive (HiveSignalBus) — <10ms, within site
     Layer 1.5: Site tGNN — hourly, intra-site cross-TRM coordination
-    Layer 2:   Network tGNN Inter-Hive (this coordinator) — daily, cross-site
+    Layer 2:   Tactical coordination (this coordinator) — daily, cross-site
     Layer 3:   AAP Cross-Authority — seconds-minutes, ad hoc
     Layer 4:   S&OP Consensus Board — weekly, policy parameters
 
 Lateral convergence check:
-    Iteration 1: all three tGNNs run in parallel with no lateral context.
+    Iteration 1: all three supply tGNNs run in parallel with demand features
+    as node input but no cross-domain lateral context.
     If any signal significantly deviates from default (|signal| > threshold),
     Iteration 2 runs: each tGNN receives the other two's outputs as lateral
-    context before re-computing.
+    context before re-computing (triangle: supply↔inventory↔capacity).
     Maximum 2 iterations (time budget for daily cycle).
 
 merged_per_site output is 100% backward-compatible with the format expected
@@ -42,9 +56,6 @@ import numpy as np
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.powell.demand_planning_tgnn_service import (
-    DemandPlanningTGNNService, DemandPlanningTGNNOutput,
-)
 from app.services.powell.supply_planning_tgnn_service import (
     SupplyPlanningTGNNService, SupplyPlanningTGNNOutput,
 )
@@ -54,6 +65,16 @@ from app.services.powell.inventory_optimization_tgnn_service import (
 from app.services.powell.capacity_rccp_tgnn_service import (
     CapacityRCCPTGNNService, CapacityRCCPTGNNOutput,
 )
+
+# Demand Planning tGNN REMOVED (April 2026). Demand features computed
+# analytically from Forecast TRM outputs (LightGBM P10/P50/P90).
+# Import retained for backward-compatible output format.
+try:
+    from app.services.powell.demand_planning_tgnn_service import (
+        DemandPlanningTGNNOutput,
+    )
+except ImportError:
+    DemandPlanningTGNNOutput = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -217,12 +238,11 @@ class TacticalHiveOutput:
 # ---------------------------------------------------------------------------
 
 class TacticalHiveCoordinator:
-    """Coordinates three parallel tGNNs with lateral context exchange.
+    """Coordinates 3 supply-side tGNNs + analytical demand features.
 
-    Each tGNN runs once (iteration 1) with only S&OP embeddings.
-    If any signal is significantly non-default, a second iteration runs
-    where each tGNN receives the other two's outputs as lateral context.
-    Maximum 2 iterations to fit within the daily GNN cycle time budget.
+    Demand features computed from Forecast TRM outputs (LightGBM P10/P50/P90).
+    No Demand Planning tGNN — demand is a per-product tabular problem, not a
+    graph problem. Supply-side tGNNs run in 2-iteration lateral cycle (triangle).
     """
 
     # Threshold for deciding whether a second iteration is warranted.
@@ -233,6 +253,73 @@ class TacticalHiveCoordinator:
         self.db = db
         self.config_id = config_id
         self.tenant_id = tenant_id
+
+    async def _compute_demand_features(
+        self,
+        site_keys: List[str],
+    ) -> DemandPlanningTGNNOutput:
+        """Compute demand features analytically from Forecast table.
+
+        Replaces the Demand Planning tGNN. Reads the latest LightGBM forecast
+        (P10/P50/P90) and computes per-site aggregate demand characteristics.
+
+        Returns a DemandPlanningTGNNOutput (backward-compatible format) with:
+        - demand_forecast: [4-period] aggregate P50 per site
+        - demand_volatility: (P90 - P10) / P50 per site
+        - bullwhip_coefficient: default 1.0 (TODO: DAG path computation)
+        - confidence: inverse of interval width
+        """
+        from sqlalchemy import text as sql_text
+
+        demand_forecast: Dict[str, List[float]] = {}
+        demand_volatility: Dict[str, float] = {}
+        bullwhip: Dict[str, float] = {}
+        confidence: Dict[str, float] = {}
+
+        try:
+            result = await self.db.execute(
+                sql_text("""
+                    SELECT site_id,
+                           COALESCE(SUM(quantity), 0) as total_p50,
+                           COALESCE(SUM(quantity_p10), 0) as total_p10,
+                           COALESCE(SUM(quantity_p90), 0) as total_p90
+                    FROM forecast
+                    WHERE config_id = :config_id
+                      AND plan_version = 'live'
+                    GROUP BY site_id
+                """),
+                {"config_id": self.config_id},
+            )
+            for row in result.fetchall():
+                sk = str(row.site_id)
+                p50 = float(row.total_p50) if row.total_p50 else 0
+                p10 = float(row.total_p10) if row.total_p10 else 0
+                p90 = float(row.total_p90) if row.total_p90 else 0
+
+                demand_forecast[sk] = [p50] * 4
+                vol = (p90 - p10) / p50 if p50 > 0 else 0.5
+                demand_volatility[sk] = min(2.0, max(0.0, vol))
+                confidence[sk] = max(0.1, min(0.99, 1.0 - vol))
+        except Exception as e:
+            logger.warning("Demand feature computation failed: %s", e)
+
+        # Fill missing sites with defaults
+        for sk in site_keys:
+            if sk not in demand_forecast:
+                demand_forecast[sk] = [0.0] * 4
+                demand_volatility[sk] = 0.5
+                confidence[sk] = 0.5
+            bullwhip[sk] = 1.0  # Default: no amplification
+
+        return DemandPlanningTGNNOutput(
+            config_id=self.config_id,
+            site_keys=list(demand_forecast.keys()) or site_keys,
+            demand_forecast=demand_forecast,
+            demand_volatility=demand_volatility,
+            bullwhip_coefficient=bullwhip,
+            confidence=confidence,
+            reasoning={sk: "Analytical: LightGBM P10/P50/P90 aggregated" for sk in (site_keys or demand_forecast.keys())},
+        )
 
     async def run_lateral_cycle(
         self,
@@ -249,25 +336,26 @@ class TacticalHiveCoordinator:
         Returns:
             TacticalHiveOutput with merged_per_site dict ready for broadcast.
         """
-        demand_svc = DemandPlanningTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
         supply_svc = SupplyPlanningTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
         inventory_svc = InventoryOptimizationTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
         capacity_svc = CapacityRCCPTGNNService(self.db, self.config_id, tenant_id=self.tenant_id)
 
-        # --- Iteration 1: parallel inference with no lateral context ---
+        # --- Iteration 1: 3 supply tGNNs in parallel + demand features ---
         logger.info(
-            f"TacticalHiveCoordinator: starting iteration 1 for config {self.config_id}"
+            "TacticalHiveCoordinator: starting iteration 1 for config %d "
+            "(3 supply tGNNs + analytical demand features)", self.config_id,
         )
-        demand_out, supply_out, inventory_out, capacity_out = await asyncio.gather(
-            demand_svc.infer(sop_embeddings=sop_embeddings, force_recompute=force_recompute),
+        supply_out, inventory_out, capacity_out = await asyncio.gather(
             supply_svc.infer(sop_embeddings=sop_embeddings, force_recompute=force_recompute),
             inventory_svc.infer(sop_embeddings=sop_embeddings, force_recompute=force_recompute),
             capacity_svc.infer(sop_embeddings=sop_embeddings, force_recompute=force_recompute),
         )
 
-        lateral = self._build_lateral_context(demand_out, supply_out, inventory_out, capacity_out)
+        # Compute demand features analytically (replaces Demand tGNN)
+        site_keys = supply_out.site_keys or inventory_out.site_keys or []
+        demand_out = await self._compute_demand_features(site_keys)
 
-        site_keys = demand_out.site_keys or supply_out.site_keys or inventory_out.site_keys
+        lateral = self._build_lateral_context(demand_out, supply_out, inventory_out, capacity_out)
         convergence: Dict[str, float] = {sk: 0.0 for sk in site_keys}
         lateral_iterations = 1
 
@@ -276,18 +364,13 @@ class TacticalHiveCoordinator:
             logger.info(
                 f"TacticalHiveCoordinator: lateral signals non-trivial, starting iteration 2"
             )
-            # Build per-domain lateral arrays
-            demand_lat = lateral.to_demand_lateral_array(site_keys)
+            # Build per-domain lateral arrays (triangle: supply ↔ inventory ↔ capacity)
+            # No demand lateral — demand features are analytical, not re-run
             supply_lat = lateral.to_supply_lateral_array(site_keys)
             inventory_lat = lateral.to_inventory_lateral_array(site_keys)
             capacity_lat = lateral.to_capacity_lateral_array(site_keys)
 
-            demand_out2, supply_out2, inventory_out2, capacity_out2 = await asyncio.gather(
-                demand_svc.infer(
-                    sop_embeddings=sop_embeddings,
-                    lateral_context=demand_lat,
-                    force_recompute=True,
-                ),
+            supply_out2, inventory_out2, capacity_out2 = await asyncio.gather(
                 supply_svc.infer(
                     sop_embeddings=sop_embeddings,
                     lateral_context=supply_lat,
@@ -306,12 +389,12 @@ class TacticalHiveCoordinator:
             )
 
             convergence = self._compute_convergence(
-                demand_out, demand_out2,
+                demand_out, demand_out,  # Demand unchanged (analytical)
                 supply_out, supply_out2,
                 inventory_out, inventory_out2,
                 site_keys,
             )
-            demand_out, supply_out, inventory_out = demand_out2, supply_out2, inventory_out2
+            supply_out, inventory_out = supply_out2, inventory_out2
             capacity_out = capacity_out2
             lateral_iterations = 2
             logger.info(
