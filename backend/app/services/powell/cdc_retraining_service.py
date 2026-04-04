@@ -359,7 +359,7 @@ class CDCRetrainingService:
         """Append a real decision outcome to the unified training corpus.
 
         The outcome becomes a new Layer 1 sample with origin='real'. The
-        aggregator will re-roll it into Layer 1.5, 2, 4 on the next pass.
+        aggregator will re-roll it into Layer 2, 2, 4 on the next pass.
         """
         try:
             from app.models.training_corpus import TrainingCorpusSample

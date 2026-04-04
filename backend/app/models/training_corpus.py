@@ -5,8 +5,8 @@ See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md for full architecture.
 
 This is the SINGLE source of truth for all agent training data:
 - Layer 1 (TRMs): per-decision samples from simulation
-- Layer 1.5 (Site tGNN): aggregated by (site, time window)
-- Layer 2 (Tactical tGNNs): aggregated by (scenario, period)
+- Layer 2 (Site tGNN): aggregated by (site, time window)
+- Layer 3 (Tactical tGNNs): aggregated by (scenario, period)
 - Layer 4 (S&OP GraphSAGE): aggregated by (scenario) with inferred theta*
 
 Real outcomes from powell_*_decisions post-provisioning append as new
@@ -65,7 +65,7 @@ class TrainingCorpusSample(Base):
     # Layer 2 specific
     period = Column(String(20), nullable=True)
 
-    # Layer 1.5 specific — "window" is a reserved PostgreSQL keyword, so the
+    # Layer 2 specific — "window" is a reserved PostgreSQL keyword, so the
     # attribute is named time_window in Python but the column is quoted "window"
     time_window = Column("window", String(20), nullable=True)
 

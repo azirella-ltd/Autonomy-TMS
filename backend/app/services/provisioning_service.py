@@ -2168,29 +2168,27 @@ class ProvisioningService:
         except Exception as e:
             logger.warning("Standard Site tGNN trainer failed (%s), falling back to oracle BC", e)
 
-        # If no sites were trained (no live trace data), fall back to oracle BC
+        # If no sites were trained (no live trace data), fall back to the
+        # unified training corpus (Layer 2 samples aggregated from TRM decisions)
         if sites_trained == 0:
             try:
-                # Determine sites from config (simplified: use a representative set)
-                # In full integration, query Site table for non-market sites in config
                 oracle_site_keys = _get_non_market_site_keys(db, config_id)
                 for site_key, master_type, sc_site_type in oracle_site_keys:
                     try:
-                        active_trms = get_active_trms(master_type, sc_site_type)
                         trainer = SiteTGNNTrainer(site_key=site_key, config_id=config_id)
-                        result = trainer.train_phase1_bc_from_oracle(
-                            num_scenarios=200,      # Fast cold-start
-                            phases=(1, 2, 3),
-                            active_trms=active_trms,
+                        bc_samples = await trainer.prepare_bc_data_from_corpus(
+                            db=db, config_id=config_id, site_id=site_key,
                         )
-                        if result.get("status") == "completed":
-                            sites_trained += 1
-                            oracle_sites.append(site_key)
+                        if bc_samples:
+                            result = trainer.train_phase1_bc(bc_samples)
+                            if result.get("status") == "completed":
+                                sites_trained += 1
+                                oracle_sites.append(site_key)
                     except Exception as site_err:
-                        logger.warning("Oracle BC failed for site %s: %s", site_key, site_err)
+                        logger.warning("Corpus BC failed for site %s: %s", site_key, site_err)
                         errors += 1
             except Exception as e:
-                logger.warning("Oracle BC fallback failed: %s", e)
+                logger.warning("Corpus BC fallback failed: %s", e)
                 errors += 1
 
         duration = asyncio.get_event_loop().time() - start_time

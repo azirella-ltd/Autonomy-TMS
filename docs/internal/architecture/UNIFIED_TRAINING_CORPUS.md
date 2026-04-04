@@ -33,8 +33,8 @@ data in isolation:
 | Layer | Training Data Source | Issue |
 |-------|---------------------|-------|
 | Layer 4 - S&OP GraphSAGE | `SoPGraphSAGEOracle` synthetic random networks + DE oracle | Orphan code, never actually called from production; cold-start with random weights |
-| Layer 2 - Tactical tGNNs | `NetworkFlowOracle` synthetic LP on random features | Does not read real DB tables; per-period LP with no inventory carry-over |
-| Layer 1.5 - Site tGNN | `_generate_synthetic_site_tgnn_samples` random matrices | No connection to real TRM outcomes at cold-start |
+| Layer 3 - Tactical tGNNs | `NetworkFlowOracle` synthetic LP on random features | Does not read real DB tables; per-period LP with no inventory carry-over |
+| Layer 2 - Site tGNN | `_generate_synthetic_site_tgnn_samples` random matrices | No connection to real TRM outcomes at cold-start |
 | Layer 1 - TRMs | Per-TRM curriculum generators + deterministic engines | Independent per TRM type; no cross-TRM interaction signal |
 
 ### The Problems
@@ -449,16 +449,16 @@ trainer.train(
 Phase 1 does behavioral cloning (predict action from state). Phase 2 does offline
 reinforcement learning using the observed rewards. Both use the same corpus.
 
-### Layer 1.5 - Site tGNN
+### Layer 2 - Site tGNN
 
 ```python
-samples = corpus.get_samples(layer=1.5, site_id=site_id)
+samples = corpus.get_samples(layer=2.0, site_id=site_id)
 trainer = SiteTGNNTrainer(site_key=site_id)
 trainer.train_phase1_bc(samples)     # behavioral cloning on per-TRM features
 trainer.train_phase2_ppo(samples)    # PPO using site_aggregate_reward
 ```
 
-### Layer 2 - Tactical tGNNs
+### Layer 3 - Tactical tGNNs
 
 ```python
 samples = corpus.get_samples(layer=2)
@@ -503,7 +503,7 @@ TRM decision -> powell_*_decisions table (immediate)
             -> Computes reward via RewardCalculator
             -> Appends to training_corpus as Layer 1 sample with is_real=true
             -> Aggregator re-runs on new samples
-            -> Produces new Layer 1.5, 2, 4 samples
+            -> Produces new Layer 2, 2, 4 samples
             -> CDC retraining service picks up the new samples
             -> Retrains affected layers
 ```
@@ -546,8 +546,8 @@ CREATE TABLE training_corpus (
     trm_type VARCHAR(50),         -- Layer 1 only
     site_id VARCHAR(100),         -- Layer 1, 1.5
     product_id VARCHAR(100),      -- Layer 1 only
-    period VARCHAR(20),           -- Layer 2 (e.g., "2026-04")
-    window VARCHAR(20),           -- Layer 1.5 (e.g., "2026-W14")
+    period VARCHAR(20),           -- Layer 3 (e.g., "2026-04")
+    window VARCHAR(20),           -- Layer 2 (e.g., "2026-W14")
     sample_data JSONB NOT NULL,   -- The full sample payload
     reward FLOAT,                 -- Aggregate reward for this sample
     weight FLOAT NOT NULL DEFAULT 1.0,

@@ -1,5 +1,5 @@
 """
-Site tGNN Trainer — 3-Phase Training Pipeline for Layer 1.5.
+Site tGNN Trainer — 3-Phase Training Pipeline for Layer 2.
 
 Phase 1 — Behavioral Cloning (BC):
   Learn from CoordinatedSimRunner's MultiHeadTrace data. For each hourly
@@ -99,7 +99,7 @@ class SiteTGNNTrainingSample:
 # ============================================================================
 
 class SiteTGNNTrainer:
-    """3-phase training pipeline for Site tGNN (Layer 1.5).
+    """3-phase training pipeline for Site tGNN (Layer 2).
 
     Usage:
         trainer = SiteTGNNTrainer(site_key="CDC_WEST", config_id=22)
@@ -234,7 +234,7 @@ class SiteTGNNTrainer:
         config_id: int,
         site_id: Optional[str] = None,
     ) -> List[SiteTGNNTrainingSample]:
-        """Load Layer 1.5 samples from the unified training corpus.
+        """Load Layer 2 samples from the unified training corpus.
 
         Preferred entry point for provisioning. Converts per-site aggregated
         TRM decision features into SiteTGNNTrainingSample format.
@@ -245,7 +245,7 @@ class SiteTGNNTrainer:
 
         service = TrainingCorpusService(db)
         corpus_samples = await service.get_samples(
-            config_id=config_id, layer=1.5, site_id=site_id,
+            config_id=config_id, layer=2.0, site_id=site_id,
         )
 
         samples: List[SiteTGNNTrainingSample] = []
@@ -294,7 +294,7 @@ class SiteTGNNTrainer:
             ))
 
         logger.info(
-            "SiteTGNNTrainer: loaded %d Layer 1.5 corpus samples for config %d site %s",
+            "SiteTGNNTrainer: loaded %d Layer 2 corpus samples for config %d site %s",
             len(samples), config_id, site_id or "all",
         )
         return samples

@@ -66,14 +66,14 @@ actions, customer-specific intelligence, and market trends.
 ```
 Layer 4 — S&OP GraphSAGE (weekly policy parameters)
   ↓
-Layer 2 — Tactical Planning (daily)
+Layer 3 — Tactical Planning (daily)
   ├── Forecast Baseline TRM (SENSE phase) → P10/P50/P90
   ├── Forecast Adjustment TRM (ASSESS phase) → adjusted forecast  ← THIS AGENT
   ├── Supply Planning tGNN → allocation, exceptions
   ├── Inventory Optimization tGNN → buffers, D/S balance
   └── Capacity/RCCP tGNN → feasibility, bottlenecks
   ↓
-Layer 1.5 — Site tGNN (hourly, always-on)
+Layer 2 — Site tGNN (hourly, always-on)
 Layer 1 — 12 TRM execution agents
 ```
 

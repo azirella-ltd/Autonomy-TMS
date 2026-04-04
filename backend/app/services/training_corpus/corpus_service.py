@@ -43,7 +43,7 @@ class TrainingCorpusService:
           2. Generate N perturbations
           3. For each perturbation: run Digital Twin simulation with TRMs
           4. Capture TRM decisions as Layer 1 samples
-          5. Aggregate upward to Layer 1.5, 2, 4
+          5. Aggregate upward to Layer 2, 2, 4
 
         Returns summary with sample counts per layer.
         """
@@ -118,8 +118,8 @@ class TrainingCorpusService:
             "config_id": config_id,
             "num_perturbations": num_perturbations,
             "layer1_samples": layer1_sample_count,
-            "layer1_5_samples": agg_summary.get("layer1_5_count", 0),
             "layer2_samples": agg_summary.get("layer2_count", 0),
+            "layer3_samples": agg_summary.get("layer3_count", 0),
             "layer4_samples": agg_summary.get("layer4_count", 0),
         }
 
@@ -138,8 +138,8 @@ class TrainingCorpusService:
 
         Used by layer-specific trainers:
           - TRM trainer: layer=1.0, trm_type="po_creation" (etc.)
-          - Site tGNN trainer: layer=1.5, site_id=site
-          - Tactical tGNN trainers: layer=2.0
+          - Site tGNN trainer: layer=2.0, site_id=site
+          - Tactical tGNN trainers: layer=3.0
           - S&OP GraphSAGE trainer: layer=4.0
 
         Args:

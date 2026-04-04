@@ -36,7 +36,7 @@ GraphSAGE (Layer 4) and the per-site TRM execution layer (Layer 1):
 Layer 4 — S&OP GraphSAGE (weekly)
   │ policy parameters θ, guardrails, KPI targets
   ▼
-Layer 2 — Tactical Planning (daily)                    ← THIS DOCUMENT
+Layer 3 — Tactical Planning (daily)                    ← THIS DOCUMENT
   │
   ├── DEMAND SIDE (2 TRMs)
   │   ├── Forecast Baseline TRM (NEW — 12th TRM)
@@ -50,7 +50,7 @@ Layer 2 — Tactical Planning (daily)                    ← THIS DOCUMENT
   │         ↓ directives, allocations, feasibility
   │
   ▼
-Layer 1.5 — Site tGNN (hourly, always-on)
+Layer 2 — Site tGNN (hourly, always-on)
 Layer 1 — 12 TRM execution agents (<10ms)
 ```
 

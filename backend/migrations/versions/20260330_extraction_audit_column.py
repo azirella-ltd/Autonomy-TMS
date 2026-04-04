@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers, used by Alembic.
 revision = "20260330_extract_audit"
-down_revision = "20260329_backtest_evaluation_step"
+down_revision = "20260329_backtest_eval"
 branch_labels = None
 depends_on = None
 

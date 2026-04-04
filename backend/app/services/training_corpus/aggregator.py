@@ -40,19 +40,19 @@ class TrainingCorpusAggregator:
         layer1_samples = await self._load_layer1_samples(config_id)
         logger.info("Aggregator: loaded %d Level 1 samples for config %d", len(layer1_samples), config_id)
 
-        layer1_5_count = await self._aggregate_site_level(tenant_id, config_id, layer1_samples)
-        layer2_count = await self._aggregate_tactical_level(tenant_id, config_id, layer1_samples)
+        layer2_count = await self._aggregate_site_level(tenant_id, config_id, layer1_samples)
+        layer3_count = await self._aggregate_tactical_level(tenant_id, config_id, layer1_samples)
         layer4_count = await self._aggregate_strategic_level(tenant_id, config_id, layer1_samples)
 
         await self.db.flush()
 
         logger.info(
-            "Aggregator complete: Layer 1.5=%d, Layer 2=%d, Layer 4=%d",
-            layer1_5_count, layer2_count, layer4_count,
+            "Aggregator complete: Layer 2=%d, Layer 2=%d, Layer 4=%d",
+            layer2_count, layer3_count, layer4_count,
         )
         return {
-            "layer1_5_count": layer1_5_count,
             "layer2_count": layer2_count,
+            "layer3_count": layer3_count,
             "layer4_count": layer4_count,
         }
 
@@ -140,7 +140,7 @@ class TrainingCorpusAggregator:
             self.db.add(TrainingCorpusSample(
                 tenant_id=tenant_id,
                 config_id=config_id,
-                layer=1.5,
+                layer=2.0,
                 scenario_id=scenario_id,
                 origin="perturbation",
                 site_id=site_id,
@@ -218,7 +218,7 @@ class TrainingCorpusAggregator:
             self.db.add(TrainingCorpusSample(
                 tenant_id=tenant_id,
                 config_id=config_id,
-                layer=2.0,
+                layer=3.0,
                 scenario_id=scenario_id,
                 origin="perturbation",
                 period=str(period),

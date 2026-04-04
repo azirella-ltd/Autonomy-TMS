@@ -390,7 +390,7 @@ def _try_load_corpus_data(
 
             rows = db.execute(sqt(
                 "SELECT sample_data, reward FROM training_corpus "
-                "WHERE config_id = :c AND layer = 2.0 "
+                "WHERE config_id = :c AND layer = 3.0 "
                 "ORDER BY created_at DESC LIMIT 2000"
             ), {"c": config_id}).fetchall()
 

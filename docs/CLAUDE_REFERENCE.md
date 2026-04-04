@@ -194,7 +194,7 @@ Context, guardrails, and targets flow **down** from strategic to execution. Feed
 - Signal half-life default 30 min (intra-hive), 12 hours (inter-hive)
 - TRMs emit signals on condition detection → other TRMs read active signals when deciding
 
-**Layer 1.5 — Site tGNN (hourly): Learned Cross-TRM Causal Coordination**
+**Layer 2 — Site tGNN (hourly): Learned Cross-TRM Causal Coordination**
 - `site_tgnn.py`: GATv2+GRU, ~25K params, 22 directed causal edges, <5ms inference
 - Always enabled (no feature flag). Cold-start returns neutral output (zero adjustments)
 - Runs BEFORE each decision cycle — modulates UrgencyVector with [-0.3, +0.3] adjustments
@@ -422,7 +422,7 @@ Completed: AWS SC 100%, 96+ pages, terminology renames, TRM Hive, AAP, CDC→Rel
 **Generation**: ~500 perturbations around the baseline (demand +/-15%, lead times +/-20%, costs +/-10%, etc.). Each perturbation runs the Digital Twin with all 12 TRMs active. Every TRM decision is captured as a Layer 1 sample.
 
 **Aggregation**: Pure data transformation upward:
-- Layer 1 (TRM decisions) → Layer 1.5 (site × time window aggregates for Site tGNN) → Layer 2 (network × domain × period for Tactical tGNNs) → Layer 4 (network × theta* for S&OP GraphSAGE)
+- Layer 1 (TRM decisions) → Layer 2 (site × time window aggregates for Site tGNN) → Layer 2 (network × domain × period for Tactical tGNNs) → Layer 4 (network × theta* for S&OP GraphSAGE)
 
 **Continuous**: Real outcomes from `powell_*_decisions` append as new Layer 1 samples post-provisioning. Aggregator re-runs on new samples. All four layers retrain together when drift is detected.
 

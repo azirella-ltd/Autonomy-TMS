@@ -47,14 +47,14 @@ async def run_corpus_aggregator_refresh() -> Dict[str, Any]:
     """Re-run the aggregator for configs with new real outcomes.
 
     Runs weekly. For each config that has new Layer 1 samples with origin='real'
-    since the last aggregation, re-roll them into Layer 1.5, 2, 4.
+    since the last aggregation, re-roll them into Layer 2, 2, 4.
     """
     from app.db.session import async_session_factory
     from sqlalchemy import text as sql_text
     from app.services.training_corpus.aggregator import TrainingCorpusAggregator
 
     configs_refreshed = 0
-    samples_generated = {"layer1_5": 0, "layer2": 0, "layer4": 0}
+    samples_generated = {"layer2": 0, "layer2": 0, "layer4": 0}
 
     async with async_session_factory() as db:
         # Find configs with real outcomes added since last aggregation
@@ -89,8 +89,8 @@ async def run_corpus_aggregator_refresh() -> Dict[str, Any]:
             # Re-aggregate
             try:
                 summary = await aggregator.aggregate_all_levels(tenant_id, config_id)
-                samples_generated["layer1_5"] += summary.get("layer1_5_count", 0)
                 samples_generated["layer2"] += summary.get("layer2_count", 0)
+                samples_generated["layer2"] += summary.get("layer3_count", 0)
                 samples_generated["layer4"] += summary.get("layer4_count", 0)
                 configs_refreshed += 1
             except Exception as e:

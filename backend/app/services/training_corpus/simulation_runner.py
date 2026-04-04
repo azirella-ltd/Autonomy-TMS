@@ -201,10 +201,45 @@ class SimulationRunner:
                 buffer_sample = self._buffer_decision(s, mean_demand, cv, week, scenario_id)
                 samples.append(buffer_sample)
 
-            # 4. Forecast Baseline decision (weekly)
+            # 4. Forecast Baseline decision (monthly)
             if week % 4 == 0:
                 fb_sample = self._forecast_baseline_decision(s, mean_demand, cv, week, scenario_id)
                 samples.append(fb_sample)
+
+            # 5. Forecast Adjustment decision (monthly or on exception)
+            if week % 4 == 0 or abs(realized_demand - mean_demand) > mean_demand * 0.3:
+                fa_sample = self._forecast_adjustment_decision(
+                    s, mean_demand, realized_demand, cv, week, scenario_id,
+                )
+                samples.append(fa_sample)
+
+            # 6. Rebalancing decision (when excess or when stockout on another site)
+            if s["on_hand"] > s["max_stock"] * 1.1 or stockout > 0:
+                samples.append(self._rebalancing_decision(s, mean_demand, stockout, week, scenario_id))
+
+            # 7. Transfer Order decision (paired with rebalancing)
+            if stockout > 0 and sum(q for _, q in s["pending_orders"]) == 0:
+                samples.append(self._to_decision(s, stockout, week, scenario_id))
+
+            # 8. Manufacturing Order decision (production scheduling proxy)
+            if s["on_hand"] <= s["reorder_point"] * 0.5 and week % 2 == 0:
+                samples.append(self._mo_decision(s, mean_demand, week, scenario_id))
+
+            # 9. Quality Disposition decision (~2% of incoming lots)
+            if arriving and rng.random() < 0.02:
+                samples.append(self._quality_decision(s, sum(arriving), week, scenario_id))
+
+            # 10. Maintenance Scheduling decision (monthly)
+            if week % 4 == 0:
+                samples.append(self._maintenance_decision(s, week, scenario_id))
+
+            # 11. Subcontracting decision (capacity overflow proxy)
+            if mean_demand > 200 and week % 4 == 0:
+                samples.append(self._subcontracting_decision(s, mean_demand, week, scenario_id))
+
+            # 12. Order Tracking decision (each pending order, each period)
+            for (arrival_week, qty) in s["pending_orders"][:2]:
+                samples.append(self._order_tracking_decision(s, arrival_week, qty, week, scenario_id))
 
         return samples
 
@@ -333,6 +368,196 @@ class SimulationRunner:
                 "mape_proxy": cv,  # lower cv = better forecast accuracy
             },
             "aggregate_reward": max(0, 1.0 - cv),
+        }
+
+    # ── Additional TRM decision proxies ──
+
+    def _forecast_adjustment_decision(self, s, mean_demand, realized_demand, cv, week, scenario_id):
+        """Forecast Adjustment TRM: correct baseline based on recent actuals."""
+        deviation = (realized_demand - mean_demand) / max(mean_demand, 1)
+        adjustment_pct = deviation * 0.3  # dampen by 70% to avoid overreaction
+        adjustment_pct = max(-0.25, min(0.25, adjustment_pct))  # cap at +/-25%
+        return {
+            "trm_type": "forecast_adjustment",
+            "product_id": s["product_id"],
+            "site_id": s["site_id"],
+            "scenario_id": scenario_id,
+            "period": week,
+            "state_features": {
+                "baseline_forecast": mean_demand,
+                "recent_actual": realized_demand,
+                "deviation_pct": deviation,
+                "demand_cv": cv,
+            },
+            "action": {
+                "adjustment_pct": adjustment_pct,
+                "direction": "up" if adjustment_pct > 0.02 else "down" if adjustment_pct < -0.02 else "no_change",
+                "adjusted_forecast": mean_demand * (1 + adjustment_pct),
+                "source": "sensing",
+            },
+            "reward_components": {"accuracy_improvement": 1.0 - abs(deviation - adjustment_pct)},
+            "aggregate_reward": max(0, 1.0 - abs(deviation - adjustment_pct)),
+        }
+
+    def _rebalancing_decision(self, s, mean_demand, stockout, week, scenario_id):
+        """Rebalancing TRM: redistribute inventory across sites."""
+        excess = max(0, s["on_hand"] - s["max_stock"])
+        shortage = stockout
+        urgency = min(1.0, (excess + shortage * 2) / max(mean_demand, 1))
+        return {
+            "trm_type": "rebalancing",
+            "product_id": s["product_id"],
+            "site_id": s["site_id"],
+            "scenario_id": scenario_id,
+            "period": week,
+            "state_features": {
+                "on_hand": s["on_hand"],
+                "max_stock": s["max_stock"],
+                "excess": excess,
+                "shortage": shortage,
+                "mean_demand": mean_demand,
+            },
+            "action": {
+                "direction": "outbound" if excess > 0 else "inbound",
+                "quantity": excess if excess > 0 else shortage,
+                "urgency": urgency,
+            },
+            "reward_components": {"urgency": urgency},
+            "aggregate_reward": 0.7 if urgency > 0.3 else 0.4,
+        }
+
+    def _to_decision(self, s, stockout, week, scenario_id):
+        """Transfer Order TRM: issue a stock transfer to cover a shortage."""
+        return {
+            "trm_type": "to_execution",
+            "product_id": s["product_id"],
+            "site_id": s["site_id"],
+            "scenario_id": scenario_id,
+            "period": week,
+            "state_features": {
+                "shortage": stockout,
+                "on_hand": s["on_hand"],
+                "in_transit": sum(q for _, q in s["pending_orders"]),
+            },
+            "action": {
+                "quantity": stockout * 1.5,  # over-order buffer
+                "target_arrival_week": week + 1,
+            },
+            "reward_components": {"shortage_covered": 1.0 if stockout > 0 else 0.0},
+            "aggregate_reward": 0.75,
+        }
+
+    def _mo_decision(self, s, mean_demand, week, scenario_id):
+        """Manufacturing Order TRM: release a production order."""
+        qty = max(0, s["max_stock"] - s["on_hand"])
+        return {
+            "trm_type": "mo_execution",
+            "product_id": s["product_id"],
+            "site_id": s["site_id"],
+            "scenario_id": scenario_id,
+            "period": week,
+            "state_features": {
+                "on_hand": s["on_hand"],
+                "max_stock": s["max_stock"],
+                "mean_demand": mean_demand,
+            },
+            "action": {
+                "production_quantity": qty,
+                "start_week": week,
+                "end_week": week + 2,
+            },
+            "reward_components": {"production_feasible": 1.0},
+            "aggregate_reward": 0.72,
+        }
+
+    def _quality_decision(self, s, incoming_qty, week, scenario_id):
+        """Quality Disposition TRM: accept/reject/rework an incoming lot."""
+        # Simulated quality outcome
+        defect_rate = 0.05  # 5% defect rate assumption
+        reject_qty = incoming_qty * defect_rate
+        return {
+            "trm_type": "quality_disposition",
+            "product_id": s["product_id"],
+            "site_id": s["site_id"],
+            "scenario_id": scenario_id,
+            "period": week,
+            "state_features": {
+                "incoming_qty": incoming_qty,
+                "defect_rate": defect_rate,
+            },
+            "action": {
+                "disposition": "partial_accept" if reject_qty > 0 else "accept",
+                "accepted_qty": incoming_qty - reject_qty,
+                "rejected_qty": reject_qty,
+            },
+            "reward_components": {"yield": 1.0 - defect_rate},
+            "aggregate_reward": 1.0 - defect_rate,
+        }
+
+    def _maintenance_decision(self, s, week, scenario_id):
+        """Maintenance Scheduling TRM: schedule preventive maintenance."""
+        return {
+            "trm_type": "maintenance_scheduling",
+            "product_id": s["product_id"],
+            "site_id": s["site_id"],
+            "scenario_id": scenario_id,
+            "period": week,
+            "state_features": {
+                "on_hand": s["on_hand"],
+                "period": week,
+            },
+            "action": {
+                "maintenance_type": "preventive",
+                "scheduled_week": week + 2,
+                "expected_downtime_hours": 8,
+            },
+            "reward_components": {"uptime": 0.95},
+            "aggregate_reward": 0.78,
+        }
+
+    def _subcontracting_decision(self, s, mean_demand, week, scenario_id):
+        """Subcontracting TRM: outsource production when capacity is tight."""
+        outsource_qty = mean_demand * 0.3  # 30% outsourced
+        return {
+            "trm_type": "subcontracting",
+            "product_id": s["product_id"],
+            "site_id": s["site_id"],
+            "scenario_id": scenario_id,
+            "period": week,
+            "state_features": {
+                "mean_demand": mean_demand,
+                "on_hand": s["on_hand"],
+            },
+            "action": {
+                "outsource_quantity": outsource_qty,
+                "vendor": "subcontractor_primary",
+                "lead_time_weeks": 3,
+            },
+            "reward_components": {"capacity_relief": 0.7},
+            "aggregate_reward": 0.68,
+        }
+
+    def _order_tracking_decision(self, s, arrival_week, qty, week, scenario_id):
+        """Order Tracking TRM: monitor in-transit order status."""
+        weeks_remaining = max(0, arrival_week - week)
+        on_time = weeks_remaining <= 2
+        return {
+            "trm_type": "order_tracking",
+            "product_id": s["product_id"],
+            "site_id": s["site_id"],
+            "scenario_id": scenario_id,
+            "period": week,
+            "state_features": {
+                "qty": qty,
+                "weeks_remaining": weeks_remaining,
+                "planned_arrival": arrival_week,
+            },
+            "action": {
+                "status": "on_track" if on_time else "delayed",
+                "alert": not on_time,
+            },
+            "reward_components": {"on_time": 1.0 if on_time else 0.0},
+            "aggregate_reward": 0.9 if on_time else 0.5,
         }
 
     def _compute_rewards(
