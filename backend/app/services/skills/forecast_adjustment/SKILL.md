@@ -175,3 +175,50 @@ Escalate to human review with elevated urgency when ANY of the following conditi
 - **Persistent trend contradiction**: The signal contradicts the established demand trend for more than 4 consecutive periods. Either the trend is genuinely reversing (strategic significance) or the signal source is systematically wrong — both require human judgment.
 - **Multiple conflicting signals**: Signals from different sources disagree on direction (e.g., sales_intel says increase, market_data says decrease). The skill cannot resolve inter-source disagreement — human must weigh source credibility and context.
 - **Extreme magnitude signal**: Signal suggests a demand change exceeding 50% of current forecast. This magnitude likely indicates a data quality issue, a one-time event, or a major market shift — all of which exceed the skill's authority to adjudicate.
+
+---
+
+## Extended Domain Support (LLM Escalation Scenarios)
+
+The TRM handles 7 decision domains with deterministic heuristics. You (the LLM Skill)
+are invoked when the TRM's confidence is low or the scenario exceeds its heuristics.
+When invoked, `escalation_reason` in the context will tell you why.
+
+### NPI Cold-Start (No Similar Products)
+**When invoked**: TRM could not find similar mature products for demand transfer.
+**Your task**: Estimate demand curve for a new product with no historical analogue.
+**Available context**: product attributes (category, price, material, target segment),
+category-level demand data, industry benchmarks (if available).
+**Output**: demand_curve (weekly quantities for 52 weeks), confidence, cannibalization
+estimate for existing products in the same category.
+**Confidence cap**: 0.50 (cold-start is inherently uncertain).
+
+### Novel Promotion Type
+**When invoked**: < 3 historical promotions of this type in this category.
+**Your task**: Estimate uplift and cannibalization for an unfamiliar promotion type.
+**Available context**: promotion details (type, discount %, duration), category demand
+history, historical promos of other types in this category.
+**Output**: uplift_pct, cannibalization_pct, forward_buy_duration_weeks.
+
+### Large Consensus Override from Negative-FVA User
+**When invoked**: User with negative FVA track record requests > 15% override.
+**Your task**: Evaluate whether the override has merit despite the user's poor
+historical accuracy. Consider the specific reasoning provided.
+**Available context**: override details, user's FVA history, product forecast
+accuracy, market signals.
+**Output**: accept/reject/compromise, adjusted_magnitude, reasoning.
+
+### Demand Sensing Anomaly
+**When invoked**: Actual demand deviates > 50% from forecast with no identified cause.
+**Your task**: Hypothesize cause and recommend correction magnitude.
+**Available context**: recent demand history, promotions active, competitor activity,
+weather, supply constraints (which could cause censored demand).
+**Output**: correction_pct, duration_periods, hypothesized_cause, confidence.
+
+### Complex Multi-Product Interaction
+**When invoked**: More than 3 products in a family are simultaneously affected by
+cannibalization, NPI, or promotion interactions.
+**Your task**: Untangle the interaction effects and allocate demand shifts.
+**Available context**: family demand data, individual product trends, active
+promotions and NPIs, category share history.
+**Output**: per-product adjustment_pct, reasoning for each, net family impact.
