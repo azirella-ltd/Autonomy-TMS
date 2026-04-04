@@ -38,7 +38,6 @@ from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.agent_config import AgentConfig
 from app.models.user import User, UserTypeEnum
 # Note: Item/ProductSiteConfig are compatibility shims proxying to Product model (SC compliant)
-from app.models.compatibility import Item, ProductSiteConfig
 from app.core.time_buckets import (
     TimeBucket,
     DEFAULT_START_DATE,

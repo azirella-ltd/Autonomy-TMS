@@ -18,8 +18,7 @@ from .base import Base
 # Import all models here to ensure they are registered with SQLAlchemy
 from sqlalchemy import inspect
 
-# Expose relationship setup helpers for legacy import paths
-from . import relationships  # noqa: F401
+# relationships.py removed (dead code referencing non-existent game.py)
 
 # Import models in dependency order to avoid circular imports
 # 1. RBAC models first (User depends on these)
@@ -56,8 +55,6 @@ from .round_metric import RoundMetric
 from app.core.time_buckets import TimeBucket
 
 # 4. Supply chain configuration models (must be imported before MonteCarloRun)
-# Temporary compatibility shims during migration
-from .compatibility import Item, ItemNodeConfig, ProductSiteConfig
 from .supply_chain_config import (
     NodeType,
     SupplyChainConfig,
@@ -158,7 +155,6 @@ from .audit_log import AuditLog
 
 # 8. Mobile Push Notifications - Option 2
 from .notification import PushToken, NotificationPreference, NotificationLog, PlatformType
-from app.models.compatibility import Item, ItemNodeConfig, ProductSiteConfig  # Temporary compat
 
 # 9. AWS SC Planning - Recommendations (Sprint 4)
 from .recommendations import Recommendation, RecommendationDecision

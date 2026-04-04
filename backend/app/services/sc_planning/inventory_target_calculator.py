@@ -57,7 +57,6 @@ from app.models.sc_entities import (
 from app.models.supplier import VendorLeadTime
 from app.models.supply_chain_config import Site, TransportationLane
 from app.models.sc_entities import Product
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
 
 class InventoryTargetCalculator:

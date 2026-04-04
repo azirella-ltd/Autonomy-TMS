@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional, List
 from enum import Enum
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
 
 # ============================================================================

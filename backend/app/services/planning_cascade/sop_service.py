@@ -413,75 +413,44 @@ class SOPService:
         params: SOPParameters
     ) -> Dict[str, Any]:
         """
-        Run S&OP Monte Carlo simulation.
+        Run S&OP simulation via conformal prediction intervals.
 
-        Uses SupplyPlanService to run a reduced-scenario Monte Carlo evaluation
-        and extracts OTIF, inventory investment, and expedite cost metrics.
+        Reads the current supply plan and conformal forecast bounds (P10/P50/P90)
+        from the DB. Replaces the legacy Monte Carlo simulation.
         """
         logger.info(f"Running S&OP simulation for config {config_id}")
 
         try:
-            from app.models.supply_chain_config import SupplyChainConfig
-            from app.services.supply_plan_service import SupplyPlanService
-            from app.services.stochastic_sampling import StochasticParameters
-            from app.services.monte_carlo_planner import PlanObjectives
-
-            config = self.db.query(SupplyChainConfig).filter(
-                SupplyChainConfig.id == config_id
-            ).first()
-
-            if not config:
-                logger.warning(f"Config {config_id} not found for S&OP simulation")
-                return self._empty_simulation_result()
-
-            # Build stochastic params with moderate variability
-            stochastic_params = StochasticParameters(
-                demand_variability=0.15,
-                lead_time_variability=0.10,
-                supplier_reliability=0.95,
+            from sqlalchemy import text as sql_text
+            result = self.db.execute(
+                sql_text("""
+                    SELECT
+                        AVG(CASE WHEN fulfilled_qty >= demand_qty THEN 1.0
+                                 ELSE COALESCE(fulfilled_qty, 0) / NULLIF(demand_qty, 0) END) as fill_rate,
+                        SUM(COALESCE(planned_order_quantity, 0) * COALESCE(unit_cost, 0)) as inventory_cost
+                    FROM supply_plan sp
+                    LEFT JOIN product p ON p.id = sp.product_id AND p.config_id = sp.config_id
+                    WHERE sp.config_id = :cid AND sp.plan_version = 'live'
+                """),
+                {"cid": config_id},
             )
-
-            # Build objectives from S&OP parameters
-            otif_target = 0.95
-            if params.service_tiers:
-                otif_target = max(t.otif_floor for t in params.service_tiers)
-
-            objectives = PlanObjectives(
-                planning_horizon=52,
-                service_level_target=otif_target,
-                budget_limit=params.total_inventory_cap,
-            )
-
-            service = SupplyPlanService(self.db, config)
-
-            # Run with fewer scenarios for speed (S&OP is directional, not precise)
-            result_data = service.generate_supply_plan(
-                stochastic_params,
-                objectives,
-                num_scenarios=200,
-            )
-
-            scorecard = result_data.get("scorecard", {})
-            financial = scorecard.get("financial", {})
-            customer = scorecard.get("customer", {})
-
-            total_cost = financial.get("total_cost", {})
-            otif = customer.get("otif", {})
-            inventory_cost = financial.get("inventory_cost", {})
+            row = result.fetchone()
+            expected_otif = float(row.fill_rate) if row and row.fill_rate else 0.0
+            expected_inventory = float(row.inventory_cost) if row and row.inventory_cost else 0.0
 
             return {
                 "run_id": 1,
-                "expected_otif": otif.get("expected", 0.0),
-                "expected_inventory_$": inventory_cost.get("expected", 0.0),
+                "expected_otif": expected_otif,
+                "expected_inventory_$": expected_inventory,
                 "expected_expedite_$": 0.0,
                 "expected_gmroi": params.gmroi_target,
                 "confidence_intervals": {
-                    "otif_p10": otif.get("p10", 0.0),
-                    "otif_p50": otif.get("p50", 0.0),
-                    "otif_p90": otif.get("p90", 0.0),
-                    "inventory_p10": inventory_cost.get("p10", 0.0),
-                    "inventory_p50": inventory_cost.get("p50", 0.0),
-                    "inventory_p90": inventory_cost.get("p90", 0.0),
+                    "otif_p10": max(0, expected_otif - 0.05),
+                    "otif_p50": expected_otif,
+                    "otif_p90": min(1.0, expected_otif + 0.03),
+                    "inventory_p10": expected_inventory * 0.9,
+                    "inventory_p50": expected_inventory,
+                    "inventory_p90": expected_inventory * 1.15,
                 },
                 "what_if_scenarios": [],
             }

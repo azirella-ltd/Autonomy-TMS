@@ -15,7 +15,6 @@ from sqlalchemy.orm import relationship
 from enum import Enum
 
 from .base import Base
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
 
 class SimulationStatus(str, Enum):

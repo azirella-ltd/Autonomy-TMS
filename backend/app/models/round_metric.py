@@ -5,7 +5,6 @@ Stores per-round metrics for simulation execution tracking.
 Replaces ParticipantRound for execution-based simulations.
 
 Terminology (Feb 2026):
-# Terminology: scenario_id (was game_id)
 - player_id -> scenario_user_id
 """
 

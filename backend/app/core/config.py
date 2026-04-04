@@ -177,7 +177,7 @@ class Settings(BaseSettings):
     
     # Scenario Settings
     # DEPRECATED: The three constants below are legacy Beer Game defaults.
-    # New scenarios must seed InvLevel.on_hand_qty via 'make seed-tbg-sc-data'.
+    # New scenarios must seed InvLevel.on_hand_qty via the AWS SC seed script.
     # Cost rates must come from InvPolicy.holding_cost_range / backlog_cost_range.
     INITIAL_INVENTORY: int = 12          # DEPRECATED — legacy Beer Game init
     HOLDING_COST_PER_UNIT: float = 0.5   # DEPRECATED — legacy Beer Game cost

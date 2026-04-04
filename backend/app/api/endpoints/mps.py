@@ -19,7 +19,6 @@ from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.production_order import ProductionOrder
 from app.models.sc_entities import Product, SourcingRules
 from app.models.supplier import VendorLeadTime
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from pydantic import BaseModel, Field
 import sqlalchemy as sa
 from app.services.user_scope_service import resolve_user_scope_sync, resolve_site_names_to_ids_sync

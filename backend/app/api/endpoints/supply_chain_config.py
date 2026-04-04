@@ -43,7 +43,6 @@ from app.models.supply_chain_config import (
     SupplyChainTrainingArtifact,
 )
 from app.models.user import UserTypeEnum
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.schemas.scenario import ScenarioCreate
 from app.rl.data_generator import load_sequences_from_db, DbLookupConfig
 from app.rl.config import SimulationParams

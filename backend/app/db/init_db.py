@@ -16,7 +16,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 # Import models in the correct order to avoid circular imports
 from app.models.base import Base
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.models.user import User, RefreshToken, UserTypeEnum
 from app.models.participant import ScenarioUser, ScenarioUserRole, ScenarioUserType, ScenarioUserStrategy
 from app.models.auth_models import PasswordHistory, PasswordResetToken

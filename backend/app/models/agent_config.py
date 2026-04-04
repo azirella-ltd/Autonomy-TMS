@@ -1,7 +1,6 @@
 """Agent configuration model for AI agents in simulations.
 
 Terminology (Feb 2026):
-# Terminology: scenario_id (was game_id)
 - Game -> Scenario
 """
 from sqlalchemy import Column, Integer, String, JSON, ForeignKey

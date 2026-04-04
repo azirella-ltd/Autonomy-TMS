@@ -53,7 +53,6 @@ def parse_args() -> argparse.Namespace:
         help="Do not create or update the showcase Autonomy games.",
     )
     parser.add_argument(
-        "--no-reset-games",
         action="store_true",
         help="Preserve existing games instead of rebuilding them from scratch.",
     )

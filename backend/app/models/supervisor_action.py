@@ -1,7 +1,6 @@
 """Supervisor action model for tracking AI supervisor decisions.
 
 Terminology (Feb 2026):
-# Terminology: scenario_id (was game_id)
 - Game -> Scenario
 """
 from datetime import datetime

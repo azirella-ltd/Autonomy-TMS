@@ -7,7 +7,6 @@ Request/response schemas for Production Order API endpoints.
 from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
 
 # ==================== Component Schemas ====================

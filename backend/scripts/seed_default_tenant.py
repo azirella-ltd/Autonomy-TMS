@@ -66,7 +66,6 @@ from app.models import (
 from app.models.supply_chain_config import ConfigLineage
 # Use Product instead of Product (AWS SC migration)
 from app.models.sc_entities import Product, ProductBom, InvPolicy
-from app.models.compatibility import Item  # Not used - for reference only  # Temporary compatibility during migration
 from app.models.user import UserTypeEnum
 from app.services.supply_chain_config_service import SupplyChainConfigService
 from app.core.security import get_password_hash
@@ -5095,7 +5094,6 @@ def run_seed_with_session(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Bootstrap Autonomy default data and agent games")
     parser.add_argument(
-        "--reset-games",
         action="store_true",
         help="Delete all existing games before recreating defaults and showcases.",
     )

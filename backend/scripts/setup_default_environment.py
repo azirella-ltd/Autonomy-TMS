@@ -38,7 +38,6 @@ from app.db.session import async_session_factory, engine, Base
 from app.models.user import User, UserBase
 from app.models.tenant import Tenant
 from app.models.supply_chain_config import SupplyChainConfig, Site, Lane, MarketDemand, NodeType
-from app.models.compatibility import Item
 from app.models.sc_entities import InvPolicy as ProductSiteConfig
 from app.models.scenario import Scenario, ScenarioStatus
 from app.models.scenario_user import ScenarioUser, ScenarioUserRole

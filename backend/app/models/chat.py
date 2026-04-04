@@ -3,7 +3,6 @@ Chat and A2A Collaboration Database Models
 Phase 7 Sprint 2
 
 Terminology (Feb 2026):
-# Terminology: scenario_id (was game_id)
 - player_id -> scenario_user_id
 - Game -> Scenario
 - Player -> ScenarioUser (in code), User (in UI)

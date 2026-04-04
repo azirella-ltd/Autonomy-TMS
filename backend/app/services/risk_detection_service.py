@@ -15,7 +15,6 @@ from scipy import stats
 import statistics
 
 from app.models.supply_chain_config import Site
-from app.models.compatibility import Item
 from app.models.sc_entities import Forecast, InvLevel, InvPolicy, Product
 from app.models.supplier import VendorLeadTime
 

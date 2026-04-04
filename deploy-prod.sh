@@ -34,7 +34,7 @@ if [ ! -f config/nginx/ssl/cert.pem ] || [ ! -f config/nginx/ssl/key.pem ]; then
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout config/nginx/ssl/key.pem \
         -out config/nginx/ssl/cert.pem \
-        -subj "/C=US/ST=State/L=City/O=BeerGame/CN=localhost"
+        -subj "/C=US/ST=State/L=City/O=Autonomy/CN=localhost"
     chmod 600 config/nginx/ssl/*.pem
 fi
 

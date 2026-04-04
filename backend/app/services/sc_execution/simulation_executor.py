@@ -120,7 +120,7 @@ class SimulationExecutor:
         if not self._product:
             raise ValueError(
                 f"No product found for SC config {self.config_id}. "
-                "Run 'make seed-tbg-sc-data' to seed Product/InvPolicy/SourcingRules "
+                "Run the AWS SC seed script to seed Product/InvPolicy/SourcingRules "
                 "before executing simulation rounds."
             )
         return self._product.id

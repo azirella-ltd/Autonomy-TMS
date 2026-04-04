@@ -23,7 +23,6 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column
 from enum import Enum
 
 from .base import Base
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
 
 class MPSStatus(str, Enum):

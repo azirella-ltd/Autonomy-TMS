@@ -246,49 +246,8 @@ class BusinessImpactService:
         scenario_config = config["config"]
         config_id = scenario_config.get("id")
 
-        # Try real planning simulation via SupplyPlanService
-        if config_id:
-            try:
-                from app.services.supply_plan_service import SupplyPlanService
-                from app.services.stochastic_sampling import StochasticParameters
-                from app.services.monte_carlo_planner import PlanObjectives
-
-                sc_config = self.db.query(SupplyChainConfig).filter(
-                    SupplyChainConfig.id == config_id
-                ).first()
-
-                if sc_config:
-                    stochastic_params = StochasticParameters(
-                        demand_variability=0.15,
-                        lead_time_variability=0.10,
-                        supplier_reliability=0.95,
-                    )
-                    objectives = PlanObjectives(
-                        planning_horizon=planning_horizon,
-                        service_level_target=0.95,
-                    )
-                    svc = SupplyPlanService(self.db, sc_config)
-                    result = svc.generate_supply_plan(
-                        stochastic_params, objectives,
-                        num_scenarios=min(simulation_runs, 200),
-                    )
-                    scorecard = result.get("scorecard", {})
-                    # Merge strategic metrics (not in scorecard)
-                    nodes = config["nodes"]
-                    lanes = config["lanes"]
-                    markets = config.get("markets", [])
-                    scorecard["strategic"] = self._simulate_strategic_metrics(
-                        nodes, lanes, markets, action_type
-                    )
-                    return scorecard
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning(
-                    f"Real planning simulation failed for config {config_id}, "
-                    f"falling back to simplified model: {e}"
-                )
-
-        # Fallback: simplified heuristic model
+        # Uses simplified heuristic model (conformal prediction intervals
+        # from the supply_plan table should replace this in a follow-up).
         nodes = config["nodes"]
         lanes = config["lanes"]
         markets = config.get("markets", [])

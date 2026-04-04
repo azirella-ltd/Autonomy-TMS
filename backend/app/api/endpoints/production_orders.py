@@ -17,7 +17,6 @@ from app.models.production_order import ProductionOrder, ProductionOrderComponen
 from app.models.mps import MPSPlan
 from app.models.supply_chain_config import Site
 from app.models.sc_entities import Product
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.schemas.production_order import (
     ProductionOrderCreate,
     ProductionOrderUpdate,

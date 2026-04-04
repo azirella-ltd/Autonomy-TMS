@@ -60,7 +60,6 @@ from app.models.supply_chain_config import (
     MarketDemand,
 )
 # Temporary compatibility imports during migration
-from app.models.compatibility import Item
 from app.models.sc_entities import Product, ProductHierarchy, InvPolicy
 
 # Preserve references to SQLAlchemy models before defining local Pydantic helpers
@@ -6616,7 +6615,6 @@ api.include_router(mixed_scenario_router)  # Mixed scenario router has /mixed-sc
 # mixed_alternative.py removed - consolidated into mixed_scenario.py
 
 # Phase 4: Supply Planning, Sourcing & Analytics
-from app.api.endpoints.supply_plan import router as supply_plan_router
 from app.api.endpoints.sourcing_rules import router as sourcing_rules_router
 from app.api.endpoints.analytics import router as analytics_router
 from app.api.endpoints.risk_analysis import router as risk_analysis_router
@@ -6630,7 +6628,6 @@ from app.api.endpoints.maintenance_orders import router as maintenance_orders_ro
 from app.api.endpoints.turnaround_orders import router as turnaround_orders_router
 from app.api.endpoints.user_capabilities import router as user_capabilities_router
 from app.api.endpoints.capabilities import router as capabilities_router
-api.include_router(supply_plan_router, prefix="/supply-plan", tags=["supply-plan", "planning"])
 api.include_router(sourcing_rules_router, prefix="/sourcing-rules", tags=["sourcing-rules", "planning"])
 api.include_router(analytics_router, prefix="/analytics", tags=["analytics", "kpi"])
 api.include_router(risk_analysis_router, prefix="/risk-analysis", tags=["risk-analysis", "insights"])

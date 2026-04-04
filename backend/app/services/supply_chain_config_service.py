@@ -26,7 +26,6 @@ from app.models.supply_chain_config import (
 )
 from app.models.sc_entities import Product, ProductBom
 # Temporary compatibility layer during migration
-from app.models.compatibility import Item, ProductSiteConfig
 from app.core.time_buckets import normalize_time_bucket, TimeBucket, DEFAULT_START_DATE
 from app.services.mixed_scenario_service import MixedScenarioService
 from app.schemas.scenario import ScenarioCreate, NodePolicy, DemandPattern

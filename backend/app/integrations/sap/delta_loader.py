@@ -19,7 +19,6 @@ from pathlib import Path
 import pandas as pd
 import json
 import hashlib
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
 logger = logging.getLogger(__name__)
 

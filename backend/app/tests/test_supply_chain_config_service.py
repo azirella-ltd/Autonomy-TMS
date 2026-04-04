@@ -51,7 +51,6 @@ from app.models.supply_chain_config import (
     NodeType,
     SupplyChainConfig,
 )
-from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.services.supply_chain_config_service import SupplyChainConfigService
 
 
