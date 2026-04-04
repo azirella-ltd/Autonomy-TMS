@@ -35,6 +35,7 @@ from typing import FrozenSet, Optional, Dict
 # ---------------------------------------------------------------------------
 
 ALL_TRM_NAMES: FrozenSet[str] = frozenset([
+    "forecast_baseline",
     "atp_executor",
     "order_tracking",
     "inventory_buffer",
@@ -79,6 +80,7 @@ _MASTER_TYPE_TRMS: Dict[str, FrozenSet[str]] = {
     "manufacturer": ALL_TRM_NAMES,
 
     "inventory": frozenset([
+        "forecast_baseline",
         "atp_executor",
         "order_tracking",
         "inventory_buffer",

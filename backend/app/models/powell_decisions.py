@@ -880,5 +880,88 @@ class PowellBufferDecision(HiveSignalMixin, Base):
         }
 
 
+class PowellForecastBaselineDecision(HiveSignalMixin, Base):
+    """Forecast baseline decision history — model selection, retraining, features.
+
+    The 12th TRM decision table. Records decisions about the statistical
+    forecast pipeline: which model to use, when to retrain, which cross-product
+    features and external signals to include.
+    """
+    __tablename__ = "powell_forecast_baseline_decisions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"), nullable=False)
+
+    # Product × Site
+    product_id = Column(String(100), nullable=False)
+    site_id = Column(String(100), nullable=False)
+
+    # Demand classification
+    demand_profile = Column(String(30), nullable=False)  # smooth/erratic/intermittent/lumpy/new/declining
+
+    # Model decision
+    recommended_model = Column(String(30), nullable=False)  # lgbm/lgbm_volatility/croston/holt_winters/tft/naive
+    model_changed = Column(Boolean, default=False)
+
+    # Retrain decision
+    retrain_recommended = Column(Boolean, default=False)
+    retrain_reason = Column(String(50), nullable=True)  # drift_cusum/mape_degradation/conformal_coverage_drift
+
+    # Accuracy
+    current_mape = Column(Float, nullable=True)
+    fva_vs_naive = Column(Float, nullable=True)  # Forecast Value Add vs naive repeat
+
+    # Forecast output
+    forecast_p50 = Column(Float, nullable=True)
+    forecast_p10 = Column(Float, nullable=True)
+    forecast_p90 = Column(Float, nullable=True)
+    conformal_interval_width = Column(Float, nullable=True)  # (P90-P10)/P50
+
+    # Feature decisions
+    cross_product_enabled = Column(Boolean, default=True)
+    external_signals = Column(JSON, nullable=True)  # List of enabled signal names
+    censored_demand_corrected = Column(Boolean, default=False)
+
+    # Demand trend
+    demand_trend = Column(String(10), nullable=True)  # surge/drop/null
+    demand_trend_magnitude = Column(Float, nullable=True)
+
+    # Quality
+    confidence = Column(Float, nullable=True)
+
+    # Outcome tracking
+    was_retrained = Column(Boolean, nullable=True)
+    mape_after_retrain = Column(Float, nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now())
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "config_id": self.config_id,
+            "product_id": self.product_id,
+            "site_id": self.site_id,
+            "demand_profile": self.demand_profile,
+            "recommended_model": self.recommended_model,
+            "model_changed": self.model_changed,
+            "retrain_recommended": self.retrain_recommended,
+            "retrain_reason": self.retrain_reason,
+            "current_mape": self.current_mape,
+            "fva_vs_naive": self.fva_vs_naive,
+            "forecast_p50": self.forecast_p50,
+            "forecast_p10": self.forecast_p10,
+            "forecast_p90": self.forecast_p90,
+            "conformal_interval_width": self.conformal_interval_width,
+            "cross_product_enabled": self.cross_product_enabled,
+            "external_signals": self.external_signals,
+            "censored_demand_corrected": self.censored_demand_corrected,
+            "demand_trend": self.demand_trend,
+            "demand_trend_magnitude": self.demand_trend_magnitude,
+            "confidence": self.confidence,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
+        }
+
+
 # Backward-compatible alias
 PowellSSDecision = PowellBufferDecision

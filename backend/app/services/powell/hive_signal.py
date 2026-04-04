@@ -195,26 +195,27 @@ class UrgencyVector:
     """
 
     TRM_INDICES: Dict[str, int] = {
-        "atp_executor": 0,
-        "order_tracking": 1,
-        "po_creation": 2,
-        "rebalancing": 3,
-        "subcontracting": 4,
-        "inventory_buffer": 5,
-        "forecast_adj": 6,
-        "quality": 7,
-        "maintenance": 8,
-        "mo_execution": 9,
-        "to_execution": 10,
+        "forecast_baseline": 0,
+        "atp_executor": 1,
+        "order_tracking": 2,
+        "po_creation": 3,
+        "rebalancing": 4,
+        "subcontracting": 5,
+        "inventory_buffer": 6,
+        "forecast_adj": 7,
+        "quality": 8,
+        "maintenance": 9,
+        "mo_execution": 10,
+        "to_execution": 11,
         # Canonical name aliases (used by decision_cycle.py and training)
-        "forecast_adjustment": 6,
-        "quality_disposition": 7,
-        "maintenance_scheduling": 8,
+        "forecast_adjustment": 7,
+        "quality_disposition": 8,
+        "maintenance_scheduling": 9,
     }
 
     # Valid direction values
     VALID_DIRECTIONS = frozenset({"neutral", "shortage", "surplus", "risk", "relief"})
-    NUM_SLOTS = 11
+    NUM_SLOTS = 12
 
     def __init__(self) -> None:
         self._lock = threading.Lock()

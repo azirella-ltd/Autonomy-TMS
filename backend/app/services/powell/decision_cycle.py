@@ -53,7 +53,8 @@ class DecisionCyclePhase(IntEnum):
 
 # Canonical TRM names → decision cycle phase (used for PHASE_TRM_MAP)
 _CANONICAL_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
-    # SENSE — demand-side scouts
+    # SENSE — demand-side scouts + baseline forecast
+    "forecast_baseline": DecisionCyclePhase.SENSE,
     "atp_executor": DecisionCyclePhase.SENSE,
     "order_tracking": DecisionCyclePhase.SENSE,
 
