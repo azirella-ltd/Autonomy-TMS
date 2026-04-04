@@ -582,6 +582,37 @@ async def startup_event():
             from app.services.sap_staging_jobs import register_sap_staging_jobs
             register_sap_staging_jobs(scheduler_service)
 
+            # Register MCP polling jobs for tenants with MCP server configs
+            try:
+                from app.integrations.mcp.scheduler import register_mcp_jobs
+                from app.db.session import async_session_factory
+                import asyncio
+                async def _register_mcp():
+                    async with async_session_factory() as mcp_db:
+                        count = await register_mcp_jobs(scheduler_service, mcp_db)
+                        if count > 0:
+                            logger.info(f"MCP: registered {count} polling jobs")
+                asyncio.get_event_loop().create_task(_register_mcp())
+            except Exception as e:
+                logger.debug(f"MCP job registration skipped: {e}")
+
+            # Register MCP pending writeback executor (every 1 minute)
+            try:
+                from app.integrations.mcp.writeback_service import process_pending_writebacks
+                from app.integrations.mcp.client import mcp_pool
+                async def _process_writebacks():
+                    from app.db.session import async_session_factory
+                    async with async_session_factory() as wb_db:
+                        await process_pending_writebacks(wb_db, mcp_pool)
+                scheduler_service.add_interval_job(
+                    func=_process_writebacks,
+                    job_id="mcp_pending_writebacks",
+                    seconds=60,
+                    replace_existing=True,
+                )
+            except Exception as e:
+                logger.debug(f"MCP writeback executor registration skipped: {e}")
+
             # CDT startup: load existing calibration from DB into memory.
             # Fast (< 5s) — reads decision-outcome pairs already stored.
             # Simulation bootstrap only runs during provisioning (conformal step)
@@ -1429,6 +1460,17 @@ def _cascade_delete_config(db, config_id: int):
         "data_drift_alerts", "data_drift_records",
         "decision_governance_policies", "guardrail_directives",
         "decision_embeddings",
+        # Powell decision tables (all 12 TRMs)
+        "powell_atp_allocation_decisions", "powell_po_decisions",
+        "powell_mo_decisions", "powell_to_decisions",
+        "powell_inventory_rebalancing_decisions", "powell_quality_decisions",
+        "powell_maintenance_decisions", "powell_subcontracting_decisions",
+        "powell_order_tracking_decisions", "powell_buffer_decisions",
+        "powell_forecast_adjustment_decisions", "powell_forecast_baseline_decisions",
+        "powell_site_agent_decisions", "powell_cdc_trigger_log",
+        "powell_site_agent_checkpoints",
+        # MCP tables
+        "mcp_server_config", "mcp_delta_state", "mcp_pending_writeback",
         # Capacity / site planning
         "resource_capacity_constraint", "resource_capacity",
         "site_planning_config", "capacity_resource_plans",

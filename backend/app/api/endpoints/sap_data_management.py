@@ -458,7 +458,8 @@ async def update_connection(
     row.sap_router_string = request.sap_router_string
     row.cloud_connector_location_id = request.cloud_connector_location_id
     if request.password:
-        row.sap_password_encrypted = request.password  # Service encrypts on commit
+        import base64
+        row.sap_password_encrypted = base64.b64encode(request.password.encode()).decode()
 
     # Reset validation since config changed
     row.is_validated = False

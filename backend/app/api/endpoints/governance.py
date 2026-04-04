@@ -543,3 +543,130 @@ def _directive_to_dict(d) -> dict:
         "extraction_confidence": d.extraction_confidence,
         "created_at": d.created_at.isoformat() if d.created_at else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Oversight Schedule (Tenant Operating Hours)
+# ---------------------------------------------------------------------------
+
+@router.get("/oversight")
+async def get_oversight_config(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    tenant_id: Optional[int] = Query(None),
+):
+    """Get the tenant's oversight schedule (operating hours, holidays, config)."""
+    tid = tenant_id if current_user.is_system_admin and tenant_id else current_user.tenant_id
+    if not tid:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    from app.services.oversight_schedule_service import load_tenant_schedule
+
+    schedule_dict, holidays, tz_name, config = await load_tenant_schedule(db, tid)
+
+    # Format schedule for frontend
+    schedule_list = []
+    for dow in range(7):
+        if dow in schedule_dict:
+            start, end = schedule_dict[dow]
+            schedule_list.append({
+                "day_of_week": dow,
+                "start_time": start,
+                "end_time": end,
+                "is_operating": True,
+            })
+        else:
+            schedule_list.append({
+                "day_of_week": dow,
+                "start_time": "08:00",
+                "end_time": "17:00",
+                "is_operating": False,
+            })
+
+    return {
+        "config": {**config, "timezone": tz_name},
+        "schedule": schedule_list,
+        "holidays": [{"date": h.isoformat(), "name": ""} for h in holidays],
+    }
+
+
+@router.put("/oversight")
+async def update_oversight_config(
+    body: dict,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    tenant_id: Optional[int] = Query(None),
+):
+    """Update the tenant's oversight schedule."""
+    tid = tenant_id if current_user.is_system_admin and tenant_id else current_user.tenant_id
+    if not tid:
+        raise HTTPException(status_code=403, detail="No tenant context")
+
+    config_data = body.get("config", {})
+    schedule_data = body.get("schedule", [])
+
+    try:
+        # Upsert oversight config
+        await db.execute(
+            text("""
+                INSERT INTO tenant_oversight_config (
+                    tenant_id, timezone, respect_business_hours,
+                    urgent_bypass_enabled, urgent_bypass_threshold,
+                    extend_delay_over_weekends, max_calendar_delay_hours,
+                    oncall_enabled, oncall_user_id
+                ) VALUES (
+                    :tid, :tz, :rbh, :ube, :ubt, :edow, :mcdh, :oce, :ocu
+                )
+                ON CONFLICT (tenant_id) DO UPDATE SET
+                    timezone = :tz,
+                    respect_business_hours = :rbh,
+                    urgent_bypass_enabled = :ube,
+                    urgent_bypass_threshold = :ubt,
+                    extend_delay_over_weekends = :edow,
+                    max_calendar_delay_hours = :mcdh,
+                    oncall_enabled = :oce,
+                    oncall_user_id = :ocu,
+                    updated_at = NOW()
+            """),
+            {
+                "tid": tid,
+                "tz": config_data.get("timezone", "UTC"),
+                "rbh": config_data.get("respect_business_hours", True),
+                "ube": config_data.get("urgent_bypass_enabled", True),
+                "ubt": config_data.get("urgent_bypass_threshold", 0.85),
+                "edow": config_data.get("extend_delay_over_weekends", True),
+                "mcdh": config_data.get("max_calendar_delay_hours", 72),
+                "oce": config_data.get("oncall_enabled", False),
+                "ocu": config_data.get("oncall_user_id"),
+            },
+        )
+
+        # Upsert weekly schedule
+        for entry in schedule_data:
+            dow = entry.get("day_of_week")
+            if dow is None:
+                continue
+            await db.execute(
+                text("""
+                    INSERT INTO tenant_operating_schedule (
+                        tenant_id, day_of_week, start_time, end_time, is_operating
+                    ) VALUES (:tid, :dow, :st, :et, :op)
+                    ON CONFLICT (tenant_id, day_of_week) DO UPDATE SET
+                        start_time = :st, end_time = :et, is_operating = :op,
+                        updated_at = NOW()
+                """),
+                {
+                    "tid": tid,
+                    "dow": dow,
+                    "st": entry.get("start_time", "08:00"),
+                    "et": entry.get("end_time", "17:00"),
+                    "op": entry.get("is_operating", True),
+                },
+            )
+
+        await db.commit()
+        return {"status": "saved"}
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

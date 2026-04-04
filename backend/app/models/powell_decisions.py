@@ -84,6 +84,7 @@ class HiveSignalMixin:
     signals_emitted = Column(JSON, nullable=True)        # List of signal types emitted after decision
     cycle_phase = Column(String(50), nullable=True)      # DecisionCyclePhase name (SENSE..REFLECT)
     cycle_id = Column(String(100), nullable=True)        # UUID of the decision cycle run
+    correlation_id = Column(String(36), nullable=True, index=True)  # End-to-end trace: CDC→signal→decision→writeback
 
     # Decision reasoning — full English explanation captured at decision time
     # Eliminates need for LLM to infer reasoning at query time

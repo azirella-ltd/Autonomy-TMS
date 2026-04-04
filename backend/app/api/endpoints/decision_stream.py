@@ -961,3 +961,43 @@ async def chat(
         decision_level=decision_level,
     )
     return result
+
+
+@router.get("/chart/{decision_type}/{decision_id}")
+async def get_decision_chart(
+    decision_type: str,
+    decision_id: int,
+    config_id: int = Query(...),
+    product_id: Optional[str] = Query(None),
+    site_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Get contextual chart data for a specific decision.
+
+    Returns time-series data showing the ISSUE → ACTION → PROJECTED OUTCOME
+    with a narrow, decision-relevant time window.
+
+    Supports all 12 TRM decision types with type-specific charts:
+    - ATP: supply vs demand buckets
+    - Rebalancing: inventory at source + destination before/after
+    - PO Creation: inventory vs reorder point + expected receipt
+    - Forecast: old vs new forecast vs actuals with P10/P90
+    - Buffer: on-hand vs safety stock target
+    - MO: production schedule + capacity
+    - TO: in-transit + source/dest on-hand
+    - Quality: inspection results + inventory impact
+    - Maintenance: downtime + capacity impact
+    - Subcontracting: internal capacity vs demand
+    - Order Tracking: delivery timeline + risk
+    """
+    from app.services.decision_chart_service import DecisionChartService
+
+    service = DecisionChartService(db)
+    return await service.get_chart_data(
+        decision_type=decision_type,
+        decision_id=decision_id,
+        config_id=config_id,
+        product_id=product_id,
+        site_id=site_id,
+    )
