@@ -9,6 +9,13 @@ Generates strategic supply plans using classical planning policies:
 
 This is PLANNING (not execution). Outputs are strategic decisions over
 a planning horizon, not period-by-period reactive orders.
+
+DEPRECATION NOTE (April 2026): This module uses pre-AWS SC terminology
+(item_id, node_id, game_id) that should be migrated to AWS SC names
+(product_id, site_id, config_id). The functionality is correct but the
+naming is inconsistent with the rest of the codebase. Conformal P10/P90
+uncertainty bounds (not Monte Carlo) should be used for safety stock
+in new code. See TACTICAL_AGENT_ARCHITECTURE.md for the current approach.
 """
 
 from typing import Dict, List, Optional, Tuple

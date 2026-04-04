@@ -14,6 +14,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '../../components/common';
+import TabErrorBoundary from '../../components/TabErrorBoundary';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import {
@@ -69,6 +70,7 @@ export default function ForecastAnalyticsHub() {
           ))}
         </TabsList>
 
+        <TabErrorBoundary>
         <Suspense fallback={<TabLoading />}>
           <TabsContent value="pipeline" className="mt-0 pt-4"><Forecasting /></TabsContent>
           <TabsContent value="accuracy" className="mt-0 pt-4"><KPIMonitoring /></TabsContent>
@@ -76,6 +78,7 @@ export default function ForecastAnalyticsHub() {
           <TabsContent value="distributions" className="mt-0 pt-4"><DistributionAnalysis /></TabsContent>
           <TabsContent value="backtesting" className="mt-0 pt-4"><ForecastBacktesting /></TabsContent>
         </Suspense>
+        </TabErrorBoundary>
       </Tabs>
     </div>
   );

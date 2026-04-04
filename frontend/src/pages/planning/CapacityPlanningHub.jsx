@@ -16,6 +16,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '../../components/common';
+import TabErrorBoundary from '../../components/TabErrorBoundary';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import ScenarioPanel from '../../components/planning/ScenarioPanel';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
@@ -78,6 +79,7 @@ export default function CapacityPlanningHub() {
           ))}
         </TabsList>
 
+        <TabErrorBoundary>
         <Suspense fallback={<TabLoading />}>
           <TabsContent value="utilization" className="mt-0 pt-4"><ResourceCapacity /></TabsContent>
           <TabsContent value="bottleneck" className="mt-0 pt-4"><BottleneckAnalysis /></TabsContent>
@@ -87,6 +89,7 @@ export default function CapacityPlanningHub() {
           <TabsContent value="maintenance" className="mt-0 pt-4"><MaintenanceWorklistPage /></TabsContent>
           <TabsContent value="heatmap" className="mt-0 pt-4"><ResourceHeatmap configId={effectiveConfigId} /></TabsContent>
         </Suspense>
+        </TabErrorBoundary>
       </Tabs>
     </div>
   );

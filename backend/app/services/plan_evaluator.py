@@ -7,6 +7,11 @@ probabilistic performance metrics.
 
 This is the evaluation/simulation layer that executes a strategic plan,
 NOT the planning layer itself.
+
+DEPRECATION NOTE (April 2026): Monte Carlo simulation is retained for
+Digital Twin / TRM training data generation but is NOT used for production
+plan generation. Production plans use conformal P10/P90 bounds for
+uncertainty quantification. See TACTICAL_AGENT_ARCHITECTURE.md.
 """
 
 from typing import Dict, List, Optional, Tuple

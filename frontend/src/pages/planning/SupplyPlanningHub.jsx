@@ -16,6 +16,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '../../components/common';
+import TabErrorBoundary from '../../components/TabErrorBoundary';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import { api } from '../../services/api';
@@ -110,6 +111,7 @@ export default function SupplyPlanningHub() {
           ))}
         </TabsList>
 
+        <TabErrorBoundary>
         <Suspense fallback={<TabLoading />}>
           <TabsContent value="generation" className="mt-0 pt-4"><SupplyPlanGeneration /></TabsContent>
           <TabsContent value="directives" className="mt-0 pt-4"><SupplyWorklistPage /></TabsContent>
@@ -119,6 +121,7 @@ export default function SupplyPlanningHub() {
           <TabsContent value="capacity" className="mt-0 pt-4"><CapacityCheck /></TabsContent>
           <TabsContent value="lead_times" className="mt-0 pt-4"><VendorLeadTimes /></TabsContent>
         </Suspense>
+        </TabErrorBoundary>
       </Tabs>
     </div>
   );

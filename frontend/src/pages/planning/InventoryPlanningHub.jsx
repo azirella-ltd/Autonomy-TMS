@@ -16,6 +16,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
 } from '../../components/common';
+import TabErrorBoundary from '../../components/TabErrorBoundary';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import ScenarioPanel from '../../components/planning/ScenarioPanel';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
@@ -79,6 +80,7 @@ export default function InventoryPlanningHub() {
           ))}
         </TabsList>
 
+        <TabErrorBoundary>
         <Suspense fallback={<TabLoading />}>
           <TabsContent value="policies" className="mt-0 pt-4"><InventoryOptimization /></TabsContent>
           <TabsContent value="projections" className="mt-0 pt-4"><InventoryProjection /></TabsContent>
@@ -88,6 +90,7 @@ export default function InventoryPlanningHub() {
           <TabsContent value="rebalancing" className="mt-0 pt-4"><RebalancingWorklistPage /></TabsContent>
           <TabsContent value="excess" className="mt-0 pt-4"><ExcessObsolete /></TabsContent>
         </Suspense>
+        </TabErrorBoundary>
       </Tabs>
     </div>
   );

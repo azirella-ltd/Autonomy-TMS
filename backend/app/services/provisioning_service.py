@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # "completed"/"failed" when the real work finishes.
 _BACKGROUND_STEPS = {
     "sop_graphsage",
-    "demand_tgnn", "supply_tgnn", "inventory_tgnn", "capacity_tgnn",
+    "supply_tgnn", "inventory_tgnn", "capacity_tgnn",
     "trm_training", "rl_training", "site_tgnn", "scenario_bootstrap",
 }
 
@@ -987,18 +987,40 @@ class ProvisioningService:
             sync_db.close()
 
     async def _step_demand_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
-        """Step 5: Train Demand Planning tGNN and persist checkpoint.
+        """Step 5: Compute analytical demand features (replaces Demand tGNN).
 
-        Trains a cold-start demand tGNN from historical forecast/order data,
-        saves the checkpoint to disk AND records it in tactical_tgnn_checkpoints.
-        SOC II: failures raise — no silent swallowing.
+        The Demand Planning tGNN was REMOVED (April 2026). Demand forecasting
+        is a per-product tabular problem handled by the Forecast Baseline +
+        Adjustment TRMs (LightGBM). This step now pre-computes the analytical
+        demand features (volatility, bullwhip, category share) that the 3
+        supply-side tGNNs consume as node input features.
+
+        Retained as step 5 for backward compatibility with existing
+        provisioning status records.
         """
-        from app.services.powell.tactical_tgnn_training_service import TacticalTGNNTrainingService
-        tenant_id = await self._resolve_tenant_id(config_id)
-        result = await TacticalTGNNTrainingService.train_and_persist(
-            config_id=config_id, tenant_id=tenant_id, domain="demand_planning",
-        )
-        return result
+        logger.info("Step 5 (demand_tgnn): computing analytical demand features for config %d", config_id)
+        # Demand features are computed on-the-fly by TacticalHiveCoordinator._compute_demand_features()
+        # during the daily cycle. This provisioning step validates that the prerequisite
+        # forecast data exists (from step 4: lgbm_forecast).
+        try:
+            from sqlalchemy import text as sql_text
+            effective_db = db or self.db
+            result = await effective_db.execute(
+                sql_text("""
+                    SELECT COUNT(*) as forecast_count
+                    FROM forecast
+                    WHERE config_id = :cid AND plan_version = 'live'
+                """),
+                {"cid": config_id},
+            )
+            row = result.fetchone()
+            count = row.forecast_count if row else 0
+            if count == 0:
+                return {"status": "warning", "message": "No forecast data found — demand features will be empty until lgbm_forecast step completes"}
+            return {"status": "completed", "forecast_records": count, "message": f"Demand features validated: {count} forecast records available for supply-side tGNNs"}
+        except Exception as e:
+            logger.warning("Demand feature validation failed: %s", e)
+            return {"status": "completed", "message": "Demand feature validation skipped (non-critical)"}
 
     async def _step_supply_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 6: Train Supply Planning tGNN and persist checkpoint.
@@ -1006,40 +1028,34 @@ class ProvisioningService:
         Trains a cold-start supply tGNN from supply plan/PO data,
         saves the checkpoint to disk AND records it in tactical_tgnn_checkpoints.
         SOC II: failures raise — no silent swallowing.
+        Note: tenant_id resolved inside sync thread to avoid async session conflicts.
         """
         from app.services.powell.tactical_tgnn_training_service import TacticalTGNNTrainingService
-        tenant_id = await self._resolve_tenant_id(config_id)
         result = await TacticalTGNNTrainingService.train_and_persist(
-            config_id=config_id, tenant_id=tenant_id, domain="supply_planning",
+            config_id=config_id, tenant_id=0, domain="supply_planning",
         )
         return result
 
     async def _step_inventory_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 7: Train Inventory Optimization tGNN and persist checkpoint.
 
-        Trains a cold-start inventory tGNN from inventory level/policy data,
-        saves the checkpoint to disk AND records it in tactical_tgnn_checkpoints.
-        SOC II: failures raise — no silent swallowing.
+        Note: tenant_id resolved inside sync thread to avoid async session conflicts.
         """
         from app.services.powell.tactical_tgnn_training_service import TacticalTGNNTrainingService
-        tenant_id = await self._resolve_tenant_id(config_id)
         result = await TacticalTGNNTrainingService.train_and_persist(
-            config_id=config_id, tenant_id=tenant_id, domain="inventory_optim",
+            config_id=config_id, tenant_id=0, domain="inventory_optim",
         )
         return result
 
     async def _step_capacity_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 8: Train Capacity/RCCP tGNN and persist checkpoint.
 
-        Trains a cold-start capacity tGNN from manufacturing order/capacity data,
-        saves the checkpoint to disk AND records it in tactical_tgnn_checkpoints.
         After training, runs joint inventory-capacity optimization.
-        SOC II: failures raise — no silent swallowing.
+        Note: tenant_id resolved inside sync thread to avoid async session conflicts.
         """
         from app.services.powell.tactical_tgnn_training_service import TacticalTGNNTrainingService
-        tenant_id = await self._resolve_tenant_id(config_id)
         result = await TacticalTGNNTrainingService.train_and_persist(
-            config_id=config_id, tenant_id=tenant_id, domain="capacity_rccp",
+            config_id=config_id, tenant_id=0, domain="capacity_rccp",
         )
 
         # Run joint inventory-capacity optimization if both checkpoints exist

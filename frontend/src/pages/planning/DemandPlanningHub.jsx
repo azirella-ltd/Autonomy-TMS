@@ -11,12 +11,13 @@
  *   Exceptions   — Anomaly detection & root cause
  */
 
-import React, { useState, useEffect, lazy, Suspense, Component } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   Tabs, TabsList, TabsTrigger, TabsContent,
   Card, Badge,
 } from '../../components/common';
+import TabErrorBoundary from '../../components/TabErrorBoundary';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
 import ScenarioPanel from '../../components/planning/ScenarioPanel';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
@@ -35,26 +36,6 @@ const ProductLifecycle = lazy(() => import('./ProductLifecycle'));
 const ForecastExceptions = lazy(() => import('./ForecastExceptions'));
 const ForecastAnalytics = lazy(() => import('./ForecastAnalytics'));
 const ForecastPipeline = lazy(() => import('./ForecastPipeline'));
-
-// Error boundary to catch lazy-load or render crashes
-class TabErrorBoundary extends Component {
-  state = { error: null };
-  static getDerivedStateFromError(error) { return { error }; }
-  render() {
-    if (this.state.error) {
-      return (
-        <div className="p-6 text-center">
-          <p className="text-red-600 font-medium mb-2">This tab failed to load</p>
-          <p className="text-sm text-muted-foreground mb-4">{this.state.error?.message || 'Unknown error'}</p>
-          <button className="text-primary text-sm underline" onClick={() => this.setState({ error: null })}>
-            Try again
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 const TABS = [
   { key: 'forecast', label: 'Forecast', icon: TrendingUp },

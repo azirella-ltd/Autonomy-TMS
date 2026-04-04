@@ -25,11 +25,9 @@ logger = logging.getLogger(__name__)
 
 # Domain -> (model class path, feature builder, checkpoint prefix)
 _DOMAIN_REGISTRY = {
-    "demand_planning": {
-        "model_module": "app.models.gnn.demand_planning_tgnn",
-        "model_class": "DemandPlanningTGNN",
-        "prefix": "demand_planning_tgnn",
-    },
+    # demand_planning REMOVED (April 2026) — demand is per-product tabular,
+    # not a graph problem. Handled by Forecast Baseline + Adjustment TRMs.
+    # Demand features are computed analytically in TacticalHiveCoordinator.
     "supply_planning": {
         "model_module": "app.models.gnn.supply_planning_tgnn",
         "model_class": "SupplyPlanningTGNN",
@@ -57,35 +55,55 @@ class TacticalTGNNTrainingService:
         tenant_id: int,
         domain: str,
         epochs: int = 20,
-        device: str = "cpu",
+        device: str = "auto",
     ) -> dict:
         """Train a tactical tGNN and persist the checkpoint.
 
-        Args:
-            config_id: SC config to train for.
-            tenant_id: Tenant owning this config.
-            domain: One of 'demand_planning', 'supply_planning', 'inventory_optim'.
-            epochs: Training epochs.
-            device: 'cpu' or 'cuda'.
-
-        Returns:
-            dict with status, num_sites, checkpoint_path, etc.
-
-        Raises:
-            RuntimeError: If training fails (SOC II — no silent failures).
+        Runs synchronous training in a thread to avoid blocking the async loop
+        and to avoid session conflicts with the provisioning's async session.
+        Device 'auto' selects CUDA if available, else CPU.
         """
+        import asyncio
+        import torch
+        if device == "auto":
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        return await asyncio.to_thread(
+            TacticalTGNNTrainingService._train_and_persist_sync,
+            config_id, tenant_id, domain, epochs, device,
+        )
+
+    @staticmethod
+    def _train_and_persist_sync(
+        config_id: int,
+        tenant_id: int,
+        domain: str,
+        epochs: int = 20,
+        device: str = "auto",
+    ) -> dict:
+        """Synchronous training — runs in a separate thread."""
+        if device == "auto":
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+
         if domain not in _DOMAIN_REGISTRY:
             raise ValueError(f"Unknown tactical tGNN domain: {domain}")
 
         start = time.time()
         reg = _DOMAIN_REGISTRY[domain]
 
-        # 1. Load topology
+        # 1. Load topology (resolve tenant_id here if not provided)
         from app.db.session import sync_session_factory
         from sqlalchemy import text as sqt
 
         sync_db = sync_session_factory()
         try:
+            # Resolve tenant_id from config if caller passed 0
+            if not tenant_id:
+                tid_row = sync_db.execute(sqt(
+                    "SELECT tenant_id FROM supply_chain_configs WHERE id = :c"
+                ), {"c": config_id}).fetchone()
+                tenant_id = tid_row[0] if tid_row else 0
+
             sites = sync_db.execute(sqt(
                 "SELECT id, name, type, master_type FROM site "
                 "WHERE config_id = :c AND is_external = false "
@@ -93,7 +111,7 @@ class TacticalTGNNTrainingService:
             ), {"c": config_id}).fetchall()
 
             lanes = sync_db.execute(sqt(
-                "SELECT source_site_id, target_site_id FROM transportation_lane "
+                "SELECT from_site_id, to_site_id FROM transportation_lane "
                 "WHERE config_id = :c"
             ), {"c": config_id}).fetchall()
         finally:
@@ -161,8 +179,13 @@ class TacticalTGNNTrainingService:
                     x = torch.tensor(sample_x, dtype=torch.float32, device=device)
                     y = torch.tensor(sample_y, dtype=torch.float32, device=device)
 
+                    # Model expects 4D: (batch, window, num_sites, features)
+                    # Training data is 3D: (window, num_sites, features) — add batch dim
+                    if x.dim() == 3:
+                        x = x.unsqueeze(0)
+
                     out = model(
-                        x_transactional=x,
+                        x_temporal=x,
                         sop_embeddings=sop_emb,
                         edge_index=edge_index,
                     )
@@ -176,9 +199,22 @@ class TacticalTGNNTrainingService:
                     else:
                         pred = out
 
-                    # Reshape target to match prediction shape
-                    if pred.shape != y.shape:
-                        y = y[:pred.shape[0]] if len(y.shape) == 1 else y.view_as(pred)
+                    # Align pred and target shapes
+                    pred = pred.squeeze()  # Remove batch/trailing dims → [num_sites] or [num_sites, heads]
+                    if pred.dim() == 0:
+                        pred = pred.unsqueeze(0)
+                    y_target = y.squeeze()
+                    # If shapes still differ, take matching slice
+                    if pred.shape != y_target.shape:
+                        if pred.dim() == 1 and y_target.dim() == 2:
+                            y_target = y_target[:, 0]  # Take first output column
+                        elif pred.dim() == 2 and y_target.dim() == 1:
+                            pred = pred[:, 0]
+                        elif pred.numel() != y_target.numel():
+                            min_n = min(pred.numel(), y_target.numel())
+                            pred = pred.flatten()[:min_n]
+                            y_target = y_target.flatten()[:min_n]
+                    y = y_target
 
                     loss = loss_fn(pred, y)
                     optimizer.zero_grad()

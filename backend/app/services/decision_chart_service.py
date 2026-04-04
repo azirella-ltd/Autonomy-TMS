@@ -232,21 +232,89 @@ class DecisionChartService:
         return await self._chart_rebalancing(config_id, product_id, site_id, decision_id)
 
     async def _chart_quality(self, config_id, product_id, site_id, decision_id) -> Dict:
-        """Quality: Inspection results + disposition impact on inventory."""
+        """Quality: Inventory impact from quality decisions (holds, rejects)."""
+        # Show inventory before/after quality decision impact
+        result = await self.db.execute(
+            sql_text("""
+                SELECT il.snapshot_date, il.on_hand_quantity,
+                       il.in_transit_quantity, il.allocated_quantity
+                FROM inventory_level il
+                WHERE il.config_id = :cid AND il.product_id = :pid AND il.site_id = :sid
+                ORDER BY il.snapshot_date DESC
+                LIMIT 14
+            """),
+            {"cid": config_id, "pid": product_id, "sid": site_id},
+        )
+        rows = list(reversed(result.fetchall()))
+        if not rows:
+            return {"title": f"Quality: Inventory Impact at {site_id}", "series": [], "note": "No inventory data available"}
+
         return {
-            "title": f"Quality: Inspection Impact at {site_id}",
+            "title": f"Quality: Inventory Impact at {site_id}",
             "window": "-2w → +1w",
-            "series": [],
-            "note": "Quality inspection time-series not yet populated from ERP data",
+            "series": [
+                {"name": "On-hand", "data": [{"x": r.snapshot_date.isoformat() if r.snapshot_date else "", "y": float(r.on_hand_quantity or 0)} for r in rows]},
+                {"name": "Allocated", "data": [{"x": r.snapshot_date.isoformat() if r.snapshot_date else "", "y": float(r.allocated_quantity or 0)} for r in rows]},
+            ],
         }
 
     async def _chart_maintenance(self, config_id, product_id, site_id, decision_id) -> Dict:
-        """Maintenance: Equipment downtime + capacity impact."""
+        """Maintenance: Capacity utilization trend + maintenance orders."""
+        # Show resource capacity utilization at the site
+        result = await self.db.execute(
+            sql_text("""
+                SELECT rc.effective_date, rc.available_capacity,
+                       rc.planned_downtime_hours, rc.hours_per_shift, rc.shift_count
+                FROM resource_capacity rc
+                WHERE rc.config_id = :cid AND rc.site_id = :sid
+                ORDER BY rc.effective_date DESC
+                LIMIT 14
+            """),
+            {"cid": config_id, "sid": site_id},
+        )
+        rows = list(reversed(result.fetchall()))
+        if not rows:
+            # Fallback: show maintenance order count if resource_capacity empty
+            try:
+                mo_result = await self.db.execute(
+                    sql_text("""
+                        SELECT planned_start_date, maintenance_type, status
+                        FROM maintenance_orders
+                        WHERE config_id = :cid AND site_id = :sid
+                        ORDER BY planned_start_date DESC
+                        LIMIT 10
+                    """),
+                    {"cid": config_id, "sid": site_id},
+                )
+                mo_rows = mo_result.fetchall()
+                if mo_rows:
+                    return {
+                        "title": f"Maintenance: Orders at {site_id}",
+                        "window": "Recent maintenance",
+                        "series": [
+                            {"name": "Maintenance", "data": [
+                                {"x": r.planned_start_date.isoformat() if r.planned_start_date else "", "y": 1, "label": f"{r.maintenance_type}: {r.status}"}
+                                for r in mo_rows
+                            ]},
+                        ],
+                    }
+            except Exception:
+                pass
+            return {"title": f"Maintenance: Capacity at {site_id}", "series": [], "note": "No capacity or maintenance data available"}
+
         return {
-            "title": f"Maintenance: Capacity Impact at {site_id}",
+            "title": f"Maintenance: Capacity Utilization at {site_id}",
             "window": "-4w → +maintenance window",
-            "series": [],
-            "note": "Maintenance downtime time-series not yet populated from ERP data",
+            "series": [
+                {"name": "Available Capacity", "data": [
+                    {"x": r.effective_date.isoformat() if r.effective_date else "", "y": float(r.available_capacity or 0)}
+                    for r in rows
+                ]},
+                {"name": "Planned Downtime (h)", "data": [
+                    {"x": r.effective_date.isoformat() if r.effective_date else "", "y": float(r.planned_downtime_hours or 0)}
+                    for r in rows
+                ]},
+            ],
         }
 
     async def _chart_subcontracting(self, config_id, product_id, site_id, decision_id) -> Dict:
