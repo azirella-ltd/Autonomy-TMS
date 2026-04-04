@@ -301,15 +301,30 @@ def _build_training_data(
     num_features: int,
     num_samples: int,
 ) -> List:
-    """Build (input, target) training pairs from DB data or synthetic baseline.
+    """Build (input, target) training pairs for tactical tGNN training.
 
-    Tries to load real historical data first. Falls back to realistic synthetic
-    data that represents typical supply chain patterns.
+    Priority order:
+      1. Unified training corpus (Layer 2 samples) — preferred, tenant-specific
+      2. Real DB history (forecast/supply_plan/inventory_level tables)
+      3. Synthetic cold-start data (last resort)
+
+    See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md
     """
     rng = np.random.RandomState(config_id + hash(domain) % 10000)
     samples = []
 
-    # Try to load real data
+    # Priority 1: unified training corpus
+    corpus_data = _try_load_corpus_data(
+        session_factory, config_id, domain, site_keys, window_size, num_features,
+    )
+    if corpus_data is not None and len(corpus_data) >= 10:
+        logger.info(
+            "Tactical tGNN %s: loaded %d Layer 2 corpus samples for config %d",
+            domain, len(corpus_data), config_id,
+        )
+        return corpus_data
+
+    # Priority 2: real DB history
     real_data = _try_load_real_data(session_factory, config_id, domain, site_keys, window_size)
 
     if real_data is not None and len(real_data) >= 10:
@@ -348,6 +363,94 @@ def _build_training_data(
             samples.append((x, y))
 
     return samples
+
+
+def _try_load_corpus_data(
+    session_factory, config_id, domain, site_keys, window_size, num_features,
+):
+    """Load Layer 2 samples from the unified training corpus.
+
+    Each Layer 2 sample contains per-site outcomes for supply/inventory/capacity.
+    We convert them to (X, y) tuples where X is a dummy windowed feature tensor
+    (the real features will come from node_features at inference time) and
+    y is the domain-specific target vector.
+    """
+    try:
+        from sqlalchemy import text as sqt
+        db = session_factory()
+        try:
+            # Map domain to the outcome key in sample_data
+            outcome_key = {
+                "supply_planning": "supply_outcomes",
+                "inventory_optim": "inventory_outcomes",
+                "capacity_rccp": "capacity_outcomes",
+            }.get(domain)
+            if not outcome_key:
+                return None
+
+            rows = db.execute(sqt(
+                "SELECT sample_data, reward FROM training_corpus "
+                "WHERE config_id = :c AND layer = 2.0 "
+                "ORDER BY created_at DESC LIMIT 2000"
+            ), {"c": config_id}).fetchall()
+
+            if not rows:
+                return None
+
+            samples = []
+            rng = np.random.RandomState(config_id)
+            num_sites = len(site_keys)
+
+            for row in rows:
+                data = row.sample_data or {}
+                outcomes_by_site = data.get(outcome_key, {})
+                if not outcomes_by_site:
+                    continue
+
+                # Build target vector per site
+                target_dim = _get_target_dim(domain)
+                y = np.zeros((num_sites, target_dim), dtype=np.float32)
+                for i, site_key in enumerate(site_keys):
+                    site_outcomes = outcomes_by_site.get(site_key, {})
+                    y[i] = _extract_target_vector(domain, site_outcomes, target_dim)
+
+                # Dummy input tensor (tactical tGNN inference builds real features)
+                x = rng.randn(window_size, num_sites, num_features).astype(np.float32) * 0.2
+                samples.append((x, y))
+
+            return samples if len(samples) >= 10 else None
+        finally:
+            db.close()
+    except Exception as e:
+        logger.debug("Corpus data load failed for %s: %s", domain, e)
+        return None
+
+
+def _get_target_dim(domain: str) -> int:
+    """Target vector dimension per domain."""
+    return {
+        "supply_planning": 3,    # exception_prob, order_rec, allocation_priority
+        "inventory_optim": 3,    # buffer_adj, stockout_prob, rebalancing_urgency
+        "capacity_rccp": 3,      # planned_utilization, feasibility, bottleneck_risk
+    }.get(domain, 3)
+
+
+def _extract_target_vector(domain: str, site_outcomes: dict, target_dim: int) -> np.ndarray:
+    """Extract the domain-specific target vector from site outcomes."""
+    v = np.zeros(target_dim, dtype=np.float32)
+    if domain == "supply_planning":
+        v[0] = site_outcomes.get("exception_prob", 0.0)
+        v[1] = site_outcomes.get("order_recommendation", 0.0) / 1000.0  # normalize
+        v[2] = site_outcomes.get("allocation_priority", 0.5)
+    elif domain == "inventory_optim":
+        v[0] = site_outcomes.get("buffer_adjustment", 0.0)
+        v[1] = site_outcomes.get("stockout_probability", 0.0)
+        v[2] = site_outcomes.get("rebalancing_urgency", 0.0)
+    elif domain == "capacity_rccp":
+        v[0] = site_outcomes.get("planned_utilization", 0.7)
+        v[1] = site_outcomes.get("feasibility_score", 0.85)
+        v[2] = site_outcomes.get("bottleneck_risk", 0.15)
+    return v
 
 
 def _try_load_real_data(session_factory, config_id, domain, site_keys, window_size):

@@ -562,6 +562,58 @@ class TRMTrainer:
         else:
             self.optimizer = None
 
+    async def load_from_corpus(
+        self,
+        db,
+        config_id: int,
+        trm_type: str,
+        limit: Optional[int] = None,
+    ) -> int:
+        """Load Layer 1 samples from the unified training corpus.
+
+        Preferred entry point for provisioning. Replaces the previous
+        per-TRM curriculum generators with samples aggregated from actual
+        TRM decisions made during Digital Twin simulations of the tenant's
+        perturbed ERP baseline.
+
+        See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md
+        """
+        from app.services.training_corpus import TrainingCorpusService
+
+        service = TrainingCorpusService(db)
+        corpus_samples = await service.get_samples(
+            config_id=config_id, layer=1.0, trm_type=trm_type, limit=limit,
+        )
+
+        loaded = 0
+        for cs in corpus_samples:
+            data = cs.get("sample_data", {})
+            state = data.get("state_features", {})
+            action = data.get("action", {})
+            outcome = data.get("reward_components", {})
+
+            # Convert state features dict to numpy array (sorted by key for determinism)
+            state_keys = sorted(state.keys())
+            state_array = np.array(
+                [float(state[k]) if isinstance(state[k], (int, float)) else 0.0
+                 for k in state_keys],
+                dtype=np.float32,
+            )
+
+            self.add_experience(
+                state_features=state_array,
+                action=action,
+                outcome=outcome,
+                trm_type=trm_type,
+            )
+            loaded += 1
+
+        logger.info(
+            "TRMTrainer: loaded %d Layer 1 corpus samples for trm_type=%s config=%d",
+            loaded, trm_type, config_id,
+        )
+        return loaded
+
     def add_experience(
         self,
         state_features: np.ndarray,
@@ -575,7 +627,7 @@ class TRMTrainer:
         """
         Add experience to replay buffer.
 
-        Called by TRM services via record_outcome().
+        Called by TRM services via record_outcome() or by load_from_corpus().
         """
         reward = self.reward_calculator.calculate_reward(trm_type, outcome)
 

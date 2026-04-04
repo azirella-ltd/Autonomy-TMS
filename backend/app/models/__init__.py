@@ -566,7 +566,6 @@ __all__ = [
     'DecisionPriority',
     'DECISION_REASON_CODES',
     'DEFAULT_APPROVAL_THRESHOLDS',
-    'relationships',
     # AIIO Framework - Agent Actions
     'AgentAction',
     'ActionMode',
@@ -670,6 +669,8 @@ __all__ = [
     'OutboundOrderLineStatus',
     'SAPChangeLog',
     'SAPChangeLogDetail',
+    # Unified Training Corpus
+    'TrainingCorpusSample',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

@@ -65,8 +65,9 @@ class TrainingCorpusSample(Base):
     # Layer 2 specific
     period = Column(String(20), nullable=True)
 
-    # Layer 1.5 specific
-    window = Column(String(20), nullable=True)
+    # Layer 1.5 specific — "window" is a reserved PostgreSQL keyword, so the
+    # attribute is named time_window in Python but the column is quoted "window"
+    time_window = Column("window", String(20), nullable=True)
 
     # The full sample payload (TRM features, network graph, theta*, etc.)
     sample_data = Column(JSONB, nullable=False)
@@ -103,7 +104,7 @@ class TrainingCorpusSample(Base):
             "site_id": self.site_id,
             "product_id": self.product_id,
             "period": self.period,
-            "window": self.window,
+            "window": self.time_window,
             "reward": self.reward,
             "weight": self.weight,
             "decision_id": self.decision_id,

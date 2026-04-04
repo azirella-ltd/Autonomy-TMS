@@ -581,6 +581,15 @@ async def startup_event():
             from app.services.sap_staging_jobs import register_sap_staging_jobs
             register_sap_staging_jobs(scheduler_service)
 
+            # Register unified training corpus maintenance jobs
+            # - Daily weight decay at 3am
+            # - Weekly aggregator refresh on Sunday at 4am
+            try:
+                from app.services.training_corpus.corpus_jobs import register_corpus_jobs
+                register_corpus_jobs(scheduler_service)
+            except Exception as e:
+                logger.debug(f"Corpus job registration skipped: {e}")
+
             # Register MCP polling jobs for tenants with MCP server configs
             try:
                 from app.integrations.mcp.scheduler import register_mcp_jobs

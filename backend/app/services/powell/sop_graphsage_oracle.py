@@ -789,3 +789,82 @@ class SoPGraphSAGETrainer:
             layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Dropout(0.1)]
         layers.append(nn.Linear(hidden_dim, output_dim))
         return nn.Sequential(*layers)
+
+    @classmethod
+    async def from_corpus(
+        cls,
+        db,
+        config_id: int,
+        hidden_dim: int = 128,
+        num_layers: int = 3,
+        learning_rate: float = 1e-3,
+    ) -> "SoPGraphSAGETrainer":
+        """Load Layer 4 samples from the unified training corpus.
+
+        Preferred entry point for provisioning. Consumes samples produced
+        by the corpus aggregator (TRM decisions rolled up by scenario with
+        inferred theta*), not the orphan synthetic network sampler.
+
+        See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md
+        """
+        from app.services.training_corpus import TrainingCorpusService
+
+        service = TrainingCorpusService(db)
+        corpus_samples = await service.get_samples(config_id=config_id, layer=4.0)
+
+        # Convert corpus samples to legacy SoPTrainingSample format
+        converted: List[SoPTrainingSample] = []
+        for cs in corpus_samples:
+            data = cs.get("sample_data", {})
+            theta_star_by_site = data.get("theta_star", {})
+            if not theta_star_by_site:
+                continue
+
+            # Build theta_vector by concatenating per-site policy params
+            theta_list: List[float] = []
+            for site_id, params in sorted(theta_star_by_site.items()):
+                theta_list.extend([
+                    params.get("safety_stock_multiplier", 1.0),
+                    params.get("service_level_target", 0.95),
+                    params.get("reorder_point_days", 7.0),
+                    params.get("order_up_to_days", 21.0),
+                    params.get("sourcing_split", 0.7),
+                ])
+
+            if not theta_list:
+                continue
+
+            num_sites = len(theta_star_by_site)
+            # Build placeholder node features [num_sites, 14] from sample metadata
+            node_feats = np.zeros((num_sites, SoPTrainingSample.NODE_FEATURE_DIM), dtype=np.float32)
+            edge_feats = np.zeros((0, SoPTrainingSample.EDGE_FEATURE_DIM), dtype=np.float32)
+            edge_index = np.zeros((2, 0), dtype=np.int64)
+
+            converted.append(SoPTrainingSample(
+                sample_id=str(uuid.uuid4()),
+                network=SoPNetwork(
+                    network_id=cs.get("scenario_id", ""),
+                    sites=[],
+                    lanes=[],
+                ),
+                node_features=node_feats,
+                edge_features=edge_feats,
+                edge_index=edge_index,
+                optimal_theta={},
+                theta_vector=np.array(theta_list, dtype=np.float32),
+                objective_value=data.get("objective_value", 0.0),
+                de_converged=True,  # corpus samples are pre-validated
+            ))
+
+        logger.info(
+            "SoPGraphSAGETrainer.from_corpus: loaded %d/%d samples for config %d",
+            len(converted), len(corpus_samples), config_id,
+        )
+
+        trainer = cls(
+            samples=converted,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            learning_rate=learning_rate,
+        )
+        return trainer

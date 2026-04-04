@@ -228,6 +228,77 @@ class SiteTGNNTrainer:
         logger.info(f"Prepared {len(samples)} BC samples from {len(traces)} traces")
         return samples
 
+    async def prepare_bc_data_from_corpus(
+        self,
+        db,
+        config_id: int,
+        site_id: Optional[str] = None,
+    ) -> List[SiteTGNNTrainingSample]:
+        """Load Layer 1.5 samples from the unified training corpus.
+
+        Preferred entry point for provisioning. Converts per-site aggregated
+        TRM decision features into SiteTGNNTrainingSample format.
+
+        See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md
+        """
+        from app.services.training_corpus import TrainingCorpusService
+
+        service = TrainingCorpusService(db)
+        corpus_samples = await service.get_samples(
+            config_id=config_id, layer=1.5, site_id=site_id,
+        )
+
+        samples: List[SiteTGNNTrainingSample] = []
+        for cs in corpus_samples:
+            data = cs.get("sample_data", {})
+            per_trm = data.get("per_trm_features", {})
+            if not per_trm:
+                continue
+
+            # Build 11 x input_dim feature matrix from per-TRM aggregates
+            features = np.zeros((NUM_TRM_TYPES, self.config.input_dim), dtype=np.float32)
+
+            trm_order = [
+                "atp_executor", "order_tracking", "po_creation", "rebalancing",
+                "subcontracting", "inventory_buffer", "forecast_adjustment",
+                "quality_disposition", "maintenance_scheduling",
+                "mo_execution", "to_execution",
+            ]
+            for idx, trm_type in enumerate(trm_order):
+                if idx >= NUM_TRM_TYPES:
+                    break
+                trm_features = per_trm.get(trm_type, {})
+                # Fill the first few dims with aggregated stats
+                features[idx, 0] = trm_features.get("avg_reward", 0.0)
+                if self.config.input_dim > 1:
+                    features[idx, 1] = trm_features.get("decision_count", 0.0) / 100.0
+                if self.config.input_dim > 2:
+                    features[idx, 2] = trm_features.get("avg_confidence", 0.5)
+                if self.config.input_dim > 3:
+                    features[idx, 3] = trm_features.get("avg_urgency", 0.5)
+
+            # Target: per-TRM urgency adjustment that would optimize site reward
+            # Heuristic: positive adjustment if TRM reward below site avg, negative if above
+            site_avg_reward = data.get("site_aggregate_reward", 0.5)
+            targets = np.zeros((NUM_TRM_TYPES,), dtype=np.float32)
+            for idx, trm_type in enumerate(trm_order):
+                if idx >= NUM_TRM_TYPES:
+                    break
+                trm_reward = per_trm.get(trm_type, {}).get("avg_reward", site_avg_reward)
+                # Clip adjustment to [-0.3, +0.3]
+                targets[idx] = max(-0.3, min(0.3, (site_avg_reward - trm_reward) * 0.5))
+
+            samples.append(SiteTGNNTrainingSample(
+                node_features=features,
+                target_adjustments=targets,
+            ))
+
+        logger.info(
+            "SiteTGNNTrainer: loaded %d Layer 1.5 corpus samples for config %d site %s",
+            len(samples), config_id, site_id or "all",
+        )
+        return samples
+
     def _trace_to_features(self, trace: Any) -> np.ndarray:
         """Convert MultiHeadTrace to 11 x input_dim feature matrix."""
         features = np.zeros((NUM_TRM_TYPES, self.config.input_dim), dtype=np.float32)

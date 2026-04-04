@@ -242,6 +242,20 @@ class CDCRetrainingService:
                     expert_action=final_result.get("expert_action"),
                 )
 
+                # Also append to the unified training corpus so the outcome
+                # flows up through aggregation to tactical and strategic layers.
+                # See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md
+                try:
+                    self._append_to_corpus(
+                        decision=decision,
+                        state_features=state_features,
+                        action=action,
+                        outcome=outcome,
+                        trm_type=trm_type,
+                    )
+                except Exception as e:
+                    logger.debug("Corpus append failed (non-fatal): %s", e)
+
             # Train
             try:
                 result = trainer.train()
@@ -333,6 +347,65 @@ class CDCRetrainingService:
         except Exception as e:
             logger.error(f"Failed to create model for {trm_type}: {e}")
             return None
+
+    def _append_to_corpus(
+        self,
+        decision: Dict[str, Any],
+        state_features: "np.ndarray",
+        action: Any,
+        outcome: Dict[str, Any],
+        trm_type: str,
+    ) -> None:
+        """Append a real decision outcome to the unified training corpus.
+
+        The outcome becomes a new Layer 1 sample with origin='real'. The
+        aggregator will re-roll it into Layer 1.5, 2, 4 on the next pass.
+        """
+        try:
+            from app.models.training_corpus import TrainingCorpusSample
+
+            # Convert numpy array state to serializable dict
+            state_dict = {
+                f"f_{i}": float(state_features[i])
+                for i in range(min(len(state_features), 32))
+            }
+
+            # Compute reward from outcome
+            reward = 0.0
+            if outcome:
+                cost_delta = outcome.get("cost_delta", 0)
+                fill_rate = outcome.get("fill_rate", 0)
+                service_level = outcome.get("service_level", 0)
+                reward = max(0.0, min(1.0,
+                    0.4 * (fill_rate or 0) +
+                    0.4 * (service_level or 0) +
+                    0.2 * (1.0 - max(0, -cost_delta / 10000.0))
+                ))
+
+            sample = TrainingCorpusSample(
+                tenant_id=self.tenant_id,
+                config_id=self.config_id,
+                layer=1.0,
+                scenario_id=f"real_{decision.get('decision_id', 'unknown')}",
+                origin="real",
+                trm_type=trm_type,
+                product_id=decision.get("product_id"),
+                site_id=self.site_key,
+                sample_data={
+                    "state_features": state_dict,
+                    "action": {"value": action} if not isinstance(action, dict) else action,
+                    "reward_components": outcome or {},
+                    "aggregate_reward": reward,
+                    "trm_type": trm_type,
+                },
+                reward=reward,
+                weight=2.0,  # Real outcomes weighted higher than perturbations
+                decision_id=decision.get("decision_id"),
+            )
+            self.db.add(sample)
+            self.db.flush()
+        except Exception as e:
+            logger.debug("Corpus append helper failed: %s", e)
 
     def _extract_features(self, input_state: Dict[str, Any]) -> List[float]:
         """Extract a feature vector from decision input state.

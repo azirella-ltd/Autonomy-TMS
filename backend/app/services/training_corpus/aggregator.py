@@ -144,7 +144,7 @@ class TrainingCorpusAggregator:
                 scenario_id=scenario_id,
                 origin="perturbation",
                 site_id=site_id,
-                window=window,
+                time_window=window,
                 sample_data=sample_data,
                 reward=site_aggregate_reward,
                 weight=1.0,
