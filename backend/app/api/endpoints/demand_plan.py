@@ -666,26 +666,45 @@ def get_hierarchy_dimensions(
     except Exception as e:
         logger.warning("Product hierarchy tree load failed: %s", e)
 
-    # Geography hierarchy (from AWS SC DM geography table via site.geo_id)
-    # Build tree: Country → Region → State → City
+    # Geography hierarchy — dynamically derived from the tenant's own data.
+    #
+    # The tree MUST come from whichever geo_ids this config's sites actually
+    # reference. Earlier code filtered by `company_id`, which produced a
+    # hardcoded hierarchy that often didn't match `site.geo_id` values
+    # (multiple parallel hierarchies exist in the geography table). That
+    # broke the drill-down below Region level because the IDs the UI sent
+    # couldn't be matched to any site.
+    #
+    # The correct approach: start from the distinct geo_ids referenced by
+    # sites in this config, then walk upward via parent_geo_id to collect
+    # every ancestor. The result is a per-tenant tree guaranteed to match
+    # `site.geo_id`, which makes filtering consistent at every level.
     geo_tree = []
     try:
-        company_id_row = db.execute(text(
-            "SELECT company_id FROM site WHERE config_id = :cfg AND company_id IS NOT NULL LIMIT 1"
-        ), {"cfg": config_id}).fetchone()
-        if company_id_row:
-            geo_rows = db.execute(text("""
-                SELECT id, description, parent_geo_id, state_prov, city
-                FROM geography WHERE company_id = :cid
-                ORDER BY parent_geo_id NULLS FIRST, description
-            """), {"cid": company_id_row[0]}).fetchall()
-            for g in geo_rows:
-                geo_tree.append({
-                    "id": g[0], "name": g[1], "parent_id": g[2],
-                    "state": g[3], "city": g[4],
-                })
-    except Exception:
-        pass
+        geo_rows = db.execute(text("""
+            WITH RECURSIVE ancestors AS (
+                SELECT g.id, g.description, g.parent_geo_id, g.state_prov, g.city
+                FROM geography g
+                WHERE g.id IN (
+                    SELECT DISTINCT geo_id FROM site
+                    WHERE config_id = :cfg AND geo_id IS NOT NULL
+                )
+                UNION
+                SELECT g.id, g.description, g.parent_geo_id, g.state_prov, g.city
+                FROM geography g
+                JOIN ancestors a ON a.parent_geo_id = g.id
+            )
+            SELECT id, description, parent_geo_id, state_prov, city
+            FROM ancestors
+            ORDER BY parent_geo_id NULLS FIRST, description
+        """), {"cfg": config_id}).fetchall()
+        for g in geo_rows:
+            geo_tree.append({
+                "id": g[0], "name": g[1], "parent_id": g[2],
+                "state": g[3], "city": g[4],
+            })
+    except Exception as e:
+        logger.warning("Dynamic geography tree build failed: %s", e)
 
     # Sites with geo linkage
     sites = db.query(Site.id, Site.name, Site.type, Site.geo_id).filter(

@@ -189,10 +189,59 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Dashboard summary: source status, signal counts by category, relevance stats."""
+    """Dashboard summary for the Context Engine page.
+
+    Envelope: is_configured / is_active + active SC config identity.
+    Scoped to the tenant. Market Intelligence is considered configured
+    when at least one external_signal_sources row exists for the tenant.
+    """
+    from sqlalchemy import text as _text
+    from app.services.context_engine_dashboard import (
+        resolve_active_config_async, context_engine_envelope,
+    )
+
     tid = _get_tenant_id(current_user)
+    config_id, config_name = await resolve_active_config_async(db, tid)
+
+    is_configured = False
+    active_sources = 0
+    total_sources = 0
+    try:
+        row = (await db.execute(
+            _text("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE COALESCE(is_active, true) = true) AS active
+                FROM external_signal_sources
+                WHERE tenant_id = :tid
+            """),
+            {"tid": tid},
+        )).fetchone()
+        if row:
+            total_sources = int(row[0] or 0)
+            active_sources = int(row[1] or 0)
+        is_configured = total_sources > 0
+    except Exception:
+        await db.rollback()
+
     service = ExternalSignalService(db, tid)
-    return await service.get_dashboard_stats()
+    try:
+        stats = await service.get_dashboard_stats()
+    except Exception:
+        await db.rollback()
+        stats = {}
+
+    return context_engine_envelope(
+        config_id=config_id,
+        config_name=config_name,
+        is_configured=is_configured,
+        is_active=is_configured and active_sources > 0,
+        metrics={
+            **stats,
+            "active_sources": active_sources,
+            "total_sources": total_sources,
+        },
+    )
 
 
 @router.get("/chat-context")

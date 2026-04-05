@@ -787,8 +787,8 @@ class MultiStageCTPService:
             )
         ).first()
 
-        if policy and policy.safety_stock_quantity:
-            return policy.safety_stock_quantity
+        if policy and policy.ss_quantity:
+            return policy.ss_quantity
         return 0.0
 
     def _get_lead_time(self, rule: SourcingRules, to_site_id: int) -> int:

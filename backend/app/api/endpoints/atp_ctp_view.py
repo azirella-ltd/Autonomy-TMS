@@ -197,7 +197,7 @@ async def calculate_atp_ctp(
         ]
         if config_id:
             fc_filters.append(Forecast.config_id == config_id)
-        forecast_stmt = select(Forecast.quantity_p50).where(and_(*fc_filters))
+        forecast_stmt = select(Forecast.forecast_p50).where(and_(*fc_filters))
         result = await db.execute(forecast_stmt)
         forecast_rows = result.scalars().all()
         forecasted_demand = sum(float(f) for f in forecast_rows) if forecast_rows else 0.0

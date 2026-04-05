@@ -443,13 +443,16 @@ class ForecastPipelineOrchestrator:
         """
         ratio_map = self._build_planning_bom_ratio_map()
 
-        # Get hierarchy: parent → children from product_hierarchy_node
+        # Get hierarchy: parent → children from product_hierarchy_node.
+        # Real columns: id (PK), parent_id (FK to id), product_id, tenant_id.
+        # Older code here referenced node_id / parent_node_id which do not exist
+        # on this schema and caused the reconcile stage to report "unknown".
         parent_children = self.db.execute(text("""
             SELECT phn_parent.product_id AS parent_product_id,
                    phn_child.product_id  AS child_product_id
             FROM product_hierarchy_node phn_child
             JOIN product_hierarchy_node phn_parent
-              ON phn_child.parent_node_id = phn_parent.node_id
+              ON phn_child.parent_id = phn_parent.id
              AND phn_child.tenant_id = phn_parent.tenant_id
             WHERE phn_child.tenant_id = :tid
               AND phn_child.product_id IS NOT NULL

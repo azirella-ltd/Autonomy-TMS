@@ -287,6 +287,61 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    """Get Slack signals dashboard summary."""
-    service = SlackSignalService(db, current_user.tenant_id)
-    return await service.get_dashboard_stats()
+    """Get Slack signals dashboard summary.
+
+    Context Engine envelope with is_configured / is_active flags scoped to
+    the tenant's active SC config. Tolerant of missing slack_connections
+    table (feature not yet deployed) — returns is_configured=false.
+    """
+    from sqlalchemy import text as _text
+    from app.services.context_engine_dashboard import (
+        resolve_active_config_async, context_engine_envelope,
+    )
+
+    tenant_id = current_user.tenant_id
+    config_id, config_name = await resolve_active_config_async(db, tenant_id)
+
+    # Configured = at least one slack_connections row (best-effort; table
+    # may not exist if the Slack integration has not been deployed).
+    is_configured = False
+    active_connections = 0
+    total_connections = 0
+    try:
+        total_connections = (await db.execute(
+            _text("SELECT COUNT(*) FROM slack_connections WHERE tenant_id = :tid"),
+            {"tid": tenant_id},
+        )).scalar() or 0
+        is_configured = total_connections > 0
+        if is_configured:
+            active_connections = (await db.execute(
+                _text(
+                    "SELECT COUNT(*) FROM slack_connections "
+                    "WHERE tenant_id = :tid AND COALESCE(is_active, true) = true"
+                ),
+                {"tid": tenant_id},
+            )).scalar() or 0
+    except Exception:
+        await db.rollback()
+
+    # Best-effort stats via the service
+    stats: dict = {}
+    try:
+        service = SlackSignalService(db, tenant_id)
+        stats = await service.get_dashboard_stats()
+    except Exception:
+        await db.rollback()
+        stats = {}
+
+    return context_engine_envelope(
+        config_id=config_id,
+        config_name=config_name,
+        is_configured=is_configured,
+        is_active=is_configured and active_connections > 0,
+        metrics={
+            **stats,
+            "active_connections": active_connections,
+            "total_connections": total_connections,
+            "channels_monitored": stats.get("channels_monitored", 0),
+            "signals_last_7d": stats.get("signals_last_7d", 0),
+        },
+    )

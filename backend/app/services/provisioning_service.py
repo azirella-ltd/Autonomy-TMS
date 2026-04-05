@@ -1364,6 +1364,11 @@ class ProvisioningService:
 
                 # Create Plan of Record from conformal-calibrated forecast P50
                 # One row per product × site × week = the operating plan
+                # Plan of Record horizon: exactly 52 weeks forward from today.
+                # The upper bound matters — without it, the plan would pull in
+                # however much forward forecast data happens to exist and
+                # produce non-deterministic horizon lengths (the original code
+                # had no upper bound and yielded ~56 weeks).
                 por_result = sync_db.execute(sqt("""
                     INSERT INTO supply_plan
                         (config_id, product_id, site_id, plan_date, plan_type,
@@ -1380,7 +1385,8 @@ class ProvisioningService:
                         'live', 'plan_of_record', 'demand_agent', NOW()
                     FROM forecast f
                     WHERE f.config_id = :cfg AND f.forecast_p50 IS NOT NULL
-                    AND f.forecast_date >= CURRENT_DATE - INTERVAL '30 days'
+                      AND f.forecast_date >= date_trunc('week', CURRENT_DATE)
+                      AND f.forecast_date <  date_trunc('week', CURRENT_DATE) + INTERVAL '52 weeks'
                     GROUP BY f.config_id, f.product_id, f.site_id, date_trunc('week', f.forecast_date)
                 """), {"cfg": config_id})
 
@@ -1775,12 +1781,38 @@ class ProvisioningService:
                 try:
                     cdt_svc = CDTCalibrationService(sync_db, tenant_id=tenant_id)
 
-                    # Pass 1: real outcomes
+                    # Pass 0 (preferred): historical corpus.
+                    # The unified training corpus (origin='historical') contains
+                    # real (action, outcome) pairs reconstructed from ERP
+                    # transaction history — typically tens of thousands per
+                    # tenant. This is the best calibration source because it
+                    # reflects the actual operational distribution without
+                    # waiting for live outcomes or relying on simulation.
+                    hist_stats = cdt_svc.calibrate_from_historical_corpus(config_id=config_id)
+                    n_hist = sum(
+                        1 for s in hist_stats.values()
+                        if s.get("status") == "calibrated"
+                    )
+                    logger.info(
+                        "CDT historical-corpus calibration: %d agents calibrated",
+                        n_hist,
+                    )
+
+                    # Pass 1: live decision outcomes (post-provisioning).
+                    # Typically empty at first provisioning but important on
+                    # subsequent recalibrations as live outcomes accumulate.
                     real_stats = cdt_svc.calibrate_all()
-                    n_real = sum(
+                    n_live = sum(
                         1 for s in real_stats.values()
                         if s.get("status") == "calibrated"
                     )
+                    # Combined: historical union live.
+                    calibrated_keys = {
+                        k for k, v in hist_stats.items() if v.get("status") == "calibrated"
+                    } | {
+                        k for k, v in real_stats.items() if v.get("status") == "calibrated"
+                    }
+                    n_real = len(calibrated_keys)
 
                     # Pass 2: simulation bootstrap for uncalibrated TRM types
                     # Determine how many TRM types are applicable for this config's topology
@@ -1847,7 +1879,7 @@ class ProvisioningService:
             try:
                 from app.services.conformal_prediction.suite import get_conformal_suite
                 from app.services.conformal_prediction import get_conformal_service
-                from app.models.sc_entities import InboundOrder
+                from app.models.sc_entities import InboundOrder, Forecast
                 from app.models.goods_receipt import GoodsReceiptLineItem
                 from app.models.quality_order import QualityOrder
                 from app.models.transfer_order import TransferOrder

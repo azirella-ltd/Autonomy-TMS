@@ -1,12 +1,15 @@
 /**
- * Context Engine — Unified hub for all external context sources.
+ * Context Engine — Unified hub for external context sources.
  *
  * Provides a bird's-eye view of Knowledge Base, Email Signals,
- * SAP Integration, and Slack Signals with quick navigation to
+ * Slack Signals, and Market Intelligence with quick navigation to
  * each individual admin page.
  *
- * All sources feed into Azirella question answering and
- * AI agent decision context.
+ * All sources feed into Azirella question answering and AI agent
+ * decision context. ERP integrations (SAP / Odoo / D365 / B1 / Infor)
+ * are explicitly NOT part of the Context Engine — they are the
+ * transactional system of record, not side-channel context, and live
+ * under Administration → ERP Data Management.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -14,9 +17,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   BookOpen,
   Mail,
-  Database,
   MessageSquare,
   Globe,
+  Database,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -240,11 +243,6 @@ export default function ContextEngine() {
   const [emailLoading, setEmailLoading] = useState(true);
   const [emailError, setEmailError] = useState(false);
 
-  // -- SAP state
-  const [sapData, setSapData] = useState(null);
-  const [sapLoading, setSapLoading] = useState(true);
-  const [sapError, setSapError] = useState(false);
-
   // -- Slack state
   const [slackData, setSlackData] = useState(null);
   const [slackLoading, setSlackLoading] = useState(true);
@@ -260,30 +258,31 @@ export default function ContextEngine() {
 
   // ── Fetch functions ────────────────────────────────────────────────────────
 
+  // Active SC config that the Context Engine is reading from.
+  // All four source endpoints return the same envelope with active_config_id /
+  // active_config_name, so we pick whichever one answered first.
+  const [activeConfig, setActiveConfig] = useState(null);
+
+  // Each source's envelope:
+  //   { is_configured, is_active, active_config_id, active_config_name, ...metrics }
+  // We store the envelope directly and resolve status from the flags.
+
   const fetchKnowledgeBase = useCallback(async () => {
     setKbLoading(true);
     setKbError(false);
     try {
-      const res = await api.get('/knowledge-base/documents');
-      const docs = Array.isArray(res.data) ? res.data : res.data?.documents || [];
-      const totalChunks = docs.reduce(
-        (sum, d) => sum + (d.chunk_count || d.chunks?.length || 0),
-        0
-      );
-      const lastUpload = docs.length > 0
-        ? docs
-            .map((d) => d.created_at || d.uploaded_at)
-            .filter(Boolean)
-            .sort()
-            .pop()
-        : null;
+      const res = await api.get('/knowledge-base/dashboard');
+      const d = res.data || {};
       setKbData({
-        documentCount: docs.length,
-        chunkCount: totalChunks,
-        lastUpload: lastUpload
-          ? new Date(lastUpload).toLocaleDateString()
-          : null,
+        isConfigured: !!d.is_configured,
+        isActive: !!d.is_active,
+        documentCount: d.document_count || 0,
+        chunkCount: d.chunk_count || 0,
+        lastUpload: d.last_upload ? new Date(d.last_upload).toLocaleDateString() : null,
       });
+      if (d.active_config_id != null) {
+        setActiveConfig({ id: d.active_config_id, name: d.active_config_name });
+      }
     } catch {
       setKbError(true);
     } finally {
@@ -296,36 +295,22 @@ export default function ContextEngine() {
     setEmailError(false);
     try {
       const res = await api.get('/email-signals/dashboard');
-      const d = res.data;
+      const d = res.data || {};
       setEmailData({
-        activeConnections: d.active_connections ?? d.connections_active ?? 0,
+        isConfigured: !!d.is_configured,
+        isActive: !!d.is_active,
+        activeConnections: d.active_connections ?? 0,
+        totalConnections: d.total_connections ?? 0,
         signalsLast7d: d.signals_last_7d ?? d.signals_7d ?? d.recent_signals ?? 0,
         unprocessed: d.unprocessed ?? d.pending ?? 0,
       });
+      if (d.active_config_id != null) {
+        setActiveConfig({ id: d.active_config_id, name: d.active_config_name });
+      }
     } catch {
       setEmailError(true);
     } finally {
       setEmailLoading(false);
-    }
-  }, []);
-
-  const fetchSapData = useCallback(async () => {
-    setSapLoading(true);
-    setSapError(false);
-    try {
-      const res = await api.get('/sap-data/dashboard');
-      const d = res.data;
-      setSapData({
-        connections: d.total_connections ?? d.connections ?? 0,
-        lastSync: d.last_sync
-          ? new Date(d.last_sync).toLocaleDateString()
-          : d.last_sync_label ?? 'Never',
-        mappedFields: d.mapped_fields ?? d.total_mapped_fields ?? 0,
-      });
-    } catch {
-      setSapError(true);
-    } finally {
-      setSapLoading(false);
     }
   }, []);
 
@@ -334,12 +319,18 @@ export default function ContextEngine() {
     setSlackError(false);
     try {
       const res = await api.get('/slack-signals/dashboard');
-      const d = res.data;
+      const d = res.data || {};
       setSlackData({
-        activeConnections: d.active_connections ?? d.connections_active ?? 0,
-        signalsLast7d: d.signals_last_7d ?? d.signals_7d ?? d.recent_signals ?? 0,
-        channelsMonitored: d.channels_monitored ?? d.channels ?? 0,
+        isConfigured: !!d.is_configured,
+        isActive: !!d.is_active,
+        activeConnections: d.active_connections ?? 0,
+        totalConnections: d.total_connections ?? 0,
+        signalsLast7d: d.signals_last_7d ?? 0,
+        channelsMonitored: d.channels_monitored ?? 0,
       });
+      if (d.active_config_id != null) {
+        setActiveConfig({ id: d.active_config_id, name: d.active_config_name });
+      }
     } catch {
       setSlackError(true);
     } finally {
@@ -352,14 +343,19 @@ export default function ContextEngine() {
     setExtError(false);
     try {
       const res = await api.get('/external-signals/dashboard');
-      const d = res.data;
+      const d = res.data || {};
       setExtData({
-        activeSources: d.sources?.filter(s => s.is_active).length ?? 0,
-        totalSources: d.sources?.length ?? 0,
-        signalsLast30d: d.total_signals_30d ?? 0,
+        isConfigured: !!d.is_configured,
+        isActive: !!d.is_active,
+        activeSources: d.active_sources ?? d.sources?.filter(s => s.is_active).length ?? 0,
+        totalSources: d.total_sources ?? d.sources?.length ?? 0,
+        signalsLast30d: d.total_signals_30d ?? d.signals_last_30d ?? 0,
         highRelevance: d.high_relevance_signals ?? 0,
         topCategory: Object.entries(d.signals_by_category || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'None',
       });
+      if (d.active_config_id != null) {
+        setActiveConfig({ id: d.active_config_id, name: d.active_config_name });
+      }
     } catch {
       setExtError(true);
     } finally {
@@ -372,12 +368,11 @@ export default function ContextEngine() {
     await Promise.allSettled([
       fetchKnowledgeBase(),
       fetchEmailSignals(),
-      fetchSapData(),
       fetchSlackSignals(),
       fetchExternalSignals(),
     ]);
     setRefreshing(false);
-  }, [fetchKnowledgeBase, fetchEmailSignals, fetchSapData, fetchSlackSignals, fetchExternalSignals]);
+  }, [fetchKnowledgeBase, fetchEmailSignals, fetchSlackSignals, fetchExternalSignals]);
 
   useEffect(() => {
     fetchAll();
@@ -386,11 +381,10 @@ export default function ContextEngine() {
   // ── Derived metrics ────────────────────────────────────────────────────────
 
   const activeCount = [
-    !kbError && kbData && kbData.documentCount > 0,
-    !emailError && emailData && emailData.activeConnections > 0,
-    !sapError && sapData && sapData.connections > 0,
-    !slackError && slackData && slackData.activeConnections > 0,
-    !extError && extData && extData.activeSources > 0,
+    !kbError && kbData?.isActive,
+    !emailError && emailData?.isActive,
+    !slackError && slackData?.isActive,
+    !extError && extData?.isActive,
   ].filter(Boolean).length;
 
   const totalIngested = (
@@ -400,39 +394,26 @@ export default function ContextEngine() {
     (extData?.signalsLast30d || 0)
   );
 
-  const allLoading = kbLoading && emailLoading && sapLoading && slackLoading && extLoading;
+  const allLoading = kbLoading && emailLoading && slackLoading && extLoading;
 
   // ── Status resolvers ───────────────────────────────────────────────────────
 
-  function kbStatus() {
-    if (kbError) return 'not_configured';
-    if (!kbData) return 'not_configured';
-    return kbData.documentCount > 0 ? 'active' : 'inactive';
+  // Unified state resolver: uses the envelope flags from the backend.
+  //   error          = API call failed (deployment or connectivity issue)
+  //   not_configured = backend says is_configured=false (never set up)
+  //   inactive       = configured but is_active=false (paused/empty)
+  //   active         = configured and actively producing signals
+  function resolveStatus(data, error) {
+    if (error) return 'error';
+    if (!data) return 'not_configured';
+    if (!data.isConfigured) return 'not_configured';
+    if (!data.isActive) return 'inactive';
+    return 'active';
   }
-
-  function emailStatus() {
-    if (emailError) return 'not_configured';
-    if (!emailData) return 'not_configured';
-    return emailData.activeConnections > 0 ? 'active' : 'inactive';
-  }
-
-  function sapStatus() {
-    if (sapError) return 'not_configured';
-    if (!sapData) return 'not_configured';
-    return sapData.connections > 0 ? 'active' : 'inactive';
-  }
-
-  function slackStatus() {
-    if (slackError) return 'not_configured';
-    if (!slackData) return 'not_configured';
-    return slackData.activeConnections > 0 ? 'active' : 'inactive';
-  }
-
-  function extStatus() {
-    if (extError) return 'not_configured';
-    if (!extData) return 'not_configured';
-    return extData.activeSources > 0 ? 'active' : 'inactive';
-  }
+  const kbStatus = () => resolveStatus(kbData, kbError);
+  const emailStatus = () => resolveStatus(emailData, emailError);
+  const slackStatus = () => resolveStatus(slackData, slackError);
+  const extStatus = () => resolveStatus(extData, extError);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -465,9 +446,52 @@ export default function ContextEngine() {
           </Button>
         </div>
 
-        {/* ── Source cards grid ────────────────────────────────────────────── */}
+        {/* ── Active SC config banner ─────────────────────────────────────────
+            The Context Engine is scoped to the tenant's active supply chain
+            config. This banner shows which config's data is being read so
+            admins can confirm they're looking at the right one. */}
+        <Card className="mb-6 border-l-4 border-l-primary">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-md bg-primary/10 text-primary">
+                  <Database className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Active Supply Chain Configuration
+                  </div>
+                  <div className="text-lg font-semibold">
+                    {activeConfig?.name || <span className="text-muted-foreground italic">No active config</span>}
+                  </div>
+                  {activeConfig?.id != null && (
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Context sources below are scoped to this configuration
+                    </div>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/admin/supply-chain-configs')}
+              >
+                Manage Configs
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Source cards grid ──────────────────────────────────────────────
+            Order (per product spec):
+              1. Active SC config (banner above)
+              2. Internal knowledge base
+              3. Market Intelligence
+              4. Email Signals
+              5. Slack Signals
+        */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {/* Knowledge Base */}
+          {/* 2. Knowledge Base */}
           <SourceCard
             icon={BookOpen}
             name="Knowledge Base"
@@ -486,64 +510,7 @@ export default function ContextEngine() {
             primaryAction={() => navigate('/admin/knowledge-base')}
           />
 
-          {/* Email Signals */}
-          <SourceCard
-            icon={Mail}
-            name="Email Signals"
-            description="GDPR-safe email ingestion that extracts supply chain signals from customer and supplier emails. PII is stripped before storage."
-            status={emailStatus()}
-            loading={emailLoading}
-            error={emailError}
-            iconBgClass="bg-emerald-500/10"
-            iconColorClass="text-emerald-600 dark:text-emerald-400"
-            metrics={[
-              { label: 'Active connections', value: emailData?.activeConnections },
-              { label: 'Signals (last 7 days)', value: emailData?.signalsLast7d?.toLocaleString() },
-              { label: 'Unprocessed', value: emailData?.unprocessed },
-            ]}
-            primaryLabel="Manage Connections"
-            primaryAction={() => navigate('/admin/email-signals')}
-          />
-
-          {/* SAP Integration */}
-          <SourceCard
-            icon={Database}
-            name="SAP Integration"
-            description="Connect to S/4HANA, APO, ECC, or BW to ingest master data via RFC, CSV, or OData. AI-powered field mapping for Z-tables."
-            status={sapStatus()}
-            loading={sapLoading}
-            error={sapError}
-            iconBgClass="bg-purple-500/10"
-            iconColorClass="text-purple-600 dark:text-purple-400"
-            metrics={[
-              { label: 'Connections', value: sapData?.connections },
-              { label: 'Last sync', value: sapData?.lastSync },
-              { label: 'Mapped fields', value: sapData?.mappedFields?.toLocaleString() },
-            ]}
-            primaryLabel="Manage SAP"
-            primaryAction={() => navigate('/admin/sap-data')}
-          />
-
-          {/* Slack Signals */}
-          <SourceCard
-            icon={MessageSquare}
-            name="Slack Signals"
-            description="Monitor Slack channels for supply chain signals. Classify messages and route actionable intelligence to TRM agents."
-            status={slackStatus()}
-            loading={slackLoading}
-            error={slackError}
-            iconBgClass="bg-amber-500/10"
-            iconColorClass="text-amber-600 dark:text-amber-400"
-            metrics={[
-              { label: 'Active connections', value: slackData?.activeConnections },
-              { label: 'Signals (last 7 days)', value: slackData?.signalsLast7d?.toLocaleString() },
-              { label: 'Channels monitored', value: slackData?.channelsMonitored },
-            ]}
-            primaryLabel="Manage Slack"
-            primaryAction={() => navigate('/admin/slack-signals')}
-          />
-
-          {/* External Signals — Outside-In Planning */}
+          {/* 3. Market Intelligence (External Signals) */}
           <SourceCard
             icon={Globe}
             name="Market Intelligence"
@@ -569,6 +536,44 @@ export default function ContextEngine() {
               } catch { /* ignore */ }
             }}
           />
+
+          {/* 4. Email Signals */}
+          <SourceCard
+            icon={Mail}
+            name="Email Signals"
+            description="GDPR-safe email ingestion that extracts supply chain signals from customer and supplier emails. PII is stripped before storage."
+            status={emailStatus()}
+            loading={emailLoading}
+            error={emailError}
+            iconBgClass="bg-emerald-500/10"
+            iconColorClass="text-emerald-600 dark:text-emerald-400"
+            metrics={[
+              { label: 'Active connections', value: emailData?.activeConnections },
+              { label: 'Signals (last 7 days)', value: emailData?.signalsLast7d?.toLocaleString() },
+              { label: 'Unprocessed', value: emailData?.unprocessed },
+            ]}
+            primaryLabel="Manage Connections"
+            primaryAction={() => navigate('/admin/email-signals')}
+          />
+
+          {/* 5. Slack Signals */}
+          <SourceCard
+            icon={MessageSquare}
+            name="Slack Signals"
+            description="Monitor Slack channels for supply chain signals. Classify messages and route actionable intelligence to TRM agents."
+            status={slackStatus()}
+            loading={slackLoading}
+            error={slackError}
+            iconBgClass="bg-amber-500/10"
+            iconColorClass="text-amber-600 dark:text-amber-400"
+            metrics={[
+              { label: 'Active connections', value: slackData?.activeConnections },
+              { label: 'Signals (last 7 days)', value: slackData?.signalsLast7d?.toLocaleString() },
+              { label: 'Channels monitored', value: slackData?.channelsMonitored },
+            ]}
+            primaryLabel="Manage Slack"
+            primaryAction={() => navigate('/admin/slack-signals')}
+          />
         </div>
 
         {/* ── Summary status bar ──────────────────────────────────────────── */}
@@ -579,7 +584,7 @@ export default function ContextEngine() {
                 {/* Active sources */}
                 <div className="flex items-center gap-2">
                   <div className="flex -space-x-1">
-                    {[kbStatus(), emailStatus(), sapStatus(), slackStatus(), extStatus()].map(
+                    {[kbStatus(), emailStatus(), slackStatus(), extStatus()].map(
                       (s, i) => (
                         <div
                           key={i}

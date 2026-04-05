@@ -189,6 +189,64 @@ async def list_documents(
     return {"documents": documents, "total": len(documents)}
 
 
+@router.get("/dashboard", tags=["knowledge-base"])
+async def get_kb_dashboard(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_kb_db),
+) -> Dict[str, Any]:
+    """Knowledge Base dashboard summary for the Context Engine page.
+
+    Context Engine envelope: is_configured / is_active flags + active SC
+    config identity. Scoped to the tenant and tolerant of a missing
+    kb_documents table (feature not yet deployed).
+    """
+    from sqlalchemy import text as _text
+    from app.db.session import async_session_factory
+    from app.services.context_engine_dashboard import (
+        resolve_active_config_async, context_engine_envelope,
+    )
+
+    tenant_id = current_user.tenant_id
+
+    # active_config lives in the main app DB, not the KB DB — use the app session.
+    async with async_session_factory() as app_db:
+        config_id, config_name = await resolve_active_config_async(app_db, tenant_id)
+
+    is_configured = False
+    document_count = 0
+    chunk_count = 0
+    last_upload = None
+    try:
+        row = (await db.execute(
+            _text("""
+                SELECT COUNT(*), COALESCE(SUM(chunk_count), 0),
+                       MAX(COALESCE(created_at, uploaded_at))
+                FROM kb_documents
+                WHERE tenant_id = :tid
+            """),
+            {"tid": tenant_id},
+        )).fetchone()
+        if row:
+            document_count = int(row[0] or 0)
+            chunk_count = int(row[1] or 0)
+            last_upload = row[2].isoformat() if row[2] else None
+        is_configured = document_count > 0
+    except Exception:
+        await db.rollback()
+
+    return context_engine_envelope(
+        config_id=config_id,
+        config_name=config_name,
+        is_configured=is_configured,
+        is_active=is_configured,
+        metrics={
+            "document_count": document_count,
+            "chunk_count": chunk_count,
+            "last_upload": last_upload,
+        },
+    )
+
+
 @router.get("/documents/{document_id}", tags=["knowledge-base"])
 async def get_document(
     document_id: int,

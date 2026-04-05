@@ -332,9 +332,52 @@ async def get_dashboard(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    """Get email signals dashboard summary."""
+    """Get email signals dashboard summary.
+
+    Context Engine envelope: scoped to the tenant's active SC config.
+    Returns is_configured/is_active flags so the Context Engine page can
+    distinguish "never set up" from "set up but paused/empty".
+    """
+    from sqlalchemy import text as _text
+    from app.services.context_engine_dashboard import (
+        resolve_active_config_async, context_engine_envelope,
+    )
+
+    tenant_id = current_user.tenant_id
+    config_id, config_name = await resolve_active_config_async(db, tenant_id)
+
+    # Configured = at least one email_connections row exists for this tenant
+    configured_row = (await db.execute(
+        _text("SELECT COUNT(*) FROM email_connections WHERE tenant_id = :tid"),
+        {"tid": tenant_id},
+    )).scalar() or 0
+    is_configured = configured_row > 0
+
+    # Active = at least one enabled connection
+    active_rows = 0
+    if is_configured:
+        active_rows = (await db.execute(
+            _text(
+                "SELECT COUNT(*) FROM email_connections "
+                "WHERE tenant_id = :tid AND COALESCE(is_active, true) = true"
+            ),
+            {"tid": tenant_id},
+        )).scalar() or 0
+
     service = EmailSignalService(db)
-    return await service.get_dashboard_stats(current_user.tenant_id)
+    stats = await service.get_dashboard_stats(tenant_id)
+
+    return context_engine_envelope(
+        config_id=config_id,
+        config_name=config_name,
+        is_configured=is_configured,
+        is_active=is_configured and active_rows > 0,
+        metrics={
+            **stats,
+            "active_connections": active_rows,
+            "total_connections": configured_row,
+        },
+    )
 
 
 # ── Manual ingestion (for testing) ───────────────────────────────────────────

@@ -13,7 +13,6 @@ import ScenariosList from "./pages/ScenariosList";
 import CreateScenario from "./pages/CreateScenario";
 import CreateScenarioFromConfig from "./components/scenario/CreateScenarioFromConfig";
 import ScenarioBoard from "./pages/ScenarioBoard";
-import PlayGame from "./pages/PlayGame";
 import ScenarioReport from "./pages/ScenarioReport.jsx";
 import ScenarioVisualizations from "./pages/ScenarioVisualizations.jsx";
 import Login from "./pages/Login.jsx";
@@ -231,15 +230,6 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_analytics">
                   <Dashboard />
-                </CapabilityProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/scenarios/play"
-              element={
-                <CapabilityProtectedRoute requiredCapability="play_simulation">
-                  <PlayGame />
                 </CapabilityProtectedRoute>
               }
             />

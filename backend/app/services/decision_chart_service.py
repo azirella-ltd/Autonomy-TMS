@@ -173,26 +173,28 @@ class DecisionChartService:
 
     async def _chart_forecast_adjustment(self, config_id, product_id, site_id, decision_id) -> Dict:
         """Forecast Adjustment: Old vs new forecast vs actuals. Window: -4w → +4w."""
+        # forecast table: forecast_date / forecast_p50 / forecast_p10 / forecast_p90
+        # (no period_start / quantity / plan_version columns on this table).
         result = await self.db.execute(
             sql_text("""
-                SELECT period_start, quantity as forecast_p50,
-                       quantity_p10, quantity_p90
+                SELECT forecast_date,
+                       COALESCE(forecast_p50, forecast_quantity) AS p50,
+                       forecast_p10, forecast_p90
                 FROM forecast
                 WHERE config_id = :cid AND product_id = :pid AND site_id = :sid
-                  AND plan_version = 'live'
-                ORDER BY period_start
+                ORDER BY forecast_date DESC
                 LIMIT 8
             """),
             {"cid": config_id, "pid": product_id, "sid": site_id},
         )
-        rows = result.fetchall()
+        rows = list(reversed(result.fetchall()))  # chronological order for chart
         return {
             "title": f"Forecast Adjustment: {product_id} at {site_id}",
             "window": "-4w → +4w",
             "series": [
-                {"name": "Forecast P50", "data": [{"x": r.period_start.isoformat() if r.period_start else "", "y": float(r.forecast_p50 or 0)} for r in rows]},
-                {"name": "P10 (downside)", "data": [{"x": r.period_start.isoformat() if r.period_start else "", "y": float(r.quantity_p10 or 0)} for r in rows], "dashStyle": "dot"},
-                {"name": "P90 (upside)", "data": [{"x": r.period_start.isoformat() if r.period_start else "", "y": float(r.quantity_p90 or 0)} for r in rows], "dashStyle": "dot"},
+                {"name": "Forecast P50", "data": [{"x": r.forecast_date.isoformat() if r.forecast_date else "", "y": float(r.p50 or 0)} for r in rows]},
+                {"name": "P10 (downside)", "data": [{"x": r.forecast_date.isoformat() if r.forecast_date else "", "y": float(r.forecast_p10 or 0)} for r in rows], "dashStyle": "dot"},
+                {"name": "P90 (upside)", "data": [{"x": r.forecast_date.isoformat() if r.forecast_date else "", "y": float(r.forecast_p90 or 0)} for r in rows], "dashStyle": "dot"},
             ],
         }
 
@@ -212,7 +214,7 @@ class DecisionChartService:
                 FROM supply_plan
                 WHERE config_id = :cid AND product_id = :pid AND site_id = :sid
                   AND plan_version = 'live'
-                  AND order_type IN ('manufacturing_order', 'production_order')
+                  AND plan_type IN ('manufacturing_order', 'production_order', 'mrp')
                 ORDER BY plan_date
                 LIMIT 14
             """),

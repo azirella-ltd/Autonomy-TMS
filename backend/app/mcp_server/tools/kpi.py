@@ -73,11 +73,13 @@ def register(mcp):
 
             # Service level (fill rate from supply plan)
             try:
+                # supply_plan columns: demand_quantity / supply_quantity (not
+                # fulfilled_qty / demand_qty — those don't exist on this table).
                 sl_result = await db.execute(
                     sql_text("""
                         SELECT
-                            AVG(CASE WHEN fulfilled_qty >= demand_qty THEN 100.0
-                                ELSE fulfilled_qty / NULLIF(demand_qty, 0) * 100 END) as fill_rate
+                            AVG(CASE WHEN supply_quantity >= demand_quantity THEN 100.0
+                                ELSE supply_quantity / NULLIF(demand_quantity, 0) * 100 END) as fill_rate
                         FROM supply_plan
                         WHERE config_id = :cid AND plan_version = 'live'
                     """),

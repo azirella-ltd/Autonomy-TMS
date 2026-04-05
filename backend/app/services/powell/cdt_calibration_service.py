@@ -161,6 +161,186 @@ def _get_model_class(model_name: str):
     return getattr(pd, model_name)
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Historical-corpus adapters: training_corpus sample_data → (estimated, actual)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Each adapter maps a single historical sample from the unified training
+# corpus into the (decision_cost_estimate, actual_cost) pair that
+# DecisionOutcomePair needs. The shape of sample_data is defined by the
+# historical extractor for that TRM (see app/services/training_corpus/historical/).
+#
+# Returns None → skip this sample (outcome missing, etc.).
+# Returns (estimated, actual) → use this pair for calibration.
+#
+# The residual = actual - estimated is the conformal score. We construct
+# residuals that reflect the *quality* of the decision: higher residual
+# = worse outcome (stockout occurred, order late, yield below plan, etc.).
+# ═══════════════════════════════════════════════════════════════════════
+
+def _adapter_po_creation(sd: Dict[str, Any]):
+    action = sd.get("action") or {}
+    outcome = sd.get("outcome") or {}
+    ordered = float(action.get("ordered_quantity") or 0)
+    if ordered <= 0:
+        return None
+    stockout = outcome.get("stockout_qty_during_window")
+    lateness = outcome.get("lateness_days") or 0
+    # Estimated "cost" = ordered qty (what the agent committed to).
+    # Actual "cost" = ordered qty + stockout penalty + lateness penalty.
+    # A perfect PO has actual == estimated; a PO that failed to prevent
+    # stockout or arrived late has actual > estimated.
+    penalty = 0.0
+    if stockout is not None:
+        penalty += float(stockout)
+    if lateness and lateness > 0:
+        penalty += float(lateness) * ordered * 0.05  # 5% daily tardiness weight
+    return (ordered, ordered + penalty)
+
+
+def _adapter_to_execution(sd: Dict[str, Any]):
+    action = sd.get("action") or {}
+    outcome = sd.get("outcome") or {}
+    qty = float(action.get("quantity") or 0)
+    if qty <= 0:
+        return None
+    dst_stockout = float(outcome.get("dst_stockout_during_window") or 0)
+    lateness = outcome.get("lateness_days") or 0
+    penalty = dst_stockout + (float(lateness) * qty * 0.05 if lateness and lateness > 0 else 0)
+    return (qty, qty + penalty)
+
+
+def _adapter_mo_execution(sd: Dict[str, Any]):
+    action = sd.get("action") or {}
+    outcome = sd.get("outcome") or {}
+    planned = float(action.get("planned_quantity") or 0)
+    if planned <= 0:
+        return None
+    actual_qty = outcome.get("actual_quantity")
+    scrap = float(outcome.get("scrap_quantity") or 0)
+    if actual_qty is None:
+        return None
+    shortfall = max(0.0, planned - float(actual_qty)) + scrap
+    return (planned, planned + shortfall)
+
+
+def _adapter_atp_allocation(sd: Dict[str, Any]):
+    action = sd.get("action") or {}
+    outcome = sd.get("outcome") or {}
+    promised = float(action.get("promised_quantity") or 0)
+    if promised <= 0:
+        return None
+    shipped = float(outcome.get("shipped_quantity") or 0)
+    backlog = float(outcome.get("backlog_quantity") or 0)
+    # Residual reflects broken promise: under-ship or backlog.
+    underdelivery = max(0.0, promised - shipped) + backlog
+    return (promised, promised + underdelivery)
+
+
+def _adapter_inventory_buffer(sd: Dict[str, Any]):
+    action = sd.get("action") or {}
+    outcome = sd.get("outcome") or {}
+    target_sl = action.get("target_service_level")
+    achieved_sl = outcome.get("achieved_service_level")
+    if target_sl is None or achieved_sl is None:
+        return None
+    try:
+        target_sl = float(target_sl)
+        achieved_sl = float(achieved_sl)
+    except (TypeError, ValueError):
+        return None
+    # Estimated = target service level, actual = shortfall added on top.
+    # A well-chosen buffer has achieved ~ target. A poor buffer has
+    # achieved < target, so residual > 0.
+    base = 1.0  # normalised baseline
+    shortfall = max(0.0, target_sl - achieved_sl)
+    return (base, base + shortfall)
+
+
+def _adapter_quality_disposition(sd: Dict[str, Any]):
+    sf = sd.get("state_features") or {}
+    outcome = sd.get("outcome") or {}
+    inspected = float(sf.get("inspection_quantity") or 0)
+    if inspected <= 0:
+        return None
+    cost = float(outcome.get("total_quality_cost") or 0)
+    # Residual = normalised quality cost per inspected unit.
+    return (inspected, inspected + cost / max(inspected, 1))
+
+
+def _adapter_maintenance(sd: Dict[str, Any]):
+    outcome = sd.get("outcome") or {}
+    # Estimated = 1 (planned maintenance). Actual = 1 + penalty when
+    # maintenance was reactive/corrective instead of preventive.
+    was_corrective = bool(outcome.get("was_corrective"))
+    return (1.0, 2.0 if was_corrective else 1.0)
+
+
+def _adapter_order_tracking(sd: Dict[str, Any]):
+    outcome = sd.get("outcome") or {}
+    lateness = outcome.get("lateness_days")
+    if lateness is None:
+        return None
+    # Estimated = expected on-time (1), actual = 1 + normalized lateness.
+    return (1.0, 1.0 + max(0.0, float(lateness)) / 7.0)
+
+
+def _adapter_rebalancing(sd: Dict[str, Any]):
+    action = sd.get("action") or {}
+    outcome = sd.get("outcome") or {}
+    qty = float(action.get("quantity") or 0)
+    if qty <= 0:
+        return None
+    justified = bool(outcome.get("justified"))
+    # A justified transfer = actual matches estimated (no penalty).
+    # An unjustified transfer = wasted capacity (residual > 0).
+    return (qty, qty if justified else qty * 1.5)
+
+
+def _adapter_forecast_baseline(sd: Dict[str, Any]):
+    action = sd.get("action") or {}
+    outcome = sd.get("outcome") or {}
+    p50 = action.get("forecast_p50")
+    realized = outcome.get("realized")
+    if p50 is None or realized is None:
+        return None
+    try:
+        return (float(p50), float(realized))
+    except (TypeError, ValueError):
+        return None
+
+
+def _adapter_forecast_adjustment(sd: Dict[str, Any]):
+    outcome = sd.get("outcome") or {}
+    ape_orig = outcome.get("ape_original")
+    ape_new = outcome.get("ape_new")
+    if ape_orig is None or ape_new is None:
+        return None
+    try:
+        # Estimated = original error, actual = post-adjustment error.
+        # A good adjustment has actual < estimated (residual negative).
+        return (float(ape_orig), float(ape_new))
+    except (TypeError, ValueError):
+        return None
+
+
+# Map corpus trm_type → (cdt registry agent_type key, adapter function).
+# Registry keys follow the convention used by TRM_COST_MAPPING above.
+_HISTORICAL_CORPUS_ADAPTERS = {
+    "po_creation":          ("po_creation",           _adapter_po_creation),
+    "to_execution":         ("to_execution",          _adapter_to_execution),
+    "mo_execution":         ("mo_execution",          _adapter_mo_execution),
+    "atp_allocation":       ("atp",                   _adapter_atp_allocation),
+    "inventory_buffer":     ("inventory_buffer",      _adapter_inventory_buffer),
+    "quality_disposition":  ("quality_disposition",   _adapter_quality_disposition),
+    "maintenance_scheduling": ("maintenance_scheduling", _adapter_maintenance),
+    "order_tracking":       ("order_tracking",        _adapter_order_tracking),
+    "rebalancing":          ("inventory_rebalancing", _adapter_rebalancing),
+    "forecast_baseline":    ("forecast_baseline",     _adapter_forecast_baseline),
+    "forecast_adjustment":  ("forecast_adjustment",   _adapter_forecast_adjustment),
+}
+
+
 class CDTCalibrationService:
     """
     Calibrates CDT wrappers for all 11 TRM agents from historical decision data.
@@ -384,6 +564,154 @@ class CDTCalibrationService:
                 continue
 
         return pairs
+
+    # ═══════════════════════════════════════════════════════════════════
+    # Calibration from the unified training corpus (historical stream).
+    #
+    # Why this exists:
+    #   calibrate_all() reads powell_*_decisions tables, which only have
+    #   ~20 seed rows per TRM from the decision_seed provisioning step and
+    #   no realized outcomes. The conformal wrappers never reach the
+    #   MIN_CALIBRATION_SIZE=30 threshold and the "0/N agents ready" banner
+    #   never clears until live outcomes accumulate over days/weeks.
+    #
+    #   The two-stream training corpus (UNIFIED_TRAINING_CORPUS.md §2a)
+    #   already contains tens of thousands of (action, outcome) pairs per
+    #   TRM extracted from the tenant's real ERP transaction history. Each
+    #   historical sample has a real action taken by the ERP and a real
+    #   realized outcome computed from forward-looking queries (e.g., did
+    #   a stockout occur in the lead-time window, was the PO on-time,
+    #   what was the actual service level of that policy). Those are
+    #   exactly the (estimated_cost, actual_cost) pairs conformal
+    #   calibration needs.
+    #
+    # Per-TRM adapters below convert each historical sample_data payload
+    # into a DecisionOutcomePair. The adapter contract:
+    #     adapter(sample_data_dict) -> (estimated_cost, actual_cost) or None
+    # Returning None means "skip this sample" (missing outcome data).
+    # ═══════════════════════════════════════════════════════════════════
+
+    def calibrate_from_historical_corpus(
+        self,
+        config_id: Optional[int] = None,
+        limit_per_type: int = 5000,
+    ) -> Dict[str, Any]:
+        """Calibrate CDT wrappers from training_corpus historical samples.
+
+        Reads samples with origin='historical' grouped by trm_type, applies
+        the per-TRM sample→DecisionOutcomePair adapter, and calls
+        wrapper.calibrate() for each TRM that meets MIN_CALIBRATION_SIZE.
+
+        This is the preferred calibration source during provisioning because
+        it is backed by real tenant ERP transactions, not 20 seed rows or a
+        digital-twin bootstrap. Runs BEFORE calibrate_all() / simulation
+        bootstrap in the provisioning step.
+        """
+        from sqlalchemy import text as _text
+
+        stats: Dict[str, Any] = {}
+
+        config_ids = self._get_tenant_config_ids()
+        if config_ids is not None and not config_ids:
+            return {"error": "No configs for tenant"}
+
+        # corpus trm_type → (cdt registry key, adapter function)
+        adapters = _HISTORICAL_CORPUS_ADAPTERS
+
+        # One query per TRM type so we stream and can filter by config.
+        where_config = ""
+        params: Dict[str, Any] = {"limit": limit_per_type}
+        if config_id is not None:
+            where_config = " AND config_id = :cid"
+            params["cid"] = config_id
+        elif config_ids:
+            where_config = " AND config_id = ANY(:cids)"
+            params["cids"] = config_ids
+
+        for corpus_trm, (cdt_agent_type, adapter) in adapters.items():
+            q = _text(f"""
+                SELECT sample_data
+                FROM training_corpus
+                WHERE layer = 1.0
+                  AND origin = 'historical'
+                  AND trm_type = :trm
+                  AND weight >= 0.3
+                  {where_config}
+                ORDER BY created_at DESC
+                LIMIT :limit
+            """)
+            try:
+                rows = self.db.execute(q, {**params, "trm": corpus_trm}).fetchall()
+            except Exception as e:
+                logger.warning("Historical corpus query failed for %s: %s", corpus_trm, e)
+                stats[cdt_agent_type] = {"status": "error", "error": str(e)[:200], "source": "historical"}
+                continue
+
+            pairs: List[DecisionOutcomePair] = []
+            for (sample_data,) in rows:
+                try:
+                    if not isinstance(sample_data, dict):
+                        continue
+                    result = adapter(sample_data)
+                    if result is None:
+                        continue
+                    estimated, actual_cost_pair = result
+                    if estimated is None or actual_cost_pair is None:
+                        continue
+                    # Build a minimal feature vector from state_features
+                    sf = sample_data.get("state_features") or {}
+                    if isinstance(sf, dict) and sf:
+                        feats = np.array(
+                            [float(v) if isinstance(v, (int, float)) else 0.0
+                             for v in sf.values()],
+                            dtype=np.float32,
+                        )
+                    else:
+                        feats = np.array([float(estimated)], dtype=np.float32)
+                    pairs.append(DecisionOutcomePair(
+                        decision_features=feats,
+                        decision_cost_estimate=float(estimated),
+                        actual_cost=float(actual_cost_pair),
+                        agent_type=cdt_agent_type,
+                        timestamp=None,
+                    ))
+                except Exception as e:
+                    logger.debug("Adapter failed for %s: %s", corpus_trm, e)
+                    continue
+
+            wrapper = self.registry.get_or_create(cdt_agent_type)
+            if len(pairs) >= ConformalDecisionWrapper.MIN_CALIBRATION_SIZE:
+                wrapper.calibrate(pairs)
+                stats[cdt_agent_type] = {
+                    "status": "calibrated",
+                    "pairs": len(pairs),
+                    "source": "historical",
+                    "diagnostics": wrapper.get_diagnostics(),
+                }
+            elif pairs:
+                for p in pairs:
+                    wrapper.add_calibration_pair(p)
+                stats[cdt_agent_type] = {
+                    "status": "partial",
+                    "pairs": len(pairs),
+                    "min_required": ConformalDecisionWrapper.MIN_CALIBRATION_SIZE,
+                    "source": "historical",
+                }
+            else:
+                stats[cdt_agent_type] = {"status": "no_data", "pairs": 0, "source": "historical"}
+
+            logger.info(
+                "CDT historical-corpus calibration %s (corpus trm=%s): %s (%d pairs)",
+                cdt_agent_type, corpus_trm,
+                stats[cdt_agent_type]["status"], stats[cdt_agent_type]["pairs"],
+            )
+
+        n_calibrated = sum(1 for s in stats.values() if s.get("status") == "calibrated")
+        logger.info(
+            "CDT historical-corpus calibration complete: %d/%d agents calibrated",
+            n_calibrated, len(adapters),
+        )
+        return stats
 
     def calibrate_from_simulation(
         self,

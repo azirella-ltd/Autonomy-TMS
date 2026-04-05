@@ -416,7 +416,7 @@ def generate_planned_orders(
             )
         ).scalar_one_or_none()
 
-        on_hand = float(inv_level.on_hand_quantity) if inv_level and inv_level.on_hand_quantity else 0.0
+        on_hand = float(inv_level.on_hand_qty) if inv_level and inv_level.on_hand_qty else 0.0
 
         # Get scheduled receipts from supply_plan table for this period
         period_start = mps_plan.start_date + timedelta(weeks=period)

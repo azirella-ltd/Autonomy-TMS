@@ -96,32 +96,75 @@ def get_eda_analysis(
             pid_list = ",".join(f"'{p}'" for p in pids)
             filters.append(f"f.product_id IN ({pid_list})")
 
-    # Geography filter (includes serving DCs via transportation lanes)
+    # Geography filter.
+    #
+    # Forecasts are stored at ship-to (customer) granularity when populated
+    # by the per-customer regeneration pipeline: forecast.site_id is the
+    # ship-from DC and forecast.customer_id is the ship-to customer site.
+    # For geography drill-down (country → region → state → city) we want to
+    # filter on the *customer* dimension, not the DC dimension, otherwise
+    # drilling from Region into State/City collapses to a single DC and
+    # returns identical rows at every level below Region.
+    #
+    # Fallback: configs where forecast.customer_id is NULL (legacy ship-from
+    # only) use the old lane-based filter so regions still narrow to a DC.
     if site_id:
         filters.append("f.site_id = :sid")
         params["sid"] = site_id
     elif geo_id:
         try:
-            geo_sites = db.execute(text("""
-                WITH RECURSIVE geo_tree AS (
-                    SELECT id FROM geography WHERE id = :gid
-                    UNION ALL
-                    SELECT g.id FROM geography g JOIN geo_tree gt ON g.parent_geo_id = gt.id
-                )
-                SELECT CAST(s.id AS TEXT) FROM site s
-                WHERE s.config_id = :cfg AND (
-                    s.geo_id IN (SELECT id FROM geo_tree)
-                    OR s.id IN (
-                        SELECT tl.from_site_id FROM transportation_lane tl
-                        JOIN site dst ON dst.id = tl.to_site_id
-                        WHERE tl.config_id = :cfg AND dst.geo_id IN (SELECT id FROM geo_tree)
+            has_ship_to = db.execute(text("""
+                SELECT 1 FROM forecast
+                WHERE config_id = :cfg AND customer_id IS NOT NULL
+                LIMIT 1
+            """), {"cfg": config_id}).fetchone() is not None
+
+            if has_ship_to:
+                # Ship-to path: walk geo tree, find customer sites in tree,
+                # filter forecast.customer_id.
+                customer_rows = db.execute(text("""
+                    WITH RECURSIVE geo_tree AS (
+                        SELECT id FROM geography WHERE id = :gid
+                        UNION ALL
+                        SELECT g.id FROM geography g
+                          JOIN geo_tree gt ON g.parent_geo_id = gt.id
                     )
-                )
-            """), {"gid": geo_id, "cfg": config_id}).fetchall()
-            sids = [s[0] for s in geo_sites]
-            if sids:
-                sid_list = ",".join(f"'{s}'" for s in sids)
-                filters.append(f"f.site_id IN ({sid_list})")
+                    SELECT CAST(s.id AS TEXT)
+                    FROM site s
+                    WHERE s.config_id = :cfg
+                      AND s.geo_id IN (SELECT id FROM geo_tree)
+                """), {"gid": geo_id, "cfg": config_id}).fetchall()
+                cids = [r[0] for r in customer_rows]
+                if cids:
+                    cid_list = ",".join(f"'{c}'" for c in cids)
+                    filters.append(f"CAST(f.customer_id AS TEXT) IN ({cid_list})")
+                else:
+                    # Geo tree empty → no matching forecast
+                    filters.append("1=0")
+            else:
+                # Legacy ship-from path: map geo → DC via transportation lanes.
+                geo_sites = db.execute(text("""
+                    WITH RECURSIVE geo_tree AS (
+                        SELECT id FROM geography WHERE id = :gid
+                        UNION ALL
+                        SELECT g.id FROM geography g
+                          JOIN geo_tree gt ON g.parent_geo_id = gt.id
+                    )
+                    SELECT CAST(s.id AS TEXT) FROM site s
+                    WHERE s.config_id = :cfg AND (
+                        s.geo_id IN (SELECT id FROM geo_tree)
+                        OR s.id IN (
+                            SELECT tl.from_site_id FROM transportation_lane tl
+                            JOIN site dst ON dst.id = tl.to_site_id
+                            WHERE tl.config_id = :cfg
+                              AND dst.geo_id IN (SELECT id FROM geo_tree)
+                        )
+                    )
+                """), {"gid": geo_id, "cfg": config_id}).fetchall()
+                sids = [s[0] for s in geo_sites]
+                if sids:
+                    sid_list = ",".join(f"'{s}'" for s in sids)
+                    filters.append(f"f.site_id IN ({sid_list})")
         except Exception:
             pass
 

@@ -41,7 +41,13 @@ import {
 import { Alert } from '../common/Alert';
 import { Badge } from '../common/Badge';
 import { Spinner } from '../common/Loading';
-import { Select, SelectOption } from '../common/Select';
+// NOTE: the original code imported { Select, SelectOption } from the Radix
+// wrapper at components/common/Select, but that module only exports
+// SelectItem (not SelectOption) and follows a different API (SelectTrigger /
+// SelectContent pattern, not e.target.value). The REASON_CODES dropdown in
+// the Save dialog is simple enough to use a plain native <select>, so we
+// avoid both the missing-export crash and Radix's strict empty-string
+// Select.Item check which failed whenever reasonCode was still "".
 import {
   Dialog,
   DialogContent,
@@ -648,15 +654,16 @@ const ForecastEditor = ({ configId, onSave }) => {
               </p>
               <div className="space-y-4">
                 <FormField label="Reason Code">
-                  <Select
+                  <select
                     value={reasonCode}
                     onChange={(e) => setReasonCode(e.target.value)}
-                    placeholder="Select a reason code"
+                    className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
+                    <option value="" disabled>Select a reason code</option>
                     {REASON_CODES.map(r => (
-                      <SelectOption key={r.value} value={r.value}>{r.label}</SelectOption>
+                      <option key={r.value} value={r.value}>{r.label}</option>
                     ))}
-                  </Select>
+                  </select>
                 </FormField>
                 <FormField label="Additional Notes (optional)">
                   <Textarea

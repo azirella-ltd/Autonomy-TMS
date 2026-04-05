@@ -45,8 +45,10 @@ def register(mcp):
         from .db import get_db
 
         async with get_db() as db:
-            filters = ["f.config_id = :config_id", "f.plan_version = :plan_version"]
-            params = {"config_id": config_id, "plan_version": plan_version, "limit": horizon_periods}
+            # Schema note: forecast table uses forecast_p10/p50/p90 + forecast_date
+            # (no quantity_p* aliases, no plan_version or period_start/end columns).
+            filters = ["f.config_id = :config_id"]
+            params = {"config_id": config_id, "limit": horizon_periods}
 
             if product_id:
                 filters.append("f.product_id = :product_id")
@@ -59,13 +61,13 @@ def register(mcp):
 
             result = await db.execute(
                 sql_text(f"""
-                    SELECT f.product_id, f.site_id, f.period_start, f.period_end,
-                           f.quantity as p50,
-                           f.quantity_p10, f.quantity_p90,
+                    SELECT f.product_id, f.site_id, f.forecast_date,
+                           COALESCE(f.forecast_p50, f.forecast_quantity) AS p50,
+                           f.forecast_p10, f.forecast_p90,
                            f.forecast_method
                     FROM forecast f
                     WHERE {where}
-                    ORDER BY f.product_id, f.site_id, f.period_start
+                    ORDER BY f.product_id, f.site_id, f.forecast_date
                     LIMIT :limit * 100
                 """),
                 params,
@@ -76,17 +78,15 @@ def register(mcp):
                 forecasts.append({
                     "product_id": r.product_id,
                     "site_id": r.site_id,
-                    "period_start": r.period_start.isoformat() if r.period_start else None,
-                    "period_end": r.period_end.isoformat() if r.period_end else None,
+                    "forecast_date": r.forecast_date.isoformat() if r.forecast_date else None,
                     "p50": float(r.p50) if r.p50 else 0,
-                    "p10": float(r.quantity_p10) if r.quantity_p10 else None,
-                    "p90": float(r.quantity_p90) if r.quantity_p90 else None,
+                    "p10": float(r.forecast_p10) if r.forecast_p10 else None,
+                    "p90": float(r.forecast_p90) if r.forecast_p90 else None,
                     "method": r.forecast_method,
                 })
 
             return {
                 "config_id": config_id,
-                "plan_version": plan_version,
                 "record_count": len(forecasts),
                 "forecasts": forecasts,
             }
