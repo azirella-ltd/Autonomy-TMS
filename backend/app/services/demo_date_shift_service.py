@@ -61,19 +61,154 @@ _CONFIG_SCOPED_TABLES = [
         "eff_end_date",
         "source_update_dttm",
     ]),
-    ("inventory_projection", "config", [
-        "period_start",
-        "period_end",
-        "created_at",
-    ]),
+    # Note: inventory_projection moved to _COMPANY_SCOPED_TABLES — the
+    # table has company_id but no config_id column.
     ("sourcing_rules", "config", [
         "eff_start_date",
         "eff_end_date",
         "source_update_dttm",
     ]),
+
+    # AWS SC transactional tables (config-scoped). Added to registry so
+    # date shifts don't silently leave transactional history stale while
+    # master data moves forward. Columns confirmed against live schema.
+    ("outbound_order", "config", [
+        "order_date",
+        "requested_delivery_date",
+        "promised_delivery_date",
+        "actual_delivery_date",
+        "source_update_dttm",
+        "created_at",
+        "updated_at",
+    ]),
+    ("outbound_order_line", "config", [
+        "order_date",
+        "requested_delivery_date",
+        "promised_delivery_date",
+        "first_ship_date",
+        "last_ship_date",
+        "created_at",
+    ]),
+    ("inbound_order_line", "config", [
+        "submitted_date",
+        "expected_delivery_date",
+        "earliest_delivery_date",
+        "latest_delivery_date",
+        "confirmation_date",
+        "order_receive_date",
+        "created_at",
+        "updated_at",
+    ]),
+    ("transfer_order", "config", [
+        "order_date",
+        "shipment_date",
+        "estimated_delivery_date",
+        "actual_ship_date",
+        "actual_delivery_date",
+        "source_update_dttm",
+        "created_at",
+        "updated_at",
+        "released_at",
+        "picked_at",
+        "shipped_at",
+        "received_at",
+    ]),
+    ("production_orders", "config", [
+        "planned_start_date",
+        "planned_completion_date",
+        "actual_start_date",
+        "actual_completion_date",
+        "released_date",
+        "closed_date",
+        "created_at",
+        "updated_at",
+    ]),
+    ("quality_order", "config", [
+        "order_date",
+        "inspection_start_date",
+        "inspection_end_date",
+        "disposition_due_date",
+        "disposition_decided_at",
+        "source_update_dttm",
+        "created_at",
+        "updated_at",
+        "closed_at",
+    ]),
+    ("goods_receipt", "config", [
+        "receipt_date",
+        "inspection_date",
+        "completed_at",
+        "created_at",
+        "updated_at",
+    ]),
+    ("goods_receipt_line_item", "config", [
+        "expiry_date",
+        "created_at",
+        "updated_at",
+    ]),
+    ("forecast_exception", "config", [
+        "period_start",
+        "period_end",
+        "detected_at",
+        "acknowledged_at",
+        "resolved_at",
+        "sla_deadline",
+        "last_escalated_at",
+        "deferred_until",
+        "last_notification_at",
+        "created_at",
+        "updated_at",
+    ]),
+]
+
+# Child tables that lack a direct config_id column but are logically
+# scoped to a parent row which DOES have config_id. Shifted via a
+# subquery join to the parent. Each entry: (table, columns, parent_sql)
+# where parent_sql is the WHERE clause fragment referencing :filter_id.
+#
+# If we don't shift these, the date shift service silently leaves child
+# rows stale while the parents move forward — the same class of bug as
+# the tables we found missing during demo verification.
+_CHILD_SCOPED_TABLES = [
+    (
+        "transfer_order_line_item",
+        [
+            "requested_ship_date",
+            "requested_delivery_date",
+            "actual_ship_date",
+            "actual_delivery_date",
+            "created_at",
+            "updated_at",
+        ],
+        "to_id IN (SELECT id FROM transfer_order WHERE config_id = :filter_id)",
+    ),
+    (
+        "quality_order_line_item",
+        [
+            "inspected_at",
+            "created_at",
+            "updated_at",
+        ],
+        "quality_order_id IN (SELECT id FROM quality_order WHERE config_id = :filter_id)",
+    ),
+    (
+        "forecast_adjustments",
+        [
+            "period_start",
+            "period_end",
+            "approved_at",
+            "created_at",
+        ],
+        "forecast_id IN (SELECT id FROM forecast WHERE config_id = :filter_id)",
+    ),
 ]
 
 _COMPANY_SCOPED_TABLES = [
+    ("inventory_projection", "company", [
+        "period_start",
+        "period_end",
+        "created_at",
+    ]),
     ("fulfillment_order", "company", [
         "created_date",
         "promised_date",
@@ -273,6 +408,19 @@ class DemoDateShiftService:
             rows, err = self._shift_table(
                 table_name, columns, shift_days,
                 where_clause="config_id = :filter_id",
+                filter_id=config_id,
+            )
+            if err:
+                errors.append(err)
+            elif rows > 0:
+                tables_updated[table_name] = rows
+                total_rows += rows
+
+        # ── Child tables scoped via parent config_id (subquery) ───
+        for table_name, columns, parent_where in _CHILD_SCOPED_TABLES:
+            rows, err = self._shift_table(
+                table_name, columns, shift_days,
+                where_clause=parent_where,
                 filter_id=config_id,
             )
             if err:
