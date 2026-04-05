@@ -1073,8 +1073,50 @@ class ProvisioningService:
                 import numpy as np
 
                 tenant_today = config_today_sync(config_id, sync_db)
-                horizon_periods = 104  # 2 years weekly
+
+                # Honor planning_horizon_template for MPS planning_type —
+                # MPS is the tactical layer that drives supply plan generation
+                # and therefore defines the demand forecast horizon.
+                # (S&OP is strategic / longer; MRP is operational / shorter.)
+                try:
+                    horizon_row = sync_db.execute(
+                        text("""
+                            SELECT horizon_months, time_bucket::text
+                            FROM planning_horizon_template
+                            WHERE planning_type = 'mps'
+                              AND is_system = true
+                            ORDER BY id LIMIT 1
+                        """),
+                    ).fetchone()
+                except Exception:
+                    horizon_row = None
+
+                if horizon_row:
+                    horizon_months = int(horizon_row[0]) if horizon_row[0] else 6
+                    template_bucket = (horizon_row[1] or "week").lower()
+                    logger.info(
+                        "lgbm_forecast: using planning_horizon_template (mps) "
+                        "horizon=%d months bucket=%s for config %d",
+                        horizon_months, template_bucket, config_id,
+                    )
+                else:
+                    # Default MPS horizon: 6 months (~26 weeks) — matches typical
+                    # supply-plan planning window. Explicit default, not silent.
+                    horizon_months = 6
+                    template_bucket = "week"
+                    logger.warning(
+                        "lgbm_forecast: no system MPS planning_horizon_template "
+                        "— using default horizon=%d months for config %d",
+                        horizon_months, config_id,
+                    )
+
+                # Convert to weekly periods (training_bucket = 'W' always here)
+                horizon_periods = max(4, int(horizon_months * 4.33))  # ~4.33 weeks/month
                 horizon_end = tenant_today + timedelta(weeks=horizon_periods)
+                logger.info(
+                    "lgbm_forecast: config %d horizon=%d weeks (%d months) ending %s",
+                    config_id, horizon_periods, horizon_months, horizon_end,
+                )
 
                 result_summary = {"ship_from": None, "ship_to": None}
                 total_persisted = 0
@@ -1108,7 +1150,7 @@ class ProvisioningService:
                         history=history,
                         cluster_results=cluster_results,
                         censored_flags={},
-                        n_periods=104,   # 2 years weekly: covers 52-wk S&OP + 52-wk MPS/supply plan
+                        n_periods=horizon_periods,  # from planning_horizon_template (tactical)
                         time_bucket="W",
                         retrain=True,
                     )
