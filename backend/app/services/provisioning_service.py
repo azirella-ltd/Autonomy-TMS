@@ -1794,9 +1794,19 @@ class ProvisioningService:
                         apply_promotional_adjustments,
                         apply_hierarchy_reconciliation,
                     )
+                    # Load tenant_id for the config — required by promo and
+                    # reconciliation adjustments. (Bug fix: prior code referenced
+                    # an undefined `config` variable and swallowed the NameError.)
+                    tenant_row = sync_db.execute(
+                        sqt("SELECT tenant_id FROM supply_chain_configs WHERE id = :cid"),
+                        {"cid": config_id},
+                    ).fetchone()
+                    tenant_id = tenant_row[0] if tenant_row else None
+                    if tenant_id is None:
+                        raise ValueError(f"No tenant_id found for config {config_id}")
                     lc_result = apply_lifecycle_adjustments(sync_db, config_id)
-                    promo_result = apply_promotional_adjustments(sync_db, config_id, config.tenant_id)
-                    recon_result = apply_hierarchy_reconciliation(sync_db, config_id, config.tenant_id)
+                    promo_result = apply_promotional_adjustments(sync_db, config_id, tenant_id)
+                    recon_result = apply_hierarchy_reconciliation(sync_db, config_id, tenant_id)
                     logger.info(
                         "Forecast adjustments: lifecycle=%d, promos=%d, reconciliation=%s",
                         lc_result.get("adjusted_rows", 0),

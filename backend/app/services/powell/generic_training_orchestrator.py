@@ -32,7 +32,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +178,7 @@ class GenericTrainingOrchestrator:
         Checkpoint paths: config_{id}/trm/trm_{type}_site{site_id}_v1.pt
         """
         from app.services.powell.trm_site_trainer import TRMSiteTrainer
+        from app.models.trm import MODEL_REGISTRY
 
         start = time.time()
         trm_dir = self.checkpoint_dir / "trm"
@@ -186,12 +187,26 @@ class GenericTrainingOrchestrator:
         result = TrainingResult(config_id=self.config_id, tier="trm")
         site_results: Dict[str, Dict[str, Any]] = {}
 
+        # Skip TRM types that don't have a neural model in MODEL_REGISTRY.
+        # forecast_baseline is LightGBM-based (handled by lgbm_forecast step),
+        # not a recursive reasoning policy, so it has no neural checkpoint to
+        # train here. Without this filter, every site logs a spurious
+        # "Unknown TRM type" warning for forecast_baseline.
+        neural_trm_types = set(MODEL_REGISTRY.keys())
+        skipped_lgbm_types: Set[str] = set()
+
         for site in self.sites:
             if not site.active_trms:
                 continue
 
             site_detail: Dict[str, Any] = {}
             for trm_type in sorted(site.active_trms):
+                if trm_type not in neural_trm_types:
+                    # Non-neural TRM (e.g. forecast_baseline = LightGBM).
+                    # Skip silently — not an error.
+                    skipped_lgbm_types.add(trm_type)
+                    site_detail[trm_type] = {"status": "skipped_non_neural"}
+                    continue
                 try:
                     trainer = TRMSiteTrainer(
                         trm_type=trm_type,
