@@ -195,7 +195,7 @@ class DemandPlanningTGNNService:
             "sites": [
                 {
                     "id": s.id,
-                    "site_key": s.site_key or f"site_{s.id}",
+                    "site_key": s.name or f"site_{s.id}",
                     "master_type": s.master_type,
                     "sc_site_type": s.sc_site_type,
                 }
@@ -203,8 +203,8 @@ class DemandPlanningTGNNService:
             ],
             "lanes": [
                 {
-                    "source_id": l.source_site_id,
-                    "target_id": l.target_site_id,
+                    "source_id": l.from_site_id,
+                    "target_id": l.to_site_id,
                 }
                 for l in lanes
             ],

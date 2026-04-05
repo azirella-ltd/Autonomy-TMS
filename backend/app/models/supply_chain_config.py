@@ -97,6 +97,12 @@ class SupplyChainConfig(Base):
     __tablename__ = "supply_chain_configs"
     
     id = Column(Integer, primary_key=True, index=True)
+    # Human-readable display slug: `{tenant_slug}-{created_at:%Y%m%dT%H%M%SZ}`.
+    # Used for UI display, log messages, and sorting by creation time. The
+    # integer id remains the foreign key everywhere; the slug is a secondary
+    # stable identifier for humans. Backfilled for existing rows by the
+    # 20260405_config_slug migration.
+    slug = Column(String(80), nullable=True, unique=True, index=True)
     name = Column(String(100), nullable=False, default="Default Configuration")
     description = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=False)
@@ -680,6 +686,92 @@ class BusinessImpactSnapshot(Base):
 
 
 # =============================================================================
-# Backward compatibility alias (DEPRECATED - use TransportationLane)
+# Backward compatibility aliases (DEPRECATED — kept to avoid import breakage
+# in modules that have not yet been migrated to the AWS SC DM terminology.)
 # =============================================================================
 Lane = TransportationLane  # DEPRECATED: Use TransportationLane
+Node = Site                # DEPRECATED: Use Site (terminology rename: node -> site)
+
+
+# =============================================================================
+# Slug auto-population on insert
+# =============================================================================
+# When a new SupplyChainConfig row is inserted without a slug, populate it as
+# `{tenant_slug}-{created_at:%Y%m%dT%H%M%SZ}-c{id}`. Since id is not yet
+# assigned at before_insert time, we generate the slug in after_insert and
+# update the row in the same transaction.
+
+from sqlalchemy import event
+
+
+def _sanitize_slug(value: str) -> str:
+    import re
+    return re.sub(r"[^a-zA-Z0-9]+", "-", value or "").strip("-").lower() or "tenant"
+
+
+@event.listens_for(SupplyChainConfig, "before_insert")
+def _populate_config_slug(mapper, connection, target):
+    if target.slug:
+        return
+    # Resolve tenant name (if relationship loaded) or fall back to tenant_id
+    tenant_name = None
+    try:
+        if getattr(target, "tenant", None) is not None:
+            tenant_name = target.tenant.name
+    except Exception:
+        tenant_name = None
+    if not tenant_name and target.tenant_id:
+        row = connection.execute(
+            __import__("sqlalchemy").text(
+                "SELECT name FROM tenants WHERE id = :tid"
+            ),
+            {"tid": target.tenant_id},
+        ).fetchone()
+        if row:
+            tenant_name = row[0]
+    slug_base = _sanitize_slug(tenant_name or f"tenant-{target.tenant_id}")
+    ts = (target.created_at or datetime.datetime.utcnow()).strftime("%Y%m%dT%H%M%SZ")
+    # id is not yet assigned; use a tenant+ts prefix. A uniqueness collision
+    # within the same second/tenant is handled by after_insert appending `-c{id}`.
+    target.slug = f"{slug_base}-{ts}"
+
+
+@event.listens_for(SupplyChainConfig, "after_insert")
+def _finalize_config_slug(mapper, connection, target):
+    """Append the integer id suffix so the slug is unique even if two configs
+    are created in the same second for the same tenant."""
+    if not target.slug:
+        return
+    if target.slug.endswith(f"-c{target.id}"):
+        return
+    final_slug = f"{target.slug}-c{target.id}"
+    connection.execute(
+        __import__("sqlalchemy").text(
+            "UPDATE supply_chain_configs SET slug = :slug WHERE id = :id"
+        ),
+        {"slug": final_slug, "id": target.id},
+    )
+    target.slug = final_slug
+
+
+def resolve_config_id(db, slug_or_id) -> Optional[int]:
+    """Accepts an int id or a string slug; returns the integer config id.
+
+    Used by API endpoints that want to accept either identifier
+    transparently. Returns None if neither matches.
+    """
+    if slug_or_id is None:
+        return None
+    # Fast path: already an int
+    if isinstance(slug_or_id, int):
+        return slug_or_id
+    s = str(slug_or_id).strip()
+    if s.isdigit():
+        return int(s)
+    # Slug lookup
+    from sqlalchemy import text as _text
+    row = db.execute(
+        _text("SELECT id FROM supply_chain_configs WHERE slug = :s"),
+        {"s": s},
+    ).fetchone()
+    return int(row[0]) if row else None

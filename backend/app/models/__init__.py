@@ -374,7 +374,7 @@ from .sc_extensions import (
 )
 
 # 34. Unified Training Corpus — single source of truth for all agent training data
-from .training_corpus import TrainingCorpusSample
+from .training_corpus import TrainingCorpusSample, TrainingCorpusCheckpoint
 
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())

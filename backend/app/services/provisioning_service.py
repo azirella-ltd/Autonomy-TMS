@@ -716,24 +716,24 @@ class ProvisioningService:
             db.close()
 
     async def _step_training_corpus(self, config_id: int, db: AsyncSession = None) -> dict:
-        """Pre-training step: Build the unified training corpus from ERP baseline.
+        """Pre-training step: build the unified training corpus.
 
-        Extracts the ERP baseline, generates perturbations, runs Digital Twin
-        simulations with TRMs, and aggregates into Layer 1 / 1.5 / 2 / 4 samples.
-
-        All subsequent training steps (sop_graphsage, supply_tgnn, inventory_tgnn,
-        capacity_tgnn, site_tgnn, trm_training) consume samples from this corpus
-        instead of generating their own synthetic data.
-
-        See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md
+        Two-stream architecture (see UNIFIED_TRAINING_CORPUS.md §2a):
+          1. Historical stream (primary) — extract (state, action, outcome)
+             triples from real ERP transaction tables for the 12 TRMs.
+          2. Simulation stream (secondary, targeted) — only when historical
+             coverage is thin, for rare-event augmentation, or for cold-start
+             tenants. Also feeds RL rollouts in the rl_training step.
         """
+        from sqlalchemy import text as sql_text
+
         from app.services.training_corpus import TrainingCorpusService
+        from app.services.training_corpus.historical import (
+            HistoricalExtractionOrchestrator,
+        )
 
         effective_db = db or self.db
-        service = TrainingCorpusService(effective_db)
 
-        # Resolve tenant_id
-        from sqlalchemy import text as sql_text
         result = await effective_db.execute(
             sql_text("SELECT tenant_id FROM supply_chain_configs WHERE id = :cid"),
             {"cid": config_id},
@@ -741,14 +741,54 @@ class ProvisioningService:
         row = result.fetchone()
         tenant_id = row.tenant_id if row else 0
 
-        # Generate corpus (default 500 perturbations, 26-week horizon)
-        result = await service.create_corpus(
-            tenant_id=tenant_id,
-            config_id=config_id,
-            num_perturbations=500,
-            planning_horizon_weeks=26,
+        # Stream 1: historical extraction (primary source of BC labels)
+        hist = await HistoricalExtractionOrchestrator(effective_db).extract_all(
+            tenant_id=tenant_id, config_id=config_id,
         )
-        return result
+        logger.info(
+            "Historical extraction config=%d: %d samples across %d TRMs",
+            config_id, hist.total_samples, len(hist.coverage),
+        )
+
+        MIN_HISTORICAL_COVERAGE = 100
+        thin_trms = [
+            trm for trm, cov in hist.coverage.items()
+            if cov.sample_count < MIN_HISTORICAL_COVERAGE
+        ]
+
+        # Stream 2: simulation augmentation — smaller than before (100×12, was
+        # 500×26). Runs only when historical data is thin or a TRM has no
+        # historical coverage at all.
+        sim_summary = None
+        if hist.total_samples < 1000 or thin_trms:
+            logger.info(
+                "Running simulation stream to augment thin TRMs: %s",
+                thin_trms or "(cold start)",
+            )
+            service = TrainingCorpusService(effective_db)
+            sim_summary = await service.create_corpus(
+                tenant_id=tenant_id,
+                config_id=config_id,
+                num_perturbations=100,
+                planning_horizon_weeks=12,
+                focus_trms=thin_trms or None,
+            )
+            if sim_summary.get("status") == "failed":
+                raise RuntimeError(
+                    f"Simulation stream failed: site={sim_summary.get('site_id')} "
+                    f"trm={sim_summary.get('trm_type')} missing={sim_summary.get('missing')}. "
+                    f"Fix master data and re-provision."
+                )
+
+        return {
+            "status": "success",
+            "historical_samples": hist.total_samples,
+            "historical_coverage": {
+                trm: cov.sample_count for trm, cov in hist.coverage.items()
+            },
+            "thin_trms": thin_trms,
+            "simulation": sim_summary,
+        }
 
     async def _step_sop_graphsage(self, config_id: int) -> dict:
         """Step 2: Train S&OP GraphSAGE model on Layer 4 corpus samples.
@@ -993,12 +1033,14 @@ class ProvisioningService:
         """
         from app.db.session import sync_session_factory
         from app.services.forecast_exception_detector import ForecastExceptionDetector
-        from datetime import date, timedelta
+        from app.core.clock import config_today_sync
+        from datetime import timedelta
 
         sync_db = sync_session_factory()
         try:
             detector = ForecastExceptionDetector(sync_db)
-            period_end = date.today()
+            # Use tenant's virtual today (frozen for demos, real today for production)
+            period_end = config_today_sync(config_id, sync_db)
             period_start = period_end - timedelta(days=90)
 
             # Detect new exceptions
@@ -1046,11 +1088,13 @@ class ProvisioningService:
         try:
             from sqlalchemy import text as sql_text
             effective_db = db or self.db
+            # forecast table has no plan_version column (that lives on
+            # supply_plan). Any forecast row is valid historical signal.
             result = await effective_db.execute(
                 sql_text("""
                     SELECT COUNT(*) as forecast_count
                     FROM forecast
-                    WHERE config_id = :cid AND plan_version = 'live'
+                    WHERE config_id = :cid
                 """),
                 {"cid": config_id},
             )
@@ -2655,6 +2699,9 @@ def _evaluate_order_tracking_for_site(trm, db, config_id: int, site_id: int):
         OrderState, OrderType, OrderStatus,
     )
     from datetime import date
+    from app.core.clock import config_today_sync
+
+    _today = config_today_sync(config_id, db)
 
     rows = db.execute(
         text("""
@@ -2676,8 +2723,8 @@ def _evaluate_order_tracking_for_site(trm, db, config_id: int, site_id: int):
                 order_id=str(order_id),
                 order_type=OrderType.PURCHASE_ORDER,
                 status=OrderStatus.CONFIRMED,
-                created_date=str(created_at or date.today()),
-                expected_date=str(expected_date or date.today()),
+                created_date=str(created_at or _today),
+                expected_date=str(expected_date or _today),
                 ordered_qty=float(qty or 0),
                 product_id=str(product_id or ""),
                 to_location=str(site_id),

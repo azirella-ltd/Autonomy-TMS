@@ -18,6 +18,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 
+def _coerce_days(value) -> float:
+    """Coerce a lead-time field to a day count.
+
+    Accepts int/float (assumed days), or a dict {'value': N, 'unit': 'day'|'week'|'hour'}.
+    Returns 0 if unparseable (caller supplies default).
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, dict):
+        n = value.get("value", 0)
+        unit = (value.get("unit") or "day").lower()
+        try:
+            n = float(n)
+        except (TypeError, ValueError):
+            return 0.0
+        if unit.startswith("week"):
+            return n * 7.0
+        if unit.startswith("hour"):
+            return n / 24.0
+        return n  # day or unknown
+    return 0.0
+
+
 @dataclass
 class BaselineSite:
     site_id: str
@@ -103,6 +128,10 @@ class ERPBaselineExtractor:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _savepoint(self, name: str):
+        """Context manager: per-query SAVEPOINT so one failure doesn't abort siblings."""
+        return self.db.begin_nested()
+
     async def extract(self, config_id: int) -> ERPBaselineSnapshot:
         """Extract complete baseline snapshot for a config."""
         # Resolve tenant_id
@@ -117,161 +146,175 @@ class ERPBaselineExtractor:
 
         # Sites
         try:
-            result = await self.db.execute(
-                sql_text("""
-                    SELECT id, description as name, master_type, geo_id
-                    FROM site
-                    WHERE config_id = :cid
-                """),
-                {"cid": config_id},
-            )
-            for row in result.fetchall():
-                snapshot.sites.append(BaselineSite(
-                    site_id=str(row.id),
-                    name=row.name or str(row.id),
-                    master_type=row.master_type or "inventory",
-                    geo_id=row.geo_id,
-                ))
+            async with self.db.begin_nested():
+                result = await self.db.execute(
+                    sql_text("""
+                        SELECT id, name, master_type, geo_id
+                        FROM site
+                        WHERE config_id = :cid
+                    """),
+                    {"cid": config_id},
+                )
+                for row in result.fetchall():
+                    snapshot.sites.append(BaselineSite(
+                        site_id=str(row.id),
+                        name=row.name or str(row.id),
+                        master_type=row.master_type or "inventory",
+                        geo_id=row.geo_id,
+                    ))
         except Exception as e:
-            logger.debug("Site extraction failed: %s", e)
+            logger.warning("Site extraction failed: %s", e)
 
         # Products
         try:
-            result = await self.db.execute(
-                sql_text("""
-                    SELECT id, description as name,
-                           COALESCE(unit_cost, 0) as unit_cost,
-                           COALESCE(unit_price, 0) as unit_price
-                    FROM product
-                    WHERE config_id = :cid
-                """),
-                {"cid": config_id},
-            )
-            for row in result.fetchall():
-                snapshot.products.append(BaselineProduct(
-                    product_id=str(row.id),
-                    name=row.name or str(row.id),
-                    unit_cost=float(row.unit_cost or 0),
-                    unit_price=float(row.unit_price or 0),
-                ))
+            async with self.db.begin_nested():
+                result = await self.db.execute(
+                    sql_text("""
+                        SELECT id,
+                               description,
+                               COALESCE(unit_cost, 0) as unit_cost,
+                               COALESCE(unit_price, 0) as unit_price,
+                               category
+                        FROM product
+                        WHERE config_id = :cid
+                    """),
+                    {"cid": config_id},
+                )
+                for row in result.fetchall():
+                    snapshot.products.append(BaselineProduct(
+                        product_id=str(row.id),
+                        name=row.description or str(row.id),
+                        unit_cost=float(row.unit_cost or 0),
+                        unit_price=float(row.unit_price or 0),
+                        category=row.category,
+                    ))
         except Exception as e:
-            logger.debug("Product extraction failed: %s", e)
+            logger.warning("Product extraction failed: %s", e)
 
-        # Transportation lanes
+        # Transportation lanes.
+        # lead_time_days is JSON {"value": N, "unit": "day"} (per schema note) —
+        # coerce to a float day count.
         try:
-            result = await self.db.execute(
-                sql_text("""
-                    SELECT from_site_id, to_site_id,
-                           COALESCE(transit_time, 2) as transit_time,
-                           COALESCE(transit_time_uom, 'day') as uom
-                    FROM transportation_lane
-                    WHERE config_id = :cid
-                """),
-                {"cid": config_id},
-            )
-            for row in result.fetchall():
-                lt_days = float(row.transit_time or 2.0)
-                if row.uom == "week":
-                    lt_days *= 7.0
-                elif row.uom == "hour":
-                    lt_days /= 24.0
-                snapshot.lanes.append(BaselineLane(
-                    from_site=str(row.from_site_id),
-                    to_site=str(row.to_site_id),
-                    lead_time_days=lt_days,
-                ))
+            async with self.db.begin_nested():
+                result = await self.db.execute(
+                    sql_text("""
+                        SELECT from_site_id, to_site_id,
+                               lead_time_days,
+                               supply_lead_time,
+                               capacity
+                        FROM transportation_lane
+                        WHERE config_id = :cid
+                    """),
+                    {"cid": config_id},
+                )
+                for row in result.fetchall():
+                    lt_days = _coerce_days(row.lead_time_days) or _coerce_days(row.supply_lead_time) or 2.0
+                    cap = row.capacity
+                    snapshot.lanes.append(BaselineLane(
+                        from_site=str(row.from_site_id),
+                        to_site=str(row.to_site_id),
+                        lead_time_days=float(lt_days),
+                        capacity_units=float(cap) if cap else float("inf"),
+                    ))
         except Exception as e:
-            logger.debug("Lane extraction failed: %s", e)
+            logger.warning("Lane extraction failed: %s", e)
 
         # Current inventory + policy
+        # Real schema: inv_level, inv_policy
         try:
-            result = await self.db.execute(
-                sql_text("""
-                    SELECT
-                        il.product_id,
-                        il.site_id,
-                        COALESCE(il.on_hand_quantity, 0) as on_hand,
-                        COALESCE(il.in_transit_quantity, 0) as in_transit,
-                        COALESCE(il.allocated_quantity, 0) as allocated,
-                        COALESCE(ip.safety_stock_quantity, 0) as safety_stock,
-                        COALESCE(ip.reorder_point, 0) as reorder_point,
-                        COALESCE(ip.max_stock_quantity, 0) as max_stock
-                    FROM inventory_level il
-                    LEFT JOIN inventory_policy ip
-                        ON ip.product_id = il.product_id
-                        AND ip.site_id = il.site_id
-                        AND ip.config_id = il.config_id
-                    WHERE il.config_id = :cid
-                """),
-                {"cid": config_id},
-            )
-            for row in result.fetchall():
-                snapshot.inventory.append(BaselineInventory(
-                    product_id=str(row.product_id),
-                    site_id=str(row.site_id),
-                    on_hand=float(row.on_hand),
-                    in_transit=float(row.in_transit),
-                    allocated=float(row.allocated),
-                    safety_stock=float(row.safety_stock),
-                    reorder_point=float(row.reorder_point),
-                    max_stock=float(row.max_stock),
-                ))
+            async with self.db.begin_nested():
+                result = await self.db.execute(
+                    sql_text("""
+                        SELECT DISTINCT ON (il.product_id, il.site_id)
+                            il.product_id,
+                            il.site_id,
+                            COALESCE(il.on_hand_qty, 0) as on_hand,
+                            COALESCE(il.in_transit_qty, 0) as in_transit,
+                            COALESCE(il.allocated_qty, 0) as allocated,
+                            COALESCE(il.safety_stock_qty, 0) as safety_stock_level,
+                            COALESCE(ip.ss_quantity, 0) as ss_quantity,
+                            COALESCE(ip.reorder_point, 0) as reorder_point,
+                            COALESCE(ip.order_up_to_level, 0) as max_stock
+                        FROM inv_level il
+                        LEFT JOIN inv_policy ip
+                            ON ip.product_id = il.product_id
+                            AND ip.site_id = il.site_id
+                            AND ip.config_id = il.config_id
+                        WHERE il.config_id = :cid
+                        ORDER BY il.product_id, il.site_id, il.inventory_date DESC NULLS LAST
+                    """),
+                    {"cid": config_id},
+                )
+                for row in result.fetchall():
+                    ss = float(row.ss_quantity or row.safety_stock_level or 0)
+                    snapshot.inventory.append(BaselineInventory(
+                        product_id=str(row.product_id),
+                        site_id=str(row.site_id),
+                        on_hand=float(row.on_hand),
+                        in_transit=float(row.in_transit),
+                        allocated=float(row.allocated),
+                        safety_stock=ss,
+                        reorder_point=float(row.reorder_point),
+                        max_stock=float(row.max_stock),
+                    ))
         except Exception as e:
-            logger.debug("Inventory extraction failed: %s", e)
+            logger.warning("Inventory extraction failed: %s", e)
 
         # Forecast (current P10/P50/P90)
         try:
-            result = await self.db.execute(
-                sql_text("""
-                    SELECT product_id, site_id, period_start,
-                           COALESCE(quantity, 0) as p50,
-                           quantity_p10, quantity_p90
-                    FROM forecast
-                    WHERE config_id = :cid
-                      AND plan_version = 'live'
-                    LIMIT 10000
-                """),
-                {"cid": config_id},
-            )
-            for row in result.fetchall():
-                snapshot.forecast.append(BaselineForecast(
-                    product_id=str(row.product_id),
-                    site_id=str(row.site_id),
-                    period_start=row.period_start.isoformat() if row.period_start else "",
-                    quantity_p50=float(row.p50),
-                    quantity_p10=float(row.quantity_p10) if row.quantity_p10 else None,
-                    quantity_p90=float(row.quantity_p90) if row.quantity_p90 else None,
-                ))
+            async with self.db.begin_nested():
+                result = await self.db.execute(
+                    sql_text("""
+                        SELECT product_id, site_id, forecast_date,
+                               COALESCE(forecast_p50, forecast_quantity, 0) as p50,
+                               forecast_p10, forecast_p90
+                        FROM forecast
+                        WHERE config_id = :cid
+                        LIMIT 10000
+                    """),
+                    {"cid": config_id},
+                )
+                for row in result.fetchall():
+                    snapshot.forecast.append(BaselineForecast(
+                        product_id=str(row.product_id),
+                        site_id=str(row.site_id),
+                        period_start=row.forecast_date.isoformat() if row.forecast_date else "",
+                        quantity_p50=float(row.p50),
+                        quantity_p10=float(row.forecast_p10) if row.forecast_p10 else None,
+                        quantity_p90=float(row.forecast_p90) if row.forecast_p90 else None,
+                    ))
         except Exception as e:
-            logger.debug("Forecast extraction failed: %s", e)
+            logger.warning("Forecast extraction failed: %s", e)
 
-        # Open POs from erp_baseline plan_version
+        # Open inbound orders (PO / transfer receipts)
         try:
-            result = await self.db.execute(
-                sql_text("""
-                    SELECT id, product_id, site_id,
-                           COALESCE(quantity, 0) as quantity,
-                           requested_delivery_date,
-                           supplier_id
-                    FROM inbound_order
-                    WHERE config_id = :cid
-                      AND status IN ('open', 'confirmed', 'in_transit')
-                    LIMIT 5000
-                """),
-                {"cid": config_id},
-            )
-            for row in result.fetchall():
-                snapshot.open_orders.append(BaselineOpenOrder(
-                    order_id=str(row.id),
-                    order_type="po",
-                    product_id=str(row.product_id),
-                    site_id=str(row.site_id),
-                    quantity=float(row.quantity),
-                    due_date=row.requested_delivery_date.isoformat() if row.requested_delivery_date else None,
-                    vendor_id=str(row.supplier_id) if row.supplier_id else None,
-                ))
+            async with self.db.begin_nested():
+                result = await self.db.execute(
+                    sql_text("""
+                        SELECT iol.id, iol.product_id, iol.to_site_id as site_id,
+                               COALESCE(iol.quantity_submitted, 0) as quantity,
+                               iol.expected_delivery_date,
+                               io.supplier_id
+                        FROM inbound_order_line iol
+                        JOIN inbound_order io ON io.id = iol.order_id
+                        WHERE iol.config_id = :cid
+                          AND iol.status IN ('open','confirmed','in_transit','submitted')
+                        LIMIT 5000
+                    """),
+                    {"cid": config_id},
+                )
+                for row in result.fetchall():
+                    snapshot.open_orders.append(BaselineOpenOrder(
+                        order_id=str(row.id),
+                        order_type="po",
+                        product_id=str(row.product_id),
+                        site_id=str(row.site_id),
+                        quantity=float(row.quantity),
+                        due_date=row.expected_delivery_date.isoformat() if row.expected_delivery_date else None,
+                        vendor_id=str(row.supplier_id) if row.supplier_id else None,
+                    ))
         except Exception as e:
-            logger.debug("Open PO extraction failed: %s", e)
+            logger.warning("Open PO extraction failed: %s", e)
 
         logger.info(
             "ERP baseline extracted: config=%d sites=%d products=%d lanes=%d inventory=%d forecast=%d POs=%d",

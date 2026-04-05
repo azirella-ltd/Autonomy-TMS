@@ -571,18 +571,42 @@ class TRMTrainer:
     ) -> int:
         """Load Layer 1 samples from the unified training corpus.
 
-        Preferred entry point for provisioning. Replaces the previous
-        per-TRM curriculum generators with samples aggregated from actual
-        TRM decisions made during Digital Twin simulations of the tenant's
-        perturbed ERP baseline.
+        Origin preference (see UNIFIED_TRAINING_CORPUS.md §2a):
+          1. origin='historical' — real ERP decisions (primary BC labels)
+          2. origin='live'       — post-provisioning real-time outcomes
+          3. origin='simulation' — Digital Twin rollouts (augmentation)
 
-        See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md
+        The trainer pulls from each stream in order until `limit` is reached
+        or all streams are exhausted. Historical samples have higher weight
+        because they reflect the actual operational policy; live samples
+        have the highest weight because they reflect the current operating
+        environment; simulation samples fill gaps in rare events and
+        cold-start TRMs.
         """
         from app.services.training_corpus import TrainingCorpusService
 
         service = TrainingCorpusService(db)
-        corpus_samples = await service.get_samples(
-            config_id=config_id, layer=1.0, trm_type=trm_type, limit=limit,
+        corpus_samples = []
+        remaining = limit
+        for origin_pref in ("historical", "live", "simulation", "perturbation"):
+            # "perturbation" is the legacy name for "simulation" — kept for
+            # backward compatibility with pre-rename rows.
+            batch = await service.get_samples(
+                config_id=config_id,
+                layer=1.0,
+                trm_type=trm_type,
+                limit=remaining,
+                origin=origin_pref,
+            )
+            corpus_samples.extend(batch)
+            if remaining is not None:
+                remaining -= len(batch)
+                if remaining <= 0:
+                    break
+        logger.info(
+            "TRMTrainer.load_from_corpus trm=%s config=%d: "
+            "historical+live+simulation total=%d",
+            trm_type, config_id, len(corpus_samples),
         )
 
         loaded = 0

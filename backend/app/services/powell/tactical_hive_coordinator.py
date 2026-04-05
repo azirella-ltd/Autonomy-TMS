@@ -277,15 +277,16 @@ class TacticalHiveCoordinator:
         confidence: Dict[str, float] = {}
 
         try:
+            # forecast table columns: forecast_p10 / forecast_p50 / forecast_p90
+            # (no plan_version column on this table — plan_version lives on supply_plan)
             result = await self.db.execute(
                 sql_text("""
                     SELECT site_id,
-                           COALESCE(SUM(quantity), 0) as total_p50,
-                           COALESCE(SUM(quantity_p10), 0) as total_p10,
-                           COALESCE(SUM(quantity_p90), 0) as total_p90
+                           COALESCE(SUM(COALESCE(forecast_p50, forecast_quantity)), 0) as total_p50,
+                           COALESCE(SUM(forecast_p10), 0) as total_p10,
+                           COALESCE(SUM(forecast_p90), 0) as total_p90
                     FROM forecast
                     WHERE config_id = :config_id
-                      AND plan_version = 'live'
                     GROUP BY site_id
                 """),
                 {"config_id": self.config_id},

@@ -12,10 +12,14 @@
 
 1. [Motivation and Problem Statement](#1-motivation)
 2. [Design Principles](#2-design-principles)
+2a. [The Two-Stream Architecture (Historical + Simulation)](#2a-the-two-stream-architecture)
 3. [Architecture Overview](#3-architecture)
 4. [The Anchor: ERP Baseline Extraction](#4-erp-baseline)
 5. [Perturbation Generation](#5-perturbations)
 6. [Digital Twin Simulation and TRM Decision Capture](#6-simulation)
+   - 6a. The ERP is the Teacher, Not a Grandmaster
+   - 6b. Corpus-Build Failure Policy (topology skip / transient pause / hard-fail)
+   - 6c. Checkpointing and Resume
 7. [Aggregation: From TRM Decisions to Layer-Specific Samples](#7-aggregation)
 8. [Per-Layer Training Pipelines](#8-per-layer-training)
 9. [Continuous Learning: Real Outcomes into the Same Corpus](#9-continuous)
@@ -60,34 +64,142 @@ reality.
 
 ## 2. Design Principles
 
-1. **Anchor on reality**: the ERP baseline is the single source of ground truth for
-   "what works today." All synthetic variations are perturbations around this anchor,
-   not free-form random networks.
+1. **Historical data is primary, simulation is secondary.** The ERP transaction
+   history already contains tens of thousands of (state, action, outcome) triples
+   per tenant. For behavioral cloning, these *are* the labels — we do not need
+   a simulator to re-derive what the ERP already did. The role of the Digital
+   Twin is **exploration beyond the historical policy**, not label generation.
 
-2. **Bottom-up generation**: TRM decisions are the finest granularity. Higher layers
-   are aggregations, not independent oracles. If a TRM makes N decisions across M
-   scenarios, the site tGNN, tactical tGNNs, and S&OP GraphSAGE all derive their
-   training samples from those N*M decisions.
+2. **The ERP is the teacher for BC, its own history is the replay buffer.** This
+   mirrors how demand forecasting trains LGBM directly on `outbound_order_line`
+   time series rather than on simulated demand. Supply-side TRMs are trained the
+   same way: extract the historical decisions the ERP made, the state that
+   preceded them, and the outcome that followed, and use them directly as BC
+   labels.
 
-3. **Consistency across layers**: if a decision at the TRM level produces a good
+3. **Simulation is reserved for counterfactual exploration.** RL fine-tuning
+   (phase 2 of TRM training) needs a simulator in the loop because PPO requires
+   off-policy rollouts — asking "what would have happened if we had ordered 2x?"
+   cannot be answered from history alone. The Digital Twin + deterministic
+   teacher + perturbation pipeline exists to answer that question. It is not
+   the source of bulk training data.
+
+4. **Bottom-up aggregation**: TRM decisions are the finest granularity. Higher
+   layers are aggregations, not independent oracles. If a TRM makes N decisions
+   (historical + synthetic combined), the site tGNN, tactical tGNNs, and S&OP
+   GraphSAGE all derive their training samples from those N decisions.
+
+5. **Consistency across layers**: if a decision at the TRM level produces a good
    outcome, the upward aggregation reflects that as positive signal at the site,
-   tactical, and strategic levels. Conversely if a decision is bad, the signal
-   propagates up consistently. Layers cannot disagree because they share the corpus.
+   tactical, and strategic levels. Layers cannot disagree because they share
+   the corpus.
 
-4. **No synthetic cold-start**: the ERP baseline is always available at provisioning.
-   No tenant starts with generic synthetic networks.
+6. **No synthetic cold-start unless required**: tenants with transaction history
+   use the historical stream. Brand-new tenants with no history fall back to
+   the simulation stream for initial training.
 
-5. **Real outcomes append to the same corpus**: post-provisioning, real decision
-   outcomes are appended as new samples. The corpus grows; retraining uses the
-   full history.
+7. **Real outcomes append to the same corpus**: post-provisioning, real decision
+   outcomes are appended as new samples with `origin='live'`. The corpus grows;
+   retraining uses the full history.
 
-6. **Perturbations replace network randomness**: instead of sampling random networks,
-   perturb the real network around its observed values. This gives generalization
-   while keeping specificity.
+8. **Three-origin weighting**: samples are tagged by origin and weighted
+   differently in the trainer. `live` outcomes get the highest weight (2.0),
+   `historical` next (1.0), `simulation` lowest (0.5) — because live reflects
+   the current operating environment, historical reflects the real operational
+   policy that the ERP enforced, and simulation is counterfactual exploration
+   subject to simulator fidelity gaps.
 
-7. **Age-weighted samples**: old perturbation samples decay in weight as real outcome
-   samples accumulate. The corpus shifts from 95% synthetic / 5% real on day 1 to
-   50/50 at month 3 to majority-real after a year.
+---
+
+## 2a. The Two-Stream Architecture
+
+The corpus is populated from **two parallel data streams** that write into the
+same `training_corpus` table, distinguished by the `origin` column:
+
+### Stream 1 — Historical (primary)
+
+Extracted from the tenant's ERP transaction tables during provisioning. For
+each TRM type, a dedicated extractor reconstructs (state, action, outcome)
+triples from the real historical decisions the ERP made:
+
+| TRM | Source tables | What gets extracted |
+|---|---|---|
+| `po_creation` | `inbound_order` + `inbound_order_line` + `inv_level` snapshots + `forecast` | State: inventory position, forecast, open orders at `order_date - 1`. Action: ordered qty, vendor, lead time. Outcome: realized receipt date, fill into on-hand, stockout avoidance over next N periods. |
+| `to_execution` | `transfer_order` + `transfer_order_line_item` + `inv_level` | State: source/dest inventory, in-transit, forecast. Action: qty, requested arrival. Outcome: actual arrival vs requested, destination stockout reduction. |
+| `mo_execution` | `production_orders` + `final_assembly_schedule` + `capacity_requirements` | State: component availability, capacity load, demand pressure. Action: release timing, quantity, resource. Outcome: completion vs schedule, downstream availability. |
+| `atp_allocation` | `order_promise` + `allocation_commit` + `aatp_consumption_record` | State: available-to-promise by priority tier at request time. Action: allocation decision. Outcome: fill rate, customer satisfaction proxy. |
+| `inventory_buffer` | `inv_policy` history + stockout events from `outbound_order_line` | State: demand CV, lead time variability, current policy. Action: SS/ROP/max_stock values. Outcome: service level achieved under this policy. |
+| `quality_disposition` | `quality_order` + `quality_order_line_item` | State: lot size, defect rate, downstream demand. Action: accept/reject/rework. Outcome: quality cost vs expedite cost. |
+| `maintenance_scheduling` | `maintenance_order` | State: equipment age, utilization, breakdown history. Action: scheduled vs reactive. Outcome: unplanned downtime avoided. |
+| `subcontracting` | `subcontracting_order` | State: internal capacity load, due-date pressure. Action: outsource qty, vendor. Outcome: cost delta vs internal, on-time delivery. |
+| `order_tracking` | `inbound_order` promised vs actual dates + `goods_receipt` | State: planned arrival, vendor reliability, shipment status. Action: escalate/expedite flag. Outcome: final arrival vs planned. |
+| `rebalancing` | `transfer_order` + `inv_level` time series | State: per-site imbalance, lane capacity. Action: which (from, to, qty) transfers were initiated. Outcome: imbalance resolution. |
+| `forecast_baseline` | `forecast` version history + `outbound_order_line` realized | State: history length, seasonality, trend. Action: chosen model + forecast. Outcome: MAPE, bias, CRPS over next horizon. |
+| `forecast_adjustment` | `forecast_adjustments` table + subsequent accuracy | State: baseline, external signal, promo calendar. Action: adjustment magnitude + direction. Outcome: MAPE improvement vs baseline. |
+
+**Every one of these is a pure SQL reconstruction problem.** The hard part is
+point-in-time state reconstruction: `inv_level` snapshots at `order_date - 1`,
+`forecast` as it existed at decision time (requires `forecast_date`
+filtering), open orders queue state at that moment. Most tables already have
+the temporal columns we need.
+
+**Outcome labeling** is a look-forward query: for each action at time T, scan
+the next N periods (e.g., lead-time + 4 weeks) to measure what actually
+happened — realized stockouts, service level, cost, lateness.
+
+**Quality filtering**: the ERP made both good and bad decisions. BC labels are
+weighted by outcome quality — disasters get low weight so the agent doesn't
+blindly imitate failures. This is distinct from the time-decay weight.
+
+### Stream 2 — Simulation (secondary, targeted)
+
+The Digital Twin + perturbation + deterministic teacher pipeline described in
+sections 4-7. Its role is **exploration beyond the historical policy**:
+
+- **Rare-event augmentation**: if the tenant has few historical stockouts, the
+  simulation deliberately induces stockout scenarios so the agent learns how
+  to respond.
+- **Counterfactual rollouts for RL**: PPO fine-tuning requires on-policy
+  trajectories. The simulator provides the environment for these rollouts
+  during the `rl_training` provisioning step.
+- **Cold-start fallback**: brand-new tenants with no transaction history get
+  all their training data from Stream 2.
+- **What-if scenarios**: when a user wants to explore "what would happen if
+  demand doubled", the scenario branch uses Stream 2 code paths.
+
+**Stream 2 is much smaller than it would be as a primary source.** For a
+tenant with sufficient historical data, Stream 2 produces 10-50k targeted
+samples focused on rare events and RL rollout episodes, not millions.
+
+### Volume comparison
+
+For a tenant like Food Dist (78 (product, site) pairs, ~2 years of history):
+
+| Approach | Approximate Layer-1 sample count |
+|---|---|
+| Historical stream only | ~30-80k |
+| Simulation-only at 500×26 (current) | ~3.9M |
+| Two-stream (hist primary + simulation augmentation) | ~50-150k |
+
+The two-stream architecture produces **~30× fewer samples** than the
+simulation-only approach while providing training data that is *more directly
+relevant* (actual tenant decisions) rather than *less* (simulated decisions
+from a deterministic teacher approximating the same tenant).
+
+### Trainer preference order
+
+TRM trainers select training data using this preference chain, per TRM type:
+
+1. **`origin='historical'`** if available with sufficient coverage (≥100 samples
+   per TRM × site × major decision type)
+2. **`origin='live'`** (post-provisioning outcomes) — always included, highest
+   weight
+3. **`origin='simulation'`** to supplement historical thin spots (rare events,
+   cold-start TRMs, or when `live` drift requires re-exploration)
+
+A TRM whose historical coverage is thin automatically pulls more from
+simulation; a TRM whose historical coverage is rich relies on it almost
+exclusively.
 
 ---
 
@@ -267,6 +379,60 @@ Each TRM decision becomes a Level 1 training sample:
     "cycle_phase": "ACQUIRE",
 }
 ```
+
+### 6a. The ERP is the Teacher, Not a Grandmaster
+
+Each TRM decision in the simulation loop is produced by calling the corresponding
+**real deterministic engine** that already exists in the codebase (AATPEngine, MRPEngine,
+BufferCalculator, RebalancingEngine, TO/MO/Quality/Maintenance/Subcontracting/OrderTracking
+engines, LGBMForecastPipeline, ForecastAdjustmentEngine). These engines are the
+ERP-equivalent planning algorithms — the same logic a classical MRP/DRP system would run
+on the perturbed scenario.
+
+Their output is the **behavioral-cloning label** for the trained agent.
+
+The ERP is a *competent intermediate player*, not a chess grandmaster. Behavioral cloning
+gives each agent a solid, rules-grounded baseline in one training pass. Reinforcement
+learning fine-tuning (PPO, scenario rollouts, real-outcome feedback) then pushes the
+agent **beyond** the teacher: it learns strategies the deterministic rules cannot express,
+including cross-TRM coordination, risk-adjusted decisions under uncertainty, and
+long-horizon trade-offs.
+
+Hand-written heuristic proxies are **not** acceptable fallbacks. If a real engine cannot
+run for a given decision, the corpus build applies the failure policy below.
+
+### 6b. Corpus-Build Failure Policy
+
+The simulation loop distinguishes three failure modes — each with a different, explicit
+response. There is no silent fallback.
+
+| Case | Condition | Response |
+|------|-----------|----------|
+| **A. Out of topology** | The TRM type is not valid for the site's DAG role (e.g. `maintenance_scheduling` at a DC, `mo_execution` at a retailer) | **Skip.** Do not generate samples for this TRM at this site. This is not an error; it is the topology-aware seeding rule. |
+| **B. Transient infrastructure** | `sqlalchemy.exc.OperationalError`, `DBAPIError`, connection pool exhaustion, deadlock, network interruption | **Pause + resume.** Checkpoint the scenario cursor, set provisioning step status to `paused` with a tenant-admin-visible message, retry with exponential backoff. Resume from the cursor when the DB is reachable again. |
+| **C. Missing master data for an in-scope TRM** | The TRM is valid for this site's role, but required master data is absent (e.g. a manufacturer site has no routings, no BOMs, no inspection plans) | **Fail loudly.** Set the provisioning step status to `failed`. The error message must identify the site, the TRM, and the missing data. The tenant admin must fix master data and re-provision. SOC II: no swallowed errors. |
+
+Determination of which case applies is made **before** any heuristic is considered:
+
+1. Resolve the site capability set from DAG topology → skip out-of-scope TRMs (Case A).
+2. Attempt the engine call. On `OperationalError`/`DBAPIError` → Case B pause/resume.
+3. On any other exception or empty required-data check → Case C hard-fail.
+
+Heuristic fallbacks are reserved **only** for cases where the engine is genuinely
+unimplemented for a capability that is topologically valid and data-present — currently
+none. Any new such gap must be documented here before a heuristic is added.
+
+### 6c. Checkpointing and Resume
+
+The simulation runner persists a checkpoint after each scenario completes, containing:
+- `corpus_id`
+- `last_scenario_id_completed`
+- `trm_decisions_written`
+- `paused_reason` (nullable)
+
+On resume, the runner reads the checkpoint and continues from `last_scenario_id_completed + 1`.
+This makes long corpus builds (500 scenarios × 12 TRMs × N sites) robust to backend
+restarts and transient DB outages without losing work.
 
 ---
 

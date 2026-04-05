@@ -35,6 +35,7 @@ class TrainingCorpusService:
         config_id: int,
         num_perturbations: int = 500,
         planning_horizon_weeks: int = 26,
+        focus_trms: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Full corpus generation pipeline for a tenant's config.
 
@@ -51,6 +52,7 @@ class TrainingCorpusService:
         from .perturbation_generator import PerturbationGenerator
         from .simulation_runner import SimulationRunner
         from .aggregator import TrainingCorpusAggregator
+        from .exceptions import MissingMasterDataError, TransientCorpusError
 
         logger.info(
             "TrainingCorpusService: creating corpus for tenant=%d config=%d perturbations=%d",
@@ -67,27 +69,36 @@ class TrainingCorpusService:
         generator = PerturbationGenerator(seed=config_id)
         perturbations = generator.generate(baseline, n=num_perturbations)
 
-        # Step 3 & 4: Run simulations, capture TRM decisions as Layer 1 samples
-        runner = SimulationRunner(self.db)
+        # corpus_id: we use config_id as a stable checkpoint key. The checkpoint
+        # table has UNIQUE(corpus_id), so re-invocations resume from where the
+        # previous run paused (Case B) or start fresh after a completed run.
+        corpus_id = config_id
+
+        # Step 3 & 4: Run simulations via the failure-policy-aware driver.
+        # This handles:
+        #   - Case A: out-of-topology TRMs are skipped silently
+        #   - Case B: transient DB failures -> TransientCorpusError (pause+resume)
+        #   - Case C: missing master data  -> MissingMasterDataError (hard fail)
+        #
+        # Samples are streamed to the DB per-scenario via sample_sink — a
+        # 500×26 Food Dist run produces ~4M samples; accumulating them in
+        # memory OOMs the container.
+        runner = SimulationRunner(
+            self.db,
+            focus_trms=frozenset(focus_trms) if focus_trms else None,
+        )
         layer1_sample_count = 0
-        for i, perturbation in enumerate(perturbations):
-            scenario_id = str(uuid.uuid4())
-            samples = await runner.run_scenario(
-                tenant_id=tenant_id,
-                config_id=config_id,
-                baseline=baseline,
-                perturbation=perturbation,
-                scenario_id=scenario_id,
-                planning_horizon_weeks=planning_horizon_weeks,
-            )
-            # Persist as Layer 1 samples
+        flush_batch = []
+
+        async def sample_sink(samples):
+            nonlocal layer1_sample_count
             for sample in samples:
                 self.db.add(TrainingCorpusSample(
                     tenant_id=tenant_id,
                     config_id=config_id,
                     layer=1.0,
-                    scenario_id=scenario_id,
-                    origin="perturbation",
+                    scenario_id=sample.get("scenario_id"),
+                    origin="simulation",
                     trm_type=sample["trm_type"],
                     product_id=sample.get("product_id"),
                     site_id=sample.get("site_id"),
@@ -96,12 +107,53 @@ class TrainingCorpusService:
                     weight=1.0,
                 ))
                 layer1_sample_count += 1
+            # Flush to DB and expunge so the session doesn't retain ORM
+            # references (memory-bound otherwise for multi-million-row runs).
+            await self.db.flush()
+            for obj in list(self.db.new):
+                self.db.expunge(obj)
 
-            if (i + 1) % 50 == 0:
-                await self.db.flush()
-                logger.info("Corpus generation: %d/%d perturbations complete", i + 1, num_perturbations)
+        try:
+            total_written = await runner.run_all_scenarios(
+                corpus_id=corpus_id,
+                tenant_id=tenant_id,
+                config_id=config_id,
+                baseline=baseline,
+                scenarios=perturbations,
+                planning_horizon_weeks=planning_horizon_weeks,
+                sample_sink=sample_sink,
+            )
+        except TransientCorpusError as e:
+            logger.error(
+                "Corpus build paused at scenario %d due to transient DB failure; "
+                "provisioning step should retry.", e.last_scenario_completed,
+            )
+            return {
+                "status": "paused",
+                "reason": "transient_db_failure",
+                "last_scenario_completed": e.last_scenario_completed,
+                "message": str(e),
+            }
+        except MissingMasterDataError as e:
+            logger.error(
+                "Corpus build failed — missing master data for in-scope TRM: %s", e,
+            )
+            return {
+                "status": "failed",
+                "reason": "missing_master_data",
+                "site_id": e.site_id,
+                "trm_type": e.trm_type,
+                "missing": e.missing,
+                "message": str(e),
+            }
 
-        await self.db.flush()
+        # Samples have already been streamed + flushed via sample_sink.
+        # Commit the accumulated writes before aggregation.
+        await self.db.commit()
+        logger.info(
+            "Corpus generation: %d Layer-1 samples persisted (streamed)",
+            layer1_sample_count,
+        )
 
         # Step 5: Aggregate upward
         aggregator = TrainingCorpusAggregator(self.db)
@@ -133,6 +185,7 @@ class TrainingCorpusService:
         site_id: Optional[str] = None,
         min_weight: float = 0.05,
         limit: Optional[int] = None,
+        origin: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Retrieve training samples for a specific layer.
 
@@ -163,6 +216,8 @@ class TrainingCorpusService:
             query = query.where(TrainingCorpusSample.trm_type == trm_type)
         if site_id:
             query = query.where(TrainingCorpusSample.site_id == site_id)
+        if origin:
+            query = query.where(TrainingCorpusSample.origin == origin)
 
         query = query.order_by(TrainingCorpusSample.created_at.desc())
         if limit:
@@ -214,20 +269,25 @@ class TrainingCorpusService:
     async def compute_weights(self, config_id: int) -> int:
         """Update sample weights based on age.
 
-        Weight formula:
-            w = base * exp(-age_days / 365)  # 1-year half-life
-            origin_factor: real = 2.0, perturbation = 1.0
+        Origin factor (see UNIFIED_TRAINING_CORPUS.md §2):
+            live       = 2.0  (post-provisioning real-time outcomes)
+            real       = 2.0  (legacy alias for live)
+            historical = 1.0  (real ERP transaction history)
+            simulation = 0.5  (Digital Twin rollouts)
+            perturbation = 0.5 (legacy alias for simulation)
 
-        Samples with w < 0.05 are pruned.
+        Age decay: 1-year half-life. Samples with w < 0.05 are pruned.
         """
         try:
             await self.db.execute(
                 sql_text("""
                     UPDATE training_corpus
                     SET weight = CASE
-                        WHEN origin = 'real' THEN 2.0 * EXP(-EXTRACT(EPOCH FROM (NOW() - created_at)) / (365 * 86400))
-                        ELSE 1.0 * EXP(-EXTRACT(EPOCH FROM (NOW() - created_at)) / (365 * 86400))
-                    END
+                        WHEN origin IN ('live', 'real') THEN 2.0
+                        WHEN origin = 'historical' THEN 1.0
+                        WHEN origin IN ('simulation', 'perturbation') THEN 0.5
+                        ELSE 0.5
+                    END * EXP(-EXTRACT(EPOCH FROM (NOW() - created_at)) / (365 * 86400))
                     WHERE config_id = :cid
                 """),
                 {"cid": config_id},

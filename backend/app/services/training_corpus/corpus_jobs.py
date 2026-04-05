@@ -80,7 +80,7 @@ async def run_corpus_aggregator_refresh() -> Dict[str, Any]:
                     DELETE FROM training_corpus
                     WHERE config_id = :cid
                       AND layer IN (1.5, 2.0, 4.0)
-                      AND origin = 'perturbation'
+                      AND origin = 'simulation'
                       AND created_at < NOW() - INTERVAL '7 days'
                 """),
                 {"cid": config_id},

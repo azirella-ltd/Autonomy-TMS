@@ -262,8 +262,8 @@ async def load_topology(config_id: int, db: AsyncSession) -> LoadedTopology:
     downstream_map: Dict[str, List[Tuple[str, TransportationLane]]] = defaultdict(list)
 
     for lane in lanes:
-        source = site_by_id.get(lane.source_node_id)
-        target = site_by_id.get(lane.target_node_id)
+        source = site_by_id.get(lane.from_site_id)
+        target = site_by_id.get(lane.to_site_id)
         if source and target:
             downstream_map[source.name].append((target.name, lane))
             upstream_map[target.name].append((source.name, lane))
@@ -1429,7 +1429,7 @@ class DAGSimulator:
         lane = self._get_lane(shipment.lane_id)
         if lane:
             site_by_id = {s.id: s for s in self.topology.sites}
-            target = site_by_id.get(lane.target_node_id)
+            target = site_by_id.get(lane.to_site_id)
             if target:
                 return target.name
         return None
@@ -1485,8 +1485,8 @@ def _topological_sort(
     adj: Dict[str, List[str]] = {s.name: [] for s in sites}
 
     for lane in lanes:
-        source = site_by_id.get(lane.source_node_id)
-        target = site_by_id.get(lane.target_node_id)
+        source = site_by_id.get(lane.from_site_id)
+        target = site_by_id.get(lane.to_site_id)
         if source and target:
             adj[source.name].append(target.name)
             in_degree[target.name] = in_degree.get(target.name, 0) + 1

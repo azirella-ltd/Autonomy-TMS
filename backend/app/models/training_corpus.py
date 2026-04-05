@@ -16,11 +16,40 @@ updated higher-layer samples.
 
 from sqlalchemy import (
     Column, Integer, BigInteger, String, Float, DateTime, ForeignKey, Index, Numeric,
+    Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 
 from .base import Base
+
+
+class TrainingCorpusCheckpoint(Base):
+    """Pause/resume checkpoint for corpus build (Case B handling).
+
+    See docs/internal/architecture/UNIFIED_TRAINING_CORPUS.md §6b, §6c.
+
+    status values: running, paused, completed, failed
+    """
+
+    __tablename__ = "training_corpus_checkpoint"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    corpus_id = Column(Integer, nullable=False, index=True)
+    tenant_id = Column(Integer, nullable=False, index=True)
+    config_id = Column(Integer, nullable=False, index=True)
+    last_scenario_completed = Column(Integer, nullable=False, default=-1)
+    total_scenarios = Column(Integer, nullable=False)
+    trm_decisions_written = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="running")
+    paused_reason = Column(Text, nullable=True)
+    failed_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("corpus_id", name="uq_corpus_checkpoint_corpus_id"),
+    )
 
 
 class TrainingCorpusSample(Base):

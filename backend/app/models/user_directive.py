@@ -125,6 +125,13 @@ class ConfigProvisioningStatus(Base):
     warm_start_at = Column(DateTime, nullable=True)
     warm_start_error = Column(Text, nullable=True)
 
+    # Step 1b: Unified training corpus build (ERP baseline + perturbations +
+    # digital-twin simulation with deterministic teacher engines). Produces
+    # Layer 1/2/3/4 samples consumed by all downstream training steps.
+    training_corpus_status = Column(String(20), default="pending")
+    training_corpus_at = Column(DateTime, nullable=True)
+    training_corpus_error = Column(Text, nullable=True)
+
     # Step 2: S&OP GraphSAGE training
     sop_graphsage_status = Column(String(20), default="pending")
     sop_graphsage_at = Column(DateTime, nullable=True)
@@ -227,7 +234,8 @@ class ConfigProvisioningStatus(Base):
     provisioning_scope = Column(String(20), nullable=True, default=None)
 
     STEPS = [
-        "warm_start", "sop_graphsage", "cfa_optimization",
+        "warm_start", "training_corpus",
+        "sop_graphsage", "cfa_optimization",
         "lgbm_forecast", "demand_tgnn", "supply_tgnn", "inventory_tgnn",
         "capacity_tgnn",
         "trm_training", "rl_training", "backtest_evaluation",
@@ -247,6 +255,7 @@ class ConfigProvisioningStatus(Base):
 
     STEP_LABELS = {
         "warm_start": "Historical Demand Simulation",
+        "training_corpus": "Unified Training Corpus",
         "sop_graphsage": "Strategic Network Planning Agent",
         "cfa_optimization": "Policy Parameter Optimization",
         "lgbm_forecast": "Demand Forecasting",
@@ -268,11 +277,12 @@ class ConfigProvisioningStatus(Base):
 
     STEP_DEPENDS = {
         "warm_start": [],
-        "sop_graphsage": ["warm_start"],
+        "training_corpus": ["warm_start"],
+        "sop_graphsage": ["training_corpus"],
         "cfa_optimization": ["sop_graphsage"],
         "lgbm_forecast": ["cfa_optimization"],
-        "demand_tgnn": ["lgbm_forecast", "sop_graphsage"],
-        "supply_tgnn": ["lgbm_forecast", "sop_graphsage"],
+        "demand_tgnn": ["lgbm_forecast", "sop_graphsage", "training_corpus"],
+        "supply_tgnn": ["lgbm_forecast", "sop_graphsage", "training_corpus"],
         "inventory_tgnn": ["supply_tgnn"],
         "capacity_tgnn": ["inventory_tgnn"],
         "trm_training": ["demand_tgnn", "supply_tgnn", "inventory_tgnn", "capacity_tgnn"],

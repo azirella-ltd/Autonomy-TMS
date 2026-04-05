@@ -279,18 +279,20 @@ async def _find_similar_products(
     """Find k most similar mature products. Returns [(product_id, similarity, avg_demand)]."""
     try:
         # Simple attribute-based similarity: same category + price proximity
+        # forecast table columns: forecast_p50 / forecast_quantity (not
+        # 'quantity'), and no plan_version column.
         result = await db.execute(
             sql_text("""
                 SELECT p.id, p.unit_cost,
-                       COALESCE(AVG(f.quantity), 0) as avg_demand
+                       COALESCE(AVG(COALESCE(f.forecast_p50, f.forecast_quantity)), 0) as avg_demand
                 FROM product p
                 LEFT JOIN forecast f ON f.product_id = p.id
-                    AND f.config_id = :config_id AND f.plan_version = 'live'
+                    AND f.config_id = :config_id
                 WHERE p.config_id = :config_id
                   AND p.id != :product_id
-                  AND COALESCE(AVG(f.quantity), 0) > 0
                 GROUP BY p.id, p.unit_cost
                 HAVING COUNT(f.id) >= 4
+                   AND COALESCE(AVG(COALESCE(f.forecast_p50, f.forecast_quantity)), 0) > 0
                 LIMIT 20
             """),
             {"config_id": config_id, "product_id": product_id},
