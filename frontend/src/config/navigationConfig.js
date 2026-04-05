@@ -73,7 +73,6 @@ import {
   Mail as MailIcon,
   BrainCircuit as BrainCircuitIcon,
   Dice5 as MonteCarloIcon,
-  Zap as ScenarioEventIcon,
   Scale as GovernanceIcon,
   Monitor as MonitoringIcon,
   Workflow as HierarchyIcon,
@@ -95,6 +94,19 @@ export const NAVIGATION_CONFIG = [
     section: 'Home',
     sectionIcon: SparklesIcon,
     items: [
+      // Order: Decision Stream is the super-user landing page for all non-
+      // tenant-admin roles. Briefing and Dashboard follow as strategic
+      // context. Scenario Events was removed — the /scenario-events page
+      // renders a blank component (tracked as tech debt); the "what-if"
+      // flow lives under Scenarios instead.
+      {
+        label: 'Decision Stream',
+        path: '/decision-stream',
+        icon: SparklesIcon,
+        requiredCapability: null, // Visible to all except tenant admin (filtered below)
+        hiddenForTenantAdmin: true, // Tenant admin uses Administration, not Decision Stream
+        description: 'Agent decisions with inspect and override',
+      },
       {
         label: 'Briefing',
         path: '/strategy-briefing',
@@ -108,21 +120,6 @@ export const NAVIGATION_CONFIG = [
         icon: DashboardIcon,
         requiredCapability: 'view_executive_dashboard',
         description: 'Strategic KPIs, performance summary, ROI',
-      },
-      {
-        label: 'Decision Stream',
-        path: '/decision-stream',
-        icon: SparklesIcon,
-        requiredCapability: null, // Visible to all except tenant admin (filtered below)
-        hiddenForTenantAdmin: true, // Tenant admin uses Administration, not Decision Stream
-        description: 'Agent decisions with inspect and override',
-      },
-      {
-        label: 'Scenario Events',
-        path: '/scenario-events',
-        icon: ScenarioEventIcon,
-        requiredCapability: null, // Always visible
-        description: 'Inject what-if events and see CDC cascade responses',
       },
     ],
   },

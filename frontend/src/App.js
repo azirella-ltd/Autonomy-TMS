@@ -152,7 +152,6 @@ import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
 import DecisionStream from "./pages/DecisionStream";
-import ScenarioEvents from "./pages/ScenarioEvents";
 import AgentPerformancePage from "./pages/AgentPerformancePage";
 import SOPWorklistPage from "./pages/SOPWorklistPage";
 import DemoSystemBuilder from "./pages/deployment/DemoSystemBuilder.jsx";
@@ -1284,10 +1283,6 @@ const AppContent = () => {
             <Route
               path="/decision-stream"
               element={<DecisionStream />}
-            />
-            <Route
-              path="/scenario-events"
-              element={<ScenarioEvents />}
             />
 
             <Route
