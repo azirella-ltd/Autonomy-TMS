@@ -941,13 +941,22 @@ class ProvisioningService:
     async def _step_lgbm_forecast(self, config_id: int) -> dict:
         """Step 4: Train LightGBM quantile models and generate P10/P50/P90 forward forecasts.
 
-        Generates 104 weeks (2 years) of forward-looking weekly demand forecasts.
+        Generates 104 weeks (2 years) of forward-looking weekly demand forecasts
+        from TWO perspectives:
+
+          1. **Ship-from (supply perspective)**: product × internal site, aggregated
+             from outbound_order.ship_from_site_id. Used by supply planning,
+             capacity planning, and production scheduling.
+          2. **Ship-to (demand perspective)**: product × customer, aggregated from
+             outbound_order.customer_id. Used by ATP, customer allocation, and
+             S&OP customer segmentation.
+
+        Both perspectives are persisted to the forecast table with
+        forecast_level in {'site', 'customer'}.
+
         All downstream steps — S&OP GraphSAGE inference, supply plan generation
         (52-week horizon), tactical GNNs, and RCCP validation — depend on this
         forward forecast horizon being present in the forecast table.
-
-        Loads demand history from the forecast table, builds the required
-        DataFrame, and calls ``run_stage4_lgbm()`` (the real entry point).
         """
         try:
             from app.services.demand_forecasting.lgbm_pipeline import LGBMForecastPipeline
@@ -957,63 +966,299 @@ class ProvisioningService:
 
             sync_db = sync_session_factory()
             try:
-                # Load demand history from ACTUAL demand (outbound_order_line),
-                # NOT from the forecast table (which would be circular training).
-                # Aggregated weekly by product×ship-from-site.
-                rows = sync_db.execute(
-                    text("""
+                # Define perspective queries. Same positive-qty selection logic, two groupings.
+                #
+                # IMPORTANT: Use shipped_quantity when > 0 (actual fulfillment),
+                # otherwise fall back to ordered_quantity. Plain COALESCE is unsafe
+                # because some ERP builders populate shipped_quantity = 0 (not NULL)
+                # for unshipped/future orders, which COALESCE would NOT skip over.
+                _qty_expr = """
+                    CASE
+                        WHEN ool.shipped_quantity IS NOT NULL AND ool.shipped_quantity > 0
+                            THEN ool.shipped_quantity
+                        ELSE COALESCE(ool.ordered_quantity, 0)
+                    END
+                """
+                _where = """
+                    ool.config_id = :cid
+                    AND (
+                        (ool.shipped_quantity IS NOT NULL AND ool.shipped_quantity > 0)
+                        OR (ool.ordered_quantity IS NOT NULL AND ool.ordered_quantity > 0)
+                    )
+                """
+
+                # Perspective 1: ship-from (supply / site)
+                site_rows = sync_db.execute(
+                    text(f"""
                         SELECT ool.product_id,
-                               CAST(oo.ship_from_site_id AS VARCHAR) AS site_id,
+                               CAST(oo.ship_from_site_id AS VARCHAR) AS grouping_key,
                                date_trunc('week', oo.order_date)::date AS demand_date,
-                               SUM(COALESCE(ool.shipped_quantity, ool.ordered_quantity)) AS actual
+                               SUM({_qty_expr}) AS actual
                         FROM outbound_order_line ool
                         JOIN outbound_order oo ON oo.id = ool.order_id
-                        WHERE ool.config_id = :cid
-                          AND COALESCE(ool.shipped_quantity, ool.ordered_quantity) > 0
-                        GROUP BY ool.product_id, CAST(oo.ship_from_site_id AS VARCHAR),
+                        WHERE {_where}
+                          AND oo.ship_from_site_id IS NOT NULL
+                        GROUP BY ool.product_id, oo.ship_from_site_id,
                                  date_trunc('week', oo.order_date)
-                        ORDER BY ool.product_id, site_id, demand_date
+                        ORDER BY ool.product_id, grouping_key, demand_date
                     """),
                     {"cid": config_id},
                 ).fetchall()
 
-                if not rows or len(rows) < 10:
-                    return {"status": "ok", "note": "Insufficient forecast history for LightGBM training"}
+                # Perspective 2: ship-to (demand / customer)
+                customer_rows = sync_db.execute(
+                    text(f"""
+                        SELECT ool.product_id,
+                               oo.customer_id AS grouping_key,
+                               date_trunc('week', oo.order_date)::date AS demand_date,
+                               SUM({_qty_expr}) AS actual
+                        FROM outbound_order_line ool
+                        JOIN outbound_order oo ON oo.id = ool.order_id
+                        WHERE {_where}
+                          AND oo.customer_id IS NOT NULL
+                          AND oo.customer_id <> ''
+                        GROUP BY ool.product_id, oo.customer_id,
+                                 date_trunc('week', oo.order_date)
+                        ORDER BY ool.product_id, grouping_key, demand_date
+                    """),
+                    {"cid": config_id},
+                ).fetchall()
 
-                history = pd.DataFrame(rows, columns=["product_id", "site_id", "demand_date", "actual"])
-                history["unique_id"] = (
-                    history["product_id"].astype(str) + "_" + history["site_id"].astype(str)
-                )
+                total_rows = (len(site_rows) if site_rows else 0) + (len(customer_rows) if customer_rows else 0)
+                if total_rows < 10:
+                    # SOC II: no silent success. Report as failed so tenant admin sees it.
+                    logger.error(
+                        "lgbm_forecast: insufficient history for config %d — %d site rows, %d customer rows. "
+                        "Check outbound_order_line.shipped_quantity/ordered_quantity population.",
+                        config_id,
+                        len(site_rows) if site_rows else 0,
+                        len(customer_rows) if customer_rows else 0,
+                    )
+                    return {
+                        "status": "failed",
+                        "error": f"Insufficient forecast history: {total_rows} rows (need ≥10)",
+                    }
 
-                # Simple cluster: all series → cluster 0
-                cluster_results = {uid: 0 for uid in history["unique_id"].unique()}
+                # Run the pipeline twice — once per dimensional perspective. Both are
+                # product-level forecasts (forecast_level='product' per AWS SC DM);
+                # they differ in which entity column the forecast rows populate:
+                #   - ship-from: product_id × site_id   (supply / plant perspective)
+                #   - ship-to:   product_id × customer_id (demand / customer perspective)
+                #
+                # forecast_level refers to the hierarchical aggregation level
+                # (product | product_group | site | region), NOT the ship dimension.
+                # All rows here are level='product'. Higher-level hierarchical
+                # forecasts (product_group, region) are computed separately.
+                #
+                # IMPORTANT: run_stage4_lgbm returns predictions but does NOT
+                # persist to the forecast table. This step MUST write the
+                # returned predictions to the forecast table or downstream steps
+                # (supply_plan, decision_seed, CDT calibration) will see zero
+                # forecast rows and silently degrade.
+                #
+                # Two known limitations of run_stage4_lgbm that we compensate for here:
+                #   (a) It only returns predictions for series with >=26 observations
+                #       ("LGBM-qualifying"). Series with fewer observations are
+                #       counted as "fallbacks" but NOT returned in the predictions
+                #       dict. We compute naive (rolling-mean) fallbacks ourselves
+                #       so every history series produces forecast rows.
+                #   (b) It anchors each series' forecast at its own last observation
+                #       date rather than at "today". For a frozen demo tenant this
+                #       means forecasts can start years in the past. We filter to
+                #       forecasts >= tenant_today so downstream steps see a
+                #       forward-looking horizon.
+                from app.models.sc_entities import Forecast
+                from app.core.clock import config_today_sync
+                from datetime import datetime, timedelta
+                import numpy as np
 
-                pipeline = LGBMForecastPipeline(config_id=config_id)
-                result = pipeline.run_stage4_lgbm(
-                    run_id=0,
-                    config_id=config_id,
-                    history=history,
-                    cluster_results=cluster_results,
-                    censored_flags={},
-                    n_periods=104,   # 2 years weekly: covers 52-wk S&OP + 52-wk MPS/supply plan
-                    time_bucket="W",
-                    retrain=True,
-                )
+                tenant_today = config_today_sync(config_id, sync_db)
+                horizon_periods = 104  # 2 years weekly
+                horizon_end = tenant_today + timedelta(weeks=horizon_periods)
+
+                result_summary = {"ship_from": None, "ship_to": None}
+                total_persisted = 0
+
+                for perspective, rows, entity_col in [
+                    ("ship_from", site_rows, "site_id"),      # product × site
+                    ("ship_to",   customer_rows, "customer_id"),  # product × customer
+                ]:
+                    if not rows:
+                        result_summary[perspective] = {"series": 0, "fallback": 0, "persisted": 0, "skipped": "no data"}
+                        continue
+                    history = pd.DataFrame(
+                        rows, columns=["product_id", entity_col, "demand_date", "actual"]
+                    )
+                    # Use pipe delimiter to match LGBMForecastPipeline's parser (split on "|", 1).
+                    history["unique_id"] = (
+                        history["product_id"].astype(str) + "|" + history[entity_col].astype(str)
+                    )
+                    # The training pipeline groups series by a "site_id" column internally,
+                    # so for the customer perspective we alias customer_id → site_id for
+                    # training purposes. We re-tag with customer_id on persistence.
+                    if entity_col != "site_id":
+                        history["site_id"] = history[entity_col]
+
+                    cluster_results = {uid: 0 for uid in history["unique_id"].unique()}
+
+                    pipeline = LGBMForecastPipeline(config_id=config_id)
+                    result = pipeline.run_stage4_lgbm(
+                        run_id=0,
+                        config_id=config_id,
+                        history=history,
+                        cluster_results=cluster_results,
+                        censored_flags={},
+                        n_periods=104,   # 2 years weekly: covers 52-wk S&OP + 52-wk MPS/supply plan
+                        time_bucket="W",
+                        retrain=True,
+                    )
+
+                    # Persist predictions to forecast table.
+                    # result["predictions"] is Dict[unique_id, List[{product_id, site_id, forecast_date, p10, p50, p90, ...}]]
+                    predictions = result.get("predictions", {}) or {}
+                    persisted = 0
+                    lgbm_persisted = 0
+                    fallback_persisted = 0
+                    now = datetime.utcnow()
+                    method_name = "lgbm_quantile"
+                    source_name = f"lgbm_{perspective}"
+
+                    def _add_row(product_id, entity_value, forecast_date, p10, p50, p90, method, source):
+                        nonlocal persisted
+                        # Filter: only persist forward-looking forecasts (>= tenant_today)
+                        # and within the 2-year horizon.
+                        fd = forecast_date
+                        if hasattr(fd, "date"):
+                            fd = fd.date()
+                        if fd < tenant_today or fd > horizon_end:
+                            return
+                        if perspective == "ship_from":
+                            try:
+                                site_int = int(entity_value)
+                            except (ValueError, TypeError):
+                                return
+                            sync_db.add(Forecast(
+                                config_id=config_id, product_id=product_id,
+                                site_id=site_int, customer_id=None,
+                                forecast_date=fd,
+                                forecast_type="statistical", forecast_level="product",
+                                forecast_method=method,
+                                forecast_quantity=float(p50),
+                                forecast_p10=float(p10), forecast_p50=float(p50),
+                                forecast_median=float(p50), forecast_p90=float(p90),
+                                created_dttm=now, is_active="true", source=source,
+                            ))
+                        else:  # ship_to
+                            sync_db.add(Forecast(
+                                config_id=config_id, product_id=product_id,
+                                site_id=None, customer_id=str(entity_value),
+                                forecast_date=fd,
+                                forecast_type="statistical", forecast_level="product",
+                                forecast_method=method,
+                                forecast_quantity=float(p50),
+                                forecast_p10=float(p10), forecast_p50=float(p50),
+                                forecast_median=float(p50), forecast_p90=float(p90),
+                                created_dttm=now, is_active="true", source=source,
+                            ))
+                        persisted += 1
+
+                    # 1. Persist LGBM-qualifying series predictions (forward window only)
+                    lgbm_uids = set()
+                    for uid, forecasts in predictions.items():
+                        if "|" not in uid:
+                            continue
+                        lgbm_uids.add(uid)
+                        product_id, entity_value = uid.split("|", 1)
+                        before = persisted
+                        for fc in forecasts:
+                            _add_row(
+                                product_id, entity_value, fc["forecast_date"],
+                                fc["p10"], fc["p50"], fc["p90"],
+                                method=method_name, source=source_name,
+                            )
+                        lgbm_persisted += persisted - before
+
+                    # 2. Fallback: naive forecast (rolling mean + P10/P90 from std dev)
+                    # for every uid in history that didn't get LGBM predictions.
+                    # This covers series with fewer than 26 observations.
+                    all_uids = set(history["unique_id"].unique())
+                    fallback_uids = all_uids - lgbm_uids
+                    for uid in fallback_uids:
+                        if "|" not in uid:
+                            continue
+                        product_id, entity_value = uid.split("|", 1)
+                        series = history[history["unique_id"] == uid]["actual"].astype(float)
+                        if series.empty:
+                            continue
+                        # Use the last 8 observations (or all) for level and std
+                        tail = series.tail(8) if len(series) >= 8 else series
+                        mean_q = float(tail.mean())
+                        std_q = float(tail.std()) if len(tail) > 1 else mean_q * 0.3
+                        if mean_q <= 0:
+                            mean_q = max(float(series.mean() or 0.0), 0.0)
+                        if std_q < 0 or np.isnan(std_q):
+                            std_q = mean_q * 0.3
+                        p10 = max(0.0, mean_q - 1.28 * std_q)
+                        p50 = mean_q
+                        p90 = mean_q + 1.28 * std_q
+                        # Generate forward weekly forecasts from tenant_today
+                        before = persisted
+                        for w in range(horizon_periods):
+                            fd = tenant_today + timedelta(weeks=w + 1)
+                            _add_row(
+                                product_id, entity_value, fd, p10, p50, p90,
+                                method="naive_rolling_mean",
+                                source=f"naive_{perspective}",
+                            )
+                        fallback_persisted += persisted - before
+
+                    sync_db.commit()
+                    total_persisted += persisted
+
+                    result_summary[perspective] = {
+                        "lgbm_series": result.get("lgbm_series_count", 0),
+                        "lgbm_fallback_count": result.get("lgbm_fallback_count", 0),
+                        "lgbm_persisted": lgbm_persisted,
+                        "fallback_persisted": fallback_persisted,
+                        "total_persisted": persisted,
+                    }
+
+                if total_persisted == 0:
+                    logger.error(
+                        "lgbm_forecast: pipeline ran but 0 forecast rows persisted for config %d. "
+                        "Check unique_id format and pipeline.predictions output.",
+                        config_id,
+                    )
+                    return {
+                        "status": "failed",
+                        "error": "LightGBM pipeline returned zero persistable predictions",
+                        "ship_from": result_summary.get("ship_from"),
+                        "ship_to": result_summary.get("ship_to"),
+                    }
+
                 return {
                     "status": "ok",
-                    "lgbm_series_count": result.get("lgbm_series_count", 0),
-                    "lgbm_fallback_count": result.get("lgbm_fallback_count", 0),
+                    "total_forecast_rows": total_persisted,
+                    "ship_from": result_summary.get("ship_from"),
+                    "ship_to": result_summary.get("ship_to"),
                 }
             finally:
                 sync_db.close()
         except ImportError:
-            logger.info(
-                "LGBMForecastPipeline not yet available — stubbing step for config %d", config_id
+            logger.error(
+                "lgbm_forecast: LGBMForecastPipeline not available for config %d", config_id
             )
-            return {"status": "stubbed", "message": "LGBMForecastPipeline service not yet implemented"}
+            return {
+                "status": "failed",
+                "error": "LGBMForecastPipeline service not available",
+            }
         except Exception as e:
-            logger.warning("LightGBM forecast step failed (non-critical): %s", e)
-            return {"status": "ok", "note": f"LightGBM forecast attempted: {str(e)[:100]}"}
+            # SOC II: surface all failures. No swallowing as "non-critical".
+            logger.exception("lgbm_forecast failed for config %d", config_id)
+            return {
+                "status": "failed",
+                "error": f"LightGBM forecast exception: {type(e).__name__}: {str(e)[:200]}",
+            }
         finally:
             # Always run forecast exception detection after forecast generation
             try:
