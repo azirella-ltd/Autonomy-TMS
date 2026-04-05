@@ -25,6 +25,7 @@ from enum import Enum
 
 from app.db.session import get_db
 from app.api.deps import get_current_user
+from app.core.clock import config_today
 from app.models.user import User
 from app.models.powell_allocation import PowellAllocation
 from app.models.planning_cascade import PolicyEnvelope
@@ -465,7 +466,7 @@ async def get_allocation_timeline(
     Returns daily buckets aggregated by priority class (P1-P5)
     for the specified date window (default: 5 past + today + 9 future = 15 days).
     """
-    today = date.today()
+    today = await config_today(config_id, db)
     window_start = today - timedelta(days=days_past)
     window_end = today + timedelta(days=days_future)
 
@@ -824,14 +825,15 @@ async def execute_rebalancing(
     # Create transfer order via InboundOrder entity
     from app.models.sc_entities import InboundOrder
     to_id = f"TO-{recommendation.from_site}-{recommendation.to_site}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    today = await config_today(config_id, db)
     order = InboundOrder(
         id=to_id,
         order_type="TRANSFER",
         order_status="PLANNED",
         ship_from_site_id=None,  # Resolved by name in calling code
         ship_to_site_id=None,
-        order_date=date.today(),
-        expected_delivery_date=date.today() + timedelta(days=3),
+        order_date=today,
+        expected_delivery_date=today + timedelta(days=3),
         total_quantity=recommendation.quantity,
     )
     db.add(order)
@@ -948,7 +950,7 @@ async def execute_po_recommendation(
         order_type="PURCHASE",
         order_status="DRAFT",
         supplier_id=recommendation.supplier_id,
-        order_date=date.today(),
+        order_date=await config_today(config_id, db),
         expected_delivery_date=recommendation.expected_receipt_date,
         total_quantity=recommendation.recommended_qty,
     )

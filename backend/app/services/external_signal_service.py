@@ -577,8 +577,26 @@ class ExternalSignalService:
 
     # ── Signal Collection ─────────────────────────────────────────────────
 
+    async def _is_frozen(self) -> bool:
+        """Return True if this tenant is in frozen/snapshot mode (no live refresh)."""
+        from sqlalchemy import text as _sqt
+        mode_row = await self.db.execute(
+            _sqt("SELECT time_mode, external_data_mode FROM tenants WHERE id = :tid"),
+            {"tid": self.tenant_id},
+        )
+        row = mode_row.fetchone()
+        if row is None:
+            return False
+        return row[0] == "frozen" or row[1] == "snapshot"
+
     async def refresh_source(self, source_id: int) -> dict:
-        """Refresh signals from a single source."""
+        """Refresh signals from a single source.
+
+        Frozen tenants: NOP. Their signals are historical playback data.
+        """
+        if await self._is_frozen():
+            return {"new_signals": 0, "skipped": True, "reason": "tenant in frozen/snapshot mode"}
+
         result = await self.db.execute(
             select(ExternalSignalSource).where(
                 ExternalSignalSource.id == source_id,
@@ -592,7 +610,19 @@ class ExternalSignalService:
         return await self._collect_from_source(source)
 
     async def refresh_all_sources(self) -> dict:
-        """Refresh all active sources for this tenant. Called by daily scheduler."""
+        """Refresh all active sources for this tenant. Called by daily scheduler.
+
+        Frozen tenants: NOP. Their signals are historical playback data.
+        """
+        if await self._is_frozen():
+            return {
+                "sources_processed": 0,
+                "signals_collected": 0,
+                "errors": 0,
+                "skipped": True,
+                "reason": "tenant in frozen/snapshot mode",
+            }
+
         result = await self.db.execute(
             select(ExternalSignalSource).where(
                 ExternalSignalSource.tenant_id == self.tenant_id,
@@ -758,13 +788,28 @@ class ExternalSignalService:
         """Get recent, relevant signals for RAG injection into Azirella chat context.
 
         Returns signals formatted for LLM consumption, sorted by relevance × recency.
+
+        Virtual clock semantics:
+        - Live tenants: window is [real_today - max_age_days, real_today]
+        - Frozen tenants: window is [virtual_today - max_age_days, virtual_today]
+          This is the playback mode — a demo frozen at 2025-11-20 will see
+          exactly the external signals that were captured around Nov 2025,
+          replaying the market context that existed at the reference date.
+
+        See docs/internal/VIRTUAL_CLOCK_ARCHITECTURE.md
         """
-        cutoff = date.today() - timedelta(days=max_age_days)
+        from app.core.clock import tenant_today as _tenant_today
+
+        tenant_ref = await _tenant_today(self.tenant_id, self.db)
+        cutoff = tenant_ref - timedelta(days=max_age_days)
+        # Expiry check uses real wall-clock time (a storm that expired in
+        # reality shouldn't magically be "active" in a frozen demo).
         now = datetime.utcnow()
         conditions = [
             ExternalSignal.tenant_id == self.tenant_id,
             ExternalSignal.is_active == True,
             ExternalSignal.signal_date >= cutoff,
+            ExternalSignal.signal_date <= tenant_ref,  # Never show "future" signals to frozen tenants
             ExternalSignal.relevance_score >= min_relevance,
             # Exclude expired signals — yesterday's storm is not relevant for planning
             or_(
@@ -937,7 +982,21 @@ class ExternalSignalService:
         }
 
     async def cleanup_expired(self) -> int:
-        """Deactivate expired signals."""
+        """Deactivate expired signals.
+
+        Frozen tenants: NOP. Their signals are historical playback data; the
+        `expires_at` column reflects real-time expiry which is irrelevant to a
+        tenant replaying Nov 2025 market context in Apr 2026.
+        """
+        from sqlalchemy import text as _sqt
+        mode_row = await self.db.execute(
+            _sqt("SELECT time_mode, external_data_mode FROM tenants WHERE id = :tid"),
+            {"tid": self.tenant_id},
+        )
+        row = mode_row.fetchone()
+        if row and (row[0] == "frozen" or row[1] == "snapshot"):
+            return 0
+
         result = await self.db.execute(
             update(ExternalSignal)
             .where(
@@ -994,8 +1053,17 @@ class ExternalSignalService:
 # ── Standalone refresh for scheduler (sync wrapper) ──────────────────────────
 
 async def refresh_all_tenants(db: AsyncSession) -> dict:
-    """Refresh all active sources across all tenants. Called by APScheduler daily job."""
-    from sqlalchemy import distinct
+    """Refresh all active sources across all tenants. Called by APScheduler daily job.
+
+    Virtual clock semantics:
+    - Live tenants (production + live demos): call external APIs for fresh data
+    - Frozen tenants (SAP Demo, etc.): SKIP refresh entirely — they replay the
+      historical signals that were already captured at their virtual reference
+      date. Calling live APIs would pollute their snapshot with current data.
+
+    See docs/internal/VIRTUAL_CLOCK_ARCHITECTURE.md
+    """
+    from sqlalchemy import distinct, text as _sqt
 
     result = await db.execute(
         select(distinct(ExternalSignalSource.tenant_id)).where(
@@ -1004,9 +1072,40 @@ async def refresh_all_tenants(db: AsyncSession) -> dict:
     )
     tenant_ids = [row[0] for row in result.all()]
 
-    total_stats = {"tenants_processed": 0, "signals_collected": 0, "errors": 0}
+    # Resolve each tenant's time_mode so we can skip frozen ones up-front
+    if tenant_ids:
+        mode_rows = await db.execute(
+            _sqt(
+                "SELECT id, time_mode, external_data_mode, virtual_today "
+                "FROM tenants WHERE id = ANY(:ids)"
+            ),
+            {"ids": tenant_ids},
+        )
+        tenant_modes = {row[0]: (row[1], row[2], row[3]) for row in mode_rows.all()}
+    else:
+        tenant_modes = {}
+
+    total_stats = {
+        "tenants_processed": 0,
+        "tenants_skipped_frozen": 0,
+        "signals_collected": 0,
+        "errors": 0,
+    }
 
     for tid in tenant_ids:
+        mode_info = tenant_modes.get(tid, ("live", "live", None))
+        time_mode, ext_mode, virt_today = mode_info
+
+        # Skip frozen tenants — they play back from signal history, never refresh live
+        if time_mode == "frozen" or ext_mode == "snapshot":
+            logger.info(
+                "External signal refresh: skipping tenant %d "
+                "(time_mode=%s, external_data_mode=%s, virtual_today=%s)",
+                tid, time_mode, ext_mode, virt_today,
+            )
+            total_stats["tenants_skipped_frozen"] += 1
+            continue
+
         try:
             service = ExternalSignalService(db, tid)
 
@@ -1024,7 +1123,8 @@ async def refresh_all_tenants(db: AsyncSession) -> dict:
             logger.error(f"Tenant {tid} external signal refresh failed: {e}")
 
     logger.info(
-        f"External signal daily refresh: {total_stats['tenants_processed']} tenants, "
+        f"External signal daily refresh: {total_stats['tenants_processed']} tenants refreshed, "
+        f"{total_stats['tenants_skipped_frozen']} frozen tenants skipped, "
         f"{total_stats['signals_collected']} signals, {total_stats['errors']} errors"
     )
     return total_stats

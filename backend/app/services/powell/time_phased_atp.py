@@ -276,6 +276,8 @@ class TimePhasedATPService:
         Returns:
             The date when ATP should be consumed (ship date)
         """
+        # TODO(virtual-clock): TimePhasedATPService has no tenant/config context;
+        # thread tenant_id through TimePhasedATPConfig or method args to use tenant_today.
         today = from_date or date.today()
         ship_date = self.subtract_business_days(expected_delivery_date, delivery_lead_time_days)
 
@@ -328,6 +330,8 @@ class TimePhasedATPService:
         Returns:
             List of allocations set for the planning horizon
         """
+        # TODO(virtual-clock): TimePhasedATPService has no tenant/config context;
+        # thread tenant_id through the service to use tenant_today for horizon start.
         today = date.today()
         horizon_end = today + timedelta(days=self.config.planning_horizon_days)
 
@@ -387,6 +391,8 @@ class TimePhasedATPService:
         Returns:
             TimePhasedATPResponse with fulfillment details
         """
+        # TODO(virtual-clock): TimePhasedATPService has no tenant/config context;
+        # order_date fallback should use tenant_today once service carries tenant_id.
         today = request.order_date or date.today()
 
         # Calculate target ship date
@@ -660,6 +666,8 @@ class TimePhasedATPService:
         if key not in self._allocations:
             return {}
 
+        # TODO(virtual-clock): TimePhasedATPService has no tenant/config context;
+        # from_date fallback should use tenant_today once service carries tenant_id.
         start = from_date or date.today()
         end = to_date or (start + timedelta(days=self.config.planning_horizon_days))
 

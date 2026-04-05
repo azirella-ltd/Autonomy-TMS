@@ -230,7 +230,8 @@ class SOPService:
         """
         from app.models.planning_cascade import PolicyEnvelope
 
-        check_date = as_of_date or date.today()
+        from app.core.clock import config_today_sync
+        check_date = as_of_date or config_today_sync(config_id, self.db)
 
         envelope = self.db.query(PolicyEnvelope).filter(
             PolicyEnvelope.config_id == config_id,

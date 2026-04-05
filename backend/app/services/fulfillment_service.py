@@ -25,6 +25,7 @@ from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.supply_chain_config import Site
 from app.services.order_management_service import OrderManagementService
+from app.core.clock import config_today
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,7 @@ class FulfillmentService:
         result = await self.db.execute(query)
         inv_level = result.scalar_one_or_none()
 
+        today = await config_today(config_id, self.db) if config_id else date.today()
         if not inv_level:
             # Create new inventory level record
             inv_level = InvLevel(
@@ -214,13 +216,13 @@ class FulfillmentService:
                 quantity=max(0.0, quantity_change),
                 config_id=config_id,
                 scenario_id=scenario_id,
-                as_of_date=date.today(),
+                as_of_date=today,
             )
             self.db.add(inv_level)
         else:
             # Update existing record
             inv_level.quantity = max(0.0, inv_level.quantity + quantity_change)
-            inv_level.as_of_date = date.today()
+            inv_level.as_of_date = today
 
         await self.db.flush()
         await self.db.refresh(inv_level)
@@ -318,7 +320,8 @@ class FulfillmentService:
 
             # Calculate arrival round (1-week lead time for simulation)
             arrival_round = (current_period + 1) if current_period is not None else None
-            estimated_delivery = order.requested_delivery_date or (date.today() + timedelta(weeks=1))
+            _today = await config_today(config_id, self.db) if config_id else date.today()
+            estimated_delivery = order.requested_delivery_date or (_today + timedelta(weeks=1))
 
             transfer_order = await self.order_mgmt.create_transfer_order(
                 to_number=to_number,
@@ -494,7 +497,8 @@ class FulfillmentService:
 
             # Calculate arrival round (lead time from lane)
             arrival_round = (current_period + 1) if current_period is not None else None
-            estimated_delivery = po.requested_delivery_date or (date.today() + timedelta(weeks=1))
+            _today = await config_today(config_id, self.db) if config_id else date.today()
+            estimated_delivery = po.requested_delivery_date or (_today + timedelta(weeks=1))
 
             transfer_order = await self.order_mgmt.create_transfer_order(
                 to_number=to_number,
@@ -771,7 +775,8 @@ class FulfillmentService:
             # Create TransferOrder for shipment
             to_number = f"TO-{order.order_id}-{order.line_number}-{current_period or 0}"
             arrival_round = (current_period + 1) if current_period is not None else None
-            estimated_delivery = order.requested_delivery_date or (date.today() + timedelta(weeks=1))
+            _today = await config_today(config_id, self.db) if config_id else date.today()
+            estimated_delivery = order.requested_delivery_date or (_today + timedelta(weeks=1))
 
             transfer_order = await self.order_mgmt.create_transfer_order(
                 to_number=to_number,

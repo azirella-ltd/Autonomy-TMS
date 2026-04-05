@@ -250,6 +250,8 @@ class AllocationService:
             self._allocations[key][alloc.priority] = alloc
 
         # Set period
+        # TODO(virtual-clock): AllocationService has no tenant/config context; thread
+        # tenant_id through AllocationConfig or set_allocations to use tenant_today_sync.
         self._period_start = period_start or date.today()
         if period_end:
             self._period_end = period_end
@@ -390,6 +392,8 @@ class AllocationService:
 
         # OTIF tracking
         if requested_date:
+            # TODO(virtual-clock): AllocationService has no tenant/config context;
+            # thread tenant_id through to use tenant_today_sync for OTIF comparison.
             result.on_time = date.today() <= requested_date
 
         # Handle unfulfillable portion
@@ -619,7 +623,8 @@ def materialize_allocation_commit(
         week_start = datetime.strptime(f"{year}-W{week:02d}-1", "%G-W%V-%u").date()
     else:
         # Default to the Monday of the current ISO week
-        today = date.today()
+        from app.core.clock import config_today_sync
+        today = config_today_sync(config_id, db)
         week_start = today - timedelta(days=today.weekday())
         logger.info(
             f"AllocationCommit {allocation_commit.id} has no time_bucket, "

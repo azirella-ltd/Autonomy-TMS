@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 import numpy as np
 
 from ...db.session import get_db
+from ...core.clock import tenant_today_sync
 from ...api.deps import get_current_user
 from ...models.user import User
 from ...services.conformal_prediction import (
@@ -1683,7 +1684,7 @@ def calibrate_demo_data(
 
     # ── 2. Seed 2 past S&OP cycles using real cost scale ─────────────────────
     # Compute monthly cost scale from Forecast × Product unit_cost
-    today = date.today()
+    today = tenant_today_sync(config.tenant_id, db)
     horizon_end = date(today.year + 1, today.month, today.day)
     rev_row = (
         db.query(func.sum(Forecast.forecast_p50 * Product.unit_cost).label("annual_cogs"))

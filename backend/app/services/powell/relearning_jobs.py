@@ -850,10 +850,26 @@ def _run_experiential_knowledge_detection() -> None:
 
 
 def _run_demo_date_shift() -> None:
-    """Shift demo data dates forward for all tracked tenant/config pairs."""
+    """Shift demo data dates forward — Food Dist demo ONLY.
+
+    The Food Dist demo (US Foods Distributor) is the single tenant whose data
+    is intentionally rolled forward nightly to keep "today" aligned with real
+    calendar time. It uses synthetically generated history, so rolling is safe
+    and keeps the demo feeling current.
+
+    All other demo tenants are EXCLUDED:
+    - SAP Demo (frozen at 2025-11-20) — CAL FAA reference date, must not drift
+    - D365/Odoo/Infor/B1 demos — anchored to their respective extraction
+      reference dates; shifting corrupts ERP transactional coherence
+    - Beer Game / Complex SC — learning tenants use simulation time, not
+      calendar time
+    - Any future production customer tenant — real data, never shifted
+
+    See docs/internal/VIRTUAL_CLOCK_ARCHITECTURE.md
+    """
     from app.db.session import sync_session_factory
 
-    logger.info("Starting scheduled demo date shift")
+    logger.info("Starting scheduled demo date shift (Food Dist only)")
 
     db = sync_session_factory()
     try:
@@ -867,18 +883,56 @@ def _run_demo_date_shift() -> None:
             logger.info("No demo date shift entries found — nothing to shift")
             return
 
-        # Only shift for tenants marked as demo
-        demo_tenant_ids = {
-            t.id for t in db.query(Tenant).filter(Tenant.is_demo == True).all()
-        }
+        # Allowlist: Food Dist demo is the only tenant eligible for date shifting.
+        # Identify by slug (stable) with a fallback to name match.
+        food_dist = (
+            db.query(Tenant)
+            .filter(Tenant.slug == "food-dist")
+            .first()
+        )
+        if food_dist is None:
+            # Fallback: match by name (handles older installs / slug variants)
+            food_dist = (
+                db.query(Tenant)
+                .filter(Tenant.name == "US Foods Distributor")
+                .first()
+            )
+
+        if food_dist is None:
+            logger.info(
+                "Demo date shift: Food Dist tenant not found — nothing to shift"
+            )
+            return
+
+        # Safety: never shift a frozen tenant, even if the allowlist matched.
+        if getattr(food_dist, "time_mode", "live") == "frozen":
+            logger.warning(
+                "Demo date shift: Food Dist tenant %d is marked frozen "
+                "(virtual_today=%s) — refusing to shift",
+                food_dist.id, getattr(food_dist, "virtual_today", None),
+            )
+            return
+
+        eligible_tenant_ids = {food_dist.id}
+        logger.info(
+            "Demo date shift: eligible tenant is %d (%s)",
+            food_dist.id, food_dist.name,
+        )
 
         total_shifted = 0
         total_rows = 0
 
         for entry in tracked:
-            if entry["tenant_id"] not in demo_tenant_ids:
-                logger.info("Skipping tenant %s (not a demo tenant)", entry["tenant_id"])
+            if entry["tenant_id"] not in eligible_tenant_ids:
+                logger.debug(
+                    "Demo date shift: skipping tenant %s (not Food Dist)",
+                    entry["tenant_id"],
+                )
                 continue
+            logger.info(
+                "Demo date shift: processing Food Dist tenant %d config %d",
+                entry["tenant_id"], entry["config_id"],
+            )
             try:
                 result = service.shift_demo_dates(
                     tenant_id=entry["tenant_id"],

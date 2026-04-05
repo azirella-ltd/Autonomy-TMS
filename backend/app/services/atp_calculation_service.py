@@ -194,7 +194,9 @@ class ATPCalculationService:
                 promised_round = round_projection['round']
                 # Convert round to date (1 week per round)
                 weeks_ahead = promised_round - current_period if current_period else 0
-                promised_date = date.today() + timedelta(weeks=weeks_ahead)
+                from app.core.clock import config_today
+                base_today = await config_today(config_id, self.db) if config_id else date.today()
+                promised_date = base_today + timedelta(weeks=weeks_ahead)
 
                 return {
                     'can_promise': True,

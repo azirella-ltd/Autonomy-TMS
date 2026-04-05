@@ -220,6 +220,7 @@ class SubcontractingEngine:
                     external_cost=external_cost,
                     total_cost=external_cost,
                     delivery_risk=1.0 - snap.subcontractor_on_time_score,
+                    # TODO(virtual-clock): thread tenant_id + sync db into engine to use tenant_today_sync.
                     estimated_completion_date=date.today() + timedelta(days=snap.subcontractor_lead_time_days),
                     explanation=f"Route external: saves {days_saved} days lead time"
                 )

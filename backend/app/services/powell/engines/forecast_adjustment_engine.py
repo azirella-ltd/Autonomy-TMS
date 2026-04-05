@@ -263,6 +263,8 @@ class ForecastAdjustmentEngine:
             source_reliability=source_reliability,
             combined_confidence=combined_confidence,
             time_horizon_periods=signal.time_horizon_periods,
+            # TODO(virtual-clock): thread tenant_id + sync db into engine to use
+            # tenant_today_sync instead of date.today() for demo reproducibility.
             effective_date=signal.effective_date or date.today(),
             current_forecast=signal.current_forecast_value,
             forecast_change=adjustment_magnitude,

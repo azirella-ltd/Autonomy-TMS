@@ -26,6 +26,7 @@ from app.models.pegging import (
 )
 from app.models.mrp import MRPRequirement
 from app.models.supply_chain_config import Site
+from app.core.clock import tenant_today_sync
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ class PeggingService:
             supply_id=f"INV-{site_id}-{product_id}",
             supply_site_id=site_id,
             pegged_quantity=quantity,
-            pegging_date=date.today(),
+            pegging_date=tenant_today_sync(tenant_id, self.db),
             pegging_status=PeggingStatus.FIRM.value,
             chain_id=chain_id,
             chain_depth=0,
@@ -198,7 +199,7 @@ class PeggingService:
             supply_id=inbound_order_id,
             supply_site_id=source_site_id,
             pegged_quantity=quantity,
-            pegging_date=date.today(),
+            pegging_date=tenant_today_sync(tenant_id, self.db),
             pegging_status=PeggingStatus.PLANNED.value,
             upstream_pegging_id=upstream_pegging_id,
             chain_id=chain_id,
@@ -252,7 +253,7 @@ class PeggingService:
             supply_id=f"MRP-REQ-{mrp_requirement_id}",
             supply_site_id=source_site_id or site_id,
             pegged_quantity=quantity,
-            pegging_date=date.today(),
+            pegging_date=tenant_today_sync(tenant_id, self.db),
             pegging_status=PeggingStatus.PLANNED.value,
             upstream_pegging_id=upstream_pegging_id,
             chain_id=chain_id,
@@ -310,7 +311,7 @@ class PeggingService:
             supply_id=f"SP-{supply_plan_id}",
             supply_site_id=source_site_id,
             pegged_quantity=quantity,
-            pegging_date=date.today(),
+            pegging_date=tenant_today_sync(tenant_id, self.db),
             pegging_status=PeggingStatus.PLANNED.value,
             upstream_pegging_id=upstream_id,
             chain_id=chain_id,
@@ -354,7 +355,7 @@ class PeggingService:
             supply_id=shipment_id,
             supply_site_id=from_site_id,
             pegged_quantity=quantity,
-            pegging_date=date.today(),
+            pegging_date=tenant_today_sync(tenant_id, self.db),
             pegging_status=PeggingStatus.FIRM.value,
             upstream_pegging_id=upstream_pegging_id,
             chain_id=chain_id,

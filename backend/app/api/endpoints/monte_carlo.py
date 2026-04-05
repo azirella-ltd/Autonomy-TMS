@@ -16,6 +16,7 @@ from sqlalchemy import select, desc
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_db, get_current_user
+from app.core.clock import config_today_sync
 from app.models.user import User
 from app.models.monte_carlo import (
     MonteCarloRun, MonteCarloScenario, MonteCarloTimeSeries,
@@ -283,7 +284,7 @@ async def create_monte_carlo_run(
             )
 
     # Set start date
-    start_date = run_create.start_date or date.today()
+    start_date = run_create.start_date or config_today_sync(effective_config_id, db)
     end_date = start_date + timedelta(weeks=run_create.planning_horizon_weeks)
 
     # Create run record

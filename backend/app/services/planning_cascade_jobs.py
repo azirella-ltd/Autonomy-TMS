@@ -193,10 +193,12 @@ def _run_forecast_exception_check():
             db = sync_session_factory()
             try:
                 from app.services.forecast_exception_detector import ForecastExceptionDetector
-                from datetime import date, timedelta
+                from app.core.clock import tenant_today_sync
+                from datetime import timedelta
 
                 detector = ForecastExceptionDetector(db)
-                period_end = date.today()
+                # Use tenant's virtual today (frozen for demos)
+                period_end = tenant_today_sync(tenant_id, db)
                 period_start = period_end - timedelta(days=30)
 
                 detected = detector.run_detection(

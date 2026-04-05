@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, asc, case
 
 from app.models.metrics_hierarchy import GARTNER_METRICS, GartnerLevel, get_metric_config
+from app.core.clock import tenant_today_sync
 
 logger = logging.getLogger(__name__)
 
@@ -647,7 +648,7 @@ class HierarchicalMetricsService:
             if not config:
                 return None, None
 
-            today = date.today()
+            today = tenant_today_sync(tenant_id, self.db)
             year_end = date(today.year + 1, today.month, today.day)
 
             # Compute revenue and cost from forecast × product (config-scoped join)
@@ -726,7 +727,7 @@ class HierarchicalMetricsService:
                 .first()
             ) if latest_inv_date_row else None
 
-            today = date.today()
+            today = tenant_today_sync(tenant_id, self.db)
             year_end = date(today.year + 1, today.month, today.day)
 
             # Annual demand (COGS basis) — config-scoped product join
@@ -2122,7 +2123,7 @@ class HierarchicalMetricsService:
             if not config:
                 return sparklines
 
-            today = date.today()
+            today = tenant_today_sync(tenant_id, self.db)
             week_starts = [today - timedelta(weeks=n_weeks - i) for i in range(n_weeks)]
 
             # ── POF sparkline from OutboundOrderLine by week ──

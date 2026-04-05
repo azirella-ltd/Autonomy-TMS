@@ -440,7 +440,9 @@ class SimulationExecutor:
             raise ValueError(f"Game {scenario_id} not found")
 
         # Start date (default: today)
-        start_date = game.created_at.date() if game.created_at else date.today()
+        from app.core.clock import config_today_sync
+        _fallback_today = config_today_sync(self.config_id, self.db) if self.config_id else date.today()
+        start_date = game.created_at.date() if game.created_at else _fallback_today
 
         # Calculate round date (1 round = 7 days)
         round_date = start_date + timedelta(days=(round_number - 1) * 7)

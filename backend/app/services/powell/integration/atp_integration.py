@@ -197,6 +197,8 @@ class SiteAgentATPAdapter:
                 location_id=alloc.get('location_id', site_key),
                 priority=Priority.from_value(alloc.get('priority', 3)),
                 allocated_qty=alloc['allocated_qty'],
+                # TODO(virtual-clock): adapter has no config_id/tenant_id; thread tenant
+                # context through load_allocations_from_tgnn to use tenant_today_sync.
                 period_start=alloc.get('period_start', date.today()),
                 period_end=alloc.get('period_end', date.today()),
             )

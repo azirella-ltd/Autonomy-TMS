@@ -107,6 +107,7 @@ class RiskDetectionService:
         available_qty = (inv_level.on_hand_qty or 0) - (inv_level.allocated_qty or 0) + (inv_level.in_transit_qty or 0)
 
         # Get demand forecast for next horizon_days
+        # TODO(virtual-clock): Thread tenant_id/config_id into detect_stockout_risk signature
         forecast_start = date.today()
         forecast_end = forecast_start + timedelta(days=horizon_days)
 
@@ -277,6 +278,7 @@ class RiskDetectionService:
         available_qty = inv_level.on_hand_qty or 0
 
         # Get recent forecasts to calculate daily demand
+        # TODO(virtual-clock): Thread tenant_id/config_id into detect_overstock_risk signature
         forecast_start = date.today() - timedelta(days=30)
         forecast_end = date.today() + timedelta(days=30)
 

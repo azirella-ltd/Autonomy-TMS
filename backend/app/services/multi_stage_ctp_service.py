@@ -164,7 +164,8 @@ class MultiStageCTPService:
         at each stage with BOM explosion and lead time accumulation.
         """
         if target_date is None:
-            target_date = date.today() + timedelta(days=30)
+            from app.core.clock import tenant_today_sync
+            target_date = tenant_today_sync(self.tenant_id, self.db) + timedelta(days=30)
 
         # Clear caches for fresh calculation
         self._clear_caches()

@@ -571,6 +571,8 @@ def _get_effective_dates(decision, decision_type: str) -> Tuple[Optional[str], i
 
     # Default: action starts today, spans 1 planning week
     created = getattr(decision, "created_at", None)
+    # TODO(virtual-clock): Threading tenant_id into _get_effective_dates would require
+    # refactoring all callers (~15 sites). Fallback to real today when created_at missing.
     default_from = created.date() if created and hasattr(created, "date") else _date.today()
     default_period = 7
 

@@ -121,6 +121,8 @@ def _decision_date(d: Dict) -> date:
                 return raw
         except (ValueError, TypeError):
             pass
+    # TODO(virtual-clock): _decision_date is a module-level helper with no tenant context.
+    # Fallback is reached only when created_at is missing/malformed.
     return date.today()
 
 

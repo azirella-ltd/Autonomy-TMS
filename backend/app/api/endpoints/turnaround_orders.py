@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, date
 
 from app.api import deps
+from app.core.clock import tenant_today
 from app.models.user import User
 from app.models.turnaround_order import TurnaroundOrder, TurnaroundOrderLineItem
 from app.core.capabilities import require_capabilities
@@ -84,7 +85,7 @@ async def create_turnaround_order(
     order = TurnaroundOrder(
         turnaround_order_number=order_number,
         rma_number=rma_number,
-        order_date=date.today(),
+        order_date=await tenant_today(current_user.tenant_id, db),
         status="INITIATED",
         created_by_id=current_user.id,
         **order_data.dict()

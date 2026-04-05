@@ -1,7 +1,7 @@
 from typing import Optional, List, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
-from sqlalchemy import Boolean, Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy import Boolean, Column, Integer, String, Text, ForeignKey, DateTime, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.sql import func
@@ -99,6 +99,25 @@ class Tenant(Base):
     round_duration_seconds: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, default=None,
         comment="Round duration in seconds for timed clock mode"
+    )
+
+    # Virtual Clock — demo mode can freeze "today" at a historical reference date
+    # See docs/internal/VIRTUAL_CLOCK_ARCHITECTURE.md
+    time_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="live", server_default="live",
+        comment="live=real today, frozen=use virtual_today",
+    )
+    virtual_today: Mapped[Optional[date]] = mapped_column(
+        Date, nullable=True,
+        comment="Frozen reference date when time_mode=frozen",
+    )
+    external_data_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="live", server_default="live",
+        comment="live=call external APIs, snapshot=replay captured data",
+    )
+    external_snapshot_id: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True,
+        comment="Snapshot identifier to replay when external_data_mode=snapshot",
     )
 
     # Customer Industry (drives default stochastic parameters)

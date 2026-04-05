@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.db.session import get_sync_db as get_db
+from app.core.clock import config_today_sync
 from app.models.user import User
 from app.models.supply_chain_config import Site as DBNode, Lane as DBLane, SupplyChainConfig
 from app.models.sc_entities import InvLevel, InvPolicy, Forecast, Product
@@ -145,7 +146,7 @@ async def optimize_rebalancing(
         ss_map = {row.site_id: float(row.total_ss or 0) for row in ss_by_site}
 
         # --- Demand forecast: avg weekly P50 per site for next 4 weeks ---
-        today = date.today()
+        today = config_today_sync(request.config_id, db)
         from datetime import timedelta
         horizon_end = today + timedelta(weeks=4)
         demand_by_site = (

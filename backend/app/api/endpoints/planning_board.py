@@ -15,6 +15,7 @@ from calendar import monthrange
 import logging
 
 from app.db.session import get_db
+from app.core.clock import config_today
 from app.models.sc_entities import (
     SupplyPlan, Product, Forecast, InvLevel, InvPolicy,
     Geography, ProductHierarchy,
@@ -239,9 +240,10 @@ async def _build_product_hierarchy(db: AsyncSession, config_id: int) -> Dict:
         return {}
 
 
-def _build_time_hierarchy(horizon_weeks: int) -> Dict:
+def _build_time_hierarchy(horizon_weeks: int, today: Optional[date] = None) -> Dict:
     """Build time hierarchy from planning horizon: Year → Quarter → Month → Week"""
-    today = date.today()
+    if today is None:
+        today = date.today()
     start = today - timedelta(days=today.weekday())
 
     year_map: Dict[str, Any] = {}
@@ -566,7 +568,7 @@ async def get_netting_timeline(
     the selected level. Returns breadcrumbs + children for navigation.
     """
     try:
-        today = date.today()
+        today = await config_today(config_id, db)
 
         # Build all three hierarchies
         site_hier = await _build_site_hierarchy(db, config_id)
@@ -584,7 +586,7 @@ async def get_netting_timeline(
             time_range = (today, today + timedelta(weeks=26))
 
         horizon_weeks = max(4, (time_range[1] - time_range[0]).days // 7 + 1)
-        time_hier = _build_time_hierarchy(horizon_weeks)
+        time_hier = _build_time_hierarchy(horizon_weeks, today=today)
 
         # Determine bucket granularity from time level
         bucket_type = _bucket_type_for_level(time_level)

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.product_lifecycle import (
     ProductLifecycle, NPIProject, EOLPlan, MarkdownPlan, LifecycleHistory,
 )
+from app.core.clock import tenant_today
 
 logger = logging.getLogger(__name__)
 
@@ -186,16 +187,17 @@ class ProductLifecycleService:
         if not npi:
             return None
 
+        _today = await tenant_today(self.tenant_id, self.db)
         gates = npi.quality_gates or []
         found = False
         for gate in gates:
             if gate.get("gate") == gate_name:
                 gate["status"] = gate_status
-                gate["date"] = date.today().isoformat()
+                gate["date"] = _today.isoformat()
                 found = True
                 break
         if not found:
-            gates.append({"gate": gate_name, "status": gate_status, "date": date.today().isoformat()})
+            gates.append({"gate": gate_name, "status": gate_status, "date": _today.isoformat()})
 
         npi.quality_gates = gates
         await self._add_history(
@@ -215,7 +217,7 @@ class ProductLifecycleService:
             raise ValueError(f"Cannot launch from '{npi.status}' status (must be pilot or ramp_up)")
 
         npi.status = "launched"
-        npi.actual_launch_date = date.today()
+        npi.actual_launch_date = await tenant_today(self.tenant_id, self.db)
         await self._add_history("npi", npi.id, "launched", user_id)
 
         # Update lifecycle stage for associated products

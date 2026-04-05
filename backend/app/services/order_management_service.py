@@ -20,6 +20,7 @@ from app.models.sc_entities import OutboundOrderLine
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.supply_chain_config import Site
+from app.core.clock import tenant_today, config_today
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ class OrderManagementService:
             site_id=site_id,
             ordered_quantity=ordered_quantity,
             requested_delivery_date=requested_delivery_date,
-            order_date=date.today(),
+            order_date=await tenant_today(tenant_id, self.db) if tenant_id else date.today(),
             market_demand_site_id=market_demand_site_id,
             priority_code=priority_code,
             status="DRAFT",
@@ -174,9 +175,10 @@ class OrderManagementService:
         order.backlog_quantity = max(0, order.ordered_quantity - order.shipped_quantity)
 
         # Update status
+        _today = await tenant_today(tenant_id, self.db) if tenant_id else date.today()
         if order.shipped_quantity >= order.ordered_quantity:
             order.status = "FULFILLED"
-            order.last_ship_date = date.today()
+            order.last_ship_date = _today
 
             # Feed service level observation into conformal prediction
             if tenant_id is not None and order.ordered_quantity > 0:
@@ -198,7 +200,7 @@ class OrderManagementService:
         elif order.shipped_quantity > 0:
             order.status = "PARTIALLY_FULFILLED"
             if order.first_ship_date is None:
-                order.first_ship_date = date.today()
+                order.first_ship_date = _today
         else:
             order.status = "CONFIRMED"
 
@@ -291,7 +293,7 @@ class OrderManagementService:
             config_id=config_id,
             tenant_id=tenant_id,
             status="APPROVED",  # Auto-approve in simulation
-            order_date=date.today(),
+            order_date=await tenant_today(tenant_id, self.db) if tenant_id else date.today(),
             requested_delivery_date=requested_delivery_date,
             scenario_id=scenario_id,
             order_round=order_round,
@@ -439,13 +441,14 @@ class OrderManagementService:
         Returns:
             Created TransferOrder with line item
         """
+        _today = await config_today(config_id, self.db) if config_id else date.today()
         to = TransferOrder(
             to_number=to_number,
             source_site_id=source_site_id,
             destination_site_id=destination_site_id,
             config_id=config_id,
-            order_date=date.today(),
-            shipment_date=date.today(),
+            order_date=_today,
+            shipment_date=_today,
             estimated_delivery_date=estimated_delivery_date,
             status="IN_TRANSIT",
             scenario_id=scenario_id,
@@ -463,7 +466,7 @@ class OrderManagementService:
             line_number=1,
             product_id=product_id,
             quantity=quantity,
-            requested_ship_date=date.today(),
+            requested_ship_date=_today,
             requested_delivery_date=estimated_delivery_date,
         )
 
@@ -519,7 +522,8 @@ class OrderManagementService:
             raise ValueError(f"TransferOrder {to_id} not found")
 
         to.status = "RECEIVED"
-        to.actual_delivery_date = date.today()
+        _today = await config_today(to.config_id, self.db) if getattr(to, "config_id", None) else date.today()
+        to.actual_delivery_date = _today
         to.received_at = datetime.utcnow()
 
         # Feed lead time observation into conformal prediction
@@ -550,7 +554,7 @@ class OrderManagementService:
             po = await self.db.get(PurchaseOrder, to.source_po_id)
             if po:
                 po.status = "RECEIVED"
-                po.actual_delivery_date = date.today()
+                po.actual_delivery_date = _today
                 po.received_at = datetime.utcnow()
 
                 # Feed PO lead time + price into conformal prediction

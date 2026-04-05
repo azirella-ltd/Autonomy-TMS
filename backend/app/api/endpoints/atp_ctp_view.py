@@ -28,6 +28,7 @@ from datetime import datetime, date, timedelta
 from decimal import Decimal
 
 from app.api import deps
+from app.core.clock import tenant_today
 from app.models.user import User
 from app.models.inventory_projection import InvProjection
 from app.models.sc_entities import Product, SupplyPlan, InvLevel, Forecast
@@ -616,7 +617,7 @@ async def get_atp_ctp_timeline(
         Time-phased ATP/CTP timeline
     """
     if not start_date:
-        start_date = date.today()
+        start_date = await tenant_today(current_user.tenant_id, db)
 
     end_date = start_date + timedelta(weeks=weeks)
 

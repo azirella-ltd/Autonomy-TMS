@@ -588,6 +588,8 @@ class ForecastAdjustmentTRM:
             auto_applicable=confidence >= 0.8,
             requires_human_review=confidence < 0.8,
             time_horizon_periods=state.time_horizon_periods,
+            # TODO(virtual-clock): state/caller does not carry tenant_id or config_id;
+            # thread tenant context through ForecastAdjustmentState to use tenant_today_sync.
             effective_date=state.effective_date or date.today(),
             reason=f"TRM: {engine_result.explanation}",
         )
@@ -635,6 +637,8 @@ class ForecastAdjustmentTRM:
             auto_applicable=False,
             requires_human_review=True,
             time_horizon_periods=state.time_horizon_periods,
+            # TODO(virtual-clock): state/caller does not carry tenant_id or config_id;
+            # thread tenant context through ForecastAdjustmentState to use tenant_today_sync.
             effective_date=state.effective_date or date.today(),
             reason=f"Heuristic: {engine_result.explanation}",
         )

@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 from datetime import date
 
 from app.db.session import get_db
+from app.core.clock import tenant_today
 from app.models.user import User
 from app.models.mps import MPSPlan, MPSPlanItem
 from app.api.deps import get_current_user
@@ -326,6 +327,7 @@ async def get_lot_sizing_visualization(
     demand_schedule: str,  # Comma-separated values
     setup_cost: float = 500.0,
     holding_cost: float = 0.5,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
@@ -342,9 +344,10 @@ async def get_lot_sizing_visualization(
 
     from datetime import date, timedelta
 
+    today = await tenant_today(current_user.tenant_id, db)
     inputs = LotSizingInput(
         demand_schedule=demand,
-        start_date=date.today(),
+        start_date=today,
         period_days=7,
         setup_cost=setup_cost,
         holding_cost_per_unit_per_period=holding_cost

@@ -980,7 +980,7 @@ class CTPService:
             ID of the saved record
         """
         try:
-            from datetime import date
+            from app.core.clock import tenant_today_sync
             from app.models.inventory_projection import CtpProjection
 
             # Get node for scenario_user
@@ -994,7 +994,7 @@ class CTPService:
                 company_id=game.tenant_id or 1,
                 product_id=product_id,
                 site_id=node.id,
-                ctp_date=date.today(),
+                ctp_date=tenant_today_sync(getattr(game, "tenant_id", None), self.db),
                 ctp_qty=float(result.ctp_p50),
                 atp_qty=0.0,  # CTP for manufacturers doesn't use ATP component
                 production_capacity_qty=float(result.production_capacity),

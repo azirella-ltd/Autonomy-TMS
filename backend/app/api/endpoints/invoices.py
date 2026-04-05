@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 import json
 
 from app.api.deps import get_db, get_current_user
+from app.core.clock import tenant_today_sync
 from app.models.user import User
 from app.models.invoice import Invoice, InvoiceLineItem, InvoiceMatchResult
 from app.models.purchase_order import (
@@ -236,7 +237,7 @@ async def create_invoice(
         vendor_name=request.vendor_name,
         po_id=request.po_id,
         invoice_date=request.invoice_date,
-        received_date=date.today(),
+        received_date=tenant_today_sync(current_user.tenant_id, db),
         due_date=request.due_date,
         subtotal=subtotal,
         tax_amount=request.tax_amount,
@@ -874,7 +875,7 @@ async def mark_invoice_paid(
 
     invoice.status = "PAID"
     invoice.payment_reference = payment_reference
-    invoice.payment_date = payment_date or date.today()
+    invoice.payment_date = payment_date or tenant_today_sync(current_user.tenant_id, db)
 
     db.commit()
 

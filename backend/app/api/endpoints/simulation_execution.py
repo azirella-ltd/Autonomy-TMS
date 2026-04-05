@@ -28,6 +28,7 @@ from datetime import datetime, date, timedelta
 from decimal import Decimal
 
 from app.api import deps
+from app.core.clock import tenant_today
 from app.models.user import User
 from app.models.scenario import Scenario
 from app.models.sc_entities import OutboundOrderLine, InvLevel
@@ -401,6 +402,7 @@ async def get_backlog_report(
     result = await db.execute(query)
     orders = result.scalars().all()
 
+    today = await tenant_today(current_user.tenant_id, db)
     # Group by site
     backlog_by_site = {}
     for order in orders:
@@ -424,7 +426,7 @@ async def get_backlog_report(
             backlog_by_site[order.site_id]['oldest_date'] = order.order_date
 
         # Calculate age
-        age_days = (date.today() - order.order_date).days
+        age_days = (today - order.order_date).days
         backlog_by_site[order.site_id]['total_age_days'] += age_days
 
     # Build response

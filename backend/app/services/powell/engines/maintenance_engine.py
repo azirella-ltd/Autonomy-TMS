@@ -153,6 +153,9 @@ class MaintenanceEngine:
 
     def evaluate_scheduling(self, mo: MaintenanceSnapshot) -> MaintenanceSchedulingResult:
         """Evaluate optimal scheduling for a maintenance order."""
+        # TODO(virtual-clock): engine is sync with no tenant/config/db context —
+        # thread tenant_id through MaintenanceEngineConfig + sync session to use
+        # tenant_today_sync for the date.today() calls below.
         # Calculate breakdown probability
         breakdown_prob = self._estimate_breakdown_probability(mo)
 

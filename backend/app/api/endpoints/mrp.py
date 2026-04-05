@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 import uuid
 
 from app.api.deps import get_db, get_current_user
+from app.core.clock import tenant_today_sync
 from app.models.user import User, UserTypeEnum
 from app.models.mps import MPSPlan, MPSPlanItem, MPSStatus
 from app.models.sc_entities import (
@@ -1163,6 +1164,7 @@ async def get_mrp_exceptions(
 
     exceptions = db.execute(query).scalars().all()
 
+    today = tenant_today_sync(current_user.tenant_id, db)
     exceptions_list = []
     for exc in exceptions:
         component = db.get(Product, exc.component_id)
@@ -1175,7 +1177,7 @@ async def get_mrp_exceptions(
             site_id=exc.site_id,
             site_name=site.name if site else f"Site {exc.site_id}",
             period_number=exc.period_index or 0,
-            period_start_date=exc.period_start_date or date.today(),
+            period_start_date=exc.period_start_date or today,
             message=exc.message,
             recommended_action=None,
             quantity_shortfall=exc.quantity,

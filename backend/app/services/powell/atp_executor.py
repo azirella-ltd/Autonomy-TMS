@@ -492,12 +492,18 @@ class ATPExecutorTRM:
         if self._engine is not None:
             try:
                 from datetime import date
+                from app.core.clock import config_today_sync
+                _today = (
+                    config_today_sync(self.config_id, self.db)
+                    if (self.config_id is not None and self.db is not None)
+                    else date.today()
+                )
                 engine_order = EngineOrder(
                     order_id=request.order_id,
                     product_id=request.product_id,
                     location_id=request.location_id,
                     requested_qty=request.requested_qty,
-                    requested_date=date.today(),
+                    requested_date=_today,
                     priority=Priority.from_value(request.priority),
                     customer_id=request.customer_id or "",
                 )

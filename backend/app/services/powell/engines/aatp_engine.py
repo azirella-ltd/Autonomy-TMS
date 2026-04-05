@@ -237,6 +237,7 @@ class AATPEngine:
                 'requested_qty': order.requested_qty,
                 'fulfilled_qty': result.available_qty,
                 'consumption_detail': consumption_detail_dicts,
+                # Audit/history timestamp — real time per clock policy
                 'timestamp': date.today().isoformat()
             })
 

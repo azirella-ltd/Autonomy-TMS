@@ -21,6 +21,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db, get_sync_db
+from app.core.clock import config_today_sync
 from app.services.planning_cascade import (
     SOPService, SOPMode, SOPParameters, ServiceTierTarget, CategoryPolicy,
     SupplyBaselineService, ProductInventoryState, SupplierInfo,
@@ -345,7 +346,7 @@ def create_policy_envelope(
         ],
         total_inventory_cap=request.total_inventory_cap,
         gmroi_target=request.gmroi_target,
-        effective_date=request.effective_date or date.today(),
+        effective_date=request.effective_date or config_today_sync(request.config_id, db),
     )
 
     try:

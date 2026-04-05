@@ -132,6 +132,14 @@ class SupplyBaselineService:
         self.db = db
         self.mode = mode
         self.planning_horizon_days = planning_horizon_days
+        self._current_config_id: Optional[int] = None
+
+    def _today(self) -> date:
+        """Tenant-aware today — uses virtual clock when a config is in scope."""
+        from app.core.clock import config_today_sync
+        if self._current_config_id is not None:
+            return config_today_sync(self._current_config_id, self.db)
+        return date.today()
 
     def generate_supply_baseline_pack(
         self,
@@ -167,6 +175,9 @@ class SupplyBaselineService:
             SupplyBaselinePack as dict
         """
         from app.models.planning_cascade import SupplyBaselinePack, PolicySource
+
+        # Stash config_id so candidate generators can resolve tenant clock
+        self._current_config_id = config_id
 
         if self.mode == "INPUT":
             if not customer_plan:
@@ -366,7 +377,7 @@ class SupplyBaselineService:
 
                 # Check if order needed
                 if current_inv <= reorder_point:
-                    order_date = date.today() + timedelta(days=day)
+                    order_date = self._today() + timedelta(days=day)
                     receipt_date = order_date + timedelta(days=lead_time)
 
                     orders.append(ReplenishmentOrder(
@@ -455,7 +466,7 @@ class SupplyBaselineService:
                         order_qty = S - current_inv
                         order_qty = max(order_qty, inv.min_order_qty)
 
-                        order_date = date.today() + timedelta(days=day)
+                        order_date = self._today() + timedelta(days=day)
                         receipt_date = order_date + timedelta(days=lead_time)
 
                         orders.append(ReplenishmentOrder(
@@ -520,7 +531,7 @@ class SupplyBaselineService:
                 daily_demand = forecast[day] if day < len(forecast) else inv.avg_daily_demand
 
                 if current_inv <= reorder_point:
-                    order_date = date.today() + timedelta(days=day)
+                    order_date = self._today() + timedelta(days=day)
                     receipt_date = order_date + timedelta(days=lead_time)
 
                     orders.append(ReplenishmentOrder(
@@ -585,7 +596,7 @@ class SupplyBaselineService:
                 daily_demand = forecast[day] if day < len(forecast) else inv.avg_daily_demand
 
                 if current_inv <= reorder_point:
-                    order_date = date.today() + timedelta(days=day)
+                    order_date = self._today() + timedelta(days=day)
                     receipt_date = order_date + timedelta(days=lead_time)
 
                     orders.append(ReplenishmentOrder(
@@ -658,7 +669,7 @@ class SupplyBaselineService:
                 daily_demand = forecast[day] if day < len(forecast) else inv.avg_daily_demand
 
                 if current_inv <= reorder_point:
-                    order_date = date.today() + timedelta(days=day)
+                    order_date = self._today() + timedelta(days=day)
                     receipt_date = order_date + timedelta(days=lead_time)
 
                     orders.append(ReplenishmentOrder(
@@ -749,7 +760,7 @@ class SupplyBaselineService:
                 if net_requirement > 0 and suppliers:
                     primary_supplier = suppliers[0]
                     lead_time = primary_supplier.lead_time_days
-                    order_date = date.today()
+                    order_date = self._today()
                     receipt_date = order_date + timedelta(days=lead_time)
 
                     orders.append(ReplenishmentOrder(
@@ -789,8 +800,8 @@ class SupplyBaselineService:
                         supplier_id=primary.supplier_id,
                         destination_id="MFG-001",
                         order_qty=net_comp,
-                        order_date=date.today(),
-                        expected_receipt_date=date.today() + timedelta(days=primary.lead_time_days),
+                        order_date=self._today(),
+                        expected_receipt_date=self._today() + timedelta(days=primary.lead_time_days),
                         confidence=0.88,
                         rationale=f"BOM explosion component ({net_comp:.0f})",
                     ))
@@ -824,7 +835,7 @@ class SupplyBaselineService:
                 destination_id=item.get("destination_id", "DC-001"),
                 order_qty=item["qty"],
                 order_date=date.fromisoformat(item["order_date"]) if isinstance(item["order_date"], str) else item["order_date"],
-                expected_receipt_date=date.fromisoformat(item["receipt_date"]) if isinstance(item.get("receipt_date"), str) else date.today() + timedelta(days=7),
+                expected_receipt_date=date.fromisoformat(item["receipt_date"]) if isinstance(item.get("receipt_date"), str) else self._today() + timedelta(days=7),
                 confidence=0.85,
                 rationale="Customer-provided",
             ))

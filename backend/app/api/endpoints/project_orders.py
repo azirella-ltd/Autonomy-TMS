@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, date
 
 from app.api import deps
+from app.core.clock import tenant_today
 from app.models.user import User
 from app.models.project_order import ProjectOrder, ProjectOrderLineItem
 from app.core.capabilities import require_capabilities
@@ -195,7 +196,7 @@ async def create_project_order(
             customer_name=order_data.customer_name,
             site_id=order_data.site_id,
             status="PLANNED",
-            order_date=date.today(),
+            order_date=await tenant_today(current_user.tenant_id, db),
             required_completion_date=order_data.required_completion_date,
             project_type=order_data.project_type,
             priority=order_data.priority,

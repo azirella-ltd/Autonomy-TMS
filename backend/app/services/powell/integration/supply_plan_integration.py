@@ -184,8 +184,9 @@ class SiteAgentSupplyPlanAdapter:
         horizon_days: int
     ) -> List[GrossRequirement]:
         """Build gross requirements from demand forecasts."""
+        from app.core.clock import config_today_sync
         requirements = []
-        today = date.today()
+        today = config_today_sync(node.config_id, self.db)
 
         # Get products associated with this node
         products = self.db.query(Product).filter(
@@ -444,6 +445,8 @@ class SiteAgentSupplyPlanAdapter:
                 "source_node_id": po.source_node,
                 "destination_node_id": po.destination_node,
                 "quantity": float(po.quantity),
+                # TODO(virtual-clock): convert_to_supply_plan_orders has no config_id param;
+                # accept PlanningContext (or config_id) and use config_today_sync.
                 "planned_week": (po.order_date - date.today()).days // 7,
                 "delivery_week": (po.receipt_date - date.today()).days // 7,
                 "cost": 0.0,  # Would be calculated based on sourcing rules

@@ -227,6 +227,8 @@ class RCCPAdjustmentTRM:
                 config_id=0,
                 site_id=state.site_id,
                 resource_id=state.resource_id,
+                # TODO(virtual-clock): TRM has no tenant/config context (config_id=0 placeholder);
+                # add config_id to TRM __init__ then use config_today_sync for period_week.
                 period_week=date.today(),
                 gnn_utilisation_pct=state.gnn_utilisation_pct,
                 overtime_delta_hours=rec.overtime_delta_hours,

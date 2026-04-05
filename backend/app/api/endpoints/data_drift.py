@@ -17,6 +17,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
+from app.core.clock import config_today_sync, tenant_today_sync
 from app.models.data_drift import DataDriftAlert, DataDriftRecord
 
 router = APIRouter(prefix="/data-drift", tags=["data-drift"])
@@ -129,7 +130,7 @@ def get_drift_records(
 
     Use this to render time-series sparklines of drift scores over weeks.
     """
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = config_today_sync(config_id, db) - timedelta(days=days)
     query = db.query(DataDriftRecord).filter(
         DataDriftRecord.config_id == config_id,
         DataDriftRecord.analysis_date >= cutoff,
@@ -193,7 +194,7 @@ def get_drift_alerts(
     current_user=Depends(get_current_user),
 ):
     """List drift alerts, ordered newest-first. Use unacknowledged_only for worklist view."""
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = config_today_sync(config_id, db) - timedelta(days=days)
     query = db.query(DataDriftAlert).filter(
         DataDriftAlert.config_id == config_id,
         DataDriftAlert.alert_date >= cutoff,
@@ -310,7 +311,7 @@ def get_drift_summary(
     """
     from sqlalchemy import text
 
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = tenant_today_sync(current_user.tenant_id, db) - timedelta(days=days)
 
     rows = db.execute(
         text("""

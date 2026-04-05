@@ -180,6 +180,8 @@ class MRPEngine:
         planned: List[PlannedOrder] = []
 
         # Get all dates in planning horizon
+        # TODO(virtual-clock): engine has no tenant/config/db context — thread
+        # config_id through MRPConfig + sync session to use config_today_sync.
         today = date.today()
         horizon_end = today + timedelta(days=self.config.planning_horizon_days)
 

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, date
 
 from app.api import deps
+from app.core.clock import tenant_today
 from app.models.user import User
 from app.models.maintenance_order import MaintenanceOrder, MaintenanceOrderSpare
 from app.core.capabilities import require_capabilities
@@ -74,7 +75,7 @@ async def create_maintenance_order(
 
     order = MaintenanceOrder(
         maintenance_order_number=order_number,
-        order_date=date.today(),
+        order_date=await tenant_today(current_user.tenant_id, db),
         created_by_id=current_user.id,
         status="PLANNED",
         **order_data.dict()

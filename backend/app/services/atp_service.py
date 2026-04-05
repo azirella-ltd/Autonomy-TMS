@@ -218,11 +218,11 @@ class ATPService:
                 sap_material = self._get_sap_material(scenario_user, game)
 
                 if sap_plant and sap_material:
-                    from datetime import date
+                    from app.core.clock import tenant_today_sync
                     sap_result = sap_bridge.check_atp_realtime(
                         plant=sap_plant,
                         material=sap_material,
-                        check_date=date.today()
+                        check_date=tenant_today_sync(getattr(game, "tenant_id", None), self.db)
                     )
                     logger.info(f"SAP ATP result for {sap_material}@{sap_plant}: ATP={sap_result.atp.atp}")
                     return sap_result.atp
@@ -1016,7 +1016,7 @@ class ATPService:
             ID of the saved record
         """
         try:
-            from datetime import date
+            from app.core.clock import tenant_today_sync
             from app.models.inventory_projection import AtpProjection
 
             # Get node ID for scenario_user
@@ -1033,7 +1033,7 @@ class ATPService:
                 company_id=game.tenant_id or 1,
                 product_id=product_id,
                 site_id=node_id,
-                atp_date=date.today(),
+                atp_date=tenant_today_sync(getattr(game, "tenant_id", None), self.db),
                 atp_qty=float(result.atp_p50),
                 cumulative_atp_qty=float(result.atp_p50),
                 opening_balance=float(result.on_hand),

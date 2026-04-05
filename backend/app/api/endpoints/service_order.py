@@ -36,6 +36,7 @@ from app.api import deps
 from app.models.user import User
 from app.models.service_order import ServiceOrder
 from app.core.capabilities import require_capabilities
+from app.core.clock import tenant_today
 
 router = APIRouter()
 
@@ -151,6 +152,7 @@ async def create_service_order(
 ):
     """Create service order"""
     company_id = current_user.tenant_id
+    today = await tenant_today(current_user.tenant_id, db)
 
     service_order = ServiceOrder(
         company_id=company_id,
@@ -159,7 +161,7 @@ async def create_service_order(
         service_order_id=order.service_order_id,
         service_order_type=order.service_order_type,
         service_date=order.service_date,
-        requested_date=date.today(),
+        requested_date=today,
         status="open",
         priority=order.priority,
         is_emergency=order.is_emergency,
@@ -189,6 +191,7 @@ async def bulk_create_service_orders(
 ):
     """Bulk create service orders"""
     company_id = current_user.tenant_id
+    today = await tenant_today(current_user.tenant_id, db)
     created_count = 0
 
     for order in orders:
@@ -199,7 +202,7 @@ async def bulk_create_service_orders(
             service_order_id=order.service_order_id,
             service_order_type=order.service_order_type,
             service_date=order.service_date,
-            requested_date=date.today(),
+            requested_date=today,
             status="open",
             priority=order.priority,
             is_emergency=order.is_emergency,
@@ -297,10 +300,11 @@ async def get_overdue_orders(
     current_user: User = Depends(deps.get_current_user)
 ):
     """Find overdue service orders"""
+    today = await tenant_today(current_user.tenant_id, db)
     stmt = select(ServiceOrder).where(
         and_(
             ServiceOrder.status.in_(['open', 'assigned', 'in_progress']),
-            ServiceOrder.service_date < date.today()
+            ServiceOrder.service_date < today
         )
     ).order_by(ServiceOrder.service_date)
 
@@ -309,7 +313,7 @@ async def get_overdue_orders(
 
     overdue_list = []
     for order in overdue_orders:
-        days_overdue = (date.today() - order.service_date).days
+        days_overdue = (today - order.service_date).days
         overdue_list.append(OverdueServiceOrderResponse(
             id=order.id,
             service_order_id=order.service_order_id,

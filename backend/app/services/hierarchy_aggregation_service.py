@@ -311,7 +311,8 @@ class HierarchyAggregationService:
             raise ValueError(f"No planning configuration found for {planning_type.value}")
 
         if as_of_date is None:
-            as_of_date = date.today()
+            from app.core.clock import tenant_today
+            as_of_date = await tenant_today(self.tenant_id, self.db)
 
         # Ensure hierarchies are loaded
         if not self._site_tree:

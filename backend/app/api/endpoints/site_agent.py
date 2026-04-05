@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 from app.db.session import get_db
 from app.api.deps import get_current_user
+from app.core.clock import tenant_today
 from app.models.user import User
 from app.services.decision_governance_service import DecisionGovernanceService
 from app.models.decision_governance import DecisionGovernancePolicy, GuardrailDirective
@@ -317,14 +318,15 @@ async def load_allocations(
 
     site_agent = get_site_agent(request.site_key, db)
 
+    today = await tenant_today(current_user.tenant_id, db)
     allocations = [
         ATPAllocation(
             product_id=a['product_id'],
             location_id=a.get('location_id', request.site_key),
             priority=Priority.from_value(a.get('priority', 3)),
             allocated_qty=a['allocated_qty'],
-            period_start=date.today(),
-            period_end=date.today(),
+            period_start=today,
+            period_end=today,
         )
         for a in request.allocations
     ]

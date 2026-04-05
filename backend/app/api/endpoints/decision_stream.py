@@ -508,13 +508,15 @@ async def get_decision_time_series(
     """
     from sqlalchemy import text
     from datetime import datetime, timedelta, date
+    from app.core.clock import config_today
 
     cfg_id = config_id or getattr(current_user, 'default_config_id', None)
     if not cfg_id:
         return {"series": [], "lines": [], "error": True}
 
     # Parse effective date for chart window
-    ref_date = date.today()
+    # Use tenant's virtual today (frozen for demos, real for production)
+    ref_date = await config_today(cfg_id, db)
     if effective_from:
         try:
             ref_date = date.fromisoformat(effective_from)
