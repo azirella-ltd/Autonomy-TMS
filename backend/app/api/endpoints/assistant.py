@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.db.kb_session import get_kb_session
-from app.db.session import get_async_db
+from app.db.session import get_db as get_async_db
 from app.services.assistant_service import AssistantService
 
 logger = logging.getLogger(__name__)
