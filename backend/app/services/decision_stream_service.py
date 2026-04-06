@@ -395,6 +395,115 @@ def _humanize_ids(text: str, product_names: Dict[str, str], site_names: Dict[str
     return text
 
 
+def _consolidate_decisions(
+    decisions: List[Dict],
+    product_names: Dict[str, str],
+    site_names: Dict[str, str],
+) -> List[Dict]:
+    """Consolidate multiple decisions for the same (product, site, type) into one card.
+
+    The decision_seed generates one row per period per TRM type, so a product
+    with 20 weekly forecast adjustments shows up as 20 separate cards. This
+    groups them into a single card with the net effect (range of adjustments,
+    average magnitude, period span).
+
+    Only consolidates when there are 3+ decisions for the same key. Leaves
+    unique and paired decisions untouched.
+    """
+    from collections import defaultdict
+
+    # Group by (product_id, site_id, decision_type)
+    groups: Dict[tuple, List[Dict]] = defaultdict(list)
+    ungrouped: List[Dict] = []
+
+    for d in decisions:
+        pid = d.get("product_id")
+        sid = d.get("site_id")
+        dtype = d.get("decision_type")
+        if pid and sid and dtype:
+            groups[(pid, sid, dtype)].append(d)
+        else:
+            ungrouped.append(d)
+
+    result = list(ungrouped)
+
+    for (pid, sid, dtype), group in groups.items():
+        if len(group) < 3:
+            # Not enough to consolidate — keep as separate cards
+            result.extend(group)
+            continue
+
+        # Consolidate into a single card
+        # Use the highest-urgency decision as the base
+        group.sort(key=lambda d: d.get("urgency_score") or 0, reverse=True)
+        base = dict(group[0])  # copy
+
+        # Compute consolidated metrics
+        p_name = base.get("product_name") or product_names.get(str(pid), str(pid))
+        s_name = base.get("site_name") or site_names.get(str(sid), str(sid))
+        n = len(group)
+
+        if dtype == "forecast_adjustment":
+            # Extract adjustment percentages
+            pcts = []
+            for d in group:
+                ev = d.get("editable_values") or {}
+                pct = ev.get("adjustment_pct")
+                if pct is not None:
+                    pcts.append(float(pct))
+            if pcts:
+                avg_pct = sum(pcts) / len(pcts)
+                min_pct = min(pcts)
+                max_pct = max(pcts)
+                direction = "up" if avg_pct > 0 else "down"
+                base["summary"] = (
+                    f"Adjust forecast {direction} {abs(avg_pct):.0f}% avg "
+                    f"(range {abs(min_pct):.0f}–{abs(max_pct):.0f}%) for "
+                    f"{p_name} @ {s_name} across {n} periods"
+                )
+            else:
+                base["summary"] = (
+                    f"{n} forecast adjustments for {p_name} @ {s_name}"
+                )
+
+        elif dtype == "po_creation":
+            qtys = [float((d.get("editable_values") or {}).get("order_quantity", 0) or 0) for d in group]
+            total_qty = sum(qtys)
+            base["summary"] = (
+                f"Create {n} purchase orders totaling {total_qty:,.0f} units "
+                f"for {p_name} @ {s_name}"
+            )
+
+        elif dtype in ("atp", "atp_allocation"):
+            base["summary"] = (
+                f"{n} ATP allocation decisions for {p_name} @ {s_name}"
+            )
+
+        elif dtype == "inventory_buffer":
+            base["summary"] = (
+                f"{n} buffer adjustments for {p_name} @ {s_name}"
+            )
+
+        else:
+            base["summary"] = (
+                f"{n} {dtype.replace('_', ' ')} decisions for {p_name} @ {s_name}"
+            )
+
+        # Keep the consolidated count and child IDs for drill-down
+        base["consolidated_count"] = n
+        base["consolidated_ids"] = [d["id"] for d in group]
+        # Use the most recent created_at
+        dates = [d.get("created_at") for d in group if d.get("created_at")]
+        if dates:
+            base["created_at"] = max(dates)
+
+        result.append(base)
+
+    # Re-sort by urgency (highest first)
+    result.sort(key=lambda d: d.get("urgency_score") or 0, reverse=True)
+    return result
+
+
 def _fmt_qty(val) -> str:
     """Format a quantity as a rounded integer string, or '?' if missing."""
     if val is None:
@@ -2023,6 +2132,12 @@ class DecisionStreamService:
                     # Decision is at a level this role doesn't see at all — drop
                     pass
             all_decisions = filtered
+
+        # ── Consolidate: group multiple decisions for the same
+        # (product, site, decision_type) into a single card showing the
+        # net effect. This prevents the Decision Stream from showing N
+        # cards for the same item when the seeder emits per-period rows.
+        all_decisions = _consolidate_decisions(all_decisions, product_names, site_names)
 
         return all_decisions, product_names, site_names
 
