@@ -444,13 +444,22 @@ def _consolidate_decisions(
         n = len(group)
 
         if dtype == "forecast_adjustment":
-            # Extract adjustment percentages
+            # Extract per-period adjustment detail
             pcts = []
+            period_details = []
             for d in group:
                 ev = d.get("editable_values") or {}
                 pct = ev.get("adjustment_pct")
+                before = ev.get("current_forecast_value")
+                after = ev.get("adjusted_forecast_value")
                 if pct is not None:
                     pcts.append(float(pct))
+                period_details.append({
+                    "id": d.get("id"),
+                    "adjustment_pct": float(pct) if pct else None,
+                    "before": float(before) if before else None,
+                    "after": float(after) if after else None,
+                })
             if pcts:
                 avg_pct = sum(pcts) / len(pcts)
                 min_pct = min(pcts)
@@ -464,6 +473,23 @@ def _consolidate_decisions(
             else:
                 base["summary"] = (
                     f"{n} forecast adjustments for {p_name} @ {s_name}"
+                )
+            # Preserve per-period detail for reasoning + chart
+            base["consolidated_detail"] = period_details
+            # Build a richer reasoning text from the individual adjustments
+            if pcts:
+                detail_lines = []
+                for i, pd in enumerate(period_details[:5]):
+                    b = f"{pd['before']:.0f}" if pd['before'] else "?"
+                    a = f"{pd['after']:.0f}" if pd['after'] else "?"
+                    p = f"{pd['adjustment_pct']:+.0f}%" if pd['adjustment_pct'] else ""
+                    detail_lines.append(f"Period {i+1}: {b} → {a} ({p})")
+                if n > 5:
+                    detail_lines.append(f"... and {n - 5} more periods")
+                base["decision_reasoning"] = (
+                    f"Forecast adjustment across {n} periods for {p_name} at {s_name}. "
+                    f"Average adjustment: {avg_pct:+.1f}% (range {min_pct:+.0f}% to {max_pct:+.0f}%). "
+                    + " | ".join(detail_lines)
                 )
 
         elif dtype == "po_creation":

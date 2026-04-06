@@ -652,64 +652,12 @@ async def get_decision_time_series(
 
         # ─── FORECAST ADJUSTMENT: old vs new forecast vs actuals ──────
         elif decision_type == "forecast_adjustment":
-            window_start = chart_start
-            window_end = chart_end
+            # For forecast adjustments, the chart shows the DECISION DATA
+            # (original vs adjusted values from powell_forecast_adjustment_decisions)
+            # not the generic forecast table, because the seeded decisions carry
+            # their own before/after values that may differ from the forecast table.
 
-            # Get adjustment details to compute original baseline
-            adj_pct = None
-            try:
-                if decision_id:
-                    adj_row = await db.execute(text("""
-                        SELECT adjustment_pct, current_forecast_value, adjusted_forecast_value
-                        FROM powell_forecast_adjustment_decisions WHERE id = :did
-                    """), {"did": int(decision_id)})
-                    adj_r = adj_row.fetchone()
-                    if adj_r and adj_r[0]:
-                        adj_pct = float(adj_r[0])
-            except Exception:
-                pass
-
-            # Revised forecast (current state of the forecast table)
-            result = await db.execute(text("""
-                SELECT forecast_date, forecast_p10, forecast_p50, forecast_p90
-                FROM forecast
-                WHERE product_id = ANY(:pids) AND config_id = :cfg
-                AND forecast_date BETWEEN :s AND :e AND forecast_p50 IS NOT NULL
-                ORDER BY forecast_date
-            """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
-
-            # Actuals (realized demand from outbound_order_line)
-            actuals = {}
-            try:
-                act_result = await db.execute(text("""
-                    SELECT date_trunc('week', order_date)::date AS wk,
-                           SUM(COALESCE(NULLIF(shipped_quantity, 0), ordered_quantity, 0)) AS actual
-                    FROM outbound_order_line
-                    WHERE product_id = ANY(:pids) AND config_id = :cfg
-                      AND order_date BETWEEN :s AND :e
-                    GROUP BY 1
-                """), {"pids": pid_variants, "cfg": cfg_id, "s": window_start, "e": window_end})
-                actuals = {r[0].strftime("%Y-%m-%d"): float(r[1]) for r in act_result.fetchall()}
-            except Exception:
-                pass
-
-            for row in result.fetchall():
-                d = row[0].strftime("%Y-%m-%d")
-                p50 = float(row[2] or 0)
-                # Compute original baseline by reversing adjustment
-                original = round(p50 / (1 + adj_pct / 100.0), 1) if adj_pct and adj_pct != 0 else p50
-                entry = {
-                    "date": d,
-                    "original": original,
-                    "p50": round(p50, 1),
-                    "p10": round(float(row[1] or 0), 1),
-                    "p90": round(float(row[3] or 0), 1),
-                }
-                if d in actuals:
-                    entry["actual"] = round(actuals[d], 1)
-                series.append(entry)
-
-            # Resolve product name for title
+            # Resolve product + site names
             p_name = product_id
             try:
                 nr = await db.execute(text(
@@ -720,22 +668,75 @@ async def get_decision_time_series(
                     p_name = pn
             except Exception:
                 pass
-
             s_name = await _site_name(site_id)
-            chart_type = "area"
-            bands = [
-                {"key": "p90", "color": "#ef4444", "label": "P90 (High)"},
-                {"key": "p10", "color": "#22c55e", "label": "P10 (Low)"},
-            ]
-            lines = [
-                {"key": "original", "color": "#94a3b8", "label": "Original Forecast", "bold": False},
-                {"key": "p50", "color": "#3b82f6", "label": "Revised Forecast", "bold": True},
-            ]
-            if actuals:
-                lines.append({"key": "actual", "color": "#f97316", "label": "Actual Demand", "bold": True})
-            adj_dir = "up" if (adj_pct or 0) > 0 else "down"
-            title = f"Forecast Adjustment — {p_name} @ {s_name}"
-            annotation = f"Agent adjusted {adj_dir} {abs(adj_pct or 0):.1f}% | {window_start} to {window_end}"
+
+            # Query ALL adjustment decisions for this (product, site) —
+            # handles both single-card and consolidated-card cases.
+            adj_rows = []
+            try:
+                adj_result = await db.execute(text("""
+                    SELECT id, adjustment_pct,
+                           current_forecast_value, adjusted_forecast_value,
+                           created_at
+                    FROM powell_forecast_adjustment_decisions
+                    WHERE config_id = :cfg
+                      AND product_id = ANY(:pids)
+                      AND CAST(site_id AS TEXT) = CAST(:sid AS TEXT)
+                    ORDER BY id
+                """), {"cfg": cfg_id, "pids": pid_variants, "sid": site_id})
+                adj_rows = adj_result.fetchall()
+            except Exception:
+                pass
+
+            if adj_rows:
+                # Build series from the actual decision data
+                for i, row in enumerate(adj_rows):
+                    pct = float(row[1] or 0)
+                    before = float(row[2] or 0)
+                    after = float(row[3] or 0)
+                    label = f"Period {i+1}"
+                    series.append({
+                        "date": label,
+                        "original": round(before, 1),
+                        "revised": round(after, 1),
+                    })
+
+                avg_pct = sum(float(r[1] or 0) for r in adj_rows) / len(adj_rows)
+                chart_type = "line"
+                lines = [
+                    {"key": "original", "color": "#94a3b8", "label": "Original Forecast", "bold": False},
+                    {"key": "revised", "color": "#3b82f6", "label": "Revised Forecast", "bold": True},
+                ]
+                adj_dir = "up" if avg_pct > 0 else "down"
+                title = f"Forecast Adjustment — {p_name} @ {s_name}"
+                annotation = (
+                    f"Agent adjusted {adj_dir} {abs(avg_pct):.0f}% avg across {len(adj_rows)} periods | "
+                    f"Range: {min(float(r[1] or 0) for r in adj_rows):.0f}% to {max(float(r[1] or 0) for r in adj_rows):.0f}%"
+                )
+            else:
+                # Fallback: no decision rows found, show generic forecast
+                result = await db.execute(text("""
+                    SELECT forecast_date, forecast_p10, forecast_p50, forecast_p90
+                    FROM forecast
+                    WHERE product_id = ANY(:pids) AND config_id = :cfg
+                    AND forecast_date BETWEEN :s AND :e AND forecast_p50 IS NOT NULL
+                    ORDER BY forecast_date
+                """), {"pids": pid_variants, "cfg": cfg_id, "s": chart_start, "e": chart_end})
+                for row in result.fetchall():
+                    series.append({
+                        "date": row[0].strftime("%Y-%m-%d"),
+                        "p50": round(float(row[2] or 0), 1),
+                        "p10": round(float(row[1] or 0), 1),
+                        "p90": round(float(row[3] or 0), 1),
+                    })
+                chart_type = "area"
+                bands = [
+                    {"key": "p90", "color": "#ef4444", "label": "P90 (High)"},
+                    {"key": "p10", "color": "#22c55e", "label": "P10 (Low)"},
+                ]
+                lines = [{"key": "p50", "color": "#3b82f6", "label": "Forecast P50", "bold": True}]
+                title = f"Forecast — {p_name} @ {s_name}"
+                annotation = f"{chart_start} to {chart_end}"
 
         # ─── INVENTORY BUFFER: on-hand vs safety stock target ─────────
         elif decision_type == "inventory_buffer":
