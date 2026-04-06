@@ -870,7 +870,7 @@ function generateMockComparison(vA, vB) {
 const DemandPlanEdit = () => {
   const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
   const [activeTab, setActiveTab] = useState('edit');
-  const [selectedConfig, setSelectedConfig] = useState('');
+  const [selectedConfig, setSelectedConfig] = useState(undefined);
   const [timeGranularity, setTimeGranularity] = useState('week');
   const fileInputRef = useRef(null);
   const [importStatus, setImportStatus] = useState(null);
