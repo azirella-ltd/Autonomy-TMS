@@ -1352,7 +1352,7 @@ const AppContent = () => {
             />
 
             <Route path="/" element={<LandingRedirect />} />
-            <Route path="*" element={<Navigate to="/executive-dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/decision-stream" replace />} />
           </Route>
         </Route>
       </Routes>

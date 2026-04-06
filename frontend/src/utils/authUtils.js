@@ -107,8 +107,9 @@ export const getDefaultLandingPath = (user) => {
   }
 
   // Executives, DEMO_ALL, and all other operational users
-  // land on Executive Dashboard — the operational overview
-  return "/executive-dashboard";
+  // land on Decision Stream — the primary operational surface where
+  // agents present decisions for inspection and override.
+  return "/decision-stream";
 };
 
 const parseRedirectTarget = (target) => {

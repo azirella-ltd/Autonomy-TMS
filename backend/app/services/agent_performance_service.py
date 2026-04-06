@@ -303,7 +303,20 @@ class AgentPerformanceService:
                         .all()
                     )
 
-                # Flat geo with state_prov + region mapping
+                # Flat geo — group by country (works for multi-country tenants
+                # like SAP Demo with plants in DE, US, TW, TR, etc.)
+                if not rows:
+                    country_rows = (
+                        _base_q(CityGeo.country)
+                        .join(CityGeo, Site.geo_id == CityGeo.id)
+                        .group_by(Product.category, CityGeo.country)
+                        .all()
+                    )
+                    if country_rows:
+                        rows = country_rows
+
+                # Flat geo with state_prov + US-specific region mapping
+                # (only useful for single-country US tenants like Food Dist)
                 if not rows:
                     flat_rows = (
                         _base_q(CityGeo.state_prov)
