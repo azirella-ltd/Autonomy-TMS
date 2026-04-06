@@ -105,13 +105,8 @@ class AgentPerformanceService:
     # =========================================================================
 
     # US state → region label mapping (matches food dist geography structure)
-    _STATE_TO_REGION = {
-        "OR": "Northwest", "WA": "Northwest",
-        "AZ": "Southwest", "CA": "Southwest", "UT": "Southwest",
-        "IL": "Central", "MN": "Central", "TX": "Central", "AR": "Central",
-        "PA": "Northeast", "NY": "Northeast",
-        "GA": "Southeast",
-    }
+    # Geography is resolved dynamically per tenant from the geography table.
+    # No hardcoded STATE_TO_REGION — see geo_hierarchy_resolver.py.
 
     def _build_treemap_from_sc_data(self, tenant_id: int) -> Optional[Dict]:
         """
@@ -124,7 +119,7 @@ class AgentPerformanceService:
         Three-tier fallback:
           1. 3-level geo join (city → state → region) — proper CFG22 hierarchy
           2. 2-level geo join (site → parent) — state-to-region
-          3. state_prov on geography + Python-level STATE_TO_REGION mapping
+          3. dynamic geo_hierarchy_resolver (walks parent_geo_id chain)
 
         Returns None if no SC config or forecast data is available.
         """
@@ -223,33 +218,35 @@ class AgentPerformanceService:
                         .all()
                     )
 
-                # A4: Flat fallback — TradingPartner.state_prov + STATE_TO_REGION mapping
+                # A4: Flat fallback — TradingPartner geo_id → dynamic region resolver
                 if not tp_rows:
+                    from app.services.geo_hierarchy_resolver import resolve_geo_regions_sync
+                    _geo_map = resolve_geo_regions_sync(self.db, config.id)
                     tp_rows = (
                         self.db.query(
                             Product.category.label("category"),
-                            TradingPartner.state_prov.label("region_name"),
+                            TradingPartner.geo_id.label("tp_geo_id"),
                             func.sum(Forecast.forecast_p50 * Product.unit_price).label("revenue"),
                             func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
                         )
                         .join(Product, Forecast.product_id == Product.id)
                         .join(TradingPartner, Forecast.customer_id == TradingPartner.id)
                         .filter(*tp_base_filters)
-                        .group_by(Product.category, TradingPartner.state_prov)
+                        .group_by(Product.category, TradingPartner.geo_id)
                         .all()
                     )
                     if tp_rows:
                         rows = [
                             type("Row", (), {
                                 "category": r.category,
-                                "region_name": self._STATE_TO_REGION.get(
-                                    r.region_name or "", r.region_name or "Other"
+                                "region_name": _geo_map.get(
+                                    str(r.tp_geo_id), str(r.tp_geo_id) or "Other"
                                 ),
                                 "revenue": r.revenue,
                                 "cost": r.cost,
                             })()
                             for r in tp_rows
-                            if r.region_name
+                            if r.tp_geo_id
                         ]
 
                 # For A1-A3, rows come directly with proper region names
@@ -303,39 +300,28 @@ class AgentPerformanceService:
                         .all()
                     )
 
-                # Flat geo — group by country (works for multi-country tenants
-                # like SAP Demo with plants in DE, US, TW, TR, etc.)
+                # Flat geo — use dynamic geo hierarchy resolver
                 if not rows:
-                    country_rows = (
-                        _base_q(CityGeo.country)
-                        .join(CityGeo, Site.geo_id == CityGeo.id)
-                        .group_by(Product.category, CityGeo.country)
-                        .all()
-                    )
-                    if country_rows:
-                        rows = country_rows
-
-                # Flat geo with state_prov + US-specific region mapping
-                # (only useful for single-country US tenants like Food Dist)
-                if not rows:
+                    from app.services.geo_hierarchy_resolver import resolve_geo_regions_sync
+                    _geo_map = resolve_geo_regions_sync(self.db, config.id)
                     flat_rows = (
-                        _base_q(CityGeo.state_prov)
-                        .join(CityGeo, Site.geo_id == CityGeo.id)
-                        .group_by(Product.category, CityGeo.state_prov)
+                        _base_q(Site.geo_id)
+                        .group_by(Product.category, Site.geo_id)
                         .all()
                     )
-                    rows = [
-                        type("Row", (), {
-                            "category": r.category,
-                            "region_name": self._STATE_TO_REGION.get(
-                                r.region_name or "", r.region_name or "Other"
-                            ),
-                            "revenue": r.revenue,
-                            "cost": r.cost,
-                        })()
-                        for r in flat_rows
-                        if r.region_name
-                    ]
+                    if flat_rows:
+                        rows = [
+                            type("Row", (), {
+                                "category": r.category,
+                                "region_name": _geo_map.get(
+                                    str(r.region_name), str(r.region_name) or "Other"
+                                ),
+                                "revenue": r.revenue,
+                                "cost": r.cost,
+                            })()
+                            for r in flat_rows
+                            if r.region_name
+                        ]
 
                 # Last resort: group by site name (no geography)
                 if not rows:

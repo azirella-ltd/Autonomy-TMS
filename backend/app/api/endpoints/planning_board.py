@@ -92,21 +92,8 @@ class NettingTimelineResponse(BaseModel):
     generated_at: datetime
 
 
-# ============================================================================
-# State → Region mapping (same as hierarchical_metrics_service)
-# ============================================================================
-
-_STATE_TO_REGION = {
-    "WA": "NW", "OR": "NW", "ID": "NW", "MT": "NW",
-    "CA": "SW", "NV": "SW", "AZ": "SW", "NM": "SW", "TX": "SW",
-    "CO": "Central", "KS": "Central", "NE": "Central", "MO": "Central",
-    "IA": "Central", "MN": "Central", "WI": "Central", "IL": "Central",
-    "IN": "Central", "OH": "Central", "MI": "Central",
-    "NY": "NE", "PA": "NE", "NJ": "NE", "CT": "NE", "MA": "NE",
-    "NH": "NE", "VT": "NE", "ME": "NE", "RI": "NE",
-    "FL": "SE", "GA": "SE", "NC": "SE", "SC": "SE", "VA": "SE",
-    "TN": "SE", "AL": "SE", "MS": "SE", "LA": "SE", "AR": "SE", "KY": "SE",
-}
+# Geography is resolved dynamically per tenant from the geography table.
+# No hardcoded STATE_TO_REGION — see geo_hierarchy_resolver.py.
 
 _MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -131,16 +118,12 @@ async def _build_site_hierarchy(db: AsyncSession, config_id: int) -> Dict:
         )
         sites = site_result.scalars().all()
 
+        # Dynamically resolve geo hierarchy from tenant data
+        from app.services.geo_hierarchy_resolver import resolve_geo_regions_async_impl
+        _geo_map = await resolve_geo_regions_async_impl(db, config_id)
         region_map: Dict[str, list] = {}
         for s in sites:
-            region = "Other"
-            if s.geo_id:
-                geo_result = await db.execute(
-                    select(Geography).where(Geography.id == s.geo_id)
-                )
-                geo = geo_result.scalar_one_or_none()
-                if geo and geo.state_prov:
-                    region = _STATE_TO_REGION.get(geo.state_prov, "Other")
+            region = _geo_map.get(str(s.geo_id), "Other") if s.geo_id else "Other"
             region_map.setdefault(region, []).append(s)
 
         region_children = {}

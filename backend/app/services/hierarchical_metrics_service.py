@@ -92,14 +92,8 @@ _METRIC_KEY_TO_GARTNER: Dict[str, str] = {
     "buffer_level_adequacy":    "BLA",
 }
 
-# Region mapping (state abbreviation → region name)
-_STATE_TO_REGION: Dict[str, str] = {
-    "OR": "Northwest", "WA": "Northwest",
-    "AZ": "Southwest", "CA": "Southwest", "UT": "Southwest",
-    "IL": "Central",   "MN": "Central",   "TX": "Central",  "AR": "Central",
-    "PA": "Northeast", "NY": "Northeast",
-    "GA": "Southeast",
-}
+# Geography is resolved dynamically per tenant from the geography table.
+# No hardcoded STATE_TO_REGION — see geo_hierarchy_resolver.py.
 
 
 def _status(value: Optional[float], target: float, lower_is_better: bool = False) -> str:
@@ -329,12 +323,12 @@ class HierarchicalMetricsService:
                 .all()
             )
 
-            # Group sites by region
+            # Group sites by region — dynamically resolved from geo hierarchy
+            from app.services.geo_hierarchy_resolver import resolve_geo_regions_sync
+            _geo_map = resolve_geo_regions_sync(self.db, config.id)
             region_map: Dict[str, List] = {}
             for s in sites:
-                geo = self.db.query(Geography).filter(Geography.id == s.geo_id).first() if s.geo_id else None
-                state = geo.state_prov if geo else None
-                region = _STATE_TO_REGION.get(state, "Other") if state else "Other"
+                region = _geo_map.get(str(s.geo_id), "Other") if s.geo_id else "Other"
                 region_map.setdefault(region, []).append(s)
 
             region_children: Dict[str, Any] = {}
