@@ -555,6 +555,8 @@ async def get_decision_time_series(
     title = ""
     chart_type = "line"
     annotation = None
+    detail_table = []
+    detail_columns = []
 
     try:
         # ─── REBALANCING: inventory at source + destination ───────────
@@ -713,6 +715,25 @@ async def get_decision_time_series(
                     f"Agent adjusted {adj_dir} {abs(avg_pct):.0f}% avg across {len(adj_rows)} periods | "
                     f"Range: {min(float(r[1] or 0) for r in adj_rows):.0f}% to {max(float(r[1] or 0) for r in adj_rows):.0f}%"
                 )
+
+                # Per-period detail table
+                detail_columns = [
+                    {"key": "period", "label": "Period"},
+                    {"key": "original", "label": "Original"},
+                    {"key": "revised", "label": "Revised"},
+                    {"key": "change", "label": "Change"},
+                ]
+                detail_table = []
+                for i, row in enumerate(adj_rows):
+                    before = float(row[2] or 0)
+                    after = float(row[3] or 0)
+                    pct = float(row[1] or 0)
+                    detail_table.append({
+                        "period": f"Period {i+1}",
+                        "original": round(before, 1),
+                        "revised": round(after, 1),
+                        "change": round(pct, 1),
+                    })
             else:
                 # Fallback: no decision rows found, show generic forecast
                 result = await db.execute(text("""
@@ -996,7 +1017,7 @@ async def get_decision_time_series(
         logger.warning(f"Time series query failed for {decision_type}: {e}")
         return {"series": [], "lines": [], "error": True}
 
-    return {
+    resp = {
         "series": series,
         "lines": lines,
         "bands": bands if bands else None,
@@ -1005,6 +1026,11 @@ async def get_decision_time_series(
         "annotation": annotation,
         "error": len(series) == 0,
     }
+    # Include per-period detail table for consolidated forecast adjustments
+    if detail_table:
+        resp["detail_table"] = detail_table
+        resp["detail_columns"] = detail_columns
+    return resp
 
 
 @router.post("/chat", response_model=DecisionStreamChatResponse)

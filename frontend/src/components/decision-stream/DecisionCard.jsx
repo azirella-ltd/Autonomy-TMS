@@ -630,6 +630,56 @@ const DecisionCard = ({
                   {chartData.annotation && (
                     <div className="mt-1.5 text-[10px] text-blue-600 italic">{chartData.annotation}</div>
                   )}
+
+                  {/* Detail table for consolidated decisions (e.g., per-period forecast adjustments) */}
+                  {chartData.detail_table && chartData.detail_table.length > 0 && (
+                    <div className="mt-3 border-t border-blue-100 pt-2">
+                      <div className="text-[10px] font-semibold text-blue-800 mb-1.5 uppercase tracking-wider">
+                        Per-Period Detail
+                      </div>
+                      <div className="max-h-[200px] overflow-y-auto">
+                        <table className="w-full text-[11px]">
+                          <thead>
+                            <tr className="border-b border-blue-100">
+                              {chartData.detail_columns?.map((col, i) => (
+                                <th key={i} className={cn(
+                                  "py-1 px-2 font-semibold text-blue-700",
+                                  i === 0 ? "text-left" : "text-right"
+                                )}>
+                                  {col.label}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {chartData.detail_table.map((row, ri) => (
+                              <tr key={ri} className={cn(
+                                "border-b border-blue-50",
+                                ri % 2 === 0 ? "bg-blue-50/30" : ""
+                              )}>
+                                {chartData.detail_columns?.map((col, ci) => {
+                                  const val = row[col.key];
+                                  const isChange = col.key === 'change';
+                                  return (
+                                    <td key={ci} className={cn(
+                                      "py-1 px-2",
+                                      ci === 0 ? "text-left font-medium" : "text-right",
+                                      isChange && val > 0 ? "text-green-700 font-semibold" : "",
+                                      isChange && val < 0 ? "text-red-700 font-semibold" : "",
+                                    )}>
+                                      {isChange && val != null ? `${val > 0 ? '+' : ''}${val.toFixed(0)}%` :
+                                       typeof val === 'number' ? val.toFixed(1) :
+                                       val ?? '—'}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {showChart && chartData?.error && (
