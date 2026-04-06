@@ -376,11 +376,11 @@ class SemanticContextService:
         result = await self.db.execute(
             select(
                 Site.id, Site.name,
-                Site.sc_site_type, Site.master_type,
+                Site.type, Site.master_type,
             ).where(Site.config_id == config_id).order_by(Site.name)
         )
         return [
-            {"id": r.id, "name": r.name, "type": r.sc_site_type, "master_type": r.master_type}
+            {"id": r.id, "name": r.name, "type": r.type, "master_type": r.master_type}
             for r in result.all()
         ]
 
