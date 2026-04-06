@@ -158,23 +158,40 @@ const wrapText = (text, maxWidth, fontSize) => {
   return lines.slice(0, 3); // Max 3 lines
 };
 
+// Smart currency formatter — auto-scales to K / M / B
+const formatCurrency = (value) => {
+  if (value == null || value === 0) return '$0';
+  const abs = Math.abs(value);
+  if (abs >= 1e9)  return `$${(value / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6)  return `$${(value / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3)  return `$${(value / 1e3).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
+};
+
+// Compact version for treemap labels (no decimal on M/B when space is tight)
+const formatCurrencyCompact = (value) => {
+  if (value == null || value === 0) return '$0';
+  const abs = Math.abs(value);
+  if (abs >= 1e9)  return `$${(value / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6)  return `$${(value / 1e6).toFixed(0)}M`;
+  if (abs >= 1e3)  return `$${(value / 1e3).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
+};
+
 const TreemapContent = (props) => {
   const { x, y, width, height, name, revenue, margin, cost } = props;
 
-  // Skip if no dimensions or no name
   if (!width || !height || width <= 0 || height <= 0 || !name) return null;
 
-  // Calculate margin from cost/revenue if not provided directly
   const calculatedMargin = margin ?? (revenue && cost ? ((revenue - cost) / revenue) * 100 : 30);
   const color = getMarginColor(calculatedMargin);
 
-  // Font sizing based on box dimensions
-  const fontSize = Math.min(13, Math.max(9, Math.min(width / 10, height / 5)));
+  // Responsive font sizing
+  const fontSize = Math.min(14, Math.max(9, Math.min(width / 10, height / 5)));
   const showDetails = width > 70 && height > 45;
   const showName = width > 40 && height > 25;
 
-  // Wrap the name text
-  const nameLines = showName ? wrapText(name, width - 8, fontSize) : [];
+  const nameLines = showName ? wrapText(name, width - 12, fontSize) : [];
   const lineHeight = fontSize + 4;
   const totalTextHeight = nameLines.length * lineHeight + (showDetails ? lineHeight : 0);
   const startY = y + (height - totalTextHeight) / 2 + fontSize;
@@ -182,14 +199,11 @@ const TreemapContent = (props) => {
   return (
     <g>
       <rect
-        x={x}
-        y={y}
-        width={width}
-        height={height}
+        x={x} y={y} width={width} height={height}
         style={{
           fill: color,
           stroke: '#fff',
-          strokeWidth: 1.5,
+          strokeWidth: 2,
           strokeOpacity: 1,
         }}
       />
@@ -201,10 +215,11 @@ const TreemapContent = (props) => {
           textAnchor="middle"
           fill="#fff"
           fontSize={fontSize}
-          fontWeight="600"
+          fontWeight="700"
           style={{
-            textShadow: '0 1px 2px rgba(0,0,0,0.35)',
-            fontFamily: 'system-ui, -apple-system, sans-serif',
+            textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+            letterSpacing: '0.01em',
           }}
         >
           {line}
@@ -215,15 +230,15 @@ const TreemapContent = (props) => {
           x={x + width / 2}
           y={startY + nameLines.length * lineHeight}
           textAnchor="middle"
-          fill="rgba(255,255,255,0.9)"
+          fill="rgba(255,255,255,0.95)"
           fontSize={fontSize - 1}
-          fontWeight="400"
+          fontWeight="500"
           style={{
-            textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-            fontFamily: 'system-ui, -apple-system, sans-serif',
+            textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+            fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
           }}
         >
-          ${(revenue / 1000000).toFixed(0)}M • {calculatedMargin?.toFixed(0)}%
+          {formatCurrencyCompact(revenue)} • {calculatedMargin?.toFixed(0)}%
         </text>
       )}
     </g>
@@ -236,28 +251,27 @@ const CustomTooltip = ({ active, payload }) => {
   const data = payload[0].payload;
   if (!data.revenue) return null;
 
-  // Calculate margin from cost if margin not provided
   const margin = data.margin ?? (data.cost ? ((data.revenue - data.cost) / data.revenue) * 100 : null);
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border min-w-[180px]">
-      <p className="font-semibold text-sm">{data.name}</p>
-      <div className="mt-1 space-y-0.5">
-        <p className="text-xs text-muted-foreground flex justify-between">
-          <span>Revenue:</span>
-          <span className="font-medium">${(data.revenue / 1000000).toFixed(1)}M</span>
+    <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border min-w-[200px]">
+      <p className="font-bold text-sm text-foreground">{data.name}</p>
+      <div className="mt-1.5 space-y-1">
+        <p className="text-xs flex justify-between gap-4">
+          <span className="text-muted-foreground">Revenue:</span>
+          <span className="font-semibold text-foreground">{formatCurrency(data.revenue)}</span>
         </p>
-        {data.cost && (
-          <p className="text-xs text-muted-foreground flex justify-between">
-            <span>Cost:</span>
-            <span className="font-medium">${(data.cost / 1000000).toFixed(1)}M</span>
+        {data.cost != null && (
+          <p className="text-xs flex justify-between gap-4">
+            <span className="text-muted-foreground">Cost:</span>
+            <span className="font-medium text-foreground">{formatCurrency(data.cost)}</span>
           </p>
         )}
         {margin != null && (
-          <p className="text-xs flex justify-between">
+          <p className="text-xs flex justify-between gap-4">
             <span className="text-muted-foreground">Margin:</span>
             <span className={cn(
-              'font-semibold',
+              'font-bold',
               margin >= 30 ? 'text-green-600' : margin >= 25 ? 'text-yellow-600' : 'text-red-600'
             )}>
               {margin.toFixed(1)}%
