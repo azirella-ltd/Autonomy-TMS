@@ -524,9 +524,16 @@ def _get_suggested_action(decision, decision_type: str) -> str:
         pct = getattr(decision, "adjustment_pct", "")
         cur = getattr(decision, "current_forecast_value", None)
         adj = getattr(decision, "adjusted_forecast_value", None)
+        # Include product, site, and horizon in the summary so the
+        # Decision Stream headline tells you WHAT, WHERE, and WHEN
+        # without clicking into the detail.
+        pid = getattr(decision, "product_id", "")
+        sid = getattr(decision, "site_id", "")
+        horizon = getattr(decision, "planning_horizon", None) or getattr(decision, "adjustment_horizon", None)
+        horizon_str = f" over {horizon}" if horizon else ""
         if cur and adj:
-            return f"Adjust forecast {direction} {pct}% ({cur:.0f} -> {adj:.0f})"
-        return f"Adjust forecast {direction} {pct}%"
+            return f"Adjust forecast {direction} {pct}% for {pid} @ {sid}{horizon_str} ({cur:.0f} → {adj:.0f} units/wk)"
+        return f"Adjust forecast {direction} {pct}% for {pid} @ {sid}{horizon_str}"
     elif decision_type == "inventory_buffer":
         base = getattr(decision, "baseline_ss", None)
         adj = getattr(decision, "adjusted_ss", None)

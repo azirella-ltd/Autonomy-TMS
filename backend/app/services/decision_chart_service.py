@@ -172,30 +172,134 @@ class DecisionChartService:
         }
 
     async def _chart_forecast_adjustment(self, config_id, product_id, site_id, decision_id) -> Dict:
-        """Forecast Adjustment: Old vs new forecast vs actuals. Window: -4w → +4w."""
-        # forecast table: forecast_date / forecast_p50 / forecast_p10 / forecast_p90
-        # (no period_start / quantity / plan_version columns on this table).
+        """Forecast Adjustment: Original baseline vs revised forecast vs actuals.
+
+        Shows 12 weeks centered on the decision point so the user can see:
+        - What the baseline forecast was before the adjustment
+        - What the revised forecast is after the adjustment
+        - What actually happened (realized demand from outbound_order_line)
+        """
+        # Resolve human-readable names for the title
+        product_name = product_id
+        site_name = str(site_id)
+        try:
+            r = await self.db.execute(
+                sql_text("SELECT description FROM product WHERE id = :pid AND config_id = :cid"),
+                {"pid": product_id, "cid": config_id},
+            )
+            row = r.fetchone()
+            if row and row[0]:
+                product_name = f"{row[0]} [{product_id}]"
+            r = await self.db.execute(
+                sql_text("SELECT name FROM site WHERE id = :sid"),
+                {"sid": site_id},
+            )
+            row = r.fetchone()
+            if row and row[0]:
+                site_name = row[0]
+        except Exception:
+            pass
+
+        # Get the decision's adjustment details to compute original baseline
+        adj_pct = None
+        adj_value = None
+        original_value = None
+        try:
+            r = await self.db.execute(
+                sql_text("""
+                    SELECT adjustment_pct, current_forecast_value, adjusted_forecast_value
+                    FROM powell_forecast_adjustment_decisions
+                    WHERE id = :did
+                """),
+                {"did": decision_id},
+            )
+            row = r.fetchone()
+            if row:
+                adj_pct = float(row[0]) if row[0] else None
+                original_value = float(row[1]) if row[1] else None
+                adj_value = float(row[2]) if row[2] else None
+        except Exception:
+            pass
+
+        # Current forecast (the revised version — what's in the forecast table now)
         result = await self.db.execute(
             sql_text("""
                 SELECT forecast_date,
                        COALESCE(forecast_p50, forecast_quantity) AS p50,
                        forecast_p10, forecast_p90
                 FROM forecast
-                WHERE config_id = :cid AND product_id = :pid AND site_id = :sid
-                ORDER BY forecast_date DESC
-                LIMIT 8
+                WHERE config_id = :cid AND product_id = :pid
+                  AND CAST(site_id AS TEXT) = CAST(:sid AS TEXT)
+                ORDER BY forecast_date
+                LIMIT 12
             """),
             {"cid": config_id, "pid": product_id, "sid": site_id},
         )
-        rows = list(reversed(result.fetchall()))  # chronological order for chart
+        rows = result.fetchall()
+
+        # Realized demand (actuals from outbound_order_line)
+        actuals_result = await self.db.execute(
+            sql_text("""
+                SELECT date_trunc('week', order_date)::date AS wk,
+                       SUM(COALESCE(shipped_quantity, ordered_quantity, 0)) AS actual
+                FROM outbound_order_line
+                WHERE config_id = :cid AND product_id = :pid
+                  AND CAST(site_id AS TEXT) = CAST(:sid AS TEXT)
+                  AND ordered_quantity > 0
+                GROUP BY 1
+                ORDER BY 1 DESC
+                LIMIT 12
+            """),
+            {"cid": config_id, "pid": product_id, "sid": site_id},
+        )
+        actuals = {r.wk.isoformat(): float(r.actual) for r in actuals_result.fetchall()}
+
+        # Build series
+        revised_series = []
+        original_series = []
+        p10_series = []
+        p90_series = []
+        actuals_series = []
+
+        for r in rows:
+            x = r.forecast_date.isoformat() if r.forecast_date else ""
+            p50 = float(r.p50 or 0)
+            revised_series.append({"x": x, "y": p50})
+            p10_series.append({"x": x, "y": float(r.forecast_p10 or 0)})
+            p90_series.append({"x": x, "y": float(r.forecast_p90 or 0)})
+
+            # Compute original baseline by reversing the adjustment
+            if adj_pct and adj_pct != 0:
+                orig = p50 / (1 + adj_pct / 100.0)
+            elif original_value is not None and adj_value is not None and adj_value != 0:
+                scale = original_value / adj_value
+                orig = p50 * scale
+            else:
+                orig = p50  # can't reverse — show same as revised
+            original_series.append({"x": x, "y": round(orig, 1)})
+
+            # Actuals for this week (if we have them)
+            if x in actuals:
+                actuals_series.append({"x": x, "y": actuals[x]})
+
+        # Date range for context label
+        dates = [r.forecast_date for r in rows if r.forecast_date]
+        window_str = f"{dates[0].isoformat()} to {dates[-1].isoformat()}" if dates else ""
+
+        series = [
+            {"name": "Original Forecast", "data": original_series, "dashStyle": "dash", "color": "#94a3b8"},
+            {"name": "Revised Forecast (P50)", "data": revised_series, "color": "#3b82f6"},
+            {"name": "P10 (Low)", "data": p10_series, "dashStyle": "dot", "color": "#22c55e"},
+            {"name": "P90 (High)", "data": p90_series, "dashStyle": "dot", "color": "#ef4444"},
+        ]
+        if actuals_series:
+            series.append({"name": "Actual Demand", "data": actuals_series, "color": "#f97316", "lineWidth": 2})
+
         return {
-            "title": f"Forecast Adjustment: {product_id} at {site_id}",
-            "window": "-4w → +4w",
-            "series": [
-                {"name": "Forecast P50", "data": [{"x": r.forecast_date.isoformat() if r.forecast_date else "", "y": float(r.p50 or 0)} for r in rows]},
-                {"name": "P10 (downside)", "data": [{"x": r.forecast_date.isoformat() if r.forecast_date else "", "y": float(r.forecast_p10 or 0)} for r in rows], "dashStyle": "dot"},
-                {"name": "P90 (upside)", "data": [{"x": r.forecast_date.isoformat() if r.forecast_date else "", "y": float(r.forecast_p90 or 0)} for r in rows], "dashStyle": "dot"},
-            ],
+            "title": f"Forecast Adjustment — {product_name} @ {site_name}",
+            "subtitle": f"Agent adjusted forecast {'up' if (adj_pct or 0) > 0 else 'down'} {abs(adj_pct or 0):.1f}%" if adj_pct else None,
+            "window": window_str,
+            "series": series,
         }
 
     async def _chart_forecast_baseline(self, config_id, product_id, site_id, decision_id) -> Dict:
