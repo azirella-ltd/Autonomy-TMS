@@ -691,14 +691,22 @@ async def get_decision_time_series(
                 pass
 
             if adj_rows:
-                # Build series from the actual decision data
+                # Build series from the actual decision data.
+                # Compute weekly dates starting from the reference date
+                # (the earliest created_at in the group, rounded to Monday).
+                from datetime import timedelta
+                first_created = adj_rows[0][4]  # created_at
+                if first_created:
+                    week_start = first_created.date() - timedelta(days=first_created.weekday())
+                else:
+                    week_start = ref_date
                 for i, row in enumerate(adj_rows):
                     pct = float(row[1] or 0)
                     before = float(row[2] or 0)
                     after = float(row[3] or 0)
-                    label = f"Period {i+1}"
+                    period_date = week_start + timedelta(weeks=i)
                     series.append({
-                        "date": label,
+                        "date": period_date.strftime("%Y-%m-%d"),
                         "original": round(before, 1),
                         "revised": round(after, 1),
                     })
@@ -716,9 +724,9 @@ async def get_decision_time_series(
                     f"Range: {min(float(r[1] or 0) for r in adj_rows):.0f}% to {max(float(r[1] or 0) for r in adj_rows):.0f}%"
                 )
 
-                # Per-period detail table
+                # Per-period detail table with dates
                 detail_columns = [
-                    {"key": "period", "label": "Period"},
+                    {"key": "week", "label": "Week Of"},
                     {"key": "original", "label": "Original"},
                     {"key": "revised", "label": "Revised"},
                     {"key": "change", "label": "Change"},
@@ -728,8 +736,9 @@ async def get_decision_time_series(
                     before = float(row[2] or 0)
                     after = float(row[3] or 0)
                     pct = float(row[1] or 0)
+                    period_date = week_start + timedelta(weeks=i)
                     detail_table.append({
-                        "period": f"Period {i+1}",
+                        "week": period_date.strftime("%b %d, %Y"),
                         "original": round(before, 1),
                         "revised": round(after, 1),
                         "change": round(pct, 1),
