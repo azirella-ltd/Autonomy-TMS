@@ -576,29 +576,35 @@ def _hydrate_registry_from_db(
             # we have enough, calibrate a catch-all wrapper per TRM type
             # using the training_corpus historical samples which DO have
             # trm_type.
+            # Use a subquery to cap at 5000 samples per TRM type to avoid
+            # OOM on large simulation corpora (some types have millions of rows).
+            # Historical/live are preferred (weight ≥ 0.3); simulation fills gaps.
             rows = sync_db.execute(
                 _text("""
-                    SELECT trm_type,
-                           array_agg(
-                               CASE WHEN sample_data ? 'outcome' THEN
-                                   COALESCE(
-                                       (sample_data->'outcome'->>'aggregate_reward')::float,
-                                       (sample_data->>'aggregate_reward')::float,
-                                       0.5
-                                   )
-                               ELSE 0.5 END
-                           ) AS rewards,
-                           array_agg(
+                    WITH ranked AS (
+                        SELECT trm_type,
                                COALESCE(
-                                   (sample_data->>'aggregate_reward')::float,
-                                   0.5
-                               )
-                           ) AS predictions
-                    FROM training_corpus
-                    WHERE tenant_id = :tid
-                      AND layer = 1.0
-                      AND origin IN ('historical', 'live')
-                      AND weight >= 0.3
+                                   (sample_data->>'aggregate_reward')::float, 0.5
+                               ) AS reward,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY trm_type
+                                   ORDER BY
+                                       CASE origin WHEN 'live' THEN 0
+                                                   WHEN 'historical' THEN 1
+                                                   ELSE 2 END,
+                                       created_at DESC
+                               ) AS rn
+                        FROM training_corpus
+                        WHERE tenant_id = :tid
+                          AND layer = 1.0
+                          AND origin IN ('historical', 'live', 'simulation', 'perturbation')
+                          AND weight >= 0.3
+                    )
+                    SELECT trm_type,
+                           array_agg(reward) AS rewards,
+                           COUNT(*) AS n
+                    FROM ranked
+                    WHERE rn <= 5000
                     GROUP BY trm_type
                     HAVING COUNT(*) >= 30
                 """),
@@ -631,12 +637,13 @@ def _hydrate_registry_from_db(
                 if not cdt_type:
                     continue
                 rewards = [float(r) for r in (row[1] or []) if r is not None]
-                predictions = [float(p) for p in (row[2] or []) if p is not None]
                 if len(rewards) < ConformalDecisionWrapper.MIN_CALIBRATION_SIZE:
                     continue
 
-                # Build DecisionOutcomePair-like losses: |actual - predicted|
-                losses = [abs(r - p) for r, p in zip(rewards, predictions)]
+                # Build losses as |reward - 1.0| (distance from perfect outcome).
+                # A reward of 1.0 = perfect decision; 0.0 = worst. Loss measures
+                # how far from perfect each historical decision was.
+                losses = [abs(1.0 - r) for r in rewards]
 
                 wrapper = registry.get_or_create(cdt_type)
                 # Directly set calibration state
