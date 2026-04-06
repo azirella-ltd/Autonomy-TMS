@@ -438,8 +438,8 @@ const AdjustmentHistoryTab = ({ configId }) => {
 const VersionComparisonTab = ({ configId }) => {
   const [versions, setVersions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [versionA, setVersionA] = useState('');
-  const [versionB, setVersionB] = useState('');
+  const [versionA, setVersionA] = useState(undefined);
+  const [versionB, setVersionB] = useState(undefined);
   const [comparison, setComparison] = useState(null);
   const [comparing, setComparing] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
