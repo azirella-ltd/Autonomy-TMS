@@ -113,7 +113,7 @@ GNN likelihood = `model_confidence` from the GNN model output (0-1).
 
 For S&OP GraphSAGE: Based on attention weight convergence — how consistent are the node embeddings?
 
-For Execution tGNN: Based on prediction confidence — how certain is the model about demand/exception forecasts?
+For Tactical tGNNs: Based on prediction confidence — how certain is the model about supply/inventory/capacity exception forecasts? (Demand forecasts are produced by the Forecast Baseline + Forecast Adjustment TRMs, not by tGNNs; tGNNs receive demand as an input feature.)
 
 **Key difference from TRM likelihood**: TRM confidence comes from CDT risk bounds (calibrated from historical decision-outcome pairs). GNN confidence is not yet CDT-calibrated — this is future work. For now, GNN confidence is the raw model output, which tends to be lower (more uncertain) than calibrated TRM confidence.
 

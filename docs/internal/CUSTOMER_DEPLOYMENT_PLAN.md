@@ -477,7 +477,7 @@ This runs 128 Monte Carlo simulations × 64 timesteps = 8,192 training samples.
 ### Step 7.2 — Train GNN Models
 
 ```bash
-# Train execution tGNN (short-term demand prediction + allocation)
+# Train tactical tGNNs (supply planning, inventory optimization, capacity RCCP)
 make train-gnn \
   CONFIG_NAME="ACME Manufacturing" \
   TRAIN_EPOCHS=50 \

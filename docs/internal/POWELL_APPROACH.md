@@ -5663,7 +5663,7 @@ The Site tGNN maps cleanly to Powell's five SDAM elements:
 |---------------|-------------------|
 | **State (S_t)** | Per-TRM urgency levels, recent decision counts, outcome quality metrics, signal bus activity -- an 11-node snapshot of the site's execution state |
 | **Decision (x_t)** | Urgency adjustment deltas for each TRM -- continuous values in [-0.3, +0.3] that modulate the UrgencyVector before the decision cycle |
-| **Exogenous Information (W_{t+1})** | Network tGNN directives (tGNNSiteDirective), new customer orders, supplier status changes, demand forecast revisions |
+| **Exogenous Information (W_{t+1})** | Tactical tGNN directives (tGNNSiteDirective), new customer orders, supplier status changes, demand forecast revisions (from Forecast Baseline/Adjustment TRMs) |
 | **Transition Function (S^M)** | HiveSignalBus propagation -- after urgency adjustments, TRMs make decisions that emit signals, which update the state for the next cycle |
 | **Objective Function** | Composite site-level Balanced Scorecard: weighted combination of fill rate, inventory turns, cost efficiency, and on-time delivery across all 11 TRM types |
 
@@ -5914,7 +5914,7 @@ The existing capabilities should be preserved as **building blocks** within Powe
 | Monte Carlo simulation | Scenario generation | Input to optimization, not just evaluation |
 | Conformal prediction | Belief state construction | Distribution-free uncertainty quantification |
 | **S&OP GraphSAGE** | **CFA (policy parameters)** | Computes θ (safety stock multipliers, risk scores) weekly/monthly |
-| **Execution tGNN** | **CFA/VFA (allocations + context)** | Generates priority allocations, demand forecasts for TRM |
+| **Tactical tGNNs (Supply/Inventory/Capacity)** | **CFA/VFA (allocations + context)** | Generates priority allocations; passes demand forecasts (from Forecast table) as input features to TRMs |
 | **Narrow TRMs** | **VFA (execution decisions)** | AATP, rebalancing, PO creation, order tracking |
 | **HybridPlanningModel** | **Hierarchical consistency** | Ensures V_execution ≈ E[V_tactical] |
 | LLM Orchestrator | Meta-policy / Policy search | Formalize as meta-MDP |

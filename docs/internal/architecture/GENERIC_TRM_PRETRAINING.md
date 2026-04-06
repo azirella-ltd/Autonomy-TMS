@@ -542,13 +542,16 @@ Per tenant:
     trm_subcontracting.pt            (~40 MB)
     trm_order_tracking.pt            (~40 MB)
     trm_rebalancing.pt               (~40 MB)
-    trm_forecast_baseline.pt         (~40 MB)
     trm_forecast_adjustment.pt       (~40 MB)
+    # trm_forecast_baseline uses LightGBM native format (.txt),
+    # not PyTorch .pt — checkpoints at config_{id}_cluster_{n}_pp{q}.txt
     site_tgnn_<site_id>.pt           (~0.5 MB each × N sites)
-    tactical_demand_tgnn.pt          (~10 MB)
     tactical_supply_tgnn.pt          (~10 MB)
     tactical_inventory_tgnn.pt       (~10 MB)
     tactical_capacity_tgnn.pt        (~10 MB)
+    # No tactical_demand_tgnn — demand forecasting is handled by
+    # Forecast Baseline TRM (LightGBM .txt checkpoints) and
+    # Forecast Adjustment TRM (neural .pt checkpoint above)
     sop_graphsage.pt                 (~20 MB)
 
 Total per tenant: ~580 MB + N × 0.5 MB
@@ -571,10 +574,12 @@ Global (shipped with Autonomy image):
 Per tenant:
   /app/checkpoints/tenant_{t}/config_{c}/
     site_tgnn_<site_id>.pt           (~0.5 MB each × N sites)
-    tactical_demand_tgnn.pt          (~10 MB)
     tactical_supply_tgnn.pt          (~10 MB)
     tactical_inventory_tgnn.pt       (~10 MB)
     tactical_capacity_tgnn.pt        (~10 MB)
+    # No tactical_demand_tgnn — demand forecasting is handled by
+    # Forecast Baseline TRM (LightGBM .txt checkpoints) and
+    # Forecast Adjustment TRM (neural .pt checkpoint above)
     sop_graphsage.pt                 (~20 MB)
     conformal_residuals.pkl          (~1 MB per TRM × 12 = ~12 MB)
 

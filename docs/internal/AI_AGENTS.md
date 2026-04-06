@@ -10,7 +10,7 @@ Autonomy's AI agents replace or assist human planners in supply chain decision-m
 
 **Key Insight**: Different AI architectures excel at different tasks:
 - **TRM**: Fast operational decisions (<10ms)
-- **GNN**: Network-wide coordination via two-tier architecture (S&OP GraphSAGE + Execution tGNN)
+- **GNN**: Network-wide coordination via two-tier architecture (S&OP GraphSAGE + 3 supply-side tactical tGNNs)
 - **LLM**: Strategic planning with natural language explainability
 - **RL**: Policy learning through trial-and-error interaction
 
@@ -27,7 +27,7 @@ Autonomy's AI agents replace or assist human planners in supply chain decision-m
 |-------|-----------|----------------|---------------------|----------|----------------|
 | **TRM** | 7M | <10ms | 90-95% | Real-time ops | Medium-High (context-aware) |
 | **S&OP GraphSAGE** | ~2M | ~200ms (weekly) | Network risk scoring | Policy parameters θ | Medium-High (attention + context) |
-| **Execution tGNN** | ~128M | ~50ms (daily) | 85-92% demand pred | Allocations + directives | Medium-High (attention + context) |
+| **Tactical tGNNs** (3 supply-side) | ~128M | ~50ms (daily) | 85-92% | Supply/inventory/capacity allocations + directives | Medium-High (attention + context) |
 | **LLM** | 175B+ (GPT-4) | ~2s | 85-90% | Strategic planning | High (natural language) |
 | **RL (PPO)** | 2M | ~5ms | 75-90% | Policy learning | Low (black box) |
 | **Naive** | 0 | <1ms | Baseline (0%) | Benchmark | High (simple rule) |
@@ -246,20 +246,20 @@ See [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md) for full architecture, tr
 
 **Two-Tier Design**:
 - **S&OP GraphSAGE** (~2M params): Medium-term structural analysis — network risk, bottleneck detection, safety stock multipliers. Updates weekly/monthly. Powell CFA.
-- **Execution tGNN** (~128M params): Short-term operational decisions — demand forecasts, order recommendations, exception detection. Updates daily. Powell CFA/VFA bridge.
+- **3 Tactical tGNNs** (~128M params total): Supply-side operational decisions — supply planning, inventory optimization, capacity/RCCP. Updates daily. Powell CFA/VFA bridge. Demand forecasting is handled separately by Forecast Baseline + Forecast Adjustment TRMs (April 2026), not by a tGNN.
 - **Graph Structure**: Supply chain DAG (graph nodes = sites, graph edges = transportation lanes)
-- **Shared Foundation**: S&OP structural embeddings [N, 64] cached and consumed by Execution tGNN
+- **Shared Foundation**: S&OP structural embeddings [N, 64] cached and consumed by tactical tGNNs
 
-**Key Innovation**: Separating slowly-changing structural context from fast-changing transactional dynamics. S&OP answers "what's the network structure?", Execution answers "given that structure, what decisions do we make now?"
+**Key Innovation**: Separating slowly-changing structural context from fast-changing transactional dynamics. S&OP answers "what's the network structure?", the tactical tGNNs answer "given that structure, what supply/inventory/capacity decisions do we make now?"
 
-### Two-Tier Architecture (S&OP + Execution)
+### Two-Tier Architecture (S&OP + Tactical)
 
 **NEW**: The GNN system now supports a two-tier architecture for scalable, production-grade planning.
 
 **Powell Framework Mapping** (see [POWELL_APPROACH.md](POWELL_APPROACH.md)):
 - **S&OP GraphSAGE** = **CFA (Cost Function Approximation)**: Computes policy parameters θ (safety stock multipliers, risk scores) that parameterize downstream decisions
-- **Execution tGNN** = **VFA (Value Function Approximation)**: Makes real-time decisions Q(s,a) using S&OP θ as part of the state representation
-- **Shared Foundation** = **Hierarchical Consistency**: Ensures V_execution ≈ E[V_tactical]
+- **Tactical tGNNs** = **VFA (Value Function Approximation)**: Make supply-side decisions Q(s,a) using S&OP θ as part of the state representation
+- **Shared Foundation** = **Hierarchical Consistency**: Ensures V_tactical ≈ E[V_strategic]
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -271,11 +271,11 @@ See [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md) for full architecture, tr
 └─────────────────────────────────────────────────────────────────┘
                           ↓ (structural embeddings cached)
 ┌─────────────────────────────────────────────────────────────────┐
-│               Execution tGNN (Short-Term)                       │
+│            Tactical tGNNs (Short-Term, Supply-Side)             │
 │  - Consumes: S&OP embeddings + transactional data               │
 │  - Updates: Daily/Real-time                                     │
-│  - Outputs: Order recommendations, demand forecasts,            │
-│             exception probability, propagation impact           │
+│  - 3 tGNNs: Supply Planning, Inventory Optimization, RCCP      │
+│  - Outputs: Order recommendations, exception prob, prop impact  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -293,8 +293,8 @@ See [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md) for full architecture, tr
 - **Update Frequency**: Weekly/monthly or on topology changes
 - **Scalability**: O(edges) complexity, handles 50+ site networks efficiently
 
-**Execution tGNN Model** (`ExecutionTemporalGNN`):
-- **Purpose**: Short-term operational decisions
+**Tactical tGNN Model** (`ExecutionTemporalGNN`):
+- **Purpose**: Short-term supply-side operational decisions (supply planning, inventory optimization, capacity/RCCP). Demand forecasting is handled by Forecast Baseline + Forecast Adjustment TRMs, not by tGNNs.
 - **Architecture**: GAT (2 layers) + GRU (temporal) + S&OP embedding fusion
 - **Inputs**:
   - Structural embeddings from S&OP model
@@ -341,7 +341,7 @@ S&OP GraphSAGE (weekly/monthly)
   → structural_embeddings [N, 64] (cached, detached)
   → criticality, bottleneck_risk, safety_stock_multiplier
       ↓
-Execution tGNN (daily)
+Tactical tGNNs (daily)
   ← transactional features [8] + hive feedback [8] + structural [64]
   → tGNNSiteDirective per site
       ↓
@@ -357,7 +357,7 @@ SiteAgent (11 TRM heads)
   └─ ... (6 more TRM heads)
       ↓
 HiveFeedbackFeatures [8 dims]
-  → fed back to next Execution tGNN cycle (closes the loop)
+  → fed back to next tactical tGNN cycle (closes the loop)
 ```
 
 **tGNNSiteDirective** — the per-site output that SiteAgent consumes:
@@ -369,14 +369,14 @@ HiveFeedbackFeatures [8 dims]
 | `concentration_risk` | S&OP GraphSAGE (cached) | POCreationTRM, SubcontractingTRM |
 | `resilience_score` | S&OP GraphSAGE (cached) | SafetyStockTRM |
 | `safety_stock_multiplier` | S&OP GraphSAGE (cached) | SafetyStockTRM, POCreationTRM |
-| `demand_forecast` | Execution tGNN (daily) | POCreationTRM, ForecastAdjustmentTRM |
-| `exception_probability` | Execution tGNN (daily) | ATPExecutorTRM, OrderTrackingTRM |
-| `propagation_impact` | Execution tGNN (daily) | OrderTrackingTRM, TOExecutionTRM |
-| `order_recommendation` | Execution tGNN (daily) | POCreationTRM |
-| `confidence` | Execution tGNN (daily) | All TRMs (decision gating) |
-| `inter_hive_signals` | Execution tGNN (daily) | Routing-dependent TRMs |
+| `demand_forecast` | Forecast Baseline + Adjustment TRMs (daily) | POCreationTRM, ForecastAdjustmentTRM |
+| `exception_probability` | Tactical tGNNs (daily) | ATPExecutorTRM, OrderTrackingTRM |
+| `propagation_impact` | Tactical tGNNs (daily) | OrderTrackingTRM, TOExecutionTRM |
+| `order_recommendation` | Supply Planning tGNN (daily) | POCreationTRM |
+| `confidence` | Tactical tGNNs (daily) | All TRMs (decision gating) |
+| `inter_hive_signals` | Tactical tGNNs (daily) | Routing-dependent TRMs |
 
-**Inter-Hive Signal Types** (generated by Execution tGNN):
+**Inter-Hive Signal Types** (generated by tactical tGNNs):
 - `UPSTREAM_DISRUPTION`: Shortage propagating downstream
 - `DOWNSTREAM_SURGE`: Demand surge detected
 - `LATERAL_SURPLUS`: Inventory available at peer site
@@ -386,9 +386,9 @@ HiveFeedbackFeatures [8 dims]
 - `RESILIENCE_WARNING`: Network resilience degrading
 - `BULLWHIP_DETECTED`: Demand amplification detected
 
-**Hive Feedback Loop** — TRM execution metrics feed back to enrich the next Execution tGNN cycle:
+**Hive Feedback Loop** — TRM execution metrics feed back to enrich the next tactical tGNN cycle:
 
-The Execution tGNN accepts 8 base transactional features, but can expand to 16 dimensions by incorporating hive feedback from the previous cycle:
+The tactical tGNNs accept 8 base transactional features, but can expand to 16 dimensions by incorporating hive feedback from the previous cycle:
 
 | Feature (base 8) | Feature (hive feedback 8) |
 |-------------------|---------------------------|
@@ -427,7 +427,7 @@ Each tier trains independently with different data characteristics and cadences.
 - **Labels**: Historical risk events, bottleneck occurrences, network disruptions
 - **Refresh**: Retrained when network topology changes significantly
 
-**Execution tGNN Training**:
+**Tactical tGNN Training**:
 - **Data**: Transactional time-series from SimPy/Beer Game scenarios (8-16 dimensions per node per timestep)
 - **Edge features**: 4 dimensions (current_lead_time, utilization, in_transit, recent_reliability)
 - **Labels**: Optimal decisions from expert traces, behavioral cloning warm-start
@@ -484,7 +484,7 @@ For each of 3 GATv2Conv layers:
   5. No temporal component — processes a single structural snapshot
 ```
 
-**Execution tGNN** (temporal transactional analysis):
+**Tactical tGNN** (temporal transactional analysis):
 ```
 For each timestep in the history window:
   1. Concatenate: transactional features [8-16] + structural embeddings [64]
@@ -497,7 +497,7 @@ After spatial processing across all timesteps:
   5. Output heads: 5 specialized projections (orders, forecasts, exceptions, etc.)
 ```
 
-**Key Benefit**: S&OP embeddings are **detached** (no gradient flow) and cached. This means the Execution tGNN can run at daily/real-time speed without recomputing the expensive structural analysis. Downstream sites can "see" upstream structural context (criticality, bottleneck risk) through the cached embeddings, and transactional dynamics (inventory, orders) through the spatial message passing.
+**Key Benefit**: S&OP embeddings are **detached** (no gradient flow) and cached. This means the tactical tGNNs can run at daily/real-time speed without recomputing the expensive structural analysis. Downstream sites can "see" upstream structural context (criticality, bottleneck risk) through the cached embeddings, and transactional dynamics (inventory, orders) through the spatial message passing.
 
 ### Multi-Site Coordination Stack
 
@@ -506,7 +506,7 @@ The GNN system operates as **Layer 2** of a 4-layer coordination stack that enab
 | Layer | Scope | Latency | Mechanism |
 |-------|-------|---------|-----------|
 | **1 — Intra-Hive** | Within single site | <10ms | UrgencyVector + HiveSignalBus between 11 TRM heads |
-| **2 — tGNN Inter-Hive** | Full network graph | Daily | S&OP GraphSAGE + Execution tGNN → per-site tGNNSiteDirective |
+| **2 — tGNN Inter-Hive** | Full network graph | Daily | S&OP GraphSAGE + tactical tGNNs → per-site tGNNSiteDirective |
 | **3 — AAP Cross-Authority** | Between sites | Seconds-minutes | AuthorizationRequest/Response for transfers, priority overrides, capacity sharing |
 | **4 — S&OP Consensus Board** | All functional agents | Weekly | Policy parameters θ negotiated by functional agents |
 
@@ -518,10 +518,10 @@ See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16 for full coo
 
 **Per-Tier Metrics**:
 
-| Metric | S&OP GraphSAGE | Execution tGNN |
+| Metric | S&OP GraphSAGE | Tactical tGNNs |
 |--------|----------------|----------------|
 | **Inference time** | ~200ms (weekly, amortized) | ~50ms (daily, all nodes) |
-| **Accuracy** | Network risk scoring | 85-92% demand prediction |
+| **Accuracy** | Network risk scoring | 85-92% supply/inventory optimization |
 | **Parameters** | ~2M | ~128M |
 | **Update frequency** | Weekly/monthly | Daily/real-time |
 | **Scalability** | O(edges), handles 50+ sites | O(edges × window), handles 50+ sites |
@@ -1604,7 +1604,7 @@ The "Azirella" prompt bar in the TopNavbar is the primary human-to-AI input chan
 | User Role | Target Layer |
 |-----------|-------------|
 | VP / Executive | Layer 4: S&OP GraphSAGE |
-| S&OP Director | Layer 2: Execution tGNN |
+| S&OP Director | Layer 3: Tactical tGNNs |
 | MPS / Allocation Manager | Layer 1.5: Site tGNN |
 | Analysts (ATP, PO, etc.) | Layer 1: Individual TRM |
 

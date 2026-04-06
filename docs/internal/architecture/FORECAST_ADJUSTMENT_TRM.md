@@ -741,7 +741,7 @@ ForecastAdjustmentOutput:
 | `services/powell/forecast_adjustment_trm.py` | TRM class (existing) |
 | `services/powell/engines/forecast_adjustment_engine.py` | Deterministic engine (existing) |
 | `services/skills/forecast_adjustment/SKILL.md` | LLM skill prompt (existing) |
-| `services/skills/demand_planning/SKILL.md` | Broader demand planning skill (existing, references Demand tGNN) |
+| `services/skills/demand_planning/SKILL.md` | Broader demand planning skill (existing; demand forecasting is handled by Forecast Baseline + Forecast Adjustment TRMs, not tGNNs) |
 | `models/powell_decisions.py` | PowellForecastAdjustmentDecision table (existing) |
 | `services/product_lifecycle_service.py` | NPI/EOL lifecycle management (existing) |
 | `services/promotional_planning_service.py` | Promotion management (existing) |

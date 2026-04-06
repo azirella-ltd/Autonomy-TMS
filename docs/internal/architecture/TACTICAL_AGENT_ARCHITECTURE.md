@@ -2,7 +2,7 @@
 
 > **Autonomy Platform — Core Architecture Reference**
 >
-> Defines the 5 tactical planning agents (2 demand + 3 supply-side tGNNs),
+> Defines the 5 tactical planning agents (2 demand TRMs + 3 supply-side tGNNs),
 > their supply chain domain roles, technology, decision boundaries,
 > training approach, and governance.
 
@@ -76,12 +76,13 @@ Layer 1 — 12 TRM execution agents (<10ms)
 
 ## 2. Why 5 Agents (2 Demand + 3 Supply)
 
-### Why Not 4 (Current)?
+### Why Not 4 tGNNs (Previous Architecture)?
 
-The current Demand Planning tGNN operates on the **supply network graph** (sites +
+The previous Demand Planning tGNN operated on the **supply network graph** (sites +
 transportation lanes). But demand dependencies are between **products** (basket,
 cannibalization, substitution), not between sites. The Demand tGNN was learning
-mostly noise from the wrong graph structure.
+mostly noise from the wrong graph structure. This is why demand forecasting moved
+to TRMs (Forecast Baseline + Forecast Adjustment) in April 2026.
 
 ### Why Not 2?
 

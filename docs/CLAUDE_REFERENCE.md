@@ -206,7 +206,7 @@ Context, guardrails, and targets flow **down** from strategic to execution. Feed
 **Layer 2 — Network tGNN (daily): Inter-Site Directives**
 - `inter_hive_signal.py`: 8 inter-hive signal types with 12-hour half-lives
 - `directive_broadcast_service.py`: Broadcasts tGNNSiteDirective to each site's SiteAgent
-- `tactical_hive_coordinator.py`: 3 parallel specialized tGNNs (demand, supply, inventory) with lateral convergence (re-run if signals deviate >5%)
+- `tactical_hive_coordinator.py`: 3 parallel specialized tGNNs (supply, inventory, capacity) with lateral convergence (re-run if signals deviate >5%)
 - Inter-hive signals mapped to local HiveSignalTypes when injected into site bus
 
 **Layer 3 — AAP Cross-Authority (seconds-minutes): Agentic Authorization Protocol**

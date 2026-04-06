@@ -279,15 +279,23 @@ Implementation: `SiteTGNNTrainer` in `site_tgnn_trainer.py`.
 
 ## Tactical Agent Training (Network Level)
 
-The Demand, Supply, and Inventory tGNNs are trained via the RLDashboard:
+The 3 supply-side tactical tGNNs are trained via the RLDashboard:
 
-- **Demand tGNN**: Supervised on forecast error + PPO for consensus demand accuracy
 - **Supply tGNN**: Supervised on supply plan optimality (cost + service) + PPO
 - **Inventory tGNN**: Supervised on buffer effectiveness + PPO for holding cost vs. stockout
+- **Capacity/RCCP tGNN**: Supervised on capacity feasibility + PPO for utilization vs. flexibility
 
 PPO is used (not Offline RL) because these agents interact with the digital twin simulation
 environment, which provides a rich online signal. The simulation is the "environment" in
 the RL sense — it is not real production data.
+
+> **Note**: Demand forecasting is NOT handled by a tGNN. It is handled by two TRMs:
+> the Forecast Baseline TRM (LightGBM quantile regression, P10/P50/P90) and the Forecast
+> Adjustment TRM (neural TRM policy + 6 deterministic engines + LLM escalation). The
+> provisioning step `demand_tgnn` is a legacy label that computes demand feature aggregates
+> for the supply-side tGNNs. The `DemandPlanningTGNN` model class exists in
+> `models/gnn/demand_planning_tgnn.py` but is not actively trained during provisioning.
+> (Demand forecasting moved to Forecast Baseline + Forecast Adjustment TRMs, April 2026.)
 
 ---
 
@@ -320,7 +328,7 @@ S&OP GraphSAGE CFA
     │ produces policy parameters θ (safety stock multipliers, SS targets)
     ▼
 Tactical tGNNs use θ as part of their state input
-    │ produce priority allocations and demand directives
+    │ produce priority allocations and supply directives
     ▼
 Site tGNNs use tGNN outputs as urgency modulation signals
     │ modulate TRM urgency vectors
@@ -329,7 +337,7 @@ Execution TRMs use site tGNN urgency as part of their state input
 ```
 
 During provisioning, this is why the step dependencies exist:
-- `demand_tgnn` depends on `sop_graphsage` (needs policy parameters)
+- `demand_tgnn` depends on `sop_graphsage` (legacy label — computes demand feature aggregates, not a tGNN training step)
 - `inventory_tgnn` depends on `supply_tgnn` (needs supply baseline)
 - `trm_training` depends on all tactical agents (needs their outputs as state features)
 - `site_tgnn` depends on `decision_seed` (needs live TRM decisions as training signal)

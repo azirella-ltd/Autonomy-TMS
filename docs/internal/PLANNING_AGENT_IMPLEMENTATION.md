@@ -9,9 +9,10 @@
 
 ## What This Document Covers
 
-The end-state Layer 2 architecture replaces the single "Network tGNN" with four
-domain-specific planning GNNs, each paired with a domain TRM for in-cycle corrections
-and a Claude Skill for cross-cycle contextual reasoning. It also adds a Planning Skill
+The end-state Layer 2 architecture replaces the single "Network tGNN" with three
+supply-side planning tGNNs (Supply, Inventory, Capacity/RCCP) plus two demand-side
+TRMs (Forecast Baseline + Forecast Adjustment), each paired with a Claude Skill for
+cross-cycle contextual reasoning. It also adds a Planning Skill
 Orchestrator (separate from the execution SkillOrchestrator) and an S&OP Adjustment Skill
 at Layer 4.
 
@@ -28,7 +29,7 @@ and the training pipeline required to bring it to production quality.
 | Supply Planning SKILL.md | ✅ Implemented | Registered in `skills/__init__.py` |
 | RCCP SKILL.md | ✅ Implemented | Registered in `skills/__init__.py` |
 | Planning Skill Orchestrator | ✅ Implemented | `skills/planning_skill_orchestrator.py` |
-| Demand Planning GNN | ✅ Implemented | `demand_planning_tgnn_service.py`, `models/gnn/demand_planning_tgnn.py` |
+| Demand Planning GNN | ⚠️ Legacy code | `demand_planning_tgnn_service.py`, `models/gnn/demand_planning_tgnn.py` — NOT actively trained during provisioning. Demand forecasting moved to Forecast Baseline + Forecast Adjustment TRMs (April 2026). The `demand_tgnn` provisioning step computes demand feature aggregates for supply-side tGNNs. |
 | Demand Adjustment TRM | ✅ Implemented | `powell/demand_adjustment_trm.py` — wired into GNNOrchestrationService Step 3.7 |
 | Demand Planning SKILL.md | ✅ Implemented | `skills/demand_planning/SKILL.md` |
 | Inventory Planning GNN | ✅ Implemented | `inventory_optimization_tgnn_service.py`, `models/gnn/inventory_optimization_tgnn.py` |

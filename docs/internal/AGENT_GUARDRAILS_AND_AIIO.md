@@ -473,8 +473,8 @@ GNN-level guardrails catch network-scope errors before they amplify:
 | Scope | Model | Cadence | What's Reviewed |
 |-------|-------|---------|----------------|
 | **S&OP Policy** | S&OP GraphSAGE | Weekly | safety_stock_multiplier, criticality_score, bottleneck_risk, resilience_score |
-| **Execution Directive** | Execution tGNN | Daily | demand_forecast, exception_probability, order_recommendation |
-| **Allocation Refresh** | Execution tGNN | Daily | Priority × Product × Location allocations |
+| **Execution Directive** | Tactical tGNNs (Supply/Inventory/Capacity) | Daily | demand_forecast (sourced from Forecast table), exception_probability, order_recommendation |
+| **Allocation Refresh** | Tactical tGNNs (Supply/Inventory/Capacity) | Daily | Priority × Product × Location allocations |
 
 ### GNN Directive Review Lifecycle
 

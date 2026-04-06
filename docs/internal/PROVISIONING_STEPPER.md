@@ -11,7 +11,7 @@ Each supply chain config has one `config_provisioning_status` row tracking the s
 | Directive Target | Required Steps |
 |-----------------|----------------|
 | Layer 4 (S&OP GraphSAGE) | warm_start, sop_graphsage |
-| Layer 2 (Execution tGNN) | warm_start through inventory_tgnn |
+| Layer 3 (Tactical tGNNs) | warm_start through inventory_tgnn |
 | Layer 1.5 (Site tGNN) | warm_start through site_tgnn |
 | Layer 1 (Individual TRM) | warm_start through trm_training |
 
@@ -31,16 +31,16 @@ The pipeline is organized into four tiers:
 |---|------|-------|------------|--------------|
 | 2 | `sop_graphsage` | Strategic Network Planning Agent | warm_start | Trains the S&OP GraphSAGE model on the network topology. Produces criticality scores, concentration risk, resilience metrics, and safety stock multipliers per site. |
 | 3 | `cfa_optimization` | Policy Parameter Optimization | sop_graphsage | Runs Differential Evolution over Monte Carlo scenarios to find optimal policy parameters θ (order-up-to levels, reorder points, safety stock multipliers). |
-| 4 | `lgbm_forecast` | Demand Forecasting | cfa_optimization | Trains LightGBM demand forecasting model from historical data. Produces baseline forecasts that feed into the tGNN agents. |
+| 4 | `lgbm_forecast` | Demand Forecasting | cfa_optimization | Trains LightGBM quantile regression model (P10/P50/P90) from historical data. This is the Forecast Baseline TRM. Produces baseline forecasts consumed by the supply-side tGNNs. |
 
 ### Tier 3 — Operational Layer
 
 | # | Step | Label | Depends On | What It Does |
 |---|------|-------|------------|--------------|
-| 5 | `demand_tgnn` | Demand Planning Agent | lgbm_forecast, sop_graphsage | Trains the demand-side temporal GNN from LGBM forecasts and S&OP embeddings. |
+| 5 | `demand_tgnn` | Demand Feature Aggregation | lgbm_forecast, sop_graphsage | Legacy label. Does NOT train a demand tGNN — validates forecast data and computes demand feature aggregates consumed by the supply-side tGNNs. Demand forecasting is handled by the Forecast Baseline TRM (lgbm_forecast step) + Forecast Adjustment TRM (April 2026). |
 | 6 | `supply_tgnn` | Supply Planning Agent | lgbm_forecast, sop_graphsage | Trains the supply-side temporal GNN for allocation and supply coordination. |
 | 7 | `inventory_tgnn` | Inventory Optimization Agent | supply_tgnn | Trains the inventory optimization tGNN downstream of supply planning. |
-| 8 | `trm_training` | Execution Role Agent Training | demand_tgnn, supply_tgnn, inventory_tgnn | Trains all 11 TRM agents (Phase 1 behavioral cloning). Requires tGNN outputs as context for training data generation. |
+| 8 | `trm_training` | Execution Role Agent Training | demand_tgnn, supply_tgnn, inventory_tgnn | Trains all 11 TRM agents (Phase 1 behavioral cloning). Depends on demand_tgnn (demand feature aggregates) and supply/inventory tGNN outputs as context for training data generation. |
 | 9 | `supply_plan` | Supply Plan Generation | cfa_optimization, trm_training | Generates the initial supply plan using optimized policy parameters and trained TRMs. Produces PO/TO/MO requests. |
 | 10 | `rccp_validation` | Rough-Cut Capacity Validation | supply_plan | Validates the supply plan against rough-cut capacity profiles. Flags capacity violations before activation. |
 
