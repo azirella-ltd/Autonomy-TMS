@@ -1077,7 +1077,7 @@ class DecisionStreamService:
         try:
             from app.db.session import sync_session_factory
             from sqlalchemy import text as sa_text
-            role_clause = "AND decision_level = :role" if decision_level else "AND decision_level IS NULL"
+            role_clause = "AND powell_role = :role" if decision_level else "AND powell_role IS NULL"
             params = {"cid": config_id, "tid": self.tenant_id}
             if decision_level:
                 params["role"] = decision_level
@@ -1130,9 +1130,9 @@ class DecisionStreamService:
                 sync_db.execute(
                     sa_text("""
                         INSERT INTO decision_stream_digests
-                            (config_id, tenant_id, decision_level, digest_text, decisions, alerts, total_pending, created_at)
+                            (config_id, tenant_id, powell_role, digest_text, decisions, alerts, total_pending, created_at)
                         VALUES (:cid, :tid, :role, :digest, CAST(:decs AS jsonb), CAST(:alerts AS jsonb), :total, CURRENT_TIMESTAMP)
-                        ON CONFLICT (config_id, tenant_id, decision_level)
+                        ON CONFLICT (config_id, tenant_id, powell_role)
                         DO UPDATE SET digest_text = EXCLUDED.digest_text,
                                       decisions = EXCLUDED.decisions,
                                       alerts = EXCLUDED.alerts,
