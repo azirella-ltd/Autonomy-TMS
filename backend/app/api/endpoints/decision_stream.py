@@ -695,11 +695,11 @@ async def get_decision_time_series(
                 # Compute weekly dates starting from the reference date
                 # (the earliest created_at in the group, rounded to Monday).
                 from datetime import timedelta
-                first_created = adj_rows[0][4]  # created_at
-                if first_created:
-                    week_start = first_created.date() - timedelta(days=first_created.weekday())
-                else:
-                    week_start = ref_date
+                # Use the tenant's forward planning start date, NOT created_at
+                # (which is when the seeder ran, not when the plan applies).
+                # For SAP Demo this is ~2025-11-24; for Food Dist ~2026-04-07.
+                # ref_date is already set from config_today / effective_from.
+                week_start = ref_date - timedelta(days=ref_date.weekday())
                 for i, row in enumerate(adj_rows):
                     pct = float(row[1] or 0)
                     before = float(row[2] or 0)
