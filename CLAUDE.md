@@ -146,19 +146,25 @@ Every customer gets two tenants:
 
 The Powell framework and agent architecture are shared. The 11 TRM agent slots map to transportation equivalents:
 
-| SC TRM Agent | TMS TRM Agent | Function |
-|---|---|---|
-| ATPExecutorTRM | **CapacityPromiseTRM** | Available capacity to promise on lane/carrier |
-| InventoryRebalancingTRM | **EquipmentRepositionTRM** | Empty container/trailer repositioning |
-| POCreationTRM | **FreightProcurementTRM** | Carrier selection, rate negotiation, tender |
-| OrderTrackingTRM | **ShipmentTrackingTRM** | In-transit visibility, ETA prediction, exceptions |
-| MOExecutionTRM | **LoadBuildTRM** | Load consolidation, optimization, sequencing |
-| TOExecutionTRM | **IntermodalTransferTRM** | Cross-mode transfers, drayage coordination |
-| QualityDispositionTRM | **ExceptionManagementTRM** | Delay, damage, refusal, rolled container resolution |
-| MaintenanceSchedulingTRM | **DockSchedulingTRM** | Appointment scheduling, dock door optimization |
-| SubcontractingTRM | **BrokerRoutingTRM** | Broker vs. asset carrier decision, overflow routing |
-| ForecastAdjustmentTRM | **DemandSensingTRM** | Shipping volume forecast adjustments from signals |
-| InventoryBufferTRM | **CapacityBufferTRM** | Reserve carrier capacity, surge planning |
+| SC TRM Agent | TMS TRM Agent | Phase | Function |
+|---|---|---|---|
+| ATPExecutorTRM | **CapacityPromiseTRM** | SENSE | Available capacity to promise on lane/carrier |
+| OrderTrackingTRM | **ShipmentTrackingTRM** | SENSE | In-transit visibility, ETA prediction, exceptions |
+| ForecastAdjustmentTRM | **DemandSensingTRM** | SENSE | Shipping volume forecast adjustments from signals |
+| InventoryBufferTRM | **CapacityBufferTRM** | ASSESS | Reserve carrier capacity, surge planning |
+| QualityDispositionTRM | **ExceptionManagementTRM** | ASSESS | Delay, damage, refusal, rolled container resolution |
+| POCreationTRM | **FreightProcurementTRM** | ACQUIRE | Carrier waterfall tendering, rate optimization |
+| SubcontractingTRM | **BrokerRoutingTRM** | ACQUIRE | Broker vs. asset carrier decision, overflow routing |
+| MaintenanceSchedulingTRM | **DockSchedulingTRM** | PROTECT | Appointment scheduling, dock door optimization |
+| MOExecutionTRM | **LoadBuildTRM** | BUILD | Load consolidation, optimization, sequencing |
+| TOExecutionTRM | **IntermodalTransferTRM** | BUILD | Cross-mode transfers, drayage coordination |
+| InventoryRebalancingTRM | **EquipmentRepositionTRM** | REFLECT | Empty container/trailer repositioning |
+
+**Implementation Status**: Capability declarations, hive signals (50+ TMS-specific signal types), site capability mapping (6 facility types), and heuristic library (all 11 TRMs with deterministic fallback rules) are complete. Files:
+- `services/powell/tms_agent_capabilities.py` — 11 TRM declarations with signal reads/emits
+- `services/powell/tms_hive_signals.py` — 50+ TMS signal types (carrier, tracking, dock, load, equipment, intermodal, network)
+- `services/powell/tms_site_capabilities.py` — facility type → active TRM mapping (shipper, terminal, cross_dock, consignee, carrier_yard, port)
+- `services/powell/tms_heuristic_library/` — state dataclasses (11) + dispatch with industry-standard rules
 
 ### TMS-Specific GNN Layers
 - **S&OP GraphSAGE**: Network-wide lane optimization, carrier portfolio balance, mode mix

@@ -204,7 +204,7 @@ This document defines exactly which code is shared with the parent Autonomy (SC 
 - [x] Add p44 API endpoints (webhook receiver, config management, tracking operations)
 
 ### Phase 2: Planning Engines (Current)
-- [ ] Create TMS Powell TRM agent framework (11 agents)
+- [x] Create TMS Powell TRM agent framework (11 agents: capabilities, hive signals, site capabilities, heuristic library)
 - [ ] Implement transportation planning service (replacing SC planner)
 - [ ] Create freight network demo data generator
 - [ ] Adapt provisioning pipeline for TMS
