@@ -295,8 +295,24 @@ Key changes from SC Planning:
 ## Architecture Decisions (April 2026)
 
 ### AIIO Model — Agents Always Act
-- Agents generate ALL transportation plans automatically during provisioning
-- No "Create Load Plan" or "Assign Carriers" buttons
+
+**Core principle:** Every alert triggers an agent action. Humans inspect and override — they do not initiate.
+
+**The AIIO Flow:**
+1. **Signal/Alert detected** → Hive signal emitted (e.g., `EXCEPTION_DETECTED`, `CAPACITY_GAP`, `TENDER_REJECTED`)
+2. **TRM agent evaluates** → Calculates urgency (0-1), makes a decision with defined confidence/likelihood
+3. **Decision enters governance** → Impact scoring determines AIIO mode:
+   - **AUTOMATE**: Agent executes, no human review needed
+   - **INFORM**: Agent executes, decision appears in Decision Stream for awareness
+   - **INSPECT**: Agent proposes, human must review before execution
+4. **Decision surfaces in Decision Stream** → User sees agent's action with urgency + likelihood + reasoning
+5. **User response** → INSPECTED (reviewed, agent action stands) or OVERRIDDEN (user changes with reasoning)
+6. **Learning loop** → Override reasoning feeds back to TRM replay buffer for agent improvement
+
+**What this means for the UI:**
+- No "Create Load Plan" or "Assign Carriers" buttons — agents do this
+- Alerts are never just informational — they always have an associated agent action
+- The Exception Dashboard, Dock Schedule, Load Board show agent-generated state, not user-created state
 - Users inspect, override (with reasoning), and scenario-test
 - Governance pipeline controls WHAT agents can do autonomously
 
