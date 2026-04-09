@@ -28,8 +28,27 @@ import { api } from '../../services/api';
 import { cn } from '../../lib/utils/cn';
 import { useAuth } from '../../contexts/AuthContext';
 
-// Agent function names (no technology references)
+// TMS Agent function names — grouped by decision cycle phase
+// SENSE → ASSESS → ACQUIRE → PROTECT → BUILD → REFLECT
 const AGENT_LABELS = {
+  // SENSE phase
+  capacity_promise: 'Capacity Promise Agent',
+  shipment_tracking: 'Shipment Tracking Agent',
+  demand_sensing: 'Demand Sensing Agent',
+  // ASSESS phase
+  capacity_buffer: 'Capacity Buffer Agent',
+  exception_management: 'Exception Mgmt Agent',
+  // ACQUIRE phase
+  freight_procurement: 'Freight Procurement Agent',
+  broker_routing: 'Broker Routing Agent',
+  // PROTECT phase
+  dock_scheduling: 'Dock Scheduling Agent',
+  // BUILD phase
+  load_build: 'Load Build Agent',
+  intermodal_transfer: 'Intermodal Transfer Agent',
+  // REFLECT phase
+  equipment_reposition: 'Equipment Reposition Agent',
+  // Legacy SC types (kept for backward compatibility with existing data)
   po_creation: 'Procurement Agent',
   mo_execution: 'Production Agent',
   to_execution: 'Transfer Agent',
@@ -60,7 +79,7 @@ const Governance = () => {
   const [loading, setLoading] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState(null);
   const [simResult, setSimResult] = useState(null);
-  const [simForm, setSimForm] = useState({ action_type: 'po_creation', estimated_impact: 5000, confidence_level: 0.8 });
+  const [simForm, setSimForm] = useState({ action_type: 'freight_procurement', estimated_impact: 5000, confidence_level: 0.8 });
   const [newDirective, setNewDirective] = useState(null);
   const [oversightConfig, setOversightConfig] = useState(null);
   const [weekSchedule, setWeekSchedule] = useState([]);

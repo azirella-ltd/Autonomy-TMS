@@ -1,7 +1,7 @@
 # TMS UI Implementation Plan
 
 **Created:** 2026-04-09
-**Status:** Phases 1-3 COMPLETE — Ready for Phase 4
+**Status:** Phases 1-4 COMPLETE — Ready for Phase 5
 **Tracking:** Checkboxes updated as each item completes
 
 ---
@@ -170,12 +170,12 @@ Convert the SC Planning frontend to a TMS-native UI across all personas (Executi
 
 ## Phase 4: Governance & Admin
 
-- [ ] **4.1** Update Governance.jsx to show 11 TMS agent types for AIIO threshold config
-- [ ] **4.2** Create CarrierManagementPage.jsx (onboarding, scorecard, lane coverage)
-- [ ] **4.3** Create RateManagementPage.jsx (contract rates, spot quotes, rate cards)
-- [ ] **4.4** Create P44IntegrationSettingsPage.jsx (project44 config, webhook status)
-- [ ] **4.5** Update Admin navigation section
-- [ ] **4.6** Documentation update
+- [x] **4.1** Update Governance.jsx to show 11 TMS agent types for AIIO threshold config
+- [x] **4.2** Create CarrierManagementPage.jsx (onboarding, scorecard, lane coverage)
+- [x] **4.3** Create RateManagementPage.jsx (contract rates, spot quotes, rate cards)
+- [x] **4.4** Create P44IntegrationSettingsPage.jsx (project44 config, webhook status)
+- [x] **4.5** Update Admin navigation section
+- [x] **4.6** Documentation update
 
 ---
 

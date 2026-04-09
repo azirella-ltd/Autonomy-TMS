@@ -843,6 +843,28 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'manage_tenant_users',
         description: 'Decision pipeline: AIIO thresholds, guardrails, planning envelope, audit trail',
       },
+      // --- TMS-SPECIFIC ADMIN ---
+      {
+        label: 'Carrier Management',
+        path: '/admin/carrier-management',
+        icon: NetworkIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Carrier onboarding, scorecards, lane coverage, contract management',
+      },
+      {
+        label: 'Rate Management',
+        path: '/admin/rate-management',
+        icon: TuneIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Contract rates, spot quotes, rate cards, accessorial charges',
+      },
+      {
+        label: 'p44 Integration',
+        path: '/admin/p44-settings',
+        icon: LayersIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'project44 connection, webhook configuration, tracking coverage',
+      },
       {
         label: 'User Management',
         path: '/admin/users',

@@ -119,6 +119,9 @@ import NetworkOptimizationAnalytics from "./pages/analytics/NetworkOptimizationA
 import KPIConfigurationAnalytics from "./pages/analytics/KPIConfigurationAnalytics.jsx";
 import UncertaintyQuantification from "./pages/analytics/UncertaintyQuantification.jsx";
 import Governance from "./pages/admin/Governance.jsx";
+import CarrierManagementPage from "./pages/admin/CarrierManagementPage.jsx";
+import RateManagementPage from "./pages/admin/RateManagementPage.jsx";
+import P44IntegrationSettingsPage from "./pages/admin/P44IntegrationSettingsPage.jsx";
 import ApprovalTemplates from "./pages/admin/ApprovalTemplates.jsx";
 import ExceptionWorkflows from "./pages/admin/ExceptionWorkflows.jsx";
 import DemandPlanEdit from "./pages/planning/DemandPlanEdit.jsx";
@@ -429,6 +432,31 @@ const AppContent = () => {
             <Route
               path="/admin/governance"
               element={<Governance />}
+            />
+            {/* TMS Admin Pages */}
+            <Route
+              path="/admin/carrier-management"
+              element={
+                <CapabilityProtectedRoute requiredCapability="manage_tenant_users">
+                  <CarrierManagementPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/rate-management"
+              element={
+                <CapabilityProtectedRoute requiredCapability="manage_tenant_users">
+                  <RateManagementPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/p44-settings"
+              element={
+                <CapabilityProtectedRoute requiredCapability="manage_tenant_users">
+                  <P44IntegrationSettingsPage />
+                </CapabilityProtectedRoute>
+              }
             />
             <Route
               path="/admin/approval-templates"
