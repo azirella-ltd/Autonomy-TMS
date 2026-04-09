@@ -6811,6 +6811,17 @@ api.include_router(order_management_router, prefix="/order-management", tags=["o
 from app.api.endpoints.carrier_integration import router as carrier_integration_router
 api.include_router(carrier_integration_router, prefix="/carrier-integration", tags=["carrier-integration", "shipping"])
 
+# project44 Integration API
+from app.api.endpoints.p44_integration import router as p44_router
+api.include_router(p44_router, prefix="/p44", tags=["p44", "integration", "visibility"])
+
+# TMS RESTful API — clean resource paths for frontend pages
+from app.api.endpoints.tms_api import carriers_router, loads_router, tms_operations_router, rates_router
+api.include_router(carriers_router, prefix="/carriers", tags=["carriers", "tms"])
+api.include_router(loads_router, prefix="/loads", tags=["loads", "tms"])
+api.include_router(tms_operations_router, tags=["tms", "operations"])
+api.include_router(rates_router, prefix="/rates", tags=["rates", "tms"])
+
 # Collaborative Editing API (Phase 3.6)
 from app.api.endpoints.collaborative_editing import router as collaborative_editing_router
 api.include_router(collaborative_editing_router, prefix="/collaborative-editing", tags=["collaborative-editing", "real-time"])
