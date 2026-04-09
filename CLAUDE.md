@@ -1,15 +1,77 @@
-# CLAUDE.md
+# CLAUDE.md — Autonomy TMS
 
 Project rules for Claude Code. Detailed architecture and reference material in [docs/CLAUDE_REFERENCE.md](docs/CLAUDE_REFERENCE.md).
 
-## CRITICAL: AWS Supply Chain Data Model Compliance
+> **Repo Relationship**: This repo is forked from [Autonomy](https://github.com/MilesAheadToo/Autonomy) (supply chain planning). The `upstream` remote tracks the parent. Shared core changes should be made in Autonomy and merged here. TMS-specific changes live only in this repo.
 
-All data MUST use the AWS Supply Chain Data Model. Extensions allowed, core tables/fields required.
+## CRITICAL: Shared Core vs. TMS-Specific Code
 
-When implementing any entity:
-1. Reference the AWS SC data model in [backend/app/models/sc_entities.py](backend/app/models/sc_entities.py)
-2. Use AWS SC field names and types as the base
-3. Add extensions only when necessary, documented as "Extension: " in docstrings
+Code in this repo falls into two categories:
+
+### Shared Core (sync with upstream Autonomy)
+Changes to these areas should ideally be made in the Autonomy repo and merged here via `git pull upstream main`.
+
+- **Infrastructure**: `backend/app/core/`, `backend/app/db/`, `backend/app/middleware/`, `backend/app/utils/`
+- **Auth & RBAC**: `backend/app/api/endpoints/auth.py`, `backend/app/models/user.py`, `backend/app/models/rbac.py`
+- **Agent Framework**: Agent orchestration patterns, TRM/GNN/LLM architecture, Powell framework structure
+- **Conformal Prediction**: `backend/app/services/conformal_prediction/`, `backend/app/services/conformal_orchestrator.py`
+- **Decision Stream & Governance**: `backend/app/services/decision_stream_service.py`, `decision_governance_service.py`
+- **AIIO Model**: Agent always acts → ACTIONED → INFORMED → INSPECTED → OVERRIDDEN
+- **Digital Twin Engine**: Simulation framework, stochastic sampling
+- **Causal AI**: Counterfactual computation, propensity matching, Bayesian override effectiveness
+- **Frontend Shell**: Navigation framework, auth flows, theming, design system
+- **Docker/Deploy**: Base compose files, Makefile structure, proxy config
+
+### TMS-Specific (this repo only)
+- **Data Models**: Transportation entities (Shipment, Carrier, Load, Route, FreightRate, Equipment, Appointment)
+- **Planning Engines**: Route optimization, load consolidation, carrier selection, dock scheduling
+- **TRM Agents**: TMS-specific agents replacing SC planning agents (see Agent Mapping below)
+- **Integrations**: project44, carrier APIs, TMS/WMS connectors (replacing SAP/D365 SC adapters)
+- **Metrics/KPIs**: On-time delivery, cost per mile, carrier scorecard, dwell time, empty miles
+- **Demo Data**: Transportation network generators, freight history generators
+- **Frontend Pages**: Transportation-specific views replacing SC planning pages
+
+## CRITICAL: Data Model — Transportation Entities
+
+The TMS data model extends the AWS SC foundation where applicable but introduces transportation-specific entities. The DAG network model is shared but nodes and edges have different semantics.
+
+### SC → TMS Entity Mapping
+
+| SC Planning Entity | TMS Equivalent | Notes |
+|---|---|---|
+| Product | Commodity / Freight Class | What's being shipped, not manufactured |
+| Site (MANUFACTURER) | Origin / Shipper | Loading point |
+| Site (INVENTORY) | Terminal / Cross-Dock / Yard | Intermediate handling |
+| Site (MARKET_DEMAND) | Destination / Consignee | Delivery point |
+| Site (MARKET_SUPPLY) | Carrier / Broker | Capacity provider |
+| Transportation Lane | Lane | Shared concept — origin-destination pair with mode |
+| Purchase Order | Shipment / Load | Unit of freight movement |
+| Manufacturing Order | Consolidation / Deconsolidation | Combining/splitting loads |
+| Transfer Order | Drayage / Intermodal Transfer | Movement between modes/terminals |
+| BOM | Load Plan / Packing Spec | How freight fills equipment |
+| Demand Plan | Shipping Demand Forecast | Expected freight volumes by lane |
+| Supply Plan | Capacity Plan | Carrier capacity by lane/mode |
+| MPS | Transportation Plan | Which loads move when, on what |
+| Inventory Level | Yard/Dock Inventory | Trailers, containers at facility |
+| ATP | Available Capacity to Promise | Carrier/lane capacity commitment |
+
+### Transportation Modes
+- **Road**: FTL (Full Truckload), LTL (Less-than-Truckload), Parcel
+- **Ocean**: FCL (Full Container), LCL (Less-than-Container), Bulk
+- **Air**: Standard, Express, Charter
+- **Rail**: Carload, Intermodal, Unit Train
+- **Intermodal**: Combinations (truck-rail, truck-ocean, etc.)
+
+### Key TMS Entities (to be implemented)
+- **Shipment**: Unit of freight from origin to destination
+- **Load**: Physical grouping of shipments on equipment
+- **Carrier**: Transportation provider with rates, lanes, capacity
+- **FreightRate**: Rate per lane/mode/carrier with validity period
+- **Equipment**: Trailer, container, railcar types and availability
+- **Appointment**: Dock door scheduling (pickup/delivery windows)
+- **BOL**: Bill of Lading — legal shipping document
+- **POD**: Proof of Delivery — confirmation record
+- **Exception**: Shipment exception (delay, damage, refused, rolled)
 
 ## CRITICAL: Documentation Must Be Updated With Code Changes
 
@@ -35,39 +97,121 @@ When code changes affect architecture, APIs, data models, or features, update re
 
 ## Terminology Convention
 
-| Old Term | New Term | Context |
-|----------|----------|---------|
+| SC Term | TMS Term | Context |
+|---------|----------|---------|
+| Product | Commodity / Freight Class | What moves |
+| Site | Location / Facility | Where it moves |
+| node | location | Network topology |
+| item | commodity | Freight classification |
+| lane | lane | Shared — origin-destination pair |
+| Purchase Order | Shipment | Freight movement unit |
+| Manufacturing Order | Load Build | Load consolidation |
+| Transfer Order | Intermodal Transfer | Mode change |
+| Demand Plan | Shipping Forecast | Volume prediction |
+| Supply Plan | Capacity Plan | Carrier availability |
+| MPS | Transportation Plan | Execution schedule |
+| ATP | Available Capacity to Promise | Lane capacity |
+| BOM | Load Plan | Equipment utilization spec |
+| Safety Stock | Buffer Capacity | Reserve carrier capacity |
+| Inventory Buffer | Yard Buffer | Equipment/trailer buffer at facility |
 | Game | Scenario | Simulation |
-| Player/Participant | ScenarioUser (code) / User (UI) | Code/UI |
-| Round | Period | Time period |
 | Group / group_id | Tenant / tenant_id | Organization boundary |
-| node | site | AWS SC data model |
-| item | product | AWS SC data model |
-| lane | transportation_lane | AWS SC data model |
-| SafetyStockTRM | InventoryBufferTRM | TRM agent layer |
 | PENDING/ACCEPTED/AUTO_EXECUTED/EXPIRED | ACTIONED | AIIO: agent executed |
 | REJECTED | OVERRIDDEN | AIIO: user rejected with reasoning |
-| powell_role | decision_level | User model field |
 
 > **AIIO Model**: Agent always acts → ACTIONED. Decision Stream surfaces → INFORMED. User reviews → INSPECTED. User overrides → OVERRIDDEN. No approval workflow.
 
-> **customer_id**: ONLY for AWS SC trading partners. Use `tenant_id` for organization boundary. Mixing these is a bug.
+> **customer_id**: ONLY for trading partners (carriers, brokers, consignees). Use `tenant_id` for organization boundary. Mixing these is a bug.
 
 ### Customer Tenant Model
 
 Every customer gets two tenants:
-- **Operational** (`TenantMode.PRODUCTION`): Real SC data from ERP extraction
-- **Learning** (`TenantMode.LEARNING`): Default TBG config, training/simulation
+- **Operational** (`TenantMode.PRODUCTION`): Real transportation data from TMS/ERP extraction
+- **Learning** (`TenantMode.LEARNING`): Demo config, training/simulation
 
 ---
 
 ## Tech Stack
 
 **Backend**: FastAPI (Python 3.10+), SQLAlchemy 2.0, PyTorch 2.2.0, PyTorch Geometric
-**Frontend**: React 18, Material-UI 5, Recharts, D3-Sankey
+**Frontend**: React 18, Material-UI 5, Recharts, D3-Sankey, Mapbox/Leaflet (geo)
 **Database**: PostgreSQL 15+
 **Infrastructure**: Docker, Docker Compose, Nginx proxy
 **AI/ML**: PyTorch (TRM/GNN), OpenAI-compatible API (LLM agents)
+**External Data**: project44 API (visibility), weather APIs, port/terminal APIs
+
+---
+
+## Agent Mapping: SC Planning → TMS
+
+The Powell framework and agent architecture are shared. The 11 TRM agent slots map to transportation equivalents:
+
+| SC TRM Agent | TMS TRM Agent | Function |
+|---|---|---|
+| ATPExecutorTRM | **CapacityPromiseTRM** | Available capacity to promise on lane/carrier |
+| InventoryRebalancingTRM | **EquipmentRepositionTRM** | Empty container/trailer repositioning |
+| POCreationTRM | **FreightProcurementTRM** | Carrier selection, rate negotiation, tender |
+| OrderTrackingTRM | **ShipmentTrackingTRM** | In-transit visibility, ETA prediction, exceptions |
+| MOExecutionTRM | **LoadBuildTRM** | Load consolidation, optimization, sequencing |
+| TOExecutionTRM | **IntermodalTransferTRM** | Cross-mode transfers, drayage coordination |
+| QualityDispositionTRM | **ExceptionManagementTRM** | Delay, damage, refusal, rolled container resolution |
+| MaintenanceSchedulingTRM | **DockSchedulingTRM** | Appointment scheduling, dock door optimization |
+| SubcontractingTRM | **BrokerRoutingTRM** | Broker vs. asset carrier decision, overflow routing |
+| ForecastAdjustmentTRM | **DemandSensingTRM** | Shipping volume forecast adjustments from signals |
+| InventoryBufferTRM | **CapacityBufferTRM** | Reserve carrier capacity, surge planning |
+
+### TMS-Specific GNN Layers
+- **S&OP GraphSAGE**: Network-wide lane optimization, carrier portfolio balance, mode mix
+- **Execution tGNN**: Daily load assignments, carrier allocations, priority routing
+- **Site tGNN**: Intra-facility cross-TRM coordination (dock, yard, staging)
+
+### TMS-Specific Agent Scenarios (replacing Beer Game)
+- **Freight Tender Game**: Carrier bidding simulation (shipper vs. carrier agents)
+- **Network Disruption Game**: Port strike, weather event, capacity crunch response
+- **Mode Selection Game**: Intermodal vs. direct routing optimization
+
+---
+
+## Architecture (Brief)
+
+> Full details: [docs/CLAUDE_REFERENCE.md](docs/CLAUDE_REFERENCE.md)
+
+**Four Pillars**: AI Agents (TRM/GNN/LLM), Conformal Prediction, Digital Twin, Causal AI
+
+**Five-Layer Agent Coordination** (shared with SC Planning):
+- Layer 4 — S&OP GraphSAGE → carrier portfolio, lane strategy, mode mix (weekly)
+- Layer 2 — Network tGNN → inter-facility directives, priority allocations (daily)
+- Layer 1.5 — Site tGNN → intra-facility cross-TRM coordination (hourly, always on)
+- Layer 1 — 11 TRMs → execution decisions (<10ms): CapacityPromise, EquipmentReposition, FreightProcurement, ShipmentTracking, LoadBuild, IntermodalTransfer, ExceptionMgmt, DockScheduling, BrokerRouting, DemandSensing, CapacityBuffer
+- AAP (Layer 3) — cross-authority agent negotiation (seconds-minutes)
+- Escalation Arbiter — persistent drift detection routes up
+
+**Key Backend Paths** (evolving — some still carry SC naming):
+- Planning: `services/aws_sc_planning/` → will become `services/transportation_planning/`
+- Powell agents: `services/powell/` (11 TRM services, heuristic library, scenario engine, RL trainer)
+- Models: `models/` (transportation entities, network config, user, tenant, rbac)
+- API: `api/endpoints/` (loads, shipments, carriers, rates, appointments, provisioning, auth, websocket)
+- Integrations: `integrations/` (project44, carrier APIs, TMS connectors)
+
+**Key Frontend Paths**:
+- Navigation: `components/TwoTierNav.jsx`, `CategoryBar.jsx`, `PageBar.jsx`
+- Planning: `pages/planning/` → TMS views (load board, shipment tracker, lane analytics, dock schedule)
+- Admin: `pages/admin/` (carrier management, rate management, network config, governance)
+- Services: `services/api.js` (Axios, baseURL=/api, withCredentials)
+
+**DAG Model**: 4 master types — Carrier (capacity providers), Shipper (origins), Terminal (intermediate), Consignee (destinations). Facilities connected by lanes.
+
+---
+
+## Key Implementation Details
+
+- **Auth**: JWT + HTTP-only cookies, CSRF double-submit, capability-based permissions
+- **Routing**: Nginx proxy — `/api/*` → backend:8000, `/*` → frontend:3000
+- **Backend entry**: `backend/main.py`
+- **Migrations**: `backend/migrations/versions/` (NOT `backend/alembic/versions/`)
+- **Sessions**: `SessionLocal` is async; use `sync_session_factory` for sync access
+- **Docker Compose**: Base `docker-compose.yml` + overlays (dev, gpu, prod, apps, db). Layer with `-f`.
+- **Env setup**: `make init-env` to create `.env` from template
 
 ---
 
@@ -88,7 +232,7 @@ make rebuild-frontend      # Rebuild frontend
 
 # Database
 make db-bootstrap          # Seed defaults
-make db-reset              # Reset games + training data
+make db-reset              # Reset scenarios + training data
 make rebuild-db            # Drop and recreate
 make reseed-db             # Re-seed after rebuild
 make reset-admin           # Reset password to Autonomy@2026
@@ -110,51 +254,6 @@ make llm-check             # Check LLM connectivity
 
 ---
 
-## Architecture (Brief)
-
-> Full details: [docs/CLAUDE_REFERENCE.md](docs/CLAUDE_REFERENCE.md)
-
-**Four Pillars**: AI Agents (TRM/GNN/LLM), Conformal Prediction, Digital Twin, Causal AI
-
-**Five-Layer Agent Coordination** (context flows down, escalation flows up):
-- Layer 4 — S&OP GraphSAGE → policy parameters θ, guardrails, KPI targets (weekly)
-- Layer 2 — Network tGNN → inter-site directives, priority allocations (daily)
-- Layer 1.5 — Site tGNN → intra-site cross-TRM urgency modulation (hourly, always on)
-- Layer 1 — 11 TRMs → execution decisions (<10ms): ATP, Rebalancing, PO, OrderTracking, MO, TO, Quality, Maintenance, Subcontracting, ForecastAdjustment, InventoryBuffer
-- AAP (Layer 3) — cross-authority agent negotiation (seconds-minutes)
-- Escalation Arbiter — persistent drift detection routes up: CDC retrain → tGNN refresh → S&OP review
-
-**Key Backend Paths**:
-- Planning: `services/aws_sc_planning/` (planner, demand, inventory targets, net requirements)
-- Powell agents: `services/powell/` (11 TRM services, heuristic library, scenario engine, RL trainer)
-- Skills: `services/skills/` (Claude Skills exception handler, feature-flagged OFF)
-- Models: `models/` (sc_entities, aws_sc_planning, supply_chain_config, user, tenant, rbac)
-- API: `api/endpoints/` (mps, supply_plan, pegging, provisioning, auth, websocket)
-
-**Key Frontend Paths**:
-- Navigation: `components/TwoTierNav.jsx`, `CategoryBar.jsx`, `PageBar.jsx`
-- Planning: `pages/planning/` (43+ pages)
-- Admin: `pages/admin/` (25+ pages)
-- Services: `services/api.js` (Axios, baseURL=/api, withCredentials)
-
-**DAG Model**: 4 master types — Market Supply, Market Demand, Inventory, Manufacturer. Sites connected by transportation lanes.
-
-**AATP Consumption**: Priority P order consumes: own tier first, then bottom-up from lowest (5→4→3→...), stops at own tier.
-
----
-
-## Key Implementation Details
-
-- **Auth**: JWT + HTTP-only cookies, CSRF double-submit, capability-based permissions
-- **Routing**: Nginx proxy — `/api/*` → backend:8000, `/*` → frontend:3000
-- **Backend entry**: `backend/main.py` (~62K lines). SC config routes registered in main.py, NOT endpoints file.
-- **Migrations**: `backend/migrations/versions/` (NOT `backend/alembic/versions/`)
-- **Sessions**: `SessionLocal` is async; use `sync_session_factory` for sync access
-- **Docker Compose**: Base `docker-compose.yml` + overlays (dev, gpu, prod, apps, db). Layer with `-f`.
-- **Env setup**: `make init-env` to create `.env` from template
-
----
-
 ## Accessing Services
 
 | Service | URL |
@@ -163,90 +262,85 @@ make llm-check             # Check LLM connectivity
 | Backend API | http://localhost:8088/api |
 | API Docs | http://localhost:8000/docs |
 | pgAdmin | http://localhost:5050 (admin@autonomy.com / admin) |
-| Remote HTTP | http://172.29.20.187:8088 |
-| Remote HTTPS | https://172.29.20.187:8443 |
 
 **Default Login**: systemadmin@autonomy.com / Autonomy@2026
 
-**User Role Hierarchy**:
-- **System Admin** (systemadmin@autonomy.com): No tenant. Manages tenants and tenant admins ONLY. No Decision Stream access.
-- **Tenant Admin** (admin@distdemo.com, admin@sap-demo.com, admin@d365-demo.com, admin@odoo-demo.com): Owns provisioning, config, user management for their tenant.
-- systemadmin NEVER has a `tenant_id` or `default_config_id`.
-
 ---
 
-## Provisioning (17 steps)
+## Provisioning (TMS — evolving)
 
-warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → rl_training → backtest_evaluation → supply_plan → rccp_validation → decision_seed → site_tgnn → conformal → scenario_bootstrap → briefing
+The 17-step provisioning pipeline adapts for transportation:
 
-- **FULL scope**: All 17 steps (structural changes)
-- **PARAMETER_ONLY scope**: 4 steps — cfa_optimization, decision_seed, conformal, briefing (policy changes)
-- Only tenant admin can provision (never systemadmin)
+warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → rl_training → backtest_evaluation → transportation_plan → capacity_validation → decision_seed → site_tgnn → conformal → scenario_bootstrap → briefing
 
----
-
-## Notes
-
-- GPU: `FORCE_GPU=1`, requires NVIDIA Docker, falls back to CPU
-- Makefile auto-detects Compose V2 vs V1
-- `.env` changes need `docker compose up -d --force-recreate backend`
-- Seeding (`make db-bootstrap`): Default TBG configs, users, tenants, showcase scenarios
+Key changes from SC Planning:
+- `supply_plan` → `transportation_plan` (load assignments, carrier allocations)
+- `rccp_validation` → `capacity_validation` (carrier capacity vs. demand)
+- Forecast targets shipping volumes, not product demand
+- TRM training data from freight execution history, not manufacturing/inventory
 
 ---
 
 ## Architecture Decisions (April 2026)
 
 ### AIIO Model — Agents Always Act
-- Agents generate ALL plans automatically during provisioning
-- No "Create MPS Plan" or "Generate Supply Plan" buttons
+- Agents generate ALL transportation plans automatically during provisioning
+- No "Create Load Plan" or "Assign Carriers" buttons
 - Users inspect, override (with reasoning), and scenario-test
 - Governance pipeline controls WHAT agents can do autonomously
 
 ### Plan Separation (Strict)
 | plan_version | Purpose | Who creates |
 |--|--|--|
-| `live` | Plan of Record — what the business operates on | Demand Agent (conformal P50) |
-| `erp_baseline` | ERP's current plan — comparison baseline | Extracted from PO/MO/TO |
+| `live` | Plan of Record — active transportation plan | Transportation Planning Agent (conformal P50) |
+| `tms_baseline` | Current TMS plan — comparison baseline | Extracted from TMS/ERP |
 | `decision_action` | User overrides from Decision Stream | Human via AIIO override |
 
-- **No Monte Carlo** in supply planning — uncertainty quantified by conformal P10/P90
-- Digital Twin simulation ONLY for TRM training data, not plan generation
-- Scenarios use separate `config_id` branches
-
 ### Planning Cascade (Auto-Execution)
-- **S&OP** (weekly Monday 6am): GraphSAGE network optimization
-- **MPS/Supply Plan** (daily 5am): Plan of Record refresh from conformal P50
-- **Execution** (every 4h): TRM decision cycle at each site
-- **Exceptions** (daily 6am): Forecast exception detection + re-evaluation
+- **S&OP** (weekly Monday 6am): GraphSAGE network/carrier portfolio optimization
+- **Transportation Plan** (daily 5am): Plan of Record refresh — load builds, carrier assignments
+- **Execution** (every 4h): TRM decision cycle at each facility
+- **Exceptions** (continuous): Shipment exception detection via project44 + carrier feeds
 
 ### Hierarchy Drilldown (All Views)
-- **Geography**: AWS SC DM `geography` table with `parent_geo_id` tree
-  - Includes serving DCs via transportation lanes (not just physical location)
-- **Product**: `product_hierarchy_node` tree (Category → Family → Product)
+- **Geography**: Facility hierarchy with serving lanes
+- **Commodity**: Freight class hierarchy (Class → Subclass → Commodity)
+- **Carrier**: Carrier portfolio hierarchy (Mode → Carrier → Service Level)
 - **Both** use breadcrumb navigation with drilldown
-- Applied to: Demand Plan, Analytics, Supply Plan, Decision Stream
 
 ### Governance Pipeline
-- Step 0: Planning envelope (adjust-before-create via Glenday Sieve)
-- Step 1: Impact scoring (5 dimensions)
+- Step 0: Planning envelope (lane/mode constraints via Glenday Sieve)
+- Step 1: Impact scoring (5 dimensions: cost, service, capacity, risk, sustainability)
 - Step 2: AIIO mode assignment (AUTOMATE/INFORM/INSPECT)
 - Step 3: Guardrail directive override
-- Agents referred to by function name, not technology
-- Controls are per-site with "apply to all sites" option
+- Controls are per-facility with "apply to all facilities" option
 
-### Frontend API Paths
-- Dockerfile sets `REACT_APP_API_BASE_URL=/api/v1`
-- Axios `baseURL` is already `/api/v1`
-- All frontend API calls use PLAIN paths (e.g., `/promotions/`, NOT `/v1/promotions/`)
-- Adding `/v1/` causes double prefix → 404
+### External Integrations (TMS-Specific)
+- **project44**: Real-time visibility, ETA, exception detection (primary)
+- **Carrier APIs**: EDI 204/214/990, API-based tender/track
+- **Weather**: NOAA, Weather.com — disruption prediction
+- **Port/Terminal**: AIS data, terminal operating systems
+- **Rate Sources**: DAT, Greenscreens, Freightwaves SONAR
 
-### Admin Navigation
-Supply Chain Configs → Decision Governance → User Management → Role Management →
-Context Engine → ERP Data Management → Stochastic Parameters → Metric Configuration →
-BSC Configuration → Experiential Knowledge → Planning Hierarchy
+### Frontend Navigation
+**Admin**: Network Config → Carrier Management → Rate Management → Decision Governance → User Management → Role Management → Context Engine → TMS Data Management → Stochastic Parameters → Metric Configuration → BSC Configuration
 
-### Tactical Planning Navigation
-Demand Planning → Supply & Production Plan → Inventory Planning → Capacity Planning
-- MPS merged into Supply & Production Plan
-- Forecast Analytics merged into Demand Planning → Analytics tab
-- Seeding (`make db-bootstrap`): Default TBG configs, users, tenants, showcase scenarios
+**Tactical Planning**: Load Planning → Shipment Management → Carrier Procurement → Dock Scheduling → Lane Analytics → Exception Management
+
+---
+
+## Upstream Sync Process
+
+To pull shared core changes from Autonomy:
+```bash
+git fetch upstream
+git merge upstream/main
+# Resolve any conflicts in TMS-specific files
+# Test thoroughly before pushing
+```
+
+To propose shared core changes back to Autonomy:
+```bash
+# Create a branch in this repo with ONLY the shared changes
+# Open a PR against MilesAheadToo/Autonomy
+```
