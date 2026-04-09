@@ -28,3 +28,7 @@ export { default as CascadeDashboard } from './CascadeDashboard';
 
 // Re-export existing planning pages
 export { default as MasterProductionScheduling } from './MasterProductionScheduling';
+
+// Phase 7 TMS pages
+export { default as ShipmentMap } from './ShipmentMap';
+export { default as P44Dashboard } from './P44Dashboard';

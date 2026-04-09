@@ -169,6 +169,8 @@ import LaneAnalytics from "./pages/planning/LaneAnalytics.jsx";
 import DockSchedule from "./pages/planning/DockSchedule.jsx";
 import ExceptionDashboard from "./pages/planning/ExceptionDashboard.jsx";
 import TMSScenarioTemplates from "./pages/TMSScenarioTemplates.jsx";
+import ShipmentMap from "./pages/planning/ShipmentMap.jsx";
+import P44Dashboard from "./pages/planning/P44Dashboard.jsx";
 import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/training";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
@@ -1006,6 +1008,24 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_exception_dashboard">
                   <ExceptionDashboard />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            {/* TMS Map & Integration */}
+            <Route
+              path="/visibility/shipment-map"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_shipment_tracking">
+                  <ShipmentMap />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/p44-dashboard"
+              element={
+                <CapabilityProtectedRoute requiredCapability="manage_tenant_users">
+                  <P44Dashboard />
                 </CapabilityProtectedRoute>
               }
             />

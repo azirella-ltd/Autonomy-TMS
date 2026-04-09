@@ -185,15 +185,24 @@ Six systems: Counterfactual Computation, Propensity-Score Matching, Bayesian Ove
 
 All use shared `TRMDecisionWorklist` component with TMS-specific columns, override fields, and summary cards.
 
-**TMS Pages** (planned — not yet built):
-- Load Board, Lane Analytics, Dock Schedule, Exception Dashboard
-- Map-based visualization (Mapbox/Leaflet)
-- Carrier Scorecards, Rate Analysis
+**TMS Planning & Visibility Pages** (`pages/planning/` — complete):
+- `LoadBoard.jsx` — Kanban-style load status board with waterfall tender panel (carrier tier cascade), rate comparison
+- `LaneAnalytics.jsx` — Lane performance metrics, sortable table with carrier breakdown drilldown
+- `DockSchedule.jsx` — Gantt-style dock door timeline (6am-6pm), live ETA feed, gate queue, appointment compliance
+- `ExceptionDashboard.jsx` — Impact-prioritized exceptions with inline AIIO actions, agent recommendations
+- `ShipmentMap.jsx` — Leaflet map with status-coded markers, click-to-detail with conformal ETA, disruption overlays
+- `P44Dashboard.jsx` — project44 integration health: connection, tracking coverage, webhook status, event feed
+
+**TMS Scenario Templates** (`config/tmsScenarioTemplates.js`):
+- Freight Tender, Network Disruption, Mode Selection scenarios with roles and parameters
+- `TMSScenarioTemplates.jsx` — Card-based template selector page
 
 **Admin Pages** (`pages/admin/` — shared shell, TMS-specific content):
-- Carrier Management, Rate Management, Network Config, Governance
+- `CarrierManagementPage.jsx` — Carrier onboarding, scorecards, lane coverage, contracts
+- `RateManagementPage.jsx` — Contract rates, spot quotes, rate cards
+- `P44IntegrationSettingsPage.jsx` — project44 connection config, webhook setup
+- Governance — 11 TMS agent types for AIIO threshold config
 - TRM/GNN/GraphSAGE dashboards (adapted for TMS agents)
-- p44 Integration Settings
 
 ### Agent System Architecture
 

@@ -640,6 +640,21 @@ export const NAVIGATION_CONFIG = [
         description: 'Exception detection and recommended actions',
       },
 
+      // --- TMS VISIBILITY ---
+      {
+        label: '— TMS VISIBILITY —',
+        path: null,
+        icon: null,
+        requiredCapability: null,
+        isSectionHeader: true,
+      },
+      {
+        label: 'Shipment Map',
+        path: '/visibility/shipment-map',
+        icon: ShippingIcon,
+        requiredCapability: 'view_shipment_tracking',
+        description: 'Real-time shipment positions, status markers, disruption overlays',
+      },
       // --- TMS PLANNING ---
       {
         label: '— TMS PLANNING —',
@@ -896,11 +911,18 @@ export const NAVIGATION_CONFIG = [
         description: 'Contract rates, spot quotes, rate cards, accessorial charges',
       },
       {
-        label: 'p44 Integration',
+        label: 'p44 Settings',
         path: '/admin/p44-settings',
         icon: LayersIcon,
         requiredCapability: 'manage_tenant_users',
-        description: 'project44 connection, webhook configuration, tracking coverage',
+        description: 'project44 connection configuration and webhook setup',
+      },
+      {
+        label: 'p44 Dashboard',
+        path: '/admin/p44-dashboard',
+        icon: MonitoringIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'project44 tracking coverage, webhook health, event feed',
       },
       {
         label: 'User Management',

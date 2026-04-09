@@ -1,7 +1,7 @@
 # TMS UI Implementation Plan
 
 **Created:** 2026-04-09
-**Status:** Phases 1-6 COMPLETE — Ready for Phase 7
+**Status:** ALL PHASES COMPLETE (1-7)
 **Tracking:** Checkboxes updated as each item completes
 
 ---
@@ -202,9 +202,9 @@ Convert the SC Planning frontend to a TMS-native UI across all personas (Executi
 
 ## Phase 7: Map Visualization & p44 Dashboard
 
-- [ ] **7.1** Shipment map view (Mapbox/Leaflet) — real-time positions, risk coloring
-- [ ] **7.2** project44 integration dashboard — webhook status, tracking coverage, data freshness
-- [ ] **7.3** Documentation update
+- [x] **7.1** ShipmentMap.jsx (Leaflet) — status-coded circle markers with pulse animation for exceptions, click-to-detail panel with conformal ETA, filter bar, KPI pills, auto-refresh
+- [x] **7.2** P44Dashboard.jsx — connection health, tracking coverage with mode breakdown bars, webhook status table with per-row test, recent events feed with auto-refresh
+- [x] **7.3** Routes, nav items, documentation update
 
 ---
 
