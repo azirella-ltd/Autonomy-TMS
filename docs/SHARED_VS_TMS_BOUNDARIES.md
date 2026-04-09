@@ -128,19 +128,21 @@ This document defines exactly which code is shared with the parent Autonomy (SC 
 
 ### Powell TRM Engines — Replace
 
-| SC Engine | TMS Engine | What Changes |
-|-----------|-----------|--------------|
-| `powell/engines/atp_executor.py` | `powell/engines/capacity_promise.py` | Lane/carrier capacity promise |
-| `powell/engines/rebalancing.py` | `powell/engines/equipment_reposition.py` | Empty container/trailer moves |
-| `powell/engines/po_creation.py` | `powell/engines/freight_procurement.py` | Carrier selection, tender, rate negotiation |
-| `powell/engines/order_tracking.py` | `powell/engines/shipment_tracking.py` | In-transit tracking, ETA, exceptions |
-| `powell/engines/mo_execution.py` | `powell/engines/load_build.py` | Load consolidation, optimization |
-| `powell/engines/to_execution.py` | `powell/engines/intermodal_transfer.py` | Cross-mode coordination |
-| `powell/engines/quality.py` | `powell/engines/exception_management.py` | Delay, damage, refusal, roll resolution |
-| `powell/engines/maintenance.py` | `powell/engines/dock_scheduling.py` | Appointment management, dock optimization |
-| `powell/engines/subcontracting.py` | `powell/engines/broker_routing.py` | Broker vs. asset carrier decision |
-| `powell/engines/forecast_adjustment.py` | `powell/engines/demand_sensing.py` | Volume forecast signal adjustment |
-| `powell/engines/safety_stock.py` | `powell/engines/capacity_buffer.py` | Reserve carrier capacity |
+**Implementation Status**: TRM capability declarations, hive signals (50+ types), site capabilities (6 facility types), and heuristic library (all 11 TRMs with deterministic fallback) are **DONE**. Files: `tms_agent_capabilities.py`, `tms_hive_signals.py`, `tms_site_capabilities.py`, `tms_heuristic_library/`.
+
+| SC Engine | TMS Engine (TRM Class) | Phase | What Changes |
+|-----------|------------------------|-------|--------------|
+| `atp_executor.py` | `capacity_promise.py` (CapacityPromiseTRM) | SENSE | Lane/carrier capacity promise |
+| `order_tracking.py` | `shipment_tracking.py` (ShipmentTrackingTRM) | SENSE | In-transit tracking, ETA, exceptions (p44/EDI) |
+| `forecast_adjustment.py` | `demand_sensing.py` (DemandSensingTRM) | SENSE | Volume forecast signal adjustment |
+| `safety_stock.py` | `capacity_buffer.py` (CapacityBufferTRM) | ASSESS | Reserve carrier capacity, surge planning |
+| `quality.py` | `exception_management.py` (ExceptionManagementTRM) | ASSESS | Delay, damage, refusal, temperature, customs |
+| `po_creation.py` | `freight_procurement.py` (FreightProcurementTRM) | ACQUIRE | Carrier waterfall tendering, rate optimization |
+| `subcontracting.py` | `broker_routing.py` (BrokerRoutingTRM) | ACQUIRE | Broker vs. asset carrier decision |
+| `maintenance.py` | `dock_scheduling.py` (DockSchedulingTRM) | PROTECT | Appointment management, dock optimization |
+| `mo_execution.py` | `load_build.py` (LoadBuildTRM) | BUILD | Load consolidation, optimization |
+| `to_execution.py` | `intermodal_transfer.py` (IntermodalTransferTRM) | BUILD | Cross-mode coordination (truck↔rail↔ocean) |
+| `rebalancing.py` | `equipment_reposition.py` (EquipmentRepositionTRM) | REFLECT | Empty container/trailer repositioning |
 
 ### Integrations — Replace/Add
 
