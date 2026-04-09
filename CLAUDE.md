@@ -89,11 +89,15 @@ When code changes affect architecture, APIs, data models, or features, update re
 
 ## CRITICAL: No Fallbacks, No Hardcoded Values
 
+**Fallbacks are dangerous.** A fabricated metric value (e.g., `|| 94.2`) hides missing data and creates false confidence in system state. This is a safety issue — transportation decisions based on phantom numbers can cause real operational harm.
+
+- **No fallback values for metrics, KPIs, or business data.** If a metric cannot be calculated or found, surface the absence clearly (show "No data", an alert, or raise an error). Never substitute a hardcoded number.
+- **No `|| <number>` patterns for business data.** Only `|| 0` is acceptable for counters where zero is the truthful default. Never for rates, scores, costs, or percentages.
 - Column names must match the actual DB schema — check model definitions first
-- No silent fallbacks — missing data shows nothing or raises error
 - No hardcoded entity references — IDs, names come from tenant data
 - No hardcoded demo data — all data from DB or calculations on DB data
 - Economic parameters explicitly set per tenant — errors for missing data
+- **Frontend rule:** When API data is unavailable, show an `<Alert>` explaining what's missing and how to fix it (e.g., "Run provisioning" or "Check metric configuration"). Never render a chart or card with invented numbers.
 
 ## Terminology Convention
 

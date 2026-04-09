@@ -621,6 +621,37 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         renderer: 'diamond',
         badge: 'Customer',
       },
+      // ── TMS facility types ─────────────────────────────────────────────────
+      SHIPPER: {
+        fill: SANKEY_COLORS.primary.light,
+        stroke: SANKEY_COLORS.primary.main,
+        renderer: 'roundedRect',
+      },
+      TERMINAL: {
+        fill: SANKEY_COLORS.warning.main,
+        stroke: SANKEY_COLORS.warning.dark,
+        renderer: 'parallelogram',
+      },
+      CROSS_DOCK: {
+        fill: SANKEY_COLORS.info.main,
+        stroke: SANKEY_COLORS.info.dark,
+        renderer: 'rect',
+      },
+      CONSIGNEE: {
+        fill: SANKEY_COLORS.secondary.main,
+        stroke: SANKEY_COLORS.secondary.dark,
+        renderer: 'pill',
+      },
+      CARRIER_YARD: {
+        fill: SANKEY_COLORS.success.main,
+        stroke: SANKEY_COLORS.success.dark,
+        renderer: 'ellipse',
+      },
+      PORT: {
+        fill: '#dbeafe',
+        stroke: '#1d4ed8',
+        renderer: 'diamond',
+      },
       DEFAULT: {
         fill: SANKEY_COLORS.grey[500],
         stroke: SANKEY_COLORS.grey[700],

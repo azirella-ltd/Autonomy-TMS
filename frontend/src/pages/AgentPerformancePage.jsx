@@ -9,7 +9,7 @@
  * - Summary KPIs (Agent Score vs Planner Score, Override Rate, Automation %)
  * - Performance & Override Trend Charts over time
  * - Category-level breakdown with individual metrics
- * - Planner capacity metrics (SKUs per planner, efficiency gains)
+ * - Planner capacity metrics (lanes per planner, efficiency gains)
  * - Key events timeline (Go-live, RIFs, NPIs)
  */
 

@@ -1,14 +1,14 @@
 /**
- * Executive Dashboard - SC_VP Landing Page
+ * Executive Dashboard - VP Transportation Landing Page
  *
  * ADH Strategic Level Dashboard - Business Outcome Focused
  *
  * Layout:
- * - Row 1 left: Portfolio Treemap (Geography × Product, revenue size, margin color)
+ * - Row 1 left: Portfolio Treemap (Geography × Lane, freight volume size, margin color)
  * - Row 1 right: Model Confidence + ROI
- * - Row 2: Supply Chain Sankey (full width)
- * - Row 3: Tier 1 ASSESS (Revenue Growth, EBIT, ROCS, Gross Margin, Cost to Serve)
- * - Row 3b: Tier 2 DIAGNOSE (POF, C2C, OFCT composites)
+ * - Row 2: Freight Flow Sankey (full width)
+ * - Row 3: Tier 1 ASSESS (On-Time Delivery, Freight Cost/Unit, Carrier Score, Load Utilization, Cost/Mile)
+ * - Row 3b: Tier 2 DIAGNOSE (Tender Performance, Asset Efficiency, Delivery Cycle composites)
  * - Row 4: S&OP Worklist
  * - Row 5: Agent Performance Summary
  */
@@ -125,7 +125,7 @@ const BusinessKPICard = ({ title, value, unit, change, changeLabel, icon: Icon, 
 
 const getMarginColor = (margin) => {
   // Color scale from red (low margin) to green (high margin)
-  // Based on industry standard beverage margins (typically 22-40%)
+  // Based on freight cost-to-revenue margins (typically 22-40%)
   if (margin >= 38) return '#16a34a'; // green-600 - excellent
   if (margin >= 34) return '#22c55e'; // green-500 - very good
   if (margin >= 30) return '#84cc16'; // lime-500 - good
@@ -885,12 +885,12 @@ const ExecutiveDashboard = () => {
       {/* Row 2: Supply Chain Flow (same component as admin SC config page) */}
       <SupplyChainConfigSankey />
 
-      {/* Row 3: Gartner Tier 1 ASSESS — Strategic Metrics */}
+      {/* Row 3: Tier 1 ASSESS — Strategic Transportation Metrics */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <div>
             <h2 className="text-lg font-semibold">Tier 1 — ASSESS</h2>
-            <p className="text-xs text-muted-foreground">Strategic performance attributes (SCOR RL/RS/AG/CO/AM)</p>
+            <p className="text-xs text-muted-foreground">Strategic transportation performance (OTD, cost, carrier quality, utilization)</p>
           </div>
           <Button
             variant="outline"
@@ -924,17 +924,14 @@ const ExecutiveDashboard = () => {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-5 gap-3">
-            <GartnerMetricCard label="Revenue Growth" value={8.2} unit="%" target={10} trend={1.5} status="warning" tier="tier1" scorCode="RL.1.1" compact />
-            <GartnerMetricCard label="EBIT Margin" value={14.8} unit="%" target={15} trend={0.3} status="warning" tier="tier1" scorCode="CO.1.1" compact />
-            <GartnerMetricCard label="Return on SC Assets" value={18.5} unit="%" target={20} trend={-0.8} status="warning" tier="tier1" scorCode="AM.1.1" compact />
-            <GartnerMetricCard label="Gross Margin" value={business_outcomes?.gross_margin?.value || 32.5} unit="%" target={35} trend={business_outcomes?.gross_margin?.change || 2.1} status="success" tier="tier1" compact />
-            <GartnerMetricCard label="Total Cost to Serve" value={22.3} unit="%" target={20} trend={-0.5} status="warning" tier="tier1" lowerIsBetter compact />
-          </div>
+          <Alert variant="default" className="text-sm">
+            <AlertTriangle className="h-4 w-4" />
+            <span className="ml-2">Tier 1 ASSESS metrics unavailable. Run provisioning or check metric configuration.</span>
+          </Alert>
         )}
       </div>
 
-      {/* Row 3b: Gartner Tier 2 DIAGNOSE — Composite Metrics */}
+      {/* Row 3b: Tier 2 DIAGNOSE — Transportation Composite Metrics */}
       <div>
         <h2 className="text-lg font-semibold mb-3">Tier 2 — DIAGNOSE</h2>
         {gartnerMetrics?.tiers?.tier2_diagnose?.metrics ? (
@@ -960,56 +957,10 @@ const ExecutiveDashboard = () => {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-4">
-            <CompositeMetricCard
-              label="Perfect Order Fulfillment"
-              value={91.3}
-              unit="%"
-              target={95}
-              trend={1.2}
-              status="warning"
-              scorCode="RL.1.1"
-              formula="POF = OTD × IF × DF × DA"
-              components={{
-                otd: { label: 'On-Time Delivery', value: 96.2, unit: '%', target: 98 },
-                if: { label: 'In-Full', value: 97.1, unit: '%', target: 99 },
-                df: { label: 'Damage-Free', value: 99.5, unit: '%', target: 99.5 },
-                da: { label: 'Documentation Accuracy', value: 98.1, unit: '%', target: 99 },
-              }}
-            />
-            <CompositeMetricCard
-              label="Cash-to-Cash Cycle"
-              value={42}
-              unit="days"
-              target={35}
-              trend={-2.5}
-              status="warning"
-              scorCode="AM.1.1"
-              formula="C2C = DIO + DSO − DPO"
-              lowerIsBetter
-              components={{
-                dio: { label: 'Days Inventory Outstanding', value: 28, unit: 'days', target: 22 },
-                dso: { label: 'Days Sales Outstanding', value: 34, unit: 'days', target: 30 },
-                dpo: { label: 'Days Payable Outstanding', value: 20, unit: 'days', target: 17 },
-              }}
-            />
-            <CompositeMetricCard
-              label="Order Fulfillment Cycle Time"
-              value={4.2}
-              unit="days"
-              target={3.5}
-              trend={-0.3}
-              status="warning"
-              scorCode="RS.1.1"
-              formula="OFCT = Source + Make + Deliver"
-              lowerIsBetter
-              components={{
-                source: { label: 'Source Cycle Time', value: 1.8, unit: 'days', target: 1.5 },
-                make: { label: 'Make Cycle Time', value: 1.2, unit: 'days', target: 1.0 },
-                deliver: { label: 'Deliver Cycle Time', value: 1.2, unit: 'days', target: 1.0 },
-              }}
-            />
-          </div>
+          <Alert variant="default" className="text-sm">
+            <AlertTriangle className="h-4 w-4" />
+            <span className="ml-2">Tier 2 DIAGNOSE metrics unavailable. Run provisioning or check metric configuration.</span>
+          </Alert>
         )}
       </div>
 

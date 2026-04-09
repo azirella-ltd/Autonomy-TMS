@@ -1,7 +1,7 @@
 # TMS UI Implementation Plan
 
 **Created:** 2026-04-09
-**Status:** Phase 1 + Phase 2 COMPLETE — Ready for Phase 3
+**Status:** Phases 1-3 COMPLETE — Ready for Phase 4
 **Tracking:** Checkboxes updated as each item completes
 
 ---
@@ -157,13 +157,14 @@ Convert the SC Planning frontend to a TMS-native UI across all personas (Executi
 
 ## Phase 3: Executive Dashboard TMS KPIs
 
-- [ ] **3.1** Replace Tier 1 ASSESS metrics with TMS KPIs (OTD, cost/unit, carrier index, utilization, cost/mile)
-- [ ] **3.2** Replace Tier 2 DIAGNOSE metrics (tender accept rate, dwell time, empty mile ratio)
-- [ ] **3.3** Update Sankey diagram node types (Shipper/Terminal/Cross-Dock/Consignee)
-- [ ] **3.4** Update AgentPerformancePage.jsx agent names to TMS TRM types
-- [ ] **3.5** Documentation update
+- [x] **3.1** Replace Tier 1 ASSESS metrics with TMS KPIs (OTD, cost/unit, carrier index, utilization, cost/mile)
+- [x] **3.2** Replace Tier 2 DIAGNOSE metrics (tender performance, asset efficiency, delivery cycle time)
+- [x] **3.3** Update Sankey diagram node types (Shipper/Terminal/Cross-Dock/Consignee/Carrier_Yard/Port)
+- [x] **3.4** Update AgentPerformancePage.jsx (already data-driven, no hardcoded SC types)
+- [x] **3.5** Remove all hardcoded fallback values — show Alert when metrics unavailable
+- [x] **3.6** Update CLAUDE.md no-fallback rule with expanded guidance
 
-**Files:** `ExecutiveDashboard.jsx`, `AgentPerformancePage.jsx`, `SankeyDiagram.jsx`
+**Files:** `ExecutiveDashboard.jsx`, `AgentPerformancePage.jsx`, `SupplyChainConfigSankey.jsx`, `CLAUDE.md`
 
 ---
 
