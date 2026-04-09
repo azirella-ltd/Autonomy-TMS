@@ -396,6 +396,22 @@ from .tms_entities import (
     ShipmentException, ExceptionResolution,
     # Documents
     BillOfLading, ProofOfDelivery,
+    # Tracking (p44-aligned)
+    TrackingEventType, TrackingEvent, ShipmentIdentifier,
+)
+
+# 36. TMS Network Configuration — Facility, Lane Profile, Carrier Contract
+from .transportation_config import (
+    FacilityType, ContractStatus, LaneDirection,
+    FacilityConfig, OperatingSchedule, YardLocation,
+    LaneProfile, CarrierContract,
+)
+
+# 37. TMS Planning — Forecast, Capacity Targets, Transportation Plan
+from .tms_planning import (
+    ForecastMethod, PlanStatus, PlanItemStatus,
+    ShippingForecast, CapacityTarget,
+    TransportationPlan, TransportationPlanItem,
 )
 
 # Verify all models are properly registered
@@ -704,6 +720,15 @@ __all__ = [
     'DockDoor', 'Appointment',
     'ShipmentException', 'ExceptionResolution',
     'BillOfLading', 'ProofOfDelivery',
+    'TrackingEventType', 'TrackingEvent', 'ShipmentIdentifier',
+    # TMS Network Config
+    'FacilityType', 'ContractStatus', 'LaneDirection',
+    'FacilityConfig', 'OperatingSchedule', 'YardLocation',
+    'LaneProfile', 'CarrierContract',
+    # TMS Planning
+    'ForecastMethod', 'PlanStatus', 'PlanItemStatus',
+    'ShippingForecast', 'CapacityTarget',
+    'TransportationPlan', 'TransportationPlanItem',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

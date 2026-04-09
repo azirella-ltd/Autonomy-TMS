@@ -357,8 +357,11 @@ class Carrier(Base):
     source = Column(String(100))
     external_identifiers = Column(JSON, nullable=True, comment="Typed external IDs: {sap_vendor, p44_id, ...}")
 
-    # p44 integration
+    # p44 integration (aligned with CapacityProviderIdentifier schema)
     p44_carrier_id = Column(String(100), comment="project44 carrier identifier")
+    p44_identifier_type = Column(String(20), comment="P44 CapacityProviderIdentifier.type: SCAC, DOT_NUMBER, MC_NUMBER, P44_EU, P44_GLOBAL, VAT, SYSTEM")
+    p44_account_group_code = Column(String(100), comment="P44 CapacityProviderAccountGroupInfo.code")
+    p44_account_code = Column(String(100), comment="P44 CapacityProviderAccountInfos.code")
 
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
@@ -1198,4 +1201,182 @@ class ProofOfDelivery(Base):
 
     __table_args__ = (
         Index('idx_pod_shipment', 'shipment_id'),
+    )
+
+
+# ============================================================================
+# Tracking Event Entities (p44-aligned)
+# ============================================================================
+
+class TrackingEventType(str, PyEnum):
+    """
+    Tracking event classification
+    Aligned with project44 TrackedShipmentEvent.eventType values
+    """
+    # Movement events
+    PICKED_UP = "PICKED_UP"
+    DEPARTED = "DEPARTED"
+    IN_TRANSIT = "IN_TRANSIT"
+    ARRIVAL_AT_STOP = "ARRIVAL_AT_STOP"
+    DEPARTED_STOP = "DEPARTED_STOP"
+    OUT_FOR_DELIVERY = "OUT_FOR_DELIVERY"
+    DELIVERED = "DELIVERED"
+    # Terminal events (LTL)
+    ARRIVED_AT_TERMINAL = "ARRIVED_AT_TERMINAL"
+    DEPARTED_TERMINAL = "DEPARTED_TERMINAL"
+    # Ocean events
+    VESSEL_DEPARTED = "VESSEL_DEPARTED"
+    VESSEL_ARRIVED = "VESSEL_ARRIVED"
+    LOADED_ON_VESSEL = "LOADED_ON_VESSEL"
+    DISCHARGED = "DISCHARGED"
+    GATE_IN = "GATE_IN"
+    GATE_OUT = "GATE_OUT"
+    TRANSSHIPMENT = "TRANSSHIPMENT"
+    CUSTOMS_CLEARED = "CUSTOMS_CLEARED"
+    CUSTOMS_HOLD = "CUSTOMS_HOLD"
+    # Intermodal
+    RAIL_DEPARTED = "RAIL_DEPARTED"
+    RAIL_ARRIVED = "RAIL_ARRIVED"
+    # Administrative
+    CREATED = "CREATED"
+    UPDATED = "UPDATED"
+    CANCELLED = "CANCELLED"
+    # Appointment
+    APPOINTMENT_SET = "APPOINTMENT_SET"
+    UPDATED_DELIVERY_APPT = "UPDATED_DELIVERY_APPT"
+    # Exceptions
+    DELAYED = "DELAYED"
+    EXCEPTION = "EXCEPTION"
+    RETURNED = "RETURNED"
+    # ETA
+    ETA_UPDATED = "ETA_UPDATED"
+
+
+class TrackingEvent(Base):
+    """
+    Individual tracking event for a shipment
+    TMS Entity: tracking_event
+
+    Aligned with project44 TrackedShipmentEvent schema:
+    - eventId (UUID), eventType, timestamp, location, statusCode
+
+    Populated from p44 webhooks, carrier EDI (214), or carrier API updates.
+    Fed to ShipmentTrackingTRM for ETA prediction and exception detection.
+    """
+    __tablename__ = "tracking_event"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+    leg_id = Column(Integer, ForeignKey("shipment_leg.id"))
+
+    # p44-aligned fields
+    event_type = Column(SAEnum(TrackingEventType, name="tracking_event_type_enum"), nullable=False)
+    event_timestamp = Column(DateTime, nullable=False, comment="When the event occurred")
+    received_timestamp = Column(DateTime, default=datetime.utcnow, comment="When we received the event")
+
+    # p44 identifiers for deduplication
+    p44_event_id = Column(String(200), comment="project44 eventId (UUID)")
+    p44_shipment_id = Column(String(200), comment="project44 masterShipmentId")
+    p44_shipment_leg_id = Column(String(200), comment="project44 shipmentLegId")
+
+    # Location (aligned with p44 Address schema)
+    location_name = Column(String(200))
+    address_line_1 = Column(String(255))
+    city = Column(String(100))
+    state = Column(String(100))
+    postal_code = Column(String(50))
+    country = Column(String(10))
+    latitude = Column(Double)
+    longitude = Column(Double)
+
+    # Status
+    status_code = Column(String(50), comment="Carrier-specific status code")
+    status_description = Column(String(500))
+
+    # ETA (p44: events.estimateDateTime for ARRIVAL_AT_STOP events)
+    estimated_arrival = Column(DateTime, comment="ETA at next stop (from p44 or conformal)")
+    estimated_departure = Column(DateTime)
+    eta_confidence = Column(JSON, comment='{"p10": "...", "p50": "...", "p90": "..."} from conformal prediction')
+
+    # Stop reference (p44: stopId from shipment legs)
+    stop_id = Column(Integer, ForeignKey("site.id"))
+    stop_sequence = Column(Integer)
+    stop_type = Column(String(20), comment="PICKUP, DELIVERY, INTERMEDIATE")
+
+    # Ocean-specific (aligned with p44 ocean tracking)
+    vessel_name = Column(String(200))
+    voyage_number = Column(String(100))
+    vessel_imo = Column(String(20), comment="IMO vessel number")
+    port_locode = Column(String(10), comment="UN/LOCODE port code")
+    container_number = Column(String(50))
+    seal_number = Column(String(50))
+
+    # Equipment (aligned with p44 equipment identifier types)
+    equipment_identifier_type = Column(String(20), comment="P44: CONTAINER_ID, RAIL_CAR_ID, TRAILER_ID")
+    equipment_identifier_value = Column(String(100))
+
+    # Temperature (for reefer tracking)
+    temperature = Column(Double)
+    temperature_uom = Column(String(5), default="F", comment="F or C")
+    temperature_set_point = Column(Double)
+
+    # Exception info (if event_type is EXCEPTION or DELAYED)
+    exception_code = Column(String(50), comment="p44 exception code mapping")
+    exception_description = Column(String(500))
+
+    # Source
+    source = Column(String(50), nullable=False, comment="P44, CARRIER_EDI, CARRIER_API, MANUAL, AGENT")
+    raw_payload = Column(JSON, comment="Original p44/EDI payload for audit")
+
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    shipment = relationship("Shipment")
+    leg = relationship("ShipmentLeg")
+    stop = relationship("Site", foreign_keys=[stop_id])
+
+    __table_args__ = (
+        Index('idx_tracking_event_shipment', 'shipment_id', 'event_timestamp'),
+        Index('idx_tracking_event_type', 'tenant_id', 'event_type', 'event_timestamp'),
+        Index('idx_tracking_event_p44', 'p44_event_id'),
+        Index('idx_tracking_event_container', 'container_number'),
+    )
+
+
+class ShipmentIdentifier(Base):
+    """
+    External identifiers for a shipment (p44-aligned)
+    TMS Entity: shipment_identifier
+
+    Aligned with project44 shipmentIdentifiers array:
+    - type: BILL_OF_LADING, PURCHASE_ORDER, DELIVERY_NUMBER, etc.
+    - value: The identifier value
+    - primaryForType: Whether this is the primary identifier of its type
+
+    Normalizes the reference_numbers JSON on Shipment into queryable records.
+    """
+    __tablename__ = "shipment_identifier"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+
+    identifier_type = Column(String(50), nullable=False,
+                             comment="P44 types: BILL_OF_LADING, PURCHASE_ORDER, DELIVERY_NUMBER, SKU, STOCK_KEEPING_UNIT, UNIVERSAL_PRODUCT_CODE")
+    identifier_value = Column(String(200), nullable=False)
+    is_primary = Column(Boolean, default=False, comment="P44: primaryForType flag")
+
+    source = Column(String(50), comment="TMS, EDI, P44, MANUAL")
+
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    shipment = relationship("Shipment")
+
+    __table_args__ = (
+        Index('idx_shipment_ident_lookup', 'identifier_type', 'identifier_value'),
+        Index('idx_shipment_ident_shipment', 'shipment_id'),
+        UniqueConstraint('shipment_id', 'identifier_type', 'identifier_value',
+                         name='uq_shipment_ident_type_value'),
     )
