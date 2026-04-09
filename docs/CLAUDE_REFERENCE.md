@@ -170,10 +170,25 @@ Six systems: Counterfactual Computation, Propensity-Score Matching, Bayesian Ove
 - Decision Stream pinned first for functional users.
 - Files: `TwoTierNav.jsx`, `CategoryBar.jsx`, `PageBar.jsx`, `useNavStore.js`
 
-**TMS Pages** (`pages/planning/` — to be built):
-- Load Board, Shipment Tracker, Lane Analytics, Dock Schedule
+**TMS Agent Worklist Pages** (`pages/planning/` — Phase 1 complete):
+- `CapacityPromiseWorklistPage.jsx` — Lane capacity commitment (SENSE)
+- `ShipmentTrackingWorklistPage.jsx` — In-transit exceptions, ETA (SENSE)
+- `DemandSensingWorklistPage.jsx` — Volume forecast adjustments (SENSE)
+- `CapacityBufferWorklistPage.jsx` — Reserve carrier capacity (ASSESS)
+- `ExceptionMgmtWorklistPage.jsx` — Delay/damage/refusal resolution (ASSESS)
+- `FreightProcurementWorklistPage.jsx` — Carrier waterfall tendering (ACQUIRE)
+- `BrokerRoutingWorklistPage.jsx` — Broker vs asset carrier (ACQUIRE)
+- `DockSchedulingWorklistPage.jsx` — Appointment/dock door optimization (PROTECT)
+- `LoadBuildWorklistPage.jsx` — Load consolidation/optimization (BUILD)
+- `IntermodalTransferWorklistPage.jsx` — Cross-mode transfers (BUILD)
+- `EquipmentRepositionWorklistPage.jsx` — Empty container/trailer repositioning (REFLECT)
+
+All use shared `TRMDecisionWorklist` component with TMS-specific columns, override fields, and summary cards.
+
+**TMS Pages** (planned — not yet built):
+- Load Board, Lane Analytics, Dock Schedule, Exception Dashboard
 - Map-based visualization (Mapbox/Leaflet)
-- Carrier Scorecards, Rate Analysis, Exception Dashboard
+- Carrier Scorecards, Rate Analysis
 
 **Admin Pages** (`pages/admin/` — shared shell, TMS-specific content):
 - Carrier Management, Rate Management, Network Config, Governance

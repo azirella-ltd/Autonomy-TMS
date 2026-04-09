@@ -156,6 +156,26 @@ This document defines exactly which code is shared with the parent Autonomy (SC 
 
 ### Frontend Pages — Replace
 
+**TMS Agent Worklist Pages** — **DONE** (11 pages, all using shared `TRMDecisionWorklist` component):
+
+| TMS Worklist Page | Route | TRM Type |
+|---|---|---|
+| `CapacityPromiseWorklistPage.jsx` | `/planning/execution/capacity-promise-worklist` | `capacity_promise` |
+| `ShipmentTrackingWorklistPage.jsx` | `/planning/execution/shipment-tracking-worklist` | `shipment_tracking` |
+| `DemandSensingWorklistPage.jsx` | `/planning/execution/demand-sensing-worklist` | `demand_sensing` |
+| `CapacityBufferWorklistPage.jsx` | `/planning/execution/capacity-buffer-worklist` | `capacity_buffer` |
+| `ExceptionMgmtWorklistPage.jsx` | `/planning/execution/exception-mgmt-worklist` | `exception_management` |
+| `FreightProcurementWorklistPage.jsx` | `/planning/execution/freight-procurement-worklist` | `freight_procurement` |
+| `BrokerRoutingWorklistPage.jsx` | `/planning/execution/broker-routing-worklist` | `broker_routing` |
+| `DockSchedulingWorklistPage.jsx` | `/planning/execution/dock-scheduling-worklist` | `dock_scheduling` |
+| `LoadBuildWorklistPage.jsx` | `/planning/execution/load-build-worklist` | `load_build` |
+| `IntermodalTransferWorklistPage.jsx` | `/planning/execution/intermodal-transfer-worklist` | `intermodal_transfer` |
+| `EquipmentRepositionWorklistPage.jsx` | `/planning/execution/equipment-reposition-worklist` | `equipment_reposition` |
+
+Also registered: 11 TMS decision types in `DecisionCard.jsx` (TYPE_LABELS, EDITABLE_FIELDS, TYPE_ICONS), TMS nav items in `navigationConfig.js`, routes in `App.js`.
+
+**TMS Planning Pages** (planned — not yet built):
+
 | SC Page Area | TMS Page Area | What Changes |
 |-------------|--------------|--------------|
 | `pages/planning/demand/` | `pages/planning/volume_forecast/` | Lane volume forecasting views |

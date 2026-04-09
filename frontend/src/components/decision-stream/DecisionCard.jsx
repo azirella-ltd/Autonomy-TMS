@@ -37,6 +37,17 @@ import {
   Loader2,
   XCircle,
   Clock,
+  // TMS-specific icons
+  Gauge,
+  MapPin,
+  Signal,
+  ShieldAlert,
+  Gavel,
+  GitBranch,
+  DoorOpen,
+  Layers,
+  Train,
+  Container,
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent } from '../common';
 import { cn } from '../../lib/utils/cn';
@@ -105,6 +116,66 @@ const EDITABLE_FIELDS = {
     { key: 'buffer_qty', label: 'Buffer Qty', type: 'number' },
     { key: 'multiplier', label: 'Multiplier', type: 'number' },
   ],
+  // --- TMS Agent Types ---
+  capacity_promise: [
+    { key: 'available_loads', label: 'Available Loads', type: 'number' },
+    { key: 'promised_date', label: 'Promise Date', type: 'date' },
+    { key: 'carrier_id', label: 'Carrier', type: 'text' },
+  ],
+  shipment_tracking: [
+    { key: 'eta_override', label: 'ETA Override', type: 'date' },
+    { key: 'exception_action', label: 'Action', type: 'select',
+      options: ['reroute', 'retender', 'hold', 'escalate'] },
+  ],
+  demand_sensing: [
+    { key: 'adjusted_forecast_loads', label: 'Adjusted Forecast (loads)', type: 'number' },
+    { key: 'adjustment_reason', label: 'Adjustment Reason', type: 'select',
+      options: ['seasonal_shift', 'volume_surge', 'volume_drop', 'signal_override', 'market_intelligence'] },
+  ],
+  capacity_buffer: [
+    { key: 'buffer_loads', label: 'Buffer Loads', type: 'number' },
+    { key: 'buffer_policy', label: 'Buffer Policy', type: 'select',
+      options: ['fixed', 'pct_forecast', 'conformal'] },
+  ],
+  exception_management: [
+    { key: 'resolution_action', label: 'Resolution', type: 'select',
+      options: ['retender', 'reroute', 'partial_deliver', 'escalate', 'write_off'] },
+    { key: 'cost_authorization', label: 'Cost Authorization ($)', type: 'number' },
+  ],
+  freight_procurement: [
+    { key: 'carrier_id', label: 'Carrier', type: 'text' },
+    { key: 'rate_override', label: 'Rate Override ($)', type: 'number' },
+    { key: 'action', label: 'Action', type: 'select',
+      options: ['tender', 'defer', 'spot', 'broker'] },
+  ],
+  broker_routing: [
+    { key: 'broker_id', label: 'Broker', type: 'text' },
+    { key: 'max_rate', label: 'Max Rate ($)', type: 'number' },
+  ],
+  dock_scheduling: [
+    { key: 'dock_door_id', label: 'Dock Door', type: 'text' },
+    { key: 'appointment_time', label: 'Appointment Time', type: 'date' },
+    { key: 'priority', label: 'Priority', type: 'select',
+      options: ['expedite', 'standard', 'defer'] },
+  ],
+  load_build: [
+    { key: 'action', label: 'Action', type: 'select',
+      options: ['consolidate', 'split', 'hold', 'expedite'] },
+    { key: 'equipment_type', label: 'Equipment', type: 'select',
+      options: ['dry_van', 'reefer', 'flatbed', 'container'] },
+  ],
+  intermodal_transfer: [
+    { key: 'target_mode', label: 'Target Mode', type: 'select',
+      options: ['road', 'rail', 'ocean', 'air'] },
+    { key: 'accept_transit_penalty', label: 'Accept Transit Penalty', type: 'select',
+      options: ['yes', 'no'] },
+  ],
+  equipment_reposition: [
+    { key: 'quantity', label: 'Equipment Qty', type: 'number' },
+    { key: 'target_facility', label: 'Target Facility', type: 'text' },
+    { key: 'action', label: 'Action', type: 'select',
+      options: ['reposition', 'hold', 'defer'] },
+  ],
 };
 
 // Decision type icons
@@ -120,6 +191,18 @@ const TYPE_ICONS = {
   subcontracting: Box,
   forecast_adjustment: TrendingUp,
   inventory_buffer: BarChart3,
+  // TMS agent icons
+  capacity_promise: Gauge,
+  shipment_tracking: MapPin,
+  demand_sensing: Signal,
+  capacity_buffer: BarChart3,
+  exception_management: ShieldAlert,
+  freight_procurement: Gavel,
+  broker_routing: GitBranch,
+  dock_scheduling: DoorOpen,
+  load_build: Layers,
+  intermodal_transfer: Train,
+  equipment_reposition: Container,
 };
 
 // Decision type display labels
@@ -142,6 +225,18 @@ const TYPE_LABELS = {
   allocation_refresh: 'Allocation Update',
   site_coordination: 'Site Coordination',
   directive: 'User Directive',
+  // TMS agent labels
+  capacity_promise: 'Capacity Promise Agent',
+  shipment_tracking: 'Shipment Tracking Agent',
+  demand_sensing: 'Demand Sensing Agent',
+  capacity_buffer: 'Capacity Buffer Agent',
+  exception_management: 'Exception Mgmt Agent',
+  freight_procurement: 'Freight Procurement Agent',
+  broker_routing: 'Broker Routing Agent',
+  dock_scheduling: 'Dock Scheduling Agent',
+  load_build: 'Load Build Agent',
+  intermodal_transfer: 'Intermodal Transfer Agent',
+  equipment_reposition: 'Equipment Reposition Agent',
 };
 
 const URGENCY_COLORS = {

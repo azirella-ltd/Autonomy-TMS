@@ -148,6 +148,18 @@ import MaintenanceWorklistPage from "./pages/planning/MaintenanceWorklistPage.js
 import SubcontractingWorklistPage from "./pages/planning/SubcontractingWorklistPage.jsx";
 import ForecastAdjWorklistPage from "./pages/planning/ForecastAdjWorklistPage.jsx";
 import BufferWorklistPage from "./pages/planning/BufferWorklistPage.jsx";
+// TMS Agent Worklist Pages
+import CapacityPromiseWorklistPage from "./pages/planning/CapacityPromiseWorklistPage.jsx";
+import ShipmentTrackingWorklistPage from "./pages/planning/ShipmentTrackingWorklistPage.jsx";
+import DemandSensingWorklistPage from "./pages/planning/DemandSensingWorklistPage.jsx";
+import CapacityBufferWorklistPage from "./pages/planning/CapacityBufferWorklistPage.jsx";
+import ExceptionMgmtWorklistPage from "./pages/planning/ExceptionMgmtWorklistPage.jsx";
+import FreightProcurementWorklistPage from "./pages/planning/FreightProcurementWorklistPage.jsx";
+import BrokerRoutingWorklistPage from "./pages/planning/BrokerRoutingWorklistPage.jsx";
+import DockSchedulingWorklistPage from "./pages/planning/DockSchedulingWorklistPage.jsx";
+import LoadBuildWorklistPage from "./pages/planning/LoadBuildWorklistPage.jsx";
+import IntermodalTransferWorklistPage from "./pages/planning/IntermodalTransferWorklistPage.jsx";
+import EquipmentRepositionWorklistPage from "./pages/planning/EquipmentRepositionWorklistPage.jsx";
 import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/training";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
@@ -828,6 +840,96 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_buffer_worklist">
                   <BufferWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            {/* TMS Agent Worklists */}
+            <Route
+              path="/planning/execution/capacity-promise-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_capacity_promise_worklist">
+                  <CapacityPromiseWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/shipment-tracking-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_shipment_tracking_worklist">
+                  <ShipmentTrackingWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/demand-sensing-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_demand_sensing_worklist">
+                  <DemandSensingWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/capacity-buffer-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_capacity_buffer_worklist">
+                  <CapacityBufferWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/exception-mgmt-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_exception_mgmt_worklist">
+                  <ExceptionMgmtWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/freight-procurement-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_freight_procurement_worklist">
+                  <FreightProcurementWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/broker-routing-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_broker_routing_worklist">
+                  <BrokerRoutingWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/dock-scheduling-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_dock_scheduling_worklist">
+                  <DockSchedulingWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/load-build-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_load_build_worklist">
+                  <LoadBuildWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/intermodal-transfer-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_intermodal_transfer_worklist">
+                  <IntermodalTransferWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/equipment-reposition-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_equipment_reposition_worklist">
+                  <EquipmentRepositionWorklistPage />
                 </CapabilityProtectedRoute>
               }
             />
