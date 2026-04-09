@@ -191,7 +191,8 @@ The Powell framework and agent architecture are shared. The 11 TRM agent slots m
 - Powell agents: `services/powell/` (11 TRM services, heuristic library, scenario engine, RL trainer)
 - Models: `models/` (transportation entities, network config, user, tenant, rbac)
 - API: `api/endpoints/` (loads, shipments, carriers, rates, appointments, provisioning, auth, websocket)
-- Integrations: `integrations/` (project44, carrier APIs, TMS connectors)
+- Integrations: `integrations/project44/` (OAuth connector, tracking service, webhook handler, data mapper, config service)
+- API — p44: `api/endpoints/p44_integration.py` (webhook receiver, config, tracking ops)
 
 **Key Frontend Paths**:
 - Navigation: `components/TwoTierNav.jsx`, `CategoryBar.jsx`, `PageBar.jsx`

@@ -146,7 +146,7 @@ This document defines exactly which code is shared with the parent Autonomy (SC 
 
 | SC Integration | TMS Integration | What Changes |
 |---------------|----------------|--------------|
-| `integrations/sap/` | `integrations/project44/` | Real-time visibility, ETA, exceptions |
+| `integrations/sap/` | `integrations/project44/` | Real-time visibility, ETA, exceptions. **DONE**: connector, tracking_service, webhook_handler, data_mapper, config_service, API endpoints |
 | `integrations/d365/` | `integrations/carrier_edi/` | EDI 204/214/990 tender/track |
 | `integrations/infor/` | `integrations/rate_sources/` | DAT, Greenscreens, SONAR |
 | `integrations/odoo/` | `integrations/tms_connectors/` | BluJay, Oracle TMS, MercuryGate |
@@ -194,16 +194,18 @@ This document defines exactly which code is shared with the parent Autonomy (SC 
 
 ## Migration Roadmap
 
-### Phase 1: Foundation (Current)
+### Phase 1: Foundation (Complete)
 - [x] Fork repo, set up remotes (upstream + origin)
 - [x] Create TMS CLAUDE.md and boundary docs
-- [ ] Create `tms_entities.py` data model
-- [ ] Create `transportation_config.py` network model
-- [ ] Add project44 integration adapter
+- [x] Create `tms_entities.py` data model (20 entities, 14 enums)
+- [x] Create `transportation_config.py` network model (5 entities, 3 enums)
+- [x] Create `tms_planning.py` planning model (4 entities, 3 enums)
+- [x] Add project44 integration adapter (connector, tracking, webhooks, data mapper, config service)
+- [x] Add p44 API endpoints (webhook receiver, config management, tracking operations)
 
-### Phase 2: Planning Engines
+### Phase 2: Planning Engines (Current)
+- [ ] Create TMS Powell TRM agent framework (11 agents)
 - [ ] Implement transportation planning service (replacing SC planner)
-- [ ] Adapt TRM engines for 11 TMS agents
 - [ ] Create freight network demo data generator
 - [ ] Adapt provisioning pipeline for TMS
 
@@ -214,7 +216,6 @@ This document defines exactly which code is shared with the parent Autonomy (SC 
 - [ ] Adapt Decision Stream for transport exceptions
 
 ### Phase 4: Integration & Training
-- [ ] project44 real-time visibility integration
 - [ ] Carrier EDI (204/214/990) adapter
 - [ ] TRM training with freight execution data
 - [ ] GNN training on transportation network

@@ -18,12 +18,14 @@ Components:
 - tracking_service.py: Shipment lifecycle (create/track/update/cancel)
 - webhook_handler.py: Inbound event processing and persistence
 - data_mapper.py: p44 schema ↔ TMS entity mapping
+- config_service.py: Tenant-level integration settings management
 """
 
 from .connector import P44Connector, P44ConnectionConfig
 from .tracking_service import P44TrackingService
 from .webhook_handler import P44WebhookHandler
 from .data_mapper import P44DataMapper
+from .config_service import P44ConfigService
 
 __all__ = [
     'P44Connector',
@@ -31,4 +33,5 @@ __all__ = [
     'P44TrackingService',
     'P44WebhookHandler',
     'P44DataMapper',
+    'P44ConfigService',
 ]
