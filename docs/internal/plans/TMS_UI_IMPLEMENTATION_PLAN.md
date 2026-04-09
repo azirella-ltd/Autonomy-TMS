@@ -1,7 +1,7 @@
 # TMS UI Implementation Plan
 
 **Created:** 2026-04-09
-**Status:** Phases 1-4 COMPLETE — Ready for Phase 5
+**Status:** Phases 1-5 COMPLETE — Ready for Phase 6
 **Tracking:** Checkboxes updated as each item completes
 
 ---
@@ -181,12 +181,12 @@ Convert the SC Planning frontend to a TMS-native UI across all personas (Executi
 
 ## Phase 5: TMS Planning Pages
 
-- [ ] **5.1** LoadBoard.jsx — Visual board by load status, carrier assignment
-- [ ] **5.2** LaneAnalytics.jsx — Lane performance, cost, OTD, carrier mix trends
-- [ ] **5.3** DockSchedule.jsx — Calendar/timeline, door utilization heat map
-- [ ] **5.4** ExceptionDashboard.jsx — Real-time exception monitoring, resolution workflow
-- [ ] **5.5** Update Planning navigation section
-- [ ] **5.6** Documentation update
+- [x] **5.1** LoadBoard.jsx — Visual board by load status, carrier assignment
+- [x] **5.2** LaneAnalytics.jsx — Lane performance, cost, OTD, carrier mix trends
+- [x] **5.3** DockSchedule.jsx — Calendar/timeline, door utilization heat map
+- [x] **5.4** ExceptionDashboard.jsx — Real-time exception monitoring, resolution workflow
+- [x] **5.5** Update Planning navigation section
+- [x] **5.6** Documentation update
 
 ---
 

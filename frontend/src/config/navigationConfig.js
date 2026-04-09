@@ -640,6 +640,43 @@ export const NAVIGATION_CONFIG = [
         description: 'Exception detection and recommended actions',
       },
 
+      // --- TMS PLANNING ---
+      {
+        label: '— TMS PLANNING —',
+        path: null,
+        icon: null,
+        requiredCapability: null,
+        isSectionHeader: true,
+      },
+      {
+        label: 'Load Board',
+        path: '/planning/load-board',
+        icon: OrderIcon,
+        requiredCapability: 'view_load_board',
+        description: 'Load planning, status board, carrier assignment',
+      },
+      {
+        label: 'Lane Analytics',
+        path: '/planning/lane-analytics',
+        icon: StatsIcon,
+        requiredCapability: 'view_lane_analytics',
+        description: 'Lane performance, cost trends, carrier mix, OTD by lane',
+      },
+      {
+        label: 'Dock Schedule',
+        path: '/planning/dock-schedule',
+        icon: FactoryIcon,
+        requiredCapability: 'view_dock_schedule',
+        description: 'Appointment timeline, door utilization, dwell tracking',
+      },
+      {
+        label: 'Exception Dashboard',
+        path: '/planning/exception-dashboard',
+        icon: RiskIcon,
+        requiredCapability: 'view_exception_dashboard',
+        description: 'Real-time shipment exception monitoring and resolution',
+      },
+
       // --- PROCUREMENT ---
       {
         label: '— PROCUREMENT —',

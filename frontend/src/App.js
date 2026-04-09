@@ -163,6 +163,11 @@ import DockSchedulingWorklistPage from "./pages/planning/DockSchedulingWorklistP
 import LoadBuildWorklistPage from "./pages/planning/LoadBuildWorklistPage.jsx";
 import IntermodalTransferWorklistPage from "./pages/planning/IntermodalTransferWorklistPage.jsx";
 import EquipmentRepositionWorklistPage from "./pages/planning/EquipmentRepositionWorklistPage.jsx";
+// TMS Planning Pages
+import LoadBoard from "./pages/planning/LoadBoard.jsx";
+import LaneAnalytics from "./pages/planning/LaneAnalytics.jsx";
+import DockSchedule from "./pages/planning/DockSchedule.jsx";
+import ExceptionDashboard from "./pages/planning/ExceptionDashboard.jsx";
 import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/training";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
@@ -958,6 +963,40 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_equipment_reposition_worklist">
                   <EquipmentRepositionWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            {/* TMS Planning Pages */}
+            <Route
+              path="/planning/load-board"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_load_board">
+                  <LoadBoard />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/lane-analytics"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_lane_analytics">
+                  <LaneAnalytics />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/dock-schedule"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_dock_schedule">
+                  <DockSchedule />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/exception-dashboard"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_exception_dashboard">
+                  <ExceptionDashboard />
                 </CapabilityProtectedRoute>
               }
             />
