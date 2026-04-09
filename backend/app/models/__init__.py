@@ -376,6 +376,28 @@ from .sc_extensions import (
 # 34. Unified Training Corpus — single source of truth for all agent training data
 from .training_corpus import TrainingCorpusSample, TrainingCorpusCheckpoint
 
+# 35. TMS Entities — Transportation Management System domain models
+from .tms_entities import (
+    # Enums
+    TransportMode, EquipmentType, ShipmentStatus, LoadStatus,
+    ExceptionType, ExceptionSeverity, ExceptionResolutionStatus,
+    CarrierType, TenderStatus, AppointmentType, AppointmentStatus, RateType,
+    # Commodity
+    CommodityHierarchy, Commodity,
+    # Carrier & Equipment
+    Carrier, CarrierLane, Equipment, CarrierScorecard,
+    # Shipment & Load
+    Shipment, ShipmentLeg, Load, LoadItem,
+    # Freight Rates & Tender
+    FreightRate, FreightTender,
+    # Appointments & Dock
+    DockDoor, Appointment,
+    # Exceptions
+    ShipmentException, ExceptionResolution,
+    # Documents
+    BillOfLading, ProofOfDelivery,
+)
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -671,6 +693,17 @@ __all__ = [
     'SAPChangeLogDetail',
     # Unified Training Corpus
     'TrainingCorpusSample',
+    # TMS Entities
+    'TransportMode', 'EquipmentType', 'ShipmentStatus', 'LoadStatus',
+    'ExceptionType', 'ExceptionSeverity', 'ExceptionResolutionStatus',
+    'CarrierType', 'TenderStatus', 'AppointmentType', 'AppointmentStatus', 'RateType',
+    'CommodityHierarchy', 'Commodity',
+    'Carrier', 'CarrierLane', 'Equipment', 'CarrierScorecard',
+    'Shipment', 'ShipmentLeg', 'Load', 'LoadItem',
+    'FreightRate', 'FreightTender',
+    'DockDoor', 'Appointment',
+    'ShipmentException', 'ExceptionResolution',
+    'BillOfLading', 'ProofOfDelivery',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.
