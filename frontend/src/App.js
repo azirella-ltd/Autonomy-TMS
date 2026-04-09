@@ -168,6 +168,7 @@ import LoadBoard from "./pages/planning/LoadBoard.jsx";
 import LaneAnalytics from "./pages/planning/LaneAnalytics.jsx";
 import DockSchedule from "./pages/planning/DockSchedule.jsx";
 import ExceptionDashboard from "./pages/planning/ExceptionDashboard.jsx";
+import TMSScenarioTemplates from "./pages/TMSScenarioTemplates.jsx";
 import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/training";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
@@ -262,6 +263,14 @@ const AppContent = () => {
               }
             />
 
+            <Route
+              path="/scenarios/templates"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_simulations">
+                  <TMSScenarioTemplates />
+                </CapabilityProtectedRoute>
+              }
+            />
             <Route
               path="/scenarios/new"
               element={

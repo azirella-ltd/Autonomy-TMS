@@ -175,10 +175,10 @@ The Powell framework and agent architecture are shared. The 11 TRM agent slots m
 - **Execution tGNN**: Daily load assignments, carrier allocations, priority routing
 - **Site tGNN**: Intra-facility cross-TRM coordination (dock, yard, staging)
 
-### TMS-Specific Agent Scenarios (replacing Beer Game)
-- **Freight Tender Game**: Carrier bidding simulation (shipper vs. carrier agents)
-- **Network Disruption Game**: Port strike, weather event, capacity crunch response
-- **Mode Selection Game**: Intermodal vs. direct routing optimization
+### TMS-Specific Agent Scenarios
+- **Freight Tender Scenario**: Carrier bidding simulation (shipper vs. carrier agents)
+- **Network Disruption Scenario**: Port strike, weather event, capacity crunch response
+- **Mode Selection Scenario**: Intermodal vs. direct routing optimization
 
 ---
 

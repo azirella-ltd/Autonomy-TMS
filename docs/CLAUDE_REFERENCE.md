@@ -93,10 +93,10 @@ Every agent decision carries a calibrated likelihood guarantee. CDT risk_bound =
 
 The digital twin replicates the customer's transportation network as a stochastic simulation. 9 triangular distributions per entity. Agents learn by watching heuristics fail. See [DIGITAL_TWIN.md](internal/DIGITAL_TWIN.md).
 
-**TMS-Specific Simulation Games** (replacing Beer Game):
-- **Freight Tender Game**: Carrier bidding simulation (shipper vs. carrier agents)
-- **Network Disruption Game**: Port strike, weather event, capacity crunch response
-- **Mode Selection Game**: Intermodal vs. direct routing optimization
+**TMS-Specific Simulation Scenarios**:
+- **Freight Tender Scenario**: Carrier bidding simulation (shipper vs. carrier agents)
+- **Network Disruption Scenario**: Port strike, weather event, capacity crunch response
+- **Mode Selection Scenario**: Intermodal vs. direct routing optimization
 
 ### Pillar #4: Causal AI (Decision Outcome Attribution)
 

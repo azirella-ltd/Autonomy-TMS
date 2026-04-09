@@ -1,7 +1,7 @@
 # TMS UI Implementation Plan
 
 **Created:** 2026-04-09
-**Status:** Phases 1-5 COMPLETE — Ready for Phase 6
+**Status:** Phases 1-6 COMPLETE — Ready for Phase 7
 **Tracking:** Checkboxes updated as each item completes
 
 ---
@@ -17,7 +17,7 @@ Convert the SC Planning frontend to a TMS-native UI across all personas (Executi
 | **Executive** | Dashboard, Briefings, Agent Performance | SC KPIs (Revenue, EBIT, POF) | TMS KPIs (OTD, cost/mile, carrier score) |
 | **Planner** | Decision Stream, Worklists, Planning Pages | 11 SC worklists, SC decision types | 11 TMS worklists, TMS decision types |
 | **Admin** | Governance, User Mgmt, AI Training | SC agent types in governance | TMS agent types, carrier/rate mgmt |
-| **Training** | Scenario Board, Reports | Beer Game | Freight Tender, Disruption, Mode Selection |
+| **Training** | Scenario Board, Reports | SC Planning Scenarios | Freight Tender, Disruption, Mode Selection |
 
 ### Agent Type Coverage
 
@@ -190,11 +190,12 @@ Convert the SC Planning frontend to a TMS-native UI across all personas (Executi
 
 ---
 
-## Phase 6: Scenario Games
+## Phase 6: TMS Scenarios
 
-- [ ] **6.1** Freight Tender Game — Carrier bidding simulation
-- [ ] **6.2** Network Disruption Game — Port strike, weather, capacity crunch
-- [ ] **6.3** Mode Selection Game — Intermodal vs direct routing optimization
+- [x] **6.1** Freight Tender Scenario — Carrier bidding simulation
+- [x] **6.2** Network Disruption Scenario — Port strike, weather, capacity crunch
+- [x] **6.3** Mode Selection Scenario — Intermodal vs direct routing optimization
+- [x] **6.4** Scenario templates page and config
 - [ ] **6.4** Documentation update
 
 ---

@@ -35,7 +35,7 @@ const AGENT_LABELS = {
   optimizer: 'Optimizer',
   llm: 'LLM Agent',
 };
-const SCENARIOS = ['Default Beer Game', 'Three FG Config', 'Variable Demand', 'All Scenarios'];
+const SCENARIOS = ['Freight Tender', 'Network Disruption', 'Mode Selection', 'All Scenarios'];
 
 const NAMES = [
   'Alice Chen', 'Bob Martinez', 'Carol Singh', 'David Kim',
