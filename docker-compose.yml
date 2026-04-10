@@ -24,6 +24,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      secrets:
+        - gh_token
     container_name: autonomy-frontend
     ports:
       - "3000:80"  # Expose frontend directly for testing
@@ -238,3 +240,13 @@ volumes:
     driver: local
   pgadmin_data:
     driver: local
+
+# Build-time secrets — never copied into image layers, mounted as tmpfs
+# during specific RUN steps that opt in via `--mount=type=secret`.
+#
+# gh_token: fine-grained GitHub PAT scoped to MilesAheadToo/autonomy-ui-core
+#   (Contents: Read). Used by frontend Dockerfile to install the private
+#   @autonomy/ui-core npm package. Override path with GH_TOKEN_FILE env var.
+secrets:
+  gh_token:
+    file: ${GH_TOKEN_FILE:-${HOME}/.config/autonomy/gh_token}

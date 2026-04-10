@@ -1,17 +1,33 @@
+# syntax=docker/dockerfile:1.4
 # Build stage
 FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Install system dependencies for native modules
-RUN apk add --no-cache python3 make g++
+# Install system dependencies for native modules + git (for github: npm deps)
+RUN apk add --no-cache python3 make g++ git
 
 # Copy package files and install TypeScript
 COPY package*.json ./
 RUN npm install -g typescript
 
-# Install all dependencies including peer dependencies
-RUN npm install --legacy-peer-deps
+# Install all dependencies — including the private @autonomy/ui-core github: dep.
+# The GitHub PAT is mounted as a BuildKit secret (id=gh_token), wired into git
+# via a one-shot credential helper that reads it from /run/secrets/gh_token.
+# The token NEVER lands in any image layer — secrets are tmpfs-only.
+#
+# Build invocation (handled by `make rebuild-frontend` / docker compose with the
+# secrets: stanza in docker-compose.yml):
+#   DOCKER_BUILDKIT=1 docker build \
+#     --secret id=gh_token,src=$HOME/.config/autonomy/gh_token \
+#     -f frontend/Dockerfile frontend/
+RUN --mount=type=secret,id=gh_token,required=true \
+    git config --global credential.helper '!f() { echo "username=x-access-token"; echo "password=$(cat /run/secrets/gh_token)"; }; f' && \
+    git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    npm install --legacy-peer-deps && \
+    git config --global --unset credential.helper && \
+    git config --global --remove-section url."https://github.com/" 2>/dev/null || true
 
 # Install additional required dependencies
 RUN npm install formik yup @hookform/resolvers react-hook-form

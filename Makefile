@@ -171,8 +171,15 @@ up-tls-only:
 	echo "   SystemAdmin login: systemadmin@autonomy.ai / Autonomy@2026"
 
 rebuild-frontend:
-	@echo "\n[+] Rebuilding frontend image with dev overrides..."; \
-	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml build frontend; \
+	@if [ ! -f "$${GH_TOKEN_FILE:-$$HOME/.config/autonomy/gh_token}" ]; then \
+		echo "\n[!] Missing GitHub PAT for @autonomy/ui-core install."; \
+		echo "    Expected at: $${GH_TOKEN_FILE:-$$HOME/.config/autonomy/gh_token}"; \
+		echo "    Create a fine-grained PAT (Contents: Read on MilesAheadToo/autonomy-ui-core)"; \
+		echo "    and save the token (no newline) to that path with chmod 600."; \
+		exit 1; \
+	fi; \
+	echo "\n[+] Rebuilding frontend image with BuildKit secret..."; \
+	DOCKER_BUILDKIT=1 $(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml build frontend; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml up -d frontend; \
 	$(MAKE) --no-print-directory proxy-restart; \
 	echo "\n[✓] Frontend rebuilt and restarted."
