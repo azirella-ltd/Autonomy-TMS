@@ -307,11 +307,13 @@ The local `frontend/src/components/common/InlineComments.jsx` is **not deleted**
 | v0.7 Visual treatment + mention autocomplete (ui-core) | Partially shipped in v0.5 — `is_agent` rendering, `Bot` icon, blue treatment, "Agent" badge, confidence chip already in `Conversation.tsx` | acer-nitro | `MilesAheadToo/autonomy-ui-core@adca0c2` |
 | v0.7 First wire-up: Decision Stream cards + CapacityPromise pilot | Not started | TBD | — |
 
-### Cross-machine coordination notes (2026-04-10)
+### Per-product machine split (2026-04-10)
 
-Two machines are working on this in parallel:
+The work is split by **product**, not by phase:
 
-- **acer-nitro** (this repo) — landed `@autonomy/ui-core` v0.4 (`filterByType`) and v0.5 (`Conversation`), all 11 TMS worklist swaps, and the TMS-side Conversation adoption. SCP repo on this machine is intentionally **not touched** to avoid cross-machine merge conflicts.
-- **msi-stealth** — the SCP-side Conversation v0.5 migration (`scpConversationsClient`, provider wiring, the same 4 SC-legacy pages). The screenshot from msi-stealth shows the changes staged in source control. This machine is also expected to handle the Autonomy → Autonomy-SCP rename work in a follow-up session.
+- **acer-nitro** = **TMS station.** Single-repo focus on `Autonomy-TMS` + `autonomy-ui-core` releases. Landed `@autonomy/ui-core` v0.4 (`filterByType`) and v0.5 (`Conversation`), all 11 TMS worklist swaps, and the TMS-side Conversation adoption. Phase 2.5, v0.6 surfacing into TMS-native entities, and v0.7 TMS backend work all continue here.
+- **msi-stealth** = **multi-repo primary workspace.** SCP development, the `Autonomy` → `Autonomy-SCP` rename, future workspace meta-repo setup. The SCP-side Conversation v0.5 migration (`scpConversationsClient`, provider wiring, the same 4 SC-legacy pages) is in flight here. Treat msi-stealth as authoritative for the SCP repo and for the rename.
 
-**Sequencing:** acer-nitro should not pull or rebase the SCP repo until msi-stealth has pushed its v0.5 work AND the rename has settled. Until then, treat msi-stealth as authoritative for the SCP repo and the rename.
+**The narrow rule:** acer-nitro does not touch the SCP repo locally. That's the only restriction. TMS development on acer-nitro proceeds normally and does not block on msi-stealth.
+
+**After the rename settles on msi-stealth:** acer-nitro pulls in `Autonomy-TMS`, optionally clones the renamed SCP repo as a read-only reference, ignores the workspace meta-repo entirely.
