@@ -17,6 +17,19 @@ import simulationApi, { api as http } from "./services/api";
 import { API_BASE_URL } from "./config/api.ts";
 import { SnackbarProvider } from "notistack";
 
+// @autonomy/ui-core integration (Phase 2 of TMS_INDEPENDENCE_PLAN)
+import {
+  DecisionStreamProvider,
+  CapabilitiesProvider,
+} from "@autonomy/ui-core";
+import { registerTMSDecisionTypes } from "./decisionTypes";
+import { tmsDecisionStreamClient } from "./services/tmsDecisionStreamClient";
+import { tmsCapabilitiesClient } from "./services/tmsCapabilitiesClient";
+
+// Register all 11 TMS decision types with the shared registry once at boot.
+// Idempotent — safe across hot reloads in dev.
+registerTMSDecisionTypes();
+
 async function probe(base, path = "/health") {
   try {
     const res = await fetch(`${base.replace(/\/$/, "")}${path}`, { credentials: "include" });
@@ -77,6 +90,8 @@ init()
       <HelmetProvider>
         <BrowserRouter>
           <AuthProvider>
+            <CapabilitiesProvider client={tmsCapabilitiesClient}>
+            <DecisionStreamProvider client={tmsDecisionStreamClient}>
             <AzirellaProvider>
             <DisplayPreferencesProvider>
             <ActiveConfigProvider>
@@ -94,6 +109,8 @@ init()
             </ActiveConfigProvider>
             </DisplayPreferencesProvider>
             </AzirellaProvider>
+            </DecisionStreamProvider>
+            </CapabilitiesProvider>
           </AuthProvider>
         </BrowserRouter>
       </HelmetProvider>
