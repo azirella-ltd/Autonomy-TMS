@@ -2,32 +2,44 @@
 
 Project rules for Claude Code. Detailed architecture and reference material in [docs/CLAUDE_REFERENCE.md](docs/CLAUDE_REFERENCE.md).
 
-> **Repo Relationship**: This repo is forked from [Autonomy](https://github.com/MilesAheadToo/Autonomy) (supply chain planning). The `upstream` remote tracks the parent. Shared core changes should be made in Autonomy and merged here. TMS-specific changes live only in this repo.
+## CRITICAL: TMS is a Sibling Product, Not a Fork
 
-## CRITICAL: Shared Core vs. TMS-Specific Code
+> **Architecture Pivot (2026-04-10)**: Autonomy SCP and Autonomy TMS are **two separate products**, not parent and fork. They share patterns and integrate via MCP, but have **independent tech stacks from the database up**. The current state of this repo (mixed SCP code from a fork) is being unwound.
 
-Code in this repo falls into two categories:
+**Target architecture:**
 
-### Shared Core (sync with upstream Autonomy)
-Changes to these areas should ideally be made in the Autonomy repo and merged here via `git pull upstream main`.
+```
+github.com/MilesAheadToo/
+├── autonomy-ui-core/          ← Shared frontend package (Decision Stream, common UI, registries)
+├── autonomy-scp-core/          ← (optional) Shared backend patterns (Powell framework, conformal, governance)
+├── Autonomy/                   ← SCP product (own DB, own backend, own frontend)
+└── Autonomy-TMS/               ← TMS product (own DB, own backend, own frontend)
+```
 
-- **Infrastructure**: `backend/app/core/`, `backend/app/db/`, `backend/app/middleware/`, `backend/app/utils/`
-- **Auth & RBAC**: `backend/app/api/endpoints/auth.py`, `backend/app/models/user.py`, `backend/app/models/rbac.py`
-- **Agent Framework**: Agent orchestration patterns, TRM/GNN/LLM architecture, Powell framework structure
-- **Conformal Prediction**: `backend/app/services/conformal_prediction/`, `backend/app/services/conformal_orchestrator.py`
-- **Decision Stream & Governance**: `backend/app/services/decision_stream_service.py`, `decision_governance_service.py`
-- **AIIO Model**: Agent always acts → ACTIONED → INFORMED → INSPECTED → OVERRIDDEN
-- **Digital Twin Engine**: Simulation framework, stochastic sampling
-- **Causal AI**: Counterfactual computation, propensity matching, Bayesian override effectiveness
-- **Frontend Shell**: Navigation framework, auth flows, theming, design system
-- **Docker/Deploy**: Base compose files, Makefile structure, proxy config
+**What is shared, and how:**
 
-### TMS-Specific (this repo only)
-- **Data Models**: Transportation entities (Shipment, Carrier, Load, Route, FreightRate, Equipment, Appointment)
-- **Planning Engines**: Route optimization, load consolidation, carrier selection, dock scheduling
-- **TRM Agents**: TMS-specific agents replacing SC planning agents (see Agent Mapping below)
-- **Integrations**: project44, carrier APIs, TMS/WMS connectors (replacing SAP/D365 SC adapters)
-- **Metrics/KPIs**: On-time delivery, cost per mile, carrier scorecard, dwell time, empty miles
+| Layer | Sharing mechanism |
+|-------|-------------------|
+| **Frontend components** (Decision Stream, navigation, common UI) | `autonomy-ui-core` npm package, consumed by both apps |
+| **Decision types** (TMS agent types, SCP agent types) | Plugin registry in `autonomy-ui-core` — each app registers its own types at boot |
+| **Backend patterns** (Powell framework, AIIO model, governance pipeline) | Concept-shared but implemented independently in each app's codebase. Optionally extracted to `autonomy-scp-core` Python package later. |
+| **Cross-app data exchange** | MCP (Model Context Protocol) — each app exposes domain tools that the other (or an executive console) can call |
+| **DB schemas** | **Independent.** TMS has its own `tms-db` PostgreSQL container. No shared tables. |
+| **Migrations** | Independent. TMS has its own alembic chain, never references SCP migrations. |
+| **Models / SQLAlchemy Base** | Independent. TMS has its own `Base = declarative_base()`. No `Shipment` collisions. |
+
+**What this means in practice:**
+
+- Do NOT copy code from upstream Autonomy into this repo as "shared core"
+- Do NOT add `git remote upstream` references to the SCP repo
+- Do NOT share SQLAlchemy `Base`, models, or DB tables with SCP
+- DO use the `autonomy-ui-core` package for shared frontend components (once extracted)
+- DO use MCP for any TMS↔SCP integration (e.g., TMS asking SCP for ATP constraints when sizing carrier capacity)
+- DO consider: a separate "executive console" app that aggregates Decision Streams from both via MCP
+
+**Current state vs target:**
+
+The repo currently contains a lot of SCP code from the original fork. See [docs/internal/plans/TMS_INDEPENDENCE_PLAN.md](docs/internal/plans/TMS_INDEPENDENCE_PLAN.md) for the 5-phase migration to the target architecture.
 - **Demo Data**: Transportation network generators, freight history generators
 - **Frontend Pages**: Transportation-specific views replacing SC planning pages
 
