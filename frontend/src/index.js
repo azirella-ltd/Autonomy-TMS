@@ -21,10 +21,12 @@ import { SnackbarProvider } from "notistack";
 import {
   DecisionStreamProvider,
   CapabilitiesProvider,
+  ConversationsProvider,
 } from "@autonomy/ui-core";
 import { registerTMSDecisionTypes } from "./decisionTypes";
 import { tmsDecisionStreamClient } from "./services/tmsDecisionStreamClient";
 import { tmsCapabilitiesClient } from "./services/tmsCapabilitiesClient";
+import { tmsConversationsClient } from "./services/tmsConversationsClient";
 
 // Register all 11 TMS decision types with the shared registry once at boot.
 // Idempotent — safe across hot reloads in dev.
@@ -92,6 +94,7 @@ init()
           <AuthProvider>
             <CapabilitiesProvider client={tmsCapabilitiesClient}>
             <DecisionStreamProvider client={tmsDecisionStreamClient}>
+            <ConversationsProvider client={tmsConversationsClient}>
             <AzirellaProvider>
             <DisplayPreferencesProvider>
             <ActiveConfigProvider>
@@ -109,6 +112,7 @@ init()
             </ActiveConfigProvider>
             </DisplayPreferencesProvider>
             </AzirellaProvider>
+            </ConversationsProvider>
             </DecisionStreamProvider>
             </CapabilitiesProvider>
           </AuthProvider>

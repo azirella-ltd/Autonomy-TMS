@@ -57,7 +57,7 @@ import {
   ArrowLeftRight,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import InlineComments from '../../components/common/InlineComments';
+import { Conversation } from '@autonomy/ui-core';
 
 // Match status colors
 const getMatchStatusVariant = (status) => {
@@ -699,7 +699,7 @@ const Invoices = () => {
               </TabsContent>
 
               <TabsContent value="comments" className="mt-4">
-                <InlineComments
+                <Conversation
                   entityType="invoice"
                   entityId={selectedInvoice.id}
                   title="Invoice Comments"

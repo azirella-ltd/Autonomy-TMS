@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
-import InlineComments from '../../components/common/InlineComments';
+import { Conversation } from '@autonomy/ui-core';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TransferOrders = () => {
@@ -363,7 +363,7 @@ const TransferOrders = () => {
             </div>
 
             {/* Inline Comments Section */}
-            <InlineComments
+            <Conversation
               entityType="transfer_order"
               entityId={selectedTO.id}
               title="Order Comments"

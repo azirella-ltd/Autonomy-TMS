@@ -46,7 +46,7 @@ import {
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
-import InlineComments from '../../components/common/InlineComments';
+import { Conversation } from '@autonomy/ui-core';
 import { RebalancingWizard } from '../../components/recommendations';
 
 const Recommendations = () => {
@@ -746,7 +746,7 @@ const Recommendations = () => {
               </div>
             </div>
 
-            <InlineComments
+            <Conversation
               entityType="recommendation"
               entityId={selectedRecommendation.id}
               title="Recommendation Comments"

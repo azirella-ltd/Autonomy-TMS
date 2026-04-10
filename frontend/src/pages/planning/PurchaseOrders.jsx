@@ -44,7 +44,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
-import InlineComments from '../../components/common/InlineComments';
+import { Conversation } from '@autonomy/ui-core';
 
 const PurchaseOrders = () => {
   const navigate = useNavigate();
@@ -569,8 +569,8 @@ const PurchaseOrders = () => {
               </Card>
             </div>
 
-            {/* Inline Comments Section */}
-            <InlineComments
+            {/* Conversation thread */}
+            <Conversation
               entityType="purchase_order"
               entityId={selectedPO.id}
               title="Order Comments"
