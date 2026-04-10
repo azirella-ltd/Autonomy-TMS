@@ -715,28 +715,35 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
     >
       <div className="flex items-center h-full px-4 md:px-6 gap-4">
 
-        {/* ── LEFT: Logo & Context ─────────────────────────────────────────── */}
-        <div className="flex items-center gap-4 flex-shrink-0">
+        {/* ── LEFT: Logo + Brand "Autonomy TMS" ──────────────────────────── */}
+        {/* Aligned with @autonomy/ui-core TopAppBar layout (v0.2). */}
+        {/* Logo h-9 (was h-7), brand text-base equal weight to "Config:". */}
+        <div className="flex items-center gap-2 flex-shrink-0">
           <Link
             to={isSysAdmin ? '/admin/tenants' : '/dashboard'}
-            className="flex items-center gap-2 font-medium hover:opacity-80 transition-opacity"
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            aria-label="Autonomy TMS"
           >
             <img
               src="/autonomy_logo.svg"
               alt="Autonomy"
-              className="h-7 w-auto"
+              className="h-9 w-auto"
             />
+            <div className="flex items-baseline gap-1.5 text-base">
+              <span className="font-semibold text-foreground">Autonomy</span>
+              <span className="font-normal text-muted-foreground">TMS</span>
+            </div>
           </Link>
+        </div>
 
+        {/* ── CENTER: Active config / context (centered in remaining space) ── */}
+        <div className="flex-1 flex items-center justify-center min-w-0">
           {shouldShowContext && (
-            <span className="hidden lg:block text-sm text-muted-foreground">
+            <span className="hidden lg:block text-base text-muted-foreground truncate max-w-xl text-center">
               {contextParts.join(' | ')}
             </span>
           )}
         </div>
-
-        {/* ── CENTER: spacer (Azirella input is portalled to bottom) ────────── */}
-        <div className="flex-1" />
 
         {/* ── AZIRELLA INPUT BAR — portalled to panel or bottom bar ── */}
         {typeof document !== 'undefined' && (
