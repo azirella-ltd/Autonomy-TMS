@@ -1,7 +1,8 @@
 # Conversation Threads Plan
 
 **Created:** 2026-04-10
-**Status:** Drafted; v0.5 ready to execute
+**Last updated:** 2026-04-10
+**Status:** v0.5 shipped on ui-core (`adca0c2`) and TMS (`4c20c8ca`); SCP-side migration in progress on msi-stealth in parallel
 **Goal:** Promote `InlineComments` to `@autonomy/ui-core` as `Conversation`, surface it across TMS-native entities, and extend it to support human ↔ agent dialog with Azirella as the default agent participant.
 
 ---
@@ -295,13 +296,22 @@ The local `frontend/src/components/common/InlineComments.jsx` is **not deleted**
 
 ## Tracking
 
-| Phase | Status | Owner | Started | Completed |
-|---|---|---|---|---|
-| v0.5 Promote `InlineComments` → `Conversation` (ui-core) | Not started | Claude/Trevor | — | — |
-| v0.5 TMS adapter + provider + 4-page migration | Not started | — | — | — |
-| v0.5 SCP adapter + provider + 4-page migration | Not started | — | — | — |
-| v0.6 Wire into TMS-native surfaces (Exception, Shipment, Load, DS card) | Not started | — | — | — |
-| v0.6 Wire into SCP-native surfaces (demand/supply plans, prod orders) | Not started | — | — | — |
-| v0.7 Synthetic agent users + bridge service (TMS backend) | Not started | — | — | — |
-| v0.7 Visual treatment + mention autocomplete (ui-core) | Not started | — | — | — |
-| v0.7 First wire-up: Decision Stream cards + CapacityPromise pilot | Not started | — | — | — |
+| Phase | Status | Where | Commit / Notes |
+|---|---|---|---|
+| v0.5 Promote `InlineComments` → `Conversation` (ui-core) | **DONE** | acer-nitro | `MilesAheadToo/autonomy-ui-core@adca0c2` (v0.5.0) |
+| v0.5 TMS adapter + provider + 4-page migration | **DONE** | acer-nitro | `Autonomy-TMS@4c20c8ca` |
+| v0.5 SCP adapter + provider + 4-page migration | **In progress** | msi-stealth | Running in parallel session — `scpConversationsClient` + index.js + 4 pages being changed there |
+| v0.6 Wire into TMS-native surfaces (Exception, Shipment, Load, DS card) | Not started | TBD | — |
+| v0.6 Wire into SCP-native surfaces (demand/supply plans, prod orders) | Not started | TBD | — |
+| v0.7 Synthetic agent users + bridge service (TMS backend) | Not started | TBD | — |
+| v0.7 Visual treatment + mention autocomplete (ui-core) | Partially shipped in v0.5 — `is_agent` rendering, `Bot` icon, blue treatment, "Agent" badge, confidence chip already in `Conversation.tsx` | acer-nitro | `MilesAheadToo/autonomy-ui-core@adca0c2` |
+| v0.7 First wire-up: Decision Stream cards + CapacityPromise pilot | Not started | TBD | — |
+
+### Cross-machine coordination notes (2026-04-10)
+
+Two machines are working on this in parallel:
+
+- **acer-nitro** (this repo) — landed `@autonomy/ui-core` v0.4 (`filterByType`) and v0.5 (`Conversation`), all 11 TMS worklist swaps, and the TMS-side Conversation adoption. SCP repo on this machine is intentionally **not touched** to avoid cross-machine merge conflicts.
+- **msi-stealth** — the SCP-side Conversation v0.5 migration (`scpConversationsClient`, provider wiring, the same 4 SC-legacy pages). The screenshot from msi-stealth shows the changes staged in source control. This machine is also expected to handle the Autonomy → Autonomy-SCP rename work in a follow-up session.
+
+**Sequencing:** acer-nitro should not pull or rebase the SCP repo until msi-stealth has pushed its v0.5 work AND the rename has settled. Until then, treat msi-stealth as authoritative for the SCP repo and the rename.
