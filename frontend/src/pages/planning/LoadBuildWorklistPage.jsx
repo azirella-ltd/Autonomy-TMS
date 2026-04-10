@@ -3,45 +3,32 @@
  *
  * Dedicated worklist for the Load Planner — human counterpart of the
  * Load Build TRM. The TRM recommends load consolidation and optimization
- * decisions (CONSOLIDATE / SPLIT / HOLD / EXPEDITE) and the planner reviews,
- * accepts, overrides, or rejects each recommendation before execution.
+ * decisions (CONSOLIDATE / SPLIT / HOLD / EXPEDITE) and the planner reviews them
+ * via the shared @autonomy/ui-core <DecisionStream>, scoped with
+ * `filterByType="load_build"`.
  *
- * Override reasons and values are recorded to the TRM replay buffer
- * (is_expert=True) for reinforcement learning.
+ * Override reasons and values flow through the shared DecisionCard's
+ * Inspect → Override flow, then through tmsDecisionStreamClient to the
+ * TMS backend, which records them to the TRM replay buffer (is_expert=True)
+ * for reinforcement learning.
  */
-import React, { useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
-import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
+import { DecisionStream } from '@autonomy/ui-core';
 
-import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
-import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
-import { useCapabilities } from '../../hooks/useCapabilities';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { getTRMDecisions } from '../../services/planningCascadeApi';
+import { useCapabilities } from '../../hooks/useCapabilities';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TRM_TYPE = 'load_build';
 const DEFAULT_CONFIG_ID = 1;
-
-/** Color mapping for recommended action chips */
-const ACTION_COLORS = {
-  CONSOLIDATE: 'success',
-  SPLIT: 'info',
-  HOLD: 'default',
-  EXPEDITE: 'warning',
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Format a number as USD currency.
- */
 const formatCurrency = (value) => {
   if (value == null || isNaN(value)) return '—';
   return new Intl.NumberFormat('en-US', {
@@ -52,152 +39,20 @@ const formatCurrency = (value) => {
   }).format(value);
 };
 
-/**
- * Format a percentage value with one decimal.
- */
-const formatPercent = (value) => {
-  if (value == null || isNaN(value)) return '—';
-  return `${Number(value).toFixed(1)}%`;
-};
-
 // ---------------------------------------------------------------------------
-// Column definitions for TRMDecisionWorklist
+// Summary cards builder — TMS-specific MUI cards above the shared stream
 // ---------------------------------------------------------------------------
 
-const COLUMNS = [
-  {
-    key: 'shipment_count',
-    label: 'Shipments',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.shipment_count != null ? Number(d.shipment_count).toLocaleString() : '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'lane_id',
-    label: 'Lane',
-    render: (d) => d.lane_id || '—',
-  },
-  {
-    key: 'equipment_type',
-    label: 'Equipment',
-    render: (d) => {
-      const type = d.equipment_type || '—';
-      return <Chip label={type} size="small" variant="outlined" />;
-    },
-  },
-  {
-    key: 'weight_utilization',
-    label: 'Weight Util %',
-    render: (d) => {
-      if (d.total_weight == null || d.max_weight == null || d.max_weight === 0) return '—';
-      const pct = (Number(d.total_weight) / Number(d.max_weight)) * 100;
-      const color = pct > 95 ? '#d32f2f' : pct > 80 ? '#2e7d32' : '#ed6c02';
-      return (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Box sx={{ flex: 1, bgcolor: '#e0e0e0', borderRadius: 1, height: 8, minWidth: 60 }}>
-            <Box sx={{ width: `${Math.min(pct, 100)}%`, bgcolor: color, borderRadius: 1, height: 8 }} />
-          </Box>
-          <Typography variant="caption" sx={{ color }}>{formatPercent(pct)}</Typography>
-        </Box>
-      );
-    },
-  },
-  {
-    key: 'volume_utilization',
-    label: 'Volume Util %',
-    render: (d) => {
-      if (d.total_volume == null || d.max_volume == null || d.max_volume === 0) return '—';
-      const pct = (Number(d.total_volume) / Number(d.max_volume)) * 100;
-      const color = pct > 95 ? '#d32f2f' : pct > 80 ? '#2e7d32' : '#ed6c02';
-      return (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Box sx={{ flex: 1, bgcolor: '#e0e0e0', borderRadius: 1, height: 8, minWidth: 60 }}>
-            <Box sx={{ width: `${Math.min(pct, 100)}%`, bgcolor: color, borderRadius: 1, height: 8 }} />
-          </Box>
-          <Typography variant="caption" sx={{ color }}>{formatPercent(pct)}</Typography>
-        </Box>
-      );
-    },
-  },
-  {
-    key: 'consolidation_savings',
-    label: 'Savings',
-    render: (d) => formatCurrency(d.consolidation_savings),
-  },
-  {
-    key: 'conflicts',
-    label: 'Conflicts',
-    render: (d) => {
-      const hasConflict = d.has_hazmat_conflict || d.has_temp_conflict;
-      return (
-        <Chip
-          label={hasConflict ? 'Yes' : 'No'}
-          size="small"
-          color={hasConflict ? 'error' : 'default'}
-          variant={hasConflict ? 'filled' : 'outlined'}
-        />
-      );
-    },
-  },
-  {
-    key: 'recommended_action',
-    label: 'Action',
-    render: (d) => {
-      const action = d.recommended_action || '—';
-      return (
-        <Chip
-          label={action}
-          size="small"
-          color={ACTION_COLORS[action] || 'default'}
-          variant="filled"
-        />
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Override field definitions for the Override Dialog
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_FIELDS = [
-  {
-    key: 'action',
-    label: 'Override Action',
-    type: 'text',
-    options: [
-      { value: 'consolidate', label: 'Consolidate' },
-      { value: 'split', label: 'Split' },
-      { value: 'hold', label: 'Hold' },
-      { value: 'expedite', label: 'Expedite' },
-    ],
-    helperText: 'Change the recommended action',
-  },
-  {
-    key: 'equipment_type',
-    label: 'Equipment Type',
-    type: 'text',
-    options: [
-      { value: 'dry_van', label: 'Dry Van' },
-      { value: 'reefer', label: 'Reefer' },
-      { value: 'flatbed', label: 'Flatbed' },
-      { value: 'container', label: 'Container' },
-    ],
-    helperText: 'Override equipment type',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Summary cards builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build summary card data from the current set of decisions.
- * Returns an array of { title, value, color?, subtitle? } objects.
- */
 const buildSummaryCards = (decisions) => {
+  if (!decisions || decisions.length === 0) {
+    return [
+      { title: 'Pending Builds', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Avg Utilization %', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Total Savings', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Conflict Count', value: 0, color: '#2e7d32', subtitle: 'No data' },
+    ];
+  }
+
   const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
@@ -211,13 +66,14 @@ const buildSummaryCards = (decisions) => {
   const avgUtil =
     utilizations.length > 0
       ? (utilizations.reduce((s, v) => s + v, 0) / utilizations.length).toFixed(1)
-      : '0.0';
+      : null;
 
   // Total savings
-  const totalSavings = decisions.reduce(
-    (sum, d) => sum + (Number(d.consolidation_savings) || 0),
-    0
-  );
+  const savingsValues = decisions.filter((d) => d.consolidation_savings != null);
+  const totalSavings =
+    savingsValues.length > 0
+      ? savingsValues.reduce((sum, d) => sum + Number(d.consolidation_savings), 0)
+      : null;
 
   // Conflict count
   const conflictCount = decisions.filter(
@@ -233,15 +89,20 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Avg Utilization %',
-      value: `${avgUtil}%`,
-      color: Number(avgUtil) < 70 ? '#d32f2f' : '#2e7d32',
-      subtitle: 'Average weight utilization',
+      value: avgUtil != null ? `${avgUtil}%` : '—',
+      color:
+        avgUtil == null
+          ? '#9e9e9e'
+          : Number(avgUtil) < 70
+            ? '#d32f2f'
+            : '#2e7d32',
+      subtitle: avgUtil != null ? 'Average weight utilization' : 'No utilization data',
     },
     {
       title: 'Total Savings',
-      value: formatCurrency(totalSavings),
-      color: '#1565c0',
-      subtitle: 'Consolidation savings',
+      value: totalSavings != null ? formatCurrency(totalSavings) : '—',
+      color: totalSavings == null ? '#9e9e9e' : '#1565c0',
+      subtitle: totalSavings != null ? 'Consolidation savings' : 'No savings data',
     },
     {
       title: 'Conflict Count',
@@ -257,47 +118,51 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const LoadBuildWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
-  const location = useLocation();
-  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_load_build_worklist');
-  const { formatSite, loadLookupsForConfig } = useDisplayPreferences();
+  const { loadLookupsForConfig } = useDisplayPreferences();
 
-  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+  const [summaryDecisions, setSummaryDecisions] = useState([]);
+  const [summaryError, setSummaryError] = useState(null);
 
-  // Memoize columns with display preference resolvers
-  const columns = useMemo(() => COLUMNS.map((col) => {
-    if (col.key === 'lane_id') {
-      return { ...col, render: (d) => formatSite(d.lane_id, d.lane_name) || '—' };
+  useEffect(() => {
+    loadLookupsForConfig(configId);
+  }, [configId, loadLookupsForConfig]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await getTRMDecisions(configId, { trm_type: TRM_TYPE });
+      setSummaryDecisions(data?.decisions || []);
+      setSummaryError(null);
+    } catch (err) {
+      setSummaryError(err?.message || 'Failed to load summary metrics');
+      setSummaryDecisions([]);
     }
-    return col;
-  }), [formatSite]);
+  }, [configId]);
 
-  // Memoize the summary card builder to keep a stable reference
-  const summaryCardsFn = useMemo(() => buildSummaryCards, []);
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   if (capLoading) {
-    return null; // Capabilities still loading; TRMDecisionWorklist shows its own spinner
+    return null;
   }
+
+  const cards = buildSummaryCards(summaryDecisions);
 
   return (
     <Box sx={{ p: 3 }}>
       <RoleTimeSeries roleKey="load_build" compact className="mb-4" />
+
       {/* Header */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h5" gutterBottom>
             Load Build Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review load consolidation and optimization recommendations from the AI agent.
-            Accept, override with reason, or reject each decision before
-            execution.
+            Inspect, override with reason, or let the agent action stand.
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -310,18 +175,40 @@ const LoadBuildWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         </Alert>
       )}
 
-      {/* TRM Decision Worklist */}
-      <TRMDecisionWorklist
+      {summaryError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Summary metrics unavailable: {summaryError}
+        </Alert>
+      )}
+
+      {/* TMS-specific summary cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {cards.map((card) => (
+          <Grid item xs={12} sm={6} md={3} key={card.title}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">
+                  {card.title}
+                </Typography>
+                <Typography variant="h4" sx={{ color: card.color, mt: 0.5 }}>
+                  {card.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {card.subtitle}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Shared Decision Stream — AIIO filter bar + cards + override flow */}
+      <DecisionStream
         configId={configId}
-        trmType={TRM_TYPE}
-        title="Load Build Worklist"
-        columns={columns}
-        overrideFields={OVERRIDE_FIELDS}
-        summaryCards={summaryCardsFn}
-        fetchDecisions={getTRMDecisions}
-        submitAction={submitTRMAction}
-        canManage={canManage}
-        initialStatusFilter={initialStatusFilter}
+        filterByType={TRM_TYPE}
+        hideHeader
+        canOverride={canManage}
+        emptyMessage="No load build decisions to review"
       />
     </Box>
   );

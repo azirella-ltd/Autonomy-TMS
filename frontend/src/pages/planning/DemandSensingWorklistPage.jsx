@@ -3,174 +3,41 @@
  *
  * Dedicated worklist for the Demand Sensing Analyst — human counterpart of the
  * Demand Sensing TRM. The TRM recommends shipping volume forecast adjustment
- * decisions and the analyst reviews, accepts, overrides, or rejects each
- * recommendation before execution.
+ * decisions and the analyst reviews them via the shared @autonomy/ui-core
+ * <DecisionStream>, scoped with `filterByType="demand_sensing"`.
  *
- * Override reasons and values are recorded to the TRM replay buffer
- * (is_expert=True) for reinforcement learning.
+ * Override reasons and values flow through the shared DecisionCard's
+ * Inspect → Override flow, then through tmsDecisionStreamClient to the
+ * TMS backend, which records them to the TRM replay buffer (is_expert=True)
+ * for reinforcement learning.
  */
-import React, { useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
-import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
+import { DecisionStream } from '@autonomy/ui-core';
 
-import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
-import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
-import { useCapabilities } from '../../hooks/useCapabilities';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { getTRMDecisions } from '../../services/planningCascadeApi';
+import { useCapabilities } from '../../hooks/useCapabilities';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TRM_TYPE = 'demand_sensing';
 const DEFAULT_CONFIG_ID = 1;
 
-/** Color mapping for recommended action chips */
-const ACTION_COLORS = {
-  ADJUST_UP: 'warning',
-  ADJUST_DOWN: 'info',
-  ACCEPT: 'success',
-  DEFER: 'default',
-};
-
 // ---------------------------------------------------------------------------
-// Helpers
+// Summary cards builder — TMS-specific MUI cards above the shared stream
 // ---------------------------------------------------------------------------
 
-/**
- * Format a number as a signed adjustment string.
- */
-const formatAdjustment = (value) => {
-  if (value == null || isNaN(value)) return '—';
-  const num = Number(value);
-  const sign = num >= 0 ? '+' : '';
-  return `${sign}${num.toLocaleString()}`;
-};
-
-/**
- * Format a decimal as a percentage string.
- */
-const formatPercentage = (value) => {
-  if (value == null || isNaN(value)) return '—';
-  return `${(Number(value) * 100).toFixed(1)}%`;
-};
-
-// ---------------------------------------------------------------------------
-// Column definitions for TRMDecisionWorklist
-// ---------------------------------------------------------------------------
-
-const COLUMNS = [
-  {
-    key: 'lane_id',
-    label: 'Lane',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.lane_id || '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'period_start',
-    label: 'Period',
-    render: (d) => d.period_start || '—',
-  },
-  {
-    key: 'forecast_loads',
-    label: 'Current Forecast',
-    render: (d) =>
-      d.forecast_loads != null
-        ? Number(d.forecast_loads).toLocaleString()
-        : '—',
-  },
-  {
-    key: 'adjustment',
-    label: 'Proposed Adjustment',
-    render: (d) => {
-      if (d.adjustment == null) return '—';
-      const num = Number(d.adjustment);
-      const color = num > 0 ? 'warning.main' : num < 0 ? 'info.main' : 'text.primary';
-      return (
-        <Typography variant="body2" sx={{ color, fontWeight: 'medium' }}>
-          {formatAdjustment(d.adjustment)}
-        </Typography>
-      );
-    },
-  },
-  {
-    key: 'signal_type',
-    label: 'Signal',
-    render: (d) => {
-      const signal = d.signal_type || '—';
-      return <Chip label={signal} size="small" variant="outlined" />;
-    },
-  },
-  {
-    key: 'signal_confidence',
-    label: 'Signal Confidence',
-    render: (d) => formatPercentage(d.signal_confidence),
-  },
-  {
-    key: 'forecast_mape',
-    label: 'MAPE %',
-    render: (d) =>
-      d.forecast_mape != null
-        ? `${Number(d.forecast_mape).toFixed(1)}%`
-        : '—',
-  },
-  {
-    key: 'recommended_action',
-    label: 'Action',
-    render: (d) => {
-      const action = d.recommended_action || '—';
-      return (
-        <Chip
-          label={action}
-          size="small"
-          color={ACTION_COLORS[action] || 'default'}
-          variant="filled"
-        />
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Override field definitions for the Override Dialog
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_FIELDS = [
-  {
-    key: 'adjusted_forecast_loads',
-    label: 'Override Forecast Loads',
-    type: 'number',
-    helperText: 'Enter the adjusted forecast load count',
-  },
-  {
-    key: 'adjustment_reason',
-    label: 'Adjustment Reason',
-    type: 'text',
-    options: [
-      { value: 'seasonal_shift', label: 'Seasonal Shift' },
-      { value: 'volume_surge', label: 'Volume Surge' },
-      { value: 'volume_drop', label: 'Volume Drop' },
-      { value: 'signal_override', label: 'Signal Override' },
-      { value: 'market_intelligence', label: 'Market Intelligence' },
-    ],
-    helperText: 'Select the reason for the forecast adjustment',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Summary cards builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build summary card data from the current set of decisions.
- * Returns an array of { title, value, color?, subtitle? } objects.
- */
 const buildSummaryCards = (decisions) => {
+  if (!decisions || decisions.length === 0) {
+    return [
+      { title: 'Pending Adjustments', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Avg Adjustment %', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Active Signals', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Avg MAPE', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+    ];
+  }
+
   const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
@@ -188,7 +55,7 @@ const buildSummaryCards = (decisions) => {
             adjustmentValues.length) *
           100
         ).toFixed(1)
-      : '0.0';
+      : null;
 
   // Active signals
   const activeSignals = decisions.filter(
@@ -200,7 +67,7 @@ const buildSummaryCards = (decisions) => {
   const avgMape =
     mapeValues.length > 0
       ? (mapeValues.reduce((sum, d) => sum + Number(d.forecast_mape), 0) / mapeValues.length).toFixed(1)
-      : '0.0';
+      : null;
 
   return [
     {
@@ -211,9 +78,14 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Avg Adjustment %',
-      value: `${avgAdjustmentPct}%`,
-      color: Number(avgAdjustmentPct) > 20 ? '#d32f2f' : '#1565c0',
-      subtitle: 'Mean absolute adjustment',
+      value: avgAdjustmentPct != null ? `${avgAdjustmentPct}%` : '—',
+      color:
+        avgAdjustmentPct == null
+          ? '#9e9e9e'
+          : Number(avgAdjustmentPct) > 20
+            ? '#d32f2f'
+            : '#1565c0',
+      subtitle: avgAdjustmentPct != null ? 'Mean absolute adjustment' : 'No adjustment data',
     },
     {
       title: 'Active Signals',
@@ -223,9 +95,16 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Avg MAPE',
-      value: `${avgMape}%`,
-      color: Number(avgMape) > 15 ? '#d32f2f' : Number(avgMape) > 10 ? '#ed6c02' : '#2e7d32',
-      subtitle: 'Forecast accuracy',
+      value: avgMape != null ? `${avgMape}%` : '—',
+      color:
+        avgMape == null
+          ? '#9e9e9e'
+          : Number(avgMape) > 15
+            ? '#d32f2f'
+            : Number(avgMape) > 10
+              ? '#ed6c02'
+              : '#2e7d32',
+      subtitle: avgMape != null ? 'Forecast accuracy' : 'No MAPE data',
     },
   ];
 };
@@ -235,40 +114,51 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const DemandSensingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
-  const location = useLocation();
-  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_demand_sensing_worklist');
   const { loadLookupsForConfig } = useDisplayPreferences();
 
-  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+  const [summaryDecisions, setSummaryDecisions] = useState([]);
+  const [summaryError, setSummaryError] = useState(null);
 
-  // Memoize columns
-  const columns = useMemo(() => COLUMNS, []);
+  useEffect(() => {
+    loadLookupsForConfig(configId);
+  }, [configId, loadLookupsForConfig]);
 
-  // Memoize the summary card builder to keep a stable reference
-  const summaryCardsFn = useMemo(() => buildSummaryCards, []);
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await getTRMDecisions(configId, { trm_type: TRM_TYPE });
+      setSummaryDecisions(data?.decisions || []);
+      setSummaryError(null);
+    } catch (err) {
+      setSummaryError(err?.message || 'Failed to load summary metrics');
+      setSummaryDecisions([]);
+    }
+  }, [configId]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   if (capLoading) {
     return null;
   }
 
+  const cards = buildSummaryCards(summaryDecisions);
+
   return (
     <Box sx={{ p: 3 }}>
       <RoleTimeSeries roleKey="demand_sensing" compact className="mb-4" />
+
       {/* Header */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h5" gutterBottom>
             Demand Sensing Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review shipping volume forecast adjustment recommendations from the AI agent.
+            Inspect, override with reason, or let the agent action stand.
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -281,18 +171,40 @@ const DemandSensingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         </Alert>
       )}
 
-      {/* TRM Decision Worklist */}
-      <TRMDecisionWorklist
+      {summaryError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Summary metrics unavailable: {summaryError}
+        </Alert>
+      )}
+
+      {/* TMS-specific summary cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {cards.map((card) => (
+          <Grid item xs={12} sm={6} md={3} key={card.title}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">
+                  {card.title}
+                </Typography>
+                <Typography variant="h4" sx={{ color: card.color, mt: 0.5 }}>
+                  {card.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {card.subtitle}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Shared Decision Stream — AIIO filter bar + cards + override flow */}
+      <DecisionStream
         configId={configId}
-        trmType={TRM_TYPE}
-        title="Demand Sensing Worklist"
-        columns={columns}
-        overrideFields={OVERRIDE_FIELDS}
-        summaryCards={summaryCardsFn}
-        fetchDecisions={getTRMDecisions}
-        submitAction={submitTRMAction}
-        canManage={canManage}
-        initialStatusFilter={initialStatusFilter}
+        filterByType={TRM_TYPE}
+        hideHeader
+        canOverride={canManage}
+        emptyMessage="No demand sensing decisions to review"
       />
     </Box>
   );

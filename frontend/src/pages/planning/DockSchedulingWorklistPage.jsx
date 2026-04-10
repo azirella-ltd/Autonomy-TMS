@@ -3,211 +3,42 @@
  *
  * Dedicated worklist for the Dock Scheduler — human counterpart of the
  * Dock Scheduling TRM. The TRM recommends appointment and dock door optimization
- * decisions (SCHEDULE / DEFER / EXPEDITE / REJECT) and the scheduler reviews,
- * accepts, overrides, or rejects each recommendation before execution.
+ * decisions (SCHEDULE / DEFER / EXPEDITE / REJECT) and the scheduler reviews them
+ * via the shared @autonomy/ui-core <DecisionStream>, scoped with
+ * `filterByType="dock_scheduling"`.
  *
- * Override reasons and values are recorded to the TRM replay buffer
- * (is_expert=True) for reinforcement learning.
+ * Override reasons and values flow through the shared DecisionCard's
+ * Inspect → Override flow, then through tmsDecisionStreamClient to the
+ * TMS backend, which records them to the TRM replay buffer (is_expert=True)
+ * for reinforcement learning.
  */
-import React, { useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
-import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
+import { DecisionStream } from '@autonomy/ui-core';
 
-import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
-import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
-import { useCapabilities } from '../../hooks/useCapabilities';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { getTRMDecisions } from '../../services/planningCascadeApi';
+import { useCapabilities } from '../../hooks/useCapabilities';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TRM_TYPE = 'dock_scheduling';
 const DEFAULT_CONFIG_ID = 1;
 
-/** Color mapping for recommended action chips */
-const ACTION_COLORS = {
-  SCHEDULE: 'success',
-  DEFER: 'default',
-  EXPEDITE: 'warning',
-  REJECT: 'error',
-};
-
-/** Color mapping for appointment type chips */
-const TYPE_COLORS = {
-  PICKUP: 'info',
-  DELIVERY: 'success',
-};
-
 // ---------------------------------------------------------------------------
-// Helpers
+// Summary cards builder — TMS-specific MUI cards above the shared stream
 // ---------------------------------------------------------------------------
 
-/**
- * Format a number as USD currency.
- */
-const formatCurrency = (value) => {
-  if (value == null || isNaN(value)) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-};
-
-/**
- * Get detention risk label and color from score.
- */
-const getDetentionRisk = (score) => {
-  if (score == null || isNaN(score)) return { label: '—', color: 'default' };
-  if (score < 0.3) return { label: 'Low', color: 'success' };
-  if (score < 0.7) return { label: 'Medium', color: 'warning' };
-  return { label: 'High', color: 'error' };
-};
-
-// ---------------------------------------------------------------------------
-// Column definitions for TRMDecisionWorklist
-// ---------------------------------------------------------------------------
-
-const COLUMNS = [
-  {
-    key: 'facility_id',
-    label: 'Facility',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.facility_id || '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'appointment_type',
-    label: 'Type',
-    render: (d) => {
-      const type = d.appointment_type || '—';
-      return (
-        <Chip
-          label={type}
-          size="small"
-          color={TYPE_COLORS[type] || 'default'}
-          variant="outlined"
-        />
-      );
-    },
-  },
-  {
-    key: 'requested_time',
-    label: 'Requested',
-    render: (d) => d.requested_time || '—',
-  },
-  {
-    key: 'earliest_available_slot',
-    label: 'Available Slot',
-    render: (d) => d.earliest_available_slot || '—',
-  },
-  {
-    key: 'utilization_pct',
-    label: 'Door Util %',
-    render: (d) => {
-      if (d.utilization_pct == null) return '—';
-      const val = Number(d.utilization_pct);
-      const color = val > 90 ? '#d32f2f' : val > 75 ? '#ed6c02' : '#2e7d32';
-      return (
-        <Typography variant="body2" sx={{ color, fontWeight: val > 90 ? 'bold' : 'normal' }}>
-          {val.toFixed(1)}%
-        </Typography>
-      );
-    },
-  },
-  {
-    key: 'current_queue_depth',
-    label: 'Queue',
-    render: (d) =>
-      d.current_queue_depth != null
-        ? Number(d.current_queue_depth).toLocaleString()
-        : '—',
-  },
-  {
-    key: 'avg_dwell_time_minutes',
-    label: 'Dwell Min',
-    render: (d) =>
-      d.avg_dwell_time_minutes != null
-        ? Number(d.avg_dwell_time_minutes).toFixed(0)
-        : '—',
-  },
-  {
-    key: 'detention_risk_score',
-    label: 'Detention Risk',
-    render: (d) => {
-      const risk = getDetentionRisk(d.detention_risk_score);
-      return (
-        <Chip
-          label={risk.label}
-          size="small"
-          color={risk.color}
-          variant="outlined"
-        />
-      );
-    },
-  },
-  {
-    key: 'recommended_action',
-    label: 'Action',
-    render: (d) => {
-      const action = d.recommended_action || '—';
-      return (
-        <Chip
-          label={action}
-          size="small"
-          color={ACTION_COLORS[action] || 'default'}
-          variant="filled"
-        />
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Override field definitions for the Override Dialog
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_FIELDS = [
-  {
-    key: 'dock_door_id',
-    label: 'Dock Door',
-    type: 'text',
-    helperText: 'Assign specific dock door',
-  },
-  {
-    key: 'appointment_time',
-    label: 'Appointment Time',
-    type: 'date',
-    helperText: 'Override appointment time',
-  },
-  {
-    key: 'priority',
-    label: 'Priority',
-    type: 'text',
-    options: [
-      { value: 'expedite', label: 'Expedite' },
-      { value: 'standard', label: 'Standard' },
-      { value: 'defer', label: 'Defer' },
-    ],
-    helperText: 'Set scheduling priority',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Summary cards builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build summary card data from the current set of decisions.
- * Returns an array of { title, value, color?, subtitle? } objects.
- */
 const buildSummaryCards = (decisions) => {
+  if (!decisions || decisions.length === 0) {
+    return [
+      { title: 'Appointments Today', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Door Utilization %', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Avg Dwell Minutes', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Detention Risk Count', value: 0, color: '#2e7d32', subtitle: 'No data' },
+    ];
+  }
+
   const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const appointmentCount = proposed.length;
 
@@ -218,7 +49,7 @@ const buildSummaryCards = (decisions) => {
   const avgUtil =
     utilizations.length > 0
       ? (utilizations.reduce((s, v) => s + v, 0) / utilizations.length).toFixed(1)
-      : '0.0';
+      : null;
 
   // Avg dwell time
   const dwells = decisions
@@ -227,7 +58,7 @@ const buildSummaryCards = (decisions) => {
   const avgDwell =
     dwells.length > 0
       ? (dwells.reduce((s, v) => s + v, 0) / dwells.length).toFixed(0)
-      : '0';
+      : null;
 
   // Detention risk count (high risk)
   const detentionCount = decisions.filter(
@@ -243,15 +74,25 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Door Utilization %',
-      value: `${avgUtil}%`,
-      color: Number(avgUtil) > 90 ? '#d32f2f' : '#2e7d32',
-      subtitle: 'Average door utilization',
+      value: avgUtil != null ? `${avgUtil}%` : '—',
+      color:
+        avgUtil == null
+          ? '#9e9e9e'
+          : Number(avgUtil) > 90
+            ? '#d32f2f'
+            : '#2e7d32',
+      subtitle: avgUtil != null ? 'Average door utilization' : 'No utilization data',
     },
     {
       title: 'Avg Dwell Minutes',
-      value: avgDwell,
-      color: Number(avgDwell) > 60 ? '#d32f2f' : '#2e7d32',
-      subtitle: 'Average dwell time',
+      value: avgDwell != null ? avgDwell : '—',
+      color:
+        avgDwell == null
+          ? '#9e9e9e'
+          : Number(avgDwell) > 60
+            ? '#d32f2f'
+            : '#2e7d32',
+      subtitle: avgDwell != null ? 'Average dwell time' : 'No dwell data',
     },
     {
       title: 'Detention Risk Count',
@@ -267,49 +108,51 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const DockSchedulingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
-  const location = useLocation();
-  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_dock_scheduling_worklist');
-  const { formatSite, loadLookupsForConfig } = useDisplayPreferences();
+  const { loadLookupsForConfig } = useDisplayPreferences();
 
-  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+  const [summaryDecisions, setSummaryDecisions] = useState([]);
+  const [summaryError, setSummaryError] = useState(null);
 
-  // Memoize columns with display preference resolvers
-  const columns = useMemo(() => COLUMNS.map((col) => {
-    if (col.key === 'facility_id') {
-      return { ...col, render: (d) => (
-        <Typography variant="body2" fontWeight="medium">{formatSite(d.facility_id, d.facility_name) || '—'}</Typography>
-      )};
+  useEffect(() => {
+    loadLookupsForConfig(configId);
+  }, [configId, loadLookupsForConfig]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await getTRMDecisions(configId, { trm_type: TRM_TYPE });
+      setSummaryDecisions(data?.decisions || []);
+      setSummaryError(null);
+    } catch (err) {
+      setSummaryError(err?.message || 'Failed to load summary metrics');
+      setSummaryDecisions([]);
     }
-    return col;
-  }), [formatSite]);
+  }, [configId]);
 
-  // Memoize the summary card builder to keep a stable reference
-  const summaryCardsFn = useMemo(() => buildSummaryCards, []);
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   if (capLoading) {
-    return null; // Capabilities still loading; TRMDecisionWorklist shows its own spinner
+    return null;
   }
+
+  const cards = buildSummaryCards(summaryDecisions);
 
   return (
     <Box sx={{ p: 3 }}>
       <RoleTimeSeries roleKey="dock_scheduling" compact className="mb-4" />
+
       {/* Header */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h5" gutterBottom>
             Dock Scheduling Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review appointment and dock door optimization recommendations from the AI agent.
-            Accept, override with reason, or reject each decision before
-            execution.
+            Inspect, override with reason, or let the agent action stand.
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -322,18 +165,40 @@ const DockSchedulingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         </Alert>
       )}
 
-      {/* TRM Decision Worklist */}
-      <TRMDecisionWorklist
+      {summaryError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Summary metrics unavailable: {summaryError}
+        </Alert>
+      )}
+
+      {/* TMS-specific summary cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {cards.map((card) => (
+          <Grid item xs={12} sm={6} md={3} key={card.title}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">
+                  {card.title}
+                </Typography>
+                <Typography variant="h4" sx={{ color: card.color, mt: 0.5 }}>
+                  {card.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {card.subtitle}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Shared Decision Stream — AIIO filter bar + cards + override flow */}
+      <DecisionStream
         configId={configId}
-        trmType={TRM_TYPE}
-        title="Dock Scheduling Worklist"
-        columns={columns}
-        overrideFields={OVERRIDE_FIELDS}
-        summaryCards={summaryCardsFn}
-        fetchDecisions={getTRMDecisions}
-        submitAction={submitTRMAction}
-        canManage={canManage}
-        initialStatusFilter={initialStatusFilter}
+        filterByType={TRM_TYPE}
+        hideHeader
+        canOverride={canManage}
+        emptyMessage="No dock scheduling decisions to review"
       />
     </Box>
   );

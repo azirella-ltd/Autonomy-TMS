@@ -3,184 +3,42 @@
  *
  * Dedicated worklist for the Equipment Manager — human counterpart of the
  * Equipment Reposition TRM. The TRM recommends empty container and trailer
- * repositioning decisions (REPOSITION / HOLD / DEFER) and the manager reviews,
- * accepts, overrides, or rejects each recommendation before execution.
+ * repositioning decisions (REPOSITION / HOLD / DEFER) and the manager reviews
+ * them via the shared @autonomy/ui-core <DecisionStream>, scoped with
+ * `filterByType="equipment_reposition"`.
  *
- * Override reasons and values are recorded to the TRM replay buffer
- * (is_expert=True) for reinforcement learning.
+ * Override reasons and values flow through the shared DecisionCard's
+ * Inspect → Override flow, then through tmsDecisionStreamClient to the
+ * TMS backend, which records them to the TRM replay buffer (is_expert=True)
+ * for reinforcement learning.
  */
-import React, { useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
-import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
+import { DecisionStream } from '@autonomy/ui-core';
 
-import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
-import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
-import { useCapabilities } from '../../hooks/useCapabilities';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { getTRMDecisions } from '../../services/planningCascadeApi';
+import { useCapabilities } from '../../hooks/useCapabilities';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TRM_TYPE = 'equipment_reposition';
 const DEFAULT_CONFIG_ID = 1;
 
-/** Color mapping for recommended action chips */
-const ACTION_COLORS = {
-  REPOSITION: 'success',
-  HOLD: 'default',
-  DEFER: 'info',
-};
-
 // ---------------------------------------------------------------------------
-// Helpers
+// Summary cards builder — TMS-specific MUI cards above the shared stream
 // ---------------------------------------------------------------------------
 
-/**
- * Format a number as USD currency.
- */
-const formatCurrency = (value) => {
-  if (value == null || isNaN(value)) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-};
-
-// ---------------------------------------------------------------------------
-// Column definitions for TRMDecisionWorklist
-// ---------------------------------------------------------------------------
-
-const COLUMNS = [
-  {
-    key: 'equipment_type',
-    label: 'Equipment',
-    render: (d) => {
-      const type = d.equipment_type || '—';
-      return <Chip label={type} size="small" variant="outlined" />;
-    },
-  },
-  {
-    key: 'source_facility_id',
-    label: 'Source',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.source_facility_id || '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'source_surplus',
-    label: 'Surplus',
-    render: (d) =>
-      d.source_surplus != null
-        ? Number(d.source_surplus).toLocaleString()
-        : '—',
-  },
-  {
-    key: 'target_facility_id',
-    label: 'Target',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.target_facility_id || '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'target_deficit',
-    label: 'Deficit',
-    render: (d) =>
-      d.target_deficit != null
-        ? Number(d.target_deficit).toLocaleString()
-        : '—',
-  },
-  {
-    key: 'reposition_miles',
-    label: 'Miles',
-    render: (d) =>
-      d.reposition_miles != null
-        ? Number(d.reposition_miles).toLocaleString()
-        : '—',
-  },
-  {
-    key: 'reposition_cost',
-    label: 'Cost',
-    render: (d) => formatCurrency(d.reposition_cost),
-  },
-  {
-    key: 'reposition_roi',
-    label: 'ROI',
-    render: (d) => {
-      if (d.reposition_roi == null) return '—';
-      const val = Number(d.reposition_roi);
-      const color = val > 1.5 ? '#2e7d32' : val > 1.0 ? '#ed6c02' : '#d32f2f';
-      return (
-        <Typography variant="body2" sx={{ color, fontWeight: val > 1.5 ? 'bold' : 'normal' }}>
-          {val.toFixed(2)}x
-        </Typography>
-      );
-    },
-  },
-  {
-    key: 'recommended_action',
-    label: 'Action',
-    render: (d) => {
-      const action = d.recommended_action || '—';
-      return (
-        <Chip
-          label={action}
-          size="small"
-          color={ACTION_COLORS[action] || 'default'}
-          variant="filled"
-        />
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Override field definitions for the Override Dialog
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_FIELDS = [
-  {
-    key: 'quantity',
-    label: 'Equipment Quantity',
-    type: 'number',
-    helperText: 'Override equipment quantity',
-  },
-  {
-    key: 'target_facility',
-    label: 'Target Facility',
-    type: 'text',
-    helperText: 'Specify alternative target facility',
-  },
-  {
-    key: 'action',
-    label: 'Override Action',
-    type: 'text',
-    options: [
-      { value: 'reposition', label: 'Reposition' },
-      { value: 'hold', label: 'Hold' },
-      { value: 'defer', label: 'Defer' },
-    ],
-    helperText: 'Change the recommended action',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Summary cards builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build summary card data from the current set of decisions.
- * Returns an array of { title, value, color?, subtitle? } objects.
- */
 const buildSummaryCards = (decisions) => {
+  if (!decisions || decisions.length === 0) {
+    return [
+      { title: 'Pending Repositions', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Fleet Utilization %', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Surplus Locations', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Deficit Locations', value: 0, color: '#2e7d32', subtitle: 'No data' },
+    ];
+  }
+
   const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
@@ -191,7 +49,7 @@ const buildSummaryCards = (decisions) => {
   const avgUtil =
     utilizations.length > 0
       ? (utilizations.reduce((s, v) => s + v, 0) / utilizations.length).toFixed(1)
-      : '0.0';
+      : null;
 
   // Surplus locations (unique source facilities with surplus > 0)
   const surplusLocations = new Set(
@@ -216,9 +74,14 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Fleet Utilization %',
-      value: `${avgUtil}%`,
-      color: Number(avgUtil) < 70 ? '#d32f2f' : '#2e7d32',
-      subtitle: 'Average fleet utilization',
+      value: avgUtil != null ? `${avgUtil}%` : '—',
+      color:
+        avgUtil == null
+          ? '#9e9e9e'
+          : Number(avgUtil) < 70
+            ? '#d32f2f'
+            : '#2e7d32',
+      subtitle: avgUtil != null ? 'Average fleet utilization' : 'No utilization data',
     },
     {
       title: 'Surplus Locations',
@@ -240,54 +103,51 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const EquipmentRepositionWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
-  const location = useLocation();
-  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_equipment_reposition_worklist');
-  const { formatSite, loadLookupsForConfig } = useDisplayPreferences();
+  const { loadLookupsForConfig } = useDisplayPreferences();
 
-  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+  const [summaryDecisions, setSummaryDecisions] = useState([]);
+  const [summaryError, setSummaryError] = useState(null);
 
-  // Memoize columns with display preference resolvers
-  const columns = useMemo(() => COLUMNS.map((col) => {
-    if (col.key === 'source_facility_id') {
-      return { ...col, render: (d) => (
-        <Typography variant="body2" fontWeight="medium">{formatSite(d.source_facility_id, d.source_facility_name) || '—'}</Typography>
-      )};
+  useEffect(() => {
+    loadLookupsForConfig(configId);
+  }, [configId, loadLookupsForConfig]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await getTRMDecisions(configId, { trm_type: TRM_TYPE });
+      setSummaryDecisions(data?.decisions || []);
+      setSummaryError(null);
+    } catch (err) {
+      setSummaryError(err?.message || 'Failed to load summary metrics');
+      setSummaryDecisions([]);
     }
-    if (col.key === 'target_facility_id') {
-      return { ...col, render: (d) => (
-        <Typography variant="body2" fontWeight="medium">{formatSite(d.target_facility_id, d.target_facility_name) || '—'}</Typography>
-      )};
-    }
-    return col;
-  }), [formatSite]);
+  }, [configId]);
 
-  // Memoize the summary card builder to keep a stable reference
-  const summaryCardsFn = useMemo(() => buildSummaryCards, []);
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   if (capLoading) {
-    return null; // Capabilities still loading; TRMDecisionWorklist shows its own spinner
+    return null;
   }
+
+  const cards = buildSummaryCards(summaryDecisions);
 
   return (
     <Box sx={{ p: 3 }}>
       <RoleTimeSeries roleKey="equipment_reposition" compact className="mb-4" />
+
       {/* Header */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h5" gutterBottom>
             Equipment Reposition Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review empty container and trailer repositioning recommendations from the AI agent.
-            Accept, override with reason, or reject each decision before
-            execution.
+            Inspect, override with reason, or let the agent action stand.
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -300,18 +160,40 @@ const EquipmentRepositionWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         </Alert>
       )}
 
-      {/* TRM Decision Worklist */}
-      <TRMDecisionWorklist
+      {summaryError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Summary metrics unavailable: {summaryError}
+        </Alert>
+      )}
+
+      {/* TMS-specific summary cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {cards.map((card) => (
+          <Grid item xs={12} sm={6} md={3} key={card.title}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">
+                  {card.title}
+                </Typography>
+                <Typography variant="h4" sx={{ color: card.color, mt: 0.5 }}>
+                  {card.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {card.subtitle}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Shared Decision Stream — AIIO filter bar + cards + override flow */}
+      <DecisionStream
         configId={configId}
-        trmType={TRM_TYPE}
-        title="Equipment Reposition Worklist"
-        columns={columns}
-        overrideFields={OVERRIDE_FIELDS}
-        summaryCards={summaryCardsFn}
-        fetchDecisions={getTRMDecisions}
-        submitAction={submitTRMAction}
-        canManage={canManage}
-        initialStatusFilter={initialStatusFilter}
+        filterByType={TRM_TYPE}
+        hideHeader
+        canOverride={canManage}
+        emptyMessage="No equipment reposition decisions to review"
       />
     </Box>
   );

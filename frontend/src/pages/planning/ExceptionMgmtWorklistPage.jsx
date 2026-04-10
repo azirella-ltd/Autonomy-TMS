@@ -4,53 +4,31 @@
  * Dedicated worklist for the Exception Management Analyst — human counterpart of the
  * Exception Management TRM. The TRM recommends delay, damage, and refusal resolution
  * decisions (RETENDER / REROUTE / PARTIAL_DELIVER / ESCALATE / WRITE_OFF) and the
- * analyst reviews, accepts, overrides, or rejects each recommendation before execution.
+ * analyst reviews them via the shared @autonomy/ui-core <DecisionStream>, scoped with
+ * `filterByType="exception_management"`.
  *
- * Override reasons and values are recorded to the TRM replay buffer
- * (is_expert=True) for reinforcement learning.
+ * Override reasons and values flow through the shared DecisionCard's
+ * Inspect → Override flow, then through tmsDecisionStreamClient to the
+ * TMS backend, which records them to the TRM replay buffer (is_expert=True)
+ * for reinforcement learning.
  */
-import React, { useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
-import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
+import { DecisionStream } from '@autonomy/ui-core';
 
-import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
-import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
-import { useCapabilities } from '../../hooks/useCapabilities';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { getTRMDecisions } from '../../services/planningCascadeApi';
+import { useCapabilities } from '../../hooks/useCapabilities';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TRM_TYPE = 'exception_management';
 const DEFAULT_CONFIG_ID = 1;
-
-/** Color mapping for recommended action chips */
-const ACTION_COLORS = {
-  RETENDER: 'warning',
-  REROUTE: 'info',
-  PARTIAL_DELIVER: 'default',
-  ESCALATE: 'error',
-  WRITE_OFF: 'error',
-};
-
-/** Color mapping for severity chips */
-const SEVERITY_COLORS = {
-  CRITICAL: 'error',
-  HIGH: 'warning',
-  MEDIUM: 'info',
-  LOW: 'default',
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Format a number as USD currency.
- */
 const formatCurrency = (value) => {
   if (value == null || isNaN(value)) return '—';
   return new Intl.NumberFormat('en-US', {
@@ -62,139 +40,34 @@ const formatCurrency = (value) => {
 };
 
 // ---------------------------------------------------------------------------
-// Column definitions for TRMDecisionWorklist
+// Summary cards builder — TMS-specific MUI cards above the shared stream
 // ---------------------------------------------------------------------------
 
-const COLUMNS = [
-  {
-    key: 'exception_id',
-    label: 'Exception',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.exception_id || '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'shipment_id',
-    label: 'Shipment',
-    render: (d) => d.shipment_id || '—',
-  },
-  {
-    key: 'exception_type',
-    label: 'Type',
-    render: (d) => {
-      const type = d.exception_type || '—';
-      return <Chip label={type} size="small" variant="outlined" />;
-    },
-  },
-  {
-    key: 'severity',
-    label: 'Severity',
-    render: (d) => {
-      const severity = d.severity || '—';
-      return (
-        <Chip
-          label={severity}
-          size="small"
-          color={SEVERITY_COLORS[severity] || 'default'}
-          variant={severity === 'CRITICAL' ? 'filled' : 'outlined'}
-        />
-      );
-    },
-  },
-  {
-    key: 'hours_since_detected',
-    label: 'Hours Open',
-    render: (d) =>
-      d.hours_since_detected != null
-        ? Number(d.hours_since_detected).toFixed(1)
-        : '—',
-  },
-  {
-    key: 'estimated_delay_hrs',
-    label: 'Est. Delay',
-    render: (d) =>
-      d.estimated_delay_hrs != null
-        ? `${Number(d.estimated_delay_hrs).toFixed(1)} hrs`
-        : '—',
-  },
-  {
-    key: 'estimated_cost_impact',
-    label: 'Cost Impact',
-    render: (d) => formatCurrency(d.estimated_cost_impact),
-  },
-  {
-    key: 'recommended_action',
-    label: 'Resolution',
-    render: (d) => {
-      const action = d.recommended_action || '—';
-      return (
-        <Chip
-          label={action}
-          size="small"
-          color={ACTION_COLORS[action] || 'default'}
-          variant="filled"
-        />
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Override field definitions for the Override Dialog
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_FIELDS = [
-  {
-    key: 'resolution_action',
-    label: 'Resolution Action',
-    type: 'text',
-    options: [
-      { value: 'retender', label: 'Retender' },
-      { value: 'reroute', label: 'Reroute' },
-      { value: 'partial_deliver', label: 'Partial Deliver' },
-      { value: 'escalate', label: 'Escalate' },
-      { value: 'write_off', label: 'Write Off' },
-    ],
-    helperText: 'Select an alternative resolution action',
-  },
-  {
-    key: 'cost_authorization',
-    label: 'Cost Authorization',
-    type: 'number',
-    helperText: 'Maximum cost authorization in dollars',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Summary cards builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build summary card data from the current set of decisions.
- * Returns an array of { title, value, color?, subtitle? } objects.
- */
 const buildSummaryCards = (decisions) => {
+  if (!decisions || decisions.length === 0) {
+    return [
+      { title: 'Open Exceptions', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Critical Count', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Avg Resolution Hours', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Total Cost Impact', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+    ];
+  }
+
   const openCount = decisions.length;
 
-  // Critical count
-  const criticalCount = decisions.filter(
-    (d) => d.severity === 'CRITICAL'
-  ).length;
+  const criticalCount = decisions.filter((d) => d.severity === 'CRITICAL').length;
 
-  // Avg resolution hours
   const hoursValues = decisions.filter((d) => d.hours_since_detected != null);
   const avgHours =
     hoursValues.length > 0
       ? (hoursValues.reduce((sum, d) => sum + Number(d.hours_since_detected), 0) / hoursValues.length).toFixed(1)
-      : '0.0';
+      : null;
 
-  // Total cost impact
-  const totalCost = decisions.reduce(
-    (sum, d) => sum + (Number(d.estimated_cost_impact) || 0),
-    0
-  );
+  const costValues = decisions.filter((d) => d.estimated_cost_impact != null);
+  const totalCost =
+    costValues.length > 0
+      ? costValues.reduce((sum, d) => sum + Number(d.estimated_cost_impact), 0)
+      : null;
 
   return [
     {
@@ -211,15 +84,29 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Avg Resolution Hours',
-      value: avgHours,
-      color: Number(avgHours) > 24 ? '#d32f2f' : Number(avgHours) > 8 ? '#ed6c02' : '#2e7d32',
-      subtitle: 'Hours since detection',
+      value: avgHours != null ? avgHours : '—',
+      color:
+        avgHours == null
+          ? '#9e9e9e'
+          : Number(avgHours) > 24
+            ? '#d32f2f'
+            : Number(avgHours) > 8
+              ? '#ed6c02'
+              : '#2e7d32',
+      subtitle: avgHours != null ? 'Hours since detection' : 'No resolution-time data',
     },
     {
       title: 'Total Cost Impact',
-      value: formatCurrency(totalCost),
-      color: totalCost > 50000 ? '#d32f2f' : totalCost > 10000 ? '#ed6c02' : '#1565c0',
-      subtitle: 'Estimated financial impact',
+      value: totalCost != null ? formatCurrency(totalCost) : '—',
+      color:
+        totalCost == null
+          ? '#9e9e9e'
+          : totalCost > 50000
+            ? '#d32f2f'
+            : totalCost > 10000
+              ? '#ed6c02'
+              : '#1565c0',
+      subtitle: totalCost != null ? 'Estimated financial impact' : 'No cost-impact data',
     },
   ];
 };
@@ -229,40 +116,51 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const ExceptionMgmtWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
-  const location = useLocation();
-  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_exception_mgmt_worklist');
   const { loadLookupsForConfig } = useDisplayPreferences();
 
-  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+  const [summaryDecisions, setSummaryDecisions] = useState([]);
+  const [summaryError, setSummaryError] = useState(null);
 
-  // Memoize columns
-  const columns = useMemo(() => COLUMNS, []);
+  useEffect(() => {
+    loadLookupsForConfig(configId);
+  }, [configId, loadLookupsForConfig]);
 
-  // Memoize the summary card builder to keep a stable reference
-  const summaryCardsFn = useMemo(() => buildSummaryCards, []);
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await getTRMDecisions(configId, { trm_type: TRM_TYPE });
+      setSummaryDecisions(data?.decisions || []);
+      setSummaryError(null);
+    } catch (err) {
+      setSummaryError(err?.message || 'Failed to load summary metrics');
+      setSummaryDecisions([]);
+    }
+  }, [configId]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   if (capLoading) {
     return null;
   }
 
+  const cards = buildSummaryCards(summaryDecisions);
+
   return (
     <Box sx={{ p: 3 }}>
       <RoleTimeSeries roleKey="exception_management" compact className="mb-4" />
+
       {/* Header */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h5" gutterBottom>
             Exception Management Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review delay, damage, and refusal resolution recommendations from the AI agent.
+            Inspect, override with reason, or let the agent action stand.
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -275,18 +173,40 @@ const ExceptionMgmtWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         </Alert>
       )}
 
-      {/* TRM Decision Worklist */}
-      <TRMDecisionWorklist
+      {summaryError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Summary metrics unavailable: {summaryError}
+        </Alert>
+      )}
+
+      {/* TMS-specific summary cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {cards.map((card) => (
+          <Grid item xs={12} sm={6} md={3} key={card.title}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">
+                  {card.title}
+                </Typography>
+                <Typography variant="h4" sx={{ color: card.color, mt: 0.5 }}>
+                  {card.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {card.subtitle}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Shared Decision Stream — AIIO filter bar + cards + override flow */}
+      <DecisionStream
         configId={configId}
-        trmType={TRM_TYPE}
-        title="Exception Management Worklist"
-        columns={columns}
-        overrideFields={OVERRIDE_FIELDS}
-        summaryCards={summaryCardsFn}
-        fetchDecisions={getTRMDecisions}
-        submitAction={submitTRMAction}
-        canManage={canManage}
-        initialStatusFilter={initialStatusFilter}
+        filterByType={TRM_TYPE}
+        hideHeader
+        canOverride={canManage}
+        emptyMessage="No exception management decisions to review"
       />
     </Box>
   );

@@ -3,44 +3,31 @@
  *
  * Dedicated worklist for the Broker Routing Analyst — human counterpart of the
  * Broker Routing TRM. The TRM recommends broker vs asset carrier routing decisions
- * (ROUTE_BROKER / HOLD / ESCALATE) and the analyst reviews, accepts,
- * overrides, or rejects each recommendation before execution.
+ * (ROUTE_BROKER / HOLD / ESCALATE) and the analyst reviews them via the shared
+ * @autonomy/ui-core <DecisionStream>, scoped with `filterByType="broker_routing"`.
  *
- * Override reasons and values are recorded to the TRM replay buffer
- * (is_expert=True) for reinforcement learning.
+ * Override reasons and values flow through the shared DecisionCard's
+ * Inspect → Override flow, then through tmsDecisionStreamClient to the
+ * TMS backend, which records them to the TRM replay buffer (is_expert=True)
+ * for reinforcement learning.
  */
-import React, { useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
-import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
+import { DecisionStream } from '@autonomy/ui-core';
 
-import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
-import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
-import { useCapabilities } from '../../hooks/useCapabilities';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { getTRMDecisions } from '../../services/planningCascadeApi';
+import { useCapabilities } from '../../hooks/useCapabilities';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TRM_TYPE = 'broker_routing';
 const DEFAULT_CONFIG_ID = 1;
-
-/** Color mapping for recommended action chips */
-const ACTION_COLORS = {
-  ROUTE_BROKER: 'info',
-  HOLD: 'default',
-  ESCALATE: 'error',
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Format a number as USD currency.
- */
 const formatCurrency = (value) => {
   if (value == null || isNaN(value)) return '—';
   return new Intl.NumberFormat('en-US', {
@@ -52,120 +39,21 @@ const formatCurrency = (value) => {
 };
 
 // ---------------------------------------------------------------------------
-// Column definitions for TRMDecisionWorklist
+// Summary cards builder — TMS-specific MUI cards above the shared stream
 // ---------------------------------------------------------------------------
 
-const COLUMNS = [
-  {
-    key: 'load_id',
-    label: 'Load',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.load_id || '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'lane_id',
-    label: 'Lane',
-    render: (d) => d.lane_id || '—',
-  },
-  {
-    key: 'mode',
-    label: 'Mode',
-    render: (d) => d.mode || '—',
-  },
-  {
-    key: 'tender_attempts_exhausted',
-    label: 'Carriers Declined',
-    render: (d) => (
-      <Chip
-        label={d.tender_attempts_exhausted ? 'Yes' : 'No'}
-        size="small"
-        color={d.tender_attempts_exhausted ? 'error' : 'default'}
-        variant="outlined"
-      />
-    ),
-  },
-  {
-    key: 'hours_to_pickup',
-    label: 'Hours to Pickup',
-    render: (d) => {
-      if (d.hours_to_pickup == null) return '—';
-      const val = Number(d.hours_to_pickup);
-      const color = val < 12 ? '#d32f2f' : 'inherit';
-      return (
-        <Typography variant="body2" sx={{ color, fontWeight: val < 12 ? 'bold' : 'normal' }}>
-          {val.toFixed(1)}
-        </Typography>
-      );
-    },
-  },
-  {
-    key: 'broker_rate_premium_pct',
-    label: 'Premium %',
-    render: (d) => {
-      if (d.broker_rate_premium_pct == null) return '—';
-      return `${Number(d.broker_rate_premium_pct).toFixed(1)}%`;
-    },
-  },
-  {
-    key: 'shipment_priority',
-    label: 'Priority',
-    render: (d) => {
-      const priority = d.shipment_priority || '—';
-      return <Chip label={priority} size="small" variant="outlined" />;
-    },
-  },
-  {
-    key: 'recommended_action',
-    label: 'Action',
-    render: (d) => {
-      const action = d.recommended_action || '—';
-      return (
-        <Chip
-          label={action}
-          size="small"
-          color={ACTION_COLORS[action] || 'default'}
-          variant="filled"
-        />
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Override field definitions for the Override Dialog
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_FIELDS = [
-  {
-    key: 'broker_id',
-    label: 'Preferred Broker',
-    type: 'text',
-    helperText: 'Specify preferred broker',
-  },
-  {
-    key: 'max_rate',
-    label: 'Max Rate',
-    type: 'number',
-    helperText: 'Maximum acceptable rate in dollars',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Summary cards builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build summary card data from the current set of decisions.
- * Returns an array of { title, value, color?, subtitle? } objects.
- */
 const buildSummaryCards = (decisions) => {
+  if (!decisions || decisions.length === 0) {
+    return [
+      { title: 'Broker Loads', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Avg Premium %', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Budget Remaining', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Avg Reliability', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+    ];
+  }
+
   const proposed = decisions.filter((d) => d.status === 'INFORMED');
-  const brokerCount = decisions.filter(
-    (d) => d.recommended_action === 'ROUTE_BROKER'
-  ).length;
+  const brokerCount = decisions.filter((d) => d.recommended_action === 'ROUTE_BROKER').length;
 
   // Avg premium %
   const premiums = decisions
@@ -174,13 +62,14 @@ const buildSummaryCards = (decisions) => {
   const avgPremium =
     premiums.length > 0
       ? (premiums.reduce((s, v) => s + v, 0) / premiums.length).toFixed(1)
-      : '0.0';
+      : null;
 
-  // Budget remaining (sum of max_rate - broker_rate for proposed)
-  const budgetRemaining = proposed.reduce(
-    (sum, d) => sum + (Number(d.budget_remaining) || 0),
-    0
-  );
+  // Budget remaining (sum of budget_remaining across proposed decisions that have the field)
+  const budgetValues = proposed.filter((d) => d.budget_remaining != null);
+  const budgetRemaining =
+    budgetValues.length > 0
+      ? budgetValues.reduce((sum, d) => sum + Number(d.budget_remaining), 0)
+      : null;
 
   // Avg reliability
   const reliabilities = decisions
@@ -189,7 +78,7 @@ const buildSummaryCards = (decisions) => {
   const avgReliability =
     reliabilities.length > 0
       ? (reliabilities.reduce((s, v) => s + v, 0) / reliabilities.length).toFixed(1)
-      : '0.0';
+      : null;
 
   return [
     {
@@ -200,21 +89,31 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Avg Premium %',
-      value: `${avgPremium}%`,
-      color: Number(avgPremium) > 15 ? '#d32f2f' : '#2e7d32',
-      subtitle: 'Broker rate premium',
+      value: avgPremium != null ? `${avgPremium}%` : '—',
+      color:
+        avgPremium == null
+          ? '#9e9e9e'
+          : Number(avgPremium) > 15
+            ? '#d32f2f'
+            : '#2e7d32',
+      subtitle: avgPremium != null ? 'Broker rate premium' : 'No premium data',
     },
     {
       title: 'Budget Remaining',
-      value: formatCurrency(budgetRemaining),
-      color: '#1565c0',
-      subtitle: 'Remaining broker budget',
+      value: budgetRemaining != null ? formatCurrency(budgetRemaining) : '—',
+      color: budgetRemaining == null ? '#9e9e9e' : '#1565c0',
+      subtitle: budgetRemaining != null ? 'Remaining broker budget' : 'No budget data',
     },
     {
       title: 'Avg Reliability',
-      value: `${avgReliability}%`,
-      color: Number(avgReliability) < 85 ? '#d32f2f' : '#2e7d32',
-      subtitle: 'Broker reliability score',
+      value: avgReliability != null ? `${avgReliability}%` : '—',
+      color:
+        avgReliability == null
+          ? '#9e9e9e'
+          : Number(avgReliability) < 85
+            ? '#d32f2f'
+            : '#2e7d32',
+      subtitle: avgReliability != null ? 'Broker reliability score' : 'No reliability data',
     },
   ];
 };
@@ -224,47 +123,51 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const BrokerRoutingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
-  const location = useLocation();
-  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_broker_routing_worklist');
-  const { formatSite, loadLookupsForConfig } = useDisplayPreferences();
+  const { loadLookupsForConfig } = useDisplayPreferences();
 
-  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+  const [summaryDecisions, setSummaryDecisions] = useState([]);
+  const [summaryError, setSummaryError] = useState(null);
 
-  // Memoize columns with display preference resolvers
-  const columns = useMemo(() => COLUMNS.map((col) => {
-    if (col.key === 'lane_id') {
-      return { ...col, render: (d) => formatSite(d.lane_id, d.lane_name) || '—' };
+  useEffect(() => {
+    loadLookupsForConfig(configId);
+  }, [configId, loadLookupsForConfig]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await getTRMDecisions(configId, { trm_type: TRM_TYPE });
+      setSummaryDecisions(data?.decisions || []);
+      setSummaryError(null);
+    } catch (err) {
+      setSummaryError(err?.message || 'Failed to load summary metrics');
+      setSummaryDecisions([]);
     }
-    return col;
-  }), [formatSite]);
+  }, [configId]);
 
-  // Memoize the summary card builder to keep a stable reference
-  const summaryCardsFn = useMemo(() => buildSummaryCards, []);
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   if (capLoading) {
-    return null; // Capabilities still loading; TRMDecisionWorklist shows its own spinner
+    return null;
   }
+
+  const cards = buildSummaryCards(summaryDecisions);
 
   return (
     <Box sx={{ p: 3 }}>
       <RoleTimeSeries roleKey="broker_routing" compact className="mb-4" />
+
       {/* Header */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h5" gutterBottom>
             Broker Routing Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review broker vs asset carrier routing decisions from the AI agent.
-            Accept, override with reason, or reject each decision before
-            execution.
+            Inspect, override with reason, or let the agent action stand.
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -277,18 +180,40 @@ const BrokerRoutingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         </Alert>
       )}
 
-      {/* TRM Decision Worklist */}
-      <TRMDecisionWorklist
+      {summaryError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Summary metrics unavailable: {summaryError}
+        </Alert>
+      )}
+
+      {/* TMS-specific summary cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {cards.map((card) => (
+          <Grid item xs={12} sm={6} md={3} key={card.title}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">
+                  {card.title}
+                </Typography>
+                <Typography variant="h4" sx={{ color: card.color, mt: 0.5 }}>
+                  {card.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {card.subtitle}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Shared Decision Stream — AIIO filter bar + cards + override flow */}
+      <DecisionStream
         configId={configId}
-        trmType={TRM_TYPE}
-        title="Broker Routing Worklist"
-        columns={columns}
-        overrideFields={OVERRIDE_FIELDS}
-        summaryCards={summaryCardsFn}
-        fetchDecisions={getTRMDecisions}
-        submitAction={submitTRMAction}
-        canManage={canManage}
-        initialStatusFilter={initialStatusFilter}
+        filterByType={TRM_TYPE}
+        hideHeader
+        canOverride={canManage}
+        emptyMessage="No broker routing decisions to review"
       />
     </Box>
   );

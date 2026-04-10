@@ -3,181 +3,41 @@
  *
  * Dedicated worklist for the Freight Procurement Analyst — human counterpart of the
  * Freight Procurement TRM. The TRM recommends carrier waterfall tendering decisions
- * (TENDER / DEFER / SPOT / BROKER) and the analyst reviews, accepts,
- * overrides, or rejects each recommendation before execution.
+ * (TENDER / DEFER / SPOT / BROKER) and the analyst reviews them via the shared
+ * @autonomy/ui-core <DecisionStream>, scoped with `filterByType="freight_procurement"`.
  *
- * Override reasons and values are recorded to the TRM replay buffer
- * (is_expert=True) for reinforcement learning.
+ * Override reasons and values flow through the shared DecisionCard's
+ * Inspect → Override flow, then through tmsDecisionStreamClient to the
+ * TMS backend, which records them to the TRM replay buffer (is_expert=True)
+ * for reinforcement learning.
  */
-import React, { useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
-import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
+import { DecisionStream } from '@autonomy/ui-core';
 
-import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
-import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
-import { useCapabilities } from '../../hooks/useCapabilities';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { getTRMDecisions } from '../../services/planningCascadeApi';
+import { useCapabilities } from '../../hooks/useCapabilities';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TRM_TYPE = 'freight_procurement';
 const DEFAULT_CONFIG_ID = 1;
 
-/** Color mapping for recommended action chips */
-const ACTION_COLORS = {
-  TENDER: 'success',
-  DEFER: 'default',
-  SPOT: 'warning',
-  BROKER: 'info',
-};
-
 // ---------------------------------------------------------------------------
-// Helpers
+// Summary cards builder — TMS-specific MUI cards above the shared stream
 // ---------------------------------------------------------------------------
 
-/**
- * Format a number as USD currency.
- */
-const formatCurrency = (value) => {
-  if (value == null || isNaN(value)) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-};
-
-// ---------------------------------------------------------------------------
-// Column definitions for TRMDecisionWorklist
-// ---------------------------------------------------------------------------
-
-const COLUMNS = [
-  {
-    key: 'load_id',
-    label: 'Load',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.load_id || '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'lane_id',
-    label: 'Lane',
-    render: (d) => d.lane_id || '—',
-  },
-  {
-    key: 'mode',
-    label: 'Mode',
-    render: (d) => d.mode || '—',
-  },
-  {
-    key: 'required_equipment',
-    label: 'Equipment',
-    render: (d) => d.required_equipment || '—',
-  },
-  {
-    key: 'weight',
-    label: 'Weight',
-    render: (d) =>
-      d.weight != null
-        ? `${Number(d.weight).toLocaleString()} lbs`
-        : '—',
-  },
-  {
-    key: 'primary_carrier_rate',
-    label: 'Primary Rate',
-    render: (d) => formatCurrency(d.primary_carrier_rate),
-  },
-  {
-    key: 'dat_benchmark_rate',
-    label: 'Benchmark',
-    render: (d) => formatCurrency(d.dat_benchmark_rate),
-  },
-  {
-    key: 'tender_attempt',
-    label: 'Attempt #',
-    render: (d) =>
-      d.tender_attempt != null
-        ? Number(d.tender_attempt)
-        : '—',
-  },
-  {
-    key: 'hours_to_tender_deadline',
-    label: 'Hours Left',
-    render: (d) => {
-      if (d.hours_to_tender_deadline == null) return '—';
-      const hours = Number(d.hours_to_tender_deadline);
-      const color = hours < 4 ? 'error.main' : hours < 12 ? 'warning.main' : 'text.primary';
-      return (
-        <Typography variant="body2" sx={{ color, fontWeight: hours < 4 ? 'bold' : 'normal' }}>
-          {hours.toFixed(1)}
-        </Typography>
-      );
-    },
-  },
-  {
-    key: 'recommended_action',
-    label: 'Action',
-    render: (d) => {
-      const action = d.recommended_action || '—';
-      return (
-        <Chip
-          label={action}
-          size="small"
-          color={ACTION_COLORS[action] || 'default'}
-          variant="filled"
-        />
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Override field definitions for the Override Dialog
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_FIELDS = [
-  {
-    key: 'carrier_id',
-    label: 'Override Carrier',
-    type: 'text',
-    helperText: 'Specify an alternative carrier ID',
-  },
-  {
-    key: 'rate_override',
-    label: 'Override Rate',
-    type: 'number',
-    helperText: 'Override rate in dollars',
-  },
-  {
-    key: 'action',
-    label: 'Override Action',
-    type: 'text',
-    options: [
-      { value: 'tender', label: 'Tender' },
-      { value: 'defer', label: 'Defer' },
-      { value: 'spot', label: 'Spot' },
-      { value: 'broker', label: 'Broker' },
-    ],
-    helperText: 'Change the recommended procurement action',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Summary cards builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build summary card data from the current set of decisions.
- * Returns an array of { title, value, color?, subtitle? } objects.
- */
 const buildSummaryCards = (decisions) => {
+  if (!decisions || decisions.length === 0) {
+    return [
+      { title: 'Pending Tenders', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Avg Rate vs Benchmark', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Accept Rate', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Avg Hours to Deadline', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+    ];
+  }
+
   const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
@@ -195,23 +55,19 @@ const buildSummaryCards = (decisions) => {
             rateComps.length) *
           100
         ).toFixed(1)
-      : '0.0';
+      : null;
 
   // Accept rate (TENDER actions)
-  const tenderCount = decisions.filter(
-    (d) => d.recommended_action === 'TENDER'
-  ).length;
+  const tenderCount = decisions.filter((d) => d.recommended_action === 'TENDER').length;
   const acceptRate =
-    decisions.length > 0
-      ? ((tenderCount / decisions.length) * 100).toFixed(1)
-      : '0.0';
+    decisions.length > 0 ? ((tenderCount / decisions.length) * 100).toFixed(1) : null;
 
   // Avg hours to deadline
   const deadlineValues = decisions.filter((d) => d.hours_to_tender_deadline != null);
   const avgHours =
     deadlineValues.length > 0
       ? (deadlineValues.reduce((sum, d) => sum + Number(d.hours_to_tender_deadline), 0) / deadlineValues.length).toFixed(1)
-      : '0.0';
+      : null;
 
   return [
     {
@@ -222,21 +78,41 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Avg Rate vs Benchmark',
-      value: `${avgRateVsBenchmark}%`,
-      color: Number(avgRateVsBenchmark) > 110 ? '#d32f2f' : Number(avgRateVsBenchmark) > 100 ? '#ed6c02' : '#2e7d32',
-      subtitle: 'Primary rate / benchmark',
+      value: avgRateVsBenchmark != null ? `${avgRateVsBenchmark}%` : '—',
+      color:
+        avgRateVsBenchmark == null
+          ? '#9e9e9e'
+          : Number(avgRateVsBenchmark) > 110
+            ? '#d32f2f'
+            : Number(avgRateVsBenchmark) > 100
+              ? '#ed6c02'
+              : '#2e7d32',
+      subtitle: avgRateVsBenchmark != null ? 'Primary rate / benchmark' : 'No benchmark data',
     },
     {
       title: 'Accept Rate',
-      value: `${acceptRate}%`,
-      color: Number(acceptRate) > 70 ? '#2e7d32' : '#ed6c02',
-      subtitle: `${tenderCount} of ${decisions.length} decisions`,
+      value: acceptRate != null ? `${acceptRate}%` : '—',
+      color:
+        acceptRate == null
+          ? '#9e9e9e'
+          : Number(acceptRate) > 70
+            ? '#2e7d32'
+            : '#ed6c02',
+      subtitle:
+        acceptRate != null ? `${tenderCount} of ${decisions.length} decisions` : 'No decisions to score',
     },
     {
       title: 'Avg Hours to Deadline',
-      value: avgHours,
-      color: Number(avgHours) < 8 ? '#d32f2f' : Number(avgHours) < 24 ? '#ed6c02' : '#2e7d32',
-      subtitle: 'Time remaining to tender',
+      value: avgHours != null ? avgHours : '—',
+      color:
+        avgHours == null
+          ? '#9e9e9e'
+          : Number(avgHours) < 8
+            ? '#d32f2f'
+            : Number(avgHours) < 24
+              ? '#ed6c02'
+              : '#2e7d32',
+      subtitle: avgHours != null ? 'Time remaining to tender' : 'No deadline data',
     },
   ];
 };
@@ -246,40 +122,51 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const FreightProcurementWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
-  const location = useLocation();
-  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_freight_procurement_worklist');
   const { loadLookupsForConfig } = useDisplayPreferences();
 
-  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+  const [summaryDecisions, setSummaryDecisions] = useState([]);
+  const [summaryError, setSummaryError] = useState(null);
 
-  // Memoize columns
-  const columns = useMemo(() => COLUMNS, []);
+  useEffect(() => {
+    loadLookupsForConfig(configId);
+  }, [configId, loadLookupsForConfig]);
 
-  // Memoize the summary card builder to keep a stable reference
-  const summaryCardsFn = useMemo(() => buildSummaryCards, []);
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await getTRMDecisions(configId, { trm_type: TRM_TYPE });
+      setSummaryDecisions(data?.decisions || []);
+      setSummaryError(null);
+    } catch (err) {
+      setSummaryError(err?.message || 'Failed to load summary metrics');
+      setSummaryDecisions([]);
+    }
+  }, [configId]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   if (capLoading) {
     return null;
   }
 
+  const cards = buildSummaryCards(summaryDecisions);
+
   return (
     <Box sx={{ p: 3 }}>
       <RoleTimeSeries roleKey="freight_procurement" compact className="mb-4" />
+
       {/* Header */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h5" gutterBottom>
             Freight Procurement Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review carrier waterfall tendering recommendations from the AI agent.
+            Inspect, override with reason, or let the agent action stand.
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -292,18 +179,40 @@ const FreightProcurementWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         </Alert>
       )}
 
-      {/* TRM Decision Worklist */}
-      <TRMDecisionWorklist
+      {summaryError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Summary metrics unavailable: {summaryError}
+        </Alert>
+      )}
+
+      {/* TMS-specific summary cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {cards.map((card) => (
+          <Grid item xs={12} sm={6} md={3} key={card.title}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">
+                  {card.title}
+                </Typography>
+                <Typography variant="h4" sx={{ color: card.color, mt: 0.5 }}>
+                  {card.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {card.subtitle}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Shared Decision Stream — AIIO filter bar + cards + override flow */}
+      <DecisionStream
         configId={configId}
-        trmType={TRM_TYPE}
-        title="Freight Procurement Worklist"
-        columns={columns}
-        overrideFields={OVERRIDE_FIELDS}
-        summaryCards={summaryCardsFn}
-        fetchDecisions={getTRMDecisions}
-        submitAction={submitTRMAction}
-        canManage={canManage}
-        initialStatusFilter={initialStatusFilter}
+        filterByType={TRM_TYPE}
+        hideHeader
+        canOverride={canManage}
+        emptyMessage="No freight procurement decisions to review"
       />
     </Box>
   );

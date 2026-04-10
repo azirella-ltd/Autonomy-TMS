@@ -3,190 +3,42 @@
  *
  * Dedicated worklist for the Intermodal Coordinator — human counterpart of the
  * Intermodal Transfer TRM. The TRM recommends cross-mode transfer decisions
- * (MODE_SHIFT / HOLD / DEFER) and the coordinator reviews, accepts,
- * overrides, or rejects each recommendation before execution.
+ * (MODE_SHIFT / HOLD / DEFER) and the coordinator reviews them via the shared
+ * @autonomy/ui-core <DecisionStream>, scoped with `filterByType="intermodal_transfer"`.
  *
- * Override reasons and values are recorded to the TRM replay buffer
- * (is_expert=True) for reinforcement learning.
+ * Override reasons and values flow through the shared DecisionCard's
+ * Inspect → Override flow, then through tmsDecisionStreamClient to the
+ * TMS backend, which records them to the TRM replay buffer (is_expert=True)
+ * for reinforcement learning.
  */
-import React, { useMemo, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
-import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
+import { DecisionStream } from '@autonomy/ui-core';
 
-import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
-import { getTRMDecisions, submitTRMAction } from '../../services/planningCascadeApi';
-import { useCapabilities } from '../../hooks/useCapabilities';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import { getTRMDecisions } from '../../services/planningCascadeApi';
+import { useCapabilities } from '../../hooks/useCapabilities';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TRM_TYPE = 'intermodal_transfer';
 const DEFAULT_CONFIG_ID = 1;
 
-/** Color mapping for recommended action chips */
-const ACTION_COLORS = {
-  MODE_SHIFT: 'success',
-  HOLD: 'default',
-  DEFER: 'info',
-};
-
 // ---------------------------------------------------------------------------
-// Helpers
+// Summary cards builder — TMS-specific MUI cards above the shared stream
 // ---------------------------------------------------------------------------
 
-/**
- * Format a number as USD currency.
- */
-const formatCurrency = (value) => {
-  if (value == null || isNaN(value)) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(value);
-};
-
-// ---------------------------------------------------------------------------
-// Column definitions for TRMDecisionWorklist
-// ---------------------------------------------------------------------------
-
-const COLUMNS = [
-  {
-    key: 'shipment_id',
-    label: 'Shipment',
-    render: (d) => (
-      <Typography variant="body2" fontWeight="medium">
-        {d.shipment_id || '—'}
-      </Typography>
-    ),
-  },
-  {
-    key: 'current_mode',
-    label: 'Current Mode',
-    render: (d) => {
-      const mode = d.current_mode || '—';
-      return <Chip label={mode} size="small" variant="outlined" />;
-    },
-  },
-  {
-    key: 'candidate_mode',
-    label: 'Candidate Mode',
-    render: (d) => {
-      const mode = d.candidate_mode || '—';
-      return <Chip label={mode} size="small" color="info" variant="outlined" />;
-    },
-  },
-  {
-    key: 'cost_savings_pct',
-    label: 'Cost Savings %',
-    render: (d) => {
-      if (d.cost_savings_pct == null) return '—';
-      const val = Number(d.cost_savings_pct);
-      return (
-        <Typography variant="body2" sx={{ color: '#2e7d32', fontWeight: val > 10 ? 'bold' : 'normal' }}>
-          {val.toFixed(1)}%
-        </Typography>
-      );
-    },
-  },
-  {
-    key: 'transit_time_penalty_days',
-    label: 'Transit Penalty',
-    render: (d) => {
-      if (d.transit_time_penalty_days == null) return '—';
-      const val = Number(d.transit_time_penalty_days);
-      const color = val > 2 ? '#d32f2f' : val > 1 ? '#ed6c02' : '#2e7d32';
-      return (
-        <Typography variant="body2" sx={{ color }}>
-          {val.toFixed(1)} days
-        </Typography>
-      );
-    },
-  },
-  {
-    key: 'rail_capacity_available',
-    label: 'Rail Available',
-    render: (d) => (
-      <Chip
-        label={d.rail_capacity_available ? 'Yes' : 'No'}
-        size="small"
-        color={d.rail_capacity_available ? 'success' : 'default'}
-        variant="outlined"
-      />
-    ),
-  },
-  {
-    key: 'intermodal_reliability_pct',
-    label: 'Reliability %',
-    render: (d) => {
-      if (d.intermodal_reliability_pct == null) return '—';
-      const val = Number(d.intermodal_reliability_pct);
-      return `${val.toFixed(1)}%`;
-    },
-  },
-  {
-    key: 'recommended_action',
-    label: 'Action',
-    render: (d) => {
-      const action = d.recommended_action || '—';
-      return (
-        <Chip
-          label={action}
-          size="small"
-          color={ACTION_COLORS[action] || 'default'}
-          variant="filled"
-        />
-      );
-    },
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Override field definitions for the Override Dialog
-// ---------------------------------------------------------------------------
-
-const OVERRIDE_FIELDS = [
-  {
-    key: 'target_mode',
-    label: 'Target Mode',
-    type: 'text',
-    options: [
-      { value: 'road', label: 'Road' },
-      { value: 'rail', label: 'Rail' },
-      { value: 'ocean', label: 'Ocean' },
-      { value: 'air', label: 'Air' },
-    ],
-    helperText: 'Override the target transportation mode',
-  },
-  {
-    key: 'accept_transit_penalty',
-    label: 'Accept Transit Penalty',
-    type: 'text',
-    options: [
-      { value: 'yes', label: 'Yes' },
-      { value: 'no', label: 'No' },
-    ],
-    helperText: 'Accept additional transit time for cost savings',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Summary cards builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build summary card data from the current set of decisions.
- * Returns an array of { title, value, color?, subtitle? } objects.
- */
 const buildSummaryCards = (decisions) => {
-  const modeShiftCount = decisions.filter(
-    (d) => d.recommended_action === 'MODE_SHIFT'
-  ).length;
+  if (!decisions || decisions.length === 0) {
+    return [
+      { title: 'Mode Shift Opportunities', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Avg Cost Savings %', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+      { title: 'Rail Capacity', value: 0, color: '#2e7d32', subtitle: 'No data' },
+      { title: 'Avg Reliability', value: '—', color: '#9e9e9e', subtitle: 'No data' },
+    ];
+  }
+
+  const modeShiftCount = decisions.filter((d) => d.recommended_action === 'MODE_SHIFT').length;
 
   // Avg cost savings %
   const savings = decisions
@@ -195,12 +47,10 @@ const buildSummaryCards = (decisions) => {
   const avgSavings =
     savings.length > 0
       ? (savings.reduce((s, v) => s + v, 0) / savings.length).toFixed(1)
-      : '0.0';
+      : null;
 
   // Rail capacity available count
-  const railAvailable = decisions.filter(
-    (d) => d.rail_capacity_available
-  ).length;
+  const railAvailable = decisions.filter((d) => d.rail_capacity_available).length;
 
   // Avg reliability
   const reliabilities = decisions
@@ -209,7 +59,7 @@ const buildSummaryCards = (decisions) => {
   const avgReliability =
     reliabilities.length > 0
       ? (reliabilities.reduce((s, v) => s + v, 0) / reliabilities.length).toFixed(1)
-      : '0.0';
+      : null;
 
   return [
     {
@@ -220,9 +70,9 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Avg Cost Savings %',
-      value: `${avgSavings}%`,
-      color: '#2e7d32',
-      subtitle: 'Average savings from mode shift',
+      value: avgSavings != null ? `${avgSavings}%` : '—',
+      color: avgSavings == null ? '#9e9e9e' : '#2e7d32',
+      subtitle: avgSavings != null ? 'Average savings from mode shift' : 'No savings data',
     },
     {
       title: 'Rail Capacity',
@@ -232,9 +82,14 @@ const buildSummaryCards = (decisions) => {
     },
     {
       title: 'Avg Reliability',
-      value: `${avgReliability}%`,
-      color: Number(avgReliability) < 85 ? '#d32f2f' : '#2e7d32',
-      subtitle: 'Intermodal reliability score',
+      value: avgReliability != null ? `${avgReliability}%` : '—',
+      color:
+        avgReliability == null
+          ? '#9e9e9e'
+          : Number(avgReliability) < 85
+            ? '#d32f2f'
+            : '#2e7d32',
+      subtitle: avgReliability != null ? 'Intermodal reliability score' : 'No reliability data',
     },
   ];
 };
@@ -244,49 +99,51 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const IntermodalTransferWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
-  const location = useLocation();
-  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_intermodal_transfer_worklist');
-  const { formatSite, loadLookupsForConfig } = useDisplayPreferences();
+  const { loadLookupsForConfig } = useDisplayPreferences();
 
-  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+  const [summaryDecisions, setSummaryDecisions] = useState([]);
+  const [summaryError, setSummaryError] = useState(null);
 
-  // Memoize columns with display preference resolvers
-  const columns = useMemo(() => COLUMNS.map((col) => {
-    if (col.key === 'shipment_id') {
-      return { ...col, render: (d) => (
-        <Typography variant="body2" fontWeight="medium">{d.shipment_id || '—'}</Typography>
-      )};
+  useEffect(() => {
+    loadLookupsForConfig(configId);
+  }, [configId, loadLookupsForConfig]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const data = await getTRMDecisions(configId, { trm_type: TRM_TYPE });
+      setSummaryDecisions(data?.decisions || []);
+      setSummaryError(null);
+    } catch (err) {
+      setSummaryError(err?.message || 'Failed to load summary metrics');
+      setSummaryDecisions([]);
     }
-    return col;
-  }), []);
+  }, [configId]);
 
-  // Memoize the summary card builder to keep a stable reference
-  const summaryCardsFn = useMemo(() => buildSummaryCards, []);
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   if (capLoading) {
-    return null; // Capabilities still loading; TRMDecisionWorklist shows its own spinner
+    return null;
   }
+
+  const cards = buildSummaryCards(summaryDecisions);
 
   return (
     <Box sx={{ p: 3 }}>
       <RoleTimeSeries roleKey="intermodal_transfer" compact className="mb-4" />
+
       {/* Header */}
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
           <Typography variant="h5" gutterBottom>
             Intermodal Transfer Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review cross-mode transfer decisions from the AI agent.
-            Accept, override with reason, or reject each decision before
-            execution.
+            Inspect, override with reason, or let the agent action stand.
           </Typography>
         </Box>
         <LayerModeIndicator layer="execution" mode="active" />
@@ -299,18 +156,40 @@ const IntermodalTransferWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         </Alert>
       )}
 
-      {/* TRM Decision Worklist */}
-      <TRMDecisionWorklist
+      {summaryError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Summary metrics unavailable: {summaryError}
+        </Alert>
+      )}
+
+      {/* TMS-specific summary cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {cards.map((card) => (
+          <Grid item xs={12} sm={6} md={3} key={card.title}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="caption" color="text.secondary">
+                  {card.title}
+                </Typography>
+                <Typography variant="h4" sx={{ color: card.color, mt: 0.5 }}>
+                  {card.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {card.subtitle}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Shared Decision Stream — AIIO filter bar + cards + override flow */}
+      <DecisionStream
         configId={configId}
-        trmType={TRM_TYPE}
-        title="Intermodal Transfer Worklist"
-        columns={columns}
-        overrideFields={OVERRIDE_FIELDS}
-        summaryCards={summaryCardsFn}
-        fetchDecisions={getTRMDecisions}
-        submitAction={submitTRMAction}
-        canManage={canManage}
-        initialStatusFilter={initialStatusFilter}
+        filterByType={TRM_TYPE}
+        hideHeader
+        canOverride={canManage}
+        emptyMessage="No intermodal transfer decisions to review"
       />
     </Box>
   );
