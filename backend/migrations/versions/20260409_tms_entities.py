@@ -26,86 +26,74 @@ depends_on = None
 # ---------------------------------------------------------------------------
 # Enum type names (created once, referenced by multiple tables)
 # ---------------------------------------------------------------------------
-transport_mode_enum = sa.Enum(
+transport_mode_enum = postgresql.ENUM(
     'FTL', 'LTL', 'PARCEL', 'FCL', 'LCL', 'BULK_OCEAN',
     'AIR_STD', 'AIR_EXPRESS', 'AIR_CHARTER',
     'RAIL_CARLOAD', 'RAIL_INTERMODAL', 'RAIL_UNIT',
     'INTERMODAL', 'DRAYAGE', 'LAST_MILE',
-    name='transport_mode_enum', create_type=False,
-)
+    name='transport_mode_enum', create_type=False)
 
-equipment_type_enum = sa.Enum(
+equipment_type_enum = postgresql.ENUM(
     'DRY_VAN', 'REEFER', 'FLATBED', 'STEP_DECK', 'LOWBOY', 'TANKER',
     'CONTAINER_20', 'CONTAINER_40', 'CONTAINER_40HC', 'CONTAINER_45',
     'REEFER_CONTAINER', 'CHASSIS', 'RAILCAR_BOX', 'RAILCAR_HOPPER',
     'RAILCAR_TANK', 'SPRINTER_VAN', 'BOX_TRUCK',
-    name='equipment_type_enum', create_type=False,
-)
+    name='equipment_type_enum', create_type=False)
 
-shipment_status_enum = sa.Enum(
+shipment_status_enum = postgresql.ENUM(
     'DRAFT', 'TENDERED', 'ACCEPTED', 'DECLINED', 'DISPATCHED',
     'IN_TRANSIT', 'AT_STOP', 'OUT_FOR_DELIVERY', 'DELIVERED',
     'POD_RECEIVED', 'INVOICED', 'CLOSED', 'CANCELLED', 'EXCEPTION',
-    name='shipment_status_enum', create_type=False,
-)
+    name='shipment_status_enum', create_type=False)
 
-load_status_enum = sa.Enum(
+load_status_enum = postgresql.ENUM(
     'PLANNING', 'OPTIMIZING', 'READY', 'TENDERED', 'ASSIGNED',
     'IN_TRANSIT', 'DELIVERED', 'CLOSED',
-    name='load_status_enum', create_type=False,
-)
+    name='load_status_enum', create_type=False)
 
-exception_type_enum = sa.Enum(
+exception_type_enum = postgresql.ENUM(
     'LATE_PICKUP', 'MISSED_PICKUP', 'LATE_DELIVERY', 'MISSED_DELIVERY',
     'ROUTE_DEVIATION', 'TEMPERATURE_EXCURSION', 'DAMAGE', 'SHORTAGE',
     'OVERAGE', 'REFUSED', 'ROLLED_CONTAINER', 'PORT_CONGESTION',
     'CUSTOMS_HOLD', 'WEATHER_DELAY', 'CARRIER_BREAKDOWN',
     'DETENTION', 'DEMURRAGE', 'ACCESSORIAL_DISPUTE',
-    name='exception_type_enum', create_type=False,
-)
+    name='exception_type_enum', create_type=False)
 
-exception_severity_enum = sa.Enum(
+exception_severity_enum = postgresql.ENUM(
     'LOW', 'MEDIUM', 'HIGH', 'CRITICAL',
-    name='exception_severity_enum', create_type=False,
-)
+    name='exception_severity_enum', create_type=False)
 
-exception_resolution_status_enum = sa.Enum(
+exception_resolution_status_enum = postgresql.ENUM(
     'DETECTED', 'INVESTIGATING', 'ACTION_TAKEN', 'RESOLVED',
     'ESCALATED', 'CLOSED',
-    name='exception_resolution_status_enum', create_type=False,
-)
+    name='exception_resolution_status_enum', create_type=False)
 
-carrier_type_enum = sa.Enum(
+carrier_type_enum = postgresql.ENUM(
     'ASSET', 'BROKER', 'THREE_PL', 'FOUR_PL', 'OCEAN_LINE',
     'AIRLINE', 'RAILROAD', 'COURIER', 'DRAYAGE_CARRIER',
-    name='carrier_type_enum', create_type=False,
-)
+    name='carrier_type_enum', create_type=False)
 
-tender_status_enum = sa.Enum(
+tender_status_enum = postgresql.ENUM(
     'CREATED', 'SENT', 'ACCEPTED', 'DECLINED', 'COUNTER_OFFERED',
     'EXPIRED', 'CANCELLED',
-    name='tender_status_enum', create_type=False,
-)
+    name='tender_status_enum', create_type=False)
 
-appointment_type_enum = sa.Enum(
+appointment_type_enum = postgresql.ENUM(
     'PICKUP', 'DELIVERY', 'CROSS_DOCK', 'DROP_TRAILER',
     'LIVE_LOAD', 'LIVE_UNLOAD',
-    name='appointment_type_enum', create_type=False,
-)
+    name='appointment_type_enum', create_type=False)
 
-appointment_status_enum = sa.Enum(
+appointment_status_enum = postgresql.ENUM(
     'REQUESTED', 'CONFIRMED', 'CHECKED_IN', 'AT_DOCK',
     'LOADING', 'UNLOADING', 'COMPLETED', 'NO_SHOW',
     'CANCELLED', 'RESCHEDULED',
-    name='appointment_status_enum', create_type=False,
-)
+    name='appointment_status_enum', create_type=False)
 
-rate_type_enum = sa.Enum(
+rate_type_enum = postgresql.ENUM(
     'CONTRACT', 'SPOT', 'MINI_BID', 'TARIFF', 'BENCHMARK',
-    name='rate_type_enum', create_type=False,
-)
+    name='rate_type_enum', create_type=False)
 
-tracking_event_type_enum = sa.Enum(
+tracking_event_type_enum = postgresql.ENUM(
     'PICKED_UP', 'DEPARTED', 'IN_TRANSIT', 'ARRIVAL_AT_STOP',
     'DEPARTED_STOP', 'OUT_FOR_DELIVERY', 'DELIVERED',
     'ARRIVED_AT_TERMINAL', 'DEPARTED_TERMINAL',
@@ -117,43 +105,36 @@ tracking_event_type_enum = sa.Enum(
     'APPOINTMENT_SET', 'UPDATED_DELIVERY_APPT',
     'DELAYED', 'EXCEPTION', 'RETURNED',
     'ETA_UPDATED',
-    name='tracking_event_type_enum', create_type=False,
-)
+    name='tracking_event_type_enum', create_type=False)
 
 # transportation_config enums
-facility_type_enum = sa.Enum(
+facility_type_enum = postgresql.ENUM(
     'SHIPPER', 'CONSIGNEE', 'TERMINAL', 'CROSS_DOCK', 'YARD',
     'PORT', 'RAIL_TERMINAL', 'AIRPORT', 'DEPOT', 'BORDER_CROSSING',
-    name='facility_type_enum', create_type=False,
-)
+    name='facility_type_enum', create_type=False)
 
-contract_status_enum = sa.Enum(
+contract_status_enum = postgresql.ENUM(
     'DRAFT', 'ACTIVE', 'EXPIRED', 'TERMINATED', 'RENEWED',
-    name='contract_status_enum', create_type=False,
-)
+    name='contract_status_enum', create_type=False)
 
-lane_direction_enum = sa.Enum(
+lane_direction_enum = postgresql.ENUM(
     'OUTBOUND', 'INBOUND', 'INTER_FACILITY', 'RETURN',
-    name='lane_direction_enum', create_type=False,
-)
+    name='lane_direction_enum', create_type=False)
 
 # tms_planning enums
-forecast_method_enum = sa.Enum(
+forecast_method_enum = postgresql.ENUM(
     'STATISTICAL', 'ML', 'CONSENSUS', 'EXTERNAL', 'CONFORMAL',
-    name='forecast_method_enum', create_type=False,
-)
+    name='forecast_method_enum', create_type=False)
 
-plan_status_enum = sa.Enum(
+plan_status_enum = postgresql.ENUM(
     'DRAFT', 'OPTIMIZING', 'READY', 'APPROVED', 'EXECUTING',
     'COMPLETED', 'SUPERSEDED',
-    name='plan_status_enum', create_type=False,
-)
+    name='plan_status_enum', create_type=False)
 
-plan_item_status_enum = sa.Enum(
+plan_item_status_enum = postgresql.ENUM(
     'PLANNED', 'CARRIER_ASSIGNED', 'TENDERED', 'CONFIRMED',
     'IN_EXECUTION', 'COMPLETED', 'CANCELLED',
-    name='plan_item_status_enum', create_type=False,
-)
+    name='plan_item_status_enum', create_type=False)
 
 
 def upgrade():
@@ -179,10 +160,20 @@ def upgrade():
         forecast_method_enum, plan_status_enum, plan_item_status_enum,
     ]
     bind = op.get_bind()
-    for enum_name, enum_def in zip(_enum_names, _enum_defs):
-        # Create only if not already present
-        if not bind.dialect.has_type(bind, enum_name):
-            sa.Enum(*enum_def.enums, name=enum_name).create(bind, checkfirst=True)
+    # Use raw SQL with IF NOT EXISTS for true idempotency within a transaction.
+    # SQLAlchemy's bind.dialect.has_type() doesn't see types created in the
+    # same uncommitted transaction, so it can issue duplicate CREATE TYPE.
+    for enum_def in _enum_defs:
+        enum_name = enum_def.name
+        values_sql = ", ".join(f"'{v}'" for v in enum_def.enums)
+        # Check if exists via system catalog (works inside transaction)
+        result = bind.exec_driver_sql(
+            f"SELECT 1 FROM pg_type WHERE typname = '{enum_name}'"
+        ).first()
+        if not result:
+            bind.exec_driver_sql(
+                f"CREATE TYPE {enum_name} AS ENUM ({values_sql})"
+            )
 
     # ------------------------------------------------------------------
     # 2. Tables — created in dependency order (parents before children)
@@ -251,7 +242,7 @@ def upgrade():
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('code', sa.String(100), nullable=False, comment='Carrier SCAC or internal code'),
         sa.Column('name', sa.String(200), nullable=False),
-        sa.Column('carrier_type', sa.Enum(
+        sa.Column('carrier_type', postgresql.ENUM(
             'ASSET', 'BROKER', 'THREE_PL', 'FOUR_PL', 'OCEAN_LINE',
             'AIRLINE', 'RAILROAD', 'COURIER', 'DRAYAGE_CARRIER',
             name='carrier_type_enum', create_type=False), nullable=False),
@@ -300,13 +291,13 @@ def upgrade():
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('carrier_id', sa.Integer(), sa.ForeignKey('carrier.id', ondelete='CASCADE'), nullable=False),
         sa.Column('lane_id', sa.Integer(), sa.ForeignKey('transportation_lane.id', ondelete='CASCADE'), nullable=False),
-        sa.Column('mode', sa.Enum(
+        sa.Column('mode', postgresql.ENUM(
             'FTL', 'LTL', 'PARCEL', 'FCL', 'LCL', 'BULK_OCEAN',
             'AIR_STD', 'AIR_EXPRESS', 'AIR_CHARTER',
             'RAIL_CARLOAD', 'RAIL_INTERMODAL', 'RAIL_UNIT',
             'INTERMODAL', 'DRAYAGE', 'LAST_MILE',
             name='transport_mode_enum', create_type=False), nullable=False),
-        sa.Column('equipment_type', sa.Enum(
+        sa.Column('equipment_type', postgresql.ENUM(
             'DRY_VAN', 'REEFER', 'FLATBED', 'STEP_DECK', 'LOWBOY', 'TANKER',
             'CONTAINER_20', 'CONTAINER_40', 'CONTAINER_40HC', 'CONTAINER_45',
             'REEFER_CONTAINER', 'CHASSIS', 'RAILCAR_BOX', 'RAILCAR_HOPPER',
@@ -333,7 +324,7 @@ def upgrade():
         'equipment',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('equipment_id', sa.String(100), nullable=False, comment='Trailer/container number'),
-        sa.Column('equipment_type', sa.Enum(
+        sa.Column('equipment_type', postgresql.ENUM(
             'DRY_VAN', 'REEFER', 'FLATBED', 'STEP_DECK', 'LOWBOY', 'TANKER',
             'CONTAINER_20', 'CONTAINER_40', 'CONTAINER_40HC', 'CONTAINER_45',
             'REEFER_CONTAINER', 'CHASSIS', 'RAILCAR_BOX', 'RAILCAR_HOPPER',
@@ -403,19 +394,19 @@ def upgrade():
         'load',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('load_number', sa.String(100), nullable=False),
-        sa.Column('status', sa.Enum(
+        sa.Column('status', postgresql.ENUM(
             'PLANNING', 'OPTIMIZING', 'READY', 'TENDERED', 'ASSIGNED',
             'IN_TRANSIT', 'DELIVERED', 'CLOSED',
             name='load_status_enum', create_type=False), nullable=False, server_default='PLANNING'),
         sa.Column('origin_site_id', sa.Integer(), sa.ForeignKey('site.id'), nullable=False),
         sa.Column('destination_site_id', sa.Integer(), sa.ForeignKey('site.id'), nullable=False),
-        sa.Column('mode', sa.Enum(
+        sa.Column('mode', postgresql.ENUM(
             'FTL', 'LTL', 'PARCEL', 'FCL', 'LCL', 'BULK_OCEAN',
             'AIR_STD', 'AIR_EXPRESS', 'AIR_CHARTER',
             'RAIL_CARLOAD', 'RAIL_INTERMODAL', 'RAIL_UNIT',
             'INTERMODAL', 'DRAYAGE', 'LAST_MILE',
             name='transport_mode_enum', create_type=False), nullable=False),
-        sa.Column('equipment_type', sa.Enum(
+        sa.Column('equipment_type', postgresql.ENUM(
             'DRY_VAN', 'REEFER', 'FLATBED', 'STEP_DECK', 'LOWBOY', 'TANKER',
             'CONTAINER_20', 'CONTAINER_40', 'CONTAINER_40HC', 'CONTAINER_45',
             'REEFER_CONTAINER', 'CHASSIS', 'RAILCAR_BOX', 'RAILCAR_HOPPER',
@@ -454,103 +445,92 @@ def upgrade():
     op.create_index('idx_load_carrier', 'load', ['carrier_id', 'status'])
 
     # ------------------------------------------------------------------
-    # 3. ALTER existing shipment table — add TMS-specific columns
+    # 3. Create tms_shipment table (TMS-domain shipments)
     # ------------------------------------------------------------------
-    # The original shipment table (20260123) has a String(100) PK and SC-oriented
-    # columns. The new TMS Shipment model uses Integer PK and many new columns.
-    # We add columns that are new in tms_entities.py and do not conflict with
-    # existing columns. We do NOT change the PK type (that requires data migration).
-    #
-    # Existing columns we skip (already present):
-    #   id, description, company_id, order_id, order_line_number, product_id,
-    #   quantity, uom, from_site_id, to_site_id, transportation_lane_id,
-    #   carrier_id, carrier_name, tracking_number, status, ship_date,
-    #   expected_delivery_date, actual_delivery_date, current_location,
-    #   current_location_lat, current_location_lon, last_tracking_update,
-    #   delivery_risk_score, risk_level, risk_factors, tracking_events,
-    #   recommended_actions, mitigation_status, source, source_event_id,
-    #   source_update_dttm, created_at, updated_at
-    #
-    # New columns from tms_entities.py Shipment model:
-    _shipment_new_cols = [
-        ('shipment_number', sa.String(100), 'Business reference number'),
-        ('origin_site_id', sa.Integer(), None),
-        ('destination_site_id', sa.Integer(), None),
-        ('lane_id', sa.Integer(), None),
-        ('commodity_id', sa.Integer(), None),
-        ('weight', sa.Double(), 'Total weight'),
-        ('weight_uom', sa.String(20), None),
-        ('volume', sa.Double(), 'Total volume'),
-        ('volume_uom', sa.String(20), None),
-        ('pallet_count', sa.Integer(), None),
-        ('piece_count', sa.Integer(), None),
-        ('declared_value', sa.Double(), None),
-        ('mode', sa.String(30), None),  # Will store enum value as string
-        ('required_equipment', sa.String(30), None),
-        ('is_hazmat', sa.Boolean(), None),
-        ('is_temperature_sensitive', sa.Boolean(), None),
-        ('temp_min', sa.Double(), None),
-        ('temp_max', sa.Double(), None),
-        ('requested_pickup_date', sa.DateTime(), None),
-        ('requested_delivery_date', sa.DateTime(), None),
-        ('earliest_pickup', sa.DateTime(), None),
-        ('latest_pickup', sa.DateTime(), None),
-        ('earliest_delivery', sa.DateTime(), None),
-        ('latest_delivery', sa.DateTime(), None),
-        ('actual_pickup_date', sa.DateTime(), None),
-        ('load_id', sa.Integer(), None),
-        ('equipment_id', sa.Integer(), None),
-        ('estimated_cost', sa.Double(), None),
-        ('actual_cost', sa.Double(), None),
-        ('freight_charge', sa.Double(), None),
-        ('accessorial_charges', postgresql.JSON(astext_type=sa.Text()), None),
-        ('total_charge', sa.Double(), None),
-        ('priority', sa.Integer(), None),
-        ('service_level', sa.String(50), None),
-        ('special_instructions', sa.Text(), None),
-        ('reference_numbers', postgresql.JSON(astext_type=sa.Text()), None),
-        ('current_lat', sa.Double(), None),
-        ('current_lon', sa.Double(), None),
-        ('estimated_arrival', sa.DateTime(), None),
-        ('eta_confidence', postgresql.JSON(astext_type=sa.Text()), None),
-        ('p44_shipment_id', sa.String(200), None),
-        ('p44_tracking_url', sa.String(500), None),
-        ('external_identifiers', postgresql.JSON(astext_type=sa.Text()), None),
-        ('tenant_id', sa.Integer(), None),
-        ('config_id', sa.Integer(), None),
-    ]
-    for col_name, col_type, comment in _shipment_new_cols:
-        try:
-            kw = {}
-            if comment:
-                kw['comment'] = comment
-            op.add_column('shipment', sa.Column(col_name, col_type, **kw))
-        except Exception:
-            # Column may already exist; skip
-            pass
-
-    # Add new indexes on shipment (using IF NOT EXISTS via try/except)
-    for idx_name, cols in [
-        ('idx_shipment_tenant_status', ['tenant_id', 'status']),
-        ('idx_shipment_dates_tms', ['tenant_id', 'requested_pickup_date', 'requested_delivery_date']),
-        ('idx_shipment_carrier_status', ['carrier_id', 'status']),
-        ('idx_shipment_lane_status', ['lane_id', 'status']),
-        ('idx_shipment_origin_dest', ['origin_site_id', 'destination_site_id']),
-    ]:
-        try:
-            op.create_index(idx_name, 'shipment', cols)
-        except Exception:
-            pass
+    # NOTE: We use a separate `tms_shipment` table rather than ALTERing the
+    # existing `shipment` table. The two represent different concepts:
+    #   - sc_entities.Shipment / shipment: Material visibility (String PK,
+    #     legacy SC schema)
+    #   - tms_entities.Shipment / tms_shipment: Freight movement (Integer PK,
+    #     full TMS lifecycle)
+    # Keeping them separate avoids type conflicts and import ambiguity.
+    op.create_table(
+        'tms_shipment',
+        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column('shipment_number', sa.String(100), nullable=False, comment='Business reference number'),
+        sa.Column('status', sa.String(30), nullable=False, server_default='DRAFT'),
+        sa.Column('origin_site_id', sa.Integer(), sa.ForeignKey('site.id'), nullable=False),
+        sa.Column('destination_site_id', sa.Integer(), sa.ForeignKey('site.id'), nullable=False),
+        sa.Column('lane_id', sa.Integer(), sa.ForeignKey('transportation_lane.id')),
+        sa.Column('commodity_id', sa.Integer(), sa.ForeignKey('commodity.id')),
+        sa.Column('quantity', sa.Double()),
+        sa.Column('weight', sa.Double()),
+        sa.Column('weight_uom', sa.String(20), server_default='LBS'),
+        sa.Column('volume', sa.Double()),
+        sa.Column('volume_uom', sa.String(20)),
+        sa.Column('pallet_count', sa.Integer()),
+        sa.Column('piece_count', sa.Integer()),
+        sa.Column('declared_value', sa.Double()),
+        sa.Column('mode', sa.String(30)),
+        sa.Column('required_equipment', sa.String(30)),
+        sa.Column('is_hazmat', sa.Boolean(), server_default='false'),
+        sa.Column('is_temperature_sensitive', sa.Boolean(), server_default='false'),
+        sa.Column('temp_min', sa.Double()),
+        sa.Column('temp_max', sa.Double()),
+        sa.Column('requested_pickup_date', sa.DateTime()),
+        sa.Column('requested_delivery_date', sa.DateTime()),
+        sa.Column('earliest_pickup', sa.DateTime()),
+        sa.Column('latest_pickup', sa.DateTime()),
+        sa.Column('earliest_delivery', sa.DateTime()),
+        sa.Column('latest_delivery', sa.DateTime()),
+        sa.Column('actual_pickup_date', sa.DateTime()),
+        sa.Column('actual_delivery_date', sa.DateTime()),
+        sa.Column('load_id', sa.Integer()),
+        sa.Column('carrier_id', sa.Integer(), sa.ForeignKey('carrier.id')),
+        sa.Column('equipment_id', sa.Integer(), sa.ForeignKey('equipment.id')),
+        sa.Column('estimated_cost', sa.Double()),
+        sa.Column('actual_cost', sa.Double()),
+        sa.Column('freight_charge', sa.Double()),
+        sa.Column('accessorial_charges', postgresql.JSON(astext_type=sa.Text())),
+        sa.Column('total_charge', sa.Double()),
+        sa.Column('priority', sa.Integer()),
+        sa.Column('service_level', sa.String(50)),
+        sa.Column('special_instructions', sa.Text()),
+        sa.Column('reference_numbers', postgresql.JSON(astext_type=sa.Text())),
+        sa.Column('current_lat', sa.Double()),
+        sa.Column('current_lon', sa.Double()),
+        sa.Column('current_location', sa.String(255)),
+        sa.Column('last_tracking_update', sa.DateTime()),
+        sa.Column('estimated_arrival', sa.DateTime()),
+        sa.Column('eta_confidence', postgresql.JSON(astext_type=sa.Text())),
+        sa.Column('delivery_risk_score', sa.Double()),
+        sa.Column('risk_level', sa.String(20)),
+        sa.Column('p44_shipment_id', sa.String(200)),
+        sa.Column('p44_tracking_url', sa.String(500)),
+        sa.Column('external_identifiers', postgresql.JSON(astext_type=sa.Text())),
+        sa.Column('tenant_id', sa.Integer(), sa.ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id', ondelete='CASCADE')),
+        sa.Column('source', sa.String(100)),
+        sa.Column('source_event_id', sa.String(100)),
+        sa.Column('source_update_dttm', sa.DateTime()),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
+        sa.Column('updated_at', sa.DateTime()),
+    )
+    op.create_index('idx_tms_shipment_tenant_status', 'tms_shipment', ['tenant_id', 'status'])
+    op.create_index('idx_tms_shipment_dates', 'tms_shipment', ['tenant_id', 'requested_pickup_date', 'requested_delivery_date'])
+    op.create_index('idx_tms_shipment_carrier', 'tms_shipment', ['carrier_id', 'status'])
+    op.create_index('idx_tms_shipment_lane', 'tms_shipment', ['lane_id', 'status'])
+    op.create_index('idx_tms_shipment_origin_dest', 'tms_shipment', ['origin_site_id', 'destination_site_id'])
 
     # ---- shipment_leg ----
     op.create_table(
         'shipment_leg',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id', ondelete='CASCADE'), nullable=False),
         sa.Column('leg_sequence', sa.Integer(), nullable=False, comment='1-based ordering'),
         sa.Column('from_site_id', sa.Integer(), sa.ForeignKey('site.id'), nullable=False),
         sa.Column('to_site_id', sa.Integer(), sa.ForeignKey('site.id'), nullable=False),
-        sa.Column('mode', sa.Enum(
+        sa.Column('mode', postgresql.ENUM(
             'FTL', 'LTL', 'PARCEL', 'FCL', 'LCL', 'BULK_OCEAN',
             'AIR_STD', 'AIR_EXPRESS', 'AIR_CHARTER',
             'RAIL_CARLOAD', 'RAIL_INTERMODAL', 'RAIL_UNIT',
@@ -582,7 +562,7 @@ def upgrade():
         'load_item',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('load_id', sa.Integer(), sa.ForeignKey('load.id', ondelete='CASCADE'), nullable=False),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id'), nullable=False),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id'), nullable=False),
         sa.Column('commodity_id', sa.Integer(), sa.ForeignKey('commodity.id')),
         sa.Column('quantity', sa.Double()),
         sa.Column('weight', sa.Double()),
@@ -601,19 +581,19 @@ def upgrade():
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('carrier_id', sa.Integer(), sa.ForeignKey('carrier.id', ondelete='CASCADE'), nullable=False),
         sa.Column('lane_id', sa.Integer(), sa.ForeignKey('transportation_lane.id'), nullable=False),
-        sa.Column('mode', sa.Enum(
+        sa.Column('mode', postgresql.ENUM(
             'FTL', 'LTL', 'PARCEL', 'FCL', 'LCL', 'BULK_OCEAN',
             'AIR_STD', 'AIR_EXPRESS', 'AIR_CHARTER',
             'RAIL_CARLOAD', 'RAIL_INTERMODAL', 'RAIL_UNIT',
             'INTERMODAL', 'DRAYAGE', 'LAST_MILE',
             name='transport_mode_enum', create_type=False), nullable=False),
-        sa.Column('equipment_type', sa.Enum(
+        sa.Column('equipment_type', postgresql.ENUM(
             'DRY_VAN', 'REEFER', 'FLATBED', 'STEP_DECK', 'LOWBOY', 'TANKER',
             'CONTAINER_20', 'CONTAINER_40', 'CONTAINER_40HC', 'CONTAINER_45',
             'REEFER_CONTAINER', 'CHASSIS', 'RAILCAR_BOX', 'RAILCAR_HOPPER',
             'RAILCAR_TANK', 'SPRINTER_VAN', 'BOX_TRUCK',
             name='equipment_type_enum', create_type=False)),
-        sa.Column('rate_type', sa.Enum(
+        sa.Column('rate_type', postgresql.ENUM(
             'CONTRACT', 'SPOT', 'MINI_BID', 'TARIFF', 'BENCHMARK',
             name='rate_type_enum', create_type=False), nullable=False),
         sa.Column('rate_per_mile', sa.Double()),
@@ -645,12 +625,12 @@ def upgrade():
     op.create_table(
         'freight_tender',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id', ondelete='CASCADE')),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id', ondelete='CASCADE')),
         sa.Column('load_id', sa.Integer(), sa.ForeignKey('load.id', ondelete='CASCADE')),
         sa.Column('carrier_id', sa.Integer(), sa.ForeignKey('carrier.id'), nullable=False),
         sa.Column('rate_id', sa.Integer(), sa.ForeignKey('freight_rate.id')),
         sa.Column('tender_sequence', sa.Integer(), nullable=False, comment='Position in carrier waterfall'),
-        sa.Column('status', sa.Enum(
+        sa.Column('status', postgresql.ENUM(
             'CREATED', 'SENT', 'ACCEPTED', 'DECLINED', 'COUNTER_OFFERED',
             'EXPIRED', 'CANCELLED',
             name='tender_status_enum', create_type=False), nullable=False, server_default='CREATED'),
@@ -694,13 +674,13 @@ def upgrade():
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('site_id', sa.Integer(), sa.ForeignKey('site.id', ondelete='CASCADE'), nullable=False),
         sa.Column('dock_door_id', sa.Integer(), sa.ForeignKey('dock_door.id')),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id')),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id')),
         sa.Column('load_id', sa.Integer(), sa.ForeignKey('load.id')),
-        sa.Column('appointment_type', sa.Enum(
+        sa.Column('appointment_type', postgresql.ENUM(
             'PICKUP', 'DELIVERY', 'CROSS_DOCK', 'DROP_TRAILER',
             'LIVE_LOAD', 'LIVE_UNLOAD',
             name='appointment_type_enum', create_type=False), nullable=False),
-        sa.Column('status', sa.Enum(
+        sa.Column('status', postgresql.ENUM(
             'REQUESTED', 'CONFIRMED', 'CHECKED_IN', 'AT_DOCK',
             'LOADING', 'UNLOADING', 'COMPLETED', 'NO_SHOW',
             'CANCELLED', 'RESCHEDULED',
@@ -732,19 +712,19 @@ def upgrade():
     op.create_table(
         'shipment_exception',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id', ondelete='CASCADE'), nullable=False),
         sa.Column('leg_id', sa.Integer(), sa.ForeignKey('shipment_leg.id')),
-        sa.Column('exception_type', sa.Enum(
+        sa.Column('exception_type', postgresql.ENUM(
             'LATE_PICKUP', 'MISSED_PICKUP', 'LATE_DELIVERY', 'MISSED_DELIVERY',
             'ROUTE_DEVIATION', 'TEMPERATURE_EXCURSION', 'DAMAGE', 'SHORTAGE',
             'OVERAGE', 'REFUSED', 'ROLLED_CONTAINER', 'PORT_CONGESTION',
             'CUSTOMS_HOLD', 'WEATHER_DELAY', 'CARRIER_BREAKDOWN',
             'DETENTION', 'DEMURRAGE', 'ACCESSORIAL_DISPUTE',
             name='exception_type_enum', create_type=False), nullable=False),
-        sa.Column('severity', sa.Enum(
+        sa.Column('severity', postgresql.ENUM(
             'LOW', 'MEDIUM', 'HIGH', 'CRITICAL',
             name='exception_severity_enum', create_type=False), nullable=False, server_default='MEDIUM'),
-        sa.Column('resolution_status', sa.Enum(
+        sa.Column('resolution_status', postgresql.ENUM(
             'DETECTED', 'INVESTIGATING', 'ACTION_TAKEN', 'RESOLVED',
             'ESCALATED', 'CLOSED',
             name='exception_resolution_status_enum', create_type=False), nullable=False, server_default='DETECTED'),
@@ -797,7 +777,7 @@ def upgrade():
     op.create_table(
         'bill_of_lading',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id', ondelete='CASCADE'), nullable=False),
         sa.Column('bol_number', sa.String(100), nullable=False),
         sa.Column('shipper_name', sa.String(200)),
         sa.Column('shipper_address', sa.Text()),
@@ -822,7 +802,7 @@ def upgrade():
     op.create_table(
         'proof_of_delivery',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id', ondelete='CASCADE'), nullable=False),
         sa.Column('signed_by', sa.String(200)),
         sa.Column('signed_at', sa.DateTime()),
         sa.Column('delivery_date', sa.DateTime(), nullable=False),
@@ -847,9 +827,9 @@ def upgrade():
     op.create_table(
         'tracking_event',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id', ondelete='CASCADE'), nullable=False),
         sa.Column('leg_id', sa.Integer(), sa.ForeignKey('shipment_leg.id')),
-        sa.Column('event_type', sa.Enum(
+        sa.Column('event_type', postgresql.ENUM(
             'PICKED_UP', 'DEPARTED', 'IN_TRANSIT', 'ARRIVAL_AT_STOP',
             'DEPARTED_STOP', 'OUT_FOR_DELIVERY', 'DELIVERED',
             'ARRIVED_AT_TERMINAL', 'DEPARTED_TERMINAL',
@@ -913,7 +893,7 @@ def upgrade():
     op.create_table(
         'shipment_identifier',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('shipment.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('shipment_id', sa.Integer(), sa.ForeignKey('tms_shipment.id', ondelete='CASCADE'), nullable=False),
         sa.Column('identifier_type', sa.String(50), nullable=False,
                   comment='P44 types: BILL_OF_LADING, PURCHASE_ORDER, DELIVERY_NUMBER, etc.'),
         sa.Column('identifier_value', sa.String(200), nullable=False),
@@ -937,7 +917,7 @@ def upgrade():
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('site_id', sa.Integer(), sa.ForeignKey('site.id', ondelete='CASCADE'), nullable=False),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id', ondelete='CASCADE'), nullable=False),
-        sa.Column('facility_type', sa.Enum(
+        sa.Column('facility_type', postgresql.ENUM(
             'SHIPPER', 'CONSIGNEE', 'TERMINAL', 'CROSS_DOCK', 'YARD',
             'PORT', 'RAIL_TERMINAL', 'AIRPORT', 'DEPOT', 'BORDER_CROSSING',
             name='facility_type_enum', create_type=False), nullable=False),
@@ -1031,7 +1011,7 @@ def upgrade():
         sa.Column('primary_mode', sa.String(20), nullable=False, comment='FTL, LTL, INTERMODAL, OCEAN, AIR, RAIL'),
         sa.Column('alternate_modes', postgresql.JSON(astext_type=sa.Text()),
                   comment='["LTL", "INTERMODAL"] — fallback modes'),
-        sa.Column('direction', sa.Enum(
+        sa.Column('direction', postgresql.ENUM(
             'OUTBOUND', 'INBOUND', 'INTER_FACILITY', 'RETURN',
             name='lane_direction_enum', create_type=False)),
         sa.Column('distance_miles', sa.Double()),
@@ -1073,7 +1053,7 @@ def upgrade():
         sa.Column('carrier_id', sa.Integer(), sa.ForeignKey('carrier.id', ondelete='CASCADE'), nullable=False),
         sa.Column('contract_number', sa.String(100), nullable=False),
         sa.Column('description', sa.String(500)),
-        sa.Column('status', sa.Enum(
+        sa.Column('status', postgresql.ENUM(
             'DRAFT', 'ACTIVE', 'EXPIRED', 'TERMINATED', 'RENEWED',
             name='contract_status_enum', create_type=False), nullable=False, server_default='DRAFT'),
         sa.Column('effective_date', sa.Date(), nullable=False),
@@ -1137,7 +1117,7 @@ def upgrade():
         sa.Column('forecast_loads_p10', sa.Double(), comment='10th percentile — low scenario'),
         sa.Column('forecast_loads_p50', sa.Double(), comment='50th percentile — most likely'),
         sa.Column('forecast_loads_p90', sa.Double(), comment='90th percentile — high scenario'),
-        sa.Column('forecast_method', sa.Enum(
+        sa.Column('forecast_method', postgresql.ENUM(
             'STATISTICAL', 'ML', 'CONSENSUS', 'EXTERNAL', 'CONFORMAL',
             name='forecast_method_enum', create_type=False)),
         sa.Column('model_id', sa.String(100), comment='ML model version that generated this'),
@@ -1198,7 +1178,7 @@ def upgrade():
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id', ondelete='CASCADE'), nullable=False),
         sa.Column('plan_version', sa.String(20), nullable=False, server_default='live'),
         sa.Column('plan_name', sa.String(200)),
-        sa.Column('status', sa.Enum(
+        sa.Column('status', postgresql.ENUM(
             'DRAFT', 'OPTIMIZING', 'READY', 'APPROVED', 'EXECUTING',
             'COMPLETED', 'SUPERSEDED',
             name='plan_status_enum', create_type=False), nullable=False, server_default='DRAFT'),
@@ -1243,7 +1223,7 @@ def upgrade():
         sa.Column('equipment_type', sa.String(30)),
         sa.Column('carrier_id', sa.Integer(), sa.ForeignKey('carrier.id')),
         sa.Column('rate_id', sa.Integer(), sa.ForeignKey('freight_rate.id')),
-        sa.Column('status', sa.Enum(
+        sa.Column('status', postgresql.ENUM(
             'PLANNED', 'CARRIER_ASSIGNED', 'TENDERED', 'CONFIRMED',
             'IN_EXECUTION', 'COMPLETED', 'CANCELLED',
             name='plan_item_status_enum', create_type=False), nullable=False, server_default='PLANNED'),
@@ -1335,39 +1315,18 @@ def downgrade():
     op.drop_table('commodity_hierarchy')
 
     # ------------------------------------------------------------------
-    # Remove columns added to existing shipment table
+    # Drop tms_shipment table
     # ------------------------------------------------------------------
-    _shipment_cols_to_remove = [
-        'shipment_number', 'origin_site_id', 'destination_site_id', 'lane_id',
-        'commodity_id', 'weight', 'weight_uom', 'volume', 'volume_uom',
-        'pallet_count', 'piece_count', 'declared_value', 'mode', 'required_equipment',
-        'is_hazmat', 'is_temperature_sensitive', 'temp_min', 'temp_max',
-        'requested_pickup_date', 'requested_delivery_date',
-        'earliest_pickup', 'latest_pickup', 'earliest_delivery', 'latest_delivery',
-        'actual_pickup_date', 'load_id', 'equipment_id',
-        'estimated_cost', 'actual_cost', 'freight_charge', 'accessorial_charges',
-        'total_charge', 'priority', 'service_level', 'special_instructions',
-        'reference_numbers', 'current_lat', 'current_lon',
-        'estimated_arrival', 'eta_confidence',
-        'p44_shipment_id', 'p44_tracking_url', 'external_identifiers',
-        'tenant_id', 'config_id',
-    ]
-    # Drop shipment indexes added by this migration
     for idx_name in [
-        'idx_shipment_tenant_status', 'idx_shipment_dates_tms',
-        'idx_shipment_carrier_status', 'idx_shipment_lane_status',
-        'idx_shipment_origin_dest',
+        'idx_tms_shipment_tenant_status', 'idx_tms_shipment_dates',
+        'idx_tms_shipment_carrier', 'idx_tms_shipment_lane',
+        'idx_tms_shipment_origin_dest',
     ]:
         try:
-            op.drop_index(idx_name, table_name='shipment')
+            op.drop_index(idx_name, table_name='tms_shipment')
         except Exception:
             pass
-
-    for col_name in _shipment_cols_to_remove:
-        try:
-            op.drop_column('shipment', col_name)
-        except Exception:
-            pass
+    op.drop_table('tms_shipment')
 
     # ------------------------------------------------------------------
     # Drop enum types

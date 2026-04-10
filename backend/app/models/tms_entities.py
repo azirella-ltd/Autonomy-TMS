@@ -540,13 +540,18 @@ class CarrierScorecard(Base):
 class Shipment(Base):
     """
     Unit of freight movement from origin to destination
-    TMS Entity: shipment
+    TMS Entity: tms_shipment (distinct from sc_entities.Shipment)
     Maps to PurchaseOrder in SC context — the demand signal for transportation
 
     A shipment represents a customer's request to move freight. It may be
     consolidated into a Load with other shipments.
+
+    NOTE: We use tms_shipment table name to avoid conflict with the
+    sc_entities.Shipment class which uses String IDs and a different schema.
+    The two represent different things: TMS Shipment is freight-domain;
+    SC Shipment is material-visibility-domain.
     """
-    __tablename__ = "shipment"
+    __tablename__ = "tms_shipment"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     shipment_number = Column(String(100), nullable=False, comment="Business reference number")
@@ -662,7 +667,7 @@ class ShipmentLeg(Base):
     __tablename__ = "shipment_leg"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id", ondelete="CASCADE"), nullable=False)
     leg_sequence = Column(Integer, nullable=False, comment="1-based ordering")
 
     from_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
@@ -793,7 +798,7 @@ class LoadItem(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     load_id = Column(Integer, ForeignKey("load.id", ondelete="CASCADE"), nullable=False)
-    shipment_id = Column(Integer, ForeignKey("shipment.id"), nullable=False)
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id"), nullable=False)
     commodity_id = Column(Integer, ForeignKey("commodity.id"))
 
     quantity = Column(Double)
@@ -887,7 +892,7 @@ class FreightTender(Base):
     __tablename__ = "freight_tender"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"))
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id", ondelete="CASCADE"))
     load_id = Column(Integer, ForeignKey("load.id", ondelete="CASCADE"))
     carrier_id = Column(Integer, ForeignKey("carrier.id"), nullable=False)
     rate_id = Column(Integer, ForeignKey("freight_rate.id"))
@@ -970,7 +975,7 @@ class Appointment(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     site_id = Column(Integer, ForeignKey("site.id", ondelete="CASCADE"), nullable=False)
     dock_door_id = Column(Integer, ForeignKey("dock_door.id"))
-    shipment_id = Column(Integer, ForeignKey("shipment.id"))
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id"))
     load_id = Column(Integer, ForeignKey("load.id"))
 
     appointment_type = Column(SAEnum(AppointmentType, name="appointment_type_enum"), nullable=False)
@@ -1030,7 +1035,7 @@ class ShipmentException(Base):
     __tablename__ = "shipment_exception"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id", ondelete="CASCADE"), nullable=False)
     leg_id = Column(Integer, ForeignKey("shipment_leg.id"))
 
     exception_type = Column(SAEnum(ExceptionType, name="exception_type_enum"), nullable=False)
@@ -1130,7 +1135,7 @@ class BillOfLading(Base):
     __tablename__ = "bill_of_lading"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id", ondelete="CASCADE"), nullable=False)
     bol_number = Column(String(100), nullable=False)
 
     shipper_name = Column(String(200))
@@ -1171,7 +1176,7 @@ class ProofOfDelivery(Base):
     __tablename__ = "proof_of_delivery"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id", ondelete="CASCADE"), nullable=False)
 
     signed_by = Column(String(200))
     signed_at = Column(DateTime)
@@ -1266,7 +1271,7 @@ class TrackingEvent(Base):
     __tablename__ = "tracking_event"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id", ondelete="CASCADE"), nullable=False)
     leg_id = Column(Integer, ForeignKey("shipment_leg.id"))
 
     # p44-aligned fields
@@ -1359,7 +1364,7 @@ class ShipmentIdentifier(Base):
     __tablename__ = "shipment_identifier"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shipment_id = Column(Integer, ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+    shipment_id = Column(Integer, ForeignKey("tms_shipment.id", ondelete="CASCADE"), nullable=False)
 
     identifier_type = Column(String(50), nullable=False,
                              comment="P44 types: BILL_OF_LADING, PURCHASE_ORDER, DELIVERY_NUMBER, SKU, STOCK_KEEPING_UNIT, UNIVERSAL_PRODUCT_CODE")

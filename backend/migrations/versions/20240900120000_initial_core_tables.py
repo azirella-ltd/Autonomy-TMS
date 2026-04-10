@@ -24,37 +24,43 @@ def _utc_now() -> sa.text:
 def upgrade() -> None:
     bind = op.get_bind()
 
+    # Define enum types with create_type=False so the inline column refs
+    # below don't try to create them again. We create them explicitly via
+    # checkfirst=True so this migration is idempotent against existing types.
     player_role_enum = sa.Enum(
         "RETAILER", "WHOLESALER", "DISTRIBUTOR", "MANUFACTURER",
         name="player_role_enum",
+        create_type=False,
     )
-    player_role_enum.create(bind, checkfirst=True)
+    sa.Enum(
+        "RETAILER", "WHOLESALER", "DISTRIBUTOR", "MANUFACTURER",
+        name="player_role_enum",
+    ).create(bind, checkfirst=True)
 
-    player_type_enum = sa.Enum("HUMAN", "AI", name="player_type_enum")
-    player_type_enum.create(bind, checkfirst=True)
+    player_type_enum = sa.Enum("HUMAN", "AI", name="player_type_enum", create_type=False)
+    sa.Enum("HUMAN", "AI", name="player_type_enum").create(bind, checkfirst=True)
 
     player_strategy_enum = sa.Enum(
-        "MANUAL",
-        "RANDOM",
-        "FIXED",
-        "DEMAND_AVERAGE",
-        "TREND_FOLLOWER",
-        "LLM_BASIC",
-        "LLM_ADVANCED",
-        "LLM_REINFORCEMENT",
+        "MANUAL", "RANDOM", "FIXED", "DEMAND_AVERAGE", "TREND_FOLLOWER",
+        "LLM_BASIC", "LLM_ADVANCED", "LLM_REINFORCEMENT",
         name="player_strategy_enum",
+        create_type=False,
     )
-    player_strategy_enum.create(bind, checkfirst=True)
+    sa.Enum(
+        "MANUAL", "RANDOM", "FIXED", "DEMAND_AVERAGE", "TREND_FOLLOWER",
+        "LLM_BASIC", "LLM_ADVANCED", "LLM_REINFORCEMENT",
+        name="player_strategy_enum",
+    ).create(bind, checkfirst=True)
 
     game_status_enum = sa.Enum(
-        "CREATED",
-        "STARTED",
-        "ROUND_IN_PROGRESS",
-        "ROUND_COMPLETED",
-        "FINISHED",
+        "CREATED", "STARTED", "ROUND_IN_PROGRESS", "ROUND_COMPLETED", "FINISHED",
         name="game_status_enum",
+        create_type=False,
     )
-    game_status_enum.create(bind, checkfirst=True)
+    sa.Enum(
+        "CREATED", "STARTED", "ROUND_IN_PROGRESS", "ROUND_COMPLETED", "FINISHED",
+        name="game_status_enum",
+    ).create(bind, checkfirst=True)
 
     # Users ------------------------------------------------------------------
     op.create_table(

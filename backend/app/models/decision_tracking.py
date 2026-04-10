@@ -35,6 +35,18 @@ class DecisionType(str, Enum):
     SAFETY_STOCK = "safety_stock"
     REPLENISHMENT = "replenishment"
     EXCEPTION_RESOLUTION = "exception_resolution"
+    # TMS decision types — one per TRM agent
+    CAPACITY_PROMISE = "capacity_promise"
+    SHIPMENT_TRACKING = "shipment_tracking"
+    DEMAND_SENSING = "demand_sensing"
+    CAPACITY_BUFFER = "capacity_buffer"
+    EXCEPTION_MANAGEMENT = "exception_management"
+    FREIGHT_PROCUREMENT = "freight_procurement"
+    BROKER_ROUTING = "broker_routing"
+    DOCK_SCHEDULING = "dock_scheduling"
+    LOAD_BUILD = "load_build"
+    INTERMODAL_TRANSFER = "intermodal_transfer"
+    EQUIPMENT_REPOSITION = "equipment_reposition"
 
 
 class DecisionStatus(str, Enum):

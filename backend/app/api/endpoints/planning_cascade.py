@@ -1385,10 +1385,23 @@ async def get_trm_decisions(
     from app.models.decision_tracking import AgentDecision, DecisionType, DecisionStatus as DTStatus
 
     trm_to_decision_type = {
+        # SC TRM types (legacy)
         "atp": DecisionType.ATP_ALLOCATION,
         "rebalancing": DecisionType.INVENTORY_REBALANCE,
         "po_creation": DecisionType.PURCHASE_ORDER,
         "order_tracking": DecisionType.EXCEPTION_RESOLUTION,
+        # TMS TRM types
+        "capacity_promise": DecisionType.CAPACITY_PROMISE,
+        "shipment_tracking": DecisionType.SHIPMENT_TRACKING,
+        "demand_sensing": DecisionType.DEMAND_SENSING,
+        "capacity_buffer": DecisionType.CAPACITY_BUFFER,
+        "exception_management": DecisionType.EXCEPTION_MANAGEMENT,
+        "freight_procurement": DecisionType.FREIGHT_PROCUREMENT,
+        "broker_routing": DecisionType.BROKER_ROUTING,
+        "dock_scheduling": DecisionType.DOCK_SCHEDULING,
+        "load_build": DecisionType.LOAD_BUILD,
+        "intermodal_transfer": DecisionType.INTERMODAL_TRANSFER,
+        "equipment_reposition": DecisionType.EQUIPMENT_REPOSITION,
     }
 
     if trm_type not in trm_to_decision_type:
@@ -1623,10 +1636,23 @@ async def get_trm_summary(
     from app.models.decision_tracking import AgentDecision, DecisionType, DecisionStatus as DTStatus
 
     trm_to_decision_type = {
+        # SC TRM types (legacy)
         "atp": DecisionType.ATP_ALLOCATION,
         "rebalancing": DecisionType.INVENTORY_REBALANCE,
         "po_creation": DecisionType.PURCHASE_ORDER,
         "order_tracking": DecisionType.EXCEPTION_RESOLUTION,
+        # TMS TRM types
+        "capacity_promise": DecisionType.CAPACITY_PROMISE,
+        "shipment_tracking": DecisionType.SHIPMENT_TRACKING,
+        "demand_sensing": DecisionType.DEMAND_SENSING,
+        "capacity_buffer": DecisionType.CAPACITY_BUFFER,
+        "exception_management": DecisionType.EXCEPTION_MANAGEMENT,
+        "freight_procurement": DecisionType.FREIGHT_PROCUREMENT,
+        "broker_routing": DecisionType.BROKER_ROUTING,
+        "dock_scheduling": DecisionType.DOCK_SCHEDULING,
+        "load_build": DecisionType.LOAD_BUILD,
+        "intermodal_transfer": DecisionType.INTERMODAL_TRANSFER,
+        "equipment_reposition": DecisionType.EQUIPMENT_REPOSITION,
     }
 
     if trm_type not in trm_to_decision_type:
