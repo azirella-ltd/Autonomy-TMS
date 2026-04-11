@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { ChevronRight } from 'lucide-react';
 
 const MIN_PANEL_WIDTH = 300;

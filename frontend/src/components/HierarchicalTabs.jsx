@@ -17,7 +17,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useAuth } from '../contexts/AuthContext';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 // ── Category definitions ────────────────────────────────────────────────────
 // Maps navigation sections to consolidated top-level tabs.

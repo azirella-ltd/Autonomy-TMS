@@ -20,7 +20,7 @@ import {
   XCircle,
   ChevronDown,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const HealthStatusCard = ({ check }) => {
   const [expanded, setExpanded] = useState(false);

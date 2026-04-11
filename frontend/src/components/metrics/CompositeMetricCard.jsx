@@ -12,7 +12,7 @@ import {
   TrendingUp,
   TrendingDown,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Card, CardContent, Progress } from '../common';
 import Sparkline from './Sparkline';
 

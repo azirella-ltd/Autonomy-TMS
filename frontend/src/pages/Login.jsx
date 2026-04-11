@@ -11,7 +11,7 @@ import { toast } from 'react-toastify';
 import ContactSystemAdminForm from '../components/ContactSystemAdminForm';
 import { Button, Input, Label, Alert, AlertDescription, Spinner } from '../components/common';
 import { AlertCircle, Eye, EyeOff, HelpCircle, Mail, KeyRound } from 'lucide-react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 /**
  * Check if user has ADH (Adaptive Decision Hierarchy) capabilities via API.

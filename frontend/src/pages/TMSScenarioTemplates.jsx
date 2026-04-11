@@ -16,7 +16,7 @@ import {
   Badge,
   Button,
 } from '../components/common';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Play, Users, Bot, Clock, Target } from 'lucide-react';
 import { TMS_SCENARIO_TEMPLATES } from '../config/tmsScenarioTemplates';
 

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import * as PopoverPrimitive from '@radix-ui/react-popover';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export const Popover = PopoverPrimitive.Root;
 

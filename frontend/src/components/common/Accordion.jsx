@@ -6,7 +6,7 @@
 
 import React from 'react';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { ChevronDown } from 'lucide-react';
 
 export const Accordion = AccordionPrimitive.Root;

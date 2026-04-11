@@ -13,7 +13,7 @@ import { Button } from '../common/Button';
 import { Alert } from '../common/Alert';
 import { Badge } from '../common/Badge';
 import { Input, Label, FormField } from '../common/Input';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export default function PlanningMethodStep({ config, onUpdate, onNext, onBack }) {
   const [expandedRecourse, setExpandedRecourse] = useState(false);

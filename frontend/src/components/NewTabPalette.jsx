@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, X } from 'lucide-react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';

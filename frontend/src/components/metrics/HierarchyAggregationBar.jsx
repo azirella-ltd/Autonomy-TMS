@@ -18,7 +18,7 @@
 
 import React, { useMemo } from 'react';
 import { MapPin, Package, Calendar, ChevronRight, X } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Card, CardContent, Badge } from '../common';
 
 const GEO_LEVELS = ['all', 'region', 'state', 'city', 'site'];

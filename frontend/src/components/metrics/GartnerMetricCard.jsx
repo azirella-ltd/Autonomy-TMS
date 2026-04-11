@@ -13,7 +13,7 @@ import {
   Minus,
   Bot,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Card, CardContent, Badge, Progress } from '../common';
 
 const TIER_BADGES = {

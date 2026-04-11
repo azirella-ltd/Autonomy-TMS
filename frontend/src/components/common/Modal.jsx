@@ -14,7 +14,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from './Dialog';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export const Modal = ({
   isOpen,

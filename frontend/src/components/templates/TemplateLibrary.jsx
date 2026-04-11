@@ -43,7 +43,7 @@ import {
   ModalFooter,
 } from '../common';
 import { api } from '../../services/api';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const TemplateLibrary = ({ onSelectTemplate, filterCategory }) => {
   const [templates, setTemplates] = useState([]);

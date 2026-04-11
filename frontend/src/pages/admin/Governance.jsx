@@ -25,7 +25,7 @@ import {
   Sliders, ChevronDown, ChevronUp, Copy,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { useAuth } from '../../contexts/AuthContext';
 
 // TMS Agent function names — grouped by decision cycle phase

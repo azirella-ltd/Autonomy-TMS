@@ -36,7 +36,7 @@ import {
   FormField,
 } from '../common';
 import { api } from '../../services/api';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const INDUSTRIES = [
   { value: 'general', label: 'General', description: 'Standard supply chain' },

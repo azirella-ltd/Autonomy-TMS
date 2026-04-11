@@ -40,7 +40,7 @@ import {
   TableCell,
   useToast,
 } from "../components/common";
-import { cn } from "../lib/utils/cn";
+import { cn } from "@azirella-ltd/autonomy-frontend";
 import { AlertTriangle, Download } from "lucide-react";
 import {
   LineChart,

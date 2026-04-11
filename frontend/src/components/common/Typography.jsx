@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const typographyVariants = {
   h1: 'text-4xl font-bold tracking-tight',

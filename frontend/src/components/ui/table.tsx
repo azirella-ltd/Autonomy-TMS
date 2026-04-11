@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { cn } from "../../lib/utils/cn";
+import { cn } from "@azirella-ltd/autonomy-frontend";
 
 const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (

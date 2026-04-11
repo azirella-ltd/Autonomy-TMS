@@ -15,7 +15,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { ChevronRight, ChevronDown, Check, Globe, Package } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const LEVEL_COLORS = {
   COMPANY: 'text-violet-600',

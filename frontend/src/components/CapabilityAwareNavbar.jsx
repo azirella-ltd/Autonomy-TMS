@@ -46,7 +46,7 @@ import {
   CollapsibleTrigger,
 } from './ui/collapsible';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { isSystemAdmin, isTenantAdmin } from '../utils/authUtils';

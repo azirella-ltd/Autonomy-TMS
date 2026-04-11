@@ -1,6 +1,6 @@
 import React from "react";
 import PropTypes from "prop-types";
-import { cn } from "../../lib/utils/cn";
+import { cn } from "@azirella-ltd/autonomy-frontend";
 
 const FLOW_COLOR = "#475569";
 const NODE_COLOR_GRADIENT = "linear-gradient(90deg, #10b981 0%, #f97316 50%, #dc2626 100%)";

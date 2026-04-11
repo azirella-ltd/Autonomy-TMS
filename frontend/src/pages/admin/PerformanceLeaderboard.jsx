@@ -17,7 +17,7 @@ import {
   Trophy, TrendingUp, TrendingDown, Minus, RefreshCw, ChevronRight,
   Users, Award, BarChart3, Filter, Medal,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { api } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 

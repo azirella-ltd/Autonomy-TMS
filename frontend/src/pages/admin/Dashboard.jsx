@@ -40,7 +40,7 @@ import {
   CheckCircle,
   Network,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const tabItems = [
   { value: 'scenarios', label: 'Scenarios', icon: <FlaskConical className="h-4 w-4" /> },

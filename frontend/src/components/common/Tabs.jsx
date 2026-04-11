@@ -6,7 +6,7 @@
 
 import React from 'react';
 import * as TabsPrimitive from '@radix-ui/react-tabs';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export const Tabs = React.forwardRef(({
   className,

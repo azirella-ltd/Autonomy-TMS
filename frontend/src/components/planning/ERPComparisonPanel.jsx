@@ -11,7 +11,7 @@ import {
 import { GitCompare, TrendingUp, TrendingDown, Minus, RefreshCw } from 'lucide-react';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const DeltaIndicator = ({ delta_pct, inverse = false }) => {
   if (!delta_pct || delta_pct === 0) return <Minus className="h-4 w-4 text-muted-foreground" />;

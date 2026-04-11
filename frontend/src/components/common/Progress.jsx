@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const sizeClasses = {
   sm: 'h-1.5',

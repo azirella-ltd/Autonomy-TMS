@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { VoiceState } from '../hooks/useVoiceAssistant';
 
 // ── Per-state visual config ───────────────────────────────────────────────

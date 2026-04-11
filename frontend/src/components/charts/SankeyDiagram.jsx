@@ -8,7 +8,7 @@ import {
   sankeyRight,
   sankeyLinkHorizontal,
 } from 'd3-sankey';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const ALIGN_FUNCTIONS = {

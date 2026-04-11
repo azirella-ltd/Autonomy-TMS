@@ -23,7 +23,7 @@ import {
   CheckCircle2 as CompletedIcon,
   Users as PeopleIcon,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const DecisionPhaseIndicator = ({
   phase = 'waiting',

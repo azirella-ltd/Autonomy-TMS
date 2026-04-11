@@ -25,7 +25,7 @@ import {
   Badge,
   Spinner,
 } from '../common';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import {
   LineChart,
   Line,

@@ -42,7 +42,7 @@ import {
 import AgentRecommendationPanel from './AgentRecommendationPanel';
 import ATPProjectionChart from './ATPProjectionChart';
 import { api } from '../../services/api';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const FulfillmentForm = ({
   atp,

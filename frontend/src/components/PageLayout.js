@@ -10,7 +10,7 @@
 import React from 'react';
 import { Helmet } from 'react-helmet-async';
 import { H1, H2 } from './common';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const maxWidthClasses = {
   'container.sm': 'max-w-2xl',

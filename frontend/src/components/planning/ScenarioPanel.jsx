@@ -12,7 +12,7 @@ import {
 import { GitBranch, Plus, BarChart3, ArrowUp, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const TYPE_COLORS = {
   BASELINE: 'bg-green-100 text-green-700',

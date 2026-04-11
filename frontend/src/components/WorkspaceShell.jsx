@@ -23,7 +23,7 @@ import useTabStore from '../stores/useTabStore';
 import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 import ProvisioningBanner from './ProvisioningBanner';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Send, Loader2, Mic, MicOff } from 'lucide-react';
 import Markdown from 'react-markdown';
 import AzirellaAvatar from './AzirellaAvatar';

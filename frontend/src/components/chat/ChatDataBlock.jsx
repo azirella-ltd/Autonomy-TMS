@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import {
   Package,
   BarChart3,

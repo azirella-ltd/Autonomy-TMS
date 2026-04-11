@@ -28,7 +28,7 @@ import {
   RefreshCw,
   Lightbulb,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import trmApi from '../../services/trmApi';
 import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';

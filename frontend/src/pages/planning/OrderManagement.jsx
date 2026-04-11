@@ -65,7 +65,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 // Note: Filter icon available if needed: import { Filter } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { api } from '../../services/api';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import * as SeparatorPrimitive from '@radix-ui/react-separator';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export const Separator = React.forwardRef(({
   className,

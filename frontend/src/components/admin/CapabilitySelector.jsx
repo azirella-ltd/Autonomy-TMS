@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Card, Button, Alert, Badge } from '../common';
 import { ChevronDown, Square, CheckSquare, MinusSquare } from 'lucide-react';
 

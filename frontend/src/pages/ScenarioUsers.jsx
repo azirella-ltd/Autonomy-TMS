@@ -15,7 +15,7 @@ import {
   SelectOption,
 } from '../components/common';
 import { Plus, ArrowLeft, User, Bot } from 'lucide-react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import PageLayout from '../components/PageLayout';
 import simulationApi, { api } from '../services/api';
 import { getAllConfigs as getAllSupplyConfigs } from '../services/supplyChainConfigService';

@@ -9,7 +9,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import useTabStore from '../stores/useTabStore';
 
 const CategoryBar = ({ sections, activeCategoryId, onSelectCategory, onOpenPalette }) => {

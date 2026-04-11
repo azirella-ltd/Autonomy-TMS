@@ -44,7 +44,7 @@ import {
   User as HumanIcon,
   Trophy as TrophyIcon,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const DecisionComparisonPanel = ({
   roundResults = [],

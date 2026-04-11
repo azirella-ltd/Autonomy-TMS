@@ -19,7 +19,7 @@ import {
   PinOff,
 } from 'lucide-react';
 import Markdown from 'react-markdown';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 // ─── Message Bubble ─────────────────────────────────────────────────────────────
 const MessageBubble = ({ role, children }) => {

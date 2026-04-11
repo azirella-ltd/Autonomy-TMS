@@ -27,12 +27,11 @@ import {
   Sparkles,
   ChevronDown,
 } from 'lucide-react';
-import { DecisionStream as UIDecisionStream } from '@azirella-ltd/autonomy-frontend';
+import { DecisionStream as UIDecisionStream, cn } from '@azirella-ltd/autonomy-frontend';
 import { Badge, Button, Card, Input } from '../components/common';
 import ChatDataBlock from '../components/chat/ChatDataBlock';
 import { decisionStreamApi } from '../services/decisionStreamApi';
 import { simulationApi } from '../services/api';
-import { cn } from '../lib/utils/cn';
 import { useDisplayPreferences } from '../contexts/DisplayPreferencesContext';
 import { useAuth } from '../contexts/AuthContext';
 

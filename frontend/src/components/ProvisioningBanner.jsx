@@ -14,7 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 import { AlertTriangle, Info, X, Settings } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const ProvisioningBanner = () => {
   const { user, provisioningStatus, provisioningStep, dismissProvisioningBanner } = useAuth();

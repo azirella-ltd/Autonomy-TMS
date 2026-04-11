@@ -25,7 +25,7 @@ import {
   SmallText,
   Spinner,
 } from '../common';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Play, FlaskConical } from 'lucide-react';
 import { testModel } from '../../services/trmApi';
 import { api } from '../../services/api';

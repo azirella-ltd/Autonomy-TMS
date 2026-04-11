@@ -14,7 +14,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { Card, CardContent, Button, Alert, Input, Label, Select, SelectOption } from '../components/common';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const Settings = () => {
   const { user } = useAuth();

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export const TooltipProvider = TooltipPrimitive.Provider;
 

@@ -6,7 +6,7 @@
  */
 
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { X, CheckCircle2, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 
 const ToastContext = createContext(null);

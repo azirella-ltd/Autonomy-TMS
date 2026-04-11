@@ -34,7 +34,7 @@ import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { isSystemAdmin } from '../utils/authUtils';
 import simulationApi, { api } from '../services/api';
 import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import AzirellaPopup from './AzirellaPopup';
 import AzirellaAvatar from './AzirellaAvatar';
 import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';

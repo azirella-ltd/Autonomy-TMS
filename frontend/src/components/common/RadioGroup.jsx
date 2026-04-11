@@ -6,7 +6,7 @@
 
 import React from 'react';
 import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Circle } from 'lucide-react';
 
 export const RadioGroup = React.forwardRef(({

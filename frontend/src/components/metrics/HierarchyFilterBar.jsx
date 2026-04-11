@@ -12,7 +12,7 @@ import {
   Package,
   Calendar,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Card, CardContent, Badge } from '../common';
 
 const DIMENSION_CONFIG = {

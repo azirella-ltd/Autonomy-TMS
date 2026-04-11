@@ -6,7 +6,7 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../services/api';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import {
   Card, CardContent, CardHeader, CardTitle,
   Badge, Button, Spinner, Alert, AlertDescription,

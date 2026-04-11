@@ -17,7 +17,7 @@ import {
   ShoppingCart, Factory, Package, ArrowRight, Undo2,
   ChevronRight, Clock, CheckCircle2, XCircle,
 } from 'lucide-react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { useAuth } from '../contexts/AuthContext';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import api from '../services/api';

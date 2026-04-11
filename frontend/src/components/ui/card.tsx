@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { cn } from "../../lib/utils/cn";
+import { cn } from "@azirella-ltd/autonomy-frontend";
 
 const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => (
   <div ref={ref} className={cn("border rounded-lg bg-card text-card-foreground shadow-sm", className)} {...props} />

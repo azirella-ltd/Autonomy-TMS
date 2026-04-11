@@ -32,7 +32,7 @@ import {
   Alert,
   Text,
 } from '../common';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import CapabilitySelector from './CapabilitySelector';
 import HierarchyScopePicker from './HierarchyScopePicker';
 

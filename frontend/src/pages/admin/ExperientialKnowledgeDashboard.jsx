@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 // ── Status & Type Colors ────────────────────────────────────────────────────
 

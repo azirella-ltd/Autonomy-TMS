@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { Helmet } from 'react-helmet-async';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const PageLayout = ({
   title,

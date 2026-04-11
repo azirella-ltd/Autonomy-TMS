@@ -52,7 +52,7 @@ import {
   Shield,
   MapPin,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const tabItems = [
   { value: 'guided', label: 'Guided Setup', icon: <Zap className="h-4 w-4" /> },

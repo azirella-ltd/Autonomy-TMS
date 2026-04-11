@@ -18,7 +18,7 @@ import {
   Zap, BarChart3, Target, Layers, GitBranch, Filter, Package, Clock,
   ChevronRight, Box,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import api from '../../services/api';
 import Sparkline from '../../components/metrics/Sparkline';
 import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../../components/metrics/HierarchyAggregationBar';

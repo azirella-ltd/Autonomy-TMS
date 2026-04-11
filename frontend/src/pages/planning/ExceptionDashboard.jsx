@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../../services/api';
 import { submitTRMAction } from '../../services/planningCascadeApi';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import {
   Card, CardContent, CardHeader, CardTitle,
   Badge, Button, Spinner, Alert, AlertDescription,

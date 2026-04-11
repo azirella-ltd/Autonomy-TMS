@@ -27,7 +27,7 @@ import {
   SmallText,
   Caption,
 } from '../common';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { testGNNModel, getGNNModelInfo } from '../../services/gnnApi';
 
 const GNNTestPanel = ({ selectedConfig }) => {

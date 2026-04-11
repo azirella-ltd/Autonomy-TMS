@@ -37,7 +37,7 @@ import {
   ChevronUp as ExpandLessIcon,
   Info as InfoIcon,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const PipelineVisibility = ({
   shipments = [],

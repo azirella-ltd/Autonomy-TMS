@@ -42,7 +42,7 @@ import {
   buildTimePeriodDisplay,
 } from "../utils/timePeriodUtils";
 import { Card, CardContent, Button, Badge, Spinner } from "../components/common";
-import { cn } from "../lib/utils/cn";
+import { cn } from "@azirella-ltd/autonomy-frontend";
 
 const ScenarioRoom = () => {
   const { scenarioId } = useParams();

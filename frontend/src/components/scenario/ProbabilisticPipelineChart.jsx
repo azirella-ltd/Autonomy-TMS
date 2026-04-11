@@ -47,7 +47,7 @@ import {
   Clock as ScheduleIcon,
 } from 'lucide-react';
 import simulationApi from '../../services/api';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const ProbabilisticPipelineChart = ({
   gameId,

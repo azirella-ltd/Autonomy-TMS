@@ -6,7 +6,7 @@
 
 import React, { createContext, useContext } from 'react';
 import * as ToggleGroupPrimitive from '@radix-ui/react-toggle-group';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const toggleVariants = {
   default: 'bg-transparent',

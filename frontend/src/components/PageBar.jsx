@@ -8,7 +8,7 @@
 
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import useTabStore from '../stores/useTabStore';
 
 const PageBar = ({ items }) => {

@@ -11,7 +11,7 @@ import React, { useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, ChevronRight } from 'lucide-react';
 import { Typography } from './common';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 // Route path to label mapping
 const ROUTE_LABELS = {

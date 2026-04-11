@@ -21,7 +21,7 @@ import {
   MessageSquare, TrendingDown, RefreshCw, ChevronRight,
   Database, CheckCircle, XCircle, Edit3, ThumbsUp, Clock,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { api } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 

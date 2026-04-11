@@ -22,7 +22,7 @@ import {
   Bot, TrendingUp, TrendingDown, RefreshCw, ChevronRight,
   Award, BarChart3, PieChart as PieChartIcon, Minus,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { api } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 

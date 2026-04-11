@@ -17,7 +17,7 @@ import {
 } from 'recharts';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const Delta = ({ value, inverse }) => {
   if (!value || value === 0) return <span className="text-muted-foreground">0%</span>;

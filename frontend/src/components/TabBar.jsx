@@ -10,7 +10,7 @@ import { Plus, X, Sparkles, Settings, LayoutGrid } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import useTabStore from '../stores/useTabStore';
 import NewTabPalette from './NewTabPalette';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const TabBar = () => {
   const [paletteOpen, setPaletteOpen] = useState(false);

@@ -19,7 +19,7 @@ import {
   TableHead,
   TableRow,
 } from '../common';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import {
   Play as PlayIcon,
   Square as StopIcon,

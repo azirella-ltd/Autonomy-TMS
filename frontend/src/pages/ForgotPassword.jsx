@@ -4,7 +4,7 @@ import { toast } from 'react-toastify';
 import { CheckCircle2, Mail } from 'lucide-react';
 import simulationApi from '../services/api';
 import { Card, CardContent, Button, Alert, Input, Label } from '../components/common';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState('');

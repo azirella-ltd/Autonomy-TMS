@@ -38,7 +38,7 @@ import {
   Wrench,
   Sparkles,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { api } from '../../services/api';
 import HierarchyFilterBar from '../../components/metrics/HierarchyFilterBar';
 import GartnerMetricCard from '../../components/metrics/GartnerMetricCard';

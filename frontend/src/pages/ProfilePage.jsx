@@ -43,7 +43,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const ProfilePage = () => {
   const { user, updateProfile } = useAuth();

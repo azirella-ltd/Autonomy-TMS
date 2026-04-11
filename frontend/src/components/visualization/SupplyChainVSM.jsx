@@ -18,7 +18,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 // Color palette
 const SITE_COLORS = {

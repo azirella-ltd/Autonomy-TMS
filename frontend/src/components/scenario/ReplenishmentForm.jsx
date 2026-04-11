@@ -51,7 +51,7 @@ import {
 } from 'lucide-react';
 import AgentRecommendationPanel from './AgentRecommendationPanel';
 import { api } from '../../services/api';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const ReplenishmentForm = ({
   currentInventory,

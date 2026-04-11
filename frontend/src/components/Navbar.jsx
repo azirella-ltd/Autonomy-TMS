@@ -31,7 +31,7 @@ import {
   Database as DataIcon,
   Building2 as GroupsIcon,
 } from "lucide-react";
-import { cn } from "../lib/utils/cn";
+import { cn } from "@azirella-ltd/autonomy-frontend";
 import { useAuth } from "../contexts/AuthContext";
 import { useActiveConfig } from "../contexts/ActiveConfigContext";
 import { isSystemAdmin, isTenantAdmin } from "../utils/authUtils";

@@ -45,7 +45,7 @@ import {
   History as HistoryIcon,
   Lightbulb as AlternativeIcon,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const AgentRecommendationPanel = ({
   recommendation,

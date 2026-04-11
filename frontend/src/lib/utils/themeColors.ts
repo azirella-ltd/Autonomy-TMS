@@ -1,35 +1,11 @@
 /**
- * Class Name Utility (cn)
+ * Theme color utilities
  *
- * Combines clsx and tailwind-merge for optimal Tailwind CSS class management.
- * - clsx: Conditionally constructs className strings
- * - tailwind-merge: Intelligently merges Tailwind classes (later classes override earlier ones)
- *
- * Usage:
- * ```tsx
- * import { cn } from '@/lib/utils';
- *
- * // Basic usage
- * <div className={cn("text-base", "text-lg")} /> // Result: "text-lg"
- *
- * // Conditional classes
- * <div className={cn(
- *   "base-class",
- *   isActive && "active-class",
- *   error ? "error-class" : "success-class"
- * )} />
- *
- * // Merging with conflicts
- * <div className={cn("p-4 bg-red-500", "p-6")} /> // Result: "p-6 bg-red-500"
- * ```
+ * The `cn()` className utility was previously exported from this file but
+ * has moved to `@azirella-ltd/autonomy-frontend` (consume directly from the
+ * package). This file now contains only theme color helpers that read from
+ * CSS variables — no equivalent in the shared package today.
  */
-
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
 
 /**
  * Get the computed color value from a CSS variable

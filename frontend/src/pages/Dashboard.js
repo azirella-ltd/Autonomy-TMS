@@ -19,7 +19,7 @@ import {
   Slider,
   useToast,
 } from '../components/common';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import PageLayout from '../components/PageLayout';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import FilterBar from '../components/FilterBar';

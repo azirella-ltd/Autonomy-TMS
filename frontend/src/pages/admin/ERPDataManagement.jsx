@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import {
   Server, Database, Zap, Users, Activity, ChevronDown, ChevronRight,
   CheckCircle, Clock, Lock, Play, AlertTriangle, Upload, RefreshCw,

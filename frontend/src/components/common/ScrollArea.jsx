@@ -6,7 +6,7 @@
 
 import React from 'react';
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export const ScrollArea = React.forwardRef(({
   className,

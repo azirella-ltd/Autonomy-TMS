@@ -164,7 +164,7 @@ Replace MUI/Chakra imports with Autonomy UI Kit imports:
 ```jsx
 // At the top of the file
 import { Card, CardHeader, CardTitle, CardContent, Button, Alert, Badge, Spinner } from '../components/common';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { LayoutDashboard, Settings, User } from 'lucide-react';
 ```
 

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import { X } from 'lucide-react';
 
 export const Sheet = DialogPrimitive.Root;

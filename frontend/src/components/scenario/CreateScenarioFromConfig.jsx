@@ -18,7 +18,7 @@ import {
   AlertTitle,
   Spinner,
 } from '../common';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import {
   createScenarioFromConfig as createScenarioFromConfigService,
   getAllConfigs as getAllConfigsService,

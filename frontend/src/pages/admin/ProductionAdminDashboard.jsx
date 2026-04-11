@@ -42,7 +42,7 @@ import {
   ChevronRight,
   FolderTree,
 } from 'lucide-react';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 import ScenarioTreeViewer from '../../components/supply-chain-config/ScenarioTreeViewer';
 import { api } from '../../services/api';
 

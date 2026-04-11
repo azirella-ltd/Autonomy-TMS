@@ -18,7 +18,7 @@ import {
   TabPanel,
 } from '../components/common';
 import { Shield, Monitor, Trash2 } from 'lucide-react';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const Profile = () => {
   const { user, updateProfile, changePassword } = useAuth();

@@ -43,7 +43,7 @@ import {
   Info as InfoIcon,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { cn } from '../../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 const ATPProjectionChart = ({
   gameId,

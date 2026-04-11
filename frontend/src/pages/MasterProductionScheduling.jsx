@@ -18,7 +18,7 @@ import { api } from '../services/api';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import ScenarioPanel from '../components/planning/ScenarioPanel';
 import ERPComparisonPanel from '../components/planning/ERPComparisonPanel';
-import { cn } from '../lib/utils/cn';
+import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export default function MasterProductionScheduling() {
   const { effectiveConfigId } = useActiveConfig();
