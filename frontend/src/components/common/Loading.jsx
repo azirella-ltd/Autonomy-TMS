@@ -23,6 +23,8 @@ export const Spinner = ({
 
   return (
     <Loader2
+      role="progressbar"
+      aria-label="Loading"
       className={cn(
         'animate-spin text-primary',
         sizes[size],

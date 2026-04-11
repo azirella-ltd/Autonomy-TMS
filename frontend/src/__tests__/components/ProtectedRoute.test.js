@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import AuthContext from '../../contexts/AuthContext';
-import ProtectedRoute from '../../components/common/ProtectedRoute';
+import ProtectedRoute from '../../components/ProtectedRoute';
 
 // Mock child components
 const PublicPage = () => <div>Public Page</div>;
@@ -42,7 +42,7 @@ const renderWithProviders = (ui, { route = '/protected', user = null, loading = 
           <Route
             path="/admin"
             element={
-              <ProtectedRoute roles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin']}>
                 <AdminPage />
               </ProtectedRoute>
             }
