@@ -3,7 +3,7 @@
  *
  * Dedicated worklist for the Demand Sensing Analyst — human counterpart of the
  * Demand Sensing TRM. The TRM recommends shipping volume forecast adjustment
- * decisions and the analyst reviews them via the shared @autonomy/ui-core
+ * decisions and the analyst reviews them via the shared @azirella-ltd/autonomy-frontend
  * <DecisionStream>, scoped with `filterByType="demand_sensing"`.
  *
  * Override reasons and values flow through the shared DecisionCard's
@@ -13,7 +13,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
-import { DecisionStream } from '@autonomy/ui-core';
+import { DecisionStream } from '@azirella-ltd/autonomy-frontend';
 
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';

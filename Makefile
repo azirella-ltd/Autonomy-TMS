@@ -171,10 +171,10 @@ up-tls-only:
 	echo "   SystemAdmin login: systemadmin@autonomy.ai / Autonomy@2026"
 
 rebuild-frontend:
-	@if [ ! -f "$${GH_TOKEN_FILE:-$$HOME/.config/autonomy/gh_token}" ]; then \
-		echo "\n[!] Missing GitHub PAT for @autonomy/ui-core install."; \
-		echo "    Expected at: $${GH_TOKEN_FILE:-$$HOME/.config/autonomy/gh_token}"; \
-		echo "    Create a fine-grained PAT (Contents: Read on MilesAheadToo/autonomy-ui-core)"; \
+	@if [ ! -f "$${NPM_TOKEN_FILE:-$$HOME/.config/autonomy/gh_token_packages}" ]; then \
+		echo "\n[!] Missing GitHub PAT for @azirella-ltd/autonomy-frontend install."; \
+		echo "    Expected at: $${NPM_TOKEN_FILE:-$$HOME/.config/autonomy/gh_token_packages}"; \
+		echo "    Create a classic PAT with read:packages scope on the azirella-ltd org"; \
 		echo "    and save the token (no newline) to that path with chmod 600."; \
 		exit 1; \
 	fi; \

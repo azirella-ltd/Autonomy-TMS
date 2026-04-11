@@ -4,7 +4,7 @@
  * Dedicated worklist for the Exception Management Analyst — human counterpart of the
  * Exception Management TRM. The TRM recommends delay, damage, and refusal resolution
  * decisions (RETENDER / REROUTE / PARTIAL_DELIVER / ESCALATE / WRITE_OFF) and the
- * analyst reviews them via the shared @autonomy/ui-core <DecisionStream>, scoped with
+ * analyst reviews them via the shared @azirella-ltd/autonomy-frontend <DecisionStream>, scoped with
  * `filterByType="exception_management"`.
  *
  * Override reasons and values flow through the shared DecisionCard's
@@ -14,7 +14,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
-import { DecisionStream } from '@autonomy/ui-core';
+import { DecisionStream } from '@azirella-ltd/autonomy-frontend';
 
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';

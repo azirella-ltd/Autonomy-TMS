@@ -1,8 +1,8 @@
 /**
- * @autonomy/ui-core Integration Example
+ * @azirella-ltd/autonomy-frontend Integration Example
  *
  * This file demonstrates how a TMS worklist page (or the main
- * Decision Stream page) would use the shared @autonomy/ui-core
+ * Decision Stream page) would use the shared @azirella-ltd/autonomy-frontend
  * package once Phase 2 of TMS_INDEPENDENCE_PLAN is executed.
  *
  * It is **NOT** wired into the router yet — it serves as a reference
@@ -27,7 +27,7 @@ import {
   DecisionStream,
   useCapabilities,
   registerDecisionTypes,
-} from '@autonomy/ui-core';
+} from '@azirella-ltd/autonomy-frontend';
 
 // TMS-specific:
 import { tmsDecisionStreamClient } from '../../services/tmsDecisionStreamClient';
@@ -77,7 +77,7 @@ function DecisionStreamExampleInner({ configId }) {
     <DecisionStream
       configId={configId}
       title="TMS Decision Stream"
-      subtitle="All 11 TMS agent types rendered via @autonomy/ui-core"
+      subtitle="All 11 TMS agent types rendered via @azirella-ltd/autonomy-frontend"
       // Override permission gated by TMS capability
       canOverride={hasCapability('manage_decision_stream')}
       // Admin flag controls CDT readiness banner detail

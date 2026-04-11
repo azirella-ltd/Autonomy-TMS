@@ -17,12 +17,12 @@ import simulationApi, { api as http } from "./services/api";
 import { API_BASE_URL } from "./config/api.ts";
 import { SnackbarProvider } from "notistack";
 
-// @autonomy/ui-core integration (Phase 2 of TMS_INDEPENDENCE_PLAN)
+// @azirella-ltd/autonomy-frontend integration (Phase 2 of TMS_INDEPENDENCE_PLAN)
 import {
   DecisionStreamProvider,
   CapabilitiesProvider,
   ConversationsProvider,
-} from "@autonomy/ui-core";
+} from "@azirella-ltd/autonomy-frontend";
 import { registerTMSDecisionTypes } from "./decisionTypes";
 import { tmsDecisionStreamClient } from "./services/tmsDecisionStreamClient";
 import { tmsCapabilitiesClient } from "./services/tmsCapabilitiesClient";

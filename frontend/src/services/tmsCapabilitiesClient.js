@@ -1,7 +1,7 @@
 /**
  * TMS Capabilities Client Adapter
  *
- * Implements the @autonomy/ui-core CapabilitiesClient interface against
+ * Implements the @azirella-ltd/autonomy-frontend CapabilitiesClient interface against
  * the TMS backend's /api/capabilities/me endpoint. Used by
  * <CapabilitiesProvider client={tmsCapabilitiesClient}> to drive
  * useCapabilities() hook in shared components.

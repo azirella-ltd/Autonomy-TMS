@@ -1,7 +1,7 @@
 /**
  * TMS Decision Type Registrations
  *
- * Registers all 11 TMS TRM decision types with @autonomy/ui-core's
+ * Registers all 11 TMS TRM decision types with @azirella-ltd/autonomy-frontend's
  * decisionTypeRegistry. Call `registerTMSDecisionTypes()` once at app
  * boot (in App.js, before rendering routes).
  *
@@ -14,7 +14,7 @@
  *   REFLECT — equipment_reposition
  */
 
-import { registerDecisionTypes } from '@autonomy/ui-core';
+import { registerDecisionTypes } from '@azirella-ltd/autonomy-frontend';
 
 // SENSE phase
 import { capacityPromiseType } from './capacityPromise';
@@ -40,7 +40,7 @@ import { intermodalTransferType } from './intermodalTransfer';
 import { equipmentRepositionType } from './equipmentReposition';
 
 /**
- * Register all 11 TMS decision types with the @autonomy/ui-core registry.
+ * Register all 11 TMS decision types with the @azirella-ltd/autonomy-frontend registry.
  * Idempotent — safe to call multiple times.
  *
  * Verify registration by calling getRegisteredDecisionTypeCount() — should

@@ -4,7 +4,7 @@
  * Dedicated worklist for the Load Planner — human counterpart of the
  * Load Build TRM. The TRM recommends load consolidation and optimization
  * decisions (CONSOLIDATE / SPLIT / HOLD / EXPEDITE) and the planner reviews them
- * via the shared @autonomy/ui-core <DecisionStream>, scoped with
+ * via the shared @azirella-ltd/autonomy-frontend <DecisionStream>, scoped with
  * `filterByType="load_build"`.
  *
  * Override reasons and values flow through the shared DecisionCard's
@@ -14,7 +14,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
-import { DecisionStream } from '@autonomy/ui-core';
+import { DecisionStream } from '@azirella-ltd/autonomy-frontend';
 
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';

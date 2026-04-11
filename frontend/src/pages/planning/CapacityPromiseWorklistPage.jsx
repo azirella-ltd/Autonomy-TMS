@@ -4,7 +4,7 @@
  * Dedicated worklist for the Capacity Promise Analyst — human counterpart of the
  * Capacity Promise TRM. The TRM recommends lane capacity commitment decisions
  * (ACCEPT / DEFER / ESCALATE) and the analyst reviews them via the shared
- * @autonomy/ui-core <DecisionStream>, scoped with `filterByType="capacity_promise"`.
+ * @azirella-ltd/autonomy-frontend <DecisionStream>, scoped with `filterByType="capacity_promise"`.
  *
  * Override reasons and values flow through the shared DecisionCard's
  * Inspect → Override flow, then through tmsDecisionStreamClient to the
@@ -17,7 +17,7 @@
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import { Box, Typography, Alert, Grid, Card, CardContent } from '@mui/material';
-import { DecisionStream } from '@autonomy/ui-core';
+import { DecisionStream } from '@azirella-ltd/autonomy-frontend';
 
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import RoleTimeSeries from '../../components/charts/RoleTimeSeries';

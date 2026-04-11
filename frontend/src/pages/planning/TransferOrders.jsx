@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
-import { Conversation } from '@autonomy/ui-core';
+import { Conversation } from '@azirella-ltd/autonomy-frontend';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TransferOrders = () => {

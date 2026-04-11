@@ -1,7 +1,7 @@
 /**
  * TMS Conversations Client Adapter
  *
- * Implements the @autonomy/ui-core ConversationsClient interface against
+ * Implements the @azirella-ltd/autonomy-frontend ConversationsClient interface against
  * the existing TMS /comments and /users endpoints. The shared
  * <Conversation> component consumes this via <ConversationsProvider>.
  *

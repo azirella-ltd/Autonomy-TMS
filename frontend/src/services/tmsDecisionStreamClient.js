@@ -2,7 +2,7 @@
  * TMS Decision Stream Client Adapter
  *
  * Wraps the existing decisionStreamApi.js calls to implement the
- * @autonomy/ui-core DecisionStreamClient interface. The shared
+ * @azirella-ltd/autonomy-frontend DecisionStreamClient interface. The shared
  * Decision Stream components (DecisionStream, DecisionCard, etc.)
  * consume this via <DecisionStreamProvider client={...}>.
  *
@@ -30,7 +30,7 @@ export const tmsDecisionStreamClient = {
   /**
    * Submit an action on a decision.
    *
-   * Maps the @autonomy/ui-core action enum to the TMS backend payload:
+   * Maps the @azirella-ltd/autonomy-frontend action enum to the TMS backend payload:
    *   - 'accept'   → { action: 'accept' }
    *   - 'inspect'  → { action: 'inspect' }
    *   - 'modify'   → { action: 'modify', override_*: ... }

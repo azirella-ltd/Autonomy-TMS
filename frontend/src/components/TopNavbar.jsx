@@ -716,7 +716,7 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
       <div className="flex items-center h-full px-4 md:px-6 gap-4">
 
         {/* ── LEFT: Logo + Brand "Autonomy TMS" ──────────────────────────── */}
-        {/* Aligned with @autonomy/ui-core TopAppBar layout (v0.2). */}
+        {/* Aligned with @azirella-ltd/autonomy-frontend TopAppBar layout (v0.2). */}
         {/* Logo h-9 (was h-7), brand text-base equal weight to "Config:". */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <Link

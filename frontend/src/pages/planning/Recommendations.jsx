@@ -46,7 +46,7 @@ import {
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
-import { Conversation } from '@autonomy/ui-core';
+import { Conversation } from '@azirella-ltd/autonomy-frontend';
 import { RebalancingWizard } from '../../components/recommendations';
 
 const Recommendations = () => {

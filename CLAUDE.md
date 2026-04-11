@@ -9,20 +9,23 @@ Project rules for Claude Code. Detailed architecture and reference material in [
 **Target architecture:**
 
 ```
-github.com/MilesAheadToo/
-├── autonomy-ui-core/          ← Shared frontend package (Decision Stream, common UI, registries)
-├── autonomy-scp-core/          ← (optional) Shared backend patterns (Powell framework, conformal, governance)
-├── Autonomy/                   ← SCP product (own DB, own backend, own frontend)
-└── Autonomy-TMS/               ← TMS product (own DB, own backend, own frontend)
+github.com/azirella-ltd/
+├── Autonomy-Core/             ← Shared monorepo: packages/ui-core (frontend),
+│                                  packages/data-model (Python — AWS SC DM, AIIO governance,
+│                                  tenant/RBAC), packages/powell-core (Python — TRM base,
+│                                  hive signals, conformal framework). Published to
+│                                  GitHub Packages as @azirella-ltd/autonomy-frontend etc.
+├── Autonomy-SCP/              ← SCP product (own DB, own backend, own frontend)
+└── Autonomy-TMS/              ← TMS product (own DB, own backend, own frontend)
 ```
 
 **What is shared, and how:**
 
 | Layer | Sharing mechanism |
 |-------|-------------------|
-| **Frontend components** (Decision Stream, navigation, common UI) | `autonomy-ui-core` npm package, consumed by both apps |
-| **Decision types** (TMS agent types, SCP agent types) | Plugin registry in `autonomy-ui-core` — each app registers its own types at boot |
-| **Backend patterns** (Powell framework, AIIO model, governance pipeline) | Concept-shared but implemented independently in each app's codebase. Optionally extracted to `autonomy-scp-core` Python package later. |
+| **Frontend components** (Decision Stream, navigation, common UI) | `@azirella-ltd/autonomy-frontend` npm package (published to GitHub Packages from `azirella-ltd/Autonomy-Core` monorepo), consumed by both apps |
+| **Decision types** (TMS agent types, SCP agent types) | Plugin registry in `@azirella-ltd/autonomy-frontend` — each app registers its own types at boot |
+| **Backend patterns** (Powell framework, AIIO model, governance pipeline) | Concept-shared today, will be extracted to `@azirella-ltd/data-model` and `@azirella-ltd/powell-core` Python packages from the same monorepo |
 | **Cross-app data exchange** | MCP (Model Context Protocol) — each app exposes domain tools that the other (or an executive console) can call |
 | **DB schemas** | **Independent.** TMS has its own `tms-db` PostgreSQL container. No shared tables. |
 | **Migrations** | Independent. TMS has its own alembic chain, never references SCP migrations. |
@@ -30,12 +33,24 @@ github.com/MilesAheadToo/
 
 **What this means in practice:**
 
-- Do NOT copy code from upstream Autonomy into this repo as "shared core"
+- Do NOT copy code from `Autonomy-SCP` into this repo as "shared core"
 - Do NOT add `git remote upstream` references to the SCP repo
 - Do NOT share SQLAlchemy `Base`, models, or DB tables with SCP
-- DO use the `autonomy-ui-core` package for shared frontend components (once extracted)
+- DO use the `@azirella-ltd/autonomy-frontend` package for shared frontend components
 - DO use MCP for any TMS↔SCP integration (e.g., TMS asking SCP for ATP constraints when sizing carrier capacity)
 - DO consider: a separate "executive console" app that aggregates Decision Streams from both via MCP
+
+## Prerequisite: GitHub PAT for `@azirella-ltd/autonomy-frontend`
+
+The frontend Docker image installs `@azirella-ltd/autonomy-frontend` from GitHub Packages, which requires a personal access token. Setup:
+
+1. Create a **classic** PAT (not fine-grained — fine-grained PATs don't support `packages` permissions as of 2026) at https://github.com/settings/tokens with the **`read:packages`** scope on the `azirella-ltd` org
+2. Save it to `~/.config/autonomy/gh_token_packages` with `chmod 600` (no trailing newline)
+3. `make rebuild-frontend` will pick it up automatically via the BuildKit secret mount
+
+Verify with `wc -c ~/.config/autonomy/gh_token_packages` — should be 40 (classic PATs are 40 chars). Override the path with `NPM_TOKEN_FILE=...` if needed.
+
+The token never lands in any image layer — it's mounted as a tmpfs secret only during the `npm install` step in `frontend/Dockerfile`.
 
 **Current state vs target:**
 
@@ -378,8 +393,12 @@ git merge upstream/main
 # Test thoroughly before pushing
 ```
 
-To propose shared core changes back to Autonomy:
+To propose shared core changes:
 ```bash
-# Create a branch in this repo with ONLY the shared changes
-# Open a PR against MilesAheadToo/Autonomy
+# Shared frontend / data-model / powell-core changes go to the monorepo:
+#   azirella-ltd/Autonomy-Core
+# Shared changes are NOT made in this TMS repo — open a PR against
+# Autonomy-Core, ship a new package version, and TMS picks it up via
+# `@azirella-ltd/autonomy-frontend` (or `@azirella-ltd/data-model`,
+# `@azirella-ltd/powell-core`) on the next dependency bump.
 ```

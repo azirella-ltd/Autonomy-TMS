@@ -57,7 +57,7 @@ import {
   ArrowLeftRight,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { Conversation } from '@autonomy/ui-core';
+import { Conversation } from '@azirella-ltd/autonomy-frontend';
 
 // Match status colors
 const getMatchStatusVariant = (status) => {
