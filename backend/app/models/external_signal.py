@@ -1,21 +1,30 @@
-"""External Signal models — Outside-in planning intelligence from public data sources.
+"""External Signal models — Outside-in intelligence from public and commercial data sources.
 
-Implements Lora Cecere's outside-in planning methodology: weather, economic indicators,
-commodity prices, geopolitical events, consumer sentiment, and regulatory signals are
-ingested daily and injected into Azirella's RAG context for supply chain decision support.
+Implements Lora Cecere's outside-in planning methodology adapted for TMS:
+weather, economic indicators, energy/fuel prices, geopolitical events, consumer
+sentiment, regulatory signals, freight market indices, carrier intelligence,
+and ocean/port data are ingested on configurable cadences and injected into
+Azirella's RAG context and TRM agent decision support.
 
 Sources are tenant-configurable by industry, region, and product relevance.
-All data comes from free, public APIs — no paid subscriptions required.
+Core sources use free, public APIs. Commercial freight market sources
+(DAT, FreightWaves SONAR, Greenscreens) are wired as stubs — activated
+when the customer has a subscription.
 
-Signal categories (aligned with Cecere's demand-sensing framework):
+Signal categories:
 - economic: CPI, PPI, unemployment, GDP, interest rates (FRED)
-- weather: Temperature, precipitation, severe events (Open-Meteo)
-- energy: Crude oil, natural gas, electricity prices (EIA)
+- weather: Temperature, precipitation, severe events (Open-Meteo, NWS)
+- energy: Crude oil, natural gas, diesel fuel index (EIA / DOE)
 - geopolitical: Disruption events, trade tensions, conflicts (GDELT)
-- sentiment: Consumer search trends, product interest (Google Trends)
-- regulatory: FDA recalls, safety alerts, compliance changes (openFDA)
-- commodity: Agricultural, metals, chemical prices (World Bank/FRED)
-- trade: Import/export volumes, tariffs, port congestion (Census/FRED)
+- sentiment: Consumer/shipper search trends, worker sentiment (Google Trends, Reddit)
+- regulatory: FDA recalls, safety alerts, hazmat compliance (openFDA)
+- commodity: Agricultural, metals, chemical spot prices (World Bank/FRED)
+- trade: Border wait times, tariffs, port congestion (Census/FRED, CBP)
+- freight_market: Spot rates, tender rejection indices, capacity forecasts (DAT, SONAR, Greenscreens)
+- carrier_intelligence: Safety ratings, inspection data, authority status (FMCSA)
+- visibility: p44 aggregate metrics — tracking coverage, exception rates, webhook health
+- ocean_intelligence: AIS vessel data, port dwell, congestion heat maps (MarineTraffic)
+- sustainability: Emissions data, SmartWay scores, carbon intensity (EPA)
 """
 
 from datetime import datetime, date
@@ -32,14 +41,21 @@ from app.models.base import Base
 # ── Signal Categories ────────────────────────────────────────────────────────
 
 SIGNAL_CATEGORIES = [
-    "economic",      # CPI, PPI, unemployment, GDP, interest rates
-    "weather",       # Temperature anomalies, precipitation, severe events
-    "energy",        # Oil, gas, electricity prices and supply
-    "geopolitical",  # Disruption events, trade tensions, sanctions
-    "sentiment",     # Consumer search trends, social media sentiment
-    "regulatory",    # FDA recalls, safety alerts, trade compliance
-    "commodity",     # Agricultural, metals, chemical spot prices
-    "trade",         # Import/export, tariffs, port congestion
+    # Shared (applicable to both SCP and TMS)
+    "economic",              # CPI, PPI, unemployment, GDP, interest rates
+    "weather",               # Temperature anomalies, precipitation, severe events
+    "energy",                # Oil, gas, diesel fuel index, electricity prices
+    "geopolitical",          # Disruption events, trade tensions, sanctions
+    "sentiment",             # Consumer/shipper search trends, worker sentiment
+    "regulatory",            # FDA recalls, safety alerts, hazmat compliance
+    "commodity",             # Agricultural, metals, chemical spot prices
+    "trade",                 # Border wait times, tariffs, port congestion
+    # TMS-specific
+    "freight_market",        # Spot rates, tender rejection, capacity indices
+    "carrier_intelligence",  # Safety ratings, inspection data, authority status
+    "visibility",            # p44 aggregate: tracking coverage, exception rates
+    "ocean_intelligence",    # AIS vessel data, port dwell, congestion heat maps
+    "sustainability",        # Emissions data, SmartWay scores, carbon intensity
 ]
 
 # ── Source Registry ──────────────────────────────────────────────────────────
@@ -120,55 +136,342 @@ SOURCE_REGISTRY = {
         "requires_key": False,
         "free_tier": "Unlimited (uses GDELT infrastructure news feed)",
         "refresh_cadence": "daily",
-        "description": "Persistent road closures, bridge restrictions, port congestion, construction zones — not real-time traffic, but days/weeks-long freight routing disruptions.",
+        "description": (
+            "Persistent road closures, bridge restrictions, port "
+            "congestion, construction zones — not real-time traffic, "
+            "but days/weeks-long freight routing disruptions."
+        ),
+    },
+    # ── TMS-specific sources ──────────────────────────────────────────
+    "fmcsa": {
+        "name": "FMCSA SaferWeb (DOT Carrier Data)",
+        "base_url": "https://mobile.fmcsa.dot.gov/qc/services",
+        "categories": ["carrier_intelligence"],
+        "requires_key": False,
+        "free_tier": "Unlimited (US federal open data)",
+        "refresh_cadence": "weekly",
+        "description": (
+            "Carrier safety ratings, inspection summary, OOS rates, "
+            "insurance status, operating authority. Critical for "
+            "carrier scorecard enrichment and compliance checks."
+        ),
+        "source_params_example": {
+            "carrier_dots": ["12345", "67890"],
+            "watch_fields": [
+                "safetyRating", "oosRate", "insuranceStatus",
+            ],
+        },
+    },
+    "doe_diesel": {
+        "name": "DOE Weekly Retail Diesel Fuel Index",
+        "base_url": "https://api.eia.gov/v2",
+        "categories": ["energy"],
+        "requires_key": True,
+        "key_env_var": "EIA_API_KEY",
+        "free_tier": "Unlimited (same EIA key as existing source)",
+        "refresh_cadence": "weekly",
+        "description": (
+            "US average retail diesel price "
+            "(PET.EMD_EPD2D_PTE_NUS_DPG.W). The standard index used "
+            "in most carrier contract fuel surcharge tables."
+        ),
+        "source_params_example": {
+            "series_ids": ["PET.EMD_EPD2D_PTE_NUS_DPG.W"],
+        },
+    },
+    "cbp_border_wait": {
+        "name": "CBP Border Wait Times",
+        "base_url": "https://bwt.cbp.gov/api",
+        "categories": ["trade"],
+        "requires_key": False,
+        "free_tier": "Unlimited (US federal open data)",
+        "refresh_cadence": "hourly",
+        "description": (
+            "Commercial vehicle wait times at US-Mexico and "
+            "US-Canada border crossings. Critical for cross-border "
+            "load planning and ETA adjustment."
+        ),
+        "source_params_example": {
+            "ports": ["Laredo", "El Paso", "Detroit"],
+            "vehicle_type": "commercial",
+        },
+    },
+    "epa_smartway": {
+        "name": "EPA SmartWay Carrier Performance",
+        "base_url": "https://www.epa.gov/smartway",
+        "categories": ["sustainability"],
+        "requires_key": False,
+        "free_tier": "Unlimited (public EPA data, bulk download)",
+        "refresh_cadence": "quarterly",
+        "description": (
+            "Carrier fuel efficiency and emissions data from the "
+            "SmartWay program. Feeds carrier scorecard sustainability "
+            "score and supports Scope 3 emissions reporting."
+        ),
+    },
+    # ── Commercial freight market sources (stubs — require paid subscription)
+    "dat_rateview": {
+        "name": "DAT RateView (Spot & Contract Rates)",
+        "base_url": "https://api.dat.com",
+        "categories": ["freight_market"],
+        "requires_key": True,
+        "key_env_var": "DAT_API_KEY",
+        "free_tier": None,
+        "refresh_cadence": "daily",
+        "description": (
+            "Real-time spot market rates by lane/equipment type. "
+            "Critical for FreightProcurementTRM rate benchmarking "
+            "and BrokerRoutingTRM spot-vs-contract decisions."
+        ),
+        "commercial": True,
+        "source_params_example": {
+            "lanes": [
+                {"origin": "LAX", "dest": "PHX", "equipment": "V"},
+            ],
+        },
+    },
+    "freightwaves_sonar": {
+        "name": "FreightWaves SONAR",
+        "base_url": "https://api.freightwaves.com",
+        "categories": ["freight_market"],
+        "requires_key": True,
+        "key_env_var": "SONAR_API_KEY",
+        "free_tier": None,
+        "refresh_cadence": "daily",
+        "description": (
+            "Outbound Tender Volume Index (OTVI), Outbound Tender "
+            "Rejection Index (OTRI), rate forecasts by lane. The "
+            "single best leading indicator for US freight capacity "
+            "tightness — when OTRI rises, CapacityBufferTRM and "
+            "FreightProcurementTRM must react."
+        ),
+        "commercial": True,
+        "source_params_example": {
+            "indices": ["OTVI.USA", "OTRI.USA", "OTVI.LAX"],
+        },
+    },
+    "greenscreens": {
+        "name": "Greenscreens.ai (Rate Intelligence)",
+        "base_url": "https://api.greenscreens.ai",
+        "categories": ["freight_market"],
+        "requires_key": True,
+        "key_env_var": "GREENSCREENS_API_KEY",
+        "free_tier": None,
+        "refresh_cadence": "daily",
+        "description": (
+            "Predictive rate intelligence and market-rate "
+            "benchmarking. Feeds FreightProcurementTRM with "
+            "confidence-scored rate predictions by lane."
+        ),
+        "commercial": True,
+    },
+    "marinetraffic": {
+        "name": "MarineTraffic (AIS Vessel Data)",
+        "base_url": "https://services.marinetraffic.com/api",
+        "categories": ["ocean_intelligence"],
+        "requires_key": True,
+        "key_env_var": "MARINETRAFFIC_API_KEY",
+        "free_tier": "Limited (100 credits on signup)",
+        "refresh_cadence": "daily",
+        "description": (
+            "AIS vessel position tracking, port call predictions, "
+            "congestion heat maps. Extends p44 ocean visibility "
+            "with raw AIS data for IntermodalTransferTRM."
+        ),
+        "commercial": True,
     },
 }
 
-# ── SC Impact Mapping ────────────────────────────────────────────────────────
-# Maps signal types to which TRM agents and planning layers are affected
+# ── TMS Signal Impact Mapping ────────────────────────────────────────────────
+# Maps signal types to which TMS TRM agents and planning layers are affected.
+# TRM type keys match the 11 TMS agents in services/powell/.
 
-SIGNAL_SC_IMPACT = {
+SIGNAL_TMS_IMPACT = {
+    # ── Shared economic / macro signals ──────────────────────────────
     "cpi_change": {
-        "trm_types": ["forecast_adjustment", "po_creation"],
+        "trm_types": ["demand_sensing", "freight_procurement"],
         "planning_layer": "strategic",
-        "description": "Consumer price changes affect demand patterns and procurement costs",
-    },
-    "severe_weather": {
-        "trm_types": ["to_execution", "po_creation", "inventory_buffer"],
-        "planning_layer": "tactical",
-        "description": "Weather disruptions affect logistics, supply lead times, and safety stock needs",
-    },
-    "oil_price_spike": {
-        "trm_types": ["to_execution", "po_creation"],
-        "planning_layer": "tactical",
-        "description": "Energy price changes affect transportation and raw material costs",
-    },
-    "geopolitical_disruption": {
-        "trm_types": ["po_creation", "subcontracting", "inventory_buffer"],
-        "planning_layer": "strategic",
-        "description": "Geopolitical events affect supplier reliability and sourcing strategy",
+        "description": (
+            "Consumer price changes shift shipping volumes and "
+            "carrier rate expectations"
+        ),
     },
     "demand_trend_shift": {
-        "trm_types": ["forecast_adjustment"],
+        "trm_types": ["demand_sensing"],
         "planning_layer": "tactical",
-        "description": "Consumer interest shifts affect demand forecasts",
-    },
-    "regulatory_recall": {
-        "trm_types": ["quality_disposition", "inventory_rebalancing"],
-        "planning_layer": "execution",
-        "description": "Regulatory actions require immediate quality and inventory response",
+        "description": (
+            "Consumer interest shifts affect shipping volume "
+            "forecasts by lane and commodity"
+        ),
     },
     "commodity_price_change": {
-        "trm_types": ["po_creation", "subcontracting"],
+        "trm_types": ["freight_procurement"],
         "planning_layer": "tactical",
-        "description": "Raw material price movements affect procurement timing and make-vs-buy",
+        "description": (
+            "Commodity price moves change the value-at-risk per "
+            "load and may trigger rate renegotiation"
+        ),
     },
-    "port_congestion": {
-        "trm_types": ["to_execution", "po_creation", "inventory_buffer"],
+
+    # ── Weather / disruption signals ─────────────────────────────────
+    "severe_weather": {
+        "trm_types": [
+            "shipment_tracking", "exception_management",
+            "equipment_reposition",
+        ],
+        "planning_layer": "execution",
+        "description": (
+            "Weather disruptions cause delays, route deviations, "
+            "and facility closures — triggers exception detection "
+            "and equipment repositioning"
+        ),
+    },
+
+    # ── Energy / fuel signals ────────────────────────────────────────
+    "oil_price_spike": {
+        "trm_types": ["freight_procurement", "broker_routing"],
         "planning_layer": "tactical",
-        "description": "Port delays affect inbound lead times and safety stock requirements",
+        "description": (
+            "Energy price spikes raise fuel surcharges across "
+            "active carrier contracts"
+        ),
+    },
+    "diesel_price_move": {
+        "trm_types": ["freight_procurement"],
+        "planning_layer": "tactical",
+        "description": (
+            "DOE diesel index move triggers fuel surcharge "
+            "recalculation across active contracts"
+        ),
+    },
+
+    # ── Geopolitical signals ─────────────────────────────────────────
+    "geopolitical_disruption": {
+        "trm_types": [
+            "capacity_buffer", "intermodal_transfer",
+            "broker_routing",
+        ],
+        "planning_layer": "strategic",
+        "description": (
+            "Geopolitical events (port strikes, border closures, "
+            "sanctions) require capacity hedging and alternate "
+            "routing"
+        ),
+    },
+
+    # ── Regulatory signals ───────────────────────────────────────────
+    "regulatory_recall": {
+        "trm_types": [
+            "exception_management", "shipment_tracking",
+        ],
+        "planning_layer": "execution",
+        "description": (
+            "Regulatory actions (recalls, hazmat reclassification) "
+            "require shipment holds and exception handling"
+        ),
+    },
+
+    # ── Trade / border signals ───────────────────────────────────────
+    "port_congestion": {
+        "trm_types": [
+            "intermodal_transfer", "capacity_buffer",
+            "equipment_reposition",
+        ],
+        "planning_layer": "tactical",
+        "description": (
+            "Port delays affect ocean-to-drayage handoffs, "
+            "container dwell, and equipment repositioning"
+        ),
+    },
+    "border_wait_spike": {
+        "trm_types": [
+            "shipment_tracking", "dock_scheduling",
+            "exception_management",
+        ],
+        "planning_layer": "execution",
+        "description": (
+            "Rising border wait times delay cross-border loads — "
+            "adjust ETAs and downstream dock appointments"
+        ),
+    },
+
+    # ── Freight market signals (new for TMS) ─────────────────────────
+    "tender_rejection_spike": {
+        "trm_types": [
+            "capacity_buffer", "freight_procurement",
+            "broker_routing",
+        ],
+        "planning_layer": "tactical",
+        "description": (
+            "Rising tender rejection rates (OTRI) signal capacity "
+            "tightening — accelerate backup carrier activation "
+            "and broker overflow"
+        ),
+    },
+    "spot_rate_divergence": {
+        "trm_types": ["freight_procurement", "broker_routing"],
+        "planning_layer": "tactical",
+        "description": (
+            "Spot rates diverging from contract rates triggers "
+            "procurement strategy review and mini-bid timing"
+        ),
+    },
+    "capacity_index_shift": {
+        "trm_types": [
+            "capacity_promise", "capacity_buffer",
+            "demand_sensing",
+        ],
+        "planning_layer": "strategic",
+        "description": (
+            "Freight market capacity indices (OTVI) shifting "
+            "affects lane-level capacity commitments and demand "
+            "forecast adjustments"
+        ),
+    },
+
+    # ── Carrier intelligence signals (new for TMS) ───────────────────
+    "carrier_safety_downgrade": {
+        "trm_types": [
+            "exception_management", "freight_procurement",
+        ],
+        "planning_layer": "execution",
+        "description": (
+            "Carrier safety rating change (FMCSA) requires "
+            "immediate tender reallocation and scorecard update"
+        ),
+    },
+    "carrier_authority_change": {
+        "trm_types": ["freight_procurement"],
+        "planning_layer": "execution",
+        "description": (
+            "Carrier operating authority revocation or suspension "
+            "— immediately remove from active tender waterfall"
+        ),
+    },
+    "carrier_insurance_lapse": {
+        "trm_types": [
+            "freight_procurement", "exception_management",
+        ],
+        "planning_layer": "execution",
+        "description": (
+            "Carrier insurance lapse detected — block new tenders "
+            "until insurance is reinstated"
+        ),
+    },
+
+    # ── Sustainability signals (new for TMS) ─────────────────────────
+    "smartway_score_change": {
+        "trm_types": ["freight_procurement"],
+        "planning_layer": "strategic",
+        "description": (
+            "Carrier SmartWay score change affects sustainability "
+            "weighting in procurement decisions"
+        ),
     },
 }
+
+# Backwards-compat alias for any code referencing the old name
+SIGNAL_SC_IMPACT = SIGNAL_TMS_IMPACT
 
 
 class ExternalSignalSource(Base):
@@ -190,13 +493,19 @@ class ExternalSignalSource(Base):
 
     # Source-specific configuration
     api_key_encrypted = Column(Text, nullable=True)  # Encrypted API key (if required)
-    source_params = Column(JSON, nullable=True)  # Source-specific parameters:
+    source_params = Column(JSON, nullable=True)
+    # Source-specific parameters:
     # FRED: {"series_ids": ["CPIAUCSL", "UNRATE", "GDP"]}
-    # Open-Meteo: {"locations": [{"lat": 40.7, "lon": -74.0, "name": "NYC"}]}
+    # Open-Meteo: {"locations": [...], "sync_from_network": true}
     # EIA: {"series_ids": ["PET.RWTC.D", "NG.RNGWHHD.D"]}
-    # GDELT: {"keywords": ["supply chain", "port strike"], "countries": ["US", "CN"]}
-    # Google Trends: {"keywords": ["beer", "craft beer", "energy drinks"]}
+    # DOE diesel: {"series_ids": ["PET.EMD_EPD2D_PTE_NUS_DPG.W"]}
+    # GDELT: {"keywords": ["port strike", "freight"], "countries": ["US"]}
+    # Google Trends: {"keywords": ["freight rates", "shipping delays"]}
     # openFDA: {"product_types": ["food", "drug"], "keywords": ["recall"]}
+    # FMCSA: {"carrier_dots": ["12345"], "watch_fields": ["safetyRating"]}
+    # CBP: {"ports": ["Laredo", "El Paso"], "vehicle_type": "commercial"}
+    # DAT: {"lanes": [{"origin": "LAX", "dest": "PHX", "equipment": "V"}]}
+    # SONAR: {"indices": ["OTVI.USA", "OTRI.USA"]}
 
     # Relevance filters (tenant-specific)
     industry_tags = Column(JSON, nullable=True)  # ["food_distribution", "beverage", "fmcg"]

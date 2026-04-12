@@ -22,6 +22,7 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.powell.hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
+from app.services.powell.tms_hive_signals import TMSHiveSignalType
 
 from .adapters.sap_s4 import SAP_TO_AWS_SC_ENTITY
 from .audit import MCPAuditLogger
@@ -30,31 +31,48 @@ from .client import MCPClientSession, MCPToolResult
 logger = logging.getLogger(__name__)
 
 
-# Map (AWS SC entity type, change_type) → HiveSignalType
-CHANGE_TO_SIGNAL: Dict[Tuple[str, str], HiveSignalType] = {
-    # Demand-side signals (Scout caste)
+# Map (entity type, change_type) → TMSHiveSignalType.
+# Entity types come from ERP extraction (SAP TM, Oracle OTM, etc.) via MCP,
+# normalized to TMS entity names by the adapter layer.
+CHANGE_TO_SIGNAL: Dict[Tuple[str, str], Any] = {
+    # Shipment signals → ShipmentTrackingTRM, ExceptionMgmtTRM
+    ("shipment", "new"): TMSHiveSignalType.SHIPMENT_PICKED_UP,
+    ("shipment", "changed"): TMSHiveSignalType.SHIPMENT_DELAYED,
+    ("shipment", "deleted"): TMSHiveSignalType.EXCEPTION_DETECTED,
+
+    # Load signals → LoadBuildTRM
+    ("load", "new"): TMSHiveSignalType.LOAD_CONSOLIDATED,
+    ("load", "changed"): TMSHiveSignalType.LOAD_SPLIT,
+
+    # Carrier / rate signals → FreightProcurementTRM, BrokerRoutingTRM
+    ("carrier", "changed"): TMSHiveSignalType.CARRIER_SUSPENDED,
+    ("freight_rate", "new"): TMSHiveSignalType.RATE_SPIKE,
+    ("freight_rate", "changed"): TMSHiveSignalType.RATE_SPIKE,
+
+    # Tender signals → FreightProcurementTRM, CapacityPromiseTRM
+    ("freight_tender", "new"): TMSHiveSignalType.TENDER_SENT,
+    ("freight_tender", "changed"): TMSHiveSignalType.TENDER_REJECTED,
+
+    # Appointment / dock signals → DockSchedulingTRM
+    ("appointment", "new"): TMSHiveSignalType.DOCK_CONGESTION,
+    ("appointment", "changed"): TMSHiveSignalType.DOCK_CONGESTION,
+
+    # Equipment signals → EquipmentRepositionTRM
+    ("equipment", "changed"): TMSHiveSignalType.EQUIPMENT_SHORTAGE,
+
+    # Exception signals → ExceptionMgmtTRM
+    ("shipment_exception", "new"): TMSHiveSignalType.EXCEPTION_DETECTED,
+    ("shipment_exception", "changed"): TMSHiveSignalType.EXCEPTION_ESCALATED,
+
+    # Network / master data signals (shared with SCP pattern)
+    ("site", "changed"): HiveSignalType.ALLOCATION_REFRESH,
+    ("commodity", "changed"): HiveSignalType.ALLOCATION_REFRESH,
+    ("lane", "changed"): TMSHiveSignalType.CARRIER_NETWORK_SHIFT,
+
+    # Demand-side signals (from ERP outbound order extraction)
     ("outbound_order", "new"): HiveSignalType.DEMAND_SURGE,
     ("outbound_order", "changed"): HiveSignalType.ORDER_EXCEPTION,
     ("outbound_order", "deleted"): HiveSignalType.DEMAND_DROP,
-
-    # Supply-side signals (Forager caste)
-    ("inbound_order", "new"): HiveSignalType.PO_EXPEDITE,
-    ("inbound_order", "changed"): HiveSignalType.PO_EXPEDITE,
-    ("inbound_order", "deleted"): HiveSignalType.PO_DEFERRED,
-
-    # Execution signals (Builder caste)
-    ("manufacturing_order", "new"): HiveSignalType.MO_RELEASED,
-    ("manufacturing_order", "changed"): HiveSignalType.MO_DELAYED,
-    ("shipment", "new"): HiveSignalType.TO_RELEASED,
-    ("shipment", "changed"): HiveSignalType.TO_DELAYED,
-
-    # Health signals (Nurse caste)
-    ("inventory_level", "changed"): HiveSignalType.BUFFER_DECREASED,
-
-    # Network signals
-    ("product", "changed"): HiveSignalType.ALLOCATION_REFRESH,
-    ("product_bom", "changed"): HiveSignalType.ALLOCATION_REFRESH,
-    ("site", "changed"): HiveSignalType.ALLOCATION_REFRESH,
 }
 
 

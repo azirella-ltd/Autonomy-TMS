@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Layers,
   ArrowRight,
+  Radar,
 } from 'lucide-react';
 import {
   Badge,
@@ -253,6 +254,11 @@ export default function ContextEngine() {
   const [extLoading, setExtLoading] = useState(true);
   const [extError, setExtError] = useState(false);
 
+  // -- p44 Visibility state
+  const [p44Data, setP44Data] = useState(null);
+  const [p44Loading, setP44Loading] = useState(true);
+  const [p44Error, setP44Error] = useState(false);
+
   // -- Global refresh
   const [refreshing, setRefreshing] = useState(false);
 
@@ -363,6 +369,31 @@ export default function ContextEngine() {
     }
   }, []);
 
+  const fetchP44Visibility = useCallback(async () => {
+    setP44Loading(true);
+    setP44Error(false);
+    try {
+      const res = await api.get('/p44/dashboard');
+      const d = res.data || {};
+      setP44Data({
+        isConfigured: !!d.is_configured,
+        isActive: !!d.is_active,
+        activeTracked: d.active_tracked ?? 0,
+        totalInTransit: d.total_in_transit ?? 0,
+        coveragePct: d.tracking_coverage_pct,
+        exceptions24h: d.exceptions_24h ?? 0,
+        events7d: d.events_7d ?? 0,
+        lastWebhookAt: d.last_webhook_at
+          ? new Date(d.last_webhook_at).toLocaleString()
+          : null,
+      });
+    } catch {
+      setP44Error(true);
+    } finally {
+      setP44Loading(false);
+    }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     setRefreshing(true);
     await Promise.allSettled([
@@ -370,9 +401,10 @@ export default function ContextEngine() {
       fetchEmailSignals(),
       fetchSlackSignals(),
       fetchExternalSignals(),
+      fetchP44Visibility(),
     ]);
     setRefreshing(false);
-  }, [fetchKnowledgeBase, fetchEmailSignals, fetchSlackSignals, fetchExternalSignals]);
+  }, [fetchKnowledgeBase, fetchEmailSignals, fetchSlackSignals, fetchExternalSignals, fetchP44Visibility]);
 
   useEffect(() => {
     fetchAll();
@@ -385,16 +417,18 @@ export default function ContextEngine() {
     !emailError && emailData?.isActive,
     !slackError && slackData?.isActive,
     !extError && extData?.isActive,
+    !p44Error && p44Data?.isActive,
   ].filter(Boolean).length;
 
   const totalIngested = (
     (kbData?.documentCount || 0) +
     (emailData?.signalsLast7d || 0) +
     (slackData?.signalsLast7d || 0) +
-    (extData?.signalsLast30d || 0)
+    (extData?.signalsLast30d || 0) +
+    (p44Data?.events7d || 0)
   );
 
-  const allLoading = kbLoading && emailLoading && slackLoading && extLoading;
+  const allLoading = kbLoading && emailLoading && slackLoading && extLoading && p44Loading;
 
   // ── Status resolvers ───────────────────────────────────────────────────────
 
@@ -414,6 +448,7 @@ export default function ContextEngine() {
   const emailStatus = () => resolveStatus(emailData, emailError);
   const slackStatus = () => resolveStatus(slackData, slackError);
   const extStatus = () => resolveStatus(extData, extError);
+  const p44Status = () => resolveStatus(p44Data, p44Error);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -491,7 +526,47 @@ export default function ContextEngine() {
               5. Slack Signals
         */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          {/* 2. Knowledge Base */}
+          {/* 2. p44 Real-Time Visibility (TMS-primary) */}
+          <SourceCard
+            icon={Radar}
+            name="p44 Visibility"
+            description="Real-time shipment tracking, ETA predictions, and exception detection across all carriers via project44 integration."
+            status={p44Status()}
+            loading={p44Loading}
+            error={p44Error}
+            iconBgClass="bg-violet-500/10"
+            iconColorClass="text-violet-600 dark:text-violet-400"
+            metrics={[
+              {
+                label: 'Tracked / In Transit',
+                value: p44Data
+                  ? `${p44Data.activeTracked} / ${p44Data.totalInTransit}`
+                  : null,
+              },
+              {
+                label: 'Tracking coverage',
+                value: p44Data?.coveragePct != null
+                  ? `${p44Data.coveragePct}%`
+                  : null,
+              },
+              {
+                label: 'Exceptions (24h)',
+                value: p44Data?.exceptions24h?.toLocaleString(),
+              },
+              {
+                label: 'Events (7 days)',
+                value: p44Data?.events7d?.toLocaleString(),
+              },
+              {
+                label: 'Last webhook',
+                value: p44Data?.lastWebhookAt || 'Never',
+              },
+            ]}
+            primaryLabel="Manage p44"
+            primaryAction={() => navigate('/admin/p44-integration')}
+          />
+
+          {/* 3. Knowledge Base */}
           <SourceCard
             icon={BookOpen}
             name="Knowledge Base"
@@ -584,7 +659,7 @@ export default function ContextEngine() {
                 {/* Active sources */}
                 <div className="flex items-center gap-2">
                   <div className="flex -space-x-1">
-                    {[kbStatus(), emailStatus(), slackStatus(), extStatus()].map(
+                    {[p44Status(), kbStatus(), emailStatus(), slackStatus(), extStatus()].map(
                       (s, i) => (
                         <div
                           key={i}

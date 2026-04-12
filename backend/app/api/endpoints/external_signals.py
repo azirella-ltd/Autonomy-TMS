@@ -17,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.services.external_signal_service import ExternalSignalService
-from app.models.external_signal import SOURCE_REGISTRY, SIGNAL_CATEGORIES, SIGNAL_SC_IMPACT
+from app.models.external_signal import (
+    SOURCE_REGISTRY, SIGNAL_CATEGORIES, SIGNAL_TMS_IMPACT,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/external-signals", tags=["External Signals"])
@@ -268,5 +270,96 @@ async def source_registry(
     return {
         "sources": SOURCE_REGISTRY,
         "categories": SIGNAL_CATEGORIES,
-        "sc_impact_types": SIGNAL_SC_IMPACT,
+        "tms_impact_types": SIGNAL_TMS_IMPACT,
+    }
+
+
+# ── Weather Location Sync ───────────────────────────────────────────────────
+
+@router.post("/sources/sync-weather-locations")
+async def sync_weather_locations(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Auto-populate Open-Meteo and NWS location parameters from the
+    tenant's active facility network and lane corridors.
+
+    For each weather source (open_meteo, nws_alerts), this endpoint:
+    1. Reads all FacilityConfig sites with lat/lon for the tenant
+    2. Reads all LaneProfile origin/destination pairs
+    3. Deduplicates by proximity (within 30 miles)
+    4. Updates the source's source_params.locations array
+    5. Returns the count of locations synced
+
+    Idempotent: running it again replaces the locations list.
+    """
+    from sqlalchemy import select, text as sql_text
+
+    tenant_id = _get_tenant_id(current_user)
+
+    # Get all facility locations with coordinates
+    rows = (await db.execute(sql_text("""
+        SELECT
+            s.name,
+            s.latitude,
+            s.longitude,
+            fc.facility_type
+        FROM facility_config fc
+        JOIN sites s ON s.id = fc.site_id
+        WHERE fc.tenant_id = :tid
+          AND s.latitude IS NOT NULL
+          AND s.longitude IS NOT NULL
+    """), {"tid": tenant_id})).fetchall()
+
+    locations = []
+    seen_coords = set()
+    for row in rows:
+        # Proximity dedup: round to 0.5° (~30 miles)
+        key = (round(row.latitude * 2) / 2, round(row.longitude * 2) / 2)
+        if key in seen_coords:
+            continue
+        seen_coords.add(key)
+        locations.append({
+            "lat": round(float(row.latitude), 4),
+            "lon": round(float(row.longitude), 4),
+            "name": row.name or f"{row.facility_type}",
+        })
+
+    if not locations:
+        return {
+            "synced": 0,
+            "message": (
+                "No facility locations with coordinates found. "
+                "Add lat/lon to your facilities in Network Config."
+            ),
+        }
+
+    # Update weather sources
+    from app.models.external_signal import ExternalSignalSource
+    weather_keys = ("open_meteo", "nws_alerts")
+    updated = 0
+    for key in weather_keys:
+        source_row = (await db.execute(
+            select(ExternalSignalSource).where(
+                ExternalSignalSource.tenant_id == tenant_id,
+                ExternalSignalSource.source_key == key,
+            )
+        )).scalar_one_or_none()
+
+        if not source_row:
+            continue
+
+        params = dict(source_row.source_params or {})
+        params["locations"] = locations
+        params["sync_from_network"] = True
+        source_row.source_params = params
+        updated += 1
+
+    if updated:
+        await db.commit()
+
+    return {
+        "synced": len(locations),
+        "sources_updated": updated,
+        "locations": locations,
     }

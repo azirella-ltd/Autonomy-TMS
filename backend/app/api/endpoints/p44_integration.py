@@ -487,3 +487,121 @@ async def get_webhook_info(
             "TRACKING_UPDATE, ETA_UPDATE, EXCEPTION, POSITION_UPDATE."
         ),
     }
+
+
+# ============================================================================
+# Context Engine Dashboard Card
+# ============================================================================
+
+@router.get(
+    "/dashboard",
+    summary="p44 visibility metrics for the Context Engine dashboard",
+)
+async def get_p44_dashboard(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Returns aggregate p44 visibility metrics for the Context Engine
+    dashboard card. No p44 API call is made — all data comes from
+    the local tms_shipment and tracking_event tables.
+
+    Metrics:
+    - active_tracked: shipments with a p44_shipment_id in transit
+    - total_in_transit: all in-transit shipments (tracked or not)
+    - tracking_coverage_pct: active_tracked / total_in_transit
+    - exceptions_24h: tracking events with exception type in last 24h
+    - last_webhook_at: most recent tracking event from p44
+    - avg_eta_confidence_hrs: average P90-P10 range width in hours
+    """
+    from sqlalchemy import select, func, and_, cast, Float, text
+    from app.models.tms_entities import Shipment, TrackingEvent
+
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="System admin cannot view integration dashboards",
+        )
+
+    # Active tracked shipments (have p44_shipment_id and are in transit)
+    in_transit_statuses = (
+        "IN_TRANSIT", "AT_STOP", "OUT_FOR_DELIVERY", "DISPATCHED",
+    )
+
+    total_in_transit_q = await db.execute(
+        select(func.count(Shipment.id)).where(
+            Shipment.tenant_id == tenant_id,
+            Shipment.status.in_(in_transit_statuses),
+        )
+    )
+    total_in_transit = total_in_transit_q.scalar() or 0
+
+    active_tracked_q = await db.execute(
+        select(func.count(Shipment.id)).where(
+            Shipment.tenant_id == tenant_id,
+            Shipment.status.in_(in_transit_statuses),
+            Shipment.p44_shipment_id.isnot(None),
+        )
+    )
+    active_tracked = active_tracked_q.scalar() or 0
+
+    coverage_pct = (
+        round(active_tracked / total_in_transit * 100, 1)
+        if total_in_transit > 0 else None
+    )
+
+    # Exceptions in last 24 hours (from tracking events sourced by p44)
+    from datetime import timedelta
+    cutoff_24h = datetime.utcnow() - timedelta(hours=24)
+    exceptions_q = await db.execute(
+        select(func.count(TrackingEvent.id)).where(
+            TrackingEvent.tenant_id == tenant_id,
+            TrackingEvent.source == "P44",
+            TrackingEvent.event_timestamp >= cutoff_24h,
+            TrackingEvent.exception_code.isnot(None),
+        )
+    )
+    exceptions_24h = exceptions_q.scalar() or 0
+
+    # Last webhook received (most recent p44-sourced tracking event)
+    last_event_q = await db.execute(
+        select(func.max(TrackingEvent.received_timestamp)).where(
+            TrackingEvent.tenant_id == tenant_id,
+            TrackingEvent.source == "P44",
+        )
+    )
+    last_webhook_at = last_event_q.scalar()
+
+    # Tracking events last 7 days (volume metric)
+    cutoff_7d = datetime.utcnow() - timedelta(days=7)
+    events_7d_q = await db.execute(
+        select(func.count(TrackingEvent.id)).where(
+            TrackingEvent.tenant_id == tenant_id,
+            TrackingEvent.source == "P44",
+            TrackingEvent.received_timestamp >= cutoff_7d,
+        )
+    )
+    events_7d = events_7d_q.scalar() or 0
+
+    # Is configured? (at least one shipment has p44_shipment_id)
+    any_tracked_q = await db.execute(
+        select(func.count(Shipment.id)).where(
+            Shipment.tenant_id == tenant_id,
+            Shipment.p44_shipment_id.isnot(None),
+        )
+    )
+    is_configured = (any_tracked_q.scalar() or 0) > 0
+
+    return {
+        "is_configured": is_configured,
+        "is_active": is_configured and active_tracked > 0,
+        "active_tracked": active_tracked,
+        "total_in_transit": total_in_transit,
+        "tracking_coverage_pct": coverage_pct,
+        "exceptions_24h": exceptions_24h,
+        "events_7d": events_7d,
+        "last_webhook_at": (
+            last_webhook_at.isoformat() if last_webhook_at else None
+        ),
+    }
