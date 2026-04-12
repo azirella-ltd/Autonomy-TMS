@@ -277,3 +277,227 @@ class P44TrackingService:
     async def get_carrier_account_groups(self) -> Dict[str, Any]:
         """Get carrier account groups."""
         return await self.connector.get("/api/v4/capacityproviders/accountgroups")
+
+    # ── Document API (Gap #4) ───────────────────────────────────────────
+
+    async def get_documents(
+        self,
+        shipment_id: str,
+        document_types: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get documents attached to a p44 shipment.
+
+        Returns a list of document metadata dicts. Each dict contains:
+          documentType, url, fileName, createdDate, etc.
+
+        Common document types: BOL, POD, INVOICE, CUSTOMS, PACKING_LIST.
+        """
+        params = {}
+        if document_types:
+            params["documentTypes"] = ",".join(document_types)
+        resp = await self.connector.get(
+            f"{self.SHIPMENTS_BASE}/{shipment_id}/documents", params=params
+        )
+        return resp.get("results", resp.get("documents", []))
+
+    # ── Port Intelligence Sync (Gap #5) ────────────────────────────────
+
+    async def sync_port_intelligence_to_lane_profiles(
+        self,
+        db_session,
+        tenant_id: int,
+        locodes: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Sync p44 port intelligence into LaneProfile risk scores.
+
+        Fetches congestion/dwell data from p44 for ocean-leg ports and
+        updates the corresponding LaneProfile entries' disruption_frequency
+        and congestion_risk_score fields. The DemandSensingTRM and
+        CapacityBufferTRM already read these fields — this gives them
+        real-time signal quality from p44.
+
+        Args:
+            db_session: async SQLAlchemy session
+            tenant_id: scope to this tenant's lane profiles
+            locodes: optional explicit port list; if None, auto-discovers
+                     from LaneProfile origin/destination regions that look
+                     like UN/LOCODE patterns
+
+        Returns:
+            {"ports_queried": N, "profiles_updated": N}
+        """
+        from sqlalchemy import select
+        from ...models.transportation_config import LaneProfile
+        from .data_mapper import P44DataMapper
+
+        # Find ocean-mode lanes for this tenant
+        stmt = select(LaneProfile).where(
+            LaneProfile.tenant_id == tenant_id,
+            LaneProfile.primary_mode.in_(["OCEAN", "FCL", "LCL", "BULK_OCEAN"]),
+            LaneProfile.is_active == True,
+        )
+        result = await db_session.execute(stmt)
+        ocean_lanes = result.scalars().all()
+
+        if not ocean_lanes:
+            return {"ports_queried": 0, "profiles_updated": 0}
+
+        # Collect port LOCODEs from lane regions (origin/destination)
+        if locodes is None:
+            locodes_set = set()
+            for lane in ocean_lanes:
+                # Regions that look like UN/LOCODEs (5-char codes like USLAX, CNSHA)
+                for region in [lane.origin_region, lane.destination_region]:
+                    if region and len(region) == 5 and region.isalpha():
+                        locodes_set.add(region.upper())
+            locodes = list(locodes_set)
+
+        if not locodes:
+            return {"ports_queried": 0, "profiles_updated": 0}
+
+        # Fetch from p44 (max 10 per call)
+        all_ports = {}
+        for i in range(0, len(locodes), 10):
+            batch = locodes[i:i + 10]
+            try:
+                raw = await self.get_port_intelligence(batch)
+                mapped = P44DataMapper.from_p44_port_intelligence(raw)
+                all_ports.update(mapped)
+            except Exception as e:
+                logger.warning(f"P44 port intelligence batch failed for {batch}: {e}")
+
+        if not all_ports:
+            return {"ports_queried": len(locodes), "profiles_updated": 0}
+
+        # Update LaneProfile risk scores based on port data
+        updated = 0
+        for lane in ocean_lanes:
+            origin_data = all_ports.get(lane.origin_region, {}) if lane.origin_region else {}
+            dest_data = all_ports.get(lane.destination_region, {}) if lane.destination_region else {}
+
+            # Use the worse of origin/destination congestion
+            congestion_levels = {
+                "LOW": 0.2, "MODERATE": 0.4, "HIGH": 0.6,
+                "VERY_HIGH": 0.8, "CRITICAL": 1.0,
+            }
+
+            scores = []
+            for port_data in [origin_data, dest_data]:
+                if port_data.get("congestion_level"):
+                    scores.append(congestion_levels.get(
+                        port_data["congestion_level"].upper(), 0.5
+                    ))
+
+            if scores:
+                lane.congestion_risk_score = max(scores)
+                # Dwell time > 5 days suggests frequent disruption
+                avg_dwell = max(
+                    origin_data.get("avg_dwell_days") or 0,
+                    dest_data.get("avg_dwell_days") or 0,
+                )
+                if avg_dwell > 0:
+                    lane.disruption_frequency = min(avg_dwell / 10.0, 1.0)
+                updated += 1
+
+        if updated:
+            await db_session.flush()
+
+        logger.info(
+            f"P44 port intelligence sync: queried {len(locodes)} ports, "
+            f"updated {updated} lane profiles for tenant {tenant_id}"
+        )
+        return {"ports_queried": len(locodes), "profiles_updated": updated}
+
+    # ── Document Sync for Shipment (Gap #4) ────────────────────────────
+
+    async def sync_documents_for_shipment(
+        self,
+        p44_shipment_id: str,
+        tms_shipment_id: int,
+        tenant_id: int,
+        db_session,
+    ) -> Dict[str, Any]:
+        """
+        Sync p44 documents (BOL, POD) into TMS BillOfLading/ProofOfDelivery.
+
+        Call this after a shipment is delivered (DELIVERED status event).
+        p44 often has the signed delivery receipt before the TMS does
+        (because p44 gets it from the driver app), shortening the POD cycle.
+
+        Returns: {"bol_synced": bool, "pod_synced": bool, "documents_found": N}
+        """
+        from sqlalchemy import select
+        from ...models.tms_entities import BillOfLading, ProofOfDelivery
+
+        try:
+            docs = await self.get_documents(p44_shipment_id, ["BOL", "POD"])
+        except Exception as e:
+            logger.warning(f"P44 document fetch failed for {p44_shipment_id}: {e}")
+            return {"bol_synced": False, "pod_synced": False, "documents_found": 0}
+
+        result = {"bol_synced": False, "pod_synced": False, "documents_found": len(docs)}
+
+        for doc in docs:
+            doc_type = (doc.get("documentType") or doc.get("type", "")).upper()
+            doc_url = doc.get("url") or doc.get("downloadUrl")
+
+            if doc_type == "BOL" and doc_url:
+                # Check if we already have a BOL with a p44 URL
+                existing = await db_session.execute(
+                    select(BillOfLading).where(
+                        BillOfLading.shipment_id == tms_shipment_id,
+                        BillOfLading.tenant_id == tenant_id,
+                    )
+                )
+                bol = existing.scalar_one_or_none()
+                if bol and not bol.document_url:
+                    # TMS has a BOL record but no document — fill from p44
+                    bol.document_url = doc_url
+                    result["bol_synced"] = True
+                elif not bol:
+                    # Create a BOL record from p44 document
+                    bol = BillOfLading(
+                        shipment_id=tms_shipment_id,
+                        bol_number=doc.get("referenceNumber", f"P44-{p44_shipment_id}"),
+                        document_url=doc_url,
+                        issued_date=datetime.utcnow().date(),
+                        tenant_id=tenant_id,
+                    )
+                    db_session.add(bol)
+                    result["bol_synced"] = True
+
+            elif doc_type == "POD" and doc_url:
+                existing = await db_session.execute(
+                    select(ProofOfDelivery).where(
+                        ProofOfDelivery.shipment_id == tms_shipment_id,
+                        ProofOfDelivery.tenant_id == tenant_id,
+                    )
+                )
+                pod = existing.scalar_one_or_none()
+                if pod and not pod.document_url:
+                    pod.document_url = doc_url
+                    if not pod.signature_url:
+                        pod.signature_url = doc_url  # POD document often IS the signed receipt
+                    result["pod_synced"] = True
+                elif not pod:
+                    pod = ProofOfDelivery(
+                        shipment_id=tms_shipment_id,
+                        delivery_date=datetime.utcnow(),
+                        delivery_status="FULL",
+                        document_url=doc_url,
+                        tenant_id=tenant_id,
+                    )
+                    db_session.add(pod)
+                    result["pod_synced"] = True
+
+        if result["bol_synced"] or result["pod_synced"]:
+            await db_session.flush()
+
+        logger.info(
+            f"P44 document sync for shipment {tms_shipment_id}: "
+            f"{result['documents_found']} docs, BOL={'synced' if result['bol_synced'] else 'no'}, "
+            f"POD={'synced' if result['pod_synced'] else 'no'}"
+        )
+        return result

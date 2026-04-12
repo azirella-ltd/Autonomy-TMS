@@ -621,6 +621,7 @@ class Shipment(Base):
     p44_tracking_url = Column(String(500))
     p44_derived_status = Column(String(50), comment="p44 derivedStatus from nested status object (e.g., EARLY, ON_TIME, LATE)")
     p44_health_score = Column(Double, comment="p44 health score (0.0-1.0) — leading indicator for exception prediction")
+    p44_master_shipment_id = Column(String(200), comment="p44 masterShipmentId — maps to TMS Load for multi-stop load-level visibility")
 
     # Source
     source = Column(String(100), comment="TMS, ERP, EDI, MANUAL")

@@ -813,7 +813,31 @@ class P44WebhookHandler:
             elif new_status == ShipmentStatus.DELIVERED:
                 ship.actual_delivery_date = event_ts
 
+        # Gap #2: store p44 masterShipmentId if present (maps to TMS Load
+        # for multi-stop load-level visibility)
+        master_id = event_data.get("masterShipmentId") or event_data.get("loadId")
+        if master_id and not ship.p44_master_shipment_id:
+            ship.p44_master_shipment_id = str(master_id)
+
         await db_session.flush()
+
+        # Gap #4: trigger document sync on delivery. p44 often has the
+        # signed POD before TMS does (driver app uploads to p44 first).
+        if new_status == ShipmentStatus.DELIVERED and ship.p44_shipment_id:
+            try:
+                from .tracking_service import P44TrackingService
+                tracking_svc = P44TrackingService(self.connector)
+                await tracking_svc.sync_documents_for_shipment(
+                    p44_shipment_id=ship.p44_shipment_id,
+                    tms_shipment_id=ship.id,
+                    tenant_id=shipment.get("tenant_id", ship.tenant_id),
+                    db_session=db_session,
+                )
+            except Exception as e:
+                # Non-critical: log and continue. Status update succeeded.
+                logger.warning(
+                    f"P44 document sync failed for shipment {shipment['shipment_number']}: {e}"
+                )
 
         logger.info(
             f"P44 webhook: shipment {shipment['shipment_number']} "
