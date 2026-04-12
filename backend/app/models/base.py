@@ -14,13 +14,13 @@ relied on it must have an explicit __tablename__ attribute.
 # THE canonical Base — all TMS models must inherit from this.
 from azirella_data_model.base import Base  # noqa: F401
 
-# Import canonical tenant subpackage to register with Base metadata.
-# Phase 3a only adopts tenant/; master, governance, and powell are
-# imported in their respective Phase 3b/3c/3d sessions to avoid
-# metadata collisions with TMS's local model files that haven't been
-# rewritten as shims yet (e.g., supply_chain_config.py still defines
-# SupplyChainConfig locally — would collide with canonical master/config.py).
+# Import canonical subpackages to register with Base metadata.
+# Each subpackage is added here when its local model files are
+# rewritten as re-export shims (to avoid metadata collisions).
+# Phase 3a: tenant/ — adopted 2026-04-12
+# Phase 3b: governance/ — adopted 2026-04-12
 import azirella_data_model.tenant  # noqa: F401
+import azirella_data_model.governance  # noqa: F401
 
 # Import TMS-specific models to register them with the same Base metadata.
 # These are the models that stay in TMS (not canonical).
