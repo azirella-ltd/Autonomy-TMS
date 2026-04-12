@@ -3,7 +3,7 @@ version: '3.8'
 services:
   proxy:
     image: nginx:alpine
-    container_name: autonomy-proxy
+    container_name: autonomy-tms-proxy
     restart: unless-stopped
     ports:
       - "8088:8088"
@@ -22,5 +22,5 @@ services:
 
 networks:
   default:
-    name: autonomy_autonomy-network
+    name: autonomy_autonomy-tms-network
     external: true

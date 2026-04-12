@@ -5,14 +5,14 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: autonomy-frontend
+    container_name: autonomy-tms-frontend
     ports:
       - "3000:80"
     environment:
       - NODE_ENV=production
       - REACT_APP_API_URL=/api
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     depends_on:
       - backend
 
@@ -20,7 +20,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: autonomy-backend
+    container_name: autonomy-tms-backend
     restart: unless-stopped
     environment:
       - MYSQL_SERVER=db
@@ -50,7 +50,7 @@ services:
     volumes:
       - ./backend:/app
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     # db is running separately
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
@@ -68,5 +68,5 @@ services:
         hard: 65535
 
 networks:
-  autonomy-network:
+  autonomy-tms-network:
     external: true

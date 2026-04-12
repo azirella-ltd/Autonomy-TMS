@@ -1,7 +1,7 @@
 services:
   proxy:
     image: nginx:alpine
-    container_name: autonomy-proxy
+    container_name: autonomy-tms-proxy
     restart: unless-stopped
     ports:
       - "8088:8088"
@@ -13,7 +13,7 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8088/healthz"]
       interval: 15s
@@ -25,7 +25,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: autonomy-frontend
+    container_name: autonomy-tms-frontend
     ports:
       - "3000:80"
     environment:
@@ -33,7 +33,7 @@ services:
       - REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL:-/api}
       - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api}
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     depends_on:
       backend:
         condition: service_healthy
@@ -46,7 +46,7 @@ services:
         - FORCE_GPU=1
       secrets:
         - autonomy_core_token
-    container_name: autonomy-backend-gpu
+    container_name: autonomy-tms-backend-gpu
     gpus: all
     restart: unless-stopped
     env_file:
@@ -87,7 +87,7 @@ services:
     volumes:
       - ./backend:/app
     networks:
-      autonomy-network:
+      autonomy-tms-network:
         aliases:
           - backend
     depends_on:
@@ -132,5 +132,5 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 networks:
-  autonomy-network:
+  autonomy-tms-network:
     driver: bridge

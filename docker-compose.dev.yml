@@ -8,7 +8,7 @@ services:
   # Optional TLS proxy for local HTTPS on 8443 (use with `--profile tls`)
   proxy-tls:
     image: nginx:alpine
-    container_name: autonomy-proxy-tls
+    container_name: autonomy-tms-proxy-tls
     profiles: ["tls"]
     ports:
       - "8443:8443"
@@ -22,7 +22,7 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - autonomy-network
+      - autonomy-tms-network
 
   # GPU-specific runtime configuration (only used when FORCE_GPU=1)
   backend:
@@ -33,6 +33,6 @@ services:
       - FORCE_GPU=${FORCE_GPU:-0}
 
 networks:
-  autonomy-network:
+  autonomy-tms-network:
     external: false
 

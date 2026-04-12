@@ -1,7 +1,7 @@
 services:
   proxy:
     image: nginx:alpine
-    container_name: autonomy-proxy
+    container_name: autonomy-tms-proxy
     restart: unless-stopped
     ports:
       - "8088:8088"
@@ -13,7 +13,7 @@ services:
       backend:
         condition: service_healthy
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8088/healthz | grep -q ok"]
       interval: 15s
@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile
       secrets:
         - npm_token
-    container_name: autonomy-frontend
+    container_name: autonomy-tms-frontend
     ports:
       - "3000:80"  # Expose frontend directly for testing
     environment:
@@ -34,7 +34,7 @@ services:
       - REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL:-/api/v1}
       - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api/v1}
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     depends_on:
       backend:
         condition: service_healthy
@@ -45,7 +45,7 @@ services:
       dockerfile: Dockerfile.cpu
       secrets:
         - autonomy_core_token
-    container_name: autonomy-backend
+    container_name: autonomy-tms-backend
     restart: unless-stopped
     env_file:
       - .env
@@ -97,7 +97,7 @@ services:
       - ./backend:/app
       - ./imports:/app/imports
     networks:
-      autonomy-network:
+      autonomy-tms-network:
         aliases:
           - backend
     depends_on:
@@ -123,7 +123,7 @@ services:
 
   db:
     image: pgvector/pgvector:pg16
-    container_name: autonomy-db
+    container_name: autonomy-tms-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRESQL_DATABASE:-autonomy}
@@ -144,7 +144,7 @@ services:
       retries: 10
       start_period: 30s
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     security_opt:
       - seccomp:unconfined
     ulimits:
@@ -154,7 +154,7 @@ services:
 
   kb-db:
     image: pgvector/pgvector:pg16
-    container_name: autonomy-kb-db
+    container_name: autonomy-tms-kb-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${KB_POSTGRESQL_DATABASE:-autonomy_kb}
@@ -171,11 +171,11 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - autonomy-network
+      - autonomy-tms-network
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    container_name: autonomy-pgadmin
+    container_name: autonomy-tms-pgadmin
     restart: unless-stopped
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@autonomy.ai}
@@ -186,7 +186,7 @@ services:
     depends_on:
       - db
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     volumes:
       - pgadmin_data:/var/lib/pgadmin
 
@@ -194,7 +194,7 @@ services:
     build:
       context: ./backend
       dockerfile: scripts/Dockerfile
-    container_name: create-users
+    container_name: autonomy-tms-create-users
     environment:
       - DATABASE_TYPE=postgresql
       - POSTGRESQL_HOST=db
@@ -206,13 +206,13 @@ services:
       db:
         condition: service_healthy
     networks:
-      - autonomy-network
+      - autonomy-tms-network
 
   mcp-server:
     build:
       context: ./backend
       dockerfile: Dockerfile.cpu
-    container_name: autonomy-mcp-server
+    container_name: autonomy-tms-mcp-server
     restart: unless-stopped
     env_file:
       - .env
@@ -229,10 +229,10 @@ services:
       db:
         condition: service_healthy
     networks:
-      - autonomy-network
+      - autonomy-tms-network
 
 networks:
-  autonomy-network:
+  autonomy-tms-network:
     driver: bridge
 
 volumes:

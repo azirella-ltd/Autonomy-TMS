@@ -3,7 +3,7 @@ version: '3.8'
 services:
   db:
     image: mariadb:10.8
-    container_name: autonomy-db
+    container_name: autonomy-tms-db
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -19,7 +19,7 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - autonomy-network
+      - autonomy-tms-network
 
   backend:
     build:
@@ -27,7 +27,7 @@ services:
       dockerfile: Dockerfile.prod
       args:
         - ENVIRONMENT=production
-    container_name: autonomy-backend
+    container_name: autonomy-tms-backend
     restart: unless-stopped
     depends_on:
       db:
@@ -53,7 +53,7 @@ services:
     ports:
       - "8000:8000"
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     logging:
       driver: "json-file"
       options:
@@ -62,7 +62,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: autonomy-nginx
+    container_name: autonomy-tms-nginx
     restart: unless-stopped
     ports:
       - "80:80"
@@ -74,10 +74,10 @@ services:
     depends_on:
       - backend
     networks:
-      - autonomy-network
+      - autonomy-tms-network
 
 networks:
-  autonomy-network:
+  autonomy-tms-network:
     driver: bridge
 
 volumes:

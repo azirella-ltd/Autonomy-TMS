@@ -3,7 +3,7 @@ version: '3.8'
 services:
   db:
     image: mariadb:10.11.14
-    container_name: autonomy-db
+    container_name: autonomy-tms-db
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
@@ -26,7 +26,7 @@ services:
         '--skip-name-resolve'
     ]
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$${MYSQL_USER}", "-p$${MYSQL_PASSWORD}"]
       interval: 10s
@@ -34,7 +34,7 @@ services:
       retries: 5
 
 networks:
-  autonomy-network:
+  autonomy-tms-network:
     driver: bridge
 
 volumes:

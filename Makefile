@@ -100,8 +100,8 @@ up-llm-ollama:
 # Pull required models into Ollama
 ollama-pull-models:
 	@echo "\n[+] Pulling Qwen 3 8B and Nomic Embed Text into Ollama..."
-	docker exec autonomy-ollama ollama pull qwen3:8b
-	docker exec autonomy-ollama ollama pull nomic-embed-text
+	docker exec autonomy-tms-ollama ollama pull qwen3:8b
+	docker exec autonomy-tms-ollama ollama pull nomic-embed-text
 	@echo "\n[✓] Models ready."
 
 # Default CPU target

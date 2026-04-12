@@ -46,7 +46,7 @@ services:
     volumes:
       - vllm_cache:/root/.cache
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     deploy:
       resources:
         reservations:
@@ -82,7 +82,7 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     networks:
-      - autonomy-network
+      - autonomy-tms-network
     deploy:
       resources:
         reservations:
