@@ -58,6 +58,18 @@ The repo currently contains a lot of SCP code from the original fork. See [docs/
 - **Demo Data**: Transportation network generators, freight history generators
 - **Frontend Pages**: Transportation-specific views replacing SC planning pages
 
+## CRITICAL: Autonomy-Core Consumer Adoption Log
+
+**When ANY change is made to `Autonomy-Core` (packages/autonomy-frontend, packages/data-model, or docs), the author MUST update `Autonomy-Core/CONSUMER_ADOPTION_LOG.md`** so that SCP and TMS can discover and adopt the change.
+
+This applies to:
+- New or changed exports in `@azirella-ltd/autonomy-frontend` (components, hooks, registries, types)
+- New or changed entities in `azirella-data-model` (models, enums, relationships)
+- New architecture decisions in `docs/ARCHITECTURE_DECISIONS.md`
+- Any change that affects the contract between Core and consuming apps
+
+**The log is the discovery mechanism.** Without it, a change to Core sits unpicked until someone happens to `git pull` and notices. Both products check `CONSUMER_ADOPTION_LOG.md` as part of their sync workflow (see [Core Sync Workflow](docs/internal/plans/AUTONOMY_DATA_MODEL_PLAN.md)).
+
 ## CRITICAL: Data Model — Transportation Entities
 
 The TMS data model extends the AWS SC foundation where applicable but introduces transportation-specific entities. The DAG network model is shared but nodes and edges have different semantics.
