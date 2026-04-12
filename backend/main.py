@@ -577,6 +577,10 @@ async def startup_event():
             from app.services.executive_briefing_jobs import register_executive_briefing_jobs
             register_executive_briefing_jobs(scheduler_service)
 
+            # Register TMS extraction jobs (shipment sync, load sync, carrier refresh, port intel)
+            from app.services.tms_extraction_jobs import register_tms_extraction_jobs
+            register_tms_extraction_jobs(scheduler_service)
+
             # Register SAP data staging jobs (incremental sync every 6h, daily reconciliation)
             from app.services.sap_staging_jobs import register_sap_staging_jobs
             register_sap_staging_jobs(scheduler_service)
