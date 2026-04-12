@@ -1,42 +1,27 @@
-from sqlalchemy.ext.declarative import declarative_base, declared_attr
-from sqlalchemy import Column, Integer
+"""SQLAlchemy Base — re-exports from canonical azirella-data-model.
 
-class CustomBase:
-    # Generate __tablename__ automatically
-    @declared_attr
-    def __tablename__(cls):
-        # Map model names to table names
-        table_names = {
-            'User': 'users',
-            'Game': 'games',
-            'Player': 'players',
-            'Round': 'rounds',
-            'PlayerAction': 'player_actions',
-            'RefreshToken': 'refresh_tokens',
-            'PasswordHistory': 'password_history',
-            'PasswordResetToken': 'password_reset_tokens',
-            'TokenBlacklist': 'token_blacklist',
-            'UserSession': 'user_sessions'
-        }
-        return table_names.get(cls.__name__, cls.__name__.lower())
+Stage 3 Phase 3a: TMS now uses the canonical Base so that ALL models
+(canonical re-exports + TMS-specific entities) register against the
+same metadata. Cross-model relationships resolve because everything
+is on one shared metadata object.
 
-    # Common columns for all models
-    id = Column(Integer, primary_key=True, index=True)
+Previously TMS had its own Base via declarative_base(cls=CustomBase)
+with a table_names dict for Beer Game legacy naming (Game→games,
+Player→players, Round→rounds). That dict is removed; any model that
+relied on it must have an explicit __tablename__ attribute.
+"""
 
-# Create the declarative base
-Base = declarative_base(cls=CustomBase)
+# THE canonical Base — all TMS models must inherit from this.
+from azirella_data_model.base import Base  # noqa: F401
 
-# Import all models to ensure they're registered with SQLAlchemy
-# This must be done after Base is defined
-from app.models.user import User, RefreshToken
-from app.models.participant import ScenarioUser
-from app.models.scenario import Scenario, Round, ScenarioUserAction
-from app.models.auth_models import PasswordHistory, PasswordResetToken
-from app.models.session import TokenBlacklist, UserSession
+# Import canonical tenant subpackage to register with Base metadata.
+# Phase 3a only adopts tenant/; master, governance, and powell are
+# imported in their respective Phase 3b/3c/3d sessions to avoid
+# metadata collisions with TMS's local model files that haven't been
+# rewritten as shims yet (e.g., supply_chain_config.py still defines
+# SupplyChainConfig locally — would collide with canonical master/config.py).
+import azirella_data_model.tenant  # noqa: F401
 
-# Import the association table to ensure it's registered
-# Note: user_games renamed to user_scenarios in Feb 2026 refactoring
-from app.models.user import user_scenarios
-
-
-
+# Import TMS-specific models to register them with the same Base metadata.
+# These are the models that stay in TMS (not canonical).
+from app.models.tms.user_extensions import TMSUserExtension  # noqa: F401

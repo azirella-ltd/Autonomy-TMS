@@ -1,258 +1,52 @@
-from typing import Optional, List, TYPE_CHECKING
-from datetime import datetime, date
+"""Tenant model — re-exports from canonical azirella-data-model.
+
+The SQLAlchemy Tenant class is now defined in azirella-data-model and
+re-exported here so that existing imports (`from app.models.tenant import Tenant`)
+continue to work unchanged. This file also keeps TMS-local enums that aren't
+in the canonical package.
+
+Stage 3 Phase 3a — TMS adopts azirella-data-model tenant subpackage.
+"""
 from enum import Enum
-from sqlalchemy import Boolean, Column, Integer, String, Text, ForeignKey, DateTime, Date
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Enum as SAEnum
-from sqlalchemy.sql import func
 
-from .base import Base
-from .explainability import ExplainabilityLevel
+# ── Canonical re-exports ─────────────────────────────────────────────────────
+# These are the SAME class objects from the shared package, not duplicates.
+# Every `from app.models.tenant import Tenant` across TMS resolves to the
+# canonical class via this re-export.
+from azirella_data_model.tenant import Tenant, TenantMode  # noqa: F401
 
+
+# ── TMS-local enums (not in canonical) ───────────────────────────────────────
 
 class TenantIndustry(str, Enum):
-    """Customer industry vertical — drives default stochastic parameters."""
-    FOOD_BEVERAGE = "food_beverage"                # Food & Beverage Manufacturing
-    PHARMACEUTICAL = "pharmaceutical"              # Pharmaceutical & Life Sciences
-    AUTOMOTIVE = "automotive"                      # Automotive & Transport Equipment
-    ELECTRONICS = "electronics"                    # Electronics & High-Tech
-    CHEMICAL = "chemical"                          # Chemical & Process Industries
-    INDUSTRIAL_EQUIPMENT = "industrial_equipment"  # Industrial Machinery & Equipment
-    CONSUMER_GOODS = "consumer_goods"              # Consumer Packaged Goods (CPG)
-    METALS_MINING = "metals_mining"                # Metals, Mining & Materials
-    AEROSPACE_DEFENSE = "aerospace_defense"        # Aerospace & Defense
-    BUILDING_MATERIALS = "building_materials"      # Building Materials & Construction
-    TEXTILE_APPAREL = "textile_apparel"            # Textile & Apparel
-    WHOLESALE_DISTRIBUTION = "wholesale_distribution"  # Wholesale Distribution
-    THIRD_PARTY_LOGISTICS = "third_party_logistics"    # 3PL & Logistics Services
+    """Customer industry vertical — drives default stochastic parameters.
 
-
-class TenantMode(str, Enum):
-    """Tenant operating mode - determines navigation and behavior."""
-    LEARNING = "learning"      # Simplified nav, game-like clock, turn-based (user education)
-    PRODUCTION = "production"  # Full nav, real data, real planning
+    The canonical Tenant uses a plain String(50) column for industry so each
+    app can define its own verticals. This enum is kept here for TMS code
+    that references it by name. SCP has its own version with manufacturing
+    verticals.
+    """
+    FOOD_BEVERAGE = "food_beverage"
+    PHARMACEUTICAL = "pharmaceutical"
+    AUTOMOTIVE = "automotive"
+    ELECTRONICS = "electronics"
+    CHEMICAL = "chemical"
+    INDUSTRIAL_EQUIPMENT = "industrial_equipment"
+    CONSUMER_GOODS = "consumer_goods"
+    METALS_MINING = "metals_mining"
+    AEROSPACE_DEFENSE = "aerospace_defense"
+    BUILDING_MATERIALS = "building_materials"
+    TEXTILE_APPAREL = "textile_apparel"
+    WHOLESALE_DISTRIBUTION = "wholesale_distribution"
+    THIRD_PARTY_LOGISTICS = "third_party_logistics"
 
 
 class ClockMode(str, Enum):
-    """Clock progression mode for Learning tenants."""
-    TURN_BASED = "turn_based"  # Advance when all players submit
-    TIMED = "timed"            # Fixed time per round
-    REALTIME = "realtime"      # Continuous (for demos)
+    """Clock progression mode for Learning tenants.
 
-if TYPE_CHECKING:
-    from .user import User
-    from .supply_chain_config import SupplyChainConfig
-    from .scenario import Scenario
-    from .sync_job import SyncJobConfig
-    from .workflow import WorkflowTemplate
-    from .planning_cycle import PlanningCycle
-
-class Tenant(Base):
-    """Organization representing an Autonomy tenant (isolation boundary)."""
-    __tablename__ = "tenants"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
-    subdomain: Mapped[str] = mapped_column(String(50), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    logo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    admin_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
-
-    # Multi-tenant provisioning defaults
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
-    billing_plan: Mapped[str] = mapped_column(String(20), nullable=False, default="FREE")
-    max_users: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
-    max_games: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
-    max_supply_chain_configs: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
-    max_storage_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=5000)
-    current_user_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    current_game_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    current_config_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    current_storage_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
-
-    # Agent Explainability Configuration
-    explainability_level: Mapped[ExplainabilityLevel] = mapped_column(
-        SAEnum(ExplainabilityLevel, values_callable=lambda x: [e.value for e in x], name="explainability_level_enum"),
-        nullable=False,
-        server_default=ExplainabilityLevel.NORMAL.value,
-        default=ExplainabilityLevel.NORMAL,
-    )
-
-    # Tenant Operating Mode (Learning vs Production)
-    mode: Mapped[TenantMode] = mapped_column(
-        SAEnum(TenantMode, values_callable=lambda x: [e.value for e in x], name="tenant_mode_enum"),
-        nullable=False,
-        server_default=TenantMode.PRODUCTION.value,
-        default=TenantMode.PRODUCTION,
-    )
-
-    # Learning Mode Settings
-    clock_mode: Mapped[Optional[ClockMode]] = mapped_column(
-        SAEnum(ClockMode, values_callable=lambda x: [e.value for e in x], name="clock_mode_enum"),
-        nullable=True,
-        default=None,
-    )
-    round_duration_seconds: Mapped[Optional[int]] = mapped_column(
-        Integer, nullable=True, default=None,
-        comment="Round duration in seconds for timed clock mode"
-    )
-
-    # Virtual Clock — demo mode can freeze "today" at a historical reference date
-    # See docs/internal/VIRTUAL_CLOCK_ARCHITECTURE.md
-    time_mode: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="live", server_default="live",
-        comment="live=real today, frozen=use virtual_today",
-    )
-    virtual_today: Mapped[Optional[date]] = mapped_column(
-        Date, nullable=True,
-        comment="Frozen reference date when time_mode=frozen",
-    )
-    external_data_mode: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="live", server_default="live",
-        comment="live=call external APIs, snapshot=replay captured data",
-    )
-    external_snapshot_id: Mapped[Optional[str]] = mapped_column(
-        String(100), nullable=True,
-        comment="Snapshot identifier to replay when external_data_mode=snapshot",
-    )
-
-    # Customer Industry (drives default stochastic parameters)
-    industry: Mapped[Optional[TenantIndustry]] = mapped_column(
-        SAEnum(TenantIndustry, values_callable=lambda x: [e.value for e in x], name="tenant_industry_enum"),
-        nullable=True,
-        default=None,
-    )
-
-    # Production Mode Settings
-    data_refresh_schedule: Mapped[Optional[str]] = mapped_column(
-        String(100), nullable=True, default=None,
-        comment="Cron expression for data refresh schedule"
-    )
-    last_data_import: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True, default=None,
-        comment="Timestamp of last data import"
-    )
-
-    # ERP Configuration (set at tenant creation by systemadmin)
-    import_base_dir: Mapped[Optional[str]] = mapped_column(
-        String(500), nullable=True, default=None,
-        comment="Base directory for data imports. Default: imports/{tenant_name}/CSV_Generic"
-    )
-    export_base_dir: Mapped[Optional[str]] = mapped_column(
-        String(500), nullable=True, default=None,
-        comment="Base directory for data exports. Default: exports/{tenant_name}/CSV_Generic"
-    )
-    erp_retention_snapshots: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=5,
-        comment="Number of extraction snapshots to retain per connection"
-    )
-
-    # Digital Twin Simulation Parameters
-    # The simulation replicates the customer's APS heuristics against stochastic reality.
-    # Agents learn by watching the heuristic decisions and their outcomes.
-    sim_trials: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=50,
-        comment="Number of stress-test trials for digital twin simulation"
-    )
-    sim_days: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=90,
-        comment="Days per episode — should match customer planning horizon"
-    )
-    sim_warmup_days: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=10,
-        comment="Warmup period (days) — skip early transients before collecting data"
-    )
-    sim_time_bucket: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="daily",
-        comment="Time bucket: daily, weekly, monthly — match customer MPS review cycle"
-    )
-    sim_decisions_per_type: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=20,
-        comment="Max decisions to seed per TRM type from simulation"
-    )
-    is_demo: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False,
-        comment="Demo tenant — dates auto-shifted daily to keep data fresh"
-    )
-
-    # Session security
-    session_timeout_minutes: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=5,
-        comment="Auto-logout after N minutes of inactivity (1-480, default 5)"
-    )
-
-    def apply_industry_sim_defaults(self) -> None:
-        """Set simulation parameters from industry benchmarks.
-
-        Called at tenant creation or when industry is changed.
-        Only sets values that haven't been explicitly overridden.
-        """
-        from app.services.powell.training_distributions import get_industry_sim_defaults
-        if not self.industry:
-            return
-        defaults = get_industry_sim_defaults(self.industry.value)
-        if self.sim_days == 90:  # still at default
-            self.sim_days = defaults["sim_days"]
-        if self.sim_trials == 50:  # still at default
-            self.sim_trials = defaults["sim_trials"]
-        if self.sim_warmup_days == 10:
-            self.sim_warmup_days = defaults["sim_warmup_days"]
-        self.sim_time_bucket = "daily"  # Always daily
-
-    @property
-    def is_learning(self) -> bool:
-        """Check if tenant is in learning mode (user education)."""
-        return self.mode == TenantMode.LEARNING
-
-    @property
-    def is_production(self) -> bool:
-        """Check if tenant is in production mode."""
-        return self.mode == TenantMode.PRODUCTION
-
-    admin: Mapped["User"] = relationship("User", back_populates="admin_of_tenant", foreign_keys=[admin_id])
-    users: Mapped[List["User"]] = relationship("User", back_populates="tenant", foreign_keys="User.tenant_id", cascade="all, delete-orphan")
-
-    # Make supply_chain_configs relationship optional
-    if TYPE_CHECKING:
-        supply_chain_configs: Mapped[List["SupplyChainConfig"]]
-    else:
-        supply_chain_configs = relationship(
-            "SupplyChainConfig",
-            back_populates="tenant",
-            cascade="all, delete-orphan",
-            lazy='dynamic'
-        )
-
-    # Scenarios belonging to this tenant
-    scenarios: Mapped[List["Scenario"]] = relationship("Scenario", back_populates="tenant", cascade="all, delete-orphan")
-    watchlists: Mapped[List["Watchlist"]] = relationship("Watchlist", back_populates="tenant", cascade="all, delete-orphan")
-
-    # SAP Data Import Cadence System
-    sync_job_configs: Mapped[List["SyncJobConfig"]] = relationship(
-        "SyncJobConfig", back_populates="tenant", cascade="all, delete-orphan"
-    )
-
-    # Workflow System
-    workflow_templates: Mapped[List["WorkflowTemplate"]] = relationship(
-        "WorkflowTemplate", back_populates="tenant", cascade="all, delete-orphan"
-    )
-
-    # Planning Cycle Management
-    planning_cycles: Mapped[List["PlanningCycle"]] = relationship(
-        "PlanningCycle", back_populates="tenant", cascade="all, delete-orphan"
-    )
-
-    # SSO Providers (explicit FK needed — SSOProvider has both tenant_id and default_tenant_id)
-    sso_providers: Mapped[List["SSOProvider"]] = relationship(
-        "SSOProvider", back_populates="tenant",
-        foreign_keys="SSOProvider.tenant_id",
-    )
-
-    # Audit Logs
-    audit_logs: Mapped[List["AuditLog"]] = relationship(
-        "AuditLog", back_populates="tenant"
-    )
+    Pre-AIIO legacy (Beer Game simulation). Kept for backward compatibility
+    with existing TMS seed scripts and config generators that reference it.
+    """
+    TURN_BASED = "turn_based"
+    TIMED = "timed"
+    REALTIME = "realtime"
