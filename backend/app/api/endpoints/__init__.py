@@ -43,6 +43,7 @@ from .synthetic_data import router as synthetic_data_router
 from .sap_data_management import router as sap_data_management_router
 from .sap_change_simulator import router as sap_change_simulator_router
 from .erp_integration import router as erp_integration_router
+from .tms_erp_integration import router as tms_erp_integration_router
 
 # Autonomy Customer Registry
 from .autonomy_customers import router as autonomy_customers_router

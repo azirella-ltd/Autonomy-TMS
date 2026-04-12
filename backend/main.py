@@ -6887,6 +6887,7 @@ from app.api.endpoints import (
     synthetic_data_router,
     sap_data_management_router,
     erp_integration_router,
+    tms_erp_integration_router,
     autonomy_customers_router,
     sap_change_simulator_router,
     powell_router,
@@ -6926,6 +6927,7 @@ api.include_router(planning_hierarchy_router, prefix="/planning-hierarchy", tags
 api.include_router(synthetic_data_router, prefix="/synthetic-data", tags=["synthetic-data"])
 api.include_router(sap_data_management_router, prefix="/sap-data", tags=["sap-data-management"])
 api.include_router(erp_integration_router, prefix="/erp", tags=["erp-integration"])
+api.include_router(tms_erp_integration_router, prefix="/tms-integration", tags=["tms-integration"])
 api.include_router(autonomy_customers_router, prefix="/customers", tags=["customers"])
 api.include_router(sap_change_simulator_router, tags=["sap-change-simulator"])
 api.include_router(powell_router, prefix="/powell", tags=["powell"])
