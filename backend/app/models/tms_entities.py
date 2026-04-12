@@ -614,11 +614,13 @@ class Shipment(Base):
     current_lon = Column(Double)
     last_tracking_update = Column(DateTime)
     estimated_arrival = Column(DateTime, comment="Current ETA from tracking/conformal")
-    eta_confidence = Column(JSON, comment='{"p10": "2026-04-10T08:00", "p50": "2026-04-10T14:00", "p90": "2026-04-11T06:00"}')
+    eta_confidence = Column(JSON, comment='{"p44": {"p10": "...", "p50": "...", "p90": "..."}, "autonomy": {"p10": "...", "p50": "...", "p90": "..."}, "composite": {"p10": "...", "p50": "...", "p90": "...", "method": "ensemble"}}')
 
     # p44 integration
     p44_shipment_id = Column(String(200), comment="project44 shipment identifier")
     p44_tracking_url = Column(String(500))
+    p44_derived_status = Column(String(50), comment="p44 derivedStatus from nested status object (e.g., EARLY, ON_TIME, LATE)")
+    p44_health_score = Column(Double, comment="p44 health score (0.0-1.0) — leading indicator for exception prediction")
 
     # Source
     source = Column(String(100), comment="TMS, ERP, EDI, MANUAL")

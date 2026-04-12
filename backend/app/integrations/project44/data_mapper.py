@@ -329,6 +329,11 @@ class P44DataMapper:
         p44_status = p44_data.get("status", {})
         if isinstance(p44_status, dict):
             result["status"] = cls._map_p44_status(p44_status.get("code", ""))
+            # Gap #1: preserve p44's derived status and health score
+            if p44_status.get("derivedStatus"):
+                result["p44_derived_status"] = p44_status["derivedStatus"]
+            if p44_status.get("health") is not None:
+                result["p44_health_score"] = float(p44_status["health"])
         elif isinstance(p44_status, str):
             result["status"] = cls._map_p44_status(p44_status)
 
@@ -337,13 +342,17 @@ class P44DataMapper:
         if eta:
             result["estimated_arrival"] = cls._parse_datetime(eta)
 
+        # Gap #3: store p44 ETA range under the "p44" sub-key so it doesn't
+        # overwrite Autonomy's conformal prediction range. The composite is
+        # computed by the ShipmentTrackingTRM when both sources are available.
         eta_window = p44_data.get("estimatedDeliveryWindow", {})
         if eta_window:
             result["eta_confidence"] = {
-                "p10": eta_window.get("start"),
-                "p50": eta,
-                "p90": eta_window.get("end"),
-                "source": "P44",
+                "p44": {
+                    "p10": eta_window.get("start"),
+                    "p50": eta,
+                    "p90": eta_window.get("end"),
+                },
             }
 
         # Tracking URL

@@ -508,7 +508,76 @@ class P44WebhookHandler:
             f"(type={event_type.value}) for shipment {shipment['shipment_number']}"
         )
 
+        # Gap #6: Wire p44 appointment events to TMS Appointment entity.
+        # When p44 confirms an appointment time change, update the
+        # corresponding TMS Appointment so the DockSchedulingTRM stays
+        # in sync with what the carrier is actually confirming.
+        appointment_event_types = {"APPOINTMENT_SET", "UPDATED_DELIVERY_APPT"}
+        if event_type.value in appointment_event_types:
+            await self._sync_appointment_from_p44(
+                shipment, event_data, tenant_id, db_session
+            )
+
         return {"id": tracking_event.id, "event_type": event_type.value}
+
+    # ── Appointment Sync (Gap #6) ──────────────────────────────────────
+
+    async def _sync_appointment_from_p44(
+        self,
+        shipment: Dict[str, Any],
+        event_data: Dict[str, Any],
+        tenant_id: int,
+        db_session,
+    ):
+        """Update TMS Appointment entity from p44 appointment events.
+
+        Looks up the Appointment by shipment_id and updates scheduled_start
+        and scheduled_end based on the p44 event's appointment window. This
+        keeps the DockSchedulingTRM's view of appointments in sync with
+        carrier-confirmed times from p44.
+        """
+        from sqlalchemy import select
+        from app.models.tms_entities import Appointment
+
+        appt_start = event_data.get("appointmentWindow", {}).get("start") or event_data.get("appointmentStart")
+        appt_end = event_data.get("appointmentWindow", {}).get("end") or event_data.get("appointmentEnd")
+
+        if not appt_start:
+            return  # No appointment data to sync
+
+        shipment_id = shipment.get("id")
+        if not shipment_id:
+            return
+
+        # Find the appointment for this shipment
+        stmt = select(Appointment).where(
+            Appointment.shipment_id == shipment_id,
+            Appointment.tenant_id == tenant_id,
+        )
+        result = await db_session.execute(stmt)
+        appointment = result.scalar_one_or_none()
+
+        if not appointment:
+            logger.debug(
+                f"P44 appointment event for shipment {shipment.get('shipment_number')} "
+                f"— no matching TMS Appointment found, skipping sync"
+            )
+            return
+
+        # Update scheduled times
+        parsed_start = self._parse_datetime(appt_start) if isinstance(appt_start, str) else appt_start
+        parsed_end = self._parse_datetime(appt_end) if appt_end and isinstance(appt_end, str) else appt_end
+
+        if parsed_start:
+            appointment.scheduled_start = parsed_start
+        if parsed_end:
+            appointment.scheduled_end = parsed_end
+
+        await db_session.flush()
+        logger.info(
+            f"P44 webhook: synced appointment for shipment {shipment.get('shipment_number')} "
+            f"→ scheduled_start={parsed_start}, scheduled_end={parsed_end}"
+        )
 
     # ── ETA Update Processing ───────────────────────────────────────────
 
@@ -541,16 +610,22 @@ class P44WebhookHandler:
         ship.estimated_arrival = eta_dt
         ship.last_tracking_update = datetime.utcnow()
 
-        # Build confidence interval from p44 window if available
+        # Gap #3: store p44 ETA range under the "p44" sub-key, preserving
+        # any existing Autonomy conformal range under "autonomy". The
+        # ShipmentTrackingTRM computes the "composite" from both.
         eta_window = event_data.get("estimateWindow", {})
         if eta_window:
-            ship.eta_confidence = {
+            existing = ship.eta_confidence or {}
+            p44_range = {
                 "p10": eta_window.get("start"),
                 "p50": event_data.get("estimateDateTime"),
                 "p90": eta_window.get("end"),
-                "source": "P44",
                 "confidence": event_data.get("confidence", "MEDIUM"),
                 "updated_at": datetime.utcnow().isoformat(),
+            }
+            ship.eta_confidence = {
+                **existing,
+                "p44": p44_range,
             }
 
         await db_session.flush()
@@ -708,6 +783,20 @@ class P44WebhookHandler:
         old_status = ship.status
         ship.status = new_status
         ship.last_tracking_update = datetime.utcnow()
+
+        # Gap #1: preserve p44's derived status and health score.
+        # The health score is a leading indicator for the ExceptionManagementTRM
+        # — a degrading score predicts an upcoming exception before p44 formally
+        # fires an EXCEPTION event.
+        p44_status_obj = event_data.get("status") or event_data.get("shipmentStatus")
+        if isinstance(p44_status_obj, dict):
+            if p44_status_obj.get("derivedStatus"):
+                ship.p44_derived_status = p44_status_obj["derivedStatus"]
+            if p44_status_obj.get("health") is not None:
+                try:
+                    ship.p44_health_score = float(p44_status_obj["health"])
+                except (ValueError, TypeError):
+                    pass
 
         # Update position if available
         location = event_data.get("location", {})
