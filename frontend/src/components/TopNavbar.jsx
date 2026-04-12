@@ -38,7 +38,7 @@ import { cn } from '@azirella-ltd/autonomy-frontend';
 import AzirellaPopup from './AzirellaPopup';
 import AzirellaAvatar from './AzirellaAvatar';
 import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
-import useTabStore from '../stores/useTabStore';
+import { useTabStore } from '@azirella-ltd/autonomy-frontend';
 
 const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOpen = false, onToggleAzirella }) => {
   const { user, isAuthenticated, logout } = useAuth();

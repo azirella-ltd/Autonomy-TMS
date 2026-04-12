@@ -9,7 +9,7 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@azirella-ltd/autonomy-frontend';
-import useTabStore from '../stores/useTabStore';
+import { useTabStore } from '@azirella-ltd/autonomy-frontend';
 
 const PageBar = ({ items }) => {
   const location = useLocation();

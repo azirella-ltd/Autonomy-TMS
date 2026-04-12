@@ -17,7 +17,7 @@ import { useCapabilities } from '../hooks/useCapabilities';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { getFilteredNavigation } from '../config/navigationConfig';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
-import useTabStore from '../stores/useTabStore';
+import { useTabStore } from '@azirella-ltd/autonomy-frontend';
 
 const DRAWER_WIDTH = 280;
 const DRAWER_WIDTH_COLLAPSED = 65;

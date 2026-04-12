@@ -15,7 +15,7 @@ import { useCapabilities } from '../hooks/useCapabilities';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { getFilteredNavigation } from '../config/navigationConfig';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
-import useTabStore from '../stores/useTabStore';
+import { useTabStore } from '@azirella-ltd/autonomy-frontend';
 
 const NewTabPalette = ({ open, onClose }) => {
   const [query, setQuery] = useState('');
