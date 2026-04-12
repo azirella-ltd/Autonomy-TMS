@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # Use an official Python runtime as a parent image
 # Python 3.11 required by mcp>=1.0.0 and other modern packages
 FROM python:3.11-slim
@@ -22,14 +23,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-eng \
     poppler-utils \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Install Python dependencies
+# Install Python dependencies — including azirella-data-model from the private
+# Autonomy-Core monorepo. The fine-grained GitHub PAT is mounted as a BuildKit
+# secret (id=autonomy_core_token), written to a temporary .netrc for git to
+# authenticate the clone, and cleaned up after pip finishes. The token never
+# lands in any image layer — secrets are tmpfs-only.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=secret,id=autonomy_core_token,required=true \
+    printf "machine github.com\nlogin x-access-token\npassword $(cat /run/secrets/autonomy_core_token)\n" > /root/.netrc && \
+    chmod 600 /root/.netrc && \
+    pip install --no-cache-dir -r requirements.txt && \
+    rm -f /root/.netrc
 
 # Install CPU-only PyTorch
 # Rely on torch version pinned in requirements.txt (2.x) to avoid older wheels needing executable stacks

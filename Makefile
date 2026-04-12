@@ -185,9 +185,16 @@ rebuild-frontend:
 	echo "\n[✓] Frontend rebuilt and restarted."
 
 rebuild-backend:
-	@echo "\n[+] Rebuilding backend image..."; \
+	@if [ ! -f "$${AUTONOMY_CORE_TOKEN_FILE:-$$HOME/.config/autonomy/gh_token_autonomy_core}" ]; then \
+		echo "\n[!] Missing GitHub PAT for azirella-data-model install."; \
+		echo "    Expected at: $${AUTONOMY_CORE_TOKEN_FILE:-$$HOME/.config/autonomy/gh_token_autonomy_core}"; \
+		echo "    Create a fine-grained PAT with Contents:Read on azirella-ltd/Autonomy-Core"; \
+		echo "    and save the token (no newline) to that path with chmod 600."; \
+		exit 1; \
+	fi; \
+	echo "\n[+] Rebuilding backend image with BuildKit secret..."; \
 	echo "   Build type: $(if $(filter 1,$(FORCE_GPU)),GPU,CPU)"; \
-	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml build $(DOCKER_BUILD_ARGS) backend; \
+	DOCKER_BUILDKIT=1 $(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml build $(DOCKER_BUILD_ARGS) backend; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml up -d backend; \
 	echo "\n[✓] Backend rebuilt and restarted."
 

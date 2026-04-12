@@ -29,8 +29,14 @@ WORKDIR /app
 
 COPY requirements.txt ./
 
-RUN python -m pip install --upgrade pip && \
+# Install Python dependencies — including azirella-data-model from the private
+# Autonomy-Core monorepo via BuildKit secret + .netrc (same pattern as Dockerfile.cpu).
+RUN --mount=type=secret,id=autonomy_core_token,required=true \
+    printf "machine github.com\nlogin x-access-token\npassword $(cat /run/secrets/autonomy_core_token)\n" > /root/.netrc && \
+    chmod 600 /root/.netrc && \
+    python -m pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
+    rm -f /root/.netrc && \
     pip install --no-cache-dir \
         torch==2.2.0+cu121 \
         torchvision==0.17.0+cu121 \

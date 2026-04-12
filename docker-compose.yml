@@ -43,6 +43,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.cpu
+      secrets:
+        - autonomy_core_token
     container_name: autonomy-backend
     restart: unless-stopped
     env_file:
@@ -247,6 +249,13 @@ volumes:
 # npm_token: classic GitHub PAT with `read:packages` scope. Used by frontend
 #   Dockerfile to install the private @azirella-ltd/autonomy-frontend package
 #   from GitHub Packages. Override path with NPM_TOKEN_FILE env var.
+#
+# autonomy_core_token: fine-grained GitHub PAT with `Contents: Read` scope on
+#   azirella-ltd/Autonomy-Core. Used by backend Dockerfile to pip-install
+#   azirella-data-model via git+https clone. Override path with
+#   AUTONOMY_CORE_TOKEN_FILE env var.
 secrets:
   npm_token:
     file: ${NPM_TOKEN_FILE:-${HOME}/.config/autonomy/gh_token_packages}
+  autonomy_core_token:
+    file: ${AUTONOMY_CORE_TOKEN_FILE:-${HOME}/.config/autonomy/gh_token_autonomy_core}

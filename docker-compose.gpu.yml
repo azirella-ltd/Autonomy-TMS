@@ -44,6 +44,8 @@ services:
       dockerfile: Dockerfile.gpu
       args:
         - FORCE_GPU=1
+      secrets:
+        - autonomy_core_token
     container_name: autonomy-backend-gpu
     gpus: all
     restart: unless-stopped
