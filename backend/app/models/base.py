@@ -19,8 +19,10 @@ from azirella_data_model.base import Base  # noqa: F401
 # rewritten as re-export shims (to avoid metadata collisions).
 # Phase 3a: tenant/ — adopted 2026-04-12
 # Phase 3b: governance/ — adopted 2026-04-12
+# Phase 3c: master/ — adopted 2026-04-12
 import azirella_data_model.tenant  # noqa: F401
 import azirella_data_model.governance  # noqa: F401
+import azirella_data_model.master  # noqa: F401
 
 # Import TMS-specific models to register them with the same Base metadata.
 # These are the models that stay in TMS (not canonical).
