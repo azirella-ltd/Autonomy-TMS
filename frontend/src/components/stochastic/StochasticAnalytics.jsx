@@ -32,12 +32,11 @@ import {
   Cell,
   ReferenceLine
 } from 'recharts';
-import { Card, CardContent } from '../common/Card';
+import { Card, CardContent, IconButton } from '../common';
 import { Badge } from '../common/Badge';
 import { Alert } from '../common/Alert';
 import { Tabs, TabsList, Tab, TabPanel } from '../common/Tabs';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '../common/Table';
-import { IconButton } from '../common/Button';
 import { Progress } from '../common/Progress';
 
 /**

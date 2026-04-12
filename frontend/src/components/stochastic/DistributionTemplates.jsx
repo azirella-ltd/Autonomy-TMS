@@ -3,8 +3,7 @@ import {
   Copy,
   Pencil
 } from 'lucide-react';
-import { Card, CardContent, CardFooter } from '../common/Card';
-import { Button } from '../common/Button';
+import { Card, CardContent, CardFooter, Button } from '../common';
 import { Badge } from '../common/Badge';
 import { Modal, ModalHeader, ModalTitle, ModalBody, ModalFooter } from '../common/Modal';
 import { Textarea, FormField } from '../common/Input';

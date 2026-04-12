@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Trash2 } from 'lucide-react';
-import { Button } from '../common/Button';
+import { Button } from '../common';
 import { Alert } from '../common/Alert';
 import { Input, Label, Textarea, FormField } from '../common/Input';
 import { Select, SelectOption } from '../common/Select';

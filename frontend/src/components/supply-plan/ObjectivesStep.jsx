@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Button } from '../common/Button';
+import { Button } from '../common';
 import { Alert } from '../common/Alert';
 import { Input, Label, FormField } from '../common/Input';
 import { Select, SelectOption } from '../common/Select';

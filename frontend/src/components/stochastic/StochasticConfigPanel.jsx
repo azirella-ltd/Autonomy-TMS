@@ -5,8 +5,7 @@ import {
   Save,
   RefreshCw
 } from 'lucide-react';
-import { Card } from '../common/Card';
-import { Button } from '../common/Button';
+import { Card, Button } from '../common';
 import { Badge } from '../common/Badge';
 import { Alert } from '../common/Alert';
 import { Tabs, TabsList, Tab, TabPanel } from '../common/Tabs';

@@ -27,9 +27,8 @@ import {
 } from 'lucide-react';
 
 // Autonomy UI Kit imports
-import { Button, IconButton } from '../common/Button';
+import { Button, IconButton, Card, CardContent } from '../common';
 import { Input, Label, Textarea, FormField } from '../common/Input';
-import { Card, CardContent } from '../common/Card';
 import {
   Table,
   TableHeader,

@@ -3,9 +3,16 @@
  *
  * Export all common UI components for easy imports.
  * Usage: import { Card, Button, Alert } from '../components/common';
+ *
+ * Components are sourced from either:
+ * - @azirella-ltd/autonomy-frontend (shared package — preferred)
+ * - Local ./ComponentName.jsx (TMS-specific or not yet in package)
+ *
+ * When the package ships an enhanced version, swap the re-export
+ * source and delete the local file. See CONSUMER_ADOPTION_LOG.md.
  */
 
-// Card components
+// Card components — from shared package (v1.2.0+)
 export {
   Card,
   CardHeader,
@@ -13,10 +20,10 @@ export {
   CardDescription,
   CardContent,
   CardFooter,
-} from './Card';
+} from '@azirella-ltd/autonomy-frontend';
 
-// Button components
-export { Button, IconButton } from './Button';
+// Button components — from shared package (v1.3.0+)
+export { Button, IconButton } from '@azirella-ltd/autonomy-frontend';
 
 // Alert components
 export { Alert, AlertTitle, AlertDescription } from './Alert';

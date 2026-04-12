@@ -21,8 +21,7 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { api } from '../../services/api';
-import { Card, CardContent } from '../common/Card';
-import { Button, IconButton } from '../common/Button';
+import { Card, CardContent, Button, IconButton } from '../common';
 import { Input, Label, Textarea, FormField } from '../common/Input';
 import { Badge } from '../common/Badge';
 import { Alert } from '../common/Alert';

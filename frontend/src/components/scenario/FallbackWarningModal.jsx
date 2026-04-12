@@ -15,7 +15,7 @@ import {
   ModalBody,
   ModalFooter,
 } from '../common/Modal';
-import { Button } from '../common/Button';
+import { Button } from '../common';
 import { Alert, AlertDescription } from '../common/Alert';
 import { AlertTriangle } from 'lucide-react';
 
