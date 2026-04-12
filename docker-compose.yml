@@ -194,6 +194,8 @@ services:
     build:
       context: ./backend
       dockerfile: scripts/Dockerfile
+      secrets:
+        - autonomy_core_token
     container_name: autonomy-tms-create-users
     environment:
       - DATABASE_TYPE=postgresql

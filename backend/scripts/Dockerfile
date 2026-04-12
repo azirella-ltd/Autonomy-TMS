@@ -1,28 +1,28 @@
-FROM python:3.9-slim
+# syntax=docker/dockerfile:1.4
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (git needed for azirella-data-model pip install)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
-    default-libmysqlclient-dev \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first to leverage Docker cache
+# Copy requirements and install with BuildKit secret for private repo auth
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=secret,id=autonomy_core_token,required=true \
+    printf "machine github.com\nlogin x-access-token\npassword $(cat /run/secrets/autonomy_core_token)\n" > /root/.netrc && \
+    chmod 600 /root/.netrc && \
+    pip install --no-cache-dir -r requirements.txt && \
+    rm -f /root/.netrc
 
 # Copy the application code
 COPY . .
 
 # Set environment variables
 ENV PYTHONPATH=/app
-ENV MYSQL_SERVER=db
-ENV MYSQL_PORT=3306
-ENV MYSQL_USER=autonomy_user
-ENV MYSQL_PASSWORD=Autonomy@2026
-ENV MYSQL_DB=autonomy
 
 # The command to run the script
 CMD ["python", "scripts/create_users.py"]
