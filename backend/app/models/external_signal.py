@@ -1,56 +1,44 @@
-"""External Signal models — Outside-in intelligence from public and commercial data sources.
+"""External Signal — TMS-specific extensions of the canonical Context Engine.
 
-Implements Lora Cecere's outside-in planning methodology adapted for TMS:
-weather, economic indicators, energy/fuel prices, geopolitical events, consumer
-sentiment, regulatory signals, freight market indices, carrier intelligence,
-and ocean/port data are ingested on configurable cadences and injected into
-Azirella's RAG context and TRM agent decision support.
+Imports base categories, source registry, and model schemas from the
+canonical `azirella_data_model.context_engine` subpackage in Core.
+Extends with TMS-specific:
 
-Sources are tenant-configurable by industry, region, and product relevance.
-Core sources use free, public APIs. Commercial freight market sources
-(DAT, FreightWaves SONAR, Greenscreens) are wired as stubs — activated
-when the customer has a subscription.
+- 5 categories: freight_market, carrier_intelligence, visibility,
+  ocean_intelligence, sustainability
+- 8 sources: FMCSA SaferWeb, DOE diesel index, CBP border wait,
+  EPA SmartWay (free), DAT RateView, FreightWaves SONAR, Greenscreens,
+  MarineTraffic (commercial stubs)
+- SIGNAL_TMS_IMPACT — routes signals to the 11 TMS TRM agents
 
-Signal categories:
-- economic: CPI, PPI, unemployment, GDP, interest rates (FRED)
-- weather: Temperature, precipitation, severe events (Open-Meteo, NWS)
-- energy: Crude oil, natural gas, diesel fuel index (EIA / DOE)
-- geopolitical: Disruption events, trade tensions, conflicts (GDELT)
-- sentiment: Consumer/shipper search trends, worker sentiment (Google Trends, Reddit)
-- regulatory: FDA recalls, safety alerts, hazmat compliance (openFDA)
-- commodity: Agricultural, metals, chemical spot prices (World Bank/FRED)
-- trade: Border wait times, tariffs, port congestion (Census/FRED, CBP)
-- freight_market: Spot rates, tender rejection indices, capacity forecasts (DAT, SONAR, Greenscreens)
-- carrier_intelligence: Safety ratings, inspection data, authority status (FMCSA)
-- visibility: p44 aggregate metrics — tracking coverage, exception rates, webhook health
-- ocean_intelligence: AIS vessel data, port dwell, congestion heat maps (MarineTraffic)
-- sustainability: Emissions data, SmartWay scores, carbon intensity (EPA)
+Same shim pattern as tenant/master/governance/powell — Core defines the
+canonical schema, TMS extends with domain-specific entries.
 """
 
-from datetime import datetime, date
-
-from sqlalchemy import (
-    Column, Integer, String, Text, Float, Boolean, DateTime, Date, JSON,
-    ForeignKey, Index, UniqueConstraint,
+# Re-export model classes from the canonical schema. Existing imports
+# like `from app.models.external_signal import ExternalSignalSource`
+# keep working unchanged.
+from azirella_data_model.context_engine import (
+    BASE_SIGNAL_CATEGORIES,
+    BASE_SOURCE_REGISTRY,
+    ExternalSignal,
+    ExternalSignalSource,
 )
-from sqlalchemy.sql import func
 
-from app.models.base import Base
+__all__ = [
+    "ExternalSignalSource",
+    "ExternalSignal",
+    "SIGNAL_CATEGORIES",
+    "SOURCE_REGISTRY",
+    "SIGNAL_TMS_IMPACT",
+    "SIGNAL_SC_IMPACT",
+]
 
 
 # ── Signal Categories ────────────────────────────────────────────────────────
+# Base categories (8) come from Core. TMS adds 5 domain-specific ones.
 
-SIGNAL_CATEGORIES = [
-    # Shared (applicable to both SCP and TMS)
-    "economic",              # CPI, PPI, unemployment, GDP, interest rates
-    "weather",               # Temperature anomalies, precipitation, severe events
-    "energy",                # Oil, gas, diesel fuel index, electricity prices
-    "geopolitical",          # Disruption events, trade tensions, sanctions
-    "sentiment",             # Consumer/shipper search trends, worker sentiment
-    "regulatory",            # FDA recalls, safety alerts, hazmat compliance
-    "commodity",             # Agricultural, metals, chemical spot prices
-    "trade",                 # Border wait times, tariffs, port congestion
-    # TMS-specific
+SIGNAL_CATEGORIES = BASE_SIGNAL_CATEGORIES + [
     "freight_market",        # Spot rates, tender rejection, capacity indices
     "carrier_intelligence",  # Safety ratings, inspection data, authority status
     "visibility",            # p44 aggregate: tracking coverage, exception rates
@@ -59,90 +47,14 @@ SIGNAL_CATEGORIES = [
 ]
 
 # ── Source Registry ──────────────────────────────────────────────────────────
+# Base 9 free public sources come from Core (FRED, Open-Meteo, EIA, GDELT,
+# Google Trends, openFDA, NWS, Reddit, DOT Disruptions). TMS adds 8 more:
+# 4 free public sources useful only for TMS, plus 4 commercial stubs that
+# require paid subscriptions.
 
 SOURCE_REGISTRY = {
-    "fred": {
-        "name": "FRED (Federal Reserve Economic Data)",
-        "base_url": "https://api.stlouisfed.org/fred",
-        "categories": ["economic", "commodity", "trade"],
-        "requires_key": True,
-        "key_env_var": "FRED_API_KEY",
-        "free_tier": "Unlimited (free registration)",
-        "refresh_cadence": "daily",
-    },
-    "open_meteo": {
-        "name": "Open-Meteo Weather API",
-        "base_url": "https://api.open-meteo.com/v1",
-        "categories": ["weather"],
-        "requires_key": False,
-        "free_tier": "10,000 requests/day (no key needed)",
-        "refresh_cadence": "daily",
-    },
-    "eia": {
-        "name": "EIA (Energy Information Administration)",
-        "base_url": "https://api.eia.gov/v2",
-        "categories": ["energy"],
-        "requires_key": True,
-        "key_env_var": "EIA_API_KEY",
-        "free_tier": "Unlimited (free registration)",
-        "refresh_cadence": "daily",
-    },
-    "gdelt": {
-        "name": "GDELT Project (Global Events Database)",
-        "base_url": "https://api.gdeltproject.org/api/v2",
-        "categories": ["geopolitical"],
-        "requires_key": False,
-        "free_tier": "Unlimited (open data)",
-        "refresh_cadence": "daily",
-    },
-    "google_trends": {
-        "name": "Google Trends (via pytrends)",
-        "base_url": "https://trends.google.com",
-        "categories": ["sentiment"],
-        "requires_key": False,
-        "free_tier": "Rate-limited (no key, use pytrends library)",
-        "refresh_cadence": "daily",
-    },
-    "openfda": {
-        "name": "openFDA (FDA Open Data)",
-        "base_url": "https://api.fda.gov",
-        "categories": ["regulatory"],
-        "requires_key": False,
-        "free_tier": "1,000 requests/day (no key), 120K with key",
-        "refresh_cadence": "daily",
-    },
-    "nws_alerts": {
-        "name": "NWS Severe Weather Alerts",
-        "base_url": "https://api.weather.gov",
-        "categories": ["weather"],
-        "requires_key": False,
-        "free_tier": "Unlimited (no key needed, US government open data)",
-        "refresh_cadence": "daily",
-        "description": "Persistent severe weather warnings (Winter Storm, Flood, Tornado, etc.) with geographic area and severity. More actionable than Open-Meteo for delivery disruptions.",
-    },
-    "reddit_sentiment": {
-        "name": "Reddit Industry Sentiment",
-        "base_url": "https://www.reddit.com",
-        "categories": ["sentiment"],
-        "requires_key": False,
-        "free_tier": "~60 requests/min (public JSON API, no OAuth needed)",
-        "refresh_cadence": "daily",
-        "description": "Frontline worker sentiment from industry subreddits (r/KitchenConfidential, r/supplychain, etc.). Leading indicator for demand shifts and supply issues.",
-    },
-    "dot_disruptions": {
-        "name": "DOT Transportation Disruptions",
-        "base_url": "https://api.gdeltproject.org/api/v2",
-        "categories": ["trade"],
-        "requires_key": False,
-        "free_tier": "Unlimited (uses GDELT infrastructure news feed)",
-        "refresh_cadence": "daily",
-        "description": (
-            "Persistent road closures, bridge restrictions, port "
-            "congestion, construction zones — not real-time traffic, "
-            "but days/weeks-long freight routing disruptions."
-        ),
-    },
-    # ── TMS-specific sources ──────────────────────────────────────────
+    **BASE_SOURCE_REGISTRY,
+    # ── TMS free public sources ───────────────────────────────────────
     "fmcsa": {
         "name": "FMCSA SaferWeb (DOT Carrier Data)",
         "base_url": "https://mobile.fmcsa.dot.gov/qc/services",
@@ -285,6 +197,7 @@ SOURCE_REGISTRY = {
 # ── TMS Signal Impact Mapping ────────────────────────────────────────────────
 # Maps signal types to which TMS TRM agents and planning layers are affected.
 # TRM type keys match the 11 TMS agents in services/powell/.
+# Stays in TMS — SCP has its own SIGNAL_SC_IMPACT routing to SCP TRM agents.
 
 SIGNAL_TMS_IMPACT = {
     # ── Shared economic / macro signals ──────────────────────────────
@@ -395,7 +308,7 @@ SIGNAL_TMS_IMPACT = {
         ),
     },
 
-    # ── Freight market signals (new for TMS) ─────────────────────────
+    # ── Freight market signals (TMS-only) ────────────────────────────
     "tender_rejection_spike": {
         "trm_types": [
             "capacity_buffer", "freight_procurement",
@@ -429,7 +342,7 @@ SIGNAL_TMS_IMPACT = {
         ),
     },
 
-    # ── Carrier intelligence signals (new for TMS) ───────────────────
+    # ── Carrier intelligence signals (TMS-only) ──────────────────────
     "carrier_safety_downgrade": {
         "trm_types": [
             "exception_management", "freight_procurement",
@@ -459,7 +372,7 @@ SIGNAL_TMS_IMPACT = {
         ),
     },
 
-    # ── Sustainability signals (new for TMS) ─────────────────────────
+    # ── Sustainability signals (TMS-only) ────────────────────────────
     "smartway_score_change": {
         "trm_types": ["freight_procurement"],
         "planning_layer": "strategic",
@@ -472,121 +385,3 @@ SIGNAL_TMS_IMPACT = {
 
 # Backwards-compat alias for any code referencing the old name
 SIGNAL_SC_IMPACT = SIGNAL_TMS_IMPACT
-
-
-class ExternalSignalSource(Base):
-    """Tenant-configurable external data source for outside-in planning signals.
-
-    Each tenant activates specific sources and configures relevance filters
-    based on their industry, geography, and product portfolio.
-    """
-    __tablename__ = "external_signal_sources"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="SET NULL"), nullable=True)
-
-    # Source identification
-    source_key = Column(String(50), nullable=False)  # "fred", "open_meteo", "eia", etc.
-    source_name = Column(String(255), nullable=False)  # Human-readable name
-    is_active = Column(Boolean, default=True, nullable=False)
-
-    # Source-specific configuration
-    api_key_encrypted = Column(Text, nullable=True)  # Encrypted API key (if required)
-    source_params = Column(JSON, nullable=True)
-    # Source-specific parameters:
-    # FRED: {"series_ids": ["CPIAUCSL", "UNRATE", "GDP"]}
-    # Open-Meteo: {"locations": [...], "sync_from_network": true}
-    # EIA: {"series_ids": ["PET.RWTC.D", "NG.RNGWHHD.D"]}
-    # DOE diesel: {"series_ids": ["PET.EMD_EPD2D_PTE_NUS_DPG.W"]}
-    # GDELT: {"keywords": ["port strike", "freight"], "countries": ["US"]}
-    # Google Trends: {"keywords": ["freight rates", "shipping delays"]}
-    # openFDA: {"product_types": ["food", "drug"], "keywords": ["recall"]}
-    # FMCSA: {"carrier_dots": ["12345"], "watch_fields": ["safetyRating"]}
-    # CBP: {"ports": ["Laredo", "El Paso"], "vehicle_type": "commercial"}
-    # DAT: {"lanes": [{"origin": "LAX", "dest": "PHX", "equipment": "V"}]}
-    # SONAR: {"indices": ["OTVI.USA", "OTRI.USA"]}
-
-    # Relevance filters (tenant-specific)
-    industry_tags = Column(JSON, nullable=True)  # ["food_distribution", "beverage", "fmcg"]
-    region_tags = Column(JSON, nullable=True)  # ["north_america", "us_east", "europe"]
-    product_tags = Column(JSON, nullable=True)  # ["frozen", "beverages", "dairy"]
-
-    # Refresh configuration
-    refresh_cadence = Column(String(20), default="daily")  # "daily", "hourly", "weekly"
-    last_refresh_at = Column(DateTime, nullable=True)
-    last_refresh_status = Column(String(20), nullable=True)  # "success", "error", "partial"
-    last_refresh_error = Column(Text, nullable=True)
-    signals_collected = Column(Integer, default=0)  # Running count
-
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "source_key", "config_id", name="uq_ext_signal_source_tenant_key"),
-        Index("ix_ext_signal_source_tenant", "tenant_id"),
-        Index("ix_ext_signal_source_active", "is_active"),
-    )
-
-
-class ExternalSignal(Base):
-    """An individual external signal captured from a public data source.
-
-    Signals are tenant-scoped, categorized, and scored for supply chain relevance.
-    They are embedded for RAG retrieval and injected into Azirella's chat context.
-    """
-    __tablename__ = "external_signals"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="SET NULL"), nullable=True)
-    source_id = Column(Integer, ForeignKey("external_signal_sources.id", ondelete="CASCADE"), nullable=False)
-
-    # Signal identification
-    source_key = Column(String(50), nullable=False)  # "fred", "open_meteo", etc.
-    category = Column(String(30), nullable=False)  # From SIGNAL_CATEGORIES
-    signal_type = Column(String(100), nullable=False)  # Specific signal (e.g., "cpi_change", "severe_weather")
-    signal_key = Column(String(255), nullable=False)  # Dedup key (e.g., "fred:CPIAUCSL:2026-03-22")
-
-    # Signal content
-    title = Column(String(500), nullable=False)  # Human-readable headline
-    summary = Column(Text, nullable=False)  # SC-relevant summary for RAG injection
-    raw_value = Column(Float, nullable=True)  # Numeric value if applicable
-    raw_unit = Column(String(50), nullable=True)  # Unit (e.g., "percent", "usd/bbl", "celsius")
-    change_pct = Column(Float, nullable=True)  # Period-over-period change percentage
-    change_direction = Column(String(10), nullable=True)  # "up", "down", "stable"
-
-    # Temporal context
-    signal_date = Column(Date, nullable=False)  # Date the signal applies to
-    reference_period = Column(String(50), nullable=True)  # "2026-Q1", "2026-03", "2026-W12"
-    previous_value = Column(Float, nullable=True)  # For trend computation
-
-    # Supply chain relevance scoring (0-1)
-    relevance_score = Column(Float, default=0.5, nullable=False)  # Overall SC relevance
-    urgency_score = Column(Float, default=0.3, nullable=False)  # Time sensitivity
-    magnitude_score = Column(Float, default=0.3, nullable=False)  # Impact magnitude
-
-    # SC impact mapping
-    affected_trm_types = Column(JSON, nullable=True)  # ["forecast_adjustment", "po_creation"]
-    planning_layer = Column(String(20), nullable=True)  # "execution", "tactical", "strategic"
-    affected_product_tags = Column(JSON, nullable=True)  # Product categories affected
-    affected_region_tags = Column(JSON, nullable=True)  # Regions affected
-
-    # RAG embedding (filled by embedding service)
-    embedding_text = Column(Text, nullable=True)  # Text used for embedding generation
-    is_embedded = Column(Boolean, default=False, nullable=False)
-
-    # Lifecycle
-    expires_at = Column(DateTime, nullable=True)  # When this signal becomes stale
-    is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, server_default=func.now())
-
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "signal_key", name="uq_ext_signal_key"),
-        Index("ix_ext_signal_tenant", "tenant_id"),
-        Index("ix_ext_signal_category", "category"),
-        Index("ix_ext_signal_date", "signal_date"),
-        Index("ix_ext_signal_active", "is_active", "tenant_id"),
-        Index("ix_ext_signal_source", "source_id"),
-        Index("ix_ext_signal_relevance", "tenant_id", "relevance_score"),
-    )
