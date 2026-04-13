@@ -4,7 +4,7 @@ Autonomy MCP Server — Main Entry Point.
 Exposes supply chain intelligence via MCP using FastMCP.
 Runs as a sidecar service in Docker alongside the main backend.
 
-Transport: Streamable HTTP on port 8001 (proxied via Nginx at /mcp)
+Transport: Streamable HTTP on port 8002 (proxied via Nginx at /mcp)
 Auth: Bearer token (same JWT as REST API) or API key
 
 Usage:
@@ -84,7 +84,7 @@ def main():
         mcp.run(transport="stdio")
     else:
         host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
-        port = int(os.getenv("MCP_SERVER_PORT", "8001"))
+        port = int(os.getenv("MCP_SERVER_PORT", "8002"))
         logger.info("Starting Autonomy MCP server on %s:%d (HTTP transport)", host, port)
         mcp.run(
             transport="http",
