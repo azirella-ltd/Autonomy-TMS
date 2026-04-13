@@ -11,15 +11,16 @@ Flow:
                                                       → CDC Monitor (metric update)
 """
 
-import hashlib
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# DeltaClassifier comes from the canonical azirella-integrations package
+# (was defined inline in this file before 2026-04-13).
+from azirella_integrations import DeltaClassifier  # noqa: F401  (re-export)
 
 from app.services.powell.hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 from app.services.powell.tms_hive_signals import TMSHiveSignalType
@@ -74,127 +75,6 @@ CHANGE_TO_SIGNAL: Dict[Tuple[str, str], Any] = {
     ("outbound_order", "changed"): HiveSignalType.ORDER_EXCEPTION,
     ("outbound_order", "deleted"): HiveSignalType.DEMAND_DROP,
 }
-
-
-class DeltaClassifier:
-    """Compares MCP poll results against DB state to detect net changes.
-
-    Uses hash-based comparison (same pattern as delta_loader.py).
-    """
-
-    def __init__(self, db: AsyncSession):
-        self.db = db
-
-    async def classify(
-        self,
-        entity_type: str,
-        records: List[Dict[str, Any]],
-        config_id: int,
-        key_field: str,
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Classify records into new/changed/deleted.
-
-        Returns:
-            {"new": [...], "changed": [...], "deleted": [...]}
-        """
-        if not records:
-            return {"new": [], "changed": [], "deleted": []}
-
-        # Get existing hashes from staging tracker
-        existing_hashes = await self._get_existing_hashes(
-            entity_type, config_id, key_field
-        )
-
-        new_records = []
-        changed_records = []
-        seen_keys = set()
-
-        for record in records:
-            key = str(record.get(key_field, ""))
-            if not key:
-                continue
-
-            seen_keys.add(key)
-            record_hash = self._hash_record(record)
-
-            if key not in existing_hashes:
-                new_records.append(record)
-            elif existing_hashes[key] != record_hash:
-                changed_records.append(record)
-            # else: unchanged, skip
-
-        # Deleted = keys in DB but not in poll results
-        # Only flag deletions if we got a complete result set (not paginated partial)
-        deleted_keys = set(existing_hashes.keys()) - seen_keys
-        deleted_records = [{"_key": k, "_deleted": True} for k in deleted_keys]
-
-        # Update hash cache
-        await self._update_hashes(
-            entity_type, config_id, key_field, records
-        )
-
-        return {
-            "new": new_records,
-            "changed": changed_records,
-            "deleted": deleted_records,
-        }
-
-    def _hash_record(self, record: Dict) -> str:
-        """Compute a content hash for a record."""
-        serialized = json.dumps(record, sort_keys=True, default=str)
-        return hashlib.sha256(serialized.encode()).hexdigest()[:16]
-
-    async def _get_existing_hashes(
-        self, entity_type: str, config_id: int, key_field: str
-    ) -> Dict[str, str]:
-        """Load existing record hashes from mcp_delta_state table."""
-        try:
-            result = await self.db.execute(
-                sql_text("""
-                    SELECT record_key, record_hash
-                    FROM mcp_delta_state
-                    WHERE entity_type = :entity_type
-                      AND config_id = :config_id
-                """),
-                {"entity_type": entity_type, "config_id": config_id},
-            )
-            return {row[0]: row[1] for row in result.fetchall()}
-        except Exception:
-            # Table might not exist yet
-            return {}
-
-    async def _update_hashes(
-        self,
-        entity_type: str,
-        config_id: int,
-        key_field: str,
-        records: List[Dict],
-    ) -> None:
-        """Update the delta state table with current record hashes."""
-        try:
-            for record in records:
-                key = str(record.get(key_field, ""))
-                if not key:
-                    continue
-                record_hash = self._hash_record(record)
-
-                await self.db.execute(
-                    sql_text("""
-                        INSERT INTO mcp_delta_state (entity_type, config_id, record_key, record_hash, updated_at)
-                        VALUES (:entity_type, :config_id, :key, :hash, NOW())
-                        ON CONFLICT (entity_type, config_id, record_key)
-                        DO UPDATE SET record_hash = :hash, updated_at = NOW()
-                    """),
-                    {
-                        "entity_type": entity_type,
-                        "config_id": config_id,
-                        "key": key,
-                        "hash": record_hash,
-                    },
-                )
-            await self.db.flush()
-        except Exception as e:
-            logger.error("Failed to update delta state: %s", e)
 
 
 class ContextEngine:
