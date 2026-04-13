@@ -1,5 +1,8 @@
 # GNN Decision Architecture — Site tGNN, Network tGNN, and S&OP GraphSAGE
 
+> **Platform reference:** [Autonomy-Core/docs/AGENT_ARCHITECTURE.md](../../../Autonomy-Core/docs/AGENT_ARCHITECTURE.md) — product-agnostic treatment. This doc covers the TMS-specific instantiation and TMS-specific agent content.
+
+
 > **Audience**: Engineers and data scientists working on the GNN layers.
 > This document specifies how each GNN layer makes decisions, how urgency and
 > likelihood are computed, and how the layers interact.

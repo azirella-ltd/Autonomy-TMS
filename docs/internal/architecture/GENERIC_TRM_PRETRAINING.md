@@ -1,5 +1,8 @@
 # Generic TRM Pre-Training — Architecture and Deployment Plan
 
+> **Platform reference:** [Autonomy-Core/docs/TRAINING_LIFECYCLE.md](../../../Autonomy-Core/docs/TRAINING_LIFECYCLE.md) — product-agnostic treatment. This doc covers the TMS-specific instantiation and TMS-specific agent content.
+
+
 > **Autonomy Platform — Core Architecture**
 >
 > Moves the 12 Tiny Recursive Models (TRMs) from per-tenant curriculum

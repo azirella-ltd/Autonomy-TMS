@@ -1,5 +1,8 @@
 # Agent Hierarchy Diagrams — Standardized Reference
 
+> **Platform reference:** [Autonomy-Core/docs/AGENT_ARCHITECTURE.md](../../../Autonomy-Core/docs/AGENT_ARCHITECTURE.md) — product-agnostic treatment. This doc covers the TMS-specific instantiation and TMS-specific agent content.
+
+
 This file contains the canonical Mermaid diagrams for the Autonomy agent architecture.
 Use the **External** versions in customer-facing documents. Use the **Internal** versions
 in engineering and architecture documents.
