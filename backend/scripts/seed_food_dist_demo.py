@@ -281,8 +281,9 @@ def create_or_get_user(
             print(f"  Updating user '{username}' user_type: {existing.user_type.value} -> {user_type.value}")
             existing.user_type = user_type
             updated = True
+        # existing.decision_level is str (canonical column); decision_level param is DecisionLevelEnum
         if existing.decision_level != decision_level:
-            old_role = existing.decision_level.value if existing.decision_level else None
+            old_role = existing.decision_level if existing.decision_level else None
             new_role = decision_level.value if decision_level else None
             print(f"  Updating user '{username}' decision_level: {old_role} -> {new_role}")
             existing.decision_level = decision_level

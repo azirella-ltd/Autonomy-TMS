@@ -576,10 +576,8 @@ async def read_users_me(
         "default_config_id": getattr(current_user, "default_config_id", None),
         "decision_level": None,
     }
-    # Extract decision_level (may be enum or string)
-    pr = getattr(current_user, "decision_level", None)
-    if pr is not None:
-        user_dict["decision_level"] = pr.value if hasattr(pr, "value") else str(pr)
+    # canonical User.decision_level is a plain string column
+    user_dict["decision_level"] = getattr(current_user, "decision_level", None)
 
     # Include tenant logo for frontend branding
     tenant_logo = None

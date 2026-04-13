@@ -40,10 +40,11 @@ async def get_my_capabilities(
     """
     capabilities = get_user_capabilities_list(current_user, db)
 
-    # Get decision_level for routing (may be None for non-level users)
+    # Get decision_level for routing (may be None for non-level users).
+    # canonical User.decision_level is a str column — no .value needed.
     decision_level = None
     if hasattr(current_user, 'decision_level') and current_user.decision_level:
-        decision_level = current_user.decision_level.value
+        decision_level = current_user.decision_level
 
     return {
         "capabilities": capabilities,

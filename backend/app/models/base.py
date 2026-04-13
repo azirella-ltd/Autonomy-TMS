@@ -28,4 +28,6 @@ import azirella_data_model.powell  # noqa: F401
 
 # Import TMS-specific models to register them with the same Base metadata.
 # These are the models that stay in TMS (not canonical).
-from app.models.tms.user_extensions import TMSUserExtension  # noqa: F401
+# (Nothing TMS-specific to register yet — previous TMSUserExtension sibling
+# table was removed 2026-04-13 in favor of the canonical users.decision_level
+# column.)

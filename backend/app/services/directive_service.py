@@ -1184,7 +1184,7 @@ class DirectiveService:
             forced_intent = "question"
             raw_text = raw_text[len("[Question] "):]
 
-        role_name = user.decision_level.value if user.decision_level else "TENANT_ADMIN"
+        role_name = user.decision_level if user.decision_level else "TENANT_ADMIN"
         layer_desc = _LAYER_DESCRIPTIONS.get(layer, "")
 
         # Build compact event catalog from registry for LLM context
@@ -1861,7 +1861,7 @@ class DirectiveService:
             '  "filters": {"region": "SW", "product": "Frozen Proteins", ...} or null\n'
             '}\n\n'
             "Return ONLY valid JSON.\n\n"
-            f"User role: {user.decision_level.value if user.decision_level else 'TENANT_ADMIN'}\n"
+            f"User role: {user.decision_level if user.decision_level else 'TENANT_ADMIN'}\n"
             f"Powell layer: {layer}\n"
             f"Available sites: {json.dumps(tenant_context.get('site_names', []))}\n"
             f"Available product families: {json.dumps(tenant_context.get('product_families', []))}\n\n"

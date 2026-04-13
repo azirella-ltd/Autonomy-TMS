@@ -43,7 +43,8 @@ def get_user_capabilities(user: User, db: Session) -> CapabilitySet:
     # Without this, any USER with a decision_level (SC_VP, SOP_DIRECTOR, etc.)
     # would only get {VIEW_DASHBOARD, VIEW_SCENARIOS, PLAY_SCENARIO}.
     if hasattr(user, 'decision_level') and user.decision_level:
-        role_caps = get_capabilities_for_user_type(user.decision_level.value)
+        # canonical User.decision_level is a str column — no .value needed
+        role_caps = get_capabilities_for_user_type(user.decision_level)
         if role_caps.capabilities != USER_CAPABILITIES.capabilities:
             base_caps = role_caps
         else:
