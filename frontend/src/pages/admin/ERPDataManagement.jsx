@@ -11,13 +11,20 @@ import SAPDataManagement from './SAPDataManagement';
 // ERP type definitions
 // ---------------------------------------------------------------------------
 
+// kind: 'erp' = full ERP (master + transactional SCP data)
+//       'tms' = dedicated TMS system (shipments, loads, carriers, rates)
 const ERP_TYPES = [
-  { key: 'sap', label: 'SAP S/4HANA', color: '#0070C0', status: 'production' },
-  { key: 'odoo', label: 'Odoo', color: '#714B67', status: 'production' },
-  { key: 'd365', label: 'Dynamics 365', color: '#0078D4', status: 'production' },
-  { key: 'sap_b1', label: 'SAP Business One', color: '#F0AB00', status: 'production' },
-  { key: 'netsuite', label: 'NetSuite', color: '#1B3A5C', status: 'planned' },
-  { key: 'epicor', label: 'Epicor', color: '#E4002B', status: 'planned' },
+  // Full ERPs
+  { key: 'sap', label: 'SAP S/4HANA', color: '#0070C0', status: 'production', kind: 'erp' },
+  { key: 'odoo', label: 'Odoo', color: '#714B67', status: 'production', kind: 'erp' },
+  { key: 'd365', label: 'Dynamics 365', color: '#0078D4', status: 'production', kind: 'erp' },
+  { key: 'sap_b1', label: 'SAP Business One', color: '#F0AB00', status: 'production', kind: 'erp' },
+  { key: 'netsuite', label: 'NetSuite', color: '#1B3A5C', status: 'planned', kind: 'erp' },
+  { key: 'epicor', label: 'Epicor', color: '#E4002B', status: 'planned', kind: 'erp' },
+  // Dedicated TMS systems
+  { key: 'sap_tm', label: 'SAP TM', color: '#0070C0', status: 'production', kind: 'tms' },
+  { key: 'oracle_otm', label: 'Oracle OTM', color: '#C74634', status: 'production', kind: 'tms' },
+  { key: 'blue_yonder', label: 'Blue Yonder TMS', color: '#F0A202', status: 'production', kind: 'tms' },
 ];
 
 const ERP_PIPELINE_STEPS = {
@@ -41,6 +48,29 @@ const ERP_PIPELINE_STEPS = {
     { key: 'user_import', label: 'User Import', description: 'Provision SC-relevant users', icon: Users, detail: 'Map B1 user authorizations to Autonomy decision levels. Import users with relevant warehouse and purchasing permissions.' },
     { key: 'transaction_data', label: 'Transaction Data', description: 'Import orders, deliveries, and production', icon: Activity, detail: 'Extract Orders, PurchaseOrders, ProductionOrders, DeliveryNotes, StockTransfers, and 20+ other transaction entities. Builds complete operational history.' },
     { key: 'warm_start', label: 'Warm Start', description: 'Provision AI models and generate plans', icon: Zap, detail: 'Run the 16-step provisioning pipeline: warm start simulation, agent training, supply plan generation, decision seeding, and conformal calibration.' },
+  ],
+
+  // ── Dedicated TMS systems ──────────────────────────────────────────
+  sap_tm: [
+    { key: 'connect', label: 'Connect', description: 'Configure SAP TM connection (RFC or OData)', icon: Server, detail: 'Connect to SAP TM via RFC (on-premise S/4HANA) or OData (S/4HANA Cloud via API_FREIGHT_ORDER / API_BUSINESS_PARTNER). Provide credentials, client, and preferred method.' },
+    { key: 'carriers', label: 'Carriers + Rates', description: 'Import carrier master and freight rate catalog', icon: Database, detail: 'Extract carrier vendors (LFA1 or A_BusinessPartner with forwarding-agent role) + freight cost catalog (VFKP or customer CDS view). Creates the carrier portfolio.' },
+    { key: 'user_import', label: 'User Import', description: 'Provision TMS-relevant users', icon: Users, detail: 'Map SAP users with transportation authorisations to Autonomy decision levels: shippers, dock coordinators, procurement, tower controllers.' },
+    { key: 'transaction_data', label: 'Freight History', description: 'Import shipments, loads, appointments, exceptions', icon: Activity, detail: 'Extract Freight Orders (VTTK / A_FreightOrder), Freight Units (VTTS / A_FreightUnit), appointments derived from planned dates, and exception-status orders. Builds the execution history agents learn from.' },
+    { key: 'warm_start', label: 'Warm Start', description: 'Provision agents and schedule extraction', icon: Zap, detail: 'Calibrate the 11 TMS execution agents on extracted history; activate the 30m / 4h / daily extraction scheduler; seed the Decision Stream with first live tenders.' },
+  ],
+  oracle_otm: [
+    { key: 'connect', label: 'Connect', description: 'Configure Oracle OTM REST connection', icon: Server, detail: 'Connect to Oracle OTM via the glog RestServlet. Basic auth with domain-qualified user (DEFAULT/user). Provide base URL, domain, credentials, and optional domain / servprov filters.' },
+    { key: 'carriers', label: 'Carriers + Rates', description: 'Import SERVPROV and RATE_OFFERING', icon: Database, detail: 'Extract OTM service providers (carriers) and rate offerings. Maps SERVPROV_GID to the Autonomy carrier portfolio and RATE_OFFERING to the rate catalog.' },
+    { key: 'user_import', label: 'User Import', description: 'Provision TMS-relevant users', icon: Users, detail: 'Map OTM users with transportation roles (planner, dispatcher, tower controller) to Autonomy decision levels.' },
+    { key: 'transaction_data', label: 'Freight History', description: 'Import shipments, movements, stops, statuses', icon: Activity, detail: 'Extract SHIPMENT, ORDER_MOVEMENT, SHIPMENT_STOP, and SHIPMENT_STATUS records. Builds multi-leg execution history including exception states.' },
+    { key: 'warm_start', label: 'Warm Start', description: 'Provision agents and schedule extraction', icon: Zap, detail: 'Calibrate the 11 TMS execution agents on extracted history; activate the extraction scheduler; seed the Decision Stream.' },
+  ],
+  blue_yonder: [
+    { key: 'connect', label: 'Connect', description: 'Configure Blue Yonder TMS OAuth2 connection', icon: Server, detail: 'Connect to Blue Yonder Luminate TMS via OAuth2 client credentials. Provide base URL, client ID, client secret, and tenant code. Token auto-refreshes on 401.' },
+    { key: 'carriers', label: 'Carriers + Rates', description: 'Import carriers and rate agreements', icon: Database, detail: 'Extract the carrier catalog and rate agreements via /api/tms/v2/carriers and /api/tms/v2/rates. Populates the carrier portfolio and rate catalog.' },
+    { key: 'user_import', label: 'User Import', description: 'Provision TMS-relevant users', icon: Users, detail: 'Map BY TMS users to Autonomy decision levels. Import planners, dock supervisors, procurement leads, exception managers.' },
+    { key: 'transaction_data', label: 'Freight History', description: 'Import orders, appointments, exceptions', icon: Activity, detail: 'Extract orders (/api/tms/v2/orders), appointments (/api/tms/v2/appointments), and exceptions. Builds execution history for the 11 TMS agents.' },
+    { key: 'warm_start', label: 'Warm Start', description: 'Provision agents and schedule extraction', icon: Zap, detail: 'Calibrate the 11 TMS execution agents on extracted history; activate the extraction scheduler; seed the Decision Stream.' },
   ],
 };
 
@@ -218,17 +248,21 @@ export default function ERPDataManagement() {
       <div>
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <Database className="h-6 w-6" />
-          ERP Data Management
+          ERP + TMS Integrations
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Configure connections to external ERP systems. Extract master data, transaction data,
-          and change data — mapped to the AWS Supply Chain data model.
+          Configure connections to external ERP systems (master + transaction data) and
+          dedicated TMS systems (shipments, loads, carriers, rates, appointments, exceptions).
+          Each connection drives a guided pipeline: connect, import, calibrate agents, schedule ongoing sync.
         </p>
       </div>
 
-      {/* ERP type selector tabs */}
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {ERP_TYPES.map((erp) => (
+      {/* Vendor type selector tabs — grouped ERP vs TMS */}
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto items-stretch">
+        <span className="self-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider pr-2">
+          ERP
+        </span>
+        {ERP_TYPES.filter(e => e.kind === 'erp').map((erp) => (
           <button
             key={erp.key}
             onClick={() => erp.status === 'production' && setSelectedERP(erp.key)}
@@ -248,15 +282,39 @@ export default function ERPDataManagement() {
             )}
           </button>
         ))}
+        <div className="self-stretch w-px bg-gray-200 mx-2" />
+        <span className="self-center text-[10px] font-semibold text-gray-400 uppercase tracking-wider pr-2">
+          TMS
+        </span>
+        {ERP_TYPES.filter(e => e.kind === 'tms').map((erp) => (
+          <button
+            key={erp.key}
+            onClick={() => erp.status === 'production' && setSelectedERP(erp.key)}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors",
+              selectedERP === erp.key
+                ? "border-blue-600 text-blue-600"
+                : erp.status === 'planned'
+                  ? "border-transparent text-gray-300 cursor-not-allowed"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 cursor-pointer",
+            )}
+            disabled={erp.status === 'planned'}
+          >
+            {erp.label}
+          </button>
+        ))}
       </div>
 
-      {/* Per-ERP content */}
+      {/* Per-vendor content */}
       {selectedERP === 'sap' && <SAPDataManagement />}
       {selectedERP === 'odoo' && <ERPGuidedPipeline erpType="odoo" erpLabel="Odoo" />}
       {selectedERP === 'd365' && <ERPGuidedPipeline erpType="d365" erpLabel="Dynamics 365" />}
       {selectedERP === 'sap_b1' && <ERPGuidedPipeline erpType="sap_b1" erpLabel="SAP Business One" />}
       {selectedERP === 'netsuite' && <PlannedERPView erpLabel="Oracle NetSuite" />}
       {selectedERP === 'epicor' && <PlannedERPView erpLabel="Epicor Kinetic" />}
+      {selectedERP === 'sap_tm' && <ERPGuidedPipeline erpType="sap_tm" erpLabel="SAP TM" />}
+      {selectedERP === 'oracle_otm' && <ERPGuidedPipeline erpType="oracle_otm" erpLabel="Oracle OTM" />}
+      {selectedERP === 'blue_yonder' && <ERPGuidedPipeline erpType="blue_yonder" erpLabel="Blue Yonder TMS" />}
     </div>
   );
 }
