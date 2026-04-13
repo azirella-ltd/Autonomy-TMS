@@ -87,16 +87,12 @@ import Invoices from "./pages/planning/Invoices.jsx";
 import TransferOrders from "./pages/planning/TransferOrders.jsx";
 import SupplyPlanGeneration from "./pages/planning/SupplyPlanGeneration.jsx";
 import PlanComparison from "./pages/planning/ScenarioComparison.jsx";
-import ATPCTPView from "./pages/planning/ATPCTPView.jsx";
 import SourcingAllocation from "./pages/planning/SourcingAllocation.jsx";
 import KPIMonitoring from "./pages/planning/KPIMonitoring.jsx";
 import HierarchicalMetricsDashboard from "./pages/planning/HierarchicalMetricsDashboard.jsx";
 import Recommendations from "./pages/planning/Recommendations.jsx";
 import DemandPlanView from "./pages/planning/DemandPlanView.jsx";
-import DemandPlanningHub from "./pages/planning/DemandPlanningHub.jsx";
 import SupplyPlanningHub from "./pages/planning/SupplyPlanningHub.jsx";
-import InventoryPlanningHub from "./pages/planning/InventoryPlanningHub.jsx";
-import CapacityPlanningHub from "./pages/planning/CapacityPlanningHub.jsx";
 import ForecastAnalyticsHub from "./pages/planning/ForecastAnalyticsHub.jsx";
 import CollaborationHub from "./pages/planning/CollaborationHub.jsx";
 import ProjectOrders from "./pages/planning/ProjectOrders.jsx";
@@ -140,17 +136,6 @@ import SupplyWorklistPage from "./pages/planning/SupplyWorklistPage.jsx";
 import AllocationWorklistPage from "./pages/planning/AllocationWorklistPage.jsx";
 import ExecutionPage from "./pages/planning/ExecutionPage.jsx";
 import CascadeDashboard from "./pages/planning/CascadeDashboard.jsx";
-import ATPWorklistPage from "./pages/planning/ATPWorklistPage.jsx";
-import RebalancingWorklistPage from "./pages/planning/RebalancingWorklistPage.jsx";
-import POWorklistPage from "./pages/planning/POWorklistPage.jsx";
-import OrderTrackingWorklistPage from "./pages/planning/OrderTrackingWorklistPage.jsx";
-import MOWorklistPage from "./pages/planning/MOWorklistPage.jsx";
-import TOWorklistPage from "./pages/planning/TOWorklistPage.jsx";
-import QualityWorklistPage from "./pages/planning/QualityWorklistPage.jsx";
-import MaintenanceWorklistPage from "./pages/planning/MaintenanceWorklistPage.jsx";
-import SubcontractingWorklistPage from "./pages/planning/SubcontractingWorklistPage.jsx";
-import ForecastAdjWorklistPage from "./pages/planning/ForecastAdjWorklistPage.jsx";
-import BufferWorklistPage from "./pages/planning/BufferWorklistPage.jsx";
 // TMS Agent Worklist Pages
 import CapacityPromiseWorklistPage from "./pages/planning/CapacityPromiseWorklistPage.jsx";
 import ShipmentTrackingWorklistPage from "./pages/planning/ShipmentTrackingWorklistPage.jsx";
@@ -798,96 +783,6 @@ const AppContent = () => {
               }
             />
 
-            {/* TRM Specialist Worklists */}
-            <Route
-              path="/planning/execution/atp-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_atp_worklist">
-                  <ATPWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/rebalancing-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_rebalancing_worklist">
-                  <RebalancingWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/po-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_po_worklist">
-                  <POWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/order-tracking-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_order_tracking_worklist">
-                  <OrderTrackingWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/mo-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_mo_worklist">
-                  <MOWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/to-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_to_worklist">
-                  <TOWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/quality-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_quality_worklist">
-                  <QualityWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/maintenance-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_maintenance_worklist">
-                  <MaintenanceWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/subcontracting-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_subcontracting_worklist">
-                  <SubcontractingWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/forecast-adj-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_forecast_adj_worklist">
-                  <ForecastAdjWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/execution/buffer-worklist"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_buffer_worklist">
-                  <BufferWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-
             {/* TMS Agent Worklists */}
             <Route
               path="/planning/execution/capacity-promise-worklist"
@@ -1032,14 +927,6 @@ const AppContent = () => {
 
             {/* Tactical Planning Hubs */}
             <Route
-              path="/planning/demand-planning"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_demand_planning">
-                  <DemandPlanningHub />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
               path="/planning/supply-planning"
               element={
                 <CapabilityProtectedRoute requiredCapability="view_supply_plan">
@@ -1052,22 +939,6 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_supply_plan">
                   <PlanComparison />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/inventory-planning"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_inventory_optimization">
-                  <InventoryPlanningHub />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/capacity-planning"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_capacity_planning">
-                  <CapacityPlanningHub />
                 </CapabilityProtectedRoute>
               }
             />
@@ -1241,19 +1112,6 @@ const AppContent = () => {
             />
 
             <Route
-              path="/execution/atp-ctp"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_atp_ctp">
-                  <ATPCTPView />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/planning/atp-ctp"
-              element={<Navigate to="/execution/atp-ctp" replace />}
-            />
-
-            <Route
               path="/planning/sourcing"
               element={
                 <CapabilityProtectedRoute requiredCapability="view_sourcing_allocation">
@@ -1301,23 +1159,6 @@ const AppContent = () => {
               path="/planning/mrp"
               element={<Navigate to="/execution/mrp" replace />}
             />
-            <Route
-              path="/execution/po-creation"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_po_worklist">
-                  <POWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-            <Route
-              path="/execution/inventory-rebalancing"
-              element={
-                <CapabilityProtectedRoute requiredCapability="view_rebalancing_worklist">
-                  <RebalancingWorklistPage />
-                </CapabilityProtectedRoute>
-              }
-            />
-
             <Route
               path="/planning/production-processes"
               element={

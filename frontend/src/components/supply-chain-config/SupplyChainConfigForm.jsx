@@ -70,7 +70,6 @@ import SiteForm from './SiteForm';
 import TransportationLaneForm from './TransportationLaneForm';  // AWS SC DM standard
 import ProductForm from './ProductForm';
 import SourcingTreeForm from './SourcingTreeForm';
-import BOMForm from './BOMForm';
 import VendorManager from './VendorManager';
 import CustomerManager from './CustomerManager';
 import SiteTypeManager from './SiteTypeManager';
@@ -162,8 +161,7 @@ const STEPS = [
   'Vendors',            // 4  — external suppliers (TradingPartner, tpartner_type=vendor)
   'Customers',          // 5  — external demand (TradingPartner, tpartner_type=customer)
   'Product Sourcing',   // 6
-  'Bill of Materials',  // 7
-  'Review & Save',      // 8
+  'Review & Save',      // 7
 ];
 
 const SupplyChainConfigForm = ({
@@ -952,18 +950,7 @@ const SupplyChainConfigForm = ({
           />
         );
 
-      case 7: // Bill of Materials
-        return (
-          <BOMForm
-            products={products}
-            sites={internalSites}
-            onUpdateSite={handleUpdateSite}
-            loading={loading}
-            navigationButtons={getNavigationButtons()}
-          />
-        );
-
-      case 8: // Review
+      case 7: // Review
         return (
           <div>
             <h3 className="text-lg font-semibold mb-4">Review Configuration</h3>

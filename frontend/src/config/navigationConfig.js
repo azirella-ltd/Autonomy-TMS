@@ -190,13 +190,6 @@ export const NAVIGATION_CONFIG = [
         description: 'Stochastic vs deterministic analysis',
       },
       {
-        label: 'Exception Detection',
-        path: '/planning/execution/order-tracking-worklist',
-        icon: RiskIcon,
-        requiredCapability: 'view_order_tracking_worklist',
-        description: 'Order tracking exceptions and anomaly alerts',
-      },
-      {
         label: 'Monte Carlo Simulation',
         path: '/planning/monte-carlo',
         icon: MonteCarloIcon,
@@ -283,32 +276,11 @@ export const NAVIGATION_CONFIG = [
       // MPS merged into Supply & Production Plan — no separate nav entry.
       // Forecast Analytics merged into Demand Planning → Analytics tab.
       {
-        label: 'Demand Planning',
-        path: '/planning/demand-planning',
-        icon: ForecastIcon,
-        requiredCapability: 'view_demand_planning',
-        description: 'Forecast, Pipeline, Analytics, Sensing, Shaping, Consensus, Exceptions',
-      },
-      {
         label: 'Supply & Production Plan',
         path: '/planning/supply-planning',
         icon: ViewIcon,
         requiredCapability: 'view_supply_plan',
         description: 'Plan of Record, Sourcing, Net Requirements, Capacity, Agent Directives',
-      },
-      {
-        label: 'Inventory Planning',
-        path: '/planning/inventory-planning',
-        icon: InventoryIcon,
-        requiredCapability: 'view_inventory_optimization',
-        description: 'Policies, Projections, Segmentation, Allocations, ATP/CTP',
-      },
-      {
-        label: 'Capacity Planning',
-        path: '/planning/capacity-planning',
-        icon: AssessmentIcon,
-        requiredCapability: 'view_capacity_planning',
-        description: 'Utilization, Bottleneck, Rough-Cut, Processes, Maintenance, Heatmap',
       },
 
       // --- OPERATIONAL PLANNING (0-3 month horizon) ---
@@ -325,13 +297,6 @@ export const NAVIGATION_CONFIG = [
         icon: LayersIcon,
         requiredCapability: 'view_supply_planning',
         description: 'Unified demand-supply netting with fan chart and MRP grid',
-      },
-      {
-        label: 'AATP Allocations',
-        path: '/execution/atp-ctp',
-        icon: CrosshairIcon,
-        requiredCapability: 'view_atp_ctp',
-        description: 'Priority-based Available-to-Promise allocation',
       },
       {
         label: 'Collaboration Hub',
@@ -526,27 +491,6 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_mrp',
         description: 'Material Requirements Planning — component requirements from MPS',
       },
-      {
-        label: 'Order Promising (ATP/CTP)',
-        path: '/execution/atp-ctp',
-        icon: StatsIcon,
-        requiredCapability: 'view_atp_ctp',
-        description: 'Available-to-Promise and Capable-to-Promise',
-      },
-      {
-        label: 'PO Creation',
-        path: '/execution/po-creation',
-        icon: OrderIcon,
-        requiredCapability: 'view_po_worklist',
-        description: 'Automated purchase order generation and timing',
-      },
-      {
-        label: 'Inventory Rebalancing',
-        path: '/execution/inventory-rebalancing',
-        icon: CompareIcon,
-        requiredCapability: 'view_rebalancing_worklist',
-        description: 'Cross-location inventory transfer decisions',
-      },
 
       // --- ORDERS ---
       {
@@ -631,13 +575,6 @@ export const NAVIGATION_CONFIG = [
         path: '/visibility/inventory',
         icon: InventoryIcon,
         requiredCapability: 'view_inventory_visibility',
-      },
-      {
-        label: 'Order Tracking',
-        path: '/planning/execution/order-tracking-worklist',
-        icon: ShippingIcon,
-        requiredCapability: 'view_order_tracking_worklist',
-        description: 'Exception detection and recommended actions',
       },
 
       // --- TMS VISIBILITY ---
