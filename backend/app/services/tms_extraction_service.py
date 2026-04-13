@@ -43,9 +43,9 @@ def _get_adapter_class(erp_type: str):
         "sap": "app.integrations.sap.tms_extractor.SAPTMAdapter",
         "sap_s4hana": "app.integrations.sap.tms_extractor.SAPTMAdapter",
         "sap_tm": "app.integrations.sap.tms_extractor.SAPTMAdapter",
+        "oracle_otm": "app.integrations.oracle.otm_extractor.OracleOTMAdapter",
+        "blue_yonder": "app.integrations.blue_yonder.by_tms_extractor.BlueYonderTMSAdapter",
         # Future:
-        # "oracle_otm": "app.integrations.oracle.tms_extractor.OracleTMAdapter",
-        # "blue_yonder": "app.integrations.blue_yonder.tms_extractor.BlueYonderTMAdapter",
         # "manhattan": "app.integrations.manhattan.tms_extractor.ManhattanTMAdapter",
     }
     module_class = adapters.get(erp_type.lower())
@@ -295,6 +295,36 @@ class TMSExtractionService:
                 company_code=params.get("company_code"),
                 plant_filter=params.get("plant_filter"),
                 shipping_type_filter=params.get("shipping_type_filter"),
+            )
+            return adapter_class(config)
+
+        if connection.erp_type.lower() == "oracle_otm":
+            from app.integrations.oracle.otm_extractor import OracleOTMConnectionConfig
+            config = OracleOTMConnectionConfig(
+                tenant_id=connection.tenant_id,
+                connection_name=connection.name,
+                base_url=connection.base_url,
+                domain=params.get("domain", "DEFAULT"),
+                otm_user=params.get("user"),
+                otm_password=params.get("password"),
+                domain_filter=params.get("domain_filter"),
+                servprov_filter=params.get("servprov_filter"),
+                verify_ssl=params.get("verify_ssl", True),
+            )
+            return adapter_class(config)
+
+        if connection.erp_type.lower() == "blue_yonder":
+            from app.integrations.blue_yonder.by_tms_extractor import (
+                BlueYonderTMSConnectionConfig,
+            )
+            config = BlueYonderTMSConnectionConfig(
+                tenant_id=connection.tenant_id,
+                connection_name=connection.name,
+                base_url=connection.base_url,
+                client_id=params.get("client_id"),
+                client_secret=params.get("client_secret"),
+                tenant_code=params.get("tenant_code"),
+                verify_ssl=params.get("verify_ssl", True),
             )
             return adapter_class(config)
 

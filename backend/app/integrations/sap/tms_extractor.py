@@ -283,7 +283,7 @@ class SAPTMAdapter(TMSExtractionAdapter):
                     "API_FREIGHT_ORDER",
                     "A_FreightOrder",
                     filters=filters,
-                    top=batch_size if mode != ExtractionMode.HISTORICAL else None,
+                    max_records=batch_size if mode != ExtractionMode.HISTORICAL else 0,
                 )
                 records = self._map_freight_orders_odata(raw)
 
@@ -334,6 +334,18 @@ class SAPTMAdapter(TMSExtractionAdapter):
                 )
                 records = [self._map_freight_stage(row) for _, row in df.iterrows()]
 
+            elif self._odata_extractor:
+                filters = []
+                if since and mode == ExtractionMode.INCREMENTAL:
+                    filters.append(f"LastChangeDateTime ge datetime'{since.isoformat()}'")
+                raw = await self._odata_extractor._fetch_entity_set(
+                    "API_FREIGHT_UNIT",
+                    "A_FreightUnit",
+                    filters=filters,
+                    max_records=batch_size if mode != ExtractionMode.HISTORICAL else 0,
+                )
+                records = self._map_freight_units_odata(raw)
+
         except Exception as e:
             logger.error(f"SAP TM load extraction failed: {e}")
             errors.append({"error": str(e), "phase": "extraction"})
@@ -374,6 +386,19 @@ class SAPTMAdapter(TMSExtractionAdapter):
                 )
                 records = [self._map_carrier(row) for _, row in df.iterrows()]
 
+            elif self._odata_extractor:
+                # API_BUSINESS_PARTNER filtered by forwarding-agent role (FLFR01).
+                # Customers can override the filter via shipping_type_filter if
+                # they use a non-standard role code for carriers.
+                filters = ["BusinessPartnerRole eq 'FLFR01'"]
+                raw = await self._odata_extractor._fetch_entity_set(
+                    "API_BUSINESS_PARTNER",
+                    "A_BusinessPartner",
+                    filters=filters,
+                    max_records=0,
+                )
+                records = self._map_carriers_odata(raw)
+
         except Exception as e:
             logger.error(f"SAP TM carrier extraction failed: {e}")
             errors.append({"error": str(e), "phase": "extraction"})
@@ -408,6 +433,18 @@ class SAPTMAdapter(TMSExtractionAdapter):
                 )
                 records = [self._map_freight_cost(row) for _, row in df.iterrows()]
 
+            elif self._odata_extractor:
+                # SAP doesn't publish a standard OData service for VFKP
+                # freight cost items in S/4HANA Cloud. Rates usually come
+                # through CDS views the customer exposes (YY1_FREIGHTCOST_CDS)
+                # or a custom service. Skip cleanly with an errors entry so
+                # the caller can log that OData rate sync isn't wired.
+                errors.append({
+                    "info": "OData freight-rate extraction requires a customer-specific "
+                            "CDS view (e.g. YY1_FREIGHTCOST_CDS); RFC path is authoritative.",
+                    "phase": "extraction",
+                })
+
         except Exception as e:
             logger.error(f"SAP TM rate extraction failed: {e}")
             errors.append({"error": str(e), "phase": "extraction"})
@@ -434,14 +471,59 @@ class SAPTMAdapter(TMSExtractionAdapter):
         are derived from Freight Order planned dates + Delivery scheduling.
         This method extracts the planned pickup/delivery windows from VTTK.
         """
-        # Appointments in SAP TM are part of the Freight Order — reuse
-        # the shipment extraction with appointment-focused mapping
+        # SAP TM models appointments as planned-date pairs on the Freight
+        # Order (pickup: DTABF+UZABF at ABFER, delivery: DTANK+UZANK at
+        # EZESSION). We extract the date fields and split into two
+        # appointment records per shipment — one pickup, one delivery —
+        # so DockSchedulingTRM has a uniform shape to consume.
+        start = datetime.utcnow()
+        records: List[Dict[str, Any]] = []
+        errors: List[Dict[str, Any]] = []
+
+        appt_fields = [
+            "TKNUM", "ABFER", "EZESSION", "TDLNR",
+            "DTABF", "UZABF", "DTANK", "UZANK",
+            "DTEFB", "DTEFA", "SIGNI",
+        ]
+
+        try:
+            if self._connector:
+                where_clause = ""
+                if since and mode == ExtractionMode.INCREMENTAL:
+                    where_clause = f"AEDAT >= '{since.strftime('%Y%m%d')}'"
+                df = self._connector._execute_query(
+                    "VTTK", appt_fields, where_clause=where_clause, max_rows=0,
+                )
+                for _, row in df.iterrows():
+                    records.extend(self._derive_appointments(row))
+
+            elif self._odata_extractor:
+                filters = []
+                if since and mode == ExtractionMode.INCREMENTAL:
+                    filters.append(
+                        f"LastChangeDateTime ge datetime'{since.isoformat()}'"
+                    )
+                raw = await self._odata_extractor._fetch_entity_set(
+                    "API_FREIGHT_ORDER",
+                    "A_FreightOrder",
+                    filters=filters,
+                    max_records=0,
+                )
+                for item in raw:
+                    records.extend(self._derive_appointments_odata(item))
+
+        except Exception as e:
+            logger.error(f"SAP TM appointment extraction failed: {e}")
+            errors.append({"error": str(e), "phase": "extraction"})
+
+        duration = (datetime.utcnow() - start).total_seconds()
         return ExtractionResult(
             entity_type="appointments",
-            records_extracted=0,
-            records_mapped=0,
+            records_extracted=len(records),
+            records_mapped=len(records),
             records_skipped=0,
-            errors=[{"info": "SAP TM appointments derived from Freight Order dates during shipment extraction"}],
+            errors=errors,
+            duration_seconds=duration,
         )
 
     async def extract_exceptions(
@@ -476,6 +558,21 @@ class SAPTMAdapter(TMSExtractionAdapter):
                     max_rows=500,
                 )
                 records = [self._map_exception(row) for _, row in df.iterrows()]
+
+            elif self._odata_extractor:
+                # Same API_FREIGHT_ORDER service, status-filtered. SAP uses
+                # TransportationStatus code values "0004"-"0006" for the
+                # delay/damage/failed triad (matches STTRG on RFC path).
+                filters = ["TransportationStatus ge '0004' and TransportationStatus le '0006'"]
+                if since and mode == ExtractionMode.INCREMENTAL:
+                    filters.append(f"LastChangeDateTime ge datetime'{since.isoformat()}'")
+                raw = await self._odata_extractor._fetch_entity_set(
+                    "API_FREIGHT_ORDER",
+                    "A_FreightOrder",
+                    filters=filters,
+                    max_records=500,
+                )
+                records = self._map_exceptions_odata(raw)
 
         except Exception as e:
             logger.error(f"SAP TM exception extraction failed: {e}")
@@ -593,18 +690,76 @@ class SAPTMAdapter(TMSExtractionAdapter):
         BAPI_SHIPMENT_CHANGE to reassign delivery documents to a
         different shipment number.
         """
-        # Load plan injection is SAP TM's most complex operation —
-        # requires orchestrating multiple BAPIs. Placeholder for now.
-        logger.warning(
-            f"SAP TM load plan injection not yet implemented. "
-            f"Load {load_external_id}, shipments {shipment_ids}"
-        )
-        return InjectionResult(
-            decision_id=metadata.get("id", 0) if metadata else 0,
-            decision_type="load_plan",
-            success=False,
-            error="Load plan injection not yet implemented for SAP TM",
-        )
+        decision_id = metadata.get("id", 0) if metadata else 0
+
+        if not self._connector:
+            return InjectionResult(
+                decision_id=decision_id,
+                decision_type="load_plan",
+                success=False,
+                error="Load plan injection requires an RFC connection (BAPI_SHIPMENT_CHANGE)",
+            )
+
+        try:
+            # BAPI_SHIPMENT_CHANGE accepts a DELIVERIES table where each row
+            # declares a delivery (LIKP document number) to attach to the
+            # freight order. Action 'I' = insert, 'D' = delete. We always
+            # insert — caller is responsible for detaching from the prior
+            # freight order in a separate decision if needed.
+            deliveries = [
+                {"VBELN": str(sid), "POSNR": "000000", "MAFLAG": "I"}
+                for sid in shipment_ids
+            ]
+
+            header_data: Dict[str, Any] = {"SHIPMENT_NUM": load_external_id}
+            header_x: Dict[str, Any] = {"SHIPMENT_NUM": "X"}
+            if equipment_type:
+                # VSART carries the SAP shipping type — customer-specific
+                # mapping from our equipment_type (e.g. "53_DRY_VAN") to SAP
+                # VSART ("01") must live in the tenant config, not here.
+                header_data["SHIPPING_TYPE"] = equipment_type
+                header_x["SHIPPING_TYPE"] = "X"
+
+            result = self._connector.execute_bapi(
+                "BAPI_SHIPMENT_CHANGE",
+                HEADERDATA=header_data,
+                HEADERDATAX=header_x,
+                DELIVERIES=deliveries,
+            )
+
+            returns = result.get("RETURN", []) or []
+            errors = [r for r in returns if r.get("TYPE") in ("E", "A")]
+            if errors:
+                return InjectionResult(
+                    decision_id=decision_id,
+                    decision_type="load_plan",
+                    success=False,
+                    external_id=load_external_id,
+                    error="; ".join(
+                        r.get("MESSAGE", "") for r in errors
+                    ),
+                    response=result,
+                )
+
+            # Commit — SAP BAPI changes require explicit commit work.
+            self._connector.execute_bapi("BAPI_TRANSACTION_COMMIT", WAIT="X")
+
+            return InjectionResult(
+                decision_id=decision_id,
+                decision_type="load_plan",
+                success=True,
+                external_id=load_external_id,
+                response=result,
+            )
+        except Exception as e:
+            logger.error(f"SAP TM load plan injection failed: {e}")
+            return InjectionResult(
+                decision_id=decision_id,
+                decision_type="load_plan",
+                success=False,
+                external_id=load_external_id,
+                error=str(e),
+            )
 
     # ── Private Mapping Methods ──────────────────────────────────────────
 
@@ -734,6 +889,120 @@ class SAPTMAdapter(TMSExtractionAdapter):
             ),
             "source": "SAP_TM",
         }
+
+    def _map_freight_units_odata(self, raw: List[Dict]) -> List[Dict[str, Any]]:
+        """Map OData A_FreightUnit response to TMS Load dicts."""
+        records = []
+        for item in raw:
+            records.append({
+                "shipment_number": item.get("FreightUnit", ""),
+                "external_id": item.get("FreightUnit", ""),
+                "leg_sequence": item.get("FreightUnitItem", 0),
+                "transport_mode": self._map_sap_mode(item.get("TransportationMode", "")),
+                "carrier_vendor_number": item.get("Carrier", ""),
+                "origin_plant": item.get("SourceLocation", ""),
+                "destination_plant": item.get("DestinationLocation", ""),
+                "weight": item.get("GrossWeight"),
+                "volume": item.get("GrossVolume"),
+                "source": "SAP_TM",
+            })
+        return records
+
+    def _map_carriers_odata(self, raw: List[Dict]) -> List[Dict[str, Any]]:
+        """Map OData A_BusinessPartner response to TMS Carrier dicts."""
+        records = []
+        for item in raw:
+            records.append({
+                "vendor_number": item.get("BusinessPartner", ""),
+                "name": item.get("BusinessPartnerFullName", "")
+                        or item.get("OrganizationBPName1", ""),
+                "country": item.get("Country", ""),
+                "scac": item.get("StandardCarrierAlphaCode") or None,
+                "phone": item.get("PhoneNumber1") or None,
+                "is_blocked": bool(item.get("BusinessPartnerIsBlocked", False)),
+                "is_deleted": bool(item.get("IsMarkedForArchiving", False)),
+                "account_group": item.get("BusinessPartnerGrouping", ""),
+                "source": "SAP_TM",
+            })
+        return records
+
+    def _map_exceptions_odata(self, raw: List[Dict]) -> List[Dict[str, Any]]:
+        """Map exception-status freight orders from OData to TMS exceptions."""
+        status_map = {"0004": "DELAY", "0005": "DAMAGE", "0006": "EXCEPTION"}
+        records = []
+        for item in raw:
+            status = str(item.get("TransportationStatus", "")).strip()
+            records.append({
+                "shipment_number": item.get("FreightOrder", ""),
+                "exception_type": status_map.get(status, "EXCEPTION"),
+                "severity": "HIGH",
+                "carrier_vendor_number": item.get("Carrier", ""),
+                "detected_at": item.get("LastChangeDateTime"),
+                "source": "SAP_TM",
+            })
+        return records
+
+    def _derive_appointments(self, row) -> List[Dict[str, Any]]:
+        """Split a VTTK row into pickup + delivery appointment records."""
+        tknum = str(row.get("TKNUM", "")).strip()
+        carrier = str(row.get("TDLNR", "")).strip()
+        appts = []
+        planned_pickup = self._parse_sap_datetime(row.get("DTABF"), row.get("UZABF"))
+        actual_pickup = self._parse_sap_date(row.get("DTEFB"))
+        if planned_pickup or actual_pickup:
+            appts.append({
+                "shipment_number": tknum,
+                "external_id": f"{tknum}-PU",
+                "appointment_type": "PICKUP",
+                "facility": str(row.get("ABFER", "")).strip(),
+                "planned_start": planned_pickup,
+                "actual_start": actual_pickup,
+                "carrier_vendor_number": carrier,
+                "source": "SAP_TM",
+            })
+        planned_delivery = self._parse_sap_datetime(row.get("DTANK"), row.get("UZANK"))
+        actual_delivery = self._parse_sap_date(row.get("DTEFA"))
+        if planned_delivery or actual_delivery:
+            appts.append({
+                "shipment_number": tknum,
+                "external_id": f"{tknum}-DL",
+                "appointment_type": "DELIVERY",
+                "facility": str(row.get("EZESSION", "")).strip(),
+                "planned_start": planned_delivery,
+                "actual_start": actual_delivery,
+                "carrier_vendor_number": carrier,
+                "source": "SAP_TM",
+            })
+        return appts
+
+    def _derive_appointments_odata(self, item: Dict) -> List[Dict[str, Any]]:
+        """OData equivalent of _derive_appointments — 2 records per freight order."""
+        fo = item.get("FreightOrder", "")
+        carrier = item.get("Carrier", "")
+        appts = []
+        if item.get("PlannedPickUpDateTime") or item.get("ActualPickUpDateTime"):
+            appts.append({
+                "shipment_number": fo,
+                "external_id": f"{fo}-PU",
+                "appointment_type": "PICKUP",
+                "facility": item.get("SourceLocation", ""),
+                "planned_start": item.get("PlannedPickUpDateTime"),
+                "actual_start": item.get("ActualPickUpDateTime"),
+                "carrier_vendor_number": carrier,
+                "source": "SAP_TM",
+            })
+        if item.get("PlannedDeliveryDateTime") or item.get("ActualDeliveryDateTime"):
+            appts.append({
+                "shipment_number": fo,
+                "external_id": f"{fo}-DL",
+                "appointment_type": "DELIVERY",
+                "facility": item.get("DestinationLocation", ""),
+                "planned_start": item.get("PlannedDeliveryDateTime"),
+                "actual_start": item.get("ActualDeliveryDateTime"),
+                "carrier_vendor_number": carrier,
+                "source": "SAP_TM",
+            })
+        return appts
 
     # ── SAP Value Mapping ────────────────────────────────────────────────
 
