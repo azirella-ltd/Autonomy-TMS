@@ -134,13 +134,13 @@ Within a single site:
 - **HiveSignalBus**: Broadcast mechanism for cross-head coordination
 - Example: ATP shortfall → signals PO head to expedite → signals Maintenance to defer
 
-#### Layer 2 — tGNN Inter-Hive (Daily)
+#### Layer 3 — tGNN Inter-Hive (Daily)
 Across the network:
 - **S&OP GraphSAGE**: Processes full network graph, outputs per-site criticality scores
 - **Execution tGNN**: Generates Priority × Product × Location allocations
 - Output: tGNNSiteDirective per site (allocation table + context embeddings)
 
-#### Layer 3 — AAP Cross-Authority (Seconds-Minutes)
+#### AAP Protocol Cross-Authority (Seconds-Minutes)
 Between functional agents:
 - **Agentic Authorization Protocol**: Structured request/response for actions outside authority
 - Three phases: Evaluate (what-if), Request (AuthorizationRequest with scorecard), Authorize
@@ -154,8 +154,8 @@ Policy parameter negotiation:
 
 ### Key Principle
 **TRMs never call across sites**. All cross-site information flows through:
-- tGNN directive (Layer 2 — daily batch)
-- AAP authorization (Layer 3 — on-demand)
+- tGNN directive (Layer 3 — daily batch)
+- AAP authorization (AAP Protocol — on-demand)
 
 ## 11 TRM Agents (Per-Site Execution)
 
@@ -213,7 +213,7 @@ Six-phase cold-start pipeline:
 - Focus: intra-hive coordination patterns
 
 ### Phase 3: Site tGNN Training
-- Cross-TRM coordination model (Layer 1.5) learns causal relationships from Phase 2 traces
+- Cross-TRM coordination model (Layer 2) learns causal relationships from Phase 2 traces
 - Behavioral cloning from coordinated traces, then PPO fine-tuning with site BSC as reward
 - Output: ~25K parameter checkpoint capturing cross-TRM causal chains
 

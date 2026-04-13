@@ -24,14 +24,14 @@ Layer 4: S&OP GraphSAGE (Strategic)
            sourcing_split)
   Adjustment: None autonomous — upstream constraint injection + human directive
 
-Layer 2: Supply Planning GNN [formerly "Network tGNN"]
+Layer 3: Supply Planning GNN [formerly "Network tGNN"]
   Scope:   Multi-site daily supply/allocation planning
   Timing:  Daily
   Output:  tGNNSiteDirective per site (allocation priority, demand forecast
            correction, exception probability, flow adjustments)
   Adjustment: None — escalation triggers DE re-run upstream
 
-Layer 1.5: Site tGNN (Operational)                             ✅ IMPLEMENTED
+Layer 2: Site tGNN (Operational)                             ✅ IMPLEMENTED
   Scope:   Single site — cross-TRM coordination
   Timing:  Hourly (at :25)
   Output:  Urgency adjustments [11, 3] per TRM
@@ -51,7 +51,7 @@ Layer 4: S&OP GraphSAGE (Strategic)                            ✅ IMPLEMENTED
     Trigger: new signal between weekly DE runs
     Action:  bounded θ* patch with pending_de_reconciliation flag
 
-Layer 2: Tactical Planning — four domain GNNs (daily, sequential)
+Layer 3: Tactical Planning — four domain GNNs (daily, sequential)
 
   Step 1 — Demand Planning GNN                                  ⬜ PLANNED
     Input:  historical demand, active forecasts, product lifecycle,
@@ -85,7 +85,7 @@ Layer 2: Tactical Planning — four domain GNNs (daily, sequential)
     + RCCP Adjustment TRM (in-cycle)                            ⬜ PLANNED
     + RCCP Skill (cross-cycle)              [SKILL.md exists]   ⬜ WIRE IN
 
-Layer 1.5: Site tGNN (Operational)                             ✅ IMPLEMENTED
+Layer 2: Site tGNN (Operational)                             ✅ IMPLEMENTED
   Unchanged — adjusts execution TRMs at the intra-site level
 
 Layer 1: 11 Execution TRMs + 11 Claude Skills                  ✅ IMPLEMENTED
@@ -147,7 +147,7 @@ gradually shifts as TRMs learn what Skills currently handle.
 At Layer 4, the current adjustment mechanism is **upstream injection** rather than downstream patching:
 
 ```
-Domain GNNs (Layer 2):
+Domain GNNs (Layer 3):
   GNN output → [Domain TRM patches plan] → [Skill adjusts if novel] → finalized plan
 
 S&OP GraphSAGE (Layer 4, current state):
@@ -206,7 +206,7 @@ closes or reverses after PPO fine-tuning on simulated stochastic outcomes.
 
 ---
 
-## Layer 1.5 — Site tGNN (Hourly Cross-TRM Coordination)
+## Layer 2 — Site tGNN (Hourly Cross-TRM Coordination)
 
 **File**: `backend/app/services/powell/site_tgnn_inference_service.py`
 **Model**: `backend/app/models/gnn/site_tgnn.py` — `SiteTGNN`
@@ -371,7 +371,7 @@ Training trigger: if MultiHeadTrace records available AND eval_loss > threshold
 
 ---
 
-## Layer 2 — Network tGNN (Daily Tactical Planning)
+## Layer 3 — Network tGNN (Daily Tactical Planning)
 
 **File**: `backend/app/services/powell/network_tgnn_oracle.py`
 **Architecture**: GATv2 on multi-site supply chain graph, ~473K parameters
@@ -955,7 +955,7 @@ site_operational_state = {
 # Urgency: 0.61 (cross-TRM conflict with MO_Execution)
 ```
 
-**Site tGNN** (hourly, Layer 1.5) sees the cross-TRM conflict:
+**Site tGNN** (hourly, Layer 2) sees the cross-TRM conflict:
 ```python
 cross_trm_attention = {
     "MO_Execution → Maintenance_Scheduling": 0.71,  # high conflict — compete for capacity
@@ -1108,7 +1108,7 @@ Site XYZ TRMs
     MaintenanceSchedulingTRM: breakdown_risk=ELEVATED
     ↓ (urgency boosts ineffective after 3 cycles)
 
-Site tGNN (Layer 1.5, hourly)
+Site tGNN (Layer 2, hourly)
     coordination_score=0.31 (TRMs in conflict)
     CROSS_TRM_BOTTLENECK InterHiveSignal emitted
     ↓
@@ -1291,7 +1291,7 @@ tGNNSiteDirective(site="DC_South") = {
 
 These directives are injected into the SiteAgent context for all affected sites.
 
-#### Network tGNN → Site tGNN (hourly, Layer 1.5)
+#### Network tGNN → Site tGNN (hourly, Layer 2)
 
 At the next hourly Site tGNN run for XYZ, the 11-node cross-TRM coordination graph
 reflects the elevated `exception_probability`:
@@ -1461,4 +1461,4 @@ Policy parameters stored in `powell_policy_parameters` table, keyed by `config_i
 - [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) — Hive signal bus, decision cycle phases, multi-site coordination stack
 - [AGENT_TRAINING_LIFECYCLE.md](AGENT_TRAINING_LIFECYCLE.md) — Training pipeline and oracle-based data generation
 - [ESCALATION_ARCHITECTURE.md](ESCALATION_ARCHITECTURE.md) — Vertical escalation between GNN layers
-- [AGENTIC_AUTHORIZATION_PROTOCOL.md](AGENTIC_AUTHORIZATION_PROTOCOL.md) — Cross-site authorization (Layer 3)
+- [AGENTIC_AUTHORIZATION_PROTOCOL.md](AGENTIC_AUTHORIZATION_PROTOCOL.md) — Cross-site authorization (AAP Protocol)

@@ -81,9 +81,9 @@ The Decision Stream sorts by urgency descending, then likelihood ascending — s
 ```mermaid
 graph TD
     SOP["<b>Layer 4: S&OP GraphSAGE</b><br/>Policy parameters θ<br/><i>Weekly · CFA · ~500K params</i>"]
-    AAP["<b>Layer 3: AAP</b><br/>AuthorizationRequest/Response<br/><i>Ad Hoc</i>"]
-    NET["<b>Layer 2: Network tGNN</b><br/>tGNNSiteDirective<br/><i>Daily · CFA/VFA · ~473K params</i>"]
-    SITE["<b>Layer 1.5: Site tGNN</b><br/>GATv2+GRU · 22 causal edges<br/><i>Hourly · VFA · ~25K params</i>"]
+    AAP["<b>AAP Protocol</b><br/>AuthorizationRequest/Response<br/><i>Ad Hoc</i>"]
+    NET["<b>Layer 3: Network tGNN</b><br/>tGNNSiteDirective<br/><i>Daily · CFA/VFA · ~473K params</i>"]
+    SITE["<b>Layer 2: Site tGNN</b><br/>GATv2+GRU · 22 causal edges<br/><i>Hourly · VFA · ~25K params</i>"]
 
     subgraph HIVE["<b>Layer 1: TRM Hive</b> · HiveSignalBus + UrgencyVector · &lt;10ms · ~7M params/TRM"]
         subgraph SC["Scout (Demand)"]
@@ -748,9 +748,9 @@ The SiteAgent:
 
 ---
 
-## Cross-TRM Coordination (Site tGNN — Layer 1.5)
+## Cross-TRM Coordination (Site tGNN — Layer 2)
 
-The 11 TRM agents within each site coordinate through two mechanisms: the reactive **HiveSignalBus** (Layer 1, <10ms) and the learned **Site tGNN** (Layer 1.5, hourly). The signal bus handles immediate event propagation -- when an ATP shortage fires, the PO Creation TRM sees it on the next cycle. The Site tGNN handles *predictive* coordination -- learning that a production spike will cascade into quality pressure, then maintenance load, then reorder activity, hours before the signal bus would detect each link.
+The 11 TRM agents within each site coordinate through two mechanisms: the reactive **HiveSignalBus** (Layer 1, <10ms) and the learned **Site tGNN** (Layer 2, hourly). The signal bus handles immediate event propagation -- when an ATP shortage fires, the PO Creation TRM sees it on the next cycle. The Site tGNN handles *predictive* coordination -- learning that a production spike will cascade into quality pressure, then maintenance load, then reorder activity, hours before the signal bus would detect each link.
 
 ### Architecture
 
@@ -854,7 +854,7 @@ The adjustments are additive and clamped. The Site tGNN modulates *emphasis* -- 
 | **1.5** | **Site tGNN** | **Single site, active TRMs** | **Hourly** | **Urgency modulation** |
 | **1** | TRM Hive + Signal Bus | Single site | Per-decision | Stigmergic signals |
 
-Layer 1.5 consumes the tGNNSiteDirective from Layer 3 as exogenous context (network conditions affect intra-site dynamics) and outputs urgency deltas consumed by Layer 1's decision cycle.
+Layer 2 consumes the tGNNSiteDirective from AAP Protocol as exogenous context (network conditions affect intra-site dynamics) and outputs urgency deltas consumed by Layer 1's decision cycle.
 
 ### Cold Start
 
@@ -946,7 +946,7 @@ Training runs every 12h at :50 via the relearning jobs scheduler.
 | `models/powell_training_config.py` | `TRMType` enum, `DEFAULT_TRM_REWARD_WEIGHTS` |
 | `models/powell_decisions.py` | Production decision persistence tables |
 
-### Site tGNN (Layer 1.5 Cross-TRM Coordination)
+### Site tGNN (Layer 2 Cross-TRM Coordination)
 
 | File | Purpose |
 |------|---------|

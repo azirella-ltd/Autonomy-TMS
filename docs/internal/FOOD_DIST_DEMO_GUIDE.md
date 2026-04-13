@@ -28,7 +28,7 @@ docker compose exec backend python -m scripts.seed_food_dist_planning_data
 # 2. Seed the action layer (briefings, worklists, decisions, alerts)
 docker compose exec backend python -m scripts.seed_food_dist_deep_demo
 
-# 3. Enable Site tGNN (Layer 1.5 cross-TRM coordination)
+# 3. Enable Site tGNN (Layer 2 cross-TRM coordination)
 make warm-start-food-dist-enable
 ```
 
@@ -47,7 +47,7 @@ The unified warm-start script (`scripts/warm_start_food_dist.py`) orchestrates t
 |-------|------|----------|--------|
 | 1 | TRM curriculum BC (all 11 types, 2 signal phases) | ~5-10 min | `checkpoints/trm_food_dist/trm_*_site256_v*.pt` |
 | 2 | Coordinated multi-head traces (CoordinatedSimRunner) | ~2-3 min | `data/hive_traces_CDC_WEST.json` |
-| 3 | Site tGNN training from traces (Layer 1.5 BC) | ~1-2 min | `checkpoints/site_tgnn/CDC_WEST/site_tgnn_latest.pt` |
+| 3 | Site tGNN training from traces (Layer 2 BC) | ~1-2 min | `checkpoints/site_tgnn/CDC_WEST/site_tgnn_latest.pt` |
 | 4 | Stochastic stress-testing (5 perturbation scenarios) | ~1-2 min | Validation results |
 | 5 | Enable Site tGNN feature flag in `site_agent_configs` | instant | DB row `enable_site_tgnn=true` |
 | 6 | Seed all demo data (planning, storylines, deep demo) | ~1-2 min | Demo-ready database |
@@ -576,15 +576,15 @@ Tie back to the Autonomy value proposition:
 3. **Compounding effect**: Every override makes the AI better, gradually shifting the 82/18 boundary
 4. **End state**: Planners become *supervisors* of AI agents, not manual decision-makers
 
-### Site tGNN — Cross-TRM Coordination (Layer 1.5)
+### Site tGNN — Cross-TRM Coordination (Layer 2)
 
-When enabled (via `make warm-start-food-dist-enable` or the full pipeline), the Site tGNN adds **learned cross-TRM causal coordination** within CDC_WEST. This is Layer 1.5 in the 5-layer coordination stack:
+When enabled (via `make warm-start-food-dist-enable` or the full pipeline), the Site tGNN adds **learned cross-TRM causal coordination** within CDC_WEST. This is Layer 2 in the 5-layer coordination stack:
 
 ```
 Layer 1   — HiveSignalBus + UrgencyVector       <10ms   (reactive, within hive)
-Layer 1.5 — Site tGNN                           hourly  (learned cross-TRM trade-offs)
-Layer 2   — Network tGNN                        daily   (inter-site allocation)
-Layer 3   — AAP (Authorization Protocol)        ad hoc  (cross-authority negotiation)
+Layer 2 — Site tGNN                           hourly  (learned cross-TRM trade-offs)
+Layer 3   — Network tGNN                        daily   (inter-site allocation)
+AAP Protocol   — AAP (Authorization Protocol)        ad hoc  (cross-authority negotiation)
 Layer 4   — S&OP GraphSAGE                      weekly  (strategic policy parameters)
 ```
 
@@ -944,7 +944,7 @@ Key patterns: Frozen desserts and beverages peak in summer (Jul: 1.40x). Frozen 
 
 **SAP strengths**: Real operational data with natural variability, manufacturing/BOM depth, larger network scale, empirical (not parametric) lead time distributions.
 
-**Demo talking point**: "Layer 1 signals are reactive — one TRM tells another 'I just did X'. Layer 1.5 is predictive — the graph network learns that when ATP fulfills aggressively for 3 cycles, MO capacity gets starved on cycle 4. It adjusts urgency *before* the problem manifests."
+**Demo talking point**: "Layer 1 signals are reactive — one TRM tells another 'I just did X'. Layer 2 is predictive — the graph network learns that when ATP fulfills aggressively for 3 cycles, MO capacity gets starved on cycle 4. It adjusts urgency *before* the problem manifests."
 
 ---
 

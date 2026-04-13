@@ -1,9 +1,17 @@
-# CLAUDE_REFERENCE.md
+# CLAUDE_REFERENCE.md (TMS)
 
 Detailed architecture, workflows, and reference material extracted from CLAUDE.md.
 Claude Code reads this file on-demand, not on every message — keeping CLAUDE.md lean.
 
-> **Fork Relationship**: This is the TMS-specific version. The SC Planning version lives in the upstream Autonomy repo. Shared infrastructure sections (Auth, Conformal, Decision Stream, Causal AI, Docker) are synced from upstream. TMS-specific sections (agents, data model, integrations, planning) are unique to this repo.
+> **Platform reference:** [Autonomy-Core/docs/PLATFORM_OVERVIEW.md](../../Autonomy-Core/docs/PLATFORM_OVERVIEW.md) and [BUSINESS_FUNCTION_MODELING.md](../../Autonomy-Core/docs/BUSINESS_FUNCTION_MODELING.md). See also [TMS_INSTANTIATION.md](TMS_INSTANTIATION.md) for the TMS-specific six-choice instantiation.
+
+> **Platform layer (authoritative in Autonomy-Core, do not re-explain here):** AIIO model, five-layer agent coordination (L1 TRM / L2 Site tGNN / L3 Tactical / L4 S&OP / AAP), decision lifecycle & correlation_id, context broker, temporal knowledge store, scenario engine, digital twin, training lifecycle, governance pipeline, conformal prediction, Claude Skills envelope, integration pattern (bulk / CDC / MCP), user interaction model. Sections of this doc that cover these topics are legacy SCP-derived content and are being trimmed — treat Autonomy-Core docs as the source of truth until the trim pass completes.
+
+> **Kept TMS-specific:** TMS data model (29 entities, 3 modules, project44), TMS TRM set (CapacityPromise, ShipmentTracking, DemandSensing, CapacityBuffer, ExceptionMgmt, FreightProcurement, BrokerRouting, DockScheduling, LoadBuild, IntermodalTransfer, EquipmentReposition), TMS freight procurement workflows, dock scheduling, carrier waterfall tendering, project44 integration, TMS planning hierarchy, TMS-specific frontend routes.
+
+> **Layer numbering:** Canonical per Autonomy-Core is **L1=TRMs, L2=Site tGNN, L3=Tactical, L4=S&OP, AAP=cross-authority (unnumbered).**
+
+> **Fork note (historical):** This repo originated as a fork of Autonomy-SCP. As of 2026-04 it is being unwound into a sibling product. Cross-product coordination uses MCP. Shared packages in Autonomy-Core are consumed as libraries, not forked.
 
 ---
 
@@ -226,7 +234,7 @@ Context, guardrails, and targets flow **down** from strategic to execution. Feed
 - Signal half-life default 30 min (intra-hive), 12 hours (inter-hive)
 - TRMs emit signals on condition detection → other TRMs read active signals when deciding
 
-**Layer 2 — Site tGNN (hourly): Learned Cross-TRM Causal Coordination**
+**Layer 3 — Site tGNN (hourly): Learned Cross-TRM Causal Coordination**
 - `site_tgnn.py`: GATv2+GRU, ~25K params, 22 directed causal edges, <5ms inference
 - Always enabled (no feature flag). Cold-start returns neutral output (zero adjustments)
 - Runs BEFORE each decision cycle — modulates UrgencyVector with [-0.3, +0.3] adjustments
@@ -234,12 +242,12 @@ Context, guardrails, and targets flow **down** from strategic to execution. Feed
 - `site_tgnn_inference_service.py`: Loads checkpoint, persists GRU hidden state across ticks
 - `site_tgnn_oracle.py`: MultiTRMCoordinationOracle generates 500+ BC samples per site
 
-**Layer 2 — Network tGNN (daily): Inter-Facility Directives**
+**Layer 3 — Network tGNN (daily): Inter-Facility Directives**
 - `inter_hive_signal.py`: 8 inter-hive signal types with 12-hour half-lives
 - `directive_broadcast_service.py`: Broadcasts tGNNSiteDirective to each facility's SiteAgent
 - `tactical_hive_coordinator.py`: 3 parallel specialized tGNNs (capacity, carrier, routing) with lateral convergence
 
-**Layer 3 — AAP Cross-Authority (seconds-minutes): Agentic Authorization Protocol**
+**AAP Protocol Cross-Authority (seconds-minutes): Agentic Authorization Protocol**
 - `authorization_protocol.py`: Three-phase protocol — EVALUATE → REQUEST → AUTHORIZE
 - `authorization_service.py`: Production service with DB persistence
 - `strategy_a2a_responder.py`: Routes authorization requests to domain-specific TRM evaluators
@@ -458,7 +466,7 @@ Hybrid TRM + Claude Skills architecture. TRMs primary (~95%, <10ms), Claude Skil
 **Generation**: ~500 perturbations around the baseline (volume +/-15%, transit times +/-20%, rates +/-10%, carrier availability, etc.). Each perturbation runs the Digital Twin with all 11 TRMs active. Every TRM decision is captured as a Layer 1 sample.
 
 **Aggregation**: Pure data transformation upward:
-- Layer 1 (TRM decisions) → Layer 2 (facility × time window aggregates for Site tGNN) → Layer 2 (network × domain × period for Tactical tGNNs) → Layer 4 (network × theta* for S&OP GraphSAGE)
+- Layer 1 (TRM decisions) → Layer 3 (facility × time window aggregates for Site tGNN) → Layer 3 (network × domain × period for Tactical tGNNs) → Layer 4 (network × theta* for S&OP GraphSAGE)
 
 **Continuous**: Real outcomes from `powell_*_decisions` append as new Layer 1 samples post-provisioning. Aggregator re-runs on new samples. All four layers retrain together when drift is detected.
 

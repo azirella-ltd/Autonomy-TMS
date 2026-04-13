@@ -58,23 +58,23 @@ graph TD
 
 **Layer 4 — Strategic Network Analysis** examines the structural properties of the supply chain network. It looks at the topology — which sites are critical chokepoints, where sourcing is dangerously concentrated, which parts of the network are fragile — and produces *policy parameters* that shape how the layers below behave. For example, a site identified as a critical bottleneck might receive a safety stock multiplier of 1.4x, meaning the execution layers will maintain 40% more buffer inventory there than the default policy would suggest.
 
-This layer uses a network analysis model designed for large graphs because the problem is fundamentally about *network structure* — the answer to "how critical is this DC?" depends not just on the DC itself but on its position relative to every other node, the number of alternative paths, and the concentration of demand it serves. The structural embeddings it produces (encoding each site's network context) are cached and consumed by Layer 3.
+This layer uses a network analysis model designed for large graphs because the problem is fundamentally about *network structure* — the answer to "how critical is this DC?" depends not just on the DC itself but on its position relative to every other node, the number of alternative paths, and the concentration of demand it serves. The structural embeddings it produces (encoding each site's network context) are cached and consumed by AAP Protocol.
 
 **Update cadence**: Weekly or monthly. Network structure changes slowly.
 
-**Layer 3 — Network Coordination** combines the structural embeddings from Layer 4 with real-time transactional data — current inventory levels, order backlogs, shipments in transit, demand forecasts — to produce *daily operational directives* for each site. These directives include demand forecasts for the next four periods, exception probability scores (how likely is this site to have a problem today?), and updated priority allocations (which customer orders should be fulfilled first when inventory is constrained?).
+**AAP Protocol — Network Coordination** combines the structural embeddings from Layer 4 with real-time transactional data — current inventory levels, order backlogs, shipments in transit, demand forecasts — to produce *daily operational directives* for each site. These directives include demand forecasts for the next four periods, exception probability scores (how likely is this site to have a problem today?), and updated priority allocations (which customer orders should be fulfilled first when inventory is constrained?).
 
 This layer uses a temporal graph attention model because the problem requires reasoning about both *network relationships* (how does a delay at Site A affect Site B downstream?) and *temporal patterns* (is this demand spike a one-time event or the beginning of a trend?). The graph attention mechanism lets the model learn which neighboring sites are most relevant for each prediction, while the temporal memory component captures time-series dynamics.
 
 The key output is a **site directive** — a structured package of guidance that flows to each site's local agent cluster:
 
 - **Policy context** (from Layer 4): Safety stock multipliers, criticality scores, bottleneck risk levels
-- **Operational context** (from Layer 3): Multi-period demand forecasts, exception probabilities, model confidence scores
+- **Operational context** (from AAP Protocol): Multi-period demand forecasts, exception probabilities, model confidence scores
 - **Network signals**: Upstream shortage alerts, downstream demand propagation warnings, lateral rebalancing opportunities
 
 **Update cadence**: Daily. Transactional state changes meaningfully day-to-day.
 
-**Layer 1.5 — Site Cross-Agent Coordination** bridges the gap between daily network-level inference and sub-millisecond reactive signals. Within each site, the 11 execution agents interact through causal pathways that the reactive signal system can only observe *after the fact* — a shortage signal fires after the shortage occurs. The site coordination model learns these causal relationships and predicts cascade effects *before* they materialize. For example, it learns that a spike in manufacturing order releases will generate quality inspection load 2-4 hours later, which may in turn create maintenance pressure. Using a lightweight graph attention architecture with temporal memory, it reads the current urgency state of all 11 agents and produces adjustment deltas that modulate each agent's urgency before the decision cycle runs. The adjustments are small and additive — the coordinator shifts emphasis, not overrides decisions.
+**Layer 2 — Site Cross-Agent Coordination** bridges the gap between daily network-level inference and sub-millisecond reactive signals. Within each site, the 11 execution agents interact through causal pathways that the reactive signal system can only observe *after the fact* — a shortage signal fires after the shortage occurs. The site coordination model learns these causal relationships and predicts cascade effects *before* they materialize. For example, it learns that a spike in manufacturing order releases will generate quality inspection load 2-4 hours later, which may in turn create maintenance pressure. Using a lightweight graph attention architecture with temporal memory, it reads the current urgency state of all 11 agents and produces adjustment deltas that modulate each agent's urgency before the decision cycle runs. The adjustments are small and additive — the coordinator shifts emphasis, not overrides decisions.
 
 **Update cadence**: Hourly. Intra-site cross-agent dynamics evolve faster than network-wide state but slower than individual decisions.
 
@@ -108,11 +108,11 @@ A customer places a rush order for 500 units of Product X at the East Coast DC.
 
 1. **Layer 0** (Engine): The ATP engine checks current inventory (200 units), scheduled receipts (150 arriving tomorrow), and allocation buckets. Deterministic result: can fulfill 350 of 500.
 
-2. **Layer 1.5** (Site Coordinator): Before the decision cycle runs, the site coordination model observes that MO Execution urgency is elevated (production behind schedule) and predicts that Quality Disposition and PO Creation will face increased pressure within hours. It raises PO Creation urgency and Quality urgency, pre-positioning those agents to respond faster.
+2. **Layer 2** (Site Coordinator): Before the decision cycle runs, the site coordination model observes that MO Execution urgency is elevated (production behind schedule) and predicts that Quality Disposition and PO Creation will face increased pressure within hours. It raises PO Creation urgency and Quality urgency, pre-positioning those agents to respond faster.
 
 3. **Layer 1** (Execution Cluster): The ATP agent receives the engine's baseline plus cluster context — a rebalancing signal indicating 100 units transferring from the West Coast DC, and a network shortage signal from the coordination model indicating the upstream supplier is constrained. The PO Creation agent, with urgency already elevated by the site coordinator, responds immediately to the ATP shortage signal. The ATP agent decides: fulfill 350 now, promise remaining 150 for Thursday (when the rebalancing transfer arrives).
 
-4. **Layer 3** (Network Coordination): Tomorrow's daily cycle incorporates today's fulfillment data. The coordination model updates the East Coast DC's demand forecast upward (rush order suggests increased demand), raises the exception probability for the constrained supplier, and adjusts allocations to prioritize this customer segment.
+4. **AAP Protocol** (Network Coordination): Tomorrow's daily cycle incorporates today's fulfillment data. The coordination model updates the East Coast DC's demand forecast upward (rush order suggests increased demand), raises the exception probability for the constrained supplier, and adjusts allocations to prioritize this customer segment.
 
 5. **Layer 4** (Strategic Analysis): At the next weekly cycle, the network analysis detects increased concentration risk — the East Coast DC now sources 78% from a single supplier that has shown constraint signals. The safety stock multiplier increases from 1.0 to 1.3, and a sourcing diversification signal is generated.
 
@@ -146,17 +146,17 @@ Signals decay exponentially over time (pheromone model), with a default half-lif
 
 The **priority vector** provides a complementary coordination mechanism: a shared array where each agent writes its current urgency level (0.0 to 1.0) and direction (shortage, surplus, risk, relief). Any agent can read any other agent's urgency, creating an always-available snapshot of the site's overall state. When the ATP agent reports urgency 0.9 (shortage direction), the PO Creation agent sees this and increases its propensity to expedite orders — without any direct function call between them.
 
-### Layer 1.5: Learned Cross-Agent Coordination (Within a Single Site, Hourly)
+### Layer 2: Learned Cross-Agent Coordination (Within a Single Site, Hourly)
 
-Between reactive stigmergic signals (<10ms, Layer 1) and daily network-level inference (Layer 2), the site coordination model provides *learned* intra-site coordination on an hourly cadence. While the signal system is reactive (signals fire after events), the site coordinator is *predictive* — it observes the current urgency and activity state of all 11 agents, applies graph attention over 22 causal edges, and outputs urgency adjustment deltas that modulate the priority vector before the next decision cycle.
+Between reactive stigmergic signals (<10ms, Layer 1) and daily network-level inference (Layer 3), the site coordination model provides *learned* intra-site coordination on an hourly cadence. While the signal system is reactive (signals fire after events), the site coordinator is *predictive* — it observes the current urgency and activity state of all 11 agents, applies graph attention over 22 causal edges, and outputs urgency adjustment deltas that modulate the priority vector before the next decision cycle.
 
 The key insight is that many cross-agent interactions follow predictable causal chains: ATP fulfillments drive MO requirements, MO completions generate quality inspection work, quality rejects create reorder pressure. The signal system captures these interactions *after* they happen. The site coordinator learns the statistical regularities and pre-adjusts urgency *before* the cascade unfolds, giving downstream agents a head start.
 
 The adjustments are deliberately small and additive. The coordinator shifts emphasis across the agent cluster — "pay more attention to quality today because production volume is spiking" — rather than overriding any individual agent's decisions.
 
-### Layer 2: Inter-Site Signals (Across Sites, Daily)
+### Layer 3: Inter-Site Signals (Across Sites, Daily)
 
-No execution agent ever calls across sites. All cross-site information flows through the network coordination model (Layer 3 in the vertical stack), which produces **inter-site signals** that are injected into each site's local signal system.
+No execution agent ever calls across sites. All cross-site information flows through the network coordination model (AAP Protocol in the vertical stack), which produces **inter-site signals** that are injected into each site's local signal system.
 
 The network coordination model analyzes the full network graph daily and generates 9 types of inter-site signals:
 
@@ -178,7 +178,7 @@ Inter-site signals have a 12-hour half-life (vs. 30 minutes for intra-site), ref
 
 **The critical design principle**: Execution agents are *unaware* that they're receiving network-level signals. They simply observe signals on the local bus and react according to their learned policy. This means the same agent model works identically whether the site is standalone or embedded in a 50-site network — the network context arrives as signals, not as architectural coupling.
 
-### Layer 3: Cross-Authority Authorization (Seconds to Minutes)
+### AAP Protocol: Cross-Authority Authorization (Seconds to Minutes)
 
 Some decisions require coordination between agents that belong to different functional authorities. A purchasing agent that wants to expedite an order might need approval from a finance authority (budget). A plant agent that wants to insert a rush production order needs authorization from the sales/ATP authority (customer commitment).
 
@@ -402,7 +402,7 @@ The Order Tracking engine detects the late shipment by comparing the supplier's 
 **Layer 1 — Confidence Routing** (within decision cycle):
 The PO Creation agent's confidence on the alternate supplier routing is 0.52 (below the 0.6 threshold — this supplier has rarely been used). The uncertainty quantification escalates to the exception handler. The handler examines the decision memory, finds 3 similar past decisions, and concurs with the PO expedite recommendation with additional context: "Supplier B has 98% on-time rate for expedited orders in the last 6 months." The proposal passes validation (quantity deviation within 30%) and is accepted.
 
-**Layer 2 — Inter-Site** (next daily cycle):
+**Layer 3 — Inter-Site** (next daily cycle):
 The network coordination model incorporates yesterday's late shipment event. It generates a network shortage signal for the affected supplier lane and a demand propagation signal for downstream sites. Sister DCs receive rebalancing suggestions. The shortage signal raises exception probabilities at all sites sourcing from this supplier.
 
 **Layer 4 — Strategic Analysis** (next weekly cycle):
@@ -541,7 +541,7 @@ All 11 agents run simultaneously in simulation, with the signal system active. T
 
 **Phase 3 — Cross-Agent Model Training** (~1 day):
 
-The site coordination model (Layer 1.5) trains on the coordinated traces from Phase 2, learning the causal relationships between agent interactions and predicting cascade effects. This phase produces the hourly urgency modulation capability that bridges reactive signals and daily network inference.
+The site coordination model (Layer 2) trains on the coordinated traces from Phase 2, learning the causal relationships between agent interactions and predicting cascade effects. This phase produces the hourly urgency modulation capability that bridges reactive signals and daily network inference.
 
 **Phase 4 — Stress Testing** (3-5 days):
 
@@ -718,11 +718,11 @@ Gartner's Critical Capabilities report evaluates platforms across Decision Stewa
 
 ---
 
-## Part 13: Site Cross-Agent Coordination — Learned Predictive Modulation (Layer 1.5)
+## Part 13: Site Cross-Agent Coordination — Learned Predictive Modulation (Layer 2)
 
 ### The Gap Between Reactive and Planned
 
-The execution cluster's stigmergic signal system (Layer 1) is *reactive*: a shortage signal fires after the shortage is observed, a quality rejection signal fires after the lot is inspected. The network coordination model (Layer 3) is *planned*: it analyzes the full supply chain graph daily and pushes directives to each site. Between these two lies a temporal gap — many cross-agent interactions within a site are causal and predictable on an hourly timescale, but neither the reactive signal system nor the daily batch inference captures them.
+The execution cluster's stigmergic signal system (Layer 1) is *reactive*: a shortage signal fires after the shortage is observed, a quality rejection signal fires after the lot is inspected. The network coordination model (AAP Protocol) is *planned*: it analyzes the full supply chain graph daily and pushes directives to each site. Between these two lies a temporal gap — many cross-agent interactions within a site are causal and predictable on an hourly timescale, but neither the reactive signal system nor the daily batch inference captures them.
 
 Consider a concrete example: a manufacturer's production schedule spikes — 40% more manufacturing orders released than usual. This will, with high probability, generate increased quality inspection load 2-4 hours later (more product to inspect), which may create maintenance pressure if equipment runs harder, which in turn drives purchasing activity if quality rejects increase. The signal system captures each link in this chain *after* it happens. The site coordination model learns the chain as a whole and pre-adjusts urgency for downstream agents *before* the cascade unfolds.
 
@@ -773,7 +773,7 @@ Edges are *not symmetric*: ATP-to-MO captures "fulfillment drives production," w
 
 **Phase 3 — Production Calibration**: Shadow mode during copilot operation. Adjustments are logged but not applied. Once shadow-mode balanced scorecard improvement exceeds a configurable threshold, adjustments go live.
 
-### Integration: How Layer 1.5 Connects
+### Integration: How Layer 2 Connects
 
 The site coordination model consumes the daily site directive as exogenous context (network-level signals affect intra-site dynamics) and outputs urgency deltas that are applied additively. Agent autonomy is preserved — the coordinator modulates emphasis, never overrides decisions.
 
@@ -822,7 +822,7 @@ The tiered strategy matches causal inference methods to each decision type's obs
 | Tier | Decision Types | Method | Signal Strength | Feedback Delay |
 |------|---------------|--------|-----------------|----------------|
 | **1** | ATP, Forecast Adjustment, Quality | Analytical counterfactual | 1.0 | 4h–7d |
-| **2** | MO, TO, PO, Order Tracking | Propensity-score matching (L2 nearest-neighbor on state vectors) | 0.3–0.9 (scales with match count) | 1d–14d |
+| **2** | MO, TO, PO, Order Tracking | Propensity-score matching (L3 nearest-neighbor on state vectors) | 0.3–0.9 (scales with match count) | 1d–14d |
 | **3** | Inventory Buffer, Maintenance, Subcontracting | Bayesian Beta prior (high confounding, long delays) | 0.15 | 14d–30d |
 
 Tier 2 signal strength increases as the matching service accumulates more comparison pairs — 0 matches yields 0.30, 50+ matches yields 0.90. This prevents the system from drawing strong causal conclusions from insufficient evidence.

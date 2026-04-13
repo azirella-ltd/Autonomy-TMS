@@ -516,7 +516,7 @@ Order at priority P=1: consume [1, 5, 4, 3, 2] (all tiers)
 **Autonomy Mapping**:
 | SAP Step | Autonomy Feature |
 |----------|-----------------|
-| Cross-company coordination | **Agentic Authorization Protocol (AAP)** — Layer 3 cross-site authorization |
+| Cross-company coordination | **Agentic Authorization Protocol (AAP)** — AAP Protocol cross-site authorization |
 | Transfer decisions | **Inventory Rebalancing TRM** — Cross-location transfer optimization |
 | Multi-site visibility | **Execution tGNN** — Network-wide priority allocations |
 
@@ -630,7 +630,7 @@ These capabilities have no corresponding FAA demo scenario, making them pure Aut
 1. Extract full supply chain topology from SAP: plants (T001W), vendors (LFA1), customers (KNA1), BOMs (STPO), source lists (EORD)
 2. Build GraphSAGE network model from real SAP data
 3. Show: concentration risk scores, single-source vulnerability, bottleneck detection, resilience scoring
-4. Show Site tGNN (Layer 1.5): cross-TRM trade-off detection within each site
+4. Show Site tGNN (Layer 2): cross-TRM trade-off detection within each site
 
 **Key Talking Point**: "SAP gives you plant-level visibility. Autonomy gives you network-wide intelligence — which supplier failure would cascade to which customers, and what the AI recommends to mitigate it."
 
@@ -943,13 +943,13 @@ Three layers generate realistic delta events from the extracted baseline:
 - Applies stochastic perturbation (the 21 distribution types already supported)
 - Optionally injects demand signals (spikes, shifts, bursts — Powell's "styles of uncertainty")
 
-**Layer 2 — Supply Event Generator** (simulates supplier/production activity)
+**Layer 3 — Supply Event Generator** (simulates supplier/production activity)
 - New PO receipts with stochastic lead times (fitted from EKBE history)
 - Production completions with stochastic yields (fitted from AFRU history)
 - Inventory movements (goods issues, adjustments, transfers)
 - Supplier disruptions (delayed shipments, partial deliveries, quality holds)
 
-**Layer 3 — CDC Event Emitter** (triggers Autonomy's existing pipeline)
+**AAP Protocol — CDC Event Emitter** (triggers Autonomy's existing pipeline)
 - Each generated event writes to the AWS SC tables (forecast, inv_level, inbound_order, etc.)
 - Fires the same CDC signals that a real SAP integration would:
   - `CDCMonitor` detects metric deviations → triggers in `powell_cdc_trigger_log`
@@ -1056,7 +1056,7 @@ The classic Kinaxis demo scenario: a major customer places an unexpected large o
 - **Duration**: 4 weeks
 - **Geography**: Plant 1710
 - **Products**: C900 + all MZ City bike components
-- **Target Layer**: Layer 1.5 (Site tGNN — single-site coordination)
+- **Target Layer**: Layer 2 (Site tGNN — single-site coordination)
 - **TRMs triggered**: ATP Executor, MO Execution, PO Creation, Inventory Buffer
 
 **What to show**: Decision Stream lights up within seconds — ATP allocation decisions, MO release recommendations for C900 assembly, PO creation for Frame-900 and Wheels-900 components, inventory buffer adjustments. Click Inspect on each to show the reasoning chain.
