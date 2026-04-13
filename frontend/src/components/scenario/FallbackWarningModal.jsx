@@ -15,8 +15,7 @@ import {
   ModalBody,
   ModalFooter,
 } from '../common/Modal';
-import { Button } from '../common';
-import { Alert, AlertDescription } from '../common/Alert';
+import { Button, Alert, AlertDescription } from '../common';
 import { AlertTriangle } from 'lucide-react';
 
 const FallbackWarningModal = ({

@@ -9,9 +9,7 @@ import {
   ResponsiveContainer,
   ReferenceLine
 } from 'recharts';
-import { Card } from '../common';
-import { Badge } from '../common/Badge';
-import { Alert } from '../common/Alert';
+import { Card, Badge, Alert } from '../common';
 import { Table, TableBody, TableCell, TableRow } from '../common/Table';
 
 /**

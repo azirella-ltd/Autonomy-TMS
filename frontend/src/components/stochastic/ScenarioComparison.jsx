@@ -21,10 +21,7 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { api } from '../../services/api';
-import { Card, CardContent, Button, IconButton } from '../common';
-import { Input, Label, Textarea, FormField } from '../common/Input';
-import { Badge } from '../common/Badge';
-import { Alert } from '../common/Alert';
+import { Card, CardContent, Button, IconButton, Input, Label, Textarea, FormField, Badge, Alert } from '../common';
 import { Spinner } from '../common/Loading';
 import { Modal, ModalHeader, ModalTitle, ModalBody, ModalFooter } from '../common/Modal';
 import { Select, SelectOption } from '../common/Select';

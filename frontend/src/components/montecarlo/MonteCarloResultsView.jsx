@@ -19,9 +19,7 @@ import {
   ResponsiveContainer,
   ComposedChart,
 } from 'recharts';
-import { Card, CardContent, Button, IconButton } from '../common';
-import { Alert, AlertTitle } from '../common/Alert';
-import { Badge } from '../common/Badge';
+import { Card, CardContent, Button, IconButton, Alert, AlertTitle, Badge } from '../common';
 import { Tabs, TabsList, Tab, TabPanel } from '../common/Tabs';
 import { Spinner } from '../common/Loading';
 import {

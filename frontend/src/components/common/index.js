@@ -25,14 +25,14 @@ export {
 // Button components — from shared package (v1.3.0+)
 export { Button, IconButton } from '@azirella-ltd/autonomy-frontend';
 
-// Alert components
-export { Alert, AlertTitle, AlertDescription } from './Alert';
+// Alert components — from shared package (v1.4.0+, shipped in v1.9.0)
+export { Alert, AlertTitle, AlertDescription } from '@azirella-ltd/autonomy-frontend';
 
-// Badge components
-export { Badge, Chip } from './Badge';
+// Badge components — from shared package (v1.5.0+, shipped in v1.9.0)
+export { Badge, Chip } from '@azirella-ltd/autonomy-frontend';
 
-// Input components
-export { Input, Label, FormField, Textarea } from './Input';
+// Input components — from shared package (v1.6.0+, shipped in v1.9.0)
+export { Input, Label, FormField, Textarea } from '@azirella-ltd/autonomy-frontend';
 
 // Loading components
 export {

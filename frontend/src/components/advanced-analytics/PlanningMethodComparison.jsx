@@ -34,10 +34,7 @@ import {
   AlertTriangle,
   CheckCircle,
 } from 'lucide-react';
-import { Card, CardContent, Button, IconButton } from '../common';
-import { Alert } from '../common/Alert';
-import { Badge } from '../common/Badge';
-import { Input, Label } from '../common/Input';
+import { Card, CardContent, Button, IconButton, Alert, Badge, Input, Label } from '../common';
 import { Progress } from '../common/Progress';
 import {
   Table,

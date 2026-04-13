@@ -27,8 +27,7 @@ import {
 } from 'lucide-react';
 
 // Autonomy UI Kit imports
-import { Button, IconButton, Card, CardContent } from '../common';
-import { Input, Label, Textarea, FormField } from '../common/Input';
+import { Button, IconButton, Card, CardContent, Input, Label, Textarea, FormField, Alert, Badge } from '../common';
 import {
   Table,
   TableHeader,
@@ -37,8 +36,6 @@ import {
   TableHead,
   TableCell,
 } from '../common/Table';
-import { Alert } from '../common/Alert';
-import { Badge } from '../common/Badge';
 import { Spinner } from '../common/Loading';
 // NOTE: the original code imported { Select, SelectOption } from the Radix
 // wrapper at components/common/Select, but that module only exports

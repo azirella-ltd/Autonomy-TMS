@@ -3,10 +3,8 @@ import {
   Copy,
   Pencil
 } from 'lucide-react';
-import { Card, CardContent, CardFooter, Button } from '../common';
-import { Badge } from '../common/Badge';
+import { Card, CardContent, CardFooter, Button, Badge, Textarea, FormField } from '../common';
 import { Modal, ModalHeader, ModalTitle, ModalBody, ModalFooter } from '../common/Modal';
-import { Textarea, FormField } from '../common/Input';
 import { Select, SelectOption } from '../common/Select';
 
 /**

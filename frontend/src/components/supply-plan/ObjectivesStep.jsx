@@ -5,9 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Button } from '../common';
-import { Alert } from '../common/Alert';
-import { Input, Label, FormField } from '../common/Input';
+import { Button, Alert, Input, Label, FormField } from '../common';
 import { Select, SelectOption } from '../common/Select';
 import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
 

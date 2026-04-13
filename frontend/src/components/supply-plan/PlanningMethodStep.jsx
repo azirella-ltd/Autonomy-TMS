@@ -8,10 +8,7 @@
 
 import React, { useState } from 'react';
 import { ChevronDown, CheckCircle, Info } from 'lucide-react';
-import { Card, CardContent, Button } from '../common';
-import { Alert } from '../common/Alert';
-import { Badge } from '../common/Badge';
-import { Input, Label, FormField } from '../common/Input';
+import { Card, CardContent, Button, Alert, Badge, Input, Label, FormField } from '../common';
 import { cn } from '@azirella-ltd/autonomy-frontend';
 
 export default function PlanningMethodStep({ config, onUpdate, onNext, onBack }) {

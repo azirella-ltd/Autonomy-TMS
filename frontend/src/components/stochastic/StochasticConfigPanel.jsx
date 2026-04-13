@@ -5,9 +5,7 @@ import {
   Save,
   RefreshCw
 } from 'lucide-react';
-import { Card, Button } from '../common';
-import { Badge } from '../common/Badge';
-import { Alert } from '../common/Alert';
+import { Card, Button, Badge, Alert } from '../common';
 import { Tabs, TabsList, Tab, TabPanel } from '../common/Tabs';
 import DistributionBuilder from './DistributionBuilder';
 import DistributionPreview from './DistributionPreview';
