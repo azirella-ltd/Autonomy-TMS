@@ -82,9 +82,10 @@ class BillOfResources(Base):
         index=True,
     )
 
-    # Product Reference
-    product_id: Mapped[int] = mapped_column(
-        Integer,
+    # Product Reference — canonical Product.id is String(100) in
+    # azirella_data_model.master.entities; keep the FK column type aligned.
+    product_id: Mapped[str] = mapped_column(
+        String(100),
         ForeignKey("product.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
