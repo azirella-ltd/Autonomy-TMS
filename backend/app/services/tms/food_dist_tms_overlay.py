@@ -955,6 +955,7 @@ class FoodDistTMSOverlay:
                 event_type=etype,
                 event_timestamp=ts,
                 status_description=desc,
+                source="AGENT",
                 tenant_id=self.tms_tenant_id,
             ))
             count += 1
