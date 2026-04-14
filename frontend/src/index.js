@@ -10,7 +10,6 @@ import "leaflet/dist/leaflet.css";
 import App from "./App";
 import IdleWarning from "./components/IdleWarning";
 import { AuthProvider } from "./contexts/AuthContext";
-import { AzirellaProvider } from "./contexts/AzirellaContext";
 import { ActiveConfigProvider } from "./contexts/ActiveConfigContext";
 import { DisplayPreferencesProvider } from "./contexts/DisplayPreferencesContext";
 import simulationApi, { api as http } from "./services/api";
@@ -22,11 +21,18 @@ import {
   DecisionStreamProvider,
   CapabilitiesProvider,
   ConversationsProvider,
+  AzirellaProvider,
 } from "@azirella-ltd/autonomy-frontend";
 import { registerTMSDecisionTypes } from "./decisionTypes";
 import { tmsDecisionStreamClient } from "./services/tmsDecisionStreamClient";
 import { tmsCapabilitiesClient } from "./services/tmsCapabilitiesClient";
 import { tmsConversationsClient } from "./services/tmsConversationsClient";
+import { tmsAzirellaClient, tmsAzirellaConfig } from "./services/tmsAzirellaClient";
+
+// Default Azirella panel to closed on first visit (shared lib defaults to open).
+if (typeof localStorage !== 'undefined' && localStorage.getItem('azirella:panel-open') === null) {
+  localStorage.setItem('azirella:panel-open', 'false');
+}
 
 // Register all 11 TMS decision types with the shared registry once at boot.
 // Idempotent — safe across hot reloads in dev.
@@ -95,7 +101,7 @@ init()
             <CapabilitiesProvider client={tmsCapabilitiesClient}>
             <DecisionStreamProvider client={tmsDecisionStreamClient}>
             <ConversationsProvider client={tmsConversationsClient}>
-            <AzirellaProvider>
+            <AzirellaProvider client={tmsAzirellaClient} config={tmsAzirellaConfig}>
             <DisplayPreferencesProvider>
             <ActiveConfigProvider>
             <SystemConfigProvider>
