@@ -119,7 +119,7 @@ class SyncJobConfig(Base):
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    tenant = relationship("Tenant", back_populates="sync_job_configs")
+    tenant = relationship("Tenant")
     executions = relationship("SyncJobExecution", back_populates="config", cascade="all, delete-orphan")
     creator = relationship("User", foreign_keys=[created_by])
 

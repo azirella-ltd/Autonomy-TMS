@@ -39,7 +39,7 @@ class PushToken(Base):
     last_used = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationship
-    user = relationship("User", back_populates="push_tokens")
+    user = relationship("User")
 
     def __repr__(self):
         return f"<PushToken(id={self.id}, user_id={self.user_id}, platform={self.platform}, active={self.is_active})>"
@@ -83,7 +83,7 @@ class NotificationPreference(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationship
-    user = relationship("User", back_populates="notification_preferences")
+    user = relationship("User")
 
     def __repr__(self):
         return f"<NotificationPreference(user_id={self.user_id}, your_turn={self.your_turn})>"

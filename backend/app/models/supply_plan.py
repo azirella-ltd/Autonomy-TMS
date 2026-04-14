@@ -74,7 +74,7 @@ class SupplyPlanRequest(Base):
     completed_at = Column(DateTime, nullable=True)
 
     # Relationships
-    user = relationship("User", back_populates="supply_plan_requests")
+    user = relationship("User")
     config = relationship("SupplyChainConfig")
     result = relationship("SupplyPlanResult", back_populates="request", uselist=False)
 
@@ -188,7 +188,7 @@ class SupplyPlanComparison(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     # Relationships
-    user = relationship("User", back_populates="supply_plan_comparisons")
+    user = relationship("User")
 
     def __repr__(self):
         return f"<SupplyPlanComparison id={self.id} name={self.name}>"
@@ -217,7 +217,7 @@ class SupplyPlanExport(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     # Relationships
-    user = relationship("User", back_populates="supply_plan_exports")
+    user = relationship("User")
     plan = relationship("SupplyPlanRequest")
 
     def __repr__(self):

@@ -152,7 +152,7 @@ class PlanningCycle(Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    tenant = relationship("Tenant", back_populates="planning_cycles")
+    tenant = relationship("Tenant")
     config = relationship("SupplyChainConfig")
     snapshots = relationship("PlanningSnapshot",
                             foreign_keys="PlanningSnapshot.cycle_id",

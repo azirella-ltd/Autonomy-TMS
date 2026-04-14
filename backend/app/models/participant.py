@@ -232,7 +232,7 @@ class ScenarioUser(Base):
         "Scenario", back_populates="scenario_users", lazy="selectin"
     )
     user: Mapped[Optional["User"]] = relationship(
-        "User", back_populates="scenario_users", lazy="selectin"
+        "User", lazy="selectin"
     )
     actions: Mapped[List["ScenarioUserAction"]] = relationship(
         "ScenarioUserAction", back_populates="scenario_user", lazy="selectin"

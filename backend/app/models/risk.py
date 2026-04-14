@@ -61,7 +61,7 @@ class RiskAlert(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    config = relationship("SupplyChainConfig", back_populates="risk_alerts")
+    config = relationship("SupplyChainConfig")
     acknowledged_by_user = relationship("User", foreign_keys=[acknowledged_by])
 
     # Indexes for performance
@@ -117,8 +117,8 @@ class Watchlist(Base):
     last_checked_at = Column(DateTime, nullable=True)
 
     # Relationships
-    creator = relationship("User", foreign_keys=[created_by], back_populates="watchlists")
-    tenant = relationship("Tenant", back_populates="watchlists")
+    creator = relationship("User", foreign_keys=[created_by])
+    tenant = relationship("Tenant")
     config = relationship("SupplyChainConfig")
 
     def __repr__(self):

@@ -99,7 +99,7 @@ class MPSPlan(Base):
     )
 
     # Relationships
-    supply_chain_config = relationship("SupplyChainConfig", back_populates="mps_plans")
+    supply_chain_config = relationship("SupplyChainConfig")
     items = relationship("MPSPlanItem", back_populates="plan", cascade="all, delete-orphan")
     capacity_checks = relationship("MPSCapacityCheck", back_populates="plan", cascade="all, delete-orphan")
     key_material_requirements = relationship("MPSKeyMaterialRequirement", back_populates="plan", cascade="all, delete-orphan")

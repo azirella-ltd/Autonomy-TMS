@@ -1,0 +1,26 @@
+# TMS dev override — joins SCP's network and configures the SCP read connection.
+#
+# This file is per Trevor's setup on 2026-04-14 (SCP DBA created `tms_reader` role
+# and SCP exposes `autonomy-scp-db` service on the `autonomy-scp_autonomy-network`
+# external Docker network).
+#
+# IMPORTANT: This override only works when TMS runs on the SAME Docker host as SCP
+# (e.g., both stacks on msi-stealth). Docker external networks don't span hosts.
+#
+# If running TMS on a different host than SCP, comment out the `networks` block
+# below and instead set SCP_DB_URL to a TCP URL pointing at SCP's host-exposed
+# Postgres port (requires SCP to publish 5432 in its compose, e.g. "5433:5432"):
+#
+#   SCP_DB_URL: postgresql+psycopg2://tms_reader:tms_reader_dev@msi-stealth.local:5433/autonomy
+
+networks:
+  autonomy-scp_autonomy-network:
+    external: true
+
+services:
+  backend:
+    networks:
+      - default
+      - autonomy-scp_autonomy-network
+    environment:
+      SCP_DB_URL: postgresql+psycopg2://tms_reader:tms_reader_dev@autonomy-scp-db:5432/autonomy

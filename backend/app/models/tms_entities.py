@@ -706,7 +706,7 @@ class ShipmentLeg(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("Shipment", back_populates="legs")
+    shipment = relationship("app.models.tms_entities.Shipment", back_populates="legs")
     from_site = relationship("Site", foreign_keys=[from_site_id])
     to_site = relationship("Site", foreign_keys=[to_site_id])
     carrier = relationship("Carrier")
@@ -780,7 +780,7 @@ class Load(Base):
     destination = relationship("Site", foreign_keys=[destination_site_id])
     carrier = relationship("Carrier")
     equipment_assigned = relationship("Equipment", foreign_keys=[equipment_id])
-    shipments = relationship("Shipment", back_populates="load")
+    shipments = relationship("app.models.tms_entities.Shipment", back_populates="load")
     items = relationship("LoadItem", back_populates="load", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -816,7 +816,7 @@ class LoadItem(Base):
 
     # Relationships
     load = relationship("Load", back_populates="items")
-    shipment = relationship("Shipment")
+    shipment = relationship("app.models.tms_entities.Shipment")
     commodity = relationship("Commodity")
 
     __table_args__ = (
@@ -921,7 +921,7 @@ class FreightTender(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("Shipment", back_populates="tenders")
+    shipment = relationship("app.models.tms_entities.Shipment", back_populates="tenders")
     load = relationship("Load")
     carrier = relationship("Carrier", back_populates="tenders")
     rate = relationship("FreightRate")
@@ -1012,7 +1012,7 @@ class Appointment(Base):
     # Relationships
     site = relationship("Site")
     dock_door = relationship("DockDoor", back_populates="appointments")
-    shipment = relationship("Shipment", back_populates="appointments")
+    shipment = relationship("app.models.tms_entities.Shipment", back_populates="appointments")
     load = relationship("Load")
     carrier = relationship("Carrier")
 
@@ -1073,7 +1073,7 @@ class ShipmentException(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("Shipment", back_populates="exceptions")
+    shipment = relationship("app.models.tms_entities.Shipment", back_populates="exceptions")
     leg = relationship("ShipmentLeg")
     resolutions = relationship("ExceptionResolution", back_populates="exception", cascade="all, delete-orphan")
 
@@ -1164,7 +1164,7 @@ class BillOfLading(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("Shipment", back_populates="bol")
+    shipment = relationship("app.models.tms_entities.Shipment", back_populates="bol")
 
     __table_args__ = (
         UniqueConstraint('tenant_id', 'bol_number', name='uq_bol_tenant_number'),
@@ -1205,7 +1205,7 @@ class ProofOfDelivery(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("Shipment", back_populates="pod")
+    shipment = relationship("app.models.tms_entities.Shipment", back_populates="pod")
 
     __table_args__ = (
         Index('idx_pod_shipment', 'shipment_id'),
@@ -1340,7 +1340,7 @@ class TrackingEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("Shipment")
+    shipment = relationship("app.models.tms_entities.Shipment")
     leg = relationship("ShipmentLeg")
     stop = relationship("Site", foreign_keys=[stop_id])
 
@@ -1380,11 +1380,90 @@ class ShipmentIdentifier(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("Shipment")
+    shipment = relationship("app.models.tms_entities.Shipment")
 
     __table_args__ = (
         Index('idx_shipment_ident_lookup', 'identifier_type', 'identifier_value'),
         Index('idx_shipment_ident_shipment', 'shipment_id'),
         UniqueConstraint('shipment_id', 'identifier_type', 'identifier_value',
                          name='uq_shipment_ident_type_value'),
+    )
+
+
+# ============================================================================
+# Equipment Repositioning
+# ============================================================================
+
+class EquipmentMoveReason(str, PyEnum):
+    """Why equipment was repositioned."""
+    REBALANCE = "REBALANCE"           # Planned reposition to match demand
+    EMPTY_RETURN = "EMPTY_RETURN"     # Return to origin / home terminal
+    MAINTENANCE = "MAINTENANCE"       # Move to maintenance facility
+    DEMURRAGE_AVOIDANCE = "DEMURRAGE_AVOIDANCE"
+    DEADHEAD = "DEADHEAD"             # Unavoidable empty miles between loads
+    CUSTOMER_REQUEST = "CUSTOMER_REQUEST"
+
+
+class EquipmentMoveStatus(str, PyEnum):
+    PLANNED = "PLANNED"
+    DISPATCHED = "DISPATCHED"
+    IN_TRANSIT = "IN_TRANSIT"
+    ARRIVED = "ARRIVED"
+    CANCELLED = "CANCELLED"
+
+
+class EquipmentMove(Base):
+    """
+    Empty equipment repositioning move
+    TMS Entity: equipment_move
+
+    Tracks empty trailers/containers being moved between facilities to
+    balance fleet supply against forecast demand. Primary data source for
+    EquipmentRepositionTRM training and performance attribution.
+    """
+    __tablename__ = "equipment_move"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    equipment_id = Column(Integer, ForeignKey("equipment.id", ondelete="CASCADE"), nullable=False)
+    carrier_id = Column(Integer, ForeignKey("carrier.id", ondelete="SET NULL"))
+
+    # Geography
+    from_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+    to_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+    miles = Column(Double, nullable=False)
+
+    # Timing
+    dispatched_at = Column(DateTime)
+    arrived_at = Column(DateTime)
+    planned_arrival_at = Column(DateTime)
+
+    # Economics
+    cost = Column(Double, comment="All-in reposition cost (fuel + driver + opportunity)")
+    cost_of_not_repositioning = Column(Double, comment="Estimated spot premium avoided")
+    roi = Column(Double, comment="cost_of_not_repositioning / cost")
+
+    # Classification
+    reason = Column(SAEnum(EquipmentMoveReason, name="equipment_move_reason_enum"), nullable=False)
+    status = Column(SAEnum(EquipmentMoveStatus, name="equipment_move_status_enum"),
+                    nullable=False, default=EquipmentMoveStatus.PLANNED)
+
+    # Agent traceability
+    agent_decision_id = Column(String(100), comment="FK to powell_decisions for traceability")
+    decision_rationale = Column(JSON, comment='{"surplus": 8, "deficit": 12, "roi": 2.3, ...}')
+
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    equipment = relationship("Equipment")
+    carrier = relationship("Carrier")
+    from_site = relationship("Site", foreign_keys=[from_site_id])
+    to_site = relationship("Site", foreign_keys=[to_site_id])
+
+    __table_args__ = (
+        Index('idx_equipment_move_tenant', 'tenant_id', 'status'),
+        Index('idx_equipment_move_equipment', 'equipment_id', 'dispatched_at'),
+        Index('idx_equipment_move_lane', 'from_site_id', 'to_site_id'),
     )

@@ -137,7 +137,7 @@ class CapacityPlan(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
-    supply_chain_config = relationship("SupplyChainConfig", back_populates="capacity_plans")
+    supply_chain_config = relationship("SupplyChainConfig")
     resources = relationship("CapacityResource", back_populates="plan", cascade="all, delete-orphan")
     requirements = relationship("CapacityRequirement", back_populates="plan", cascade="all, delete-orphan")
     creator = relationship("User", foreign_keys=[created_by])

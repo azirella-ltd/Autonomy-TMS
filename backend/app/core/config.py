@@ -216,6 +216,11 @@ class Settings(BaseSettings):
     KB_DATABASE_URL: Optional[str] = None
     KB_ASYNC_DATABASE_URL: Optional[str] = None
 
+    # Read-only SCP database (sibling product). Used by the Food Dist TMS overlay
+    # ETL extractor to pull source SCP shipment/site/order rows into TMS staging.
+    # See docker-compose.override.yml for the network setup.
+    SCP_DB_URL: Optional[str] = None
+
     # ==========================================================================
     # Connection settings
     SAP_HOST: Optional[str] = None  # Application server host (e.g., "sap-server.company.com")

@@ -91,7 +91,7 @@ class Scenario(Base):
     supply_chain_rounds: Mapped[List["SCScenarioRound"]] = relationship(
         "ScenarioRound", back_populates="scenario", lazy="selectin"
     )
-    users = relationship("User", secondary="user_scenarios", back_populates="scenarios", lazy="selectin")
+    users = relationship("User", secondary="user_scenarios", lazy="selectin")
     supervisor_actions = relationship("SupervisorAction", back_populates="scenario", lazy="selectin")
     agent_configs = relationship("AgentConfig", back_populates="scenario", lazy="selectin")
     tenant: Mapped[Optional["Tenant"]] = relationship("Tenant", back_populates="scenarios")

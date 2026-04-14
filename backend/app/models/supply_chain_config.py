@@ -94,7 +94,7 @@ class SupplyChainTrainingArtifact(Base):
     dataset_name = Column(String(255), nullable=False)
     model_name = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
-    config = relationship("SupplyChainConfig", back_populates="training_artifacts")
+    config = relationship("SupplyChainConfig")
 
 
 class ConfigDelta(Base):
@@ -111,7 +111,7 @@ class ConfigDelta(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
     created_by = Column(String(36), nullable=True)
     description = Column(String(500), nullable=True)
-    config = relationship("SupplyChainConfig", back_populates="deltas")
+    config = relationship("SupplyChainConfig")
 
 
 class ConfigLineage(Base):

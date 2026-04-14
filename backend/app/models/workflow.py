@@ -111,7 +111,7 @@ class WorkflowTemplate(Base):
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    tenant = relationship("Tenant", back_populates="workflow_templates")
+    tenant = relationship("Tenant")
     executions = relationship("WorkflowExecution", back_populates="template")
     creator = relationship("User", foreign_keys=[created_by])
 
