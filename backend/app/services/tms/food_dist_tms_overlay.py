@@ -608,6 +608,20 @@ class FoodDistTMSOverlay:
         events + appointments, inject exceptions at calibrated rates, and
         emit any equipment repositioning decisions.
         """
+        # Idempotency: skip days that already have loads for this tenant.
+        # Load.load_number encodes YYYYMMDD so we check by the prefix.
+        day_prefix = f"FD-{d.strftime('%Y%m%d')}-"
+        already = self.session.execute(
+            select(func.count()).select_from(Load).where(
+                and_(
+                    Load.tenant_id == self.tms_tenant_id,
+                    Load.load_number.like(f"{day_prefix}%"),
+                )
+            )
+        ).scalar_one()
+        if already:
+            return {"skipped_existing_loads": already}
+
         scp_shipments = self._scp_shipments_on(d)
         if not scp_shipments:
             return {}
