@@ -40,6 +40,7 @@ from app.db.session import sync_engine
 from app.models.tenant import Tenant, TenantMode, ClockMode
 from app.models.supply_chain_config import SupplyChainConfig
 from sqlalchemy import text
+from app.models.user import User
 from app.services.tms.food_dist_tms_overlay import FoodDistTMSOverlay, OverlayConfig
 
 logging.basicConfig(
@@ -68,6 +69,11 @@ def parse_args():
 
 
 def get_or_create_tms_tenant(session) -> Tenant:
+    """
+    Bootstrap: Tenant.admin_id NOT NULL FKs -> users.id, User.tenant_id FKs
+    -> tenants.id. Break the cycle by inserting an admin user first, then
+    the tenant, then updating the user's tenant_id.
+    """
     tenant = session.execute(
         select(Tenant).where(Tenant.slug == TMS_TENANT_SLUG)
     ).scalar_one_or_none()
@@ -75,16 +81,42 @@ def get_or_create_tms_tenant(session) -> Tenant:
         logger.info("Existing TMS tenant: id=%d slug=%s", tenant.id, tenant.slug)
         return tenant
 
+    # Step 1 — insert the admin user (tenant_id NULL for now)
+    admin = session.execute(
+        select(User).where(User.email == "systemadmin@food-dist-tms.local")
+    ).scalar_one_or_none()
+    if admin is None:
+        admin = User(
+            email="systemadmin@food-dist-tms.local",
+            username="systemadmin_fdtms",
+            full_name="Food Dist TMS System Admin",
+            hashed_password="!",  # placeholder, login disabled
+            is_active=True,
+            is_superuser=True,
+        )
+        session.add(admin)
+        session.flush()
+        logger.info("Created admin user id=%d for TMS tenant bootstrap", admin.id)
+
+    # Step 2 — tenant referencing that admin
     tenant = Tenant(
         name=TMS_TENANT_NAME,
         slug=TMS_TENANT_SLUG,
         subdomain=TMS_TENANT_SLUG,
+        admin_id=admin.id,
         mode=TenantMode.LEARNING,
         time_mode=ClockMode.TURN_BASED,
         industry="foodservice",
     )
     session.add(tenant)
     session.flush()
+
+    # Step 3 — backfill admin.tenant_id
+    session.execute(
+        text("UPDATE users SET tenant_id = :tid WHERE id = :uid"),
+        {"tid": tenant.id, "uid": admin.id},
+    )
+    session.commit()
     logger.info("Created TMS tenant: id=%d slug=%s", tenant.id, tenant.slug)
     return tenant
 
