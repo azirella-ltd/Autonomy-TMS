@@ -78,6 +78,7 @@ def get_or_create_tms_tenant(session) -> Tenant:
     tenant = Tenant(
         name=TMS_TENANT_NAME,
         slug=TMS_TENANT_SLUG,
+        subdomain=TMS_TENANT_SLUG,
         mode=TenantMode.LEARNING,
         time_mode=ClockMode.TURN_BASED,
         industry="foodservice",
