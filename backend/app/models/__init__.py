@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 # Import base first - this will also import all models
 from .base import Base
 
+# Capability manifest — declares (and eagerly loads) the Core capabilities
+# TMS consumes: tenant, master, governance, powell, context_engine. See
+# Autonomy-Core/docs/CAPABILITY_MANIFEST.md for the pattern.
+from . import capabilities  # noqa: F401
+
 # Import all models here to ensure they are registered with SQLAlchemy
 from sqlalchemy import inspect
 

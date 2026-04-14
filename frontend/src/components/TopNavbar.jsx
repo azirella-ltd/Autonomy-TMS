@@ -725,13 +725,13 @@ const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOp
             aria-label="Autonomy TMS"
           >
             <img
-              src="/autonomy_logo.svg"
+              src="/autonomy_icon.svg"
               alt="Autonomy"
               className="h-9 w-auto"
             />
             <div className="flex items-baseline gap-1.5 text-base">
               <span className="font-semibold text-foreground">Autonomy</span>
-              <span className="font-normal text-muted-foreground">TMS</span>
+              <span className="font-semibold text-foreground">TMS</span>
             </div>
           </Link>
         </div>
