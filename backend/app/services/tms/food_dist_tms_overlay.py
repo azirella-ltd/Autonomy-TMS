@@ -347,6 +347,7 @@ class FoodDistTMSOverlay:
                     config_id=tms_cfg.id,
                     from_site_id=from_tms,
                     to_site_id=to_tms,
+                    capacity=1000,  # synthetic default; overlay doesn't plan on it
                 )
                 self.session.add(lane)
                 self.session.flush()
