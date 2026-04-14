@@ -133,8 +133,8 @@ class BillOfResources(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Optional link to production process definition
-    production_process_id: Mapped[Optional[int]] = mapped_column(
-        Integer,
+    production_process_id: Mapped[Optional[str]] = mapped_column(
+        String(100),
         ForeignKey("production_process.id", ondelete="SET NULL"),
         nullable=True,
     )
