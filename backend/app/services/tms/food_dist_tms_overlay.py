@@ -388,17 +388,31 @@ class FoodDistTMSOverlay:
 
     def _seed_equipment_fleet(self) -> None:
         """
-        Give each carrier a modest fleet of trailers. UT-based carriers and
-        the DC itself hold baseline reefer/dry pools for reposition sims.
+        Give each carrier a modest fleet of trailers distributed across
+        the internal DCs (Food Dist has a CDC in UT and RDCs in WA + CA).
+        Distributing the initial pool is what makes the reposition TRM
+        have non-trivial imbalances to act on.
         """
-        ut_dc = next(
-            (s for s in self._sites_by_id.values() if s.type == "MANUFACTURER"), None
-        )
-        # Food Dist uses INVENTORY for the DC in some seeds; fall back:
-        if ut_dc is None:
-            ut_dc = next(
-                (s for s in self._sites_by_id.values() if "UT" in (s.name or "")), None
-            )
+        # Build the list of internal DCs by cross-referencing staging.
+        # is_external=0 + internal sites are treated as DCs for placement.
+        internal_scp_ids = {
+            r[0] for r in self.session.execute(
+                text("""
+                    SELECT scp_site_id FROM tms_src_scp_site
+                    WHERE is_external = 0
+                """)
+            ).all()
+        }
+        dcs: List[TmsSite] = [
+            site for scp_id, tms_id in self._scp_to_tms_site.items()
+            if scp_id in internal_scp_ids
+            and (site := self._sites_by_id.get(tms_id)) is not None
+        ]
+        if not dcs:
+            # Fallback — first materialized site
+            dcs = list(self._sites_by_id.values())[:1]
+        logger.info("Equipment will be distributed across %d internal DCs: %s",
+                    len(dcs), [d.name for d in dcs])
 
         # Collect existing equipment per carrier for idempotency
         existing_by_carrier: Dict[int, int] = dict(
@@ -438,7 +452,8 @@ class FoodDistTMSOverlay:
                     temp_min=-10.0 if eq_type == "REEFER" else None,
                     temp_max=40.0 if eq_type == "REEFER" else None,
                     status="AVAILABLE",
-                    current_site_id=ut_dc.id if ut_dc else None,
+                    # Round-robin across DCs so reposition TRM has imbalances
+                    current_site_id=dcs[i % len(dcs)].id,
                     source="food_dist_tms_seed",
                     tenant_id=self.tms_tenant_id,
                     config_id=self.sc_config_id,
