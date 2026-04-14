@@ -4,7 +4,7 @@
   "private": true,
   "homepage": "/",
   "dependencies": {
-    "@azirella-ltd/autonomy-frontend": "^1.11.1",
+    "@azirella-ltd/autonomy-frontend": "^1.11.2",
     "@chakra-ui/icons": "^2.1.1",
     "@chakra-ui/react": "^2.8.2",
     "@emotion/cache": "^11.11.0",
