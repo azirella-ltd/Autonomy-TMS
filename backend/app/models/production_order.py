@@ -20,7 +20,21 @@ from .base import Base
 
 class ProductionOrder(Base):
     """
-    Production Order entity following Supply Chain data model.
+    Production Order — TMS legacy variant of the universal work-order concept.
+
+    **Conforms to** ``azirella_data_model.work_order.WorkOrderMixin``
+    contract. Retained for compatibility during the SCP→TMS split; once
+    TMS adds its own transport-specific work orders (DispatchOrder,
+    LoadOrder), they should subclass ``WorkOrderMixin`` directly rather
+    than copy this class further.
+
+    Contract mapping shared with SCP (see Autonomy-SCP's equivalent docstring
+    for full detail): order_number, planned/actual quantities, status,
+    planned/actual/released/closed dates all match mixin field names.
+
+    See Autonomy-Core docs/CAPABILITY_MANIFEST.md for the extraction rationale.
+
+    Supply Chain data model context below preserved for reference:
 
     Represents a manufacturing work order that transforms raw materials
     into finished goods according to a Bill of Materials (BOM).

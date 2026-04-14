@@ -44,10 +44,29 @@ class ResourceType(str, Enum):
 
 class CapacityPlan(Base):
     """
-    Capacity Plan
+    Capacity Plan — TMS variant of the universal capacity-plan concept.
 
-    Strategic capacity planning tool that validates production plans against
-    available resources. Supports what-if scenarios and bottleneck analysis.
+    **Conforms to** ``azirella_data_model.capacity_plan.CapacityPlanMixin``
+    contract. Today this class is a near-copy of SCP's production-RCCP
+    model; as TMS's capacity planning diverges toward transport-specific
+    resources (lanes, carriers, dock slots), migrate to a TMS-native
+    schema that directly subclasses ``CapacityPlanMixin``.
+
+    Contract mapping (same field names as SCP's equivalent):
+
+    | Mixin field     | TMS column                 |
+    |-----------------|----------------------------|
+    | name            | name                       |
+    | description     | description                |
+    | tenant_id       | (derived via supply_chain_config_id) |
+    | start_date      | start_date                 |
+    | end_date        | end_date                   |
+    | horizon_length  | planning_horizon_weeks     |
+    | bucket_size     | bucket_size_days           |
+    | bucket_unit     | (implicit DAY)             |
+    | status          | status                     |
+
+    See Autonomy-Core docs/CAPABILITY_MANIFEST.md for the rationale.
     """
     __tablename__ = "capacity_plans"
 

@@ -22,9 +22,40 @@ from app.models.base import Base
 
 class ForecastAdjustment(Base):
     """
-    Individual forecast adjustment record.
+    Individual forecast adjustment record (TMS variant of the universal
+    forecast-adjustment concept).
 
-    Tracks a single change to a forecast value with reason and audit info.
+    **Conforms to**
+    ``azirella_data_model.forecast_adjustment.ForecastAdjustmentMixin``
+    contract. Today this class mirrors SCP's ForecastAdjustment; as TMS
+    grows freight-volume-specific forecasting, migrate to a TMS-native
+    subclass that directly inherits ``ForecastAdjustmentMixin``.
+
+    Contract mapping (field alignment already near-perfect):
+
+    | Mixin field       | TMS column                         |
+    |-------------------|------------------------------------|
+    | tenant_id         | (derived via forecast_id)          |
+    | adjustment_type   | adjustment_type                    |
+    | original_value    | original_value                     |
+    | adjustment_value  | adjustment_value                   |
+    | new_value         | new_value                          |
+    | period_start      | period_start                       |
+    | period_end        | period_end                         |
+    | time_bucket       | time_bucket                        |
+    | reason_code       | reason_code                        |
+    | reason_text       | reason_text                        |
+    | notes             | notes                              |
+    | source            | source                             |
+    | batch_id          | batch_id                           |
+    | status            | status                             |
+    | approved_by       | approved_by_id                     |
+    | approved_at       | approved_at                        |
+    | created_by        | created_by_id                      |
+    | created_at        | created_at                         |
+
+    TMS-specific: ``forecast_id`` FK to the appropriate forecast table
+    (freight volume today; potentially lane capacity forecasts later).
     """
 
     __tablename__ = "forecast_adjustments"
