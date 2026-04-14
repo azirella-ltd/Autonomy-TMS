@@ -93,6 +93,8 @@ export const NAVIGATION_CONFIG = [
   {
     section: 'Home',
     sectionIcon: SparklesIcon,
+    // v1.11.1 declarative gate
+    visibleToDecisionLevels: ['EXECUTIVE', 'SC_VP', 'SOP_DIRECTOR', 'MPS_MANAGER', 'DEMO_ALL'],
     items: [
       // Order: Decision Stream is the super-user landing page for all non-
       // tenant-admin roles. Briefing and Dashboard follow as strategic
@@ -129,6 +131,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Insights & Analytics',
+    visibleToDecisionLevels: ['SOP_DIRECTOR', 'MPS_MANAGER', 'DEMO_ALL'],
     sectionIcon: AnalyticsIcon,
     divider: true,
     items: [
@@ -239,6 +242,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Planning',
+    visibleToDecisionLevels: ['SOP_DIRECTOR', 'MPS_MANAGER', 'DEMO_ALL'],
     sectionIcon: CalendarIcon,
     divider: true,
     items: [
@@ -312,6 +316,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Planning Cascade',
+    visibleToDecisionLevels: ['SOP_DIRECTOR', 'MPS_MANAGER', 'DEMO_ALL'],
     sectionIcon: CascadeIcon,
     divider: true,
     items: [
@@ -473,6 +478,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Execution',
+    visibleToDecisionLevels: ['MPS_MANAGER', 'DEMO_ALL'],
     sectionIcon: ExecutionIcon,
     divider: true,
     items: [
@@ -663,6 +669,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Scenarios',
+    visibleToDecisionLevels: ['DEMO_ALL'],
     sectionIcon: ScenariosIcon,
     divider: true,
     productionOnly: true,  // Only show in Production mode
@@ -697,6 +704,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'AI & Agents',
+    visibleToDecisionLevels: ['DEMO_ALL'],
     sectionIcon: BrainIcon,
     divider: true,
     items: [
@@ -782,6 +790,7 @@ export const NAVIGATION_CONFIG = [
   // ============================================================================
   {
     section: 'Deployment',
+    visibleToDecisionLevels: ['DEMO_ALL'],
     sectionIcon: WandIcon,
     divider: true,
     items: [
@@ -816,7 +825,10 @@ export const NAVIGATION_CONFIG = [
     section: 'Administration',
     sectionIcon: AdminIcon,
     divider: true,
-    adminOnly: true,
+    adminOnly: true,  // legacy flag — kept for local filter (pending retirement)
+    // v1.11.1: visible to tenant admins OR DEMO_ALL users (OR-gate)
+    tenantAdminOnly: true,
+    visibleToDecisionLevels: ['DEMO_ALL'],
     items: [
       {
         label: 'Supply Chain Configs',
@@ -1059,7 +1071,10 @@ export const LEARNING_NAVIGATION = [
     section: 'Administration',
     sectionIcon: AdminIcon,
     divider: true,
-    adminOnly: true,
+    adminOnly: true,  // legacy flag — kept for local filter (pending retirement)
+    // v1.11.1: visible to tenant admins OR DEMO_ALL users (OR-gate)
+    tenantAdminOnly: true,
+    visibleToDecisionLevels: ['DEMO_ALL'],
     items: [
       {
         label: 'Users',
@@ -1110,6 +1125,16 @@ export const GROUP_MODES = TENANT_MODES;
  * @param {boolean} isTenantAdmin - Whether user is organization admin (TENANT_ADMIN type)
  * @param {string} tenantMode - Tenant mode: 'learning' or 'production' (default: 'production')
  * @returns {Array} Filtered navigation sections with enabled/disabled state
+ */
+/**
+ * @deprecated since v1.11.1 of @azirella-ltd/autonomy-frontend.
+ *
+ * WorkspaceShell uses the shared useFilteredNavigation hook via
+ * declarative fields (requiredCapability, requiredDecisionLevels,
+ * hiddenForTenantAdmin, visibleToDecisionLevels, tenantAdminOnly).
+ * This function is retained only for CapabilityAwareNavbar,
+ * CapabilityAwareSidebar, TwoTierNav (local copy), and NewTabPalette,
+ * which are candidates for replacement with the shared shell components.
  */
 export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmin, tenantMode = 'production', decisionLevel = null) {
   // System admins get special navigation

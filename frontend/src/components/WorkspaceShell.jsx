@@ -17,7 +17,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { NavigationProvider, NavigationFilterProvider, useCapabilities } from '@azirella-ltd/autonomy-frontend';
 import TopNavbar from './TopNavbar';
-import { NAVIGATION_CONFIG, SYSTEM_ADMIN_NAVIGATION, getFilteredNavigation } from '../config/navigationConfig';
+import { NAVIGATION_CONFIG, SYSTEM_ADMIN_NAVIGATION, LEARNING_NAVIGATION } from '../config/navigationConfig';
 import { isSystemAdmin as checkIsSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 import TwoTierNav from './TwoTierNav';
 import { TabPane } from '@azirella-ltd/autonomy-frontend';
@@ -290,25 +290,20 @@ const WorkspaceShell = () => {
     if (saved !== null) setSidebarOpen(saved === 'true');
   }, []);
 
-  // Nav filtering via v1.11.0 contract: shared context providers feed the
-  // filter dimensions (role + capability), SCP/TMS-specific legacy filter
-  // (getFilteredNavigation) still does the final item shaping. Future
-  // cleanup: annotate items with requiredDecisionLevels/tenantAdminOnly
-  // and retire getFilteredNavigation (Workstream A3).
-  const _caps = useCapabilities();
-  const _hasCapability = _caps?.hasCapability ?? (() => true);
+  // Nav filtering via v1.11.1 shared declarative contract.
+  useCapabilities();  // ensure provider is mounted
   const _isSysAdm = checkIsSystemAdmin(user);
   const _isTenantAdm = checkIsTenantAdmin(user);
   const _decisionLevel = user?.decision_level || null;
   const _tenantMode = user?.tenant?.mode || 'production';
-  const _filteredNav = useMemo(
-    () => getFilteredNavigation(_hasCapability, _isSysAdm, _isTenantAdm, _tenantMode, _decisionLevel),
-    [_hasCapability, _isSysAdm, _isTenantAdm, _tenantMode, _decisionLevel]
-  );
 
   return (
     <NavigationFilterProvider value={{ isSystemAdmin: _isSysAdm, isTenantAdmin: _isTenantAdm, decisionLevel: _decisionLevel, tenantMode: _tenantMode }}>
-    <NavigationProvider config={_filteredNav} systemAdminConfig={SYSTEM_ADMIN_NAVIGATION}>
+    <NavigationProvider
+      config={NAVIGATION_CONFIG}
+      systemAdminConfig={SYSTEM_ADMIN_NAVIGATION}
+      learningConfig={LEARNING_NAVIGATION}
+    >
     <div className="min-h-screen bg-background flex flex-col">
       {/* Top Navbar — always visible */}
       <TopNavbar
