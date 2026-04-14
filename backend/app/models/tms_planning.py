@@ -142,7 +142,7 @@ class ShippingForecast(Base):
     commodity = relationship("Commodity")
 
     __table_args__ = (
-        Index('idx_forecast_lookup', 'config_id', 'plan_version', 'forecast_date', 'lane_id'),
+        Index('idx_shipping_forecast_lookup', 'config_id', 'plan_version', 'forecast_date', 'lane_id'),
         Index('idx_forecast_tenant_period', 'tenant_id', 'forecast_date', 'period_type'),
         Index('idx_forecast_lane_mode', 'lane_id', 'mode', 'forecast_date'),
     )

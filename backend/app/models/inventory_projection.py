@@ -114,7 +114,7 @@ class InvProjection(Base):
     config = relationship("SupplyChainConfig", foreign_keys=[config_id])
 
     __table_args__ = (
-        Index('idx_inv_projection_lookup', 'product_id', 'site_id', 'projection_date'),
+        Index('idx_inventory_projection_lookup', 'product_id', 'site_id', 'projection_date'),
         Index('idx_inv_projection_scenario', 'scenario_id', 'projection_date'),
         Index('idx_inv_projection_scenario_round', 'scenario_id', 'round_number'),
     )

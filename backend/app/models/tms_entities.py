@@ -651,7 +651,7 @@ class Shipment(Base):
 
     __table_args__ = (
         UniqueConstraint('tenant_id', 'shipment_number', name='uq_shipment_tenant_number'),
-        Index('idx_shipment_status', 'tenant_id', 'status'),
+        Index('idx_tms_shipment_status', 'tenant_id', 'status'),
         Index('idx_shipment_dates', 'tenant_id', 'requested_pickup_date', 'requested_delivery_date'),
         Index('idx_shipment_carrier', 'carrier_id', 'status'),
         Index('idx_shipment_lane', 'lane_id', 'status'),
@@ -1080,7 +1080,7 @@ class ShipmentException(Base):
     __table_args__ = (
         Index('idx_exception_shipment', 'shipment_id'),
         Index('idx_exception_status', 'tenant_id', 'resolution_status', 'severity'),
-        Index('idx_exception_type', 'tenant_id', 'exception_type', 'detected_at'),
+        Index('idx_tms_exception_type', 'tenant_id', 'exception_type', 'detected_at'),
     )
 
 
