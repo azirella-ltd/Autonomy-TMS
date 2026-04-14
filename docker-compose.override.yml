@@ -27,3 +27,9 @@ services:
       - autonomy-scp_autonomy-network
     environment:
       SCP_DB_URL: postgresql+psycopg2://tms_reader:tms_reader_dev@autonomy-scp-db:5432/autonomy
+      # IMPORTANT: SCP's Postgres service is also named `db` — when the TMS
+      # backend joins both networks, bare `db` hostname becomes ambiguous and
+      # can resolve to SCP's DB, silently writing TMS data into SCP. Force the
+      # TMS DB URL to use the explicit container-alias hostname.
+      DATABASE_URL: postgresql+psycopg2://autonomy_user:autonomy_password@autonomy-tms-db:5432/autonomy
+      ASYNC_DATABASE_URL: postgresql+asyncpg://autonomy_user:autonomy_password@autonomy-tms-db:5432/autonomy
