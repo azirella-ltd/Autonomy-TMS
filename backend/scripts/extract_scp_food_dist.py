@@ -41,7 +41,7 @@ logger = logging.getLogger("extract_scp_food_dist")
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config-name", default="Food Dist Demo",
+    ap.add_argument("--config-name", default="Food Dist Distribution Network",
                     help="SCP supply chain config name to extract")
     args = ap.parse_args()
 

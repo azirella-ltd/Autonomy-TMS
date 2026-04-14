@@ -307,12 +307,13 @@ class FoodDistExtractor:
         } for r in rows])
 
     def _extract_trading_partners(self, scp_conn) -> int:
-        # Trading partners aren't strictly scoped to config; pull those referenced
-        # by Food Dist sites + lanes.
+        # SCP schema: trading_partners has `_id` pk, `id` natural key, `tpartner_type`,
+        # `description` (display name), plus geo cols. Pull partners referenced by
+        # Food Dist sites.
         rows = scp_conn.execute(
             text("""
-                SELECT DISTINCT tp._id AS id, tp.name, tp.partner_type,
-                       tp.postal_code, tp.country
+                SELECT DISTINCT tp._id AS partner_pk, tp.description AS name,
+                       tp.tpartner_type, tp.postal_code, tp.country
                 FROM trading_partners tp
                 JOIN site s ON s.trading_partner_id = tp._id
                 WHERE s.config_id = :c
@@ -320,10 +321,10 @@ class FoodDistExtractor:
             {"c": self._scp_config_id},
         ).mappings().all()
         return self._bulk_insert(tms_src_scp_trading_partner, [{
-            "scp_partner_id": r["id"],
+            "scp_partner_id": r["partner_pk"],
             "scp_config_id": self._scp_config_id,
             "name": r.get("name"),
-            "partner_type": r.get("partner_type"),
+            "partner_type": r.get("tpartner_type"),
             "postal_code": r.get("postal_code"),
             "country": r.get("country"),
         } for r in rows])
@@ -347,28 +348,42 @@ class FoodDistExtractor:
         } for r in rows])
 
     def _extract_products(self, scp_conn) -> int:
-        # Food Dist's product table includes attributes JSON with temperature
-        # category. SCP-side schema may vary; defensive col list.
+        # SCP product: display name in `description`; no `attributes` JSON;
+        # temperature inferred from category/family/product_group strings.
         rows = scp_conn.execute(
             text("""
-                SELECT id, name, product_group, attributes
+                SELECT id, description AS name, product_group, category, family,
+                       external_identifiers
                 FROM product WHERE config_id = :c
             """),
             {"c": self._scp_config_id},
         ).mappings().all()
         out = []
         for r in rows:
-            attrs = r.get("attributes") or {}
+            haystack = " ".join(str(v or "").lower() for v in
+                                (r.get("category"), r.get("family"),
+                                 r.get("product_group"), r.get("name")))
+            if any(kw in haystack for kw in ("frozen", "ice cream", "fzn")):
+                temp_cat = "frozen"
+            elif any(kw in haystack for kw in ("refriger", "dairy", "produce",
+                                                "meat", "seafood", "cheese",
+                                                "fresh")):
+                temp_cat = "refrigerated"
+            else:
+                temp_cat = "dry"
             out.append({
                 "scp_product_id": str(r["id"]),
                 "scp_config_id": self._scp_config_id,
                 "name": r.get("name"),
                 "product_group": r.get("product_group"),
-                "temperature_category": attrs.get("temperature_category")
-                                        or attrs.get("temp_category"),
-                "unit_size": attrs.get("unit_size"),
-                "cases_per_pallet": attrs.get("cases_per_pallet"),
-                "attributes": attrs,
+                "temperature_category": temp_cat,
+                "unit_size": None,
+                "cases_per_pallet": None,
+                "attributes": {
+                    "category": r.get("category"),
+                    "family": r.get("family"),
+                    "external_identifiers": r.get("external_identifiers"),
+                },
             })
         return self._bulk_insert(tms_src_scp_product, out)
 
@@ -402,10 +417,15 @@ class FoodDistExtractor:
         } for r in rows])
 
     def _extract_outbound_lines(self, scp_conn) -> int:
+        # SCP outbound_order_line: `ordered_quantity` (not `quantity`).
+        # SCP outbound_order: `ship_from_site_id` / `ship_to_site_id`.
         rows = scp_conn.execute(
             text("""
-                SELECT ol.id, ol.order_id, ol.product_id, ol.quantity,
-                       ol.requested_date, oo.from_site_id, oo.to_site_id
+                SELECT ol.id, ol.order_id, ol.product_id,
+                       ol.ordered_quantity AS quantity,
+                       ol.requested_delivery_date AS requested_date,
+                       oo.ship_from_site_id AS from_site_id,
+                       oo.ship_to_site_id AS to_site_id
                 FROM outbound_order_line ol
                 JOIN outbound_order oo ON ol.order_id = oo.id
                 WHERE oo.config_id = :c
@@ -424,10 +444,16 @@ class FoodDistExtractor:
         } for r in rows])
 
     def _extract_inbound_lines(self, scp_conn) -> int:
+        # SCP inbound_order_line: `quantity_submitted`, `from_partner_id` via
+        # `tpartner_id`, `to_site_id` directly on the line. inbound_order has
+        # `supplier_id` but line's `tpartner_id` is the authoritative partner FK.
         rows = scp_conn.execute(
             text("""
-                SELECT il.id, il.order_id, il.product_id, il.quantity,
-                       il.requested_date, io.from_partner_id, io.to_site_id
+                SELECT il.id, il.order_id, il.product_id,
+                       il.quantity_submitted AS quantity,
+                       il.expected_delivery_date AS requested_date,
+                       il.tpartner_id AS from_partner_id,
+                       il.to_site_id
                 FROM inbound_order_line il
                 JOIN inbound_order io ON il.order_id = io.id
                 WHERE io.config_id = :c
