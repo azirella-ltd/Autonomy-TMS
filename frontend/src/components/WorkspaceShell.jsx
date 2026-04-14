@@ -15,13 +15,12 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
-import { NavigationProvider, NavigationFilterProvider, useCapabilities } from '@azirella-ltd/autonomy-frontend';
+import { NavigationProvider, NavigationFilterProvider, TwoTierNav as SharedTwoTierNav, useCapabilities } from '@azirella-ltd/autonomy-frontend';
 import TopNavbar from './TopNavbar';
 import { NAVIGATION_CONFIG, SYSTEM_ADMIN_NAVIGATION, LEARNING_NAVIGATION } from '../config/navigationConfig';
 import { isSystemAdmin as checkIsSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
-import TwoTierNav from './TwoTierNav';
+const TwoTierNav = SharedTwoTierNav;
 import { TabPane } from '@azirella-ltd/autonomy-frontend';
-import CapabilityAwareSidebar from './CapabilityAwareSidebar';
 import { useTabStore } from '@azirella-ltd/autonomy-frontend';
 import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
