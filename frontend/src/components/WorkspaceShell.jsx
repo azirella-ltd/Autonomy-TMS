@@ -28,8 +28,7 @@ import ProvisioningBanner from './ProvisioningBanner';
 import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Send, Loader2, Mic, MicOff } from 'lucide-react';
 import Markdown from 'react-markdown';
-import AzirellaAvatar from './AzirellaAvatar';
-import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
+import { AzirellaAvatar, useVoiceAssistant, VoiceState } from '@azirella-ltd/autonomy-frontend';
 
 const ADMIN_TAB_ID = 'tab-administration';
 const AZIRELLA_PANEL_WIDTH = 380;

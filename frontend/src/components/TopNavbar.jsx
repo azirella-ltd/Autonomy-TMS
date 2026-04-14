@@ -35,9 +35,8 @@ import { isSystemAdmin } from '../utils/authUtils';
 import simulationApi, { api } from '../services/api';
 import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
 import { cn } from '@azirella-ltd/autonomy-frontend';
-import AzirellaPopup from './AzirellaPopup';
-import AzirellaAvatar from './AzirellaAvatar';
-import { useVoiceAssistant, VoiceState } from '../hooks/useVoiceAssistant';
+import AzirellaPopup from './AzirellaPopup';  // SCP/TMS-specific clarification UI — not the shared AzirellaPopup
+import { AzirellaAvatar, useVoiceAssistant, VoiceState } from '@azirella-ltd/autonomy-frontend';
 import { useTabStore } from '@azirella-ltd/autonomy-frontend';
 
 const TopNavbar = ({ sidebarOpen = true, azirellaPanelWidth = 0, azirellaPanelOpen = false, onToggleAzirella }) => {
