@@ -168,7 +168,7 @@ LTL_CARRIERS = [
     CarrierSpec("EXLA", "Estes Express Lines", "EXLA", "ASSET", "VA",
                 ("ASSET",), ("DRY_VAN",),
                 approx_fleet_size=8500, otd_performance=0.95, avg_linehaul_rate_cpm=3.60),
-    CarrierSpec("CRST", "Central Transport", "CTII", "ASSET", "MI",
+    CarrierSpec("CENT", "Central Transport", "CENT", "ASSET", "MI",
                 ("ASSET",), ("DRY_VAN",),
                 approx_fleet_size=4200, otd_performance=0.92, avg_linehaul_rate_cpm=3.45),
     CarrierSpec("FCSY", "FedEx Freight", "FXFE", "ASSET", "TN",
