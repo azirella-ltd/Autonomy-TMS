@@ -400,11 +400,23 @@ class FoodDistTMSOverlay:
                 (s for s in self._sites_by_id.values() if "UT" in (s.name or "")), None
             )
 
+        # Collect existing equipment per carrier for idempotency
+        existing_by_carrier: Dict[int, int] = dict(
+            self.session.execute(
+                select(Equipment.carrier_id, func.count())
+                .where(Equipment.tenant_id == self.tms_tenant_id)
+                .group_by(Equipment.carrier_id)
+            ).all()
+        )
+
         for carrier in self._carriers:
             spec = next(
                 (s for s in TOP_FOODSERVICE_CARRIERS if s.code == carrier.code), None
             )
             if not spec or not spec.is_asset:
+                continue
+            if existing_by_carrier.get(carrier.id, 0) > 0:
+                # Already seeded equipment for this carrier
                 continue
             # Small fleet: 10-30 trailers per carrier (training scale, not real fleet)
             count = min(30, max(5, spec.approx_fleet_size // 500))
