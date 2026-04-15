@@ -537,7 +537,7 @@ class CarrierScorecard(Base):
 # Shipment & Load Entities
 # ============================================================================
 
-class Shipment(Base):
+class TMSShipment(Base):
     """
     Unit of freight movement from origin to destination
     TMS Entity: tms_shipment (distinct from sc_entities.Shipment)
@@ -706,7 +706,7 @@ class ShipmentLeg(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("app.models.tms_entities.Shipment", back_populates="legs")
+    shipment = relationship("app.models.tms_entities.TMSShipment", back_populates="legs")
     from_site = relationship("Site", foreign_keys=[from_site_id])
     to_site = relationship("Site", foreign_keys=[to_site_id])
     carrier = relationship("Carrier")
@@ -780,7 +780,7 @@ class Load(Base):
     destination = relationship("Site", foreign_keys=[destination_site_id])
     carrier = relationship("Carrier")
     equipment_assigned = relationship("Equipment", foreign_keys=[equipment_id])
-    shipments = relationship("app.models.tms_entities.Shipment", back_populates="load")
+    shipments = relationship("app.models.tms_entities.TMSShipment", back_populates="load")
     items = relationship("LoadItem", back_populates="load", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -816,7 +816,7 @@ class LoadItem(Base):
 
     # Relationships
     load = relationship("Load", back_populates="items")
-    shipment = relationship("app.models.tms_entities.Shipment")
+    shipment = relationship("app.models.tms_entities.TMSShipment")
     commodity = relationship("Commodity")
 
     __table_args__ = (
@@ -921,7 +921,7 @@ class FreightTender(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("app.models.tms_entities.Shipment", back_populates="tenders")
+    shipment = relationship("app.models.tms_entities.TMSShipment", back_populates="tenders")
     load = relationship("Load")
     carrier = relationship("Carrier", back_populates="tenders")
     rate = relationship("FreightRate")
@@ -1012,7 +1012,7 @@ class Appointment(Base):
     # Relationships
     site = relationship("Site")
     dock_door = relationship("DockDoor", back_populates="appointments")
-    shipment = relationship("app.models.tms_entities.Shipment", back_populates="appointments")
+    shipment = relationship("app.models.tms_entities.TMSShipment", back_populates="appointments")
     load = relationship("Load")
     carrier = relationship("Carrier")
 
@@ -1073,7 +1073,7 @@ class ShipmentException(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("app.models.tms_entities.Shipment", back_populates="exceptions")
+    shipment = relationship("app.models.tms_entities.TMSShipment", back_populates="exceptions")
     leg = relationship("ShipmentLeg")
     resolutions = relationship("ExceptionResolution", back_populates="exception", cascade="all, delete-orphan")
 
@@ -1164,7 +1164,7 @@ class BillOfLading(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("app.models.tms_entities.Shipment", back_populates="bol")
+    shipment = relationship("app.models.tms_entities.TMSShipment", back_populates="bol")
 
     __table_args__ = (
         UniqueConstraint('tenant_id', 'bol_number', name='uq_bol_tenant_number'),
@@ -1205,7 +1205,7 @@ class ProofOfDelivery(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("app.models.tms_entities.Shipment", back_populates="pod")
+    shipment = relationship("app.models.tms_entities.TMSShipment", back_populates="pod")
 
     __table_args__ = (
         Index('idx_pod_shipment', 'shipment_id'),
@@ -1340,7 +1340,7 @@ class TrackingEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("app.models.tms_entities.Shipment")
+    shipment = relationship("app.models.tms_entities.TMSShipment")
     leg = relationship("ShipmentLeg")
     stop = relationship("Site", foreign_keys=[stop_id])
 
@@ -1380,7 +1380,7 @@ class ShipmentIdentifier(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    shipment = relationship("app.models.tms_entities.Shipment")
+    shipment = relationship("app.models.tms_entities.TMSShipment")
 
     __table_args__ = (
         Index('idx_shipment_ident_lookup', 'identifier_type', 'identifier_value'),
@@ -1467,3 +1467,12 @@ class EquipmentMove(Base):
         Index('idx_equipment_move_equipment', 'equipment_id', 'dispatched_at'),
         Index('idx_equipment_move_lane', 'from_site_id', 'to_site_id'),
     )
+
+
+# ── Backwards-compat alias ────────────────────────────────────────────
+# The TMS-specific Shipment class was renamed to TMSShipment on
+# 2026-04-15 so it no longer collides with the canonical
+# azirella_data_model.master.entities.Shipment in Base's class
+# registry. Existing callsites that import Shipment from this module
+# keep working via this alias; new code should use TMSShipment.
+Shipment = TMSShipment

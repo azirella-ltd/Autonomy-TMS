@@ -355,8 +355,10 @@ def create_or_get_tenant(db: Session, admin_user: User) -> Tenant:
 
     tenant = Tenant(
         name=FOOD_DIST_CUSTOMER_NAME,
-        description=FOOD_DIST_DESCRIPTION,
+        slug="food-dist",
+        subdomain="food-dist",
         admin_id=admin_user.id,
+        description=FOOD_DIST_DESCRIPTION,
         mode=TenantMode.PRODUCTION,  # Operational tenant
     )
     db.add(tenant)

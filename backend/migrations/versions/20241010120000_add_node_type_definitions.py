@@ -35,10 +35,12 @@ def upgrade() -> None:
     )
 
     default_payload = json.dumps(DEFAULT_DEFINITIONS)
+    # Cast to json so the comparison works on both JSON and JSONB columns.
     update_stmt = sa.text(
         "UPDATE supply_chain_configs "
-        "SET node_type_definitions = :payload "
-        "WHERE node_type_definitions IS NULL OR node_type_definitions = '[]'"
+        "SET node_type_definitions = CAST(:payload AS json) "
+        "WHERE node_type_definitions IS NULL "
+        "   OR node_type_definitions::text = '[]'"
     )
     op.execute(update_stmt.bindparams(payload=default_payload))
 

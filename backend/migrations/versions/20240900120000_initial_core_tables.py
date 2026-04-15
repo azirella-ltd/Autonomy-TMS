@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "20240900120000"
@@ -21,46 +22,65 @@ def _utc_now() -> sa.text:
     return sa.text("CURRENT_TIMESTAMP")
 
 
+def _create_enum_idempotent(name: str, values: tuple[str, ...]) -> None:
+    """Create a PostgreSQL ENUM type idempotently.
+
+    `sa.Enum(...).create(bind, checkfirst=True)` has a historical bug
+    where subsequent `op.create_table` calls that reference the same
+    enum name (even with `create_type=False` on the Column) re-emit
+    `CREATE TYPE` and fail on the second run. Using a raw DO-block
+    bypasses the SQLAlchemy side of that misbehaviour.
+    """
+    values_sql = ", ".join(f"'{v}'" for v in values)
+    op.execute(
+        f"""
+        DO $$ BEGIN
+            CREATE TYPE {name} AS ENUM ({values_sql});
+        EXCEPTION WHEN duplicate_object THEN
+            NULL;
+        END $$;
+        """
+    )
+
+
 def upgrade() -> None:
-    bind = op.get_bind()
-
-    # Define enum types with create_type=False so the inline column refs
-    # below don't try to create them again. We create them explicitly via
-    # checkfirst=True so this migration is idempotent against existing types.
-    player_role_enum = sa.Enum(
-        "RETAILER", "WHOLESALER", "DISTRIBUTOR", "MANUFACTURER",
-        name="player_role_enum",
-        create_type=False,
+    # Create enum types idempotently via raw DO blocks, then reference
+    # them from columns with postgresql.ENUM(create_type=False) so
+    # op.create_table never tries to CREATE TYPE on its own.
+    _create_enum_idempotent(
+        "player_role_enum",
+        ("RETAILER", "WHOLESALER", "DISTRIBUTOR", "MANUFACTURER"),
     )
-    sa.Enum(
+    _create_enum_idempotent("player_type_enum", ("HUMAN", "AI"))
+    _create_enum_idempotent(
+        "player_strategy_enum",
+        (
+            "MANUAL", "RANDOM", "FIXED", "DEMAND_AVERAGE", "TREND_FOLLOWER",
+            "LLM_BASIC", "LLM_ADVANCED", "LLM_REINFORCEMENT",
+        ),
+    )
+    _create_enum_idempotent(
+        "game_status_enum",
+        ("CREATED", "STARTED", "ROUND_IN_PROGRESS", "ROUND_COMPLETED", "FINISHED"),
+    )
+
+    player_role_enum = postgresql.ENUM(
         "RETAILER", "WHOLESALER", "DISTRIBUTOR", "MANUFACTURER",
-        name="player_role_enum",
-    ).create(bind, checkfirst=True)
-
-    player_type_enum = sa.Enum("HUMAN", "AI", name="player_type_enum", create_type=False)
-    sa.Enum("HUMAN", "AI", name="player_type_enum").create(bind, checkfirst=True)
-
-    player_strategy_enum = sa.Enum(
+        name="player_role_enum", create_type=False,
+    )
+    player_type_enum = postgresql.ENUM(
+        "HUMAN", "AI",
+        name="player_type_enum", create_type=False,
+    )
+    player_strategy_enum = postgresql.ENUM(
         "MANUAL", "RANDOM", "FIXED", "DEMAND_AVERAGE", "TREND_FOLLOWER",
         "LLM_BASIC", "LLM_ADVANCED", "LLM_REINFORCEMENT",
-        name="player_strategy_enum",
-        create_type=False,
+        name="player_strategy_enum", create_type=False,
     )
-    sa.Enum(
-        "MANUAL", "RANDOM", "FIXED", "DEMAND_AVERAGE", "TREND_FOLLOWER",
-        "LLM_BASIC", "LLM_ADVANCED", "LLM_REINFORCEMENT",
-        name="player_strategy_enum",
-    ).create(bind, checkfirst=True)
-
-    game_status_enum = sa.Enum(
+    game_status_enum = postgresql.ENUM(
         "CREATED", "STARTED", "ROUND_IN_PROGRESS", "ROUND_COMPLETED", "FINISHED",
-        name="game_status_enum",
-        create_type=False,
+        name="game_status_enum", create_type=False,
     )
-    sa.Enum(
-        "CREATED", "STARTED", "ROUND_IN_PROGRESS", "ROUND_COMPLETED", "FINISHED",
-        name="game_status_enum",
-    ).create(bind, checkfirst=True)
 
     # Users ------------------------------------------------------------------
     op.create_table(
@@ -168,7 +188,7 @@ def upgrade() -> None:
         sa.Column("current_stock", sa.Integer(), nullable=False, server_default="12"),
         sa.Column("incoming_shipments", sa.JSON(), nullable=True),
         sa.Column("backorders", sa.Integer(), nullable=False, server_default=sa.text("0")),
-        sa.Column("cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
+        sa.Column("cost", sa.Float(), nullable=False, server_default=sa.text("0")),
     )
 
     # Game rounds ------------------------------------------------------------
@@ -196,9 +216,9 @@ def upgrade() -> None:
         sa.Column("inventory_after", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("backorders_before", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("backorders_after", sa.Integer(), nullable=False, server_default=sa.text("0")),
-        sa.Column("holding_cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
-        sa.Column("backorder_cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
-        sa.Column("total_cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
+        sa.Column("holding_cost", sa.Float(), nullable=False, server_default=sa.text("0")),
+        sa.Column("backorder_cost", sa.Float(), nullable=False, server_default=sa.text("0")),
+        sa.Column("total_cost", sa.Float(), nullable=False, server_default=sa.text("0")),
     )
 
     # Player actions ---------------------------------------------------------

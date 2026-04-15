@@ -88,7 +88,7 @@ def ensure_users_table() -> None:
         sa.Column("full_name", sa.String(length=100), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("TRUE")),
         sa.Column("is_superuser", sa.Boolean(), nullable=False, server_default=sa.text("FALSE")),
-        sa.Column("user_type", _enum_user_type(), nullable=False, server_default="Player"),
+        sa.Column("user_type", _enum_user_type(), nullable=False, server_default="PLAYER"),
         sa.Column("last_login", sa.DateTime(), nullable=True),
         sa.Column("last_password_change", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("failed_login_attempts", sa.Integer(), nullable=False, server_default=sa.text("0")),
@@ -216,7 +216,7 @@ def ensure_players_table() -> None:
         sa.Column("strategy", _enum_player_strategy(), nullable=False, server_default="manual"),
         sa.Column("inventory", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("backlog", sa.Integer(), nullable=False, server_default=sa.text("0")),
-        sa.Column("cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
+        sa.Column("cost", sa.Float(), nullable=False, server_default=sa.text("0")),
         sa.Column("is_ready", sa.Boolean(), nullable=False, server_default=sa.text("FALSE")),
         sa.Column("can_see_demand", sa.Boolean(), nullable=False, server_default=sa.text("FALSE")),
         sa.Column("llm_model", sa.String(length=100), nullable=True),
@@ -358,7 +358,7 @@ def ensure_supply_chain_tables() -> None:
             sa.Column("current_stock", sa.Integer(), nullable=False, server_default="12"),
             sa.Column("incoming_shipments", sa.JSON(), nullable=True),
             sa.Column("backorders", sa.Integer(), nullable=False, server_default=sa.text("0")),
-            sa.Column("cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
+            sa.Column("cost", sa.Float(), nullable=False, server_default=sa.text("0")),
             sa.ForeignKeyConstraint(["player_id"], ["players.id"], ondelete="CASCADE"),
         )
 
@@ -400,9 +400,9 @@ def ensure_supply_chain_tables() -> None:
             sa.Column("inventory_after", sa.Integer(), nullable=False),
             sa.Column("backorders_before", sa.Integer(), nullable=False, server_default=sa.text("0")),
             sa.Column("backorders_after", sa.Integer(), nullable=False, server_default=sa.text("0")),
-            sa.Column("holding_cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
-            sa.Column("backorder_cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
-            sa.Column("total_cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
+            sa.Column("holding_cost", sa.Float(), nullable=False, server_default=sa.text("0")),
+            sa.Column("backorder_cost", sa.Float(), nullable=False, server_default=sa.text("0")),
+            sa.Column("total_cost", sa.Float(), nullable=False, server_default=sa.text("0")),
             sa.Column("comment", sa.String(length=255), nullable=True),
             sa.ForeignKeyConstraint(["player_id"], ["players.id"], ondelete="CASCADE"),
             sa.ForeignKeyConstraint(["round_id"], ["game_rounds.id"], ondelete="CASCADE"),
@@ -414,7 +414,7 @@ def ensure_supply_chain_tables() -> None:
             sa.Column("id", sa.Integer(), primary_key=True),
             sa.Column("name", sa.String(length=100), nullable=False),
             sa.Column("description", sa.String(length=255), nullable=True),
-            sa.Column("unit_cost", sa.Float(), nullable=False, server_default=sa.text("FALSE")),
+            sa.Column("unit_cost", sa.Float(), nullable=False, server_default=sa.text("0")),
         )
 
     if not _table_exists("simulation_runs"):
@@ -446,8 +446,8 @@ def backfill_defaults() -> None:
     if _column_exists("users", "user_type"):
         bind.execute(
             text(
-                "UPDATE users SET user_type = CASE WHEN is_superuser = 1 THEN 'SYSTEM_ADMIN' ELSE 'PLAYER' END "
-                "WHERE user_type IS NULL OR user_type = ''"
+                "UPDATE users SET user_type = CASE WHEN is_superuser THEN 'SYSTEM_ADMIN' ELSE 'PLAYER' END "
+                "WHERE user_type IS NULL OR user_type::text = ''"
             )
         )
 
@@ -472,7 +472,7 @@ def backfill_defaults() -> None:
     if _column_exists("players", "type"):
         bind.execute(
             text(
-                "UPDATE players SET type = CASE WHEN is_ai = 1 THEN 'ai' ELSE 'human' END "
+                "UPDATE players SET type = CASE WHEN is_ai THEN 'ai' ELSE 'human' END "
                 "WHERE type IS NULL"
             )
         )
