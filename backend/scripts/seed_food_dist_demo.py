@@ -474,6 +474,27 @@ def main():
         print("\n1. Ensuring permissions are seeded...")
         seed_default_permissions(db)
 
+        # Step 1b: Ensure a system admin exists. backend/init_db.py only
+        # creates this when user_count == 0, but it doesn't run as part
+        # of the seed pipeline — without it the customer can seed the
+        # tenant data and still be unable to log in.
+        sys_email = "systemadmin@autonomy.ai"
+        if not db.query(User).filter(User.email == sys_email).first():
+            sys_admin = User(
+                username="systemadmin",
+                email=sys_email,
+                hashed_password=get_password_hash(DEFAULT_PASSWORD),
+                full_name="System Admin",
+                is_active=True,
+                is_superuser=True,
+                user_type="SYSTEM_ADMIN",
+            )
+            db.add(sys_admin)
+            db.commit()
+            print(f"   Created system admin: {sys_email}")
+        else:
+            print(f"   System admin {sys_email} already exists")
+
         # Step 2: Create tenant admin user first (needed for tenant creation)
         print("\n2. Creating tenant admin user...")
         admin_config = next(u for u in FIXED_USERS if u["is_tenant_admin"])
