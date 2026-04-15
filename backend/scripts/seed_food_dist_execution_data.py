@@ -481,9 +481,9 @@ def seed_project_orders(conn):
 
             conn.execute(text("""
                 INSERT INTO project_order_line_item
-                (project_order_id, line_number, product_id, description,
-                 quantity_required, quantity_produced, unit_of_measure,
-                 unit_price, line_total, required_date, status, created_at)
+                (project_order_id, line_number, product_id, product_description,
+                 quantity_required, quantity_issued, uom,
+                 unit_cost, total_cost, required_date, status, created_at)
                 VALUES (:poid, :ln, :pid, :desc,
                  :qr, :qp, 'EA', :uc, :tc, :rd, :status, :cat)
             """), {
@@ -557,12 +557,12 @@ def seed_maintenance_orders(conn):
 
         conn.execute(text("""
             INSERT INTO maintenance_order
-            (maintenance_order_number, asset_id, asset_name, asset_category,
+            (maintenance_order_number, asset_id, asset_name, asset_type,
              site_id, config_id, tenant_id, company_id, order_type, source,
              maintenance_type, status, priority, order_date,
-             scheduled_start_date, scheduled_end_date,
-             actual_start_date, actual_end_date,
-             work_description, root_cause, resolution_notes, failure_code,
+             scheduled_start_date, scheduled_completion_date,
+             actual_start_date, actual_completion_date,
+             work_description, root_cause_analysis, corrective_actions, failure_description,
              downtime_required, estimated_downtime_hours, actual_downtime_hours,
              estimated_labor_hours, actual_labor_hours,
              estimated_cost, actual_cost,
@@ -578,7 +578,7 @@ def seed_maintenance_orders(conn):
         """), {
             "mon": f"MO-{order_date.strftime('%Y%m%d')}-{str(i+1).zfill(4)}",
             "aid": eq_id, "aname": eq_name, "acat": eq_type,
-            "sid": str(DC_SITE_ID),
+            "sid": int(DC_SITE_ID),
             "cid": CONFIG_ID, "gid": TENANT_ID, "comp": COMPANY_ID,
             "mtype": mtype, "status": status,
             "priority": "URGENT" if mtype == "EMERGENCY" else random.choice(["NORMAL", "NORMAL", "HIGH"]),
@@ -612,9 +612,9 @@ def seed_maintenance_orders(conn):
 
             conn.execute(text("""
                 INSERT INTO maintenance_order_spare
-                (maintenance_order_id, line_number, product_id, description,
-                 quantity_required, quantity_issued, unit_of_measure,
-                 unit_cost, line_total, created_at)
+                (maintenance_order_id, line_number, product_id, product_description,
+                 quantity_required, quantity_issued, uom,
+                 unit_cost, total_cost, created_at)
                 VALUES (:moid, :ln, :pid, :desc,
                  :qr, :qi, 'EA', :uc, :lt, :cat)
             """), {
@@ -696,10 +696,10 @@ def seed_turnaround_orders(conn):
             (turnaround_order_number, from_site_id, to_site_id, refurbishment_site_id,
              config_id, tenant_id, company_id, order_type, source,
              return_reason_code, return_reason_description, turnaround_type,
-             status, order_date, expected_receipt_date, actual_receipt_date,
-             inspection_date, disposition_date, completion_date, disposition,
+             status, order_date, pickup_scheduled_date, received_date,
+             inspection_date, disposition_date, refurbishment_completion_date, disposition,
              quality_grade, product_condition,
-             estimated_refurbishment_cost, actual_refurbishment_cost, recovery_value,
+             refurbishment_cost, recovery_value,
              notes, created_by_id, created_at)
             VALUES (:tan, :from_sid, :to_sid, :refurb_sid,
              :cid, :gid, :comp, 'turnaround', 'AUTONOMY',
@@ -707,13 +707,14 @@ def seed_turnaround_orders(conn):
              :status, :od, :erd, :ard,
              :insp, :disp_date, :comp_date, :disp,
              :qg, :pc,
-             :erc, :arc, :rv,
+             :rc, :rv,
              :notes, :uid, :cat)
             RETURNING id
         """), {
             "tan": f"TA-{order_date.strftime('%Y%m%d')}-{str(i+1).zfill(4)}",
-            "from_sid": str(cust_id), "to_sid": str(DC_SITE_ID),
-            "refurb_sid": str(DC_SITE_ID) if ta_type == "REFURBISH" else None,
+            "from_sid": int(cust_id) if str(cust_id).isdigit() else None,
+            "to_sid": int(DC_SITE_ID),
+            "refurb_sid": int(DC_SITE_ID) if ta_type == "REFURBISH" else None,
             "cid": CONFIG_ID, "gid": TENANT_ID, "comp": COMPANY_ID,
             "rrc": reason_code, "rrd": reason_desc, "tat": ta_type,
             "status": status, "od": order_date,
@@ -723,8 +724,7 @@ def seed_turnaround_orders(conn):
             "disp": disposition,
             "qg": random.choice(["A", "B", "C", "D"]) if actual_receipt else None,
             "pc": random.choice(["GOOD", "FAIR", "POOR", "DAMAGED"]) if actual_receipt else None,
-            "erc": est_refurb_cost,
-            "arc": round(est_refurb_cost * random.uniform(0.8, 1.2), 2) if status in ("COMPLETED", "DISPOSED") and ta_type == "REFURBISH" else 0,
+            "rc": round(est_refurb_cost * random.uniform(0.8, 1.2), 2) if status in ("COMPLETED", "DISPOSED") and ta_type == "REFURBISH" else est_refurb_cost,
             "rv": round(random.uniform(100, 2000), 2) if status in ("COMPLETED", "DISPOSED") else None,
             "notes": f"Return from {cust_name}: {reason_desc}",
             "uid": USER_ID, "cat": now,
@@ -744,13 +744,13 @@ def seed_turnaround_orders(conn):
 
             conn.execute(text("""
                 INSERT INTO turnaround_order_line_item
-                (turnaround_order_id, line_number, product_id, description,
+                (turnaround_order_id, line_number, product_id, product_description,
                  quantity_returned, quantity_accepted, quantity_rejected,
-                 serial_number, lot_number, product_condition, quality_grade,
+                 serial_number, lot_number, line_condition,
                  notes, created_at)
                 VALUES (:taid, :ln, :pid, :desc,
                  :qret, :qacc, :qrej,
-                 :sn, :lot, :pc, :qg,
+                 :sn, :lot, :pc,
                  :notes, :cat)
             """), {
                 "taid": ta_id, "ln": ln, "pid": pid,
@@ -759,7 +759,6 @@ def seed_turnaround_orders(conn):
                 "sn": f"SN-{random.randint(100000, 999999)}" if random.random() > 0.5 else None,
                 "lot": f"LOT-{random.randint(1000, 9999)}" if random.random() > 0.5 else None,
                 "pc": random.choice(["GOOD", "FAIR", "POOR"]) if actual_receipt else None,
-                "qg": random.choice(["A", "B", "C"]) if actual_receipt else None,
                 "notes": None, "cat": now,
             })
             count_lines += 1
@@ -805,24 +804,10 @@ def seed_goods_receipts(conn):
             "FROM purchase_order_line_item WHERE po_id = :pid ORDER BY line_number"
         ), {"pid": po_id}).fetchall()
 
-        conn.execute(text("""
-            INSERT INTO goods_receipt
-            (gr_number, po_id, receiving_site_id, receipt_date,
-             status, notes, received_by_id, created_at, completed_at)
-            VALUES (:grn, :poid, :rsid, :rd,
-             'COMPLETED', :notes, :uid, :cat, :ca)
-            RETURNING id
-        """), {
-            "grn": gr_num, "poid": po_id, "rsid": DC_SITE_ID,
-            "rd": receipt_date,
-            "notes": f"Receipt for {po_number}",
-            "uid": USER_ID, "cat": now,
-            "ca": receipt_date + timedelta(hours=random.randint(2, 8)),
-        })
-        gr_id = conn.execute(text("SELECT lastval()")).scalar()
-        gr_id_map[po_id] = gr_id
-        count_gr += 1
-
+        # Pre-compute per-line numbers so we can populate the NOT-NULL
+        # header totals (total_received_qty / total_accepted_qty /
+        # total_rejected_qty / has_variance).
+        line_rows = []
         for po_line_id, line_num, product_id, qty, unit_price in po_lines:
             variance_roll = random.random()
             if variance_roll < 0.8:
@@ -834,23 +819,56 @@ def seed_goods_receipts(conn):
             else:
                 received_qty = qty
                 rejected_qty = random.randint(1, max(1, int(qty * 0.03)))
-
             accepted_qty = received_qty - rejected_qty
             variance_qty = received_qty - qty
+            line_rows.append((po_line_id, line_num, product_id, qty,
+                              received_qty, accepted_qty, rejected_qty, variance_qty))
 
+        tot_received = sum(r[4] for r in line_rows)
+        tot_accepted = sum(r[5] for r in line_rows)
+        tot_rejected = sum(r[6] for r in line_rows)
+        has_variance = any(r[7] != 0 for r in line_rows)
+
+        conn.execute(text("""
+            INSERT INTO goods_receipt
+            (gr_number, po_id, receiving_site_id, receipt_date,
+             status, total_received_qty, total_accepted_qty, total_rejected_qty,
+             has_variance, notes, received_by_id, created_at, updated_at, completed_at)
+            VALUES (:grn, :poid, :rsid, :rd,
+             'COMPLETED', :trq, :taq, :trjq, :hv,
+             :notes, :uid, :cat, :cat, :ca)
+            RETURNING id
+        """), {
+            "grn": gr_num, "poid": po_id, "rsid": DC_SITE_ID,
+            "rd": receipt_date,
+            "trq": tot_received, "taq": tot_accepted, "trjq": tot_rejected,
+            "hv": has_variance,
+            "notes": f"Receipt for {po_number}",
+            "uid": USER_ID, "cat": now,
+            "ca": receipt_date + timedelta(hours=random.randint(2, 8)),
+        })
+        gr_id = conn.execute(text("SELECT lastval()")).scalar()
+        gr_id_map[po_id] = gr_id
+        count_gr += 1
+
+        for po_line_id, line_num, product_id, qty, received_qty, accepted_qty, rejected_qty, variance_qty in line_rows:
             conn.execute(text("""
                 INSERT INTO goods_receipt_line_item
-                (goods_receipt_id, po_line_id, line_number, product_id, description,
-                 expected_qty, received_qty, accepted_qty, rejected_qty,
-                 variance_type, inspection_status, rejection_reason, created_at)
-                VALUES (:grid, :plid, :ln, :pid, :desc,
-                 :eq, :rq, :aq, :rejq,
-                 :vt, :is, :rr, :cat)
+                (gr_id, po_line_id, line_number, product_id,
+                 expected_qty, received_qty, accepted_qty, rejected_qty, variance_qty,
+                 variance_type, inspection_required, inspection_status, rejection_reason,
+                 created_at, updated_at)
+                VALUES (:grid, :plid, :ln, :pid,
+                 :eq, :rq, :aq, :rejq, :vq,
+                 :vt, :ir, :is, :rr,
+                 :cat, :cat)
             """), {
                 "grid": gr_id, "plid": po_line_id, "ln": line_num,
-                "pid": product_id, "desc": f"Receipt of {product_id}",
+                "pid": product_id,
                 "eq": qty, "rq": received_qty, "aq": accepted_qty, "rejq": rejected_qty,
+                "vq": variance_qty,
                 "vt": "SHORTAGE" if variance_qty < 0 else ("OVERAGE" if variance_qty > 0 else None),
+                "ir": rejected_qty > 0 or variance_qty != 0,
                 "is": "FAILED" if rejected_qty > 0 else "PASSED",
                 "rr": "Quality defect" if rejected_qty > 0 else None,
                 "cat": now,
@@ -917,18 +935,27 @@ def seed_invoices(conn):
             "UNDER_REVIEW" if match_status in ("PARTIAL_MATCH", "DISCREPANCY") else "RECEIVED"
         )
 
+        # match_score is NOT NULL — higher for exact matches
+        match_score = 1.0 if match_status == "MATCHED" else (
+            0.7 if match_status == "PARTIAL_MATCH" else (0.3 if match_status == "DISCREPANCY" else 0.0)
+        )
+        has_discrepancy = match_status in ("PARTIAL_MATCH", "DISCREPANCY")
+        discrepancy_amount = round(total * 0.02, 2) if has_discrepancy else 0.0
+
         conn.execute(text("""
             INSERT INTO invoice
             (invoice_number, vendor_invoice_number, vendor_id, vendor_name,
              po_id, invoice_date, received_date, due_date,
-             subtotal, tax_amount, total_amount,
-             currency, match_status, status, payment_terms,
-             notes, created_by_id, created_at)
+             subtotal, tax_amount, shipping_amount, discount_amount, total_amount,
+             currency, match_status, match_score, status,
+             has_discrepancy, discrepancy_amount, payment_terms,
+             notes, created_by_id, created_at, updated_at)
             VALUES (:inv_num, :vin, :vid, :vname,
              :poid, :idate, :rdate, :ddate,
-             :sub, :tax, :total,
-             'USD', :ms, :status, :pt,
-             :notes, :uid, :cat)
+             :sub, :tax, :ship, :disc, :total,
+             'USD', :ms, :mscore, :status,
+             :hd, :da, :pt,
+             :notes, :uid, :cat, :cat)
             RETURNING id
         """), {
             "inv_num": f"INV-{po_number.replace('PO-', '')}",
@@ -937,8 +964,9 @@ def seed_invoices(conn):
             "poid": po_id, "idate": inv_date,
             "rdate": inv_date + timedelta(days=random.randint(0, 3)),
             "ddate": inv_date + timedelta(days=30),
-            "sub": subtotal, "tax": tax, "total": total,
-            "ms": match_status, "status": inv_status,
+            "sub": subtotal, "tax": tax, "ship": 0.0, "disc": 0.0, "total": total,
+            "ms": match_status, "mscore": match_score, "status": inv_status,
+            "hd": has_discrepancy, "da": discrepancy_amount,
             "pt": random.choice(["NET30", "NET45", "NET60", "2/10_NET30"]),
             "notes": None, "uid": USER_ID, "cat": now,
         })
@@ -953,25 +981,41 @@ def seed_invoices(conn):
         ), {"pid": po_id}).fetchall()
 
         gr_lines = conn.execute(text(
-            "SELECT po_line_id, received_qty FROM goods_receipt_line_item WHERE goods_receipt_id = :grid"
+            "SELECT po_line_id, received_qty FROM goods_receipt_line_item WHERE gr_id = :grid"
         ), {"grid": gr_id}).fetchall()
         gr_qty_map = {r[0]: r[1] for r in gr_lines}
 
         for po_line_id, line_num, product_id, po_qty, po_unit_price, po_line_total in po_lines:
             inv_unit_price = round((po_unit_price or 0) * price_factor, 2)
             inv_qty = po_qty
+            recv_qty = gr_qty_map.get(po_line_id, po_qty)
             line_total = round(inv_qty * inv_unit_price, 2)
 
+            qty_variance = inv_qty - po_qty
+            price_variance = round(inv_unit_price - (po_unit_price or 0), 2)
             conn.execute(text("""
                 INSERT INTO invoice_line_item
                 (invoice_id, po_line_id, line_number, product_id, description,
-                 quantity, unit_price, line_total, created_at)
+                 invoiced_qty, po_qty, received_qty,
+                 unit_price, po_unit_price, line_total,
+                 discount_amount, tax_amount, match_status,
+                 qty_variance, price_variance, variance_pct,
+                 created_at, updated_at)
                 VALUES (:iid, :plid, :ln, :pid, :desc,
-                 :qty, :up, :lt, :cat)
+                 :iq, :pq, :rq,
+                 :up, :pup, :lt,
+                 :disc, :taxa, :mst,
+                 :qv, :pv, :vp,
+                 :cat, :cat)
             """), {
                 "iid": inv_id, "plid": po_line_id, "ln": line_num,
                 "pid": product_id, "desc": f"Invoice for {product_id}",
-                "qty": inv_qty, "up": inv_unit_price, "lt": line_total,
+                "iq": inv_qty, "pq": po_qty, "rq": recv_qty,
+                "up": inv_unit_price, "pup": po_unit_price or 0, "lt": line_total,
+                "disc": 0.0, "taxa": 0.0,
+                "mst": "MATCHED" if qty_variance == 0 and price_variance == 0 else "DISCREPANCY",
+                "qv": qty_variance, "pv": price_variance,
+                "vp": round(abs(price_variance) / (po_unit_price or 1) * 100, 2),
                 "cat": now,
             })
             count_lines += 1
@@ -985,27 +1029,40 @@ def seed_invoices(conn):
         total_variance = round(total - po_total_val, 2)
         is_within = match_status == "MATCHED"
 
+        total_po_qty = sum(pl[3] for pl in po_lines)
+        total_gr_qty = sum(gr_qty_map.get(pl[0], pl[3]) for pl in po_lines)
+        total_inv_qty = total_po_qty  # invoice_qty uses po_qty above
         conn.execute(text("""
             INSERT INTO invoice_match_result
-            (invoice_id, po_id, gr_id, match_type, match_status,
-             po_total, gr_total, invoice_total,
-             quantity_variance, price_variance, total_variance,
-             tolerance_percent, is_within_tolerance,
-             discrepancy_details, resolution, resolution_notes,
-             resolved_by_id, created_at, resolved_at)
-            VALUES (:iid, :poid, :grid, '3_WAY', :ms,
-             :pot, :grt, :invt,
-             :qv, :pv, :tv,
-             :tp, :iwt,
-             :dd, :res, :rn,
-             :rbi, :cat, :ra)
+            (invoice_id, po_id, gr_id, match_date, match_method, overall_status,
+             match_score,
+             po_total, gr_total, invoice_total, total_variance,
+             total_po_qty, total_gr_qty, total_invoiced_qty,
+             qty_variance, qty_match_pct, price_match_pct, price_variance,
+             qty_tolerance_pct, price_tolerance_pct,
+             exceptions_count, exception_details,
+             resolution_status, resolution_notes, resolved_by_id, resolved_at)
+            VALUES (:iid, :poid, :grid, :cat, '3_WAY', :ms,
+             :mscore,
+             :pot, :grt, :invt, :tv,
+             :tpq, :tgq, :tiq,
+             :qv, :qmp, :pmp, :pv,
+             :qtp, :ptp,
+             :ec, :dd,
+             :res, :rn, :rbi, :ra)
         """), {
             "iid": inv_id, "poid": po_id, "grid": gr_id,
             "ms": match_status,
+            "mscore": 1.0 if is_within else 0.7,
             "pot": po_total_val, "grt": round(gr_total, 2), "invt": total,
-            "qv": 0.0, "pv": round(total - po_total_val - tax, 2),
             "tv": total_variance,
-            "tp": 2.0, "iwt": is_within,
+            "tpq": total_po_qty, "tgq": total_gr_qty, "tiq": total_inv_qty,
+            "qv": total_inv_qty - total_po_qty,
+            "qmp": 100.0 if total_inv_qty == total_po_qty else 95.0,
+            "pmp": 98.0 if is_within else 85.0,
+            "pv": round(total - po_total_val - tax, 2),
+            "qtp": 2.0, "ptp": 2.0,
+            "ec": 0 if is_within else 1,
             "dd": json.dumps({"type": "price_variance", "amount": total_variance}) if not is_within else None,
             "res": "AUTO_APPROVED" if is_within else ("PENDING_REVIEW" if match_status == "PENDING" else None),
             "rn": "Automatically matched within tolerance" if is_within else None,

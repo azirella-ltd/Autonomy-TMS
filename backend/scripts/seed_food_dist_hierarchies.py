@@ -35,6 +35,7 @@ from app.db.session import sync_engine
 from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product, Geography, ProductHierarchy, Company
 from app.models.tenant import Tenant
+from azirella_data_model.master.entities import TradingPartner
 
 # =============================================================================
 # Geographic Hierarchy Configuration (AWS SC: geography table)
@@ -418,6 +419,9 @@ def create_sites(db: Session, config: SupplyChainConfig, company: Company, geo_m
     print(f"   Created DC: {dc.name} (geo: {slc_geo_id})")
 
     # Suppliers (no geo linking for now - external to company)
+    # Each supplier is BOTH a Site (for DAG topology) AND a TradingPartner
+    # row (for vendor_products + sourcing_rules + storyline contingency
+    # rules to FK against). Storyline scripts assume both exist.
     for supp_code, supp_data in SUPPLIER_LOCATIONS.items():
         supplier = Site(
             config_id=config.id,
@@ -434,7 +438,21 @@ def create_sites(db: Session, config: SupplyChainConfig, company: Company, geo_m
         )
         db.add(supplier)
         site_map[supp_code] = supplier
-    print(f"   Created {len(SUPPLIER_LOCATIONS)} suppliers")
+
+        # Idempotent TradingPartner creation
+        tp = db.query(TradingPartner).filter(TradingPartner.id == supp_code).first()
+        if tp is None:
+            db.add(TradingPartner(
+                id=supp_code,
+                tpartner_type="vendor",
+                description=supp_data["name"],
+                company_id=company.id,
+                city=supp_data["city"],
+                state_prov=supp_data["state"],
+                country="USA",
+                is_active="true",
+            ))
+    print(f"   Created {len(SUPPLIER_LOCATIONS)} suppliers (Site + TradingPartner)")
 
     # Customers - linked to city geography
     customer_count = 0

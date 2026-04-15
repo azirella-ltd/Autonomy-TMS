@@ -455,14 +455,14 @@ def seed_story2(db):
     contingency_products = [RD003, RD004, RD005]
     for prod in contingency_products:
         # RICHPROD gets priority 1 (60%) in contingency plan
-        richprod_rule_id = f"SR_CTNG_{CONFIG_ID}_256_{RICHPROD_SITE}_{prod}"
+        richprod_rule_id = f"SR_CTNG_{CONFIG_ID}_{DC}_{RICHPROD_SITE}_{prod}"
         db.execute(text("""
             INSERT INTO sourcing_rules
             (id, config_id, company_id, product_id, from_site_id, to_site_id,
              sourcing_rule_type, sourcing_priority, sourcing_ratio, min_quantity, max_quantity,
              eff_start_date, eff_end_date, is_active, source, source_event_id, source_update_dttm)
             VALUES
-            (:id, :cfg, NULL, :pid, :from_site, 256,
+            (:id, :cfg, NULL, :pid, :from_site, :dc,
              'buy', 1, 0.60, 500, 5000,
              '2026-02-24 06:00:00', '2026-03-31 23:59:59', 'true',
              'contingency', :bid, NOW())
@@ -473,17 +473,17 @@ def seed_story2(db):
               eff_end_date=EXCLUDED.eff_end_date,
               source_event_id=EXCLUDED.source_event_id
         """), {"id": richprod_rule_id, "cfg": CONFIG_ID, "pid": prod,
-               "from_site": RICHPROD_SITE, "bid": BATCH_ID})
+               "from_site": RICHPROD_SITE, "bid": BATCH_ID, "dc": DC})
 
         # LANDOLAKES gets priority 2 (40%) in contingency plan
-        landolakes_rule_id = f"SR_CTNG_{CONFIG_ID}_256_{LANDOLAKES_SITE}_{prod}"
+        landolakes_rule_id = f"SR_CTNG_{CONFIG_ID}_{DC}_{LANDOLAKES_SITE}_{prod}"
         db.execute(text("""
             INSERT INTO sourcing_rules
             (id, config_id, company_id, product_id, from_site_id, to_site_id,
              sourcing_rule_type, sourcing_priority, sourcing_ratio, min_quantity, max_quantity,
              eff_start_date, eff_end_date, is_active, source, source_event_id, source_update_dttm)
             VALUES
-            (:id, :cfg, NULL, :pid, :from_site, 256,
+            (:id, :cfg, NULL, :pid, :from_site, :dc,
              'buy', 2, 0.40, 300, 3000,
              '2026-02-24 06:00:00', '2026-03-31 23:59:59', 'true',
              'contingency', :bid, NOW())
@@ -494,7 +494,7 @@ def seed_story2(db):
               eff_end_date=EXCLUDED.eff_end_date,
               source_event_id=EXCLUDED.source_event_id
         """), {"id": landolakes_rule_id, "cfg": CONFIG_ID, "pid": prod,
-               "from_site": LANDOLAKES_SITE, "bid": BATCH_ID})
+               "from_site": LANDOLAKES_SITE, "bid": BATCH_ID, "dc": DC})
 
     db.commit()
     print(f"    Created contingency sourcing rules for {len(contingency_products)} dairy products")
@@ -1028,7 +1028,7 @@ def main():
     with SessionLocal() as db:
         rows = db.execute(text("""
             SELECT
-              (SELECT COUNT(*) FROM forecast WHERE config_id=:cfg AND site_id=256 AND forecast_date >= '2026-02-07') as new_forecasts,
+              (SELECT COUNT(*) FROM forecast WHERE config_id=:cfg AND site_id=:dc AND forecast_date >= '2026-02-07') as new_forecasts,
               (SELECT COUNT(*) FROM forecast_adjustments WHERE batch_id=:bid) as adjustments,
               (SELECT COUNT(*) FROM purchase_order WHERE config_id=:cfg AND source_event_id=:bid) as purchase_orders,
               (SELECT COUNT(*) FROM purchase_order_line_item WHERE po_id IN (SELECT id FROM purchase_order WHERE config_id=:cfg AND source_event_id=:bid)) as po_lines,
@@ -1037,7 +1037,7 @@ def main():
               (SELECT COUNT(*) FROM capacity_requirements WHERE plan_id IN (SELECT id FROM capacity_plans WHERE supply_chain_config_id=:cfg AND description LIKE '%STORY_DATA%')) as capacity_requirements,
               (SELECT COUNT(*) FROM sourcing_rules WHERE config_id=:cfg AND source_event_id=:bid) as sourcing_rules,
               (SELECT COUNT(*) FROM vendor_products WHERE source_event_id=:bid) as vendor_products
-        """), {"cfg": CONFIG_ID, "bid": BATCH_ID}).fetchone()
+        """), {"cfg": CONFIG_ID, "bid": BATCH_ID, "dc": DC}).fetchone()
 
     total = rows.new_forecasts + rows.adjustments + rows.purchase_orders + rows.po_lines + rows.capacity_plans + rows.capacity_resources + rows.capacity_requirements + rows.sourcing_rules + rows.vendor_products
     print(f"""

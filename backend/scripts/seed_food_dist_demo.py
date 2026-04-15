@@ -103,6 +103,23 @@ FIXED_USERS = [
         "product_scope": None,
     },
     # ==========================================================================
+    # SUPER USER: TENANT_ADMIN type with DEMO_ALL — convenient single login
+    # that has access to every screen for demo walkthroughs.
+    # `is_tenant_admin` is False here because that flag selects the SINGLE
+    # bootstrap admin used to create the Tenant row; we want this user to
+    # be created in the regular user-creation loop, not as the bootstrap.
+    # ==========================================================================
+    {
+        "username": "super",
+        "email": "super@distdemo.com",
+        "full_name": "Food Dist Super User",
+        "user_type": UserTypeEnum.TENANT_ADMIN,
+        "is_tenant_admin": False,
+        "decision_level": "DEMO_ALL",
+        "site_scope": None,
+        "product_scope": None,
+    },
+    # ==========================================================================
     # EXECUTIVE (CEO): Read-only strategic view
     # ==========================================================================
     {
