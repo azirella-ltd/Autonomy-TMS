@@ -256,7 +256,7 @@ The Powell framework and agent architecture are shared. The 11 TRM agent slots m
 ## Key Implementation Details
 
 - **Auth**: JWT + HTTP-only cookies, CSRF double-submit, capability-based permissions
-- **Routing**: Nginx proxy — `/api/*` → backend:8000, `/*` → frontend:3000
+- **Routing**: Nginx proxy (host port `8089`) — `/api/*` → backend:8000, `/*` → frontend:3000 (container-internal ports unchanged; host ports shifted from SCP to avoid conflicts)
 - **Backend entry**: `backend/main.py`
 - **Migrations**: `backend/migrations/versions/` (NOT `backend/alembic/versions/`)
 - **Sessions**: `SessionLocal` is async; use `sync_session_factory` for sync access
@@ -308,10 +308,13 @@ make llm-check             # Check LLM connectivity
 
 | Service | URL |
 |---------|-----|
-| Frontend | http://localhost:8088 |
-| Backend API | http://localhost:8088/api |
-| API Docs | http://localhost:8000/docs |
-| pgAdmin | http://localhost:5050 (admin@autonomy.com / admin) |
+| Frontend | http://localhost:8089 |
+| Backend API | http://localhost:8089/api |
+| API Docs | http://localhost:8010/docs |
+| pgAdmin | http://localhost:5051 (admin@autonomy.com / admin) |
+| MCP server | http://localhost:8011 |
+
+> **Port allocation:** TMS host ports are deliberately offset from SCP so both can run on the same machine. SCP uses 8088 / 3000 / 8000 / 5050 / 8001 / 8443; TMS uses 8089 / 3001 / 8010 / 5051 / 8011 / 8444. Container-internal ports are unchanged on both sides.
 
 **Default Login**: systemadmin@autonomy.com / Autonomy@2026
 

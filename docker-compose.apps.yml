@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: autonomy-tms-frontend
     ports:
-      - "3000:80"
+      - "3001:80"
     environment:
       - NODE_ENV=production
       - REACT_APP_API_URL=/api
@@ -46,7 +46,7 @@ services:
       - DB_PORT=3306
       - DB_SSL_MODE=disable
     ports:
-      - "8000:8000"
+      - "8010:8000"
     volumes:
       - ./backend:/app
     networks:

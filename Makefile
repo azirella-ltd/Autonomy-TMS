@@ -84,7 +84,7 @@ up-llm:
 	@echo "\n[+] Starting full stack with local LLM (vLLM + Qwen 3 8B)..."
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.llm.yml --profile vllm up -d
 	@echo "\n[✓] Stack started with local LLM."
-	@echo "   App:     http://$(HOST):8088"
+	@echo "   App:     http://$(HOST):8089"
 	@echo "   vLLM:    http://$(HOST):8001/v1 (OpenAI-compatible)"
 	@echo "   Note:    First start downloads model (~5GB). Check: docker logs autonomy-vllm"
 
@@ -93,7 +93,7 @@ up-llm-ollama:
 	@echo "\n[+] Starting full stack with Ollama..."
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.llm.yml --profile ollama up -d
 	@echo "\n[✓] Stack started with Ollama."
-	@echo "   App:     http://$(HOST):8088"
+	@echo "   App:     http://$(HOST):8089"
 	@echo "   Ollama:  http://$(HOST):11434"
 	@echo "   Next:    make ollama-pull-models"
 
@@ -115,7 +115,7 @@ up:
 	mode_label="CPU"; \
 	if [ "$(FORCE_GPU)" = "1" ]; then mode_label="GPU"; fi; \
 	echo "\n[✓] Local development server started ($${mode_label} mode)."; \
-	echo "   URL:     http://$(HOST):8088"; \
+	echo "   URL:     http://$(HOST):8089"; \
 	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"; \
 	if [ "$(FORCE_GPU)" = "1" ]; then \
 		echo "   GPU:     $$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader 2>/dev/null || echo 'No GPU detected')"; \
@@ -138,14 +138,14 @@ up-dev:
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml build $(DOCKER_BUILD_ARGS) backend && \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml up -d proxy frontend backend db create-users; \
 	echo "\n[✓] Local development server started with dev overrides (CPU mode)."; \
-	echo "   URL:     http://$(HOST):8088"; \
+	echo "   URL:     http://$(HOST):8089"; \
 	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"
 
 up-remote:
 	@echo "\n[+] Building and starting full system for remote access..."; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml up -d --build proxy frontend backend db create-users; \
 	echo "\n[✓] Remote server started."; \
-	echo "   URL:     http://$(REMOTE_HOST):8088"; \
+	echo "   URL:     http://$(REMOTE_HOST):8089"; \
 	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"; \
 	echo "\n   For local development, use: make up-dev"
 
@@ -153,7 +153,7 @@ up-tls:
 	@echo "\n[+] Building and starting full system with TLS proxy on 8443..."; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml --profile tls up -d --build frontend backend db proxy-tls create-users; \
 	echo "\n[✓] Local HTTPS server started (self-signed)."; \
-	echo "   URL:     https://$(HOST):8443"; \
+	echo "   URL:     https://$(HOST):8444"; \
 	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"; \
 	echo "\n   For remote HTTPS access, use: make up-remote-tls"
 
@@ -161,13 +161,13 @@ up-remote-tls:
 	@echo "\n[+] Building and starting full system with TLS for remote access..."; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml --profile tls up -d --build frontend backend db proxy-tls create-users; \
 	echo "\n[✓] Remote HTTPS server started (self-signed)."; \
-	echo "   URL:     https://$(REMOTE_HOST):8443"; \
+	echo "   URL:     https://$(REMOTE_HOST):8444"; \
 	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"
 
 up-tls-only:
-	@echo "\n[+] Starting TLS-only proxy (no HTTP proxy on 8088)..."; \
+	@echo "\n[+] Starting TLS-only proxy (no HTTP proxy on 8089)..."; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml --profile tls up -d --build frontend backend db proxy-tls create-users; \
-	echo "\n[✓] Started. Open https://172.29.20.187:8443 in your browser (self-signed)."; \
+	echo "\n[✓] Started. Open https://172.29.20.187:8444 in your browser (self-signed)."; \
 	echo "   SystemAdmin login: systemadmin@autonomy.ai / Autonomy@2026"
 
 rebuild-frontend:
@@ -390,8 +390,8 @@ setup-default-env:
 
 proxy-url:
 	@echo "Current host: $(HOST) (set with HOST=ip make ...)"; \
-	echo "HTTP:  http://$(HOST):8088"; \
-	echo "HTTPS: https://$(HOST):8443 (enable with: make up-tls)"; \
+	echo "HTTP:  http://$(HOST):8089"; \
+	echo "HTTPS: https://$(HOST):8444 (enable with: make up-tls)"; \
 	echo "Login: systemadmin@autonomy.ai / Autonomy@2026"; \
 	echo "To change host: HOST=your-ip make ..."
 
@@ -399,7 +399,7 @@ help:
         @echo "Available targets:"; \
 	echo ""; \
 	echo "Local Development (CPU/GPU):"; \
-	echo "  make up            - build/start HTTP proxy (8088), frontend, backend, db, seed (CPU mode)"; \
+	echo "  make up            - build/start HTTP proxy (8089), frontend, backend, db, seed (CPU mode)"; \
 	echo "  make gpu-up        - prune images, rebuild frontend/backend, start GPU stack"; \
 	echo "  make up FORCE_GPU=1 - enable GPU support if available (set to 1 to enable)"; \
 	echo "  make up-dev        - same as up, with dev overrides"; \
@@ -411,7 +411,7 @@ help:
 	echo "  make up-tls FORCE_GPU=1 - start with HTTPS and GPU support"; \
 	echo ""; \
 	echo "Remote Server:"; \
-	echo "  make up-remote     - start server for remote access (HTTP 8088)"; \
+	echo "  make up-remote     - start server for remote access (HTTP 8089)"; \
 	echo "  make up-remote-tls - start with HTTPS (8443) for remote access"; \
 	echo ""; \
 	echo "Common Operations:"; \

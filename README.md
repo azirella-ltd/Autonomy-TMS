@@ -330,9 +330,9 @@ docker compose exec backend python -m app.db.init_db
 make db-bootstrap
 
 # Access the application
-# Frontend: http://localhost:8088
-# Backend API: http://localhost:8000/docs
-# Database Admin: http://localhost:5050
+# Frontend: http://localhost:8089
+# Backend API: http://localhost:8010/docs
+# Database Admin: http://localhost:5051
 ```
 
 ### GPU Mode (for ML training)
@@ -349,9 +349,9 @@ cd backend && python scripts/training/train_trm.py
 
 ### Play a Beer Game
 ```bash
-# Via UI: Navigate to http://localhost:8088/games/create
+# Via UI: Navigate to http://localhost:8089/games/create
 # Via API:
-curl -X POST http://localhost:8000/api/v1/mixed-games/ \
+curl -X POST http://localhost:8010/api/v1/mixed-games/ \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My First Game",
