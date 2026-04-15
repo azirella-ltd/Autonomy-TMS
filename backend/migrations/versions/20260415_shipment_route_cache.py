@@ -26,9 +26,10 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         'shipment_route_cache',
+        sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('shipment_id', sa.Integer(),
-                  sa.ForeignKey('shipment.id', ondelete='CASCADE'),
-                  primary_key=True),
+                  sa.ForeignKey('tms_shipment.id', ondelete='CASCADE'),
+                  nullable=False, unique=True, index=True),
         sa.Column('geometry_geojson', sa.Text(), nullable=False,
                   comment='GeoJSON LineString as JSON-encoded text'),
         sa.Column('distance_meters', sa.Float(), nullable=True),

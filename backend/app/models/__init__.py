@@ -412,6 +412,9 @@ from .transportation_config import (
     LaneProfile, CarrierContract,
 )
 
+# 37. TMS Shipment Route Cache — OSRM-derived polyline cache
+from .shipment_route_cache import ShipmentRouteCache  # noqa: F401
+
 # 37. TMS Planning — Forecast, Capacity Targets, Transportation Plan
 from .tms_planning import (
     ForecastMethod, PlanStatus, PlanItemStatus,

@@ -12,12 +12,17 @@ from .base import Base
 
 
 class ShipmentRouteCache(Base):
+    """Canonical `Base` already supplies the `id` PK column.
+    `shipment_id` is a unique FK so each shipment has at most one cache row.
+    """
     __tablename__ = "shipment_route_cache"
 
     shipment_id = Column(
         Integer,
-        ForeignKey("shipment.id", ondelete="CASCADE"),
-        primary_key=True,
+        ForeignKey("tms_shipment.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
     )
     geometry_geojson = Column(Text, nullable=False)
     distance_meters = Column(Float, nullable=True)
