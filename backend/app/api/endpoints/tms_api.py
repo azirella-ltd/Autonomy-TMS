@@ -1352,3 +1352,416 @@ async def rate_cards(
         if response:
             response.headers["X-TMS-Warning"] = "TMS tables not yet provisioned"
         return _NOT_PROVISIONED
+
+
+# ============================================================================
+# CRUD: Carrier write endpoints (POST / PATCH / DELETE)
+# ============================================================================
+
+class CarrierWritePayload(BaseModel):
+    code: str
+    name: str
+    carrier_type: str = "FOR_HIRE"
+    scac: Optional[str] = None
+    mc_number: Optional[str] = None
+    dot_number: Optional[str] = None
+    modes: Optional[List[str]] = None
+    equipment_types: Optional[List[str]] = None
+    service_regions: Optional[List[str]] = None
+    is_hazmat_certified: Optional[bool] = None
+    is_bonded: Optional[bool] = None
+    insurance_limit: Optional[float] = None
+    primary_contact_name: Optional[str] = None
+    primary_contact_email: Optional[str] = None
+    primary_contact_phone: Optional[str] = None
+    dispatch_email: Optional[str] = None
+    dispatch_phone: Optional[str] = None
+    is_active: Optional[bool] = True
+    onboarding_status: Optional[str] = "ACTIVE"
+    config_id: Optional[int] = None
+
+
+@carriers_router.post("/", response_model=Dict[str, Any])
+async def create_carrier(
+    body: CarrierWritePayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Create a new carrier for the current tenant."""
+    cfg = await _resolve_config_id(body.config_id, current_user, db)
+    c = Carrier(
+        tenant_id=current_user.tenant_id,
+        config_id=cfg,
+        code=body.code,
+        name=body.name,
+        carrier_type=body.carrier_type,
+        scac=body.scac,
+        mc_number=body.mc_number,
+        dot_number=body.dot_number,
+        modes=body.modes or [],
+        equipment_types=body.equipment_types or [],
+        service_regions=body.service_regions or [],
+        is_hazmat_certified=body.is_hazmat_certified or False,
+        is_bonded=body.is_bonded or False,
+        insurance_limit=body.insurance_limit,
+        primary_contact_name=body.primary_contact_name,
+        primary_contact_email=body.primary_contact_email,
+        primary_contact_phone=body.primary_contact_phone,
+        dispatch_email=body.dispatch_email,
+        dispatch_phone=body.dispatch_phone,
+        is_active=body.is_active if body.is_active is not None else True,
+        onboarding_status=body.onboarding_status or "ACTIVE",
+        source="manual",
+    )
+    db.add(c)
+    await db.commit()
+    await db.refresh(c)
+    return {"id": c.id, "code": c.code, "name": c.name}
+
+
+@carriers_router.patch("/{carrier_id}", response_model=Dict[str, Any])
+async def update_carrier(
+    carrier_id: int,
+    body: CarrierWritePayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Update an existing carrier."""
+    stmt = select(Carrier).where(
+        Carrier.id == carrier_id,
+        Carrier.tenant_id == current_user.tenant_id,
+    )
+    c = (await db.execute(stmt)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, f"Carrier {carrier_id} not found")
+    for f in ["code", "name", "carrier_type", "scac", "mc_number", "dot_number",
+              "modes", "equipment_types", "service_regions", "is_hazmat_certified",
+              "is_bonded", "insurance_limit", "primary_contact_name",
+              "primary_contact_email", "primary_contact_phone", "dispatch_email",
+              "dispatch_phone", "is_active", "onboarding_status"]:
+        v = getattr(body, f)
+        if v is not None:
+            setattr(c, f, v)
+    await db.commit()
+    await db.refresh(c)
+    return {"id": c.id, "code": c.code, "name": c.name, "updated": True}
+
+
+@carriers_router.delete("/{carrier_id}", response_model=Dict[str, Any])
+async def delete_carrier(
+    carrier_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Soft-delete a carrier (set is_active=False)."""
+    stmt = select(Carrier).where(
+        Carrier.id == carrier_id,
+        Carrier.tenant_id == current_user.tenant_id,
+    )
+    c = (await db.execute(stmt)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, f"Carrier {carrier_id} not found")
+    c.is_active = False
+    c.onboarding_status = "SUSPENDED"
+    await db.commit()
+    return {"id": carrier_id, "deleted": True}
+
+
+# ============================================================================
+# CRUD: FreightRate write endpoints (POST / PATCH / DELETE)
+# ============================================================================
+
+class FreightRateWritePayload(BaseModel):
+    carrier_id: int
+    lane_id: int
+    mode: str
+    equipment_type: Optional[str] = None
+    rate_type: str = "CONTRACT"
+    rate_per_mile: Optional[float] = None
+    rate_flat: Optional[float] = None
+    rate_per_cwt: Optional[float] = None
+    rate_per_unit: Optional[float] = None
+    min_charge: Optional[float] = None
+    fuel_surcharge_pct: Optional[float] = None
+    fuel_surcharge_method: Optional[str] = None
+    accessorial_schedule: Optional[Dict[str, float]] = None
+    eff_start_date: str  # ISO date
+    eff_end_date: str
+    contract_number: Optional[str] = None
+    is_active: Optional[bool] = True
+    min_volume_per_week: Optional[int] = None
+    max_volume_per_week: Optional[int] = None
+    config_id: Optional[int] = None
+
+
+def _parse_iso_date(s: str):
+    from datetime import date
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        raise HTTPException(400, f"Invalid ISO date: {s}")
+
+
+@rates_router.post("/", response_model=Dict[str, Any])
+async def create_rate(
+    body: FreightRateWritePayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Create a new freight rate (contract or spot)."""
+    cfg = await _resolve_config_id(body.config_id, current_user, db)
+    r = FreightRate(
+        tenant_id=current_user.tenant_id,
+        config_id=cfg,
+        carrier_id=body.carrier_id,
+        lane_id=body.lane_id,
+        mode=body.mode,
+        equipment_type=body.equipment_type,
+        rate_type=body.rate_type,
+        rate_per_mile=body.rate_per_mile,
+        rate_flat=body.rate_flat,
+        rate_per_cwt=body.rate_per_cwt,
+        rate_per_unit=body.rate_per_unit,
+        min_charge=body.min_charge,
+        fuel_surcharge_pct=body.fuel_surcharge_pct,
+        fuel_surcharge_method=body.fuel_surcharge_method,
+        accessorial_schedule=body.accessorial_schedule,
+        eff_start_date=_parse_iso_date(body.eff_start_date),
+        eff_end_date=_parse_iso_date(body.eff_end_date),
+        contract_number=body.contract_number,
+        is_active=body.is_active if body.is_active is not None else True,
+        min_volume_per_week=body.min_volume_per_week,
+        max_volume_per_week=body.max_volume_per_week,
+        source="manual",
+    )
+    db.add(r)
+    await db.commit()
+    await db.refresh(r)
+    return {"id": r.id, "carrier_id": r.carrier_id, "lane_id": r.lane_id}
+
+
+@rates_router.patch("/{rate_id}", response_model=Dict[str, Any])
+async def update_rate(
+    rate_id: int,
+    body: FreightRateWritePayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Update an existing freight rate."""
+    stmt = select(FreightRate).where(
+        FreightRate.id == rate_id,
+        FreightRate.tenant_id == current_user.tenant_id,
+    )
+    r = (await db.execute(stmt)).scalar_one_or_none()
+    if not r:
+        raise HTTPException(404, f"Rate {rate_id} not found")
+    for f in ["carrier_id", "lane_id", "mode", "equipment_type", "rate_type",
+              "rate_per_mile", "rate_flat", "rate_per_cwt", "rate_per_unit",
+              "min_charge", "fuel_surcharge_pct", "fuel_surcharge_method",
+              "accessorial_schedule", "contract_number", "is_active",
+              "min_volume_per_week", "max_volume_per_week"]:
+        v = getattr(body, f)
+        if v is not None:
+            setattr(r, f, v)
+    if body.eff_start_date:
+        r.eff_start_date = _parse_iso_date(body.eff_start_date)
+    if body.eff_end_date:
+        r.eff_end_date = _parse_iso_date(body.eff_end_date)
+    await db.commit()
+    await db.refresh(r)
+    return {"id": r.id, "updated": True}
+
+
+@rates_router.delete("/{rate_id}", response_model=Dict[str, Any])
+async def delete_rate(
+    rate_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Soft-delete a freight rate (set is_active=False)."""
+    stmt = select(FreightRate).where(
+        FreightRate.id == rate_id,
+        FreightRate.tenant_id == current_user.tenant_id,
+    )
+    r = (await db.execute(stmt)).scalar_one_or_none()
+    if not r:
+        raise HTTPException(404, f"Rate {rate_id} not found")
+    r.is_active = False
+    await db.commit()
+    return {"id": rate_id, "deleted": True}
+
+
+# ============================================================================
+# Shipment Route Geometry — lazy OSRM cache
+# ============================================================================
+
+import json as _json
+import os as _os
+
+routes_router = APIRouter(tags=["shipment-routes"])
+
+
+@routes_router.get("/{shipment_id}/route", response_model=Dict[str, Any])
+async def get_shipment_route(
+    shipment_id: int,
+    refresh: bool = Query(False, description="Bypass cache and re-fetch from OSRM"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return the road-network route for a shipment as GeoJSON LineString.
+
+    On first call, fetches from OSRM (public router.project-osrm.org by
+    default; override with `OSRM_BASE_URL` env var for a self-hosted
+    instance). Result cached in `shipment_route_cache` keyed by
+    shipment_id; subsequent calls return the cache.
+
+    Falls back to a straight-line GeoJSON from origin → destination
+    coordinates if the routing API is unreachable, so the map always has
+    SOMETHING to draw.
+    """
+    from app.models.shipment_route_cache import ShipmentRouteCache
+    from app.models.supply_chain_config import Site
+    import httpx
+
+    # Tenant-scoped shipment lookup
+    s_stmt = select(Shipment).where(
+        Shipment.id == shipment_id,
+        Shipment.tenant_id == current_user.tenant_id,
+    )
+    shipment = (await db.execute(s_stmt)).scalar_one_or_none()
+    if not shipment:
+        raise HTTPException(404, f"Shipment {shipment_id} not found")
+
+    # Cache hit?
+    if not refresh:
+        cache_stmt = select(ShipmentRouteCache).where(
+            ShipmentRouteCache.shipment_id == shipment_id,
+        )
+        cached = (await db.execute(cache_stmt)).scalar_one_or_none()
+        if cached:
+            return {
+                "shipment_id": shipment_id,
+                "geometry": _json.loads(cached.geometry_geojson),
+                "distance_meters": cached.distance_meters,
+                "duration_seconds": cached.duration_seconds,
+                "source": cached.source,
+                "cached": True,
+            }
+
+    # Resolve origin + destination coordinates via Site
+    origin_stmt = select(Site).where(Site.id == shipment.origin_site_id)
+    dest_stmt = select(Site).where(Site.id == shipment.destination_site_id)
+    origin = (await db.execute(origin_stmt)).scalar_one_or_none()
+    dest = (await db.execute(dest_stmt)).scalar_one_or_none()
+
+    def _coord(site, fallback_lat, fallback_lon):
+        lat = getattr(site, "latitude", None) or fallback_lat
+        lon = getattr(site, "longitude", None) or fallback_lon
+        return lat, lon
+
+    o_lat, o_lon = _coord(origin, shipment.current_lat, shipment.current_lon)
+    d_lat, d_lon = _coord(dest, None, None)
+
+    if not (o_lat and o_lon and d_lat and d_lon):
+        raise HTTPException(
+            422,
+            "Origin or destination has no lat/lon — populate Site coordinates "
+            "first or wait for tracking to populate current_lat/lon",
+        )
+
+    osrm_base = _os.getenv("OSRM_BASE_URL", "https://router.project-osrm.org")
+    osrm_url = (
+        f"{osrm_base}/route/v1/driving/"
+        f"{o_lon},{o_lat};{d_lon},{d_lat}"
+        "?overview=full&geometries=geojson"
+    )
+
+    geometry = None
+    distance = None
+    duration = None
+    source = "osrm"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(osrm_url)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("routes"):
+                rt = data["routes"][0]
+                geometry = rt.get("geometry")  # GeoJSON LineString
+                distance = rt.get("distance")
+                duration = rt.get("duration")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("OSRM lookup failed for shipment %s: %s", shipment_id, e)
+
+    if geometry is None:
+        # Fallback: straight line
+        geometry = {
+            "type": "LineString",
+            "coordinates": [[o_lon, o_lat], [d_lon, d_lat]],
+        }
+        source = "straight_line"
+
+    # Upsert into cache
+    cache_stmt = select(ShipmentRouteCache).where(
+        ShipmentRouteCache.shipment_id == shipment_id,
+    )
+    cached = (await db.execute(cache_stmt)).scalar_one_or_none()
+    if cached:
+        cached.geometry_geojson = _json.dumps(geometry)
+        cached.distance_meters = distance
+        cached.duration_seconds = duration
+        cached.source = source
+    else:
+        cached = ShipmentRouteCache(
+            shipment_id=shipment_id,
+            geometry_geojson=_json.dumps(geometry),
+            distance_meters=distance,
+            duration_seconds=duration,
+            source=source,
+        )
+        db.add(cached)
+    await db.commit()
+
+    return {
+        "shipment_id": shipment_id,
+        "geometry": geometry,
+        "distance_meters": distance,
+        "duration_seconds": duration,
+        "source": source,
+        "cached": False,
+    }
+
+
+# ============================================================================
+# CRUD: Load status update (drives Load Board drag-and-drop)
+# ============================================================================
+
+class LoadStatusUpdate(BaseModel):
+    status: str
+
+
+@loads_router.patch("/{load_id}/status", response_model=Dict[str, Any])
+async def update_load_status(
+    load_id: int,
+    body: LoadStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Move a load between Kanban columns. Validates the new status against
+    the LoadStatus enum. Backwards transitions (e.g. IN_TRANSIT → PLANNING)
+    are allowed since this is also used to undo accidental drops; auditors
+    see every transition in the row's updated_at timestamp."""
+    valid = {s.value for s in LoadStatus}
+    if body.status not in valid:
+        raise HTTPException(400, f"Invalid status: {body.status}. Must be one of {sorted(valid)}")
+    stmt = select(Load).where(
+        Load.id == load_id,
+        Load.tenant_id == current_user.tenant_id,
+    )
+    load = (await db.execute(stmt)).scalar_one_or_none()
+    if not load:
+        raise HTTPException(404, f"Load {load_id} not found")
+    prev = _safe_str(load.status)
+    load.status = body.status
+    await db.commit()
+    return {"id": load_id, "status": body.status, "previous_status": prev}

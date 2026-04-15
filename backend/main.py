@@ -6820,11 +6820,16 @@ from app.api.endpoints.p44_integration import router as p44_router
 api.include_router(p44_router, prefix="/p44", tags=["p44", "integration", "visibility"])
 
 # TMS RESTful API — clean resource paths for frontend pages
-from app.api.endpoints.tms_api import carriers_router, loads_router, tms_operations_router, rates_router
+from app.api.endpoints.tms_api import carriers_router, loads_router, tms_operations_router, rates_router, routes_router
 api.include_router(carriers_router, prefix="/carriers", tags=["carriers", "tms"])
 api.include_router(loads_router, prefix="/loads", tags=["loads", "tms"])
 api.include_router(tms_operations_router, tags=["tms", "operations"])
 api.include_router(rates_router, prefix="/rates", tags=["rates", "tms"])
+api.include_router(routes_router, prefix="/shipments", tags=["shipment-routes", "tms"])
+
+# TMS-native scenario runner
+from app.api.endpoints.tms_scenarios import router as tms_scenarios_router
+api.include_router(tms_scenarios_router, prefix="/tms-scenarios", tags=["tms-scenarios"])
 
 # Collaborative Editing API (Phase 3.6)
 from app.api.endpoints.collaborative_editing import router as collaborative_editing_router

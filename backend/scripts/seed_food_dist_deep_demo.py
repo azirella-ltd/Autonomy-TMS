@@ -1724,6 +1724,161 @@ def seed_override_posteriors(db: Session, users: dict):
 # Main
 # =============================================================================
 
+def seed_extended_storylines(db: Session, tenant_id: int, users: dict):
+    """Seed three additional storylines that exercise corners of the network the
+    original 6 don't:
+
+      7. Multi-site inventory imbalance — METROGRO has 3 weeks of Cheddar,
+         FAMREST has 2 days. Hub-and-spoke rebalance recommended.
+      8. Cold chain temperature breach — reefer trailer running 4°F warm on
+         in-transit Ice Cream load; potential product loss + insurance claim.
+      9. Carrier capacity shortage — all three preferred dairy carriers are
+         booked Friday; spot rates +18%; recommendation to split tender or
+         delay non-critical loads.
+
+    These are demo-only; they do not affect the live decision stream until a
+    user inspects/overrides them.
+    """
+    print("\n15. Seeding extended storylines (multi-site, cold chain, carrier capacity)...")
+
+    alerts = [
+        # Story 7: Multi-site imbalance
+        ConditionAlert(
+            tenant_id=tenant_id,
+            condition_type=ConditionType.MULTI_SITE_SHORTFALL,
+            entity_type="product", entity_id=RD001,  # Cheddar
+            is_active=True, severity=ConditionSeverity.WARNING,
+            first_detected_at=WED + timedelta(hours=8),
+            last_checked_at=THU + timedelta(hours=14),
+            duration_hours=30.0,
+            current_value=3.2, threshold_value=7.0, deviation_pct=-54.0,
+            context={
+                "trigger": "Uneven sell-through across customer DCs",
+                "imbalance": {
+                    METROGRO: {"days_of_supply": 21.0},
+                    FAMREST: {"days_of_supply": 2.1},
+                    CAMPUSDINE: {"days_of_supply": 8.5},
+                },
+                "recommended_action": "Transfer 480 cases from METROGRO to FAMREST via dedicated dry van; ETA Fri AM",
+            },
+            created_at=WED + timedelta(hours=8), updated_at=THU + timedelta(hours=14),
+        ),
+        # Story 8: Cold chain breach (in-transit reefer)
+        ConditionAlert(
+            tenant_id=tenant_id,
+            condition_type=ConditionType.SUPPLY_CHAIN_BOTTLENECK,
+            entity_type="shipment", entity_id="SHP-FD001-20260227-A",
+            is_active=True, severity=ConditionSeverity.CRITICAL,
+            first_detected_at=THU + timedelta(hours=10),
+            last_checked_at=THU + timedelta(hours=14),
+            duration_hours=4.0,
+            current_value=14.0, threshold_value=10.0, deviation_pct=40.0,
+            context={
+                "trigger": "Reefer trailer setpoint drift",
+                "product": FD001,  # Ice Cream Vanilla
+                "carrier": "BLUEFROZEN",
+                "current_temp_f": 14.0,
+                "target_temp_f": 10.0,
+                "duration_at_risk_min": 240,
+                "estimated_product_value_at_risk": 18400.0,
+                "recommended_action": "Reroute to nearest cross-dock for temperature audit; notify QA + claims team",
+            },
+            created_at=THU + timedelta(hours=10), updated_at=THU + timedelta(hours=14),
+        ),
+        # Story 9: Carrier capacity shortage Friday
+        ConditionAlert(
+            tenant_id=tenant_id,
+            condition_type=ConditionType.CAPACITY_CONSTRAINT,
+            entity_type="carrier", entity_id="DAIRY_CARRIERS_PREFERRED",
+            is_active=True, severity=ConditionSeverity.WARNING,
+            first_detected_at=THU + timedelta(hours=6),
+            last_checked_at=FRI + timedelta(hours=4),
+            duration_hours=22.0,
+            current_value=0.0, threshold_value=12.0, deviation_pct=-100.0,
+            context={
+                "trigger": "All three preferred dairy carriers booked Friday",
+                "preferred_carriers": ["COLDCHAIN_SVC", "DAIRY_LOGI", "REFRIGEXPRESS"],
+                "spot_market_premium_pct": 18.0,
+                "loads_affected": 7,
+                "recommended_action": "Split tender — 4 loads to spot, 3 loads delayed to Saturday morning departure",
+            },
+            created_at=THU + timedelta(hours=6), updated_at=FRI + timedelta(hours=4),
+        ),
+    ]
+    for a in alerts:
+        db.add(a)
+    db.flush()
+
+    # Three matching agent recommendations so each storyline appears in the
+    # Decision Stream at INFORMED status (agent already acted, awaiting
+    # human awareness).
+    decisions = [
+        AgentDecision(
+            tenant_id=tenant_id, user_id=users.get("mps"),
+            decision_type=DecisionType.INVENTORY_REBALANCE,
+            item_code=RD001, item_name="Cheddar Block Sharp", category="Refrigerated Dairy",
+            issue_summary="Multi-site Cheddar imbalance — METROGRO 21 days, FAMREST 2.1 days",
+            impact_value=12300.0, impact_description="$12.3K stock-out averted at FAMREST",
+            agent_recommendation="Transfer 480 cases Cheddar METROGRO → FAMREST via dedicated reefer van",
+            agent_reasoning=(
+                "FAMREST projected to stock-out Saturday at current burn rate; "
+                "METROGRO carries 21 days of supply and can release 480 cases "
+                "without breaching their own min. Dedicated reefer van available "
+                "WED 18:00 cross-dock; ETA FAMREST FRI 06:00."
+            ),
+            agent_confidence=0.87, recommended_value=480.0,
+            status=DecisionStatus.INFORMED, urgency=DecisionUrgency.STANDARD,
+            agent_type="trm", planning_cycle="2026-W09",
+            created_at=WED + timedelta(hours=9), updated_at=WED + timedelta(hours=9),
+        ),
+        AgentDecision(
+            tenant_id=tenant_id, user_id=users.get("mps"),
+            decision_type=DecisionType.EXCEPTION_RESOLUTION,
+            item_code="SHP-FD001-20260227-A", item_name="Ice Cream Vanilla — Reefer SHP-A",
+            category="Cold Chain",
+            issue_summary="Cold-chain breach — reefer setpoint drift to 14°F (target 10°F) for 4 hours",
+            impact_value=18400.0, impact_description="$18.4K product value at risk",
+            agent_recommendation="Reroute to PHX cross-dock for temperature audit before delivery",
+            agent_reasoning=(
+                "Reefer setpoint drift to 14°F detected at 10:00; conformal "
+                "model says 73% probability of >2hr at-risk window before "
+                "scheduled delivery. PHX cross-dock has audit bay open at "
+                "13:30. Audit + repack OR claim — depending on findings."
+            ),
+            agent_confidence=0.73,
+            status=DecisionStatus.INFORMED, urgency=DecisionUrgency.URGENT,
+            agent_type="trm", planning_cycle="2026-W09",
+            created_at=THU + timedelta(hours=10, minutes=20),
+            updated_at=THU + timedelta(hours=10, minutes=20),
+        ),
+        AgentDecision(
+            tenant_id=tenant_id, user_id=users.get("mps"),
+            decision_type=DecisionType.PURCHASE_ORDER,
+            item_code="DAIRY_CARRIERS_FRI", item_name="Dairy Carrier Pool — Friday",
+            category="Carrier Procurement",
+            issue_summary="All three preferred dairy carriers fully booked Friday; spot rates +18%",
+            impact_value=4920.0, impact_description="$4.9K premium spend if not optimised",
+            agent_recommendation="Split tender — 4 loads to spot, 3 loads delayed to Sat 06:00",
+            agent_reasoning=(
+                "All three preferred dairy carriers fully booked Friday. Spot "
+                "market quotes +18% over contract. Splitting the tender (4 "
+                "high-priority loads to spot at $4,920 over budget; 3 "
+                "lower-priority loads delayed to Sat 06:00 with no penalty) "
+                "minimises premium spend while honouring service commitments."
+            ),
+            agent_confidence=0.81, recommended_value=7.0,
+            status=DecisionStatus.INFORMED, urgency=DecisionUrgency.STANDARD,
+            agent_type="trm", planning_cycle="2026-W09",
+            created_at=THU + timedelta(hours=7), updated_at=THU + timedelta(hours=7),
+        ),
+    ]
+    for d in decisions:
+        db.add(d)
+    db.flush()
+
+    print(f"   ✓ 3 extended storylines: {len(alerts)} alerts + {len(decisions)} agent decisions")
+
+
 def main():
     print("=" * 70)
     print("Seeding Food Dist Deep Demo — Action Layer Data")
@@ -1763,6 +1918,7 @@ def main():
         seed_powell_buffer_decisions(db, config_id)
         seed_performance_metrics(db, tenant_id)
         seed_override_posteriors(db, users)
+        seed_extended_storylines(db, tenant_id, users)
 
         db.commit()
 

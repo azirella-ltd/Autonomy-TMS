@@ -249,7 +249,32 @@ const LoadBoard = () => {
       {loads.length > 0 && (
         <div className="grid grid-cols-5 gap-3 min-h-[400px]">
           {STATUSES.map((status) => (
-            <div key={status} className="flex flex-col rounded-lg border bg-gray-50 overflow-hidden">
+            <div
+              key={status}
+              className="flex flex-col rounded-lg border bg-gray-50 overflow-hidden"
+              onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ring-2', 'ring-blue-400'); }}
+              onDragLeave={(e) => e.currentTarget.classList.remove('ring-2', 'ring-blue-400')}
+              onDrop={async (e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('ring-2', 'ring-blue-400');
+                const droppedId = e.dataTransfer.getData('text/load-id');
+                const fromStatus = e.dataTransfer.getData('text/from-status');
+                if (!droppedId || fromStatus === status) return;
+                // Optimistic update
+                setLoads(prev => prev.map(l =>
+                  (l.load_id || l.id) == droppedId ? { ...l, status } : l,
+                ));
+                try {
+                  await api.patch(`/loads/${droppedId}/status`, { status });
+                } catch (err) {
+                  // Roll back on failure
+                  setLoads(prev => prev.map(l =>
+                    (l.load_id || l.id) == droppedId ? { ...l, status: fromStatus } : l,
+                  ));
+                  alert(`Failed to move load: ${err?.response?.data?.detail || err.message}`);
+                }
+              }}
+            >
               <div className={cn('px-3 py-2 flex items-center justify-between', STATUS_HEADER_COLORS[status])}>
                 <span className="text-xs font-semibold text-white uppercase tracking-wide">
                   {status.replace('_', ' ')}
@@ -266,8 +291,14 @@ const LoadBoard = () => {
                   return (
                     <div key={loadId}>
                       <div
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/load-id', String(loadId));
+                          e.dataTransfer.setData('text/from-status', status);
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
                         className={cn(
-                          'p-2 rounded border text-xs space-y-1 shadow-sm cursor-pointer',
+                          'p-2 rounded border text-xs space-y-1 shadow-sm cursor-grab active:cursor-grabbing',
                           STATUS_COLORS[status]
                         )}
                         onClick={() => isTendering && toggleTenderPanel(loadId)}

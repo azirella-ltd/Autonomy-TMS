@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap, GeoJSON } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { api } from '../../services/api';
 import { cn } from '@azirella-ltd/autonomy-frontend';
@@ -79,9 +79,22 @@ const ShipmentMap = () => {
   const [modeFilter, setModeFilter] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedShipment, setSelectedShipment] = useState(null);
+  const [selectedRoute, setSelectedRoute] = useState(null);
   const [listExpanded, setListExpanded] = useState(true);
   const [zoom, setZoom] = useState(4);
   const refreshTimerRef = useRef(null);
+
+  // Lazy-load route geometry when a shipment is selected
+  useEffect(() => {
+    setSelectedRoute(null);
+    const id = selectedShipment?.shipment_id || selectedShipment?.id;
+    if (!id) return;
+    let cancelled = false;
+    api.get(`/shipments/${id}/route`)
+      .then(r => { if (!cancelled) setSelectedRoute(r.data?.geometry || null); })
+      .catch(() => { if (!cancelled) setSelectedRoute(null); });
+    return () => { cancelled = true; };
+  }, [selectedShipment]);
 
   const fetchShipments = useCallback(async () => {
     setError(null);
@@ -285,6 +298,18 @@ const ShipmentMap = () => {
               </CircleMarker>
             );
           })}
+          {selectedRoute && (
+            <GeoJSON
+              key={`route-${selectedShipment?.shipment_id || selectedShipment?.id}`}
+              data={selectedRoute}
+              style={() => ({
+                color: STATUS_COLORS[selectedShipment?.status] || '#3b82f6',
+                weight: 4,
+                opacity: 0.85,
+                dashArray: selectedShipment?.status === 'AT_RISK' ? '8 6' : undefined,
+              })}
+            />
+          )}
         </MapContainer>
 
         {/* Right overlay: shipment detail panel */}

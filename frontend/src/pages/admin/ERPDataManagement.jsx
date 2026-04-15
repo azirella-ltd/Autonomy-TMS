@@ -1,11 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { cn } from '@azirella-ltd/autonomy-frontend';
 import {
   Server, Database, Zap, Users, Activity, ChevronDown, ChevronRight,
-  CheckCircle, Clock, Lock, Play, AlertTriangle, Upload, RefreshCw,
+  CheckCircle, Clock, Lock, Play, AlertTriangle, Upload, RefreshCw, Trash2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Alert, AlertDescription, Badge } from '../../components/common';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '../../components/common/Dialog';
+import { api } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 import SAPDataManagement from './SAPDataManagement';
+
+// ---------------------------------------------------------------------------
+// Vendor → connection-form schema (which fields the modal asks for)
+// ---------------------------------------------------------------------------
+const CONNECTION_FORM_SCHEMA = {
+  sap_tm: {
+    method: 'odata',
+    fields: [
+      { key: 'base_url', label: 'OData base URL', type: 'url', required: true },
+      { key: 'auth_credentials.username', label: 'Username', type: 'text' },
+      { key: 'auth_credentials.password', label: 'Password', type: 'password' },
+      { key: 'connection_params.client', label: 'SAP client', type: 'text', placeholder: '100' },
+      { key: 'connection_params.preferred_method', label: 'Method', type: 'select',
+        options: [{ value: 'odata', label: 'OData (S/4HANA Cloud)' }, { value: 'rfc', label: 'RFC (on-prem)' }] },
+    ],
+  },
+  oracle_otm: {
+    method: 'rest_api',
+    fields: [
+      { key: 'base_url', label: 'OTM base URL', type: 'url', required: true,
+        placeholder: 'https://otmgtm.oracle.com' },
+      { key: 'auth_credentials.user', label: 'Domain-qualified user', type: 'text',
+        placeholder: 'DEFAULT/admin' },
+      { key: 'auth_credentials.password', label: 'Password', type: 'password' },
+      { key: 'connection_params.domain', label: 'OTM domain', type: 'text', placeholder: 'DEFAULT' },
+    ],
+  },
+  blue_yonder: {
+    method: 'rest_api',
+    fields: [
+      { key: 'base_url', label: 'Luminate TMS base URL', type: 'url', required: true,
+        placeholder: 'https://luminate.blueyonder.com' },
+      { key: 'auth_credentials.client_id', label: 'OAuth2 Client ID', type: 'text', required: true },
+      { key: 'auth_credentials.client_secret', label: 'OAuth2 Client Secret', type: 'password', required: true },
+      { key: 'connection_params.tenant_code', label: 'Tenant code', type: 'text' },
+    ],
+  },
+  odoo: {
+    method: 'json_rpc',
+    fields: [
+      { key: 'base_url', label: 'Odoo URL', type: 'url', required: true,
+        placeholder: 'http://localhost:8069' },
+      { key: 'connection_params.database', label: 'Database', type: 'text', required: true },
+      { key: 'auth_credentials.username', label: 'Username', type: 'text', required: true },
+      { key: 'auth_credentials.password', label: 'Password / API key', type: 'password', required: true },
+    ],
+  },
+  d365: {
+    method: 'odata',
+    fields: [
+      { key: 'base_url', label: 'D365 environment URL', type: 'url', required: true },
+      { key: 'auth_credentials.client_id', label: 'Azure AD client ID', type: 'text', required: true },
+      { key: 'auth_credentials.client_secret', label: 'Azure AD client secret', type: 'password', required: true },
+      { key: 'connection_params.tenant_id_azure', label: 'Azure AD tenant ID', type: 'text', required: true },
+      { key: 'connection_params.legal_entity', label: 'Legal entity', type: 'text', placeholder: 'USMF' },
+    ],
+  },
+  sap_b1: {
+    method: 'odata',
+    fields: [
+      { key: 'base_url', label: 'B1 Service Layer URL', type: 'url', required: true },
+      { key: 'auth_credentials.username', label: 'Username', type: 'text', required: true },
+      { key: 'auth_credentials.password', label: 'Password', type: 'password', required: true },
+      { key: 'connection_params.company_db', label: 'Company database', type: 'text', required: true },
+    ],
+  },
+};
 
 // ---------------------------------------------------------------------------
 // ERP type definitions
@@ -81,11 +153,99 @@ const ERP_PIPELINE_STEPS = {
 function ERPGuidedPipeline({ erpType, erpLabel }) {
   const steps = ERP_PIPELINE_STEPS[erpType] || [];
   const [expandedStep, setExpandedStep] = useState('connect');
+  const [connections, setConnections] = useState([]);
+  const [loadingConns, setLoadingConns] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [runningStep, setRunningStep] = useState(null);
+  const { user } = useAuth();
+  const tenantId = user?.tenant_id || user?.group_id;
 
-  // For now, all steps start as "ready" (connect) or "locked" (rest)
+  const loadConnections = useCallback(async () => {
+    if (!tenantId) return;
+    setLoadingConns(true);
+    try {
+      const r = await api.get('/erp-integration/connections', {
+        params: { tenant_id: tenantId, erp_type: erpType },
+      });
+      setConnections(r.data || []);
+    } catch (e) {
+      console.error('Failed to load ERP connections:', e);
+    } finally {
+      setLoadingConns(false);
+    }
+  }, [tenantId, erpType]);
+
+  useEffect(() => { loadConnections(); }, [loadConnections]);
+
+  const handleTest = async (connId) => {
+    try {
+      const r = await api.post(`/erp-integration/connections/${connId}/test`, null, {
+        params: { tenant_id: tenantId },
+      });
+      alert(r.data.success ? 'Connection OK' : 'Connection FAILED — see logs');
+      loadConnections();
+    } catch (e) {
+      alert(`Test failed: ${e.message}`);
+    }
+  };
+
+  const handleDelete = async (connId) => {
+    if (!window.confirm('Delete this connection?')) return;
+    await api.delete(`/erp-integration/connections/${connId}`, {
+      params: { tenant_id: tenantId },
+    });
+    loadConnections();
+  };
+
+  const handleRunStep = async (stepKey) => {
+    if (connections.length === 0) {
+      alert('Add and test a connection first.');
+      return;
+    }
+    const conn = connections.find(c => c.is_validated) || connections[0];
+    setRunningStep(stepKey);
+    try {
+      // Map UI step → entity_types for the extraction service.
+      const entityMap = {
+        carriers: ['carriers', 'rates'],
+        transaction_data: ['shipments', 'loads', 'appointments', 'exceptions'],
+        master_data: ['carriers', 'rates'],
+        warm_start: [],
+        user_import: [],
+      };
+      const entities = entityMap[stepKey] || [];
+      if (entities.length > 0) {
+        const path = ['sap_tm', 'oracle_otm', 'blue_yonder'].includes(erpType)
+          ? `/tms-integration/extract/${conn.id}`
+          : `/erp-integration/extract/${conn.id}`;
+        const r = await api.post(path, {
+          entity_types: entities,
+          mode: stepKey === 'warm_start' ? 'full' : 'incremental',
+        }, { params: { tenant_id: tenantId } });
+        const total = (r.data.results || []).reduce(
+          (acc, x) => acc + (x.records_extracted || 0), 0,
+        );
+        alert(`Extracted ${total} records across ${entities.join(', ')}`);
+      } else if (stepKey === 'warm_start') {
+        alert('Warm Start triggered — agent calibration runs in background scheduler.');
+      } else {
+        alert(`${stepKey}: not yet wired for this vendor`);
+      }
+    } catch (e) {
+      alert(`Step failed: ${e?.response?.data?.detail || e.message}`);
+    } finally {
+      setRunningStep(null);
+    }
+  };
+
   const getStepStatus = (stepKey, idx) => {
-    if (idx === 0) return 'ready';
-    return 'locked';
+    if (stepKey === 'connect') {
+      return connections.some(c => c.is_validated) ? 'complete'
+        : connections.length > 0 ? 'ready' : 'ready';
+    }
+    if (!connections.some(c => c.is_validated)) return 'locked';
+    if (runningStep === stepKey) return 'running';
+    return 'ready';
   };
 
   const statusConfig = {
@@ -168,22 +328,46 @@ function ERPGuidedPipeline({ erpType, erpLabel }) {
                       <p className="text-sm text-gray-600">{step.detail}</p>
 
                       {step.key === 'connect' && (
-                        <div className="flex gap-2">
-                          <Button size="sm" className="gap-1">
-                            <Upload className="h-4 w-4" />
-                            Add Connection
-                          </Button>
-                          <span className="text-sm text-orange-600 flex items-center gap-1">
-                            <AlertTriangle className="h-4 w-4" />
-                            No connections configured yet.
-                          </span>
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <Button size="sm" className="gap-1" onClick={() => setShowAddModal(true)}>
+                              <Upload className="h-4 w-4" />
+                              Add Connection
+                            </Button>
+                            <Button size="sm" variant="outline" className="gap-1" onClick={loadConnections} disabled={loadingConns}>
+                              <RefreshCw className={cn("h-4 w-4", loadingConns && "animate-spin")} />
+                              Refresh
+                            </Button>
+                          </div>
+                          {connections.length === 0 ? (
+                            <span className="text-sm text-orange-600 flex items-center gap-1">
+                              <AlertTriangle className="h-4 w-4" />
+                              No connections configured yet.
+                            </span>
+                          ) : (
+                            <div className="space-y-1">
+                              {connections.map(c => (
+                                <div key={c.id} className="flex items-center gap-2 text-sm border rounded p-2">
+                                  <span className="font-medium flex-1">{c.name}</span>
+                                  <Badge variant={c.is_validated ? 'success' : 'secondary'}>
+                                    {c.is_validated ? 'Validated' : 'Untested'}
+                                  </Badge>
+                                  <Button size="sm" variant="outline" onClick={() => handleTest(c.id)}>Test</Button>
+                                  <Button size="sm" variant="ghost" onClick={() => handleDelete(c.id)}>
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {step.key !== 'connect' && (
-                        <Button size="sm" variant="outline" disabled className="gap-1">
-                          <Play className="h-4 w-4" />
-                          Run {step.label}
+                        <Button size="sm" variant="outline" disabled={status === 'locked' || runningStep === step.key}
+                          className="gap-1" onClick={() => handleRunStep(step.key)}>
+                          <Play className={cn("h-4 w-4", runningStep === step.key && "animate-spin")} />
+                          {runningStep === step.key ? `Running ${step.label}…` : `Run ${step.label}`}
                         </Button>
                       )}
                     </div>
@@ -215,7 +399,118 @@ function ERPGuidedPipeline({ erpType, erpLabel }) {
           </ul>
         </AlertDescription>
       </Alert>
+
+      <AddConnectionDialog
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        erpType={erpType}
+        erpLabel={erpLabel}
+        tenantId={tenantId}
+        onCreated={() => { setShowAddModal(false); loadConnections(); }}
+      />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Add Connection Dialog — vendor-aware form
+// ---------------------------------------------------------------------------
+function AddConnectionDialog({ open, onClose, erpType, erpLabel, tenantId, onCreated }) {
+  const schema = CONNECTION_FORM_SCHEMA[erpType];
+  const [name, setName] = useState('');
+  const [values, setValues] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!schema) return null;
+
+  const setField = (key, value) => setValues(v => ({ ...v, [key]: value }));
+
+  const submit = async () => {
+    if (!name) { alert('Connection name required'); return; }
+    setSubmitting(true);
+    try {
+      // Group dotted keys (auth_credentials.x, connection_params.y) into nested dicts
+      const auth_credentials = {};
+      const connection_params = {};
+      let base_url = null;
+      for (const f of schema.fields) {
+        const v = values[f.key];
+        if (!v) continue;
+        if (f.key === 'base_url') base_url = v;
+        else if (f.key.startsWith('auth_credentials.')) auth_credentials[f.key.slice(18)] = v;
+        else if (f.key.startsWith('connection_params.')) connection_params[f.key.slice(19)] = v;
+      }
+      await api.post('/erp-integration/connections', {
+        name,
+        erp_type: erpType,
+        connection_method: schema.method,
+        base_url,
+        auth_type: 'password',
+        auth_credentials,
+        connection_params,
+      }, { params: { tenant_id: tenantId } });
+      setName(''); setValues({});
+      onCreated();
+    } catch (e) {
+      alert(`Create failed: ${e?.response?.data?.detail || e.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add {erpLabel} connection</DialogTitle>
+          <DialogDescription>
+            Credentials are stored encrypted at rest in the tenant database.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div>
+            <label className="text-sm font-medium">Connection name</label>
+            <input
+              className="w-full border rounded px-2 py-1.5 text-sm"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder={`${erpLabel} — production`}
+            />
+          </div>
+          {schema.fields.map(f => (
+            <div key={f.key}>
+              <label className="text-sm font-medium">
+                {f.label}{f.required && <span className="text-red-500">*</span>}
+              </label>
+              {f.type === 'select' ? (
+                <select
+                  className="w-full border rounded px-2 py-1.5 text-sm"
+                  value={values[f.key] || ''}
+                  onChange={e => setField(f.key, e.target.value)}
+                >
+                  <option value="">— choose —</option>
+                  {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              ) : (
+                <input
+                  type={f.type === 'password' ? 'password' : 'text'}
+                  className="w-full border rounded px-2 py-1.5 text-sm"
+                  value={values[f.key] || ''}
+                  onChange={e => setField(f.key, e.target.value)}
+                  placeholder={f.placeholder}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={submitting}>
+            {submitting ? 'Creating…' : 'Create'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
