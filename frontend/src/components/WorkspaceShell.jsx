@@ -18,12 +18,15 @@ import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { NavigationProvider, NavigationFilterProvider, TwoTierNav as SharedTwoTierNav, useCapabilities } from '@azirella-ltd/autonomy-frontend';
 import TopNavbar from './TopNavbar';
 import { NAVIGATION_CONFIG, SYSTEM_ADMIN_NAVIGATION, LEARNING_NAVIGATION } from '../config/navigationConfig';
-import { isSystemAdmin as checkIsSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
+import {
+  isSystemAdmin,
+  isSystemAdmin as checkIsSystemAdmin,
+  isTenantAdmin as checkIsTenantAdmin,
+} from '../utils/authUtils';
 const TwoTierNav = SharedTwoTierNav;
 import { TabPane } from '@azirella-ltd/autonomy-frontend';
 import { useTabStore } from '@azirella-ltd/autonomy-frontend';
 import { useAuth } from '../contexts/AuthContext';
-import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 import ProvisioningBanner from './ProvisioningBanner';
 import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Send, Loader2, Mic, MicOff } from 'lucide-react';
