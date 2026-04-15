@@ -65,7 +65,7 @@ from app.models.override_effectiveness import OverrideEffectivenessPosterior
 # Constants — Product, Site, and Supplier IDs from Food Dist config
 # =============================================================================
 
-FOOD_DIST_TENANT_NAME = "Food Distributor"
+FOOD_DIST_TENANT_NAME = "Food Dist"  # Aligned with seed_food_dist_demo.py FOOD_DIST_CUSTOMER_NAME
 FOOD_DIST_CONFIG_NAME = "Food Dist Distribution Network"
 
 # Timeline
@@ -77,19 +77,25 @@ FRI = datetime(2026, 2, 28, 6, 0, 0)
 DEMO_START = MON
 DEMO_END = FRI + timedelta(hours=18)
 
-# Products (CFG22_ prefix, 5 categories × 5 products)
-FP001 = "CFG22_FP001"  # Chicken Breast IQF
-FP002 = "CFG22_FP002"  # Beef Patties 80/20
-FP004 = "CFG22_FP004"  # Turkey Breast Deli
-RD001 = "CFG22_RD001"  # Cheddar Block Sharp
-RD003 = "CFG22_RD003"  # Cream Cheese Block
-RD004 = "CFG22_RD004"  # Greek Yogurt Plain
-RD005 = "CFG22_RD005"  # Butter Salted Grade AA
-FD001 = "CFG22_FD001"  # Ice Cream Vanilla Premium
-FD002 = "CFG22_FD002"  # Sorbet Mango
-FD003 = "CFG22_FD003"  # Gelato Chocolate
-FD004 = "CFG22_FD004"  # Pie Apple 10 inch
-FD005 = "CFG22_FD005"  # Cake Chocolate Layer
+# Products — prefix derived from the actual config_id at module load.
+# Earlier versions hardcoded `CFG22_` based on a stale tenant id; now uses
+# food_dist_lookup so it tracks whatever id the upstream seed assigned.
+from scripts.food_dist_lookup import resolve_food_dist_ids as _resolve_pref
+_fd_pref = _resolve_pref()
+_PREFIX = f"CFG{_fd_pref['config_id']}_"
+
+FP001 = f"{_PREFIX}FP001"  # Chicken Breast IQF
+FP002 = f"{_PREFIX}FP002"  # Beef Patties 80/20
+FP004 = f"{_PREFIX}FP004"  # Turkey Breast Deli
+RD001 = f"{_PREFIX}RD001"  # Cheddar Block Sharp
+RD003 = f"{_PREFIX}RD003"  # Cream Cheese Block
+RD004 = f"{_PREFIX}RD004"  # Greek Yogurt Plain
+RD005 = f"{_PREFIX}RD005"  # Butter Salted Grade AA
+FD001 = f"{_PREFIX}FD001"  # Ice Cream Vanilla Premium
+FD002 = f"{_PREFIX}FD002"  # Sorbet Mango
+FD003 = f"{_PREFIX}FD003"  # Gelato Chocolate
+FD004 = f"{_PREFIX}FD004"  # Pie Apple 10 inch
+FD005 = f"{_PREFIX}FD005"  # Cake Chocolate Layer
 
 # Site codes
 DC_SITE = "CDC_WEST"

@@ -41,24 +41,24 @@ with engine.connect() as _conn:
     _comp = _conn.execute(text(
         "SELECT id FROM company WHERE id LIKE :pat LIMIT 1"
     ), {"pat": f"%CORP_{TENANT_ID}"}).fetchone()
-    COMPANY_ID = _comp[0] if _comp else _fd["company_id"] or f"UF_CORP_{TENANT_ID}"
+    COMPANY_ID = _comp[0] if _comp else _fd["company_id"] or f"FD_CORP_{TENANT_ID}"
 
 SUPPLIER_SITES = _fd["supplier_sites"]
 CUSTOMER_SITES = _fd["customer_sites"]
 
-PRODUCTS = [f"CFG22_{cat}{str(i).zfill(3)}" for cat in ["FP", "DP", "BV", "FD", "RD"] for i in range(1, 6)]
+PRODUCTS = [f"CFG{CONFIG_ID}_{cat}{str(i).zfill(3)}" for cat in ["FP", "DP", "BV", "FD", "RD"] for i in range(1, 6)]
 
 SUPPLIER_PRODUCTS = {
-    257: ["CFG22_FP001", "CFG22_FP002"],
-    258: ["CFG22_FD001", "CFG22_FD002", "CFG22_FD003"],
-    259: ["CFG22_DP001", "CFG22_DP002"],
-    260: ["CFG22_FD004", "CFG22_FD005"],
-    261: ["CFG22_BV001", "CFG22_BV002"],
-    262: ["CFG22_FP003", "CFG22_FP004", "CFG22_FP005"],
-    263: ["CFG22_DP003", "CFG22_DP004"],
-    264: ["CFG22_RD001", "CFG22_RD002"],
-    265: ["CFG22_RD003", "CFG22_RD004", "CFG22_RD005"],
-    266: ["CFG22_BV003", "CFG22_BV004", "CFG22_BV005"],
+    257: [f"CFG{CONFIG_ID}_FP001", f"CFG{CONFIG_ID}_FP002"],
+    258: [f"CFG{CONFIG_ID}_FD001", f"CFG{CONFIG_ID}_FD002", f"CFG{CONFIG_ID}_FD003"],
+    259: [f"CFG{CONFIG_ID}_DP001", f"CFG{CONFIG_ID}_DP002"],
+    260: [f"CFG{CONFIG_ID}_FD004", f"CFG{CONFIG_ID}_FD005"],
+    261: [f"CFG{CONFIG_ID}_BV001", f"CFG{CONFIG_ID}_BV002"],
+    262: [f"CFG{CONFIG_ID}_FP003", f"CFG{CONFIG_ID}_FP004", f"CFG{CONFIG_ID}_FP005"],
+    263: [f"CFG{CONFIG_ID}_DP003", f"CFG{CONFIG_ID}_DP004"],
+    264: [f"CFG{CONFIG_ID}_RD001", f"CFG{CONFIG_ID}_RD002"],
+    265: [f"CFG{CONFIG_ID}_RD003", f"CFG{CONFIG_ID}_RD004", f"CFG{CONFIG_ID}_RD005"],
+    266: [f"CFG{CONFIG_ID}_BV003", f"CFG{CONFIG_ID}_BV004", f"CFG{CONFIG_ID}_BV005"],
 }
 
 EQUIPMENT = [

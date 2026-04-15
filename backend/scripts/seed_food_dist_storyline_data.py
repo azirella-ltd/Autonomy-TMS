@@ -56,7 +56,7 @@ _fd = _resolve()
 CONFIG_ID = _fd["config_id"]
 TENANT_ID = _fd["tenant_id"]
 BATCH_ID = "STORY_DATA_2026"
-COMPANY_ID = _fd["company_id"] or f"UF_CORP_{_fd['tenant_id']}"
+COMPANY_ID = _fd["company_id"] or f"FD_CORP_{_fd['tenant_id']}"
 _PREFIX = f"CFG{CONFIG_ID}_"
 _SITES = _fd["site_ids"]
 

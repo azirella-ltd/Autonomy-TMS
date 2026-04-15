@@ -50,7 +50,7 @@ class InventoryOptimization(Base):
 
     # AWS SC Core Fields
     company_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("company.id"))
-    site_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("site.id"))
+    site_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("site.id"))
     product_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("product.id"))
 
     # Optimization metadata
@@ -151,7 +151,7 @@ class CapacityOptimization(Base):
 
     # AWS SC Core Fields
     company_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("company.id"))
-    site_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("site.id"))
+    site_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("site.id"))
     resource_id: Mapped[Optional[str]] = mapped_column(String(100))
 
     # Optimization metadata
@@ -347,7 +347,7 @@ class KPIConfiguration(Base):
 
     # AWS SC Core Fields
     company_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("company.id"))
-    site_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("site.id"))  # Optional: site-specific KPI
+    site_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("site.id"))  # Optional: site-specific KPI
 
     # KPI metadata
     kpi_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)

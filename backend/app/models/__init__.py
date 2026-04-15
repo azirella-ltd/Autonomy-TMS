@@ -415,6 +415,11 @@ from .transportation_config import (
 # 37. TMS Shipment Route Cache — OSRM-derived polyline cache
 from .shipment_route_cache import ShipmentRouteCache  # noqa: F401
 
+# 38. Analytics — InventoryOptimization, CapacityOptimization,
+#     NetworkOptimization, KPIConfiguration. Imported here so
+#     Base.metadata.create_all() picks them up at startup.
+from . import analytics  # noqa: F401
+
 # 37. TMS Planning — Forecast, Capacity Targets, Transportation Plan
 from .tms_planning import (
     ForecastMethod, PlanStatus, PlanItemStatus,

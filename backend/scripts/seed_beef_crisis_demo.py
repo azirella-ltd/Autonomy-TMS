@@ -62,7 +62,7 @@ def main():
                                      unit_cost, unit_price, category, family, product_group,
                                      weight, weight_uom, is_active)
                 VALUES (:pid, :cid, 'Premium Wagyu-Blend Burger 6oz (NEW - Mar 2026)',
-                        'PH_UF_CORP_3_FAM_FRZ_PROTEIN', 'CASE',
+                        'PH_FD_CORP_3_FAM_FRZ_PROTEIN', 'CASE',
                         18.50, 32.00, 'Frozen Proteins', 'Meat & Poultry', 'Premium Burgers',
                         15.0, 'LB', true)
                 ON CONFLICT DO NOTHING

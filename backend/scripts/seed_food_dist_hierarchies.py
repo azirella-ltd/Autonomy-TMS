@@ -198,8 +198,14 @@ def find_food_dist_tenant(db: Session) -> Tenant:
 
 
 def find_or_create_company(db: Session, tenant: Tenant) -> Company:
-    """Find or create the Food Dist company record (AWS SC: company table)."""
-    company_id = f"UF_CORP_{tenant.id}"
+    """Find or create the Food Dist company record (AWS SC: company table).
+
+    Convention: `FD_CORP_{tenant.id}` (planning_data, execution_data,
+    storyline_data, allocation_demo all expect this prefix). Older code
+    referenced `UF_CORP_*` which never matched and silently broke
+    cross-script seeding.
+    """
+    company_id = f"FD_CORP_{tenant.id}"
     company = db.query(Company).filter(Company.id == company_id).first()
     if company:
         print(f"   Found existing company: {company.description}")
