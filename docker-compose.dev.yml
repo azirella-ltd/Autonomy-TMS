@@ -11,7 +11,7 @@ services:
     container_name: autonomy-tms-proxy-tls
     profiles: ["tls"]
     ports:
-      - "8444:8443"
+      - "${DEV_TLS_HOST_PORT:-8444}:8443"
     volumes:
       - ./config/dev-proxy/nginx.tls.conf:/etc/nginx/nginx.conf:ro
       - ./config/nginx/ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro

@@ -315,6 +315,8 @@ make llm-check             # Check LLM connectivity
 | MCP server | http://localhost:8011 |
 
 > **Port allocation:** TMS host ports are deliberately offset from SCP so both can run on the same machine. SCP uses 8088 / 3000 / 8000 / 5050 / 8001 / 8443; TMS uses 8089 / 3001 / 8010 / 5051 / 8011 / 8444. Container-internal ports are unchanged on both sides.
+>
+> All host ports are env-driven (`PROXY_HOST_PORT`, `BACKEND_HOST_PORT`, `MCP_HOST_PORT`, ...). To override at deploy time, copy `deployments/.env.example` to `.env` (Compose auto-loads). See [Autonomy-Core/docs/DEPLOYMENT_PORTS.md](../Autonomy-Core/docs/DEPLOYMENT_PORTS.md) for the full convention.
 
 **Default Login**: systemadmin@autonomy.com / Autonomy@2026
 
