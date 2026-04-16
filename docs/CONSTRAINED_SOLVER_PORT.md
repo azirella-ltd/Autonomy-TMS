@@ -1,5 +1,13 @@
 # TMS Constrained Solver Port
 
+> **2026-04-16 addendum — FOUNDATIONAL CORRECTION. READ FIRST.**
+>
+> The LP/MILP solver is **not** Autonomy's tactical planner. The target architecture is **Tier 3 — GraphSAGE trained by reinforcement learning on the digital twin** (AlphaZero / Leela pattern). The LP is a baseline, a safety net, and a bootstrap for new tenants. It is **never** a teacher for the GNN.
+>
+> This document describes the LP port because LP is Tier 1 / Tier 2 infrastructure for the migration toward Tier 3 — not because LP is the endpoint. Port the LP to give TMS tenants something immediately useful; simultaneously, budget for the twin + RL investment that delivers Tier 3. See [CONSTRAINED_SOLVER_PORT_TIER_3_ADDENDUM.md](CONSTRAINED_SOLVER_PORT_TIER_3_ADDENDUM.md) for the full Tier 3 picture.
+>
+> Do not design TMS to rest on LP long-term. Do not train a GraphSAGE on LP-generated labels.
+
 **Purpose.** Port SCP's Path C Phase 3 solver work to TMS on acer-nitro. Same architecture, TMS-domain substance. This is a concrete step-by-step derived from the SCP implementation shipped 2026-04-16.
 
 **Reference reading before starting (SCP side):**
