@@ -68,12 +68,27 @@ from app.models.override_effectiveness import OverrideEffectivenessPosterior
 FOOD_DIST_TENANT_NAME = "Food Dist"  # Aligned with seed_food_dist_demo.py FOOD_DIST_CUSTOMER_NAME
 FOOD_DIST_CONFIG_NAME = "Food Dist Distribution Network"
 
-# Timeline
-MON = datetime(2026, 2, 24, 6, 0, 0)
-TUE = datetime(2026, 2, 25, 6, 0, 0)
-WED = datetime(2026, 2, 26, 6, 0, 0)
-THU = datetime(2026, 2, 27, 6, 0, 0)
-FRI = datetime(2026, 2, 28, 6, 0, 0)
+# Timeline — anchored to "now" so demo data stays within the 30-day
+# decision_stream lookback window. The narrative spans Mon-Fri of the
+# current week. Override DEMO_NARRATIVE_FRIDAY env var to pin a specific
+# date (useful for screenshots / regression tests).
+import os as _os
+_ANCHOR_FRI_STR = _os.environ.get("DEMO_NARRATIVE_FRIDAY")
+if _ANCHOR_FRI_STR:
+    _FRI = datetime.strptime(_ANCHOR_FRI_STR, "%Y-%m-%d").replace(hour=6)
+else:
+    # Friday of the current ISO week (or today if today is Fri/Sat/Sun)
+    _today = datetime.now().replace(hour=6, minute=0, second=0, microsecond=0)
+    _days_to_fri = (4 - _today.weekday()) % 7  # weekday(): Mon=0..Sun=6; Fri=4
+    _FRI = _today + timedelta(days=_days_to_fri)
+    if _days_to_fri > 3:  # if more than 3 days away (Sun→Fri), use last week's Fri
+        _FRI -= timedelta(days=7)
+
+MON = _FRI - timedelta(days=4)
+TUE = _FRI - timedelta(days=3)
+WED = _FRI - timedelta(days=2)
+THU = _FRI - timedelta(days=1)
+FRI = _FRI
 DEMO_START = MON
 DEMO_END = FRI + timedelta(hours=18)
 

@@ -286,6 +286,13 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_supply_plan',
         description: 'Plan of Record, Sourcing, Net Requirements, Capacity, Agent Directives',
       },
+      {
+        label: 'Transportation Plan',
+        path: '/planning/transportation-plan',
+        icon: ViewIcon,
+        requiredCapability: 'view_load_board',
+        description: 'Unconstrained / Constrained / ERP-baseline / Override views (Tactical Planning Re-Architecture)',
+      },
 
       // --- OPERATIONAL PLANNING (0-3 month horizon) ---
       {
