@@ -1,0 +1,230 @@
+# TMS Tier-3-First Tactical Planner Plan
+
+**Status:** Design — awaiting review + SCP coordination before implementation.
+**Decision owner:** Trevor, 2026-04-16.
+**Diverges from:** [`CONSTRAINED_SOLVER_PORT.md`](CONSTRAINED_SOLVER_PORT.md) (SCP's LP/MILP port guide).
+**Aligned with:** [`CONSTRAINED_SOLVER_PORT_TIER_3_ADDENDUM.md`](CONSTRAINED_SOLVER_PORT_TIER_3_ADDENDUM.md) (foundational correction).
+**Sister doc:** [`BSC_OVERRIDE_MODEL.md`](BSC_OVERRIDE_MODEL.md) (BSC 5-axis override — the reward function resolver).
+
+---
+
+## 1. The decision
+
+TMS **skips** the full LP/MILP port described in `CONSTRAINED_SOLVER_PORT.md`. Instead, TMS goes directly to the Tier 3 target architecture:
+
+> **GraphSAGE policy trained end-to-end by reinforcement learning against a TMS digital twin** (AlphaZero / Leela pattern applied to transportation planning).
+
+LP is not the planner. LP is:
+1. **A feasibility-repair layer** — projects GNN plans onto feasibility when hard constraints are violated (driver HOS, dock slot, carrier contract minimums).
+2. **A new-tenant bootstrap** — until the tenant's twin accumulates enough training history, use a deliberately non-LP heuristic to fill `transportation_plan` (not LP, to avoid accidental imitation learning).
+
+**Hard rule:** LP output is **never** a training label for the GNN. Imitation caps the policy at LP performance forever; Tier 3 aims to exceed LP.
+
+## 2. Why skip the LP port
+
+SCP went LP-first because they started from classical MRP and had a working infrastructure to extend. TMS is starting from nothing — a greenfield. Porting SCP's 9-11 week LP build only to retire it when Tier 3 lands is redundant work, plus it risks LP becoming entrenched as "the TMS planner" and biasing the GNN reward shaping toward LP-reachable solutions.
+
+The Tier 3 addendum is explicit: `DO NOT build a GNN that imitates the LP` and `DO NOT defer the twin`. Going Tier-3-first honours both.
+
+**Trade-off accepted:** no production-ready TMS planner for months A-C while the twin + RL train. Mitigations in §5.
+
+## 3. Phased plan
+
+| Phase | Work | Months | Gating | Parallelisable |
+|---|---|---|---|---|
+| **A** | TMS digital twin audit + build | 2-3 | critical path | — |
+| **B** | RL reward function (BSC 5-axis resolver) + graph-tensor state representation | 1-1.5 | can start with A | with A |
+| **C** | Rollout harness + PPO training loop | 2-3 | gated on A | — |
+| **D** | GNN planner deployment, flag-gated per tenant | 0.5 | gated on C | — |
+| **E** | Minimal LP repair step (feasibility projection only) | 2 weeks | just-in-time when first violation emerges | with A/B/C |
+| **F** | Bootstrap heuristic for new tenants | 1 week | must ship before first Tier-3 tenant onboards | first |
+| **G** | Canonical BSC + strategic_proposal tables in Autonomy-Core (Option A) | 1 week | enables B and D | first |
+
+### Phase A — TMS digital twin (critical path)
+
+Deliverable: `backend/app/services/twin/tms_twin.py` + `docs/TMS_DIGITAL_TWIN_AUDIT.md` mirroring SCP's [`DIGITAL_TWIN_AUDIT.md`](https://github.com/azirella-ltd/Autonomy-SCP/blob/main/docs/internal/architecture/DIGITAL_TWIN_AUDIT.md).
+
+Required twin fidelity (from Tier 3 addendum §5):
+- **Shipment arrivals** — stochastic per lane, seasonal modulation, customer-class mix
+- **Carrier capacity realisation** — committed vs available, per-carrier reliability distribution, tender-acceptance rate
+- **Driver HOS** — US FMCSA 11/14/70 rules (or international equivalent per tenant region)
+- **Dock slot availability** — per site, per day, per shift
+- **Transit time distributions** — per lane per mode, conditioned on day-of-week + season
+- **Equipment balance** — trailer/container pool, repositioning cost, dwell time at yards
+- **Disruption injection** — weather (NOAA distributions), carrier strike, port congestion, fuel-price shocks
+- **Customer SLA tiers** — Platinum P99 → Economy P80, per service-class
+- **Accessorial cost realism** — detention, layover, fuel surcharge, lumper, driver assist
+
+First deliverable is the audit doc (2 weeks) — what fidelity exists vs what's missing, with a quantified plan to close each gap. Build follows.
+
+### Phase B — Reward function + state representation
+
+Parallel with A. Two sub-deliverables:
+
+**B.1 — BSC 5-axis reward function (`backend/app/services/twin/bsc_reward.py`)**
+
+Uses the `BscResolver` pattern from [`BSC_OVERRIDE_MODEL.md`](BSC_OVERRIDE_MODEL.md). For each rollout step, compute BSC attainment in [-1, 1] across four perspectives:
+
+| Perspective | TMS metric code | Direction | Baseline / Target |
+|---|---|---|---|
+| FINANCIAL | `cost_per_mile_ratio` | lower | contract_rate × 1.10 / contract_rate × 0.95 |
+| CUSTOMER | `on_time_delivery_ratio` | higher | 0.90 / 0.98 |
+| INTERNAL | `trailer_utilisation` | higher | 0.70 / 0.90 |
+| LEARNING | `plan_override_rate` | lower | 0.20 / 0.05 |
+
+Weighted sum per resolved BSC cell (time-phase × calendar-event × product-hierarchy × geo-hierarchy × tenant-default). TMS-specific calendar events to seed:
+- `PEAK_PRODUCE_SEASON` (late May–September, US)
+- `HURRICANE_SEASON` (June–November, Atlantic)
+- `CHASSIS_SHORTAGE_Q4` (October–December, intermodal)
+- `FUEL_SURCHARGE_RESET` (quarterly)
+- `DRIVER_HOS_RULE_CHANGE` (ad-hoc, FMCSA policy updates)
+
+TMS hierarchy walkers (`_product_path()`, `_geo_path()`) are domain-specific — walk lane/carrier/commodity-class where SCP walks product-family/site/geo. Graceful degradation: empty path means that axis isn't used for the tenant.
+
+**B.2 — Graph-tensor state representation (`backend/app/services/twin/state_encoder.py`)**
+
+Serialise twin state as a heterogeneous graph tensor for GraphSAGE consumption:
+
+- **Nodes**: sites, carriers, equipment pools, shipments, active loads, disruptions
+- **Edges**: lane connectivity, carrier-lane coverage, shipment-to-load assignments, equipment location, disruption impact
+- **Node features**: capacity (committed / available), current utilisation, reliability score, time-to-next-available, cost params, SLA tier
+- **Edge features**: lane distance, historical reliability, transit-time distribution parameters, contract terms
+
+Output: `torch_geometric.data.HeteroData`. Frozen schema version so model retraining doesn't break on state evolution.
+
+### Phase C — Rollout harness + PPO training loop
+
+Deliverable: `backend/app/services/twin/rl_training_harness.py` + `backend/app/services/twin/policy_graphsage.py`.
+
+- Multi-process twin rollouts (Ray or native multiprocessing); policy evaluates on GPU
+- Curriculum over scenario difficulty: start with small network + no disruptions, graduate to full network + stacked disruptions
+- PPO on trajectory returns; actor-critic heads off shared GraphSAGE encoder
+- Training-time targets: 1 month first pilot (small network, low fidelity) → 3-6 months to LP parity on held-out scenarios → 6-12 months to exceed LP
+
+**Explicit guardrail:** no imitation-learning loss term. No LP-plan-as-label auxiliary task. Pure RL on twin reward.
+
+### Phase D — Flag-gated deployment
+
+Deliverable: `tenant_solver_features.use_gnn_as_planner` flag + inference endpoint `POST /api/v1/transportation-plans/solve-gnn/{config_id}`.
+
+Transition criteria per tenant (copied from Tier 3 addendum §4):
+- **Tier 1 → Tier 2** (warmstart + critique): tenant's daily LP solve crosses a threshold **OR** tenant has ≥ 4 weeks of twin-generated training data (whichever comes first — TMS skips LP so this is training-data-driven).
+- **Tier 2 → Tier 3** (GNN plans, LP repairs): GraphSAGE plan matches or exceeds LP-optimal reward on a held-out scenario set for 4+ consecutive weeks. For TMS, "LP-optimal" is approximated by phase E's feasibility-repair output as a floor, not a ceiling.
+
+### Phase E — Minimal LP repair step (JIT)
+
+Built only when the first GNN plan violates a hard constraint. Do not build upfront.
+
+Scope constraints:
+- **Single-period only** (one planning horizon week)
+- **Feasibility projection only** — minimise `||GNN_plan - projected_plan||` subject to hard constraints; no objective optimisation
+- **scipy/HiGHS** or OR-Tools GLOP — whichever adds fewer deps
+- **No multi-period rolling horizon, no warmstart, no MILP, no setup times, no scenario parallelism**
+
+File: `backend/app/services/twin/lp_repair.py`. Hard one-page scope limit. Any feature expansion requires explicit sign-off ("is this creeping into being a planner?").
+
+### Phase F — Bootstrap heuristic for new tenants
+
+Ship before any tenant onboards Tier 3. Required because phase D tenants need *something* in `transportation_plan` during their first weeks (twin has no training history yet).
+
+Design: **priority-based greedy consolidation**, deliberately non-LP.
+
+- Sort shipments by (`service_level` DESC, `requested_pickup_date` ASC, `weight` DESC)
+- Walk the sorted list; place each shipment in the first open load whose lane matches, equipment is compatible, and capacity fits
+- Open a new load when no fit exists
+- Rate-card lookup from `freight_rate` DB rows (same query pattern as §10.2's seeder)
+- No optimisation, no multi-stop consolidation, no capacity-aware selection
+
+Why not LP: using even a minimal LP here risks the bootstrap becoming a fallback path that tempts the team to train against it. The heuristic is simple, fast, and nobody will be tempted to imitate it.
+
+File: `backend/app/services/twin/bootstrap_heuristic.py`.
+
+### Phase G — Canonical tables in Autonomy-Core (Option A)
+
+Deliverable: PR against `azirella-ltd/Autonomy-Core` moving 6+ tables to canonical, plus `CONSUMER_ADOPTION_LOG.md` entry.
+
+Tables to canonicalise (per `CONSTRAINED_SOLVER_PORT.md` §3.2 + `BSC_OVERRIDE_MODEL.md` Option A):
+1. `tenant_bsc_weights`
+2. `tenant_bsc_metric_goals`
+3. `tenant_bsc_weights_override`
+4. `tenant_bsc_metric_goal_override`
+5. `calendar_event`
+6. `calendar_event_instance`
+7. `strategic_proposal` (add `product_scope` enum column — SCP | TMS | BOTH)
+
+Both products pin new `azirella-data-model` version. TMS seeds transport-specific calendar-event and metric-code rows on first boot.
+
+## 4. What we're NOT building (retired from port guide)
+
+These get dropped:
+- `constrained_solver.py` (full SLA + capacity + equipment flow LP) → retired
+- `constrained_plan_generator.py` (LP-driven plan producer) → retired
+- Port guide §4 weeks 3-4 (LP v0) → retired
+- Port guide §4 weeks 7-8 (LP v1 multi-period rolling horizon + warmstart) → retired
+- Port guide §4 week 9 (daily 5am LP cron) → replaced by GNN inference + phase E repair
+- MILP with setup times + lane flows → retired
+
+Kept (from port guide):
+- §3.1 `plan_versions.py` — already shipped Phase 0
+- §3.2 `bsc_attainment.py` — repurposed as RL reward; canonical via phase G
+- §3.5 `capacity_gap_analyzer.py` — already shipped as §10.1 (MovementGapAnalyzer)
+- §3.6 synthetic capacity seeder — already shipped as §10.2
+- §3.7 `strategic_proposal` table — canonicalised via phase G
+
+## 5. Production continuity during months A-C
+
+This is the biggest risk. Mitigations:
+
+**Option 1 (primary):** Phase F bootstrap heuristic ships first (week 1-2). Food Dist demo and any early tenants get a priority-based greedy plan. Weak but honest; no capacity-aware optimisation.
+
+**Option 2 (escalation for enterprise tenants):** TMS calls SCP's `ConstrainedPlanGenerator` via MCP as a temporary safety net if an enterprise tenant onboards before phase D ships. Requires:
+- SCP exposes MCP tool `scp.solve-constrained-plan` (already live per 2026-04-16 SCP main)
+- TMS MCP client maps TMS entities → SCP entities → calls solver → maps result back
+- Cross-product coupling retired when phase D goes live for that tenant
+
+**Option 3 (do not):** Ship nothing. Not viable for tenants waiting.
+
+Default: Option 1. Option 2 only if a specific tenant escalation demands it.
+
+## 6. Coordination items for SCP team
+
+Before implementation starts, flag to SCP:
+
+1. **Divergence from port guide.** TMS is going Tier-3-first. SCP stays LP-primary indefinitely. Decision Stream / S&OP exec dashboards need a plan-quality metric that works for both.
+2. **Request early access to SCP's `DIGITAL_TWIN_AUDIT.md`** as a template for TMS's mirror audit (phase A).
+3. **Request MCP exposure of SCP's `ConstrainedPlanGenerator`** as a potential Option 2 stopgap.
+4. **Request Option A** for the 7 canonical tables in phase G. Coordinate release timing (both products bump together).
+5. **Naming: `transportation_plan.generated_by` vs `supply_plan.produced_by`** — align to one convention. Propose renaming TMS's `generated_by` → `produced_by` on next migration for cross-product consistency.
+
+## 7. Open questions flagged back to Trevor
+
+1. Is there a TMS tenant scheduled to go live in months A-C? If yes, which? (Determines whether Option 2 MCP fallback is needed.)
+2. Twin build team — who owns this? Is the SCP twin team available to dual-task, or is TMS standalone?
+3. RL infrastructure — can we reuse SCP's GPU training cluster / Ray setup, or does TMS need its own?
+4. Budget for twin fidelity — e.g., FMCSA HOS data subscriptions, NOAA disruption feeds, DAT rate distributions. Sign-offs required?
+
+## 8. What ships on acer-nitro before review
+
+Documented:
+- This plan
+- §10 TMS counterparts (shipped)
+- `CONSTRAINED_SOLVER_PORT.md`, Tier 3 addendum, BSC override guide (inherited from SCP)
+
+Built:
+- §10.1 `movement_gap_analyzer.py` + endpoint
+- §10.2 `synthetic_capacity_seeder.py` + endpoint
+- §10.3 `tms_demo_importer.py` + endpoint
+
+Not yet built (all 7 phases).
+
+## 9. Hard rules (non-negotiable)
+
+1. **LP output is never a label for the GNN.** No imitation-learning auxiliary loss, no LP-warmstart-as-teacher.
+2. **Phase E LP additions are one-page scope.** Any new LP feature needs explicit sign-off ("is this drifting into a planner?").
+3. **Bootstrap heuristic stays deliberately non-LP.** Greedy priority-based, simple enough that nobody is tempted to imitate it.
+4. **Twin fidelity gaps are quantified, not hand-waved.** Phase A audit doc lists every gap with a closure plan.
+5. **GNN-vs-LP promotion criteria are held-out scenario sets, not in-sample benchmarks.**
+
+---
+
+**Next step after approval:** open phase A (twin audit doc) + phase G (canonical Core PR) + phase F (bootstrap heuristic) as three parallel tickets on week 1.
