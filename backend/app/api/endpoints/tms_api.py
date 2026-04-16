@@ -12,7 +12,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -47,7 +47,7 @@ from app.models.tms_entities import (
 )
 from app.models.tms_planning import TransportationPlan, TransportationPlanItem
 from app.models.transportation_config import FacilityConfig, LaneProfile
-from app.models.supply_chain_config import Site, TransportationLane
+from app.models.supply_chain_config import Site, TransportationLane, SupplyChainConfig
 
 logger = logging.getLogger(__name__)
 
@@ -1867,3 +1867,93 @@ async def list_transportation_plans(
         if response:
             response.headers["X-TMS-Warning"] = "TMS tables not yet provisioned"
         return _NOT_PROVISIONED
+
+
+# ============================================================================
+# Movement Gap Analysis — §10.1 of the Tactical Planning Re-Architecture.
+# Same 3-variant component shape as SCP's gap_analysis but keyed by lane /
+# equipment instead of product / site.
+# ============================================================================
+
+@plans_router.get("/gap-analysis/{config_id}", response_model=Dict[str, Any])
+async def transportation_plan_gap_analysis(
+    config_id: int,
+    top_n: int = Query(10, ge=1, le=100, description="Worst-N lanes by capacity gap"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Per-lane / per-equipment gap between unconstrained, constrained_live, and
+    decision_action plan versions for a tenant's config. See
+    docs/TACTICAL_PLANNING_REARCHITECTURE.md §10.1."""
+    from app.services.tms_planning.movement_gap_analyzer import MovementGapAnalyzer
+
+    # Tenant-scope config_id
+    cfg_check = await db.execute(
+        select(SupplyChainConfig.id).where(
+            SupplyChainConfig.id == config_id,
+            SupplyChainConfig.tenant_id == current_user.tenant_id,
+        )
+    )
+    if cfg_check.scalar_one_or_none() is None:
+        raise HTTPException(404, f"Config {config_id} not found for this tenant")
+
+    analyzer = MovementGapAnalyzer(db)
+    return await analyzer.analyze(config_id, top_n=top_n)
+
+
+# ============================================================================
+# §10.2 Synthetic capacity seeder endpoint
+# ============================================================================
+
+class CapacitySeedRequest(BaseModel):
+    config_id: Optional[int] = None
+    history_window_weeks: int = 12
+
+
+@plans_router.post("/seed-capacity", response_model=Dict[str, Any])
+async def seed_synthetic_capacity(
+    body: CapacitySeedRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Run the synthetic capacity seeder for the current tenant. Idempotent."""
+    from app.services.tms_planning.synthetic_capacity_seeder import SyntheticCapacitySeeder
+    return await SyntheticCapacitySeeder(db).seed(
+        tenant_id=current_user.tenant_id,
+        config_id=body.config_id,
+        history_window_weeks=body.history_window_weeks,
+    )
+
+
+# ============================================================================
+# §10.3 TMS demo importer endpoint
+# ============================================================================
+
+class TMSDemoImportRequest(BaseModel):
+    payload: Optional[Dict[str, Any]] = None
+    source_url: Optional[str] = None
+
+
+@plans_router.post("/tms-demo-import", response_model=Dict[str, Any])
+async def tms_demo_import(
+    body: TMSDemoImportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Ingest an SCP `tms-demo-export` package (schema 1.0). Either pass the
+    full JSON in `payload` or provide `source_url` to fetch from SCP directly.
+    See docs/TACTICAL_PLANNING_REARCHITECTURE.md §10.3."""
+    from app.services.tms_planning.tms_demo_importer import TMSDemoImporter
+
+    if not body.payload and not body.source_url:
+        raise HTTPException(400, "Provide either payload or source_url")
+    if body.payload and body.source_url:
+        raise HTTPException(400, "Provide payload OR source_url, not both")
+
+    importer = TMSDemoImporter(db)
+    try:
+        if body.source_url:
+            return await importer.import_from_url(body.source_url)
+        return await importer.import_from_payload(body.payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))

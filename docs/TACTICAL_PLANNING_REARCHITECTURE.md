@@ -269,103 +269,146 @@ Phase 0 (honest labelling) is 1 week. Phase 1 (unconstrained generator) is the f
 
 ---
 
-## 10. Addendum 2026-04-16 — Patterns now shipped on SCP side to mirror here
+## 10. Cross-product patterns — SCP-shipped, TMS-counterpart contracts
 
-These three pieces landed on SCP and are ready for TMS-side parity work. Each has a matching design pattern below, parameters to change, and an estimated effort.
+Three pieces landed on SCP in the 2026-04-16 batch with direct TMS counterparts. Both sides of each pair now exist. This section captures the shared design plus TMS's concrete contracts (endpoint URLs, JSON shapes, file paths) so the two products stay in lockstep.
 
-### 10.1 GapAnalysisPanel (reusable UI)
+### 10.1 GapAnalysisPanel (SCP) ↔ MovementGapAnalyzer (TMS)
 
 **What SCP shipped:** [`frontend/src/components/planning/GapAnalysisPanel.jsx`](https://github.com/azirella-ltd/Autonomy-SCP/blob/main/frontend/src/components/planning/GapAnalysisPanel.jsx) — three variants (`full` / `summary` / `compact`), reads `GET /api/v1/supply-plan/gap-analysis/{config_id}`, shows honest `stub_only` indicator when constrained solver is the identity stub.
 
-**TMS equivalent:** Build `frontend/src/components/planning/MovementGapPanel.jsx` with the same three variants. API: `GET /api/v1/transportation-plan/gap-analysis/{config_id}`. Reads `transportation_plan` grouped by `plan_version + is_constrained`, with aggregation by lane or by equipment pool (instead of product × site × week like SCP).
+**What TMS shipped (backend):** `backend/app/services/tms_planning/movement_gap_analyzer.py` + endpoint `GET /api/v1/transportation-plans/gap-analysis/{config_id}`. Same 3-variant component shape as SCP; aggregation key is **lane + equipment_type** instead of product/site because that's the level transportation gaps materialise at.
 
-**Backend analyzer to build** (`backend/app/services/tactical/movement_gap_analyzer.py`):
+**Aggregation behaviour:**
+- Reads rows of `transportation_plan` for the requested `config_id` across all three `plan_version` values (`unconstrained_reference`, `constrained_live`, `decision_action`).
+- Groups by `(lane_id, equipment_type)` and emits per-group totals (loads, shipments, estimated cost, miles, utilisation).
+- Computes gap metrics: `loads_gap = constrained_loads - unconstrained_loads`, `cost_gap`, `utilisation_gap`. Negative `loads_gap` = capacity shortfall.
+- Returns a single response object with `lanes: [...]`, `equipment_types: [...]`, and a `summary` block (totals + worst-N lanes by capacity gap).
 
-```python
-# Pseudocode — 1:1 with SCP's CapacityGapAnalyzer
-class MovementGapAnalyzer:
-    def summarise(self):
-        # Aggregate over transportation_plan WHERE config_id=:cfg
-        # group by plan_version, is_constrained
-        # compute total committed_weight / committed_volume / load_count
-        # per-lane × week breakdown for the by_period section
-        # honest has_constrained_stub_only flag
-```
-
-**Drop targets in TMS UI** (mirroring SCP placements):
-- Transportation Plan View — `summary` variant in the header area
-- Load Build Worklist — `compact` as a status badge
-- S&OP / Capacity dashboard — `full` for drill-down
-- Decision Stream — `compact` so users see "we're capacity-bound" while triaging
-
-**Effort:** ~½ day backend + ½ day frontend, assuming `transportation_plan.plan_version` + `is_constrained` are already in place (Path C Phase 0 on TMS per the acer-nitro thread).
-
-### 10.2 Synthetic capacity seeder
-
-**What SCP shipped:** [`backend/app/services/tactical/synthetic_capacity_seeder.py`](https://github.com/azirella-ltd/Autonomy-SCP/blob/main/backend/app/services/tactical/synthetic_capacity_seeder.py).
-
-Key logic:
-```
-peak_week_qty  = MAX over weeks of SUM(planned_order_quantity per site)
-capacity/day   = peak_week_qty / working_days_per_week * headroom (default 1.2)
-capacity/hour  = capacity/day / regional_hours_per_day
-```
-
-Regional calendar keyed by country_code: US/DE/UK/FR/NL/BE/IT/ES 5d×16h, CN 6d×20h, IN 6d×24h, JP/MX/BR 6d×16h, AU 5d×16h, default US. Writes `site_work_center` + `shift_calendar`, idempotent (replaces prior synthetic rows).
-
-**TMS equivalent:** Build `backend/app/services/tactical/synthetic_tms_capacity_seeder.py`. Four outputs instead of two:
-
-| TMS entity | Peak signal | Synthesis rule |
-|---|---|---|
-| `carrier_lane.weekly_capacity` (or equivalent) | peak-week sum of committed_weight / committed_volume per lane | `peak_week / operating_days_per_week * headroom` |
-| `dock_door` slot availability per site per day | peak-week appointment count per site | `peak_week / operating_days_per_week * headroom` |
-| `equipment.count` per type per site | peak-week concurrent equipment-in-use per site | ceil of max concurrency × headroom |
-| `shift_calendar` (same schema as SCP) | — | same regional calendar logic as SCP |
-
-**Endpoint:** `POST /api/v1/tactical/capacity/synthesize-tms/{config_id}?country_code=US&headroom=1.20`.
-
-**Effort:** ~1 day. The peak-from-plan logic is the same pattern as SCP's; the entities are different but the table shape is close.
-
-### 10.3 SAP Demo → TMS demo conversion
-
-**Use case:** TMS needs a rich demo tenant without live SAP access. SCP already has SAP Demo (config 188, tenant 20) populated with plants 1010/1710/1720, inbound/outbound orders, transfer orders, purchase orders. Converting that into a TMS tenant gives you a real 3-site network with real shipment flows to work against.
-
-**Approach: SCP-side exporter + TMS-side importer.** The exporter runs on SCP and emits a JSON package. The importer on TMS creates a new TMS config and ingests shipments/lanes/loads/carriers.
-
-**SCP exporter:** shipped in this pass as `backend/app/services/tactical/tms_demo_exporter.py` + `GET /api/v1/tactical/tms-demo-export/{scp_config_id}`. Produces:
+**Variant shape (mirroring SCP):**
 
 ```json
 {
-  "source_tenant": "SAP Demo",
-  "source_config_id": 188,
-  "target_suggestion": { "tenant_name": "SAP Demo TMS", "mode": "LEARNING" },
-  "sites": [...],        // from SCP's site table: 1010, 1710, 1720
-  "products": [...],     // SKU catalogue
-  "carriers": [...],     // derived from vendor/trading_partner (SCP suppliers repurposed as carriers)
-  "lanes": [...],        // derived from transportation_lane + transfer_order pairs
-  "shipments": [...],    // derived from outbound_order + transfer_order + purchase_order
-  "historical_volume_weeks": 52
+  "config_id": 2,
+  "generated_at": "2026-04-16T10:00:00Z",
+  "variants": {
+    "unconstrained": {"loads": 200, "shipments": 850, "cost_usd": 142500, "miles": 95000},
+    "constrained":   {"loads": 180, "shipments": 820, "cost_usd": 138900, "miles": 92800},
+    "override":      {"loads": 184, "shipments": 825, "cost_usd": 140200, "miles": 93100}
+  },
+  "lanes": [
+    {
+      "lane_id": 12, "lane_label": "DC_WEST → CUST_LAX",
+      "equipment_type": "FTL_53",
+      "unconstrained": {...}, "constrained": {...}, "override": {...},
+      "loads_gap": -14, "cost_gap_usd": 4200, "utilisation_gap_pct": -8.2
+    }
+  ],
+  "equipment_types": [...],
+  "summary": {
+    "worst_capacity_gap_lanes": [...],
+    "total_loads_gap": -22,
+    "total_cost_gap_usd": 12400,
+    "interpretation": "Aggregate movement plan is 22 loads short under current carrier capacity"
+  }
 }
 ```
 
-**TMS importer (to build on acer-nitro):** `backend/app/services/tactical/tms_demo_importer.py` that accepts the exporter payload, creates the TMS tenant + config + sites + lanes + shipment history, then runs the TMS synthetic capacity seeder to produce carrier_lane capacities + dock slots from the imported shipment peak.
+**Still pending on TMS side:** `frontend/src/components/planning/MovementGapPanel.jsx` mirroring SCP's `GapAnalysisPanel.jsx` three variants. Drop targets: Transportation Plan View header (summary), Load Build Worklist (compact), S&OP dashboard (full), Decision Stream (compact). Effort: ~½ day frontend.
 
-**Contract between SCP exporter and TMS importer:** Both products consume the same JSON schema. Schema versioning via a `schema_version` field (start at `1.0`). If the schema evolves, add a deprecation note in `docs/CONSUMER_ADOPTION_LOG.md` on Autonomy-Core.
+### 10.2 Synthetic capacity seeder (both sides shipped)
 
-**Effort:** SCP exporter shipped. TMS importer ~1 day + reuse of existing tenant provisioning infrastructure.
+**SCP pattern:** [`backend/app/services/tactical/synthetic_capacity_seeder.py`](https://github.com/azirella-ltd/Autonomy-SCP/blob/main/backend/app/services/tactical/synthetic_capacity_seeder.py) — peak-week envelope × headroom, writes `site_work_center` + `shift_calendar`, idempotent. Regional calendar keyed by country_code: US/DE/UK/FR/NL/BE/IT/ES 5d×16h, CN 6d×20h, IN 6d×24h, JP/MX/BR 6d×16h, AU 5d×16h, default US.
+
+**TMS equivalent shipped:** `backend/app/services/tms_planning/synthetic_capacity_seeder.py` — three outputs (carrier-lane / dock-door / equipment) instead of two:
+
+| Entity | Field | Synthesis formula |
+|---|---|---|
+| `carrier_lane` | `weekly_capacity` (loads/week) | `ceil(historical_avg_weekly_loads * 1.2)` per (carrier, lane) pair seen in shipment history; minimum 5 loads/week |
+| `dock_door` | `slots_per_day` | `ceil(peak_inbound_appointments_per_day * 1.2)` per facility; minimum 8 slots/day for any active facility |
+| `equipment` | `available_count` per equipment_type per facility | `ceil(peak_concurrent_use * 1.15)`; minimum 4 units per type per yard |
+| `appointment` slots | dock-window grid | 5 days × 16 hours × `(60 / appointment_minutes)` per dock door |
+
+**Endpoint:** `POST /api/v1/transportation-plans/seed-capacity` (body: `{config_id, history_window_weeks}`).
+
+**Behaviour:**
+- Idempotent — running twice doesn't double counts; identifies existing rows by natural key and updates in place
+- Operates per-tenant, per-config
+- Emits a summary row per entity (created / updated / rows_seen, basis metric)
+- Marks each generated row with `source = 'synthetic_capacity_v1'` so future real-data extracts can selectively wipe synthetic rows
+
+### 10.3 SAP Demo → TMS demo conversion (both sides shipped)
+
+**Use case:** TMS needs a rich demo tenant without live SAP access. SCP already has SAP Demo (config 188, tenant 20) populated with plants 1010/1710/1720, inbound/outbound orders, transfer orders, purchase orders. Converting that into a TMS tenant gives you a real 3-site network with real shipment flows to work against.
+
+**Approach:** SCP-side exporter + TMS-side importer, coordinated through `schema_version="1.0"`.
+
+**SCP exporter (shipped):** `backend/app/services/tactical/tms_demo_exporter.py` + `GET /api/v1/tactical/tms-demo-export/{scp_config_id}`. Produces:
+
+```
+{
+  "schema_version": "1.0",
+  "exported_from": {"product": "scp", "config_id": 188, "exported_at": "..."},
+  "sites":     [...],            # scp_site_id is the natural key
+  "lanes":     [...],            # references scp_site_id endpoints
+  "partners":  [...],            # tagged by kind (vendor / customer / carrier);
+                                 # scp_partner_id is the natural key
+  "shipments": [...],            # references scp_site_id + scp_partner_id
+  "summary":   {...}             # counts + provenance
+}
+```
+
+Verified payloads from SCP:
+- **SAP Demo**: 141 shipments (47 customer + 94 vendor) across 44 sites / 1302 lanes — ~710 KB
+- **Food Dist**: 620 customer shipments across 27 sites / 26 lanes — ~674 KB
+
+**TMS importer (shipped):** `backend/app/services/tms_planning/tms_demo_importer.py` + `POST /api/v1/transportation-plans/tms-demo-import` (body: full JSON package OR `{"source_url": "..."}` to fetch from SCP directly).
+
+**Remapping rules (the caveat from §10's transmittal note):**
+
+The exporter preserves `scp_site_id` and `scp_partner_id` as the natural keys. TMS uses Integer surrogate IDs for `site.id` and a String key for `trading_partners.id`. The importer translates during ingest:
+
+| SCP key | TMS target | Translation |
+|---|---|---|
+| `scp_site_id` (string, e.g. "RDC_NW") | `site.id` (Integer surrogate) | Look up by `site.name == scp_site_id`; create the Site if missing; cache the mapping for the rest of the import |
+| `scp_partner_id` (string) | `trading_partners.id` (String) | Namespace with the `scp_config_id` so two SCP exports can co-exist: `f"SCP{cfg}_{scp_partner_id}"` |
+| Lane endpoints | `transportation_lane.from_site_id` / `to_site_id` | After site mapping, look up by (origin, dest) pair within the new config; create if missing (with default capacity / lead-time) |
+| Shipment refs | TMS shipment FKs | Use the cached site / partner maps from the previous steps |
+
+**Importer steps (in order):**
+1. Validate `schema_version == "1.0"` (reject 2.x with a clear error)
+2. Create-or-update tenant (use `exported_from` provenance for the tenant name + slug)
+3. Create-or-update config
+4. For each site → site map (collision strategy: by name within tenant)
+5. For each partner → namespaced trading_partner id
+6. For each lane → after-site lookup or insert (default `capacity=1000`, `lead_time_days=3` when payload null)
+7. For each shipment → use the cached maps
+8. Run `synthetic_capacity_seeder` (§10.2) at the end so the imported tenant has capacity envelopes
+9. Return a manifest: `{tenant_id, config_id, counts: {sites, lanes, partners, shipments}, remapping_rules_applied: [...], synthetic_capacity: {...}}`
+
+**Contract versioning:** Schema evolution recorded in `docs/CONSUMER_ADOPTION_LOG.md` on Autonomy-Core. Both products bump together.
 
 ## 11. Current zero-data state (2026-04-16) and what changed
 
 | Dataset | SCP | TMS |
 |---|---|---|
-| `is_constrained` flag | ✅ column exists, 41,621 rows flagged false | ✅ (per acer-nitro thread) |
-| `produced_by` provenance | ✅ column exists, 100% coverage | ⏸ mirror when convenient |
-| BSC weights | ✅ `tenant_bsc_weights` table + admin UI | ⏸ can share via shared canonical, TBD |
-| Per-product cost params | ✅ `product_cost_params` + admin UI | — (different semantics: linehaul, detention) |
-| Capacity envelope | ✅ `site_work_center`, `shift_calendar`, `supplier_capacity_window`, `customer_sla_tier` | ⏸ mirror with carrier_lane capacity, dock_door slots |
-| Synthetic capacity seeded | ✅ Food Dist (US) + SAP Demo (DE) | ⏸ pending TMS tenants |
-| Gap analyzer | ✅ `/supply-plan/gap-analysis/{cfg}` + reusable panel | ⏸ `/transportation-plan/gap-analysis/{cfg}` to build |
-| SAP Demo → TMS exporter | ✅ `/tactical/tms-demo-export/{scp_cfg}` | ⏸ importer to build |
+| `is_constrained` flag | ✅ column exists, 41,621 rows flagged false | ✅ shipped Phase 0 |
+| `produced_by` provenance | ✅ column exists, 100% coverage | ⏸ equivalent on TMS is `transportation_plan.generated_by`; naming alignment TBD |
+| BSC weights | ✅ `tenant_bsc_weights` table + 5-axis override model + admin UI | ⏸ Option A canonicalisation in Autonomy-Core (see `BSC_OVERRIDE_MODEL.md`) |
+| Per-product cost params | ✅ `product_cost_params` + admin UI | — (TMS uses lane-keyed cost params: linehaul, detention, accessorial) |
+| Capacity envelope | ✅ `site_work_center`, `shift_calendar`, `supplier_capacity_window`, `customer_sla_tier` | ✅ carrier_lane capacity + dock_door slots + equipment pool seeded via §10.2 |
+| Synthetic capacity seeded | ✅ Food Dist (US) + SAP Demo (DE) | ✅ Food Dist + demo-import tenants via §10.2 |
+| Gap analyzer | ✅ `/supply-plan/gap-analysis/{cfg}` + reusable panel | ✅ `/transportation-plans/gap-analysis/{cfg}` (backend shipped §10.1); frontend panel still to build |
+| SAP Demo → TMS exporter | ✅ `/tactical/tms-demo-export/{scp_cfg}` | ✅ `POST /transportation-plans/tms-demo-import` (§10.3) |
+
+### Status
+
+| Item | Status | Owner | Notes |
+|---|---|---|---|
+| §10.1 MovementGapAnalyzer (backend) | shipped | TMS | Lives at `services/tms_planning/movement_gap_analyzer.py` |
+| §10.1 MovementGapPanel (frontend) | pending | TMS | Mirror SCP's three-variant panel; drop in 4 UI locations |
+| §10.2 Synthetic capacity | shipped | TMS | Lives at `services/tms_planning/synthetic_capacity_seeder.py`; idempotent |
+| §10.3 TMS importer | shipped | TMS | Lives at `services/tms_planning/tms_demo_importer.py`; SCP exporter call gated on SCP being reachable |
 
 ---
 
