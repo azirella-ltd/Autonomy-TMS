@@ -2,6 +2,27 @@
 
 Project rules for Claude Code. Detailed architecture and reference material in [docs/CLAUDE_REFERENCE.md](docs/CLAUDE_REFERENCE.md).
 
+## CRITICAL: Evaluate Core vs Product Placement on Every Change
+
+**Every time code is written, moved, or reviewed — for TMS, Core, SCP, or any other product — you MUST explicitly evaluate where it belongs.**
+
+- **Autonomy-Core** owns platform infrastructure: math, algorithms, schemas, contracts, solver interfaces, RL primitives, data-model types, training loops, reward function scaffolding, scenario samplers, governance tables.
+- **TMS (this repo)** owns transportation domain logic: specific TRMs (LoadBuild, FreightProcurement, DockScheduling, etc.), metric codes seeded per tenant (on_time_delivery, cost_per_mile), hierarchy walker implementations for TMS tables, plan generators that query transportation_plan, TMS-specific feature vectorisations and DisruptionKind extensions (PEAK_PRODUCE_SEASON, CHASSIS_SHORTAGE_Q4, etc.).
+
+Practical heuristic: **if SCP (or another product) will need the same abstraction, it goes in Core. If only TMS's tables, TRMs, or transport-domain semantics reference it, it stays here.**
+
+Drift is the failure mode. Writing cross-product logic in TMS "because the related code lived there" is how Core and product silently diverge. Prevent this by evaluating placement at commit time, not afterwards.
+
+Never skip this evaluation. Never default to "put it here for now, refactor later." Either:
+1. Place it correctly on the first write, or
+2. Call out explicitly that you're deferring the Core extraction and log a follow-up task.
+
+Already in Core (use these; do not duplicate): BSC override model, constrained solver family (LP/MILP/lane-flow), RL harness, scenario sampler, digital twin interface — all under `azirella_data_model.optimization / .ml / .digital_twin / .governance`.
+
+Stays in TMS: specific TRMs, transportation_plan queries, carrier/lane/dock schemas.
+
+This directive appears in Autonomy-Core, Autonomy-SCP, and this repo's CLAUDE.md for symmetric enforcement.
+
 ## CRITICAL: TMS is a Sibling Product, Not a Fork
 
 > **Architecture Pivot (2026-04-10)**: Autonomy SCP and Autonomy TMS are **two separate products**, not parent and fork. They share patterns and integrate via MCP, but have **independent tech stacks from the database up**. The current state of this repo (mixed SCP code from a fork) is being unwound.
