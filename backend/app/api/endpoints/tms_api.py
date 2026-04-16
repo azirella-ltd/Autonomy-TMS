@@ -1765,3 +1765,105 @@ async def update_load_status(
     load.status = body.status
     await db.commit()
     return {"id": load_id, "status": body.status, "previous_status": prev}
+
+
+# ============================================================================
+# Transportation Plan view — supports plan_version toggle per Tactical
+# Planning Re-Architecture Phase 0. See
+# docs/TACTICAL_PLANNING_REARCHITECTURE.md for the four canonical values.
+# ============================================================================
+
+plans_router = APIRouter(tags=["transportation-plans"])
+
+
+@plans_router.get("/", response_model=Dict[str, Any])
+async def list_transportation_plans(
+    config_id: Optional[int] = Query(None, description="Config scope"),
+    plan_version: Optional[str] = Query(
+        None,
+        description=(
+            "One of: unconstrained_reference, constrained_live, "
+            "erp_baseline, decision_action. Omit to return all versions."
+        ),
+    ),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    response: Response = None,
+):
+    """List transportation plans for the tenant, filtered by plan_version.
+
+    Today, only `constrained_live` rows are populated. Phase 1 of the
+    Tactical Planning Re-Architecture will start producing
+    `unconstrained_reference` rows nightly; ERP extractors will seed
+    `erp_baseline`; the Decision Stream override flow will seed
+    `decision_action`. Until then this endpoint still returns the full
+    list so the UI can show "coming soon" placeholders.
+    """
+    try:
+        from app.models.tms_planning import PlanVersion, PLANNING_IS_CONSTRAINED
+
+        stmt = select(TransportationPlan).where(
+            TransportationPlan.tenant_id == current_user.tenant_id,
+        )
+        cfg = await _resolve_config_id(config_id, current_user, db)
+        if cfg is not None:
+            stmt = stmt.where(TransportationPlan.config_id == cfg)
+        if plan_version:
+            stmt = stmt.where(TransportationPlan.plan_version == plan_version)
+
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        stmt = (
+            stmt.order_by(TransportationPlan.plan_start_date.desc())
+            .limit(limit).offset(offset)
+        )
+        rows = (await db.execute(stmt)).scalars().all()
+
+        items = [
+            {
+                "id": p.id,
+                "config_id": p.config_id,
+                "plan_version": p.plan_version,
+                "plan_name": p.plan_name,
+                "status": _safe_str(p.status),
+                "plan_start_date": p.plan_start_date.isoformat() if p.plan_start_date else None,
+                "plan_end_date": p.plan_end_date.isoformat() if p.plan_end_date else None,
+                "total_planned_loads": p.total_planned_loads,
+                "total_planned_shipments": p.total_planned_shipments,
+                "total_estimated_cost": p.total_estimated_cost,
+                "avg_utilization_pct": p.avg_utilization_pct,
+                "optimization_method": p.optimization_method,
+                "generated_by": p.generated_by,
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+            for p in rows
+        ]
+
+        # Per-version counts help the UI render its toggle
+        counts_stmt = (
+            select(TransportationPlan.plan_version, func.count())
+            .where(TransportationPlan.tenant_id == current_user.tenant_id)
+            .group_by(TransportationPlan.plan_version)
+        )
+        counts_rows = (await db.execute(counts_stmt)).all()
+        counts_by_version = {r[0]: r[1] for r in counts_rows}
+        for v in PlanVersion:
+            counts_by_version.setdefault(v.value, 0)
+
+        return {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "counts_by_version": counts_by_version,
+            "planning_is_constrained": PLANNING_IS_CONSTRAINED,
+            "supported_versions": [v.value for v in PlanVersion],
+        }
+
+    except (OperationalError, ProgrammingError):
+        if response:
+            response.headers["X-TMS-Warning"] = "TMS tables not yet provisioned"
+        return _NOT_PROVISIONED

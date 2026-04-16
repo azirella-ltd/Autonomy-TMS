@@ -149,6 +149,7 @@ import LoadBuildWorklistPage from "./pages/planning/LoadBuildWorklistPage.jsx";
 import IntermodalTransferWorklistPage from "./pages/planning/IntermodalTransferWorklistPage.jsx";
 import EquipmentRepositionWorklistPage from "./pages/planning/EquipmentRepositionWorklistPage.jsx";
 // TMS Planning Pages
+import TransportationPlanView from "./pages/planning/TransportationPlanView.jsx";
 import LoadBoard from "./pages/planning/LoadBoard.jsx";
 import LaneAnalytics from "./pages/planning/LaneAnalytics.jsx";
 import DockSchedule from "./pages/planning/DockSchedule.jsx";
@@ -874,6 +875,14 @@ const AppContent = () => {
             />
 
             {/* TMS Planning Pages */}
+            <Route
+              path="/planning/transportation-plan"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_load_board">
+                  <TransportationPlanView />
+                </CapabilityProtectedRoute>
+              }
+            />
             <Route
               path="/planning/load-board"
               element={

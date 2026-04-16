@@ -174,11 +174,19 @@ SCP chose Path C. TMS follows the same path. Training data and domain adaptation
 
 ### 5.1 Sequencing
 
-**Phase 0 — Honest labelling (1 week, low risk):**
-1. Add `transportation_plan.plan_version` column. Values: `unconstrained_reference`, `constrained_live`, `erp_baseline`, `decision_action`.
-2. Migrate existing rows: today's agent-written plan is really a decision record, but label it `constrained_live` for now (not ideal, but matches what agents consume).
-3. Add UI toggle in Transportation Plan view (unconstrained vs constrained vs gap).
-4. Document that `is_constrained=false` today.
+**Phase 0 — Honest labelling (1 week, low risk): ✅ COMPLETE (2026-04-16)**
+1. ✅ `transportation_plan.plan_version` widened to `VARCHAR(30)`, default flipped to
+   `'constrained_live'`. Alembic migration `20260416_plan_version`. Canonical enum
+   lives in `app.models.tms_planning.PlanVersion`.
+2. ✅ Existing `plan_version='live'` rows back-filled to `'constrained_live'`
+   (migration's `upgrade()` does the UPDATE).
+3. ✅ UI toggle shipped: `/planning/transportation-plan` page has a 4-button toggle
+   showing per-version counts. Honesty banner reads the
+   `PLANNING_IS_CONSTRAINED` flag — currently `False`, flips to green
+   `CheckCircle` when Phase 3 lands.
+4. ✅ Frontend banner + `PLANNING_IS_CONSTRAINED = False` constant in
+   `backend/app/models/tms_planning.py`. Endpoint returns the flag so any
+   downstream service can read the honest state.
 
 **Phase 1 — Unconstrained movement plan generator (2-3 months):**
 5. Build TMS-equivalent of `NetRequirementsCalculator`: `UnconstrainedMovementPlanner`. Lives in `backend/app/services/tms_planning/`.

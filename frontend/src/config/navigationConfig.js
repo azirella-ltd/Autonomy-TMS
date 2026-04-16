@@ -607,6 +607,13 @@ export const NAVIGATION_CONFIG = [
         isSectionHeader: true,
       },
       {
+        label: 'Transportation Plan',
+        path: '/planning/transportation-plan',
+        icon: OrderIcon,
+        requiredCapability: 'view_load_board',
+        description: 'Unconstrained / Constrained / ERP-baseline / Override plan views (Tactical Planning Re-Architecture)',
+      },
+      {
         label: 'Load Board',
         path: '/planning/load-board',
         icon: OrderIcon,

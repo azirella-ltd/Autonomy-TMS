@@ -6827,6 +6827,10 @@ api.include_router(tms_operations_router, tags=["tms", "operations"])
 api.include_router(rates_router, prefix="/rates", tags=["rates", "tms"])
 api.include_router(routes_router, prefix="/shipments", tags=["shipment-routes", "tms"])
 
+# Transportation Plan view — Phase 0 of the Tactical Planning Re-Architecture
+from app.api.endpoints.tms_api import plans_router
+api.include_router(plans_router, prefix="/transportation-plans", tags=["transportation-plans", "tms"])
+
 # TMS-native scenario runner
 from app.api.endpoints.tms_scenarios import router as tms_scenarios_router
 api.include_router(tms_scenarios_router, prefix="/tms-scenarios", tags=["tms-scenarios"])

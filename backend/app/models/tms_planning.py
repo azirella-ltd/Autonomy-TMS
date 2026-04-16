@@ -63,6 +63,28 @@ class PlanStatus(str, PyEnum):
     SUPERSEDED = "SUPERSEDED"
 
 
+class PlanVersion(str, PyEnum):
+    """Canonical transportation plan version labels.
+
+    Aligned with docs/TACTICAL_PLANNING_REARCHITECTURE.md — these are the
+    four named views the Tactical re-architecture (Phase 0 → Phase 4)
+    builds up to. All four values are live on the column today, but only
+    `CONSTRAINED_LIVE` is populated; the others will be produced by the
+    Unconstrained Movement Planner (Phase 1), ERP baseline extractors,
+    and the Decision Stream override flow respectively.
+    """
+    UNCONSTRAINED_REFERENCE = "unconstrained_reference"
+    CONSTRAINED_LIVE = "constrained_live"
+    ERP_BASELINE = "erp_baseline"
+    DECISION_ACTION = "decision_action"
+
+
+# Today's system is NOT constrained-planning. Agent-written plans are
+# decision records labelled `constrained_live` for UI continuity. Flip
+# to True when the Integrated Balancer lands (Phase 3).
+PLANNING_IS_CONSTRAINED = False
+
+
 class PlanItemStatus(str, PyEnum):
     """Individual planned load status"""
     PLANNED = "PLANNED"
@@ -232,7 +254,16 @@ class TransportationPlan(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"), nullable=False)
-    plan_version = Column(String(20), nullable=False, default="live")
+    # `plan_version` is the honest label for what this row represents:
+    #   unconstrained_reference — Demand Potential or Unconstrained Movement Plan
+    #   constrained_live        — Constrained Committed Plan (today's agent-written plan;
+    #                              until the Integrated Balancer ships, this is really a
+    #                              decision record — see docs/TACTICAL_PLANNING_REARCHITECTURE.md)
+    #   erp_baseline            — External TMS / ERP plan, for comparison
+    #   decision_action         — User-authored override plan
+    # Kept as String (not Enum) so the values can evolve without Alembic churn; the
+    # canonical enum is `app.models.tms_planning.PlanVersion`.
+    plan_version = Column(String(30), nullable=False, default="constrained_live")
     plan_name = Column(String(200))
 
     status = Column(SAEnum(PlanStatus, name="plan_status_enum"), nullable=False, default=PlanStatus.DRAFT)
