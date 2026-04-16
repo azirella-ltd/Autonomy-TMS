@@ -23,8 +23,14 @@ services:
     ports: !override
       - "8010:8000"
     networks:
-      - default
-      - autonomy-scp_autonomy-network
+      default: {}
+      # Join SCP's network only to reach `autonomy-scp-db`. Override the default
+      # service-name alias so we don't also register as `backend` there — that
+      # alias is owned by autonomy-scp-backend and collisions cause Docker DNS
+      # round-robin between the two backends, breaking SCP auth.
+      autonomy-scp_autonomy-network:
+        aliases:
+          - autonomy-tms-backend
     environment:
       SCP_DB_URL: postgresql+psycopg2://tms_reader:tms_reader_dev@autonomy-scp-db:5432/autonomy
       # IMPORTANT: SCP's Postgres service is also named `db` — when the TMS
