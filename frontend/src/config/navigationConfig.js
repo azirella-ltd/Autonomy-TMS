@@ -105,8 +105,12 @@ export const NAVIGATION_CONFIG = [
         label: 'Decision Stream',
         path: '/decision-stream',
         icon: SparklesIcon,
-        requiredCapability: null, // Visible to all except tenant admin (filtered below)
-        hiddenForTenantAdmin: true, // Tenant admin uses Administration, not Decision Stream
+        requiredCapability: null,
+        // Section already gates on decision level (EXECUTIVE / SC_VP /
+        // SOP_DIRECTOR / MPS_MANAGER / DEMO_ALL). The tenant-admin hide
+        // was wrong — DEMO_ALL super-users have user_type=TENANT_ADMIN
+        // by design and need to see the Decision Stream as their
+        // landing page.
         description: 'Agent decisions with inspect and override',
       },
       {

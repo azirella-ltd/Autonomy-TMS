@@ -15,7 +15,18 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
-import { NavigationProvider, NavigationFilterProvider, TwoTierNav as SharedTwoTierNav, useCapabilities } from '@azirella-ltd/autonomy-frontend';
+import {
+  NavigationProvider,
+  NavigationFilterProvider,
+  TwoTierNav as SharedTwoTierNav,
+  useCapabilities,
+  TabPane,
+  useTabStore,
+  cn,
+  AzirellaAvatar,
+  useVoiceAssistant,
+  VoiceState,
+} from '@azirella-ltd/autonomy-frontend';
 import TopNavbar from './TopNavbar';
 import { NAVIGATION_CONFIG, SYSTEM_ADMIN_NAVIGATION, LEARNING_NAVIGATION } from '../config/navigationConfig';
 import {
@@ -23,15 +34,12 @@ import {
   isSystemAdmin as checkIsSystemAdmin,
   isTenantAdmin as checkIsTenantAdmin,
 } from '../utils/authUtils';
-const TwoTierNav = SharedTwoTierNav;
-import { TabPane } from '@azirella-ltd/autonomy-frontend';
-import { useTabStore } from '@azirella-ltd/autonomy-frontend';
 import { useAuth } from '../contexts/AuthContext';
 import ProvisioningBanner from './ProvisioningBanner';
-import { cn } from '@azirella-ltd/autonomy-frontend';
 import { Send, Loader2, Mic, MicOff } from 'lucide-react';
 import Markdown from 'react-markdown';
-import { AzirellaAvatar, useVoiceAssistant, VoiceState } from '@azirella-ltd/autonomy-frontend';
+
+const TwoTierNav = SharedTwoTierNav;
 
 const ADMIN_TAB_ID = 'tab-administration';
 const AZIRELLA_PANEL_WIDTH = 380;
