@@ -98,3 +98,20 @@ Latest Core commit: `4124f0b`. Includes:
 - node_type_utils
 
 **TMS requirements.txt:** bump pin to `4124f0b` to get everything.
+
+---
+
+## Addendum — Architecture correction (2026-04-17 afternoon)
+
+User-confirmed correction to the Tier 3 framing across all repos.
+
+**The correct architecture (Powell Cascade):**
+
+Training: Twin + APS heuristics → training data → train tGNNs/GraphSAGE per tenant DAG.
+Testing: Agents vs heuristic baseline on test set. LP optional secondary benchmark.
+Operational: S&OP GraphSAGE (L4) → tGNNs (L3) → Site tGNN (L2) → TRMs (L1). Each layer passes directives/context/guardrails DOWN. TRMs execute within execution horizon only; longer-term intent comes from tactical/strategic layers.
+
+**TMS action:** Ensure all architecture discussions on acer-nitro use this framing. The training infrastructure (twin + heuristics) generates data; the trained agents (tGNNs/GraphSAGE) produce the plan/directives; the TRMs execute. LP is a Tier 1/2 fallback, not the end-state.
+
+Updated SCP docs: TIER_3_GNN_FIRST_PLANNING.md §1, TACTICAL_PLANNER_POSITIONING.md, foundational memory.
+Core pin: 449493c (floor constraint fix).
