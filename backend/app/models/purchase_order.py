@@ -64,8 +64,8 @@ class PurchaseOrder(Base):
 
     # Simulation extensions
     scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))  # Link to simulation session
-    order_round = Column(Integer)    # Round when PO was created
-    arrival_round = Column(Integer)  # Round when PO shipment is due to arrive
+    order_period = Column(Integer)    # Round when PO was created
+    arrival_period = Column(Integer)  # Round when PO shipment is due to arrive
 
     # Audit
     created_by_id = Column(Integer, ForeignKey("users.id"))
@@ -90,7 +90,7 @@ class PurchaseOrder(Base):
         Index('idx_po_mrp_run', 'mrp_run_id'),
         Index('idx_po_company', 'company_id'),
         Index('idx_po_order_type', 'order_type'),
-        Index('idx_po_scenario_round', 'scenario_id', 'order_round'),
+        Index('idx_po_scenario_round', 'scenario_id', 'order_period'),
     )
 
 

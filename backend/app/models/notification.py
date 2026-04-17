@@ -57,10 +57,10 @@ class NotificationPreference(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
     # Game notifications
-    game_started = Column(Boolean, default=True, nullable=False)
-    round_started = Column(Boolean, default=True, nullable=False)
+    scenario_started = Column(Boolean, default=True, nullable=False)
+    period_started = Column(Boolean, default=True, nullable=False)
     your_turn = Column(Boolean, default=True, nullable=False)
-    game_completed = Column(Boolean, default=True, nullable=False)
+    scenario_completed = Column(Boolean, default=True, nullable=False)
 
     # Team notifications
     team_message = Column(Boolean, default=True, nullable=False)
@@ -102,7 +102,7 @@ class NotificationLog(Base):
     push_token_id = Column(Integer, ForeignKey("push_tokens.id", ondelete="SET NULL"), nullable=True)
 
     # Notification content
-    notification_type = Column(String(100), nullable=False, index=True)  # e.g., "your_turn", "game_started"
+    notification_type = Column(String(100), nullable=False, index=True)  # e.g., "your_turn", "scenario_started"
     title = Column(String(255), nullable=False)
     body = Column(Text, nullable=False)
     data = Column(Text, nullable=True)  # JSON string with additional data

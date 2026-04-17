@@ -3,8 +3,8 @@
 Terminology (Feb 2026):
 - Game -> Scenario
 - Player -> ScenarioUser
-- GameRound -> ScenarioRound
-- PlayerRound -> ScenarioUserPeriod
+- ScenarioPeriod -> ScenarioPeriod
+- PlayerPeriod -> ScenarioUserPeriod
 - PlayerInventory -> ScenarioUserInventory
 """
 
@@ -20,12 +20,12 @@ from sqlalchemy.orm import relationship
 from .base import Base
 
 
-class RoundPhase(str, Enum):
-    """Round phase for DAG-ordered sequential execution"""
+class PeriodPhase(str, Enum):
+    """Period phase for DAG-ordered sequential execution"""
     FULFILLMENT = "FULFILLMENT"  # Phase 1: Users fulfill downstream orders (ATP-based)
     REPLENISHMENT = "REPLENISHMENT"  # Phase 2: Users order from upstream (after receiving POs)
     DECISION = "DECISION"  # Legacy: Single decision point (original simulation)
-    COMPLETED = "COMPLETED"  # Round finished, ready for next round
+    COMPLETED = "COMPLETED"  # Period finished, ready for next period
 
 
 class ScenarioUserInventory(Base):
@@ -43,13 +43,13 @@ class ScenarioUserInventory(Base):
 
 
 class Order(Base):
-    """Orders placed by scenario users during simulation rounds."""
+    """Orders placed by scenario users during simulation periods."""
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
     scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id", ondelete="CASCADE"), nullable=False)
-    round_number = Column(Integer, nullable=False)
+    period_number = Column(Integer, nullable=False)
     quantity = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -57,17 +57,17 @@ class Order(Base):
     scenario = relationship("Scenario")
 
 
-class ScenarioRound(Base):
+class ScenarioPeriod(Base):
     """A round within a scenario/simulation.
 
-    Tracks the state and progress of each round including demand,
+    Tracks the state and progress of each period including demand,
     completion status, and DAG sequential execution phases.
     """
-    __tablename__ = "scenario_rounds"
+    __tablename__ = "scenario_periods"
 
     id = Column(Integer, primary_key=True, index=True)
     scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False)
-    round_number = Column(Integer, nullable=False)
+    period_number = Column(Integer, nullable=False)
     customer_demand = Column(Integer, nullable=False)
     is_completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -78,13 +78,13 @@ class ScenarioRound(Base):
     period_end = Column(Date, nullable=True)
 
     # DAG Sequential Execution fields
-    current_phase = Column(SQLEnum(RoundPhase), server_default="DECISION", nullable=False)
+    current_phase = Column(SQLEnum(PeriodPhase), server_default="DECISION", nullable=False)
     phase_started_at = Column(DateTime, nullable=True)
     fulfillment_completed_at = Column(DateTime, nullable=True)
     replenishment_completed_at = Column(DateTime, nullable=True)
 
-    scenario = relationship("Scenario", back_populates="supply_chain_rounds")
-    scenario_user_periods = relationship("ScenarioUserPeriod", back_populates="scenario_round")
+    scenario = relationship("Scenario", back_populates="supply_chain_periods")
+    scenario_user_periods = relationship("ScenarioUserPeriod", back_populates="scenario_period")
 
 
 class UpstreamOrderType(str, Enum):
@@ -95,7 +95,7 @@ class UpstreamOrderType(str, Enum):
 
 
 class ScenarioUserPeriod(Base):
-    """Per-scenario-user metrics and state for each round.
+    """Per-scenario-user metrics and state for each period.
 
     Tracks orders placed/received, inventory changes, costs,
     and DAG execution phase details.
@@ -104,7 +104,7 @@ class ScenarioUserPeriod(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id", ondelete="CASCADE"), nullable=False)
-    scenario_round_id = Column(Integer, ForeignKey("scenario_rounds.id", ondelete="CASCADE"), nullable=False)
+    scenario_period_id = Column(Integer, ForeignKey("scenario_periods.id", ondelete="CASCADE"), nullable=False)
     order_placed = Column(Integer, nullable=False)
     order_received = Column(Integer, default=0)
     inventory_before = Column(Integer, nullable=False)
@@ -119,7 +119,7 @@ class ScenarioUserPeriod(Base):
     # DAG Sequential Execution - Upstream Order Tracking (Phase 1)
     upstream_order_id = Column(Integer, nullable=True)
     upstream_order_type = Column(SQLEnum(UpstreamOrderType), nullable=True)
-    round_phase = Column(SQLEnum(RoundPhase), default=RoundPhase.DECISION, nullable=False)
+    period_phase = Column(SQLEnum(PeriodPhase), default=PeriodPhase.DECISION, nullable=False)
 
     # Fulfillment phase tracking
     fulfillment_qty = Column(Integer, nullable=True)
@@ -130,19 +130,20 @@ class ScenarioUserPeriod(Base):
     replenishment_submitted_at = Column(DateTime, nullable=True)
 
     scenario_user = relationship("ScenarioUser", back_populates="scenario_user_periods")
-    scenario_round = relationship("ScenarioRound", back_populates="scenario_user_periods")
+    scenario_period = relationship("ScenarioPeriod", back_populates="scenario_user_periods")
 
     __table_args__ = (
         Index('idx_sup_upstream_order', 'upstream_order_id', 'upstream_order_type'),
-        Index('idx_sup_round_phase', 'scenario_round_id', 'round_phase'),
-        Index('idx_sup_scenario_user_round', 'scenario_user_id', 'scenario_round_id'),
+        Index('idx_sup_period_phase', 'scenario_period_id', 'period_phase'),
+        Index('idx_sup_scenario_user_period', 'scenario_user_id', 'scenario_period_id'),
     )
 
 
-# Backward compatibility aliases (temporary - remove after full migration)
+# Backward compatibility aliases (temporary - remove in Workstream X with SCP-fork code)
 ParticipantInventory = ScenarioUserInventory
-ParticipantRound = ScenarioUserPeriod
+ParticipantPeriod = ScenarioUserPeriod
 PlayerInventory = ScenarioUserInventory
-PlayerRound = ScenarioUserPeriod
-GameRound = ScenarioRound
-AlternativeRound = ScenarioRound
+PlayerPeriod = ScenarioUserPeriod
+AlternativeRound = ScenarioPeriod
+ScenarioRound = ScenarioPeriod  # Legacy alias — hundreds of SCP-fork refs; delete with Workstream X
+RoundPhase = PeriodPhase  # Legacy alias — SCP-fork refs; delete with Workstream X

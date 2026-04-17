@@ -63,20 +63,7 @@ class PlanStatus(str, PyEnum):
     SUPERSEDED = "SUPERSEDED"
 
 
-class PlanVersion(str, PyEnum):
-    """Canonical transportation plan version labels.
-
-    Aligned with docs/TACTICAL_PLANNING_REARCHITECTURE.md — these are the
-    four named views the Tactical re-architecture (Phase 0 → Phase 4)
-    builds up to. All four values are live on the column today, but only
-    `CONSTRAINED_LIVE` is populated; the others will be produced by the
-    Unconstrained Movement Planner (Phase 1), ERP baseline extractors,
-    and the Decision Stream override flow respectively.
-    """
-    UNCONSTRAINED_REFERENCE = "unconstrained_reference"
-    CONSTRAINED_LIVE = "constrained_live"
-    ERP_BASELINE = "erp_baseline"
-    DECISION_ACTION = "decision_action"
+from azirella_data_model.optimization.plan_versions import PlanVersion, is_constrained_for_version  # noqa: E402
 
 
 # Today's system is NOT constrained-planning. Agent-written plans are

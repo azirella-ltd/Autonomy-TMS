@@ -1,5 +1,5 @@
 """
-Round Metric Database Model
+Period Metric Database Model
 
 Stores per-round metrics for simulation execution tracking.
 Replaces ParticipantRound for execution-based simulations.
@@ -24,18 +24,18 @@ from .base import Base
 
 class RoundMetric(Base):
     """
-    Round-level metrics for simulation execution.
+    Period-level metrics for simulation execution.
 
     Tracks inventory, backlog, costs, and KPIs for each site in each round.
     Used by the SimulationExecutionEngine to calculate performance metrics.
     """
-    __tablename__ = "round_metric"
+    __tablename__ = "period_metric"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Scenario and round identification
     scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False)
-    round_number = Column(Integer, nullable=False)
+    period_number = Column(Integer, nullable=False)
     site_id = Column(Integer, ForeignKey("site.id", ondelete="CASCADE"), nullable=False)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id", ondelete="SET NULL"), nullable=True)
 
@@ -67,9 +67,9 @@ class RoundMetric(Base):
     updated_at = Column(DateTime, onupdate=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('scenario_id', 'round_number', 'site_id', name='uq_round_metric_scenario_round_site'),
+        UniqueConstraint('scenario_id', 'period_number', 'site_id', name='uq_period_metric_scenario_period_site'),
         Index('idx_round_metric_scenario', 'scenario_id'),
-        Index('idx_round_metric_round', 'scenario_id', 'round_number'),
+        Index('idx_period_metric_period', 'scenario_id', 'period_number'),
         Index('idx_round_metric_site', 'site_id'),
         Index('idx_round_metric_scenario_user', 'scenario_user_id'),
     )
@@ -78,7 +78,7 @@ class RoundMetric(Base):
         return (
             f"<RoundMetric("
             f"scenario_id={self.scenario_id}, "
-            f"round={self.round_number}, "
+            f"round={self.period_number}, "
             f"site_id={self.site_id}, "
             f"inventory={self.inventory}, "
             f"backlog={self.backlog}, "
@@ -91,7 +91,7 @@ class RoundMetric(Base):
         return {
             'id': self.id,
             'scenario_id': self.scenario_id,
-            'round_number': self.round_number,
+            'period_number': self.period_number,
             'site_id': self.site_id,
             'scenario_user_id': self.scenario_user_id,
             'inventory': self.inventory,

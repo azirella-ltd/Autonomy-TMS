@@ -182,7 +182,7 @@ class AggregatedOrder(Base):
     # Aggregation details
     policy_id = Column(Integer, ForeignKey("order_aggregation_policy.id"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
-    round_number = Column(Integer, nullable=False)
+    period_number = Column(Integer, nullable=False)
 
     # Sites and product
     from_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
@@ -217,7 +217,7 @@ class AggregatedOrder(Base):
     updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP"))
 
     __table_args__ = (
-        Index('idx_agg_order_scenario_round', 'scenario_id', 'round_number'),
+        Index('idx_agg_order_scenario_round', 'scenario_id', 'period_number'),
         Index('idx_agg_order_sites', 'from_site_id', 'to_site_id'),
         Index('idx_agg_order_status', 'status'),
         Index('idx_agg_order_scheduled', 'scheduled_order_date'),

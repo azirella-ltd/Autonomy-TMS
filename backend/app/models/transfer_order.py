@@ -53,8 +53,8 @@ class TransferOrder(Base):
 
     # Extension: Simulation fields
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))  # Link to simulation session
-    order_round = Column(Integer)  # Round when TO was created
-    arrival_round = Column(Integer)  # Round when TO arrives (order_round + lead_time)
+    order_period = Column(Integer)  # Round when TO was created
+    arrival_period = Column(Integer)  # Round when TO arrives (order_period + lead_time)
 
     # Transportation
     transportation_mode = Column(String(50))  # truck, rail, air, ocean, courier
@@ -75,7 +75,7 @@ class TransferOrder(Base):
     source_po_id = Column(Integer, ForeignKey("purchase_order.id", ondelete="SET NULL"))  # Link TO to originating PO
 
     # DAG Sequential Execution - Bidirectional link to ScenarioUserPeriod
-    source_participant_round_id = Column(Integer, ForeignKey("scenario_user_periods.id", ondelete="SET NULL"), nullable=True)
+    source_participant_period_id = Column(Integer, ForeignKey("scenario_user_periods.id", ondelete="SET NULL"), nullable=True)
 
     # Audit
     created_by_id = Column(Integer, ForeignKey("users.id"))
@@ -102,10 +102,10 @@ class TransferOrder(Base):
         Index('idx_to_lane', 'source_site_id', 'destination_site_id'),
         Index('idx_to_company', 'company_id'),
         Index('idx_to_order_type', 'order_type'),
-        Index('idx_to_scenario_arrival', 'scenario_id', 'arrival_round', 'status'),  # Simulation: efficient TO arrival queries
-        Index('idx_to_scenario_order', 'scenario_id', 'order_round'),  # Simulation: TOs created per round
+        Index('idx_to_scenario_arrival', 'scenario_id', 'arrival_period', 'status'),  # Simulation: efficient TO arrival queries
+        Index('idx_to_scenario_order', 'scenario_id', 'order_period'),  # Simulation: TOs created per round
         Index('idx_to_source_po', 'source_po_id'),  # Link TO to PO
-        Index('idx_to_participant_round', 'source_participant_round_id'),  # DAG: bidirectional link to ParticipantRound
+        Index('idx_to_participant_round', 'source_participant_period_id'),  # DAG: bidirectional link to ParticipantRound
     )
 
 

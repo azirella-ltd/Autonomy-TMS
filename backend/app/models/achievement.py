@@ -62,7 +62,7 @@ class ScenarioUserStats(Base):
     scenario_user_id = Column(Integer, ForeignKey('scenario_users.id', ondelete='CASCADE'), primary_key=True)
     total_scenarios_played = Column(Integer, nullable=False, default=0)
     total_scenarios_won = Column(Integer, nullable=False, default=0)
-    total_rounds_played = Column(Integer, nullable=False, default=0)
+    total_periods_played = Column(Integer, nullable=False, default=0)
     total_orders_placed = Column(Integer, nullable=False, default=0)
     total_cost = Column(DECIMAL(15, 2), nullable=False, default=0.00)
     avg_service_level = Column(DECIMAL(5, 2), nullable=True)

@@ -100,7 +100,7 @@ class InvProjection(Base):
 
     # Extension: Simulation Integration
     config_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"))
-    round_number: Mapped[Optional[int]] = mapped_column(Integer, comment="Simulation round")
+    period_number: Mapped[Optional[int]] = mapped_column(Integer, comment="Simulation round")
 
     # Audit Fields
     created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
@@ -116,7 +116,7 @@ class InvProjection(Base):
     __table_args__ = (
         Index('idx_inventory_projection_lookup', 'product_id', 'site_id', 'projection_date'),
         Index('idx_inv_projection_scenario', 'scenario_id', 'projection_date'),
-        Index('idx_inv_projection_scenario_round', 'scenario_id', 'round_number'),
+        Index('idx_inv_projection_scenario_round', 'scenario_id', 'period_number'),
     )
 
     def calculate_atp(self) -> float:

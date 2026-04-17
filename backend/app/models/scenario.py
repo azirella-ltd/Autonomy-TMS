@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from .participant import ScenarioUser
     from .user import User
     from .agent_config import AgentConfig
-    from .supply_chain import ScenarioRound as SCScenarioRound
+    from .supply_chain import ScenarioPeriod as SCScenarioPeriod
     from .supply_chain_config import SupplyChainConfig
     from .function_assignment import FunctionAssignment
 
@@ -87,9 +87,9 @@ class Scenario(Base):
 
     # Relationships
     scenario_users: Mapped[List["ScenarioUser"]] = relationship("ScenarioUser", back_populates="scenario", lazy="selectin")
-    rounds: Mapped[List["Round"]] = relationship("Round", back_populates="scenario", lazy="selectin")
-    supply_chain_rounds: Mapped[List["SCScenarioRound"]] = relationship(
-        "ScenarioRound", back_populates="scenario", lazy="selectin"
+    periods: Mapped[List["Period"]] = relationship("Period", back_populates="scenario", lazy="selectin")
+    supply_chain_periods: Mapped[List["SCScenarioPeriod"]] = relationship(
+        "ScenarioPeriod", back_populates="scenario", lazy="selectin"
     )
     users = relationship("User", secondary="user_scenarios", lazy="selectin")
     supervisor_actions = relationship("SupervisorAction", back_populates="scenario", lazy="selectin")
@@ -136,25 +136,25 @@ class Scenario(Base):
         ).first()
 
 
-class Round(Base):
-    """A round within a scenario/simulation."""
-    __tablename__ = "rounds"
+class Period(Base):
+    """A period within a scenario/simulation."""
+    __tablename__ = "periods"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     scenario_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))
-    round_number: Mapped[int] = mapped_column(Integer)
+    period_number: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
 
     # Relationships
-    scenario: Mapped["Scenario"] = relationship("Scenario", back_populates="rounds", lazy="selectin")
-    scenario_user_actions: Mapped[List["ScenarioUserAction"]] = relationship("ScenarioUserAction", back_populates="round", lazy="selectin")
+    scenario: Mapped["Scenario"] = relationship("Scenario", back_populates="periods", lazy="selectin")
+    scenario_user_actions: Mapped[List["ScenarioUserAction"]] = relationship("ScenarioUserAction", back_populates="period", lazy="selectin")
 
 
 class ScenarioUserAction(Base):
-    """An action taken by a scenario user during a round.
+    """An action taken by a scenario user during a period.
 
     Records decisions made by scenario users (human or AI) during simulation.
     """
@@ -162,17 +162,18 @@ class ScenarioUserAction(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     scenario_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))
-    round_id: Mapped[int] = mapped_column(Integer, ForeignKey("rounds.id", ondelete="CASCADE"))
+    period_id: Mapped[int] = mapped_column(Integer, ForeignKey("periods.id", ondelete="CASCADE"))
     scenario_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenario_users.id", ondelete="CASCADE"))
     action_type: Mapped[str] = mapped_column(String(50))
     quantity: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    round: Mapped["Round"] = relationship("Round", back_populates="scenario_user_actions", lazy="selectin")
+    period: Mapped["Period"] = relationship("Period", back_populates="scenario_user_actions", lazy="selectin")
     scenario_user: Mapped["ScenarioUser"] = relationship("ScenarioUser", back_populates="actions", lazy="selectin")
     scenario: Mapped["Scenario"] = relationship("Scenario", lazy="selectin")
 
 
-# Backward-compatibility aliases (temporary - remove after full migration)
+# Backward-compatibility aliases (temporary - remove in Workstream X)
 ParticipantAction = ScenarioUserAction
+Round = Period  # Legacy alias — SCP-fork refs; delete with Workstream X

@@ -34,7 +34,7 @@ from app.models.sc_entities import OutboundOrderLine, InvLevel, InvPolicy, Produ
 from app.models.purchase_order import PurchaseOrder
 from app.models.transfer_order import TransferOrder
 from app.models.supply_chain_config import Site, SupplyChainConfig, TransportationLane
-from app.models.round_metric import RoundMetric
+from app.models.period_metric import RoundMetric
 from app.services.order_management_service import OrderManagementService
 from app.services.fulfillment_service import FulfillmentService
 from app.services.atp_calculation_service import ATPCalculationService
