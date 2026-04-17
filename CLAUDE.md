@@ -2,6 +2,8 @@
 
 Project rules for Claude Code. Detailed architecture and reference material in [docs/CLAUDE_REFERENCE.md](docs/CLAUDE_REFERENCE.md).
 
+> **Cross-product engineering rules** (AWS SC DM compliance, SOC II, AIIO, terminology, plan separation, planning cascade, hierarchy drilldown, governance pipeline, Five-Layer Agent Coordination, AATP) are defined in `Autonomy-Core/CLAUDE.md`. This file carries the TMS-specific addenda only. When a rule in this file conflicts with Core, Core wins.
+
 ## CRITICAL: Evaluate Core vs Product Placement on Every Change
 
 **Every time code is written, moved, or reviewed — for TMS, Core, SCP, or any other product — you MUST explicitly evaluate where it belongs.**
