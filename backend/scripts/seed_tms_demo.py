@@ -1,878 +1,553 @@
 #!/usr/bin/env python3
+"""Seed TMS demo data for Food Dist tenant.
+
+Populates: carriers, carrier-lanes, freight rates, TMS shipments, loads,
+transportation plan + items, appointments, shipment exceptions, and
+TMS-domain agent decisions. Idempotent — skips if carriers already exist.
+
+Run:  docker exec autonomy-tms-backend-gpu python scripts/seed_tms_demo.py
 """
-Seed TMS demo data for a tenant.
-
-Creates realistic transportation demo data: facilities, carriers, lanes,
-rates, loads, shipments, appointments, exceptions, and commodities.
-
-Usage:
-    docker compose exec backend python scripts/seed_tms_demo.py --tenant-id 1 --config-id 1
-"""
-
-import argparse
-import sys
+import json
 import os
-from datetime import datetime, date, timedelta
+import random
+import sys
+from datetime import datetime, timedelta, date
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.db.session import sync_session_factory
-from app.models.tms_entities import (
-    Commodity, CommodityHierarchy,
-    Carrier, CarrierLane, CarrierScorecard, Equipment,
-    Shipment, Load, FreightRate,
-    Appointment, ShipmentException,
-    CarrierType, TransportMode, EquipmentType,
-    ShipmentStatus, LoadStatus, ExceptionType, ExceptionSeverity,
-    ExceptionResolutionStatus, AppointmentType, AppointmentStatus, RateType,
+from sqlalchemy import text, create_engine
+from sqlalchemy.orm import Session
+
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://autonomy_user:autonomy_password@autonomy-tms-db:5432/autonomy",
 )
-from app.models.transportation_config import (
-    FacilityConfig, LaneProfile, FacilityType, LaneDirection,
-)
-from app.models.supply_chain_config import Site, TransportationLane
-from sqlalchemy import select
+engine = create_engine(DATABASE_URL)
 
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-def _get_or_skip(session, model, tenant_id, unique_field, unique_value):
-    """Return existing record or None (meaning caller should create)."""
-    stmt = select(model).where(
-        getattr(model, 'tenant_id') == tenant_id,
-        getattr(model, unique_field) == unique_value,
-    )
-    return session.execute(stmt).scalar_one_or_none()
-
-
-def _get_site_by_name(session, config_id, name):
-    stmt = select(Site).where(Site.config_id == config_id, Site.name == name)
-    return session.execute(stmt).scalar_one_or_none()
-
-
-def _get_lane(session, config_id, from_site_id, to_site_id):
-    stmt = select(TransportationLane).where(
-        TransportationLane.config_id == config_id,
-        TransportationLane.from_site_id == from_site_id,
-        TransportationLane.to_site_id == to_site_id,
-    )
-    return session.execute(stmt).scalar_one_or_none()
-
-
-# ---------------------------------------------------------------------------
-# Commodities
-# ---------------------------------------------------------------------------
-
-COMMODITIES = [
-    {"code": "DRY-GROCERY", "description": "Dry Grocery", "freight_class": "70",
-     "weight": 40.0, "weight_uom": "LBS", "base_uom": "CS"},
-    {"code": "REFRIG-PRODUCE", "description": "Refrigerated Produce", "freight_class": "85",
-     "weight": 35.0, "weight_uom": "LBS", "base_uom": "CS",
-     "is_temperature_sensitive": True, "temp_min": 33.0, "temp_max": 40.0},
-    {"code": "ELECTRONICS", "description": "Electronics", "freight_class": "125",
-     "weight": 25.0, "weight_uom": "LBS", "base_uom": "EA", "value_per_unit": 450.0},
-    {"code": "BUILDING-MAT", "description": "Building Materials", "freight_class": "50",
-     "weight": 80.0, "weight_uom": "LBS", "base_uom": "EA"},
-    {"code": "CHEM-HAZMAT", "description": "Chemicals/Hazmat", "freight_class": "150",
-     "weight": 55.0, "weight_uom": "LBS", "base_uom": "DR",
-     "is_hazmat": True, "hazmat_class": "3", "hazmat_un_number": "UN1993"},
-]
-
-
-def seed_commodities(session, tenant_id, config_id):
-    created = 0
-    for c in COMMODITIES:
-        if _get_or_skip(session, Commodity, tenant_id, 'code', c['code']):
-            continue
-        session.add(Commodity(
-            tenant_id=tenant_id, config_id=config_id,
-            code=c['code'], description=c['description'],
-            freight_class=c['freight_class'], weight=c['weight'],
-            weight_uom=c['weight_uom'], base_uom=c['base_uom'],
-            is_hazmat=c.get('is_hazmat', False),
-            hazmat_class=c.get('hazmat_class'),
-            hazmat_un_number=c.get('hazmat_un_number'),
-            is_temperature_sensitive=c.get('is_temperature_sensitive', False),
-            temp_min=c.get('temp_min'), temp_max=c.get('temp_max'),
-            value_per_unit=c.get('value_per_unit'),
-            source="DEMO_SEED",
-        ))
-        created += 1
-    session.flush()
-    print(f"  Commodities: {created} created, {len(COMMODITIES) - created} already exist")
-
-
-# ---------------------------------------------------------------------------
-# Facilities (Sites + FacilityConfig)
-# ---------------------------------------------------------------------------
-
-FACILITIES = [
-    {"name": "Chicago Distribution Center", "type": "inventory", "ftype": FacilityType.SHIPPER,
-     "lat": 41.8781, "lon": -87.6298, "dock_doors": 16, "yard_spots": 60,
-     "hours": {"mon": {"open": "05:00", "close": "22:00"}, "tue": {"open": "05:00", "close": "22:00"},
-               "wed": {"open": "05:00", "close": "22:00"}, "thu": {"open": "05:00", "close": "22:00"},
-               "fri": {"open": "05:00", "close": "22:00"}, "sat": {"open": "06:00", "close": "14:00"}}},
-    {"name": "Dallas Warehouse", "type": "inventory", "ftype": FacilityType.SHIPPER,
-     "lat": 32.7767, "lon": -96.7970, "dock_doors": 12, "yard_spots": 45,
-     "hours": {"mon": {"open": "06:00", "close": "21:00"}, "tue": {"open": "06:00", "close": "21:00"},
-               "wed": {"open": "06:00", "close": "21:00"}, "thu": {"open": "06:00", "close": "21:00"},
-               "fri": {"open": "06:00", "close": "21:00"}}},
-    {"name": "Atlanta Hub", "type": "inventory", "ftype": FacilityType.SHIPPER,
-     "lat": 33.7490, "lon": -84.3880, "dock_doors": 14, "yard_spots": 50,
-     "hours": {"mon": {"open": "05:00", "close": "23:00"}, "tue": {"open": "05:00", "close": "23:00"},
-               "wed": {"open": "05:00", "close": "23:00"}, "thu": {"open": "05:00", "close": "23:00"},
-               "fri": {"open": "05:00", "close": "23:00"}, "sat": {"open": "07:00", "close": "15:00"}}},
-    {"name": "Memphis Intermodal Terminal", "type": "inventory", "ftype": FacilityType.TERMINAL,
-     "lat": 35.1495, "lon": -90.0490, "dock_doors": 20, "yard_spots": 80,
-     "hours": {"mon": {"open": "00:00", "close": "23:59"}, "tue": {"open": "00:00", "close": "23:59"},
-               "wed": {"open": "00:00", "close": "23:59"}, "thu": {"open": "00:00", "close": "23:59"},
-               "fri": {"open": "00:00", "close": "23:59"}, "sat": {"open": "00:00", "close": "23:59"},
-               "sun": {"open": "00:00", "close": "23:59"}}},
-    {"name": "Kansas City Cross-Dock", "type": "inventory", "ftype": FacilityType.CROSS_DOCK,
-     "lat": 39.0997, "lon": -94.5786, "dock_doors": 18, "yard_spots": 40,
-     "hours": {"mon": {"open": "04:00", "close": "23:00"}, "tue": {"open": "04:00", "close": "23:00"},
-               "wed": {"open": "04:00", "close": "23:00"}, "thu": {"open": "04:00", "close": "23:00"},
-               "fri": {"open": "04:00", "close": "23:00"}, "sat": {"open": "06:00", "close": "18:00"}}},
-    {"name": "New York Retail DC", "type": "inventory", "ftype": FacilityType.CONSIGNEE,
-     "lat": 40.7128, "lon": -74.0060, "dock_doors": 10, "yard_spots": 30,
-     "hours": {"mon": {"open": "06:00", "close": "20:00"}, "tue": {"open": "06:00", "close": "20:00"},
-               "wed": {"open": "06:00", "close": "20:00"}, "thu": {"open": "06:00", "close": "20:00"},
-               "fri": {"open": "06:00", "close": "20:00"}}},
-    {"name": "Los Angeles Grocery DC", "type": "inventory", "ftype": FacilityType.CONSIGNEE,
-     "lat": 33.9425, "lon": -118.2551, "dock_doors": 12, "yard_spots": 35,
-     "hours": {"mon": {"open": "05:00", "close": "21:00"}, "tue": {"open": "05:00", "close": "21:00"},
-               "wed": {"open": "05:00", "close": "21:00"}, "thu": {"open": "05:00", "close": "21:00"},
-               "fri": {"open": "05:00", "close": "21:00"}}},
-    {"name": "Port of Long Beach", "type": "inventory", "ftype": FacilityType.PORT,
-     "lat": 33.7701, "lon": -118.1937, "dock_doors": 6, "yard_spots": 75,
-     "hours": {"mon": {"open": "00:00", "close": "23:59"}, "tue": {"open": "00:00", "close": "23:59"},
-               "wed": {"open": "00:00", "close": "23:59"}, "thu": {"open": "00:00", "close": "23:59"},
-               "fri": {"open": "00:00", "close": "23:59"}, "sat": {"open": "00:00", "close": "23:59"},
-               "sun": {"open": "00:00", "close": "23:59"}}},
-]
-
-
-def seed_facilities(session, tenant_id, config_id):
-    created_sites = 0
-    created_configs = 0
-    for f in FACILITIES:
-        site = _get_site_by_name(session, config_id, f['name'])
-        if not site:
-            site = Site(
-                config_id=config_id, name=f['name'], type=f['type'],
-                latitude=f['lat'], longitude=f['lon'],
-            )
-            session.add(site)
-            session.flush()
-            created_sites += 1
-
-        existing_fc = session.execute(
-            select(FacilityConfig).where(
-                FacilityConfig.site_id == site.id,
-                FacilityConfig.config_id == config_id,
-            )
-        ).scalar_one_or_none()
-        if not existing_fc:
-            inbound = f['dock_doors'] // 2
-            session.add(FacilityConfig(
-                site_id=site.id, config_id=config_id, tenant_id=tenant_id,
-                facility_type=f['ftype'],
-                total_dock_doors=f['dock_doors'],
-                inbound_dock_doors=inbound,
-                outbound_dock_doors=f['dock_doors'] - inbound,
-                total_yard_spots=f['yard_spots'],
-                reefer_yard_spots=f['yard_spots'] // 5,
-                operating_hours=f['hours'],
-                timezone="America/Chicago",
-                requires_appointment=True,
-                appointment_lead_time_hrs=24,
-                default_appointment_duration_min=60,
-                capabilities=["LIVE_LOAD", "DROP_TRAILER"],
-                equipment_compatible=["DRY_VAN", "REEFER", "FLATBED"],
-                max_daily_inbound_loads=f['dock_doors'] * 3,
-                max_daily_outbound_loads=f['dock_doors'] * 3,
-            ))
-            created_configs += 1
-    session.flush()
-    print(f"  Sites: {created_sites} created, {len(FACILITIES) - created_sites} already exist")
-    print(f"  FacilityConfigs: {created_configs} created")
-
-
-# ---------------------------------------------------------------------------
-# Carriers
-# ---------------------------------------------------------------------------
+TENANT_ID = 1
+CONFIG_ID = 2
+NOW = datetime.utcnow()
+TODAY = date.today()
+random.seed(42)
 
 CARRIERS = [
-    {"code": "SWFT", "name": "Swift Transportation", "scac": "SWFT",
-     "carrier_type": CarrierType.ASSET, "modes": ["FTL"],
-     "equipment_types": ["DRY_VAN", "REEFER"], "otd": 92.0, "score": 88},
-    {"code": "WERN", "name": "Werner Enterprises", "scac": "WERN",
-     "carrier_type": CarrierType.ASSET, "modes": ["FTL", "LTL"],
-     "equipment_types": ["DRY_VAN", "REEFER", "FLATBED"], "otd": 89.0, "score": 84},
-    {"code": "JBHT", "name": "J.B. Hunt", "scac": "JBHT",
-     "carrier_type": CarrierType.ASSET, "modes": ["INTERMODAL", "FTL"],
-     "equipment_types": ["CONTAINER_40", "CONTAINER_40HC", "DRY_VAN"], "otd": 94.0, "score": 91},
-    {"code": "XPOL", "name": "XPO Logistics", "scac": "XPOL",
-     "carrier_type": CarrierType.THREE_PL, "modes": ["LTL"],
-     "equipment_types": ["DRY_VAN"], "otd": 87.0, "score": 80},
-    {"code": "SNDR", "name": "Schneider National", "scac": "SNDR",
-     "carrier_type": CarrierType.ASSET, "modes": ["FTL", "INTERMODAL"],
-     "equipment_types": ["DRY_VAN", "REEFER", "CONTAINER_40HC"], "otd": 91.0, "score": 87},
-    {"code": "ECHO", "name": "Echo Global Logistics", "scac": "ECHO",
-     "carrier_type": CarrierType.BROKER, "modes": ["FTL", "LTL", "INTERMODAL"],
-     "equipment_types": ["DRY_VAN", "REEFER", "FLATBED"], "otd": 85.0, "score": 76},
+    {"code": "SNDR", "name": "Schneider National", "carrier_type": "ASSET", "scac": "SNDR", "mc_number": "MC-133655", "dot_number": "231027", "modes": ["FTL", "LTL", "INTERMODAL"], "equipment_types": ["DRY_VAN", "REEFER", "FLATBED"], "service_regions": ["US-WEST", "US-NATIONAL"]},
+    {"code": "JBHT", "name": "J.B. Hunt Transport", "carrier_type": "ASSET", "scac": "JBHT", "mc_number": "MC-92485", "dot_number": "62205", "modes": ["FTL", "INTERMODAL", "DRAYAGE"], "equipment_types": ["DRY_VAN", "REEFER", "CONTAINER_40"], "service_regions": ["US-NATIONAL"]},
+    {"code": "WERN", "name": "Werner Enterprises", "carrier_type": "ASSET", "scac": "WERN", "mc_number": "MC-153625", "dot_number": "91227", "modes": ["FTL", "LTL"], "equipment_types": ["DRY_VAN", "REEFER", "FLATBED"], "service_regions": ["US-WEST", "US-SW"]},
+    {"code": "XPOL", "name": "XPO Logistics", "carrier_type": "THREE_PL", "scac": "CNWY", "mc_number": "MC-136561", "dot_number": "282914", "modes": ["LTL", "FTL"], "equipment_types": ["DRY_VAN", "REEFER"], "service_regions": ["US-NATIONAL"]},
+    {"code": "ODFL", "name": "Old Dominion Freight Line", "carrier_type": "ASSET", "scac": "ODFL", "mc_number": "MC-76573", "dot_number": "66420", "modes": ["LTL"], "equipment_types": ["DRY_VAN"], "service_regions": ["US-NATIONAL"]},
+    {"code": "FDXF", "name": "FedEx Freight", "carrier_type": "ASSET", "scac": "FXFE", "mc_number": "MC-349309", "dot_number": "1067081", "modes": ["LTL", "FTL"], "equipment_types": ["DRY_VAN", "REEFER"], "service_regions": ["US-NATIONAL"]},
+    {"code": "USFC", "name": "US Foods Carrier Fleet", "carrier_type": "ASSET", "scac": "USFC", "mc_number": None, "dot_number": None, "modes": ["FTL"], "equipment_types": ["REEFER"], "service_regions": ["US-WEST"]},
+    {"code": "KNGT", "name": "Knight-Swift Transportation", "carrier_type": "ASSET", "scac": "KNIG", "mc_number": "MC-116574", "dot_number": "52814", "modes": ["FTL", "INTERMODAL"], "equipment_types": ["DRY_VAN", "REEFER", "FLATBED"], "service_regions": ["US-WEST", "US-SW", "US-NATIONAL"]},
 ]
 
+LANE_DISTANCES = {
+    "TYSON→CDC_WEST": 1200, "KRAFT→CDC_WEST": 1800, "GENMILLS→CDC_WEST": 1500,
+    "NESTLE→CDC_WEST": 1100, "TROP→CDC_WEST": 2400, "SYSCOMEAT→CDC_WEST": 350,
+    "LANDOLAKES→CDC_WEST": 1600, "CONAGRA→CDC_WEST": 1400, "RICHPROD→CDC_WEST": 2200,
+    "COCACOLA→CDC_WEST": 2100,
+    "CDC_WEST→CUST_PDX": 175, "CDC_WEST→CUST_EUG": 280, "CDC_WEST→CUST_SAL": 250,
+    "CDC_WEST→CUST_SEA": 175, "CDC_WEST→CUST_TAC": 155, "CDC_WEST→CUST_SPO": 350,
+    "CDC_WEST→CUST_LAX": 960, "CDC_WEST→CUST_SFO": 640, "CDC_WEST→CUST_SDG": 1090,
+    "CDC_WEST→CUST_SAC": 585, "CDC_WEST→CUST_PHX": 1420, "CDC_WEST→CUST_TUS": 1510,
+    "CDC_WEST→CUST_MES": 1430, "CDC_WEST→CUST_SLC": 770,
+}
 
-def seed_carriers(session, tenant_id, config_id):
-    created_carriers = 0
-    created_scorecards = 0
-    today = date.today()
-    period_start = today - timedelta(days=90)
+SHIPMENT_STATUSES = ["DRAFT", "DISPATCHED", "IN_TRANSIT", "DELIVERED"]
+SHIPMENT_STATUS_WEIGHTS = [0.10, 0.15, 0.25, 0.50]
 
+
+def seed_carriers(db: Session):
+    existing = db.execute(text("SELECT count(*) FROM carrier WHERE tenant_id = :t"), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  Carriers already exist ({existing}), skipping")
+        return
     for c in CARRIERS:
-        if _get_or_skip(session, Carrier, tenant_id, 'code', c['code']):
+        db.execute(text("""
+            INSERT INTO carrier (code, name, carrier_type, scac, mc_number, dot_number,
+                modes, equipment_types, service_regions, is_active, onboarding_status,
+                onboarding_date, tenant_id, config_id, created_at)
+            VALUES (:code, :name, :ct, :scac, :mc, :dot,
+                :modes, :eq, :regions, true, 'ACTIVE',
+                :od, :tid, :cid, :now)
+        """), {
+            "code": c["code"], "name": c["name"], "ct": c["carrier_type"],
+            "scac": c["scac"], "mc": c.get("mc_number"), "dot": c.get("dot_number"),
+            "modes": json.dumps(c["modes"]), "eq": json.dumps(c["equipment_types"]),
+            "regions": json.dumps(c["service_regions"]),
+            "od": TODAY - timedelta(days=random.randint(30, 365)),
+            "tid": TENANT_ID, "cid": CONFIG_ID, "now": NOW,
+        })
+    db.commit()
+    print(f"  Inserted {len(CARRIERS)} carriers")
+
+
+def seed_carrier_lanes(db: Session):
+    existing = db.execute(text("SELECT count(*) FROM carrier_lane WHERE tenant_id = :t"), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  Carrier-lanes already exist ({existing}), skipping")
+        return
+    carriers = db.execute(text("SELECT id, code FROM carrier WHERE tenant_id = :t"), {"t": TENANT_ID}).mappings().all()
+    lanes = db.execute(text("""
+        SELECT tl.id FROM transportation_lane tl WHERE tl.config_id = :cid
+    """), {"cid": CONFIG_ID}).mappings().all()
+    count = 0
+    for lane in lanes:
+        assigned = random.sample(list(carriers), k=min(random.randint(2, 4), len(carriers)))
+        for i, c in enumerate(assigned):
+            db.execute(text("""
+                INSERT INTO carrier_lane (carrier_id, lane_id, mode, equipment_type,
+                    weekly_capacity, avg_transit_days, priority, is_primary, is_active,
+                    eff_start_date, eff_end_date, tenant_id, created_at)
+                VALUES (:cid, :lid, 'FTL', 'DRY_VAN', :wc, :atd, :pri, :prim, true,
+                    :es, :ee, :tid, :now)
+            """), {
+                "cid": c["id"], "lid": lane["id"], "wc": random.randint(8, 30),
+                "atd": round(random.uniform(1.0, 4.0), 1),
+                "pri": i + 1, "prim": i == 0,
+                "es": TODAY - timedelta(days=90), "ee": TODAY + timedelta(days=275),
+                "tid": TENANT_ID, "now": NOW,
+            })
+            count += 1
+    db.commit()
+    print(f"  Inserted {count} carrier-lane assignments")
+
+
+def seed_freight_rates(db: Session):
+    existing = db.execute(text("SELECT count(*) FROM freight_rate WHERE tenant_id = :t"), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  Freight rates already exist ({existing}), skipping")
+        return
+    carrier_lanes = db.execute(text(
+        "SELECT carrier_id, lane_id, mode, equipment_type FROM carrier_lane WHERE tenant_id = :t"
+    ), {"t": TENANT_ID}).mappings().all()
+    count = 0
+    for cl in carrier_lanes:
+        db.execute(text("""
+            INSERT INTO freight_rate (carrier_id, lane_id, mode, equipment_type,
+                rate_type, rate_per_mile, min_charge, fuel_surcharge_pct,
+                eff_start_date, eff_end_date, is_active, tenant_id, config_id, created_at)
+            VALUES (:cid, :lid, :mode, :eq, 'CONTRACT', :rpm, :mc, :fsp,
+                :es, :ee, true, :tid, :cfgid, :now)
+        """), {
+            "cid": cl["carrier_id"], "lid": cl["lane_id"],
+            "mode": cl["mode"], "eq": cl["equipment_type"],
+            "rpm": round(random.uniform(2.10, 3.80), 2),
+            "mc": round(random.uniform(250, 500), 2),
+            "fsp": round(random.uniform(0.15, 0.28), 2),
+            "es": TODAY - timedelta(days=90), "ee": TODAY + timedelta(days=275),
+            "tid": TENANT_ID, "cfgid": CONFIG_ID, "now": NOW,
+        })
+        count += 1
+    db.commit()
+    print(f"  Inserted {count} freight rates")
+
+
+def seed_tms_shipments(db: Session, n=300):
+    existing = db.execute(text(
+        "SELECT count(*) FROM tms_shipment WHERE tenant_id = :t AND source = 'demo_seed'"
+    ), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  TMS shipments already exist ({existing}), skipping")
+        return
+    lanes = db.execute(text("""
+        SELECT tl.id, s1.name AS origin, s2.name AS dest, tl.from_site_id, tl.to_site_id
+        FROM transportation_lane tl
+        JOIN site s1 ON tl.from_site_id = s1.id JOIN site s2 ON tl.to_site_id = s2.id
+        WHERE tl.config_id = :cid
+    """), {"cid": CONFIG_ID}).mappings().all()
+    outbound = [l for l in lanes if l["origin"] == "CDC_WEST"]
+    inbound = [l for l in lanes if l["dest"] == "CDC_WEST"]
+    count = 0
+    for i in range(n):
+        lane = random.choice(outbound if random.random() < 0.7 else inbound)
+        key = f"{lane['origin']}→{lane['dest']}"
+        dist = LANE_DISTANCES.get(key, 500)
+        days_ago = random.randint(0, 28)
+        pickup = NOW - timedelta(days=days_ago, hours=random.randint(6, 18))
+        delivery = pickup + timedelta(days=max(1, round(dist / 500)))
+        status = random.choices(SHIPMENT_STATUSES, weights=SHIPMENT_STATUS_WEIGHTS)[0]
+        weight = round(random.uniform(8000, 44000), 0)
+        pallets = random.randint(4, 26)
+        db.execute(text("""
+            INSERT INTO tms_shipment (shipment_number, status, origin_site_id, destination_site_id,
+                lane_id, quantity, weight, volume, pallet_count, mode, required_equipment,
+                requested_pickup_date, requested_delivery_date, priority, service_level,
+                source, tenant_id, config_id, created_at)
+            VALUES (:sn, :st, :oid, :did, :lid, :qty, :wt, :vol, :pal, 'FTL', 'DRY_VAN',
+                :rpd, :rdd, :pri, :sl, 'demo_seed', :tid, :cid, :ca)
+        """), {
+            "sn": f"FD-{i+1:06d}", "st": status,
+            "oid": lane["from_site_id"], "did": lane["to_site_id"], "lid": lane["id"],
+            "qty": pallets, "wt": weight, "vol": round(random.uniform(800, 3200), 0),
+            "pal": pallets, "rpd": pickup, "rdd": delivery,
+            "pri": random.choice([1, 2, 3, 4, 5]),
+            "sl": random.choice(["STANDARD", "STANDARD", "STANDARD", "EXPEDITED", "PREMIUM"]),
+            "ca": pickup - timedelta(days=random.randint(1, 3)),
+            "tid": TENANT_ID, "cid": CONFIG_ID,
+        })
+        count += 1
+    db.commit()
+    print(f"  Inserted {count} TMS shipments")
+
+
+def seed_loads(db: Session, n=120):
+    existing = db.execute(text(
+        "SELECT count(*) FROM load WHERE tenant_id = :t AND source = 'demo_seed'"
+    ), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  Loads already exist ({existing}), skipping")
+        return
+    carriers = db.execute(text("SELECT id FROM carrier WHERE tenant_id = :t"), {"t": TENANT_ID}).mappings().all()
+    lanes = db.execute(text("""
+        SELECT tl.id, tl.from_site_id, tl.to_site_id, s1.name AS origin, s2.name AS dest
+        FROM transportation_lane tl
+        JOIN site s1 ON tl.from_site_id = s1.id JOIN site s2 ON tl.to_site_id = s2.id
+        WHERE tl.config_id = :cid
+    """), {"cid": CONFIG_ID}).mappings().all()
+    statuses = ["PLANNING", "READY", "TENDERED", "ASSIGNED", "IN_TRANSIT", "DELIVERED", "DELIVERED", "DELIVERED"]
+    count = 0
+    for i in range(n):
+        lane = random.choice(lanes)
+        key = f"{lane['origin']}→{lane['dest']}"
+        dist = LANE_DISTANCES.get(key, 500)
+        carrier = random.choice(carriers)
+        days_ago = random.randint(0, 21)
+        depart = NOW - timedelta(days=days_ago, hours=random.randint(4, 20))
+        arrive = depart + timedelta(hours=max(8, round(dist / 45)))
+        wt = round(random.uniform(20000, 44000), 0)
+        vol = round(random.uniform(1800, 3600), 0)
+        pals = random.randint(12, 26)
+        cost = round(dist * random.uniform(2.20, 3.50), 2)
+        db.execute(text("""
+            INSERT INTO load (load_number, status, origin_site_id, destination_site_id,
+                mode, equipment_type, carrier_id, total_weight, total_volume, total_pallets,
+                weight_utilization_pct, volume_utilization_pct, planned_departure, planned_arrival,
+                total_cost, cost_per_mile, total_miles, source, tenant_id, config_id, created_at)
+            VALUES (:ln, :st, :oid, :did, 'FTL', 'DRY_VAN', :cid, :wt, :vol, :pal,
+                :wu, :vu, :pd, :pa, :tc, :cpm, :mi, 'demo_seed', :tid, :cfgid, :ca)
+        """), {
+            "ln": f"LD-{i+1:05d}", "st": random.choice(statuses),
+            "oid": lane["from_site_id"], "did": lane["to_site_id"],
+            "cid": carrier["id"], "wt": wt, "vol": vol, "pal": pals,
+            "wu": round(wt / 44000 * 100, 1), "vu": round(vol / 3800 * 100, 1),
+            "pd": depart, "pa": arrive,
+            "tc": cost, "cpm": round(cost / max(dist, 1), 2), "mi": dist,
+            "tid": TENANT_ID, "cfgid": CONFIG_ID,
+            "ca": depart - timedelta(hours=random.randint(1, 12)),
+        })
+        count += 1
+    db.commit()
+    print(f"  Inserted {count} loads")
+
+
+def seed_transportation_plan(db: Session):
+    existing = db.execute(text(
+        "SELECT count(*) FROM transportation_plan WHERE tenant_id = :t AND generated_by = 'demo_seed'"
+    ), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  Transportation plans already exist ({existing}), skipping")
+        return
+    loads = db.execute(text("""
+        SELECT id, origin_site_id, destination_site_id, carrier_id,
+            total_weight, total_volume, total_pallets, weight_utilization_pct,
+            total_cost, cost_per_mile, total_miles, planned_departure, planned_arrival
+        FROM load WHERE tenant_id = :t AND source = 'demo_seed' ORDER BY planned_departure
+    """), {"t": TENANT_ID}).mappings().all()
+    lanes_map = {}
+    for r in db.execute(text(
+        "SELECT id, from_site_id, to_site_id FROM transportation_lane WHERE config_id = :c"
+    ), {"c": CONFIG_ID}).mappings().all():
+        lanes_map[(r["from_site_id"], r["to_site_id"])] = r["id"]
+
+    for version in ["constrained_live", "unconstrained_reference"]:
+        total_cost = sum(float(l["total_cost"] or 0) for l in loads if l["total_cost"])
+        total_miles = sum(float(l["total_miles"] or 0) for l in loads if l["total_miles"])
+        is_unc = version == "unconstrained_reference"
+        db.execute(text("""
+            INSERT INTO transportation_plan (config_id, plan_version, plan_name, status,
+                plan_start_date, plan_end_date, planning_horizon_days,
+                total_planned_loads, total_planned_shipments, total_estimated_cost,
+                total_estimated_miles, avg_cost_per_mile, avg_utilization_pct,
+                carrier_count, optimization_method, generated_by, tenant_id, created_at)
+            VALUES (:cid, :pv, :pn, 'READY', :sd, :ed, 28, :tpl, :tps, :tec,
+                :tem, :acpm, :aup, 8, :om, 'demo_seed', :tid, :now)
+        """), {
+            "cid": CONFIG_ID, "pv": version,
+            "pn": f"Food Dist — {version.replace('_', ' ').title()}",
+            "sd": TODAY - timedelta(days=28), "ed": TODAY,
+            "tpl": len(loads), "tps": len(loads) * 2,
+            "tec": round(total_cost * (0.92 if is_unc else 1.0), 2),
+            "tem": round(total_miles, 1),
+            "acpm": round(total_cost / max(total_miles, 1), 2),
+            "aup": round(random.uniform(85, 95) if is_unc else random.uniform(72, 88), 1),
+            "om": "UNCONSTRAINED_HEURISTIC" if is_unc else "AGENT",
+            "tid": TENANT_ID, "now": NOW,
+        })
+        plan_id = db.execute(text(
+            "SELECT id FROM transportation_plan WHERE tenant_id = :t AND plan_version = :pv AND generated_by = 'demo_seed' ORDER BY id DESC LIMIT 1"
+        ), {"t": TENANT_ID, "pv": version}).scalar()
+        for ld in loads:
+            lane_id = lanes_map.get((ld["origin_site_id"], ld["destination_site_id"]))
+            cost_mult = 0.92 if is_unc else 1.0
+            db.execute(text("""
+                INSERT INTO transportation_plan_item (plan_id, origin_site_id, destination_site_id,
+                    lane_id, mode, equipment_type, carrier_id, status,
+                    planned_pickup_date, planned_delivery_date,
+                    shipment_count, total_weight, total_volume, total_pallets,
+                    utilization_pct, estimated_cost, estimated_cost_per_mile, distance_miles,
+                    load_id, tenant_id, created_at)
+                VALUES (:pid, :oid, :did, :lid, 'FTL', 'DRY_VAN', :cid, 'PLANNED',
+                    :ppd, :pdd, 2, :tw, :tv, :tp, :up, :ec, :ecpm, :dm, :ldid, :tid, :now)
+            """), {
+                "pid": plan_id, "oid": ld["origin_site_id"], "did": ld["destination_site_id"],
+                "lid": lane_id, "cid": ld["carrier_id"],
+                "ppd": ld["planned_departure"], "pdd": ld["planned_arrival"],
+                "tw": ld["total_weight"], "tv": ld["total_volume"], "tp": ld["total_pallets"],
+                "up": ld["weight_utilization_pct"],
+                "ec": round(float(ld["total_cost"] or 0) * cost_mult, 2),
+                "ecpm": ld["cost_per_mile"], "dm": ld["total_miles"], "ldid": ld["id"],
+                "tid": TENANT_ID, "now": NOW,
+            })
+    db.commit()
+    print(f"  Inserted 2 transportation plans with {len(loads)} items each")
+
+
+def seed_appointments(db: Session):
+    existing = db.execute(text("SELECT count(*) FROM appointment WHERE tenant_id = :t"), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  Appointments already exist ({existing}), skipping")
+        return
+    loads_data = db.execute(text("""
+        SELECT id, destination_site_id, carrier_id, planned_arrival, status
+        FROM load WHERE tenant_id = :t AND source = 'demo_seed' LIMIT 80
+    """), {"t": TENANT_ID}).mappings().all()
+    dock_doors = {}
+    for dd in db.execute(text("SELECT id, site_id FROM dock_door WHERE tenant_id = :t"), {"t": TENANT_ID}).mappings().all():
+        dock_doors.setdefault(dd["site_id"], []).append(dd["id"])
+    count = 0
+    for ld in loads_data:
+        doors = dock_doors.get(ld["destination_site_id"], [])
+        if not doors:
             continue
-        carrier = Carrier(
-            tenant_id=tenant_id, config_id=config_id,
-            code=c['code'], name=c['name'], scac=c['scac'],
-            carrier_type=c['carrier_type'],
-            modes=c['modes'], equipment_types=c['equipment_types'],
-            service_regions=["US_DOMESTIC"],
-            is_active=True, onboarding_status="ACTIVE",
-            onboarding_date=date(2025, 1, 15),
-            primary_contact_name=f"{c['name']} Dispatch",
-            dispatch_email=f"dispatch@{c['code'].lower()}.com",
-            source="DEMO_SEED",
-        )
-        session.add(carrier)
-        session.flush()
-        created_carriers += 1
-
-        session.add(CarrierScorecard(
-            tenant_id=tenant_id, carrier_id=carrier.id,
-            period_start=period_start, period_end=today,
-            total_shipments=320, total_loads=280,
-            on_time_pickup_pct=c['otd'] - 2.0,
-            on_time_delivery_pct=c['otd'],
-            avg_transit_variance_hrs=round((100 - c['otd']) * 0.8, 1),
-            avg_cost_per_mile=round(2.10 + (100 - c['score']) * 0.02, 2),
-            avg_cost_per_shipment=round(1800 + (100 - c['score']) * 30, 0),
-            damage_rate_pct=round(0.2 + (100 - c['score']) * 0.01, 2),
-            claims_count=max(0, (100 - c['score']) // 5),
-            tender_acceptance_rate_pct=round(78 + c['score'] * 0.15, 1),
-            tracking_compliance_pct=round(80 + c['score'] * 0.15, 1),
-            composite_score=float(c['score']),
-            score_components={"on_time": 30, "cost": 25, "quality": 20, "responsiveness": 25},
-        ))
-        created_scorecards += 1
-
-    session.flush()
-    print(f"  Carriers: {created_carriers} created, {len(CARRIERS) - created_carriers} already exist")
-    print(f"  CarrierScorecards: {created_scorecards} created")
+        sched = ld["planned_arrival"] or (NOW - timedelta(days=random.randint(0, 14)))
+        status = "COMPLETED" if ld["status"] == "DELIVERED" else random.choice(["CONFIRMED", "CHECKED_IN", "AT_DOCK"])
+        db.execute(text("""
+            INSERT INTO appointment (site_id, dock_door_id, load_id, appointment_type,
+                status, scheduled_start, scheduled_end, carrier_id, tenant_id, created_at)
+            VALUES (:sid, :ddid, :lid, 'DELIVERY', :st, :ss, :se, :cid, :tid, :now)
+        """), {
+            "sid": ld["destination_site_id"], "ddid": random.choice(doors), "lid": ld["id"],
+            "st": status, "ss": sched, "se": sched + timedelta(hours=2),
+            "cid": ld["carrier_id"], "tid": TENANT_ID, "now": NOW,
+        })
+        count += 1
+    db.commit()
+    print(f"  Inserted {count} appointments")
 
 
-# ---------------------------------------------------------------------------
-# Lanes (TransportationLane + LaneProfile)
-# ---------------------------------------------------------------------------
-
-LANE_DEFS = [
-    ("Chicago Distribution Center", "New York Retail DC", "FTL", 790, 13.0, 2.1),
-    ("Chicago Distribution Center", "Los Angeles Grocery DC", "FTL", 2015, 32.0, 2.45),
-    ("Dallas Warehouse", "Atlanta Hub", "FTL", 781, 12.5, 2.05),
-    ("Dallas Warehouse", "New York Retail DC", "FTL", 1548, 24.0, 2.30),
-    ("Atlanta Hub", "New York Retail DC", "FTL", 868, 14.0, 2.15),
-    ("Memphis Intermodal Terminal", "Chicago Distribution Center", "INTERMODAL", 530, 18.0, 1.80),
-    ("Kansas City Cross-Dock", "Dallas Warehouse", "LTL", 500, 10.0, 2.60),
-    ("Port of Long Beach", "Chicago Distribution Center", "INTERMODAL", 2015, 72.0, 1.85),
-    ("Port of Long Beach", "Dallas Warehouse", "INTERMODAL", 1435, 56.0, 1.90),
-    ("Atlanta Hub", "Los Angeles Grocery DC", "FTL", 2175, 34.0, 2.50),
-]
-
-
-def seed_lanes(session, tenant_id, config_id):
-    created_lanes = 0
-    created_profiles = 0
-
-    for (origin_name, dest_name, mode, miles, drive_hrs, cpm) in LANE_DEFS:
-        origin = _get_site_by_name(session, config_id, origin_name)
-        dest = _get_site_by_name(session, config_id, dest_name)
-        if not origin or not dest:
-            print(f"    WARN: could not find sites for lane {origin_name} -> {dest_name}")
-            continue
-
-        lane = _get_lane(session, config_id, origin.id, dest.id)
-        if not lane:
-            lane = TransportationLane(
-                config_id=config_id,
-                from_site_id=origin.id, to_site_id=dest.id,
-                capacity=50,
-            )
-            session.add(lane)
-            session.flush()
-            created_lanes += 1
-
-        existing_lp = session.execute(
-            select(LaneProfile).where(
-                LaneProfile.lane_id == lane.id,
-                LaneProfile.config_id == config_id,
-            )
-        ).scalar_one_or_none()
-        if not existing_lp:
-            transit_days = round(drive_hrs / 10.0, 1)  # ~10 hrs driving/day
-            session.add(LaneProfile(
-                lane_id=lane.id, config_id=config_id, tenant_id=tenant_id,
-                primary_mode=mode, direction=LaneDirection.OUTBOUND,
-                distance_miles=float(miles), drive_time_hours=drive_hrs,
-                avg_transit_days=transit_days,
-                p10_transit_days=round(transit_days * 0.85, 1),
-                p50_transit_days=transit_days,
-                p90_transit_days=round(transit_days * 1.25, 1),
-                avg_weekly_volume=12, peak_weekly_volume=20,
-                avg_cost_per_mile=cpm,
-                benchmark_rate=round(cpm * miles, 2),
-                benchmark_source="DAT",
-                benchmark_date=date.today() - timedelta(days=7),
-                disruption_frequency=2.5,
-                weather_risk_score=0.15,
-                congestion_risk_score=0.20,
-                is_active=True,
-            ))
-            created_profiles += 1
-
-    session.flush()
-    print(f"  Lanes: {created_lanes} created, {len(LANE_DEFS) - created_lanes} already exist")
-    print(f"  LaneProfiles: {created_profiles} created")
+def seed_exceptions(db: Session):
+    existing = db.execute(text("SELECT count(*) FROM shipment_exception WHERE tenant_id = :t"), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  Exceptions already exist ({existing}), skipping")
+        return
+    shipments = db.execute(text("""
+        SELECT id FROM tms_shipment WHERE tenant_id = :t AND source = 'demo_seed'
+        AND status IN ('IN_TRANSIT', 'DELIVERED') ORDER BY random() LIMIT 20
+    """), {"t": TENANT_ID}).mappings().all()
+    exc_types = ["LATE_PICKUP", "LATE_DELIVERY", "WEATHER_DELAY", "CARRIER_BREAKDOWN",
+                 "TEMPERATURE_EXCURSION", "DETENTION", "ROUTE_DEVIATION", "SHORTAGE"]
+    count = 0
+    for s in shipments:
+        etype = random.choice(exc_types)
+        db.execute(text("""
+            INSERT INTO shipment_exception (shipment_id, exception_type, severity,
+                resolution_status, description, detected_at, estimated_delay_hrs,
+                estimated_cost_impact, detection_source, tenant_id, created_at)
+            VALUES (:sid, :et, :sev, :rs, :desc, :da, :edh, :eci, :ds, :tid, :now)
+        """), {
+            "sid": s["id"], "et": etype,
+            "sev": random.choice(["LOW", "MEDIUM", "MEDIUM", "HIGH", "CRITICAL"]),
+            "rs": random.choice(["DETECTED", "DETECTED", "INVESTIGATING", "RESOLVED", "RESOLVED"]),
+            "desc": f"{etype.replace('_', ' ').title()} detected on shipment",
+            "da": NOW - timedelta(hours=random.randint(1, 72)),
+            "edh": round(random.uniform(2, 24), 1),
+            "eci": round(random.uniform(150, 5000), 2),
+            "ds": random.choice(["P44_WEBHOOK", "CARRIER_EDI", "MANUAL", "AGENT_DETECTION"]),
+            "tid": TENANT_ID, "now": NOW,
+        })
+        count += 1
+    db.commit()
+    print(f"  Inserted {count} shipment exceptions")
 
 
-# ---------------------------------------------------------------------------
-# Freight Rates
-# ---------------------------------------------------------------------------
+def add_tms_decision_types(db: Session):
+    tms_types = [
+        "LOAD_BUILD", "FREIGHT_PROCUREMENT", "SHIPMENT_TRACKING",
+        "DOCK_SCHEDULING", "CAPACITY_PROMISE", "EQUIPMENT_REPOSITION",
+        "BROKER_ROUTING", "INTERMODAL_TRANSFER", "DEMAND_SENSING",
+        "CAPACITY_BUFFER", "EXCEPTION_MANAGEMENT",
+    ]
+    existing = db.execute(text(
+        "SELECT enumlabel FROM pg_enum JOIN pg_type ON pg_enum.enumtypid = pg_type.oid "
+        "WHERE typname = 'decision_type_enum'"
+    )).scalars().all()
+    added = 0
+    for dt in tms_types:
+        if dt not in existing:
+            db.execute(text(f"ALTER TYPE decision_type_enum ADD VALUE IF NOT EXISTS '{dt}'"))
+            added += 1
+    if added:
+        db.commit()
+        print(f"  Added {added} TMS decision types to enum")
+    else:
+        print("  TMS decision types already in enum")
 
-def seed_rates(session, tenant_id, config_id):
-    created = 0
-    today = date.today()
-    carriers = session.execute(
-        select(Carrier).where(Carrier.tenant_id == tenant_id)
-    ).scalars().all()
-    carrier_map = {c.code: c for c in carriers}
 
-    # Build lane lookup
-    lanes = []
-    for (origin_name, dest_name, mode, miles, _, _) in LANE_DEFS:
-        origin = _get_site_by_name(session, config_id, origin_name)
-        dest = _get_site_by_name(session, config_id, dest_name)
-        if origin and dest:
-            lane = _get_lane(session, config_id, origin.id, dest.id)
-            if lane:
-                lanes.append((lane, mode, miles))
+def seed_agent_decisions(db: Session, target=120):
+    existing = db.execute(text(
+        "SELECT count(*) FROM agent_decisions WHERE tenant_id = :t AND agent_type = 'TMS_TRM'"
+    ), {"t": TENANT_ID}).scalar()
+    if existing > 0:
+        print(f"  TMS agent decisions already exist ({existing}), skipping")
+        return
+    sites = db.execute(text("SELECT id, name FROM site WHERE config_id = :c"), {"c": CONFIG_ID}).mappings().all()
+    carriers = db.execute(text("SELECT id, name FROM carrier WHERE tenant_id = :t"), {"t": TENANT_ID}).mappings().all()
 
-    # Assign 2-4 carriers per lane (20 total rates target)
-    rate_assignments = [
-        ("SWFT", 0, RateType.CONTRACT, 0.00), ("WERN", 0, RateType.CONTRACT, 0.03),
-        ("SNDR", 1, RateType.CONTRACT, -0.02), ("JBHT", 1, RateType.CONTRACT, 0.05),
-        ("SWFT", 2, RateType.CONTRACT, 0.01), ("XPOL", 2, RateType.SPOT, 0.10),
-        ("WERN", 3, RateType.CONTRACT, 0.02), ("ECHO", 3, RateType.SPOT, 0.08),
-        ("SNDR", 4, RateType.CONTRACT, -0.01), ("SWFT", 4, RateType.CONTRACT, 0.04),
-        ("JBHT", 5, RateType.CONTRACT, -0.10), ("SNDR", 5, RateType.CONTRACT, 0.00),
-        ("XPOL", 6, RateType.CONTRACT, 0.15), ("ECHO", 6, RateType.SPOT, 0.12),
-        ("JBHT", 7, RateType.CONTRACT, -0.15), ("SNDR", 7, RateType.CONTRACT, -0.05),
-        ("JBHT", 8, RateType.CONTRACT, -0.10), ("ECHO", 8, RateType.SPOT, 0.05),
-        ("SWFT", 9, RateType.CONTRACT, 0.02), ("WERN", 9, RateType.CONTRACT, 0.06),
+    decisions_spec = [
+        ("LOAD_BUILD", [
+            ("Load consolidation — PDX + EUG", "Consolidate 3 LTL shipments to Portland and Eugene into single FTL", "Reduces cost per shipment by 35%, fills trailer to 87% utilisation"),
+            ("Multi-stop load — CA customers", "Build multi-stop FTL: CDC_WEST → LAX → SFO → SAC", "Same-day delivery for 3 customers, 92% utilisation vs 3 separate LTL at 45%"),
+            ("Split overweight load", "Split 52,000 lb shipment into two loads for 44,000 lb FTL limit", "Compliance required — single overweight load would face $4,200 fine"),
+        ]),
+        ("FREIGHT_PROCUREMENT", [
+            ("Tender to Schneider — Lane 11", "Award CDC_WEST→PDX to Schneider at $2.45/mi (contract rate)", "Best rate among 3 bids; 98.2% OTD history on this lane"),
+            ("Spot rate escalation — Phoenix", "Market rate for CDC_WEST→PHX spiked 22% — spot tender at $3.85/mi to Knight-Swift", "Contract rate unavailable this week. Spot avoids service failure."),
+            ("Carrier waterfall — rejected tender", "JB Hunt rejected Lane 17 tender. Cascading to Werner at +$0.15/mi", "Auto-cascade per waterfall priority. Werner confirmed in 12 minutes."),
+        ]),
+        ("SHIPMENT_TRACKING", [
+            ("ETA slip — FD-000042", "Carrier reports 4-hour delay due to I-5 construction near Sacramento", "Revised ETA still within delivery window."),
+            ("GPS dark — FD-000108", "No tracking update for 6 hours on FD-000108 (CDC_WEST→SEA)", "Dispatched carrier check-call. Dead zone on US-97."),
+            ("Early arrival — FD-000201", "Shipment arriving 8 hours early at CUST_SFO", "Dock appointment rescheduled. Customer notified."),
+        ]),
+        ("DOCK_SCHEDULING", [
+            ("Dock conflict — Door D-03", "Two deliveries at D-03 14:00. Moved FD-000055 to D-05.", "D-05 reefer-capable. Zero wait time impact."),
+            ("Peak day rebalance", "Thursday 18 inbound vs 8-door capacity. Shifted 4 to Wednesday PM.", "Peak dock utilisation reduced from 225% to 175%."),
+        ]),
+        ("CAPACITY_PROMISE", [
+            ("Lane 17 capacity commit", "Committed 12 loads/week CDC_WEST→LAX for 4 weeks with Schneider", "Locked rate $2.85/mi vs spot $3.40/mi."),
+            ("Reefer capacity alert", "Reefer availability dropping to 60% for Weeks 18-20", "PEAK_PRODUCE_SEASON approaching. Recommend 8 additional reefer loads/week."),
+        ]),
+        ("EQUIPMENT_REPOSITION", [
+            ("Empty reposition PHX→CDC_WEST", "6 empty dry vans at CUST_PHX. Repositioning 4 to CDC_WEST.", "$380 deadhead vs $1,200 spot trailer rental."),
+            ("Reefer pre-position for produce season", "Pre-positioning 3 reefers at CDC_WEST from CUST_SLC", "Produce season demand starts Week 18."),
+        ]),
+        ("BROKER_ROUTING", [
+            ("Overflow to XPO — surge week", "Route 5 overflow loads through XPO for Week 16 surge", "Asset carriers at capacity. XPO rate 18% above contract but service guaranteed."),
+        ]),
+        ("EXCEPTION_MANAGEMENT", [
+            ("Weather delay — I-10 closure", "Flash flooding closed I-10 near Tucson. 3 shipments affected.", "Rerouted via I-8. +2 hours transit. Customers notified."),
+            ("Carrier breakdown — Werner", "Werner tractor breakdown Lane 24 (CDC_WEST→SLC). Load stranded.", "Knight-Swift rescue unit dispatched. ETA 3 hours."),
+            ("Refused delivery — CUST_MES", "CUST_MES refused partial delivery (18 of 22 pallets)", "Investigating origin. Return-to-shipper in progress."),
+        ]),
+        ("DEMAND_SENSING", [
+            ("Volume spike — Portland metro", "PDX+EUG+SAL volumes up 15% vs 4-week average", "Back-to-school season. Recommend capacity pre-commit Weeks 17-19."),
+        ]),
+        ("CAPACITY_BUFFER", [
+            ("Surge buffer — CA lanes", "Reserving 8 FTL slots/week across CA lanes for produce season", "Historical 25% increase May-August. Buffer $2,400/week."),
+        ]),
     ]
 
-    mode_to_enum = {
-        "FTL": TransportMode.FTL, "LTL": TransportMode.LTL,
-        "INTERMODAL": TransportMode.INTERMODAL,
-    }
-
-    for (carrier_code, lane_idx, rtype, cpm_delta) in rate_assignments:
-        if lane_idx >= len(lanes):
-            continue
-        lane, mode_str, miles = lanes[lane_idx]
-        carrier = carrier_map.get(carrier_code)
-        if not carrier:
-            continue
-
-        # Check existence by carrier+lane+rate_type
-        existing = session.execute(
-            select(FreightRate).where(
-                FreightRate.tenant_id == tenant_id,
-                FreightRate.carrier_id == carrier.id,
-                FreightRate.lane_id == lane.id,
-                FreightRate.rate_type == rtype,
-            )
-        ).scalar_one_or_none()
-        if existing:
-            continue
-
-        base_cpm = LANE_DEFS[lane_idx][5]
-        actual_cpm = round(base_cpm + cpm_delta, 2)
-        session.add(FreightRate(
-            tenant_id=tenant_id, config_id=config_id,
-            carrier_id=carrier.id, lane_id=lane.id,
-            mode=mode_to_enum.get(mode_str, TransportMode.FTL),
-            equipment_type=EquipmentType.DRY_VAN,
-            rate_type=rtype,
-            rate_per_mile=actual_cpm,
-            rate_flat=round(actual_cpm * miles, 2),
-            fuel_surcharge_pct=18.5 if rtype == RateType.CONTRACT else 22.0,
-            fuel_surcharge_method="DOE_INDEX",
-            min_charge=350.0,
-            eff_start_date=today - timedelta(days=180),
-            eff_end_date=today + timedelta(days=185),
-            is_active=True,
-            source="DEMO_SEED",
-        ))
-        created += 1
-
-    session.flush()
-    print(f"  FreightRates: {created} created")
-
-
-# ---------------------------------------------------------------------------
-# Carrier Lanes
-# ---------------------------------------------------------------------------
-
-def seed_carrier_lanes(session, tenant_id, config_id):
-    created = 0
-    carriers = session.execute(
-        select(Carrier).where(Carrier.tenant_id == tenant_id)
-    ).scalars().all()
-    carrier_map = {c.code: c for c in carriers}
-
-    mode_to_enum = {
-        "FTL": TransportMode.FTL, "LTL": TransportMode.LTL,
-        "INTERMODAL": TransportMode.INTERMODAL,
-    }
-
-    # Derive carrier-lane from rates already created
-    rates = session.execute(
-        select(FreightRate).where(FreightRate.tenant_id == tenant_id)
-    ).scalars().all()
-
-    seen = set()
-    for rate in rates:
-        key = (rate.carrier_id, rate.lane_id, str(rate.mode))
-        if key in seen:
-            continue
-        seen.add(key)
-
-        existing = session.execute(
-            select(CarrierLane).where(
-                CarrierLane.tenant_id == tenant_id,
-                CarrierLane.carrier_id == rate.carrier_id,
-                CarrierLane.lane_id == rate.lane_id,
-            )
-        ).scalar_one_or_none()
-        if existing:
-            continue
-
-        session.add(CarrierLane(
-            tenant_id=tenant_id,
-            carrier_id=rate.carrier_id,
-            lane_id=rate.lane_id,
-            mode=rate.mode,
-            equipment_type=EquipmentType.DRY_VAN,
-            weekly_capacity=15,
-            avg_transit_days=2.5,
-            priority=1,
-            is_primary=(created % 3 == 0),
-            is_active=True,
-            eff_start_date=date.today() - timedelta(days=180),
-            eff_end_date=date.today() + timedelta(days=185),
-        ))
-        created += 1
-
-    session.flush()
-    print(f"  CarrierLanes: {created} created")
-
-
-# ---------------------------------------------------------------------------
-# Loads
-# ---------------------------------------------------------------------------
-
-LOAD_STATUSES = (
-    [LoadStatus.PLANNING] * 5 +
-    [LoadStatus.TENDERED] * 5 +
-    [LoadStatus.IN_TRANSIT] * 8 +
-    [LoadStatus.DELIVERED] * 7 +
-    [LoadStatus.CLOSED] * 5
-)
-
-
-def seed_loads(session, tenant_id, config_id):
-    created = 0
-    today = datetime.utcnow()
-
-    carriers = session.execute(
-        select(Carrier).where(Carrier.tenant_id == tenant_id)
-    ).scalars().all()
-    if not carriers:
-        print("  Loads: skipped (no carriers)")
-        return
-
-    # Collect all facility sites
-    sites = []
-    for f in FACILITIES:
-        site = _get_site_by_name(session, config_id, f['name'])
-        if site:
-            sites.append(site)
-    if len(sites) < 2:
-        print("  Loads: skipped (not enough sites)")
-        return
-
-    for i in range(30):
-        load_number = f"LD-2026-{i+1:04d}"
-        if _get_or_skip(session, Load, tenant_id, 'load_number', load_number):
-            continue
-
-        status = LOAD_STATUSES[i]
-        origin = sites[i % 3]  # rotate through shippers
-        dest = sites[5 + (i % 2)]  # rotate through consignees (idx 5,6)
-        carrier = carriers[i % len(carriers)]
-        weight = 22000 + (i * 733) % 22000  # 22k-44k lbs
-        modes = [TransportMode.FTL, TransportMode.LTL, TransportMode.INTERMODAL]
-
-        days_offset = -5 + (i % 12)
-        departure = today + timedelta(days=days_offset)
-        arrival = departure + timedelta(hours=18 + (i % 48))
-
-        session.add(Load(
-            tenant_id=tenant_id, config_id=config_id,
-            load_number=load_number,
-            status=status,
-            origin_site_id=origin.id,
-            destination_site_id=dest.id,
-            mode=modes[i % 3],
-            equipment_type=EquipmentType.DRY_VAN,
-            carrier_id=carrier.id,
-            total_weight=float(weight),
-            total_volume=round(weight / 12.0, 1),
-            total_pallets=weight // 2200,
-            weight_utilization_pct=round(weight / 44000 * 100, 1),
-            planned_departure=departure,
-            planned_arrival=arrival,
-            actual_departure=departure if status in (LoadStatus.IN_TRANSIT, LoadStatus.DELIVERED, LoadStatus.CLOSED) else None,
-            actual_arrival=arrival if status in (LoadStatus.DELIVERED, LoadStatus.CLOSED) else None,
-            total_miles=float(600 + (i * 97) % 1500),
-            cost_per_mile=round(2.0 + (i % 8) * 0.15, 2),
-            total_cost=round((600 + (i * 97) % 1500) * (2.0 + (i % 8) * 0.15), 2),
-            source="DEMO_SEED",
-        ))
-        created += 1
-
-    session.flush()
-    print(f"  Loads: {created} created, {30 - created} already exist")
-
-
-# ---------------------------------------------------------------------------
-# Shipments
-# ---------------------------------------------------------------------------
-
-# In-transit lat/lon points along US highways
-TRANSIT_POINTS = [
-    (41.59, -83.65), (40.80, -81.37), (40.44, -79.99),  # OH/PA corridor
-    (39.95, -75.17), (40.22, -74.76), (40.71, -74.01),  # NJ/NY
-    (38.90, -77.04), (37.54, -77.43), (35.23, -80.84),  # VA/NC
-    (34.05, -118.24), (35.47, -97.52), (36.16, -95.99), # OK/CA
-    (38.63, -90.20), (39.77, -86.16), (41.25, -95.94),  # MO/IN/NE
-    (32.78, -96.80), (33.45, -88.82), (35.05, -85.31),  # TX/MS/TN
-]
-
-
-def seed_shipments(session, tenant_id, config_id):
-    created = 0
-    today = datetime.utcnow()
-
-    loads = session.execute(
-        select(Load).where(Load.tenant_id == tenant_id)
-    ).scalars().all()
-    load_map = {l.load_number: l for l in loads}
-
-    carriers = session.execute(
-        select(Carrier).where(Carrier.tenant_id == tenant_id)
-    ).scalars().all()
-    if not carriers:
-        print("  Shipments: skipped (no carriers)")
-        return
-
-    commodities = session.execute(
-        select(Commodity).where(Commodity.tenant_id == tenant_id)
-    ).scalars().all()
-
-    sites = []
-    for f in FACILITIES:
-        site = _get_site_by_name(session, config_id, f['name'])
-        if site:
-            sites.append(site)
-
-    statuses_cycle = [
-        ShipmentStatus.DRAFT, ShipmentStatus.TENDERED, ShipmentStatus.ACCEPTED,
-        ShipmentStatus.DISPATCHED, ShipmentStatus.IN_TRANSIT, ShipmentStatus.IN_TRANSIT,
-        ShipmentStatus.IN_TRANSIT, ShipmentStatus.DELIVERED, ShipmentStatus.DELIVERED,
-        ShipmentStatus.POD_RECEIVED, ShipmentStatus.CLOSED, ShipmentStatus.EXCEPTION,
-    ]
-
-    for i in range(50):
-        shipment_number = f"SHP-2026-{i+1:05d}"
-        if _get_or_skip(session, Shipment, tenant_id, 'shipment_number', shipment_number):
-            continue
-
-        status = statuses_cycle[i % len(statuses_cycle)]
-        origin = sites[i % 3]
-        dest = sites[5 + (i % 2)]
-        carrier = carriers[i % len(carriers)]
-        commodity = commodities[i % len(commodities)] if commodities else None
-
-        load_idx = i * 30 // 50  # distribute across loads
-        load_num = f"LD-2026-{load_idx+1:04d}"
-        load = load_map.get(load_num)
-
-        weight = 4000 + (i * 311) % 10000
-        pickup = today + timedelta(days=-3 + (i % 10))
-        delivery = pickup + timedelta(hours=20 + (i % 60))
-
-        # Lat/lon for in-transit
-        lat, lon = (None, None)
-        if status == ShipmentStatus.IN_TRANSIT:
-            pt = TRANSIT_POINTS[i % len(TRANSIT_POINTS)]
-            lat, lon = pt
-
-        # ETA confidence
-        eta_conf = None
-        if status in (ShipmentStatus.IN_TRANSIT, ShipmentStatus.DISPATCHED):
-            p50 = delivery
-            eta_conf = {
-                "p10": (p50 - timedelta(hours=6)).isoformat(),
-                "p50": p50.isoformat(),
-                "p90": (p50 + timedelta(hours=14)).isoformat(),
-            }
-
-        session.add(Shipment(
-            tenant_id=tenant_id, config_id=config_id,
-            shipment_number=shipment_number,
-            status=status,
-            origin_site_id=origin.id,
-            destination_site_id=dest.id,
-            commodity_id=commodity.id if commodity else None,
-            weight=float(weight), weight_uom="LBS",
-            volume=round(weight / 10.0, 1), volume_uom="CUFT",
-            pallet_count=max(1, weight // 2200),
-            mode=TransportMode.FTL if i % 3 != 2 else TransportMode.INTERMODAL,
-            required_equipment=EquipmentType.DRY_VAN,
-            requested_pickup_date=pickup,
-            requested_delivery_date=delivery,
-            actual_pickup_date=pickup if status.value in ("IN_TRANSIT", "DELIVERED", "POD_RECEIVED", "CLOSED") else None,
-            actual_delivery_date=delivery if status.value in ("DELIVERED", "POD_RECEIVED", "CLOSED") else None,
-            load_id=load.id if load else None,
-            carrier_id=carrier.id,
-            estimated_cost=round(weight * 0.08, 2),
-            priority=1 + (i % 5),
-            service_level="STANDARD" if i % 4 != 0 else "EXPEDITED",
-            current_lat=lat, current_lon=lon,
-            last_tracking_update=today if lat else None,
-            estimated_arrival=delivery,
-            eta_confidence=eta_conf,
-            source="DEMO_SEED",
-        ))
-        created += 1
-
-    session.flush()
-    print(f"  Shipments: {created} created, {50 - created} already exist")
-
-
-# ---------------------------------------------------------------------------
-# Dock Appointments
-# ---------------------------------------------------------------------------
-
-def seed_appointments(session, tenant_id, config_id):
-    created = 0
-    today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # Use first 3 sites (shippers)
-    shipper_sites = []
-    for f in FACILITIES[:3]:
-        site = _get_site_by_name(session, config_id, f['name'])
-        if site:
-            shipper_sites.append(site)
-
-    carriers = session.execute(
-        select(Carrier).where(Carrier.tenant_id == tenant_id)
-    ).scalars().all()
-
-    shipments = session.execute(
-        select(Shipment).where(Shipment.tenant_id == tenant_id)
-    ).scalars().all()
-
-    appt_types = [AppointmentType.PICKUP, AppointmentType.DELIVERY,
-                  AppointmentType.LIVE_LOAD, AppointmentType.DROP_TRAILER]
-    appt_statuses = [
-        AppointmentStatus.CONFIRMED, AppointmentStatus.CONFIRMED,
-        AppointmentStatus.CHECKED_IN, AppointmentStatus.LOADING,
-        AppointmentStatus.COMPLETED, AppointmentStatus.COMPLETED,
-        AppointmentStatus.NO_SHOW, AppointmentStatus.CONFIRMED,
-    ]
-
-    for i in range(20):
-        site = shipper_sites[i % len(shipper_sites)] if shipper_sites else None
-        if not site:
-            continue
-
-        day_offset = i // 10  # 0 = today, 1 = tomorrow
-        hour = 6 + (i % 10) * 1.5
-        start = today + timedelta(days=day_offset, hours=hour)
-        end = start + timedelta(minutes=60)
-
-        shipment = shipments[i] if i < len(shipments) else None
-        carrier = carriers[i % len(carriers)] if carriers else None
-
-        status = appt_statuses[i % len(appt_statuses)]
-
-        # Check existence loosely by site + time
-        existing = session.execute(
-            select(Appointment).where(
-                Appointment.tenant_id == tenant_id,
-                Appointment.site_id == site.id,
-                Appointment.scheduled_start == start,
-            )
-        ).scalar_one_or_none()
-        if existing:
-            continue
-
-        session.add(Appointment(
-            tenant_id=tenant_id,
-            site_id=site.id,
-            shipment_id=shipment.id if shipment else None,
-            carrier_id=carrier.id if carrier else None,
-            appointment_type=appt_types[i % len(appt_types)],
-            status=status,
-            scheduled_start=start,
-            scheduled_end=end,
-            actual_arrival=start - timedelta(minutes=15) if status in (AppointmentStatus.CHECKED_IN, AppointmentStatus.LOADING, AppointmentStatus.COMPLETED) else None,
-            actual_start=start if status in (AppointmentStatus.LOADING, AppointmentStatus.COMPLETED) else None,
-            actual_end=end if status == AppointmentStatus.COMPLETED else None,
-            dwell_time_minutes=75 if status == AppointmentStatus.COMPLETED else None,
-            dock_time_minutes=55 if status == AppointmentStatus.COMPLETED else None,
-            wait_time_minutes=20 if status == AppointmentStatus.COMPLETED else None,
-            driver_name=f"Driver {i+1}",
-            trailer_number=f"TRL-{1000+i}",
-        ))
-        created += 1
-
-    session.flush()
-    print(f"  Appointments: {created} created, {20 - created} already exist")
-
-
-# ---------------------------------------------------------------------------
-# Shipment Exceptions
-# ---------------------------------------------------------------------------
-
-EXCEPTIONS = [
-    {"type": ExceptionType.LATE_DELIVERY, "severity": ExceptionSeverity.HIGH,
-     "desc": "Shipment delayed 8 hours due to highway closure on I-40 near Nashville",
-     "delay": 8.0, "cost": 1200.0, "lat": 36.16, "lon": -86.78},
-    {"type": ExceptionType.LATE_DELIVERY, "severity": ExceptionSeverity.MEDIUM,
-     "desc": "Carrier arrived 4 hours past delivery window at New York Retail DC",
-     "delay": 4.0, "cost": 450.0, "lat": 40.71, "lon": -74.01},
-    {"type": ExceptionType.WEATHER_DELAY, "severity": ExceptionSeverity.HIGH,
-     "desc": "Severe thunderstorms in Dallas-Fort Worth area causing widespread delays",
-     "delay": 12.0, "cost": 2100.0, "lat": 32.78, "lon": -96.80},
-    {"type": ExceptionType.DAMAGE, "severity": ExceptionSeverity.CRITICAL,
-     "desc": "Pallet shift during transit — 12 cases of electronics damaged",
-     "delay": 0.0, "cost": 5400.0, "lat": 39.95, "lon": -75.17},
-    {"type": ExceptionType.TEMPERATURE_EXCURSION, "severity": ExceptionSeverity.HIGH,
-     "desc": "Reefer unit malfunction — produce load exceeded 42F for 3 hours",
-     "delay": 6.0, "cost": 8200.0, "lat": 35.15, "lon": -90.05},
-    {"type": ExceptionType.CUSTOMS_HOLD, "severity": ExceptionSeverity.MEDIUM,
-     "desc": "Container held at Long Beach for additional documentation review",
-     "delay": 48.0, "cost": 3500.0, "lat": 33.77, "lon": -118.19},
-    {"type": ExceptionType.REFUSED, "severity": ExceptionSeverity.CRITICAL,
-     "desc": "Consignee refused delivery — shipment arrived outside appointment window",
-     "delay": 24.0, "cost": 4100.0, "lat": 33.94, "lon": -118.26},
-    {"type": ExceptionType.ROLLED_CONTAINER, "severity": ExceptionSeverity.HIGH,
-     "desc": "Container rolled from vessel at Long Beach — next available sailing in 5 days",
-     "delay": 120.0, "cost": 6800.0, "lat": 33.77, "lon": -118.19},
-]
-
-
-def seed_exceptions(session, tenant_id, config_id):
-    created = 0
-    now = datetime.utcnow()
-
-    shipments = session.execute(
-        select(Shipment).where(Shipment.tenant_id == tenant_id)
-    ).scalars().all()
-    if not shipments:
-        print("  Exceptions: skipped (no shipments)")
-        return
-
-    for i, exc in enumerate(EXCEPTIONS):
-        shipment = shipments[i % len(shipments)]
-
-        # Check by shipment + type
-        existing = session.execute(
-            select(ShipmentException).where(
-                ShipmentException.tenant_id == tenant_id,
-                ShipmentException.shipment_id == shipment.id,
-                ShipmentException.exception_type == exc['type'],
-            )
-        ).scalar_one_or_none()
-        if existing:
-            continue
-
-        session.add(ShipmentException(
-            tenant_id=tenant_id,
-            shipment_id=shipment.id,
-            exception_type=exc['type'],
-            severity=exc['severity'],
-            resolution_status=ExceptionResolutionStatus.DETECTED if i < 4 else ExceptionResolutionStatus.INVESTIGATING,
-            description=exc['desc'],
-            detected_at=now - timedelta(hours=i * 6),
-            estimated_delay_hrs=exc['delay'],
-            estimated_cost_impact=exc['cost'],
-            detection_source="DEMO_SEED",
-            exception_lat=exc['lat'],
-            exception_lon=exc['lon'],
-        ))
-        created += 1
-
-    session.flush()
-    print(f"  Exceptions: {created} created, {len(EXCEPTIONS) - created} already exist")
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def seed_all(tenant_id: int, config_id: int):
-    session = sync_session_factory()
-    try:
-        print(f"Seeding TMS demo data for tenant_id={tenant_id}, config_id={config_id}")
-        seed_commodities(session, tenant_id, config_id)
-        seed_facilities(session, tenant_id, config_id)
-        seed_carriers(session, tenant_id, config_id)
-        seed_lanes(session, tenant_id, config_id)
-        seed_rates(session, tenant_id, config_id)
-        seed_carrier_lanes(session, tenant_id, config_id)
-        seed_loads(session, tenant_id, config_id)
-        seed_shipments(session, tenant_id, config_id)
-        seed_appointments(session, tenant_id, config_id)
-        seed_exceptions(session, tenant_id, config_id)
-        session.commit()
-        print(f"\nTMS demo data seeded successfully.")
-    except Exception as e:
-        session.rollback()
-        print(f"\nError seeding TMS demo data: {e}")
-        raise
-    finally:
-        session.close()
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Seed TMS demo data for a tenant")
-    parser.add_argument('--tenant-id', type=int, default=1, help="Tenant ID")
-    parser.add_argument('--config-id', type=int, default=1, help="Supply chain config ID")
-    args = parser.parse_args()
-    seed_all(args.tenant_id, args.config_id)
+    statuses = ["ACTIONED", "ACTIONED", "ACTIONED", "INFORMED", "INFORMED", "INSPECTED", "OVERRIDDEN"]
+    urgencies = ["STANDARD", "STANDARD", "STANDARD", "URGENT", "LOW"]
+    count = 0
+
+    for dtype, items in decisions_spec:
+        for item_name, recommendation, reasoning in items:
+            site = random.choice(sites)
+            carrier = random.choice(carriers) if carriers else None
+            days_ago = random.randint(0, 14)
+            db.execute(text("""
+                INSERT INTO agent_decisions (tenant_id, decision_type, item_code, item_name,
+                    category, issue_summary, impact_value, impact_description,
+                    agent_recommendation, agent_reasoning, agent_confidence,
+                    status, urgency, agent_type, agent_version,
+                    created_at, updated_at, outcome_measured, planning_cycle, context_data)
+                VALUES (:tid, :dt, :ic, :iname, 'TRANSPORTATION', :iss, :iv, :idesc,
+                    :arec, :areas, :aconf, :st, :urg, 'TMS_TRM', 'v1.0',
+                    :ca, :ua, false, 'DAILY', :ctx)
+            """), {
+                "tid": TENANT_ID, "dt": dtype,
+                "ic": f"{dtype}-{count+1:03d}", "iname": item_name,
+                "iss": recommendation, "iv": round(random.uniform(500, 15000), 2),
+                "idesc": f"Estimated impact: ${random.randint(500, 15000):,}",
+                "arec": recommendation, "areas": reasoning,
+                "aconf": round(random.uniform(0.72, 0.98), 2),
+                "st": random.choice(statuses), "urg": random.choice(urgencies),
+                "ca": NOW - timedelta(days=days_ago, hours=random.randint(0, 12)),
+                "ua": NOW - timedelta(days=days_ago),
+                "ctx": json.dumps({"site_id": site["id"], "site_name": site["name"],
+                    "carrier_id": carrier["id"] if carrier else None,
+                    "carrier_name": carrier["name"] if carrier else None}),
+            })
+            count += 1
+
+    while count < target:
+        dtype, items = random.choice(decisions_spec)
+        base = random.choice(items)
+        site = random.choice(sites)
+        days_ago = random.randint(0, 21)
+        db.execute(text("""
+            INSERT INTO agent_decisions (tenant_id, decision_type, item_code, item_name,
+                category, issue_summary, impact_value, impact_description,
+                agent_recommendation, agent_reasoning, agent_confidence,
+                status, urgency, agent_type, agent_version,
+                created_at, updated_at, outcome_measured, planning_cycle)
+            VALUES (:tid, :dt, :ic, :iname, 'TRANSPORTATION', :iss, :iv, :idesc,
+                :arec, :areas, :aconf, :st, :urg, 'TMS_TRM', 'v1.0',
+                :ca, :ua, false, 'DAILY')
+        """), {
+            "tid": TENANT_ID, "dt": dtype,
+            "ic": f"{dtype}-{count+1:03d}", "iname": f"{base[0]} (v{count})",
+            "iss": base[1], "iv": round(random.uniform(200, 12000), 2),
+            "idesc": f"Estimated impact: ${random.randint(200, 12000):,}",
+            "arec": base[1], "areas": base[2],
+            "aconf": round(random.uniform(0.65, 0.98), 2),
+            "st": random.choice(statuses), "urg": random.choice(urgencies),
+            "ca": NOW - timedelta(days=days_ago, hours=random.randint(0, 23)),
+            "ua": NOW - timedelta(days=days_ago),
+        })
+        count += 1
+
+    db.commit()
+    print(f"  Inserted {count} TMS agent decisions")
+
+
+def main():
+    print("=== TMS Demo Seed — Food Dist Tenant ===")
+    print(f"  Tenant: {TENANT_ID}, Config: {CONFIG_ID}, Date: {TODAY}")
+    with Session(engine) as db:
+        print("\n1. Carriers")
+        seed_carriers(db)
+        print("2. Carrier-lane assignments")
+        seed_carrier_lanes(db)
+        print("3. Freight rates")
+        seed_freight_rates(db)
+        print("4. TMS shipments")
+        seed_tms_shipments(db)
+        print("5. Loads")
+        seed_loads(db)
+        print("6. Transportation plan + items")
+        seed_transportation_plan(db)
+        print("7. Appointments")
+        seed_appointments(db)
+        print("8. Shipment exceptions")
+        seed_exceptions(db)
+        print("9. TMS decision types + agent decisions")
+        add_tms_decision_types(db)
+        seed_agent_decisions(db)
+    print("\n=== Done. Demo data seeded. ===")
+
+
+if __name__ == "__main__":
+    main()
