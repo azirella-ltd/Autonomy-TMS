@@ -1,8 +1,9 @@
 """
 Stochastic Supply Chain Modeling Framework
 
-This package provides distributions, sampling strategies, and engines for
-modeling uncertainty in supply chain operations.
+Base distributions, sampling strategies, and distribution fitting are provided by
+Autonomy-Core (azirella_data_model.stochastic). This package re-exports them and
+adds TMS-specific modules: DistributionEngine, DistributionFeatureExtractor.
 
 Quick Start:
     from app.services.stochastic import DistributionEngine
@@ -11,20 +12,6 @@ Quick Start:
     samples = engine.sample({
         'lead_time': {'type': 'normal', 'mean': 7.0, 'stddev': 1.5}
     })
-
-Available Distribution Types:
-- Basic: deterministic, uniform, discrete_uniform
-- Symmetric: normal, truncated_normal, triangular
-- Right-Skewed: lognormal, gamma, weibull, exponential
-- Bounded: beta
-- Discrete: poisson, binomial, negative_binomial
-- Data-Driven: empirical_discrete, empirical_continuous
-- Advanced: mixture, categorical
-
-Sampling Strategies:
-- IndependentSampling: Sample each variable independently
-- CorrelatedSampling: Sample with correlation matrix
-- TimeSeriesSampling: Sample with autocorrelation (AR process)
 """
 
 from .distributions import (
@@ -58,6 +45,7 @@ from .sampling_strategies import (
     TimeSeriesSampling,
 )
 
+# TMS-specific: DistributionEngine (not in Core)
 from .distribution_engine import (
     DistributionEngine,
     StochasticVariable,
@@ -65,16 +53,18 @@ from .distribution_engine import (
     validate_correlation_matrix,
 )
 
+# Core re-export
 from .distribution_fitter import (
     DistributionFitter,
     FitResult,
     FitReport,
 )
 
+# TMS-specific: DistributionFeatureExtractor (not in Core)
 from .feature_extractor import DistributionFeatureExtractor
 
 __all__ = [
-    # Distributions
+    # Distributions (from Core via shim)
     'Distribution',
     'DistributionFactory',
     'DeterministicDistribution',
@@ -96,24 +86,24 @@ __all__ = [
     'MixtureDistribution',
     'CategoricalDistribution',
 
-    # Sampling Strategies
+    # Sampling Strategies (from Core via shim)
     'SamplingStrategy',
     'SamplingStrategyFactory',
     'IndependentSampling',
     'CorrelatedSampling',
     'TimeSeriesSampling',
 
-    # Engine
+    # Engine (TMS-specific)
     'DistributionEngine',
     'StochasticVariable',
     'create_distribution_preview',
     'validate_correlation_matrix',
 
-    # Distribution Fitter
+    # Distribution Fitter (from Core via shim)
     'DistributionFitter',
     'FitResult',
     'FitReport',
 
-    # Feature Extractor
+    # Feature Extractor (TMS-specific)
     'DistributionFeatureExtractor',
 ]
