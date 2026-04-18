@@ -49,6 +49,22 @@ from app.services.powell.contextual_bsc import (
 from app.services.powell.scenario_candidates import CandidateActions, CandidateGenerator
 from app.services.powell.scenario_trigger import LEVEL_CAPS, ScenarioTrigger
 
+# Re-export pure computation helpers from Core for backward compatibility
+from azirella_data_model.powell.scenario_engine import (  # noqa: F401
+    SCENARIO_STATUS_CREATED,
+    SCENARIO_STATUS_EVALUATING,
+    SCENARIO_STATUS_SCORED,
+    SCENARIO_STATUS_PROMOTED,
+    SCENARIO_STATUS_REJECTED,
+    SCENARIO_STATUS_EXPIRED,
+    VALID_STATUSES,
+    LevelCap,
+    BSCScoredScenario as CoreBSCScoredScenario,
+    estimate_execution_days,
+    inject_actions_into_chain,
+    aggregate_simulation_results,
+)
+
 logger = logging.getLogger(__name__)
 
 
