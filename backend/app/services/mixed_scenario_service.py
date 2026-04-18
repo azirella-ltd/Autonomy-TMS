@@ -10408,3 +10408,11 @@ class MixedScenarioService:
             for k in ['order_leadtime','supply_leadtime','init_inventory','holding_cost','backlog_cost','max_inbound_per_link','max_order']:
                 if k in gp and gp[k] is not None:
                     _check_range(k, float(gp[k]))
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible re-export — new code should import from
+# app.services.scenario_service directly.
+# DEPRECATED: This shim will be removed in a future release.
+# ---------------------------------------------------------------------------
+from app.services.scenario_service import ScenarioService  # noqa: E402, F401
