@@ -170,18 +170,29 @@ def persist_to_staging(session, adapter: SAPTMAdapter):
         session.execute(tms_src_scp_product.insert(), prod_rows)
     logger.info(f"Staged {len(prod_rows)} products/materials")
 
-    # Build a plant-code → site-id lookup for shipment mapping
+    # Build plant-code → site-id lookup for shipment mapping
+    # Also map by shipping point (VSTEL) — SAP LIKP uses VSTEL, not WERKS.
+    # VSTEL typically shares digits with the plant code.
     plant_to_site = {}
     for s in site_rows:
         code = (s["attributes"] or {}).get("sap_code", "")
         if code:
             plant_to_site[code] = s["scp_site_id"]
+            # Also register the 4-digit prefix as a VSTEL lookup
+            # (SAP shipping points map to plants by first 4 digits)
+            if len(code) >= 4:
+                plant_to_site[code[:4]] = s["scp_site_id"]
 
     # Shipments (deliveries from LIKP/LIPS)
     shipments = adapter._extract_shipments_from_csv(since=None, mode=ExtractionMode.HISTORICAL)
     ship_rows = []
     for s in shipments:
-        from_site = plant_to_site.get(s.get("origin_plant"))
+        # LIKP uses VSTEL (shipping point), not WERKS (plant)
+        origin_key = s.get("origin_plant") or s.get("carrier_vendor", "")
+        from_site = plant_to_site.get(origin_key)
+        # Also try shipping_type as VSTEL proxy
+        if from_site is None:
+            from_site = plant_to_site.get(s.get("shipping_type", ""))
         to_site = plant_to_site.get(f"CUST_{s.get('destination_customer')}")
         ship_rows.append({
             "scp_shipment_id": f"SAP_{s['shipment_number']}",

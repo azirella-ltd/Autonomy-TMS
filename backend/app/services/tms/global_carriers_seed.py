@@ -154,7 +154,7 @@ CONTAINER_SPECIALISTS = [
                 approx_fleet_size=6000000, otd_performance=0.90, avg_linehaul_rate_cpm=0.05,
                 service_regions=("GLOBAL",), typical_acceptance_rate=0.95),
     CarrierSpec("BNSF", "BNSF Railway", "BNSF", "ASSET", "US",
-                ("RAIL_INTERMODAL", "RAIL_CARLOAD"), ("CONTAINER_53", "RAILCAR_BOX"),
+                ("RAIL_INTERMODAL", "RAIL_CARLOAD"), ("CONTAINER_45", "RAILCAR_BOX"),
                 approx_fleet_size=8000, otd_performance=0.88, avg_linehaul_rate_cpm=0.04,
                 service_regions=("US_DOMESTIC",)),
     CarrierSpec("DBCG", "DB Cargo", "DBCG", "ASSET", "DE",

@@ -1121,7 +1121,8 @@ class SAPTMAdapter(TMSExtractionAdapter):
             records.append({
                 "shipment_number": vbeln,
                 "status": "DELIVERED" if actual_gi else "PLANNED",
-                "origin_plant": str(row.get("WERKS", "")).strip(),
+                # LIKP uses VSTEL (shipping point), not WERKS. VSTEL maps to plant.
+                "origin_plant": str(row.get("VSTEL") or row.get("WERKS", "")).strip(),
                 "destination_customer": str(row.get("KUNNR", "")).strip(),
                 "ship_date": ship_date,
                 "planned_delivery_date": delivery_date,

@@ -476,7 +476,7 @@ class FoodDistTMSOverlay:
                 spec.is_asset
                 or any(eq in spec.equipment_types for eq in
                        ("CONTAINER_40", "CONTAINER_40HC", "CONTAINER_20",
-                        "REEFER_CONTAINER", "CONTAINER_53", "RAILCAR_BOX"))
+                        "REEFER_CONTAINER", "CONTAINER_45", "RAILCAR_BOX"))
             )
             if not has_physical_assets:
                 continue
@@ -503,7 +503,7 @@ class FoodDistTMSOverlay:
                     "CONTAINER_40HC": (40.0, 59000.0, 2700.0, False),
                     "CONTAINER_20": (20.0, 47000.0, 1170.0, False),
                     "REEFER_CONTAINER": (40.0, 55000.0, 2100.0, True),
-                    "CONTAINER_53": (53.0, 44000.0, 3489.0, False),
+                    "CONTAINER_45": (53.0, 44000.0, 3489.0, False),
                     "RAILCAR_BOX": (50.0, 143000.0, 5000.0, False),
                 }
                 length, max_wt, max_vol, is_temp = eq_specs.get(

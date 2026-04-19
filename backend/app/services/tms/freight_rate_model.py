@@ -45,7 +45,7 @@ _BASE_CPM: Dict[str, float] = {
     "DRY_VAN": 2.25,
     "REEFER": 2.70,
     "FLATBED": 2.95,
-    "CONTAINER_53": 1.85,     # Intermodal linehaul (rail-only segment)
+    "CONTAINER_45": 1.85,     # Intermodal linehaul (rail-only segment)
     "REEFER_CONTAINER": 2.30,
     "CONTAINER_40": 1.75,
     "CONTAINER_40HC": 1.75,
