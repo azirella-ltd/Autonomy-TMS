@@ -19,6 +19,21 @@ networks:
 
 services:
   backend:
+    # Force GPU build on msi-stealth (RTX 4060)
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.gpu
+      args:
+        - FORCE_GPU=1
+      secrets:
+        - autonomy_core_token
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     # SCP backend already owns host port 8000 on msi-stealth; remap TMS to 8010
     ports: !override
       - "8010:8000"
