@@ -28,6 +28,7 @@ See docs/TMS_ERP_INTEGRATION.md for the full entity mapping.
 """
 
 import logging
+from sqlalchemy import text
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -137,11 +138,18 @@ class SAPTMConnectionConfig(ConnectionConfig):
     odata_client_id: Optional[str] = None
     odata_client_secret: Optional[str] = None
     # Which extraction method to prefer
-    preferred_method: str = "odata"  # "odata", "rfc", "csv"
+    preferred_method: str = "odata"  # "odata", "rfc", "csv", "db_canonical"
+    # CSV directory (for csv method)
+    csv_directory: Optional[str] = None
     # SAP system filters
     company_code: Optional[str] = None
     plant_filter: Optional[List[str]] = None
     shipping_type_filter: Optional[List[str]] = None  # e.g., ["01", "02"] for truck, rail
+    # DB canonical connection (reads from a Postgres DB with AWS SC DM tables —
+    # e.g., SCP staging DB, SAP HANA data lake, or any system exporting canonical
+    # Shipment/Site/Product/TransportationLane tables)
+    db_canonical_url: Optional[str] = None
+    db_canonical_config_id: Optional[int] = None  # supply_chain_configs.id to scope extraction
 
 
 class SAPTMAdapter(TMSExtractionAdapter):
@@ -167,6 +175,7 @@ class SAPTMAdapter(TMSExtractionAdapter):
         self.config: SAPTMConnectionConfig = config
         self._connector = None
         self._odata_extractor = None
+        self._db_engine = None  # For db_canonical method
 
     # ── Connection Management ────────────────────────────────────────────
 
@@ -195,6 +204,23 @@ class SAPTMAdapter(TMSExtractionAdapter):
                 self._connected = connected
                 if not connected:
                     logger.error(f"SAP TM OData connection failed: {msg}")
+            elif self.config.preferred_method == "csv":
+                from .csv_loader import CSVDataLoader
+                self._csv_loader = CSVDataLoader(self.config.csv_directory or "")
+                tables = self._csv_loader.list_available_tables()
+                self._connected = len(tables) > 0
+                logger.info(f"SAP CSV loader: {len(tables)} tables available")
+            elif self.config.preferred_method == "db_canonical" and self.config.db_canonical_url:
+                from sqlalchemy import create_engine
+                self._db_engine = create_engine(
+                    self.config.db_canonical_url,
+                    pool_size=2, max_overflow=0,
+                    connect_args={"options": "-c default_transaction_read_only=on"},
+                )
+                with self._db_engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                self._connected = True
+                logger.info("SAP DB canonical connection established")
             else:
                 logger.error(f"No valid SAP connection config for method {self.config.preferred_method}")
                 self._connected = False
@@ -272,6 +298,11 @@ class SAPTMAdapter(TMSExtractionAdapter):
                     max_rows=batch_size if mode != ExtractionMode.HISTORICAL else 0,
                 )
                 records = self._map_freight_orders(df)
+
+            elif hasattr(self, '_csv_loader') and self._csv_loader:
+                # CSV extraction — base S/4HANA uses LIKP/LIPS (deliveries)
+                # instead of VTTK (TM freight orders)
+                records = self._extract_shipments_from_csv(since, mode)
 
             elif self._odata_extractor:
                 # OData extraction
@@ -1060,3 +1091,141 @@ class SAPTMAdapter(TMSExtractionAdapter):
             except (ValueError, IndexError):
                 pass
         return dt
+
+    # ── CSV Extraction Methods ──────────────────────────────────────────
+    # Base S/4HANA (no TM module) uses LIKP/LIPS for deliveries, T001W for
+    # plants, LFA1 for vendors/carriers, KNA1 for customers, MARA/MAKT for
+    # materials. These map differently from VTTK/VTTS freight orders.
+
+    def _extract_shipments_from_csv(self, since, mode) -> List[Dict[str, Any]]:
+        """Extract deliveries from LIKP/LIPS CSVs → TMS shipment records."""
+        import pandas as pd
+        likp = self._csv_loader.load_table("LIKP")
+        lips = self._csv_loader.load_table("LIPS")
+        if likp is None or likp.empty:
+            logger.warning("LIKP CSV not found or empty")
+            return []
+
+        records = []
+        for _, row in likp.iterrows():
+            ship_date = self._parse_sap_date(row.get("WADAT_IST") or row.get("WADAT"))
+            delivery_date = self._parse_sap_date(row.get("LFDAT"))
+            actual_gi = self._parse_sap_date(row.get("WADAT_IST"))
+
+            # Get delivery items for weight/volume
+            vbeln = str(row.get("VBELN", "")).strip()
+            items = lips[lips["VBELN"].astype(str).str.strip() == vbeln] if lips is not None and not lips.empty else pd.DataFrame()
+            total_weight = items["BRGEW"].astype(float).sum() if "BRGEW" in items.columns else 0
+            total_volume = items["VOLUM"].astype(float).sum() if "VOLUM" in items.columns else 0
+
+            records.append({
+                "shipment_number": vbeln,
+                "status": "DELIVERED" if actual_gi else "PLANNED",
+                "origin_plant": str(row.get("WERKS", "")).strip(),
+                "destination_customer": str(row.get("KUNNR", "")).strip(),
+                "ship_date": ship_date,
+                "planned_delivery_date": delivery_date,
+                "actual_delivery_date": actual_gi,
+                "total_weight": total_weight,
+                "weight_uom": str(row.get("GEWEI", "KG")).strip(),
+                "total_volume": total_volume,
+                "volume_uom": str(row.get("VOLEH", "M3")).strip(),
+                "carrier_vendor": str(row.get("ROUTE", "")).strip(),
+                "shipping_type": str(row.get("VSART", "")).strip(),
+                "items": [
+                    {
+                        "material": str(item.get("MATNR", "")).strip(),
+                        "quantity": float(item.get("LFIMG", 0)),
+                        "uom": str(item.get("MEINS", "EA")).strip(),
+                        "weight": float(item.get("BRGEW", 0)),
+                    }
+                    for _, item in items.iterrows()
+                ],
+                "_source": "csv",
+                "_table": "LIKP",
+            })
+        logger.info(f"CSV: extracted {len(records)} deliveries from LIKP")
+        return records
+
+    def _extract_sites_from_csv(self) -> List[Dict[str, Any]]:
+        """Extract plants from T001W + addresses from ADRC → TMS sites."""
+        t001w = self._csv_loader.load_table("T001W")
+        adrc = self._csv_loader.load_table("ADRC")
+        kna1 = self._csv_loader.load_table("KNA1")
+        records = []
+
+        if t001w is not None and not t001w.empty:
+            for _, row in t001w.iterrows():
+                plant = str(row.get("WERKS", "")).strip()
+                records.append({
+                    "site_code": plant,
+                    "name": str(row.get("NAME1", plant)).strip(),
+                    "type": "MANUFACTURER",
+                    "country": str(row.get("LAND1", "")).strip(),
+                    "city": str(row.get("ORT01", "")).strip(),
+                    "_source": "csv", "_table": "T001W",
+                })
+
+        if kna1 is not None and not kna1.empty:
+            for _, row in kna1.iterrows():
+                customer = str(row.get("KUNNR", "")).strip()
+                records.append({
+                    "site_code": f"CUST_{customer}",
+                    "name": str(row.get("NAME1", customer)).strip(),
+                    "type": "MARKET_DEMAND",
+                    "country": str(row.get("LAND1", "")).strip(),
+                    "city": str(row.get("ORT01", "")).strip(),
+                    "_source": "csv", "_table": "KNA1",
+                })
+
+        logger.info(f"CSV: extracted {len(records)} sites (T001W + KNA1)")
+        return records
+
+    def _extract_carriers_from_csv(self) -> List[Dict[str, Any]]:
+        """Extract vendors with forwarding-agent flag from LFA1 → TMS carriers."""
+        lfa1 = self._csv_loader.load_table("LFA1")
+        if lfa1 is None or lfa1.empty:
+            return []
+        records = []
+        for _, row in lfa1.iterrows():
+            records.append({
+                "vendor_number": str(row.get("LIFNR", "")).strip(),
+                "name": str(row.get("NAME1", "")).strip(),
+                "country": str(row.get("LAND1", "")).strip(),
+                "scac": str(row.get("SCAC", "")).strip() if "SCAC" in row.index else "",
+                "tax_number_1": str(row.get("STCD1", "")).strip(),
+                "phone": str(row.get("TELF1", "")).strip(),
+                "_source": "csv", "_table": "LFA1",
+            })
+        logger.info(f"CSV: extracted {len(records)} vendors from LFA1")
+        return records
+
+    def _extract_materials_from_csv(self) -> List[Dict[str, Any]]:
+        """Extract materials from MARA/MAKT → TMS commodities."""
+        mara = self._csv_loader.load_table("MARA")
+        makt = self._csv_loader.load_table("MAKT")
+        if mara is None or mara.empty:
+            return []
+        records = []
+        # Build description lookup from MAKT
+        desc_map = {}
+        if makt is not None and not makt.empty:
+            for _, row in makt.iterrows():
+                matnr = str(row.get("MATNR", "")).strip()
+                desc_map[matnr] = str(row.get("MAKTX", "")).strip()
+
+        for _, row in mara.iterrows():
+            matnr = str(row.get("MATNR", "")).strip()
+            records.append({
+                "material_number": matnr,
+                "description": desc_map.get(matnr, matnr),
+                "material_type": str(row.get("MTART", "")).strip(),
+                "material_group": str(row.get("MATKL", "")).strip(),
+                "base_uom": str(row.get("MEINS", "EA")).strip(),
+                "gross_weight": float(row.get("BRGEW", 0)) if "BRGEW" in row.index else 0,
+                "weight_uom": str(row.get("GEWEI", "KG")).strip() if "GEWEI" in row.index else "KG",
+                "volume": float(row.get("VOLUM", 0)) if "VOLUM" in row.index else 0,
+                "_source": "csv", "_table": "MARA",
+            })
+        logger.info(f"CSV: extracted {len(records)} materials from MARA")
+        return records
