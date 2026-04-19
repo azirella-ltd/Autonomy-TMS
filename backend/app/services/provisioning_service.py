@@ -1706,14 +1706,15 @@ class ProvisioningService:
                         f.config_id, f.product_id, CAST(f.site_id AS INTEGER),
                         date_trunc('week', f.forecast_date)::date,
                         'demand_plan',
-                        AVG(f.forecast_p50), AVG(f.forecast_p50),
-                        AVG(f.forecast_p50),
+                        SUM(f.forecast_p50), SUM(f.forecast_p50),
+                        SUM(f.forecast_p50),
                         date_trunc('week', f.forecast_date)::date,
                         'live', 'plan_of_record', 'demand_agent', NOW()
                     FROM forecast f
                     WHERE f.config_id = :cfg AND f.forecast_p50 IS NOT NULL
                       AND f.forecast_date >= date_trunc('week', CURRENT_DATE)
                       AND f.forecast_date <  date_trunc('week', CURRENT_DATE) + INTERVAL '52 weeks'
+                      AND COALESCE(f.source, '') NOT IN ('disaggregated_ship_to', 'erp_baseline', 'naive_aggregate')
                     GROUP BY f.config_id, f.product_id, f.site_id, date_trunc('week', f.forecast_date)
                 """), {"cfg": config_id})
 

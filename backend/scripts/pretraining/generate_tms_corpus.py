@@ -47,10 +47,41 @@ try:
 except ImportError:
     HAS_PARQUET = False
 
-from azirella_data_model.powell.tms.heuristic_library.dispatch import (
-    compute_tms_decision, Actions,
+# Import heuristic library by loading the .py files directly — avoids
+# triggering `import torch` from the parent powell/__init__.py package
+# (site_agent_model.py needs torch at module level, but corpus generation
+# is heuristic-only / no neural network inference).
+import importlib.util as _ilu
+import os as _os
+
+def _load_module_direct(name: str, path: str):
+    spec = _ilu.spec_from_file_location(name, path)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+_CORE_TMS_HL = _os.path.join(
+    _os.path.dirname(__file__), "..", "..", "..",
+    "Autonomy-Core", "packages", "data-model", "src",
+    "azirella_data_model", "powell", "tms", "heuristic_library",
 )
-from azirella_data_model.powell.tms.heuristic_library.base import (
+# Fallback: installed package location
+if not _os.path.isdir(_CORE_TMS_HL):
+    import azirella_data_model as _adm
+    _CORE_TMS_HL = _os.path.join(
+        _os.path.dirname(_adm.__file__), "powell", "tms", "heuristic_library",
+    )
+
+_base_mod = _load_module_direct("tms_hl_base", _os.path.join(_CORE_TMS_HL, "base.py"))
+# Inject base into sys.modules so dispatch.py can import from it
+import sys as _sys
+_sys.modules["azirella_data_model.powell.tms.heuristic_library.base"] = _base_mod
+
+_dispatch_mod = _load_module_direct("tms_hl_dispatch", _os.path.join(_CORE_TMS_HL, "dispatch.py"))
+compute_tms_decision = _dispatch_mod.compute_tms_decision
+Actions = _dispatch_mod.Actions
+
+from azirella_data_model.powell.tms.heuristic_library.base import (  # noqa: E402
     CapacityPromiseState,
     ShipmentTrackingState,
     DemandSensingState,
