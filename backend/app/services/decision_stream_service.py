@@ -1043,6 +1043,84 @@ class DecisionStreamService(BaseDecisionStreamService):
 
         name_cache = {"products": product_names, "sites": site_names}
 
+        # Geography path cache for DecisionCard breadcrumb (Core v1.10.4)
+        # Walk parent_geo_id chain per site → root-to-leaf path
+        geo_paths: Dict[int, List[str]] = {}
+        try:
+            from app.models.sc_entities import Geography
+            geo_rows = await self.db.execute(
+                text("""
+                    SELECT s.id AS site_id, s.name, s.geo_id,
+                           g.id AS gid, g.description, g.country,
+                           g.state_prov, g.parent_geo_id
+                    FROM site s
+                    LEFT JOIN geography g ON g.id = s.geo_id
+                    WHERE s.config_id = ANY(:cids)
+                """),
+                {"cids": list(config_filter)},
+            )
+            # Build geo_data for chain walking
+            geo_data: Dict[str, dict] = {}
+            site_geo_map: Dict[int, str] = {}
+            site_name_map: Dict[int, str] = {}
+            for row in geo_rows.fetchall():
+                sid, sname, sgeo, gid, gdesc, gcountry, gstate, gparent = row
+                if gid:
+                    geo_data[str(gid)] = {
+                        "description": gdesc, "country": gcountry,
+                        "state_prov": gstate,
+                        "parent_geo_id": str(gparent) if gparent else None,
+                    }
+                if sid and sgeo:
+                    site_geo_map[sid] = str(sgeo)
+                if sid and sname:
+                    site_name_map[sid] = sname
+
+            # Load ancestor geography nodes
+            to_load = {
+                g["parent_geo_id"] for g in geo_data.values()
+                if g["parent_geo_id"] and g["parent_geo_id"] not in geo_data
+            }
+            depth = 0
+            while to_load and depth < 10:
+                depth += 1
+                anc_rows = await self.db.execute(
+                    text("""
+                        SELECT id, description, country, state_prov, parent_geo_id
+                        FROM geography WHERE id = ANY(:ids)
+                    """),
+                    {"ids": list(to_load)},
+                )
+                next_load = set()
+                for arow in anc_rows.fetchall():
+                    gid = str(arow[0])
+                    geo_data[gid] = {
+                        "description": arow[1], "country": arow[2],
+                        "state_prov": arow[3],
+                        "parent_geo_id": str(arow[4]) if arow[4] else None,
+                    }
+                    if arow[4] and str(arow[4]) not in geo_data:
+                        next_load.add(str(arow[4]))
+                to_load = next_load
+
+            # Build root-to-leaf path per site
+            for sid, geo_id in site_geo_map.items():
+                chain = []
+                visited = set()
+                current = geo_id
+                while current and current in geo_data and current not in visited:
+                    visited.add(current)
+                    desc_label = geo_data[current].get("description") or geo_data[current].get("country") or current
+                    chain.append(desc_label)
+                    current = geo_data[current].get("parent_geo_id")
+                chain.reverse()  # root → leaf
+                # Append site name as the leaf
+                if sid in site_name_map:
+                    chain.append(site_name_map[sid])
+                geo_paths[sid] = chain
+        except Exception as e:
+            logger.debug(f"Geography path build skipped: {e}")
+
         # Query all 11 TRM tables
         for model_class, type_key in DECISION_TABLES:
             if relevant_types is not None and type_key not in relevant_types:
@@ -1137,6 +1215,7 @@ class DecisionStreamService(BaseDecisionStreamService):
                         "effective_from": safe_effective_from(row, type_key, TMS_DATE_EXTRACTORS),
                         "period_days": safe_period_days(row, type_key, TMS_DATE_EXTRACTORS),
                         "created_at": row.created_at.isoformat() if row.created_at else None,
+                        "geography_path": geo_paths.get(site_id) if site_id else None,
                         "editable_values": get_editable_values(row, type_key, EDITABLE_FIELDS_MAP),
                         "context": {
                             "config_id": row.config_id,
