@@ -1077,76 +1077,147 @@ class FoodDistTMSOverlay:
 
     def _emit_reposition_moves(self, d: date) -> int:
         """
-        Periodic rebalance: check imbalances across sites, emit EquipmentMove
-        rows for the top N most-justified moves.
+        Demand-aware equipment rebalancing.
+
+        For each equipment type, compute per-site surplus/deficit:
+            surplus = equipment_on_hand - demand_next_7d
+        Move equipment from highest-surplus sites to highest-deficit sites
+        where the ROI (spot premium avoided / reposition cost) exceeds 1.3×.
+
+        This is the industry-standard heuristic: greedy nearest-deficit with
+        demand forecast, not just raw count imbalance.
         """
-        # Count equipment per (site, equipment_type)
-        rows = self.session.execute(
+        # 1. Equipment on-hand by (site, eq_type)
+        eq_rows = self.session.execute(
             select(Equipment.current_site_id, Equipment.equipment_type, func.count())
-            .where(Equipment.tenant_id == self.tms_tenant_id)
+            .where(and_(
+                Equipment.tenant_id == self.tms_tenant_id,
+                Equipment.status == "AVAILABLE",
+            ))
             .group_by(Equipment.current_site_id, Equipment.equipment_type)
         ).all()
-        by_site: Dict[Tuple[int, EquipmentType], int] = {
-            (site_id, etype): cnt for site_id, etype, cnt in rows if site_id
+        on_hand: Dict[Tuple[int, str], int] = {
+            (sid, str(etype)): cnt for sid, etype, cnt in eq_rows if sid
         }
 
-        # Simple imbalance rule: move from max to min for each equipment type
+        # 2. Demand next 7 days by (site, equipment implied by temp category)
+        #    Count SCP shipments departing from each site in [d, d+7)
+        window_start = datetime.combine(d, datetime.min.time())
+        window_end = window_start + timedelta(days=7)
+        demand_rows = self.session.execute(
+            text("""
+                SELECT s.from_site_id, p.temperature_category, COUNT(*) AS loads
+                FROM tms_src_scp_shipment s
+                LEFT JOIN tms_src_scp_product p ON s.scp_product_id = p.scp_product_id
+                WHERE s.ship_date >= :s AND s.ship_date < :e
+                GROUP BY s.from_site_id, p.temperature_category
+            """),
+            {"s": window_start, "e": window_end},
+        ).all()
+
+        # Translate SCP site ids → TMS site ids and temp → equipment type
+        demand: Dict[Tuple[int, str], int] = {}
+        for scp_site, temp_cat, cnt in demand_rows:
+            tms_site = self._scp_to_tms_site.get(scp_site)
+            if tms_site is None:
+                continue
+            eq = "REEFER" if (temp_cat or "").lower() in ("frozen", "refrigerated") else "DRY_VAN"
+            demand[(tms_site, eq)] = demand.get((tms_site, eq), 0) + cnt
+
+        # 3. Compute surplus/deficit per (site, eq_type)
+        all_sites = set(s for s, _ in on_hand) | set(s for s, _ in demand)
         moves_created = 0
-        for eq_type in (EquipmentType.REEFER, EquipmentType.DRY_VAN):
-            sites_with = [(sid, cnt) for (sid, et), cnt in by_site.items() if et == eq_type]
-            if len(sites_with) < 2:
-                continue
-            sites_with.sort(key=lambda x: x[1])
-            low_site, low_cnt = sites_with[0]
-            high_site, high_cnt = sites_with[-1]
-            if high_cnt - low_cnt < 5:
-                continue
 
-            from_site = self._sites_by_id.get(high_site)
-            to_site = self._sites_by_id.get(low_site)
-            miles = haversine_miles(
-                getattr(from_site, "latitude", None),
-                getattr(from_site, "longitude", None),
-                getattr(to_site, "latitude", None),
-                getattr(to_site, "longitude", None),
-            ) if from_site and to_site else 500.0
-            cost = miles * self.cfg.reposition_cost_per_mile
-            avoided_premium = cost * self.rng.uniform(1.2, 2.5)
+        for eq_type_str in ("REEFER", "DRY_VAN"):
+            scored: List[Tuple[int, int, int, int]] = []  # (site, surplus, on_hand, demand)
+            for site_id in all_sites:
+                oh = on_hand.get((site_id, eq_type_str), 0)
+                dm = demand.get((site_id, eq_type_str), 0)
+                surplus = oh - dm
+                scored.append((site_id, surplus, oh, dm))
 
-            # Pick an available equipment at high_site
-            eq = self.session.execute(
-                select(Equipment).where(and_(
-                    Equipment.tenant_id == self.tms_tenant_id,
-                    Equipment.current_site_id == high_site,
-                    Equipment.equipment_type == eq_type,
-                    Equipment.status == "AVAILABLE",
-                )).limit(1)
-            ).scalar_one_or_none()
-            if eq is None:
+            # Sort: most surplus first, most deficit last
+            scored.sort(key=lambda x: x[1], reverse=True)
+            if not scored:
                 continue
 
-            self.session.add(EquipmentMove(
-                equipment_id=eq.id,
-                carrier_id=eq.carrier_id,
-                from_site_id=high_site,
-                to_site_id=low_site,
-                miles=miles,
-                dispatched_at=datetime.combine(d, datetime.min.time()) + timedelta(hours=14),
-                planned_arrival_at=datetime.combine(d, datetime.min.time())
-                                   + timedelta(hours=14 + miles / 50),
-                cost=cost,
-                cost_of_not_repositioning=avoided_premium,
-                roi=avoided_premium / max(1.0, cost),
-                reason=EquipmentMoveReason.REBALANCE,
-                status=EquipmentMoveStatus.DISPATCHED,
-                decision_rationale={
-                    "high_site_count": high_cnt,
-                    "low_site_count": low_cnt,
-                    "gap": high_cnt - low_cnt,
-                },
-                tenant_id=self.tms_tenant_id,
-                config_id=self.sc_config_id,
-            ))
-            eq.current_site_id = low_site  # Optimistic update
-            moves_created += 1
+            # Greedy: move from surplus sites to deficit sites
+            surplus_sites = [(s, sur, oh, dm) for s, sur, oh, dm in scored if sur > 0]
+            deficit_sites = [(s, sur, oh, dm) for s, sur, oh, dm in scored if sur < 0]
+
+            for def_site, def_surplus, def_oh, def_demand in deficit_sites:
+                deficit_qty = abs(def_surplus)
+                for i, (sur_site, sur_surplus, sur_oh, sur_demand) in enumerate(surplus_sites):
+                    if sur_surplus <= 0 or deficit_qty <= 0:
+                        continue
+                    qty_to_move = min(sur_surplus, deficit_qty)
+
+                    from_site_obj = self._sites_by_id.get(sur_site)
+                    to_site_obj = self._sites_by_id.get(def_site)
+                    miles = haversine_miles(
+                        getattr(from_site_obj, "latitude", None),
+                        getattr(from_site_obj, "longitude", None),
+                        getattr(to_site_obj, "latitude", None),
+                        getattr(to_site_obj, "longitude", None),
+                    ) if from_site_obj and to_site_obj else 500.0
+
+                    cost_per_unit = miles * self.cfg.reposition_cost_per_mile
+                    # Spot premium at deficit location: estimate based on
+                    # deficit severity (more deficit → higher premium)
+                    deficit_severity = min(1.0, deficit_qty / max(1, def_demand))
+                    spot_premium_per_unit = cost_per_unit * (1.5 + deficit_severity)
+                    roi = spot_premium_per_unit / max(1.0, cost_per_unit)
+
+                    if roi < 1.3:
+                        continue
+
+                    # Move up to qty_to_move units one at a time
+                    for _ in range(qty_to_move):
+                        eq = self.session.execute(
+                            select(Equipment).where(and_(
+                                Equipment.tenant_id == self.tms_tenant_id,
+                                Equipment.current_site_id == sur_site,
+                                Equipment.equipment_type == EquipmentType(eq_type_str),
+                                Equipment.status == "AVAILABLE",
+                            )).limit(1)
+                        ).scalar_one_or_none()
+                        if eq is None:
+                            break
+
+                        total_cost = cost_per_unit
+                        total_avoided = spot_premium_per_unit
+                        self.session.add(EquipmentMove(
+                            equipment_id=eq.id,
+                            carrier_id=eq.carrier_id,
+                            from_site_id=sur_site,
+                            to_site_id=def_site,
+                            miles=miles,
+                            dispatched_at=datetime.combine(d, datetime.min.time())
+                                          + timedelta(hours=14),
+                            planned_arrival_at=datetime.combine(d, datetime.min.time())
+                                               + timedelta(hours=14 + miles / 50),
+                            cost=total_cost,
+                            cost_of_not_repositioning=total_avoided,
+                            roi=total_avoided / max(1.0, total_cost),
+                            reason=EquipmentMoveReason.REBALANCE,
+                            status=EquipmentMoveStatus.DISPATCHED,
+                            decision_rationale={
+                                "source_equipment": sur_oh,
+                                "source_demand_7d": sur_demand,
+                                "source_surplus": sur_surplus,
+                                "target_equipment": def_oh,
+                                "target_demand_7d": def_demand,
+                                "target_deficit": deficit_qty,
+                                "equipment_type": eq_type_str,
+                            },
+                            tenant_id=self.tms_tenant_id,
+                            config_id=self.sc_config_id,
+                        ))
+                        eq.current_site_id = def_site
+                        moves_created += 1
+
+                    # Update running state
+                    surplus_sites[i] = (sur_site, sur_surplus - qty_to_move, sur_oh, sur_demand)
+                    deficit_qty -= qty_to_move
+
         return moves_created
