@@ -536,17 +536,26 @@ class FoodDistTMSOverlay:
         Assign 3-5 carriers to each lane with priority tiers forming the
         waterfall. UT-preferred carriers get priority on UT-touching lanes.
         """
-        ut_pref_codes = {c.code for c in ut_hub_preferred()}
-        reefer_codes = {c.code for c in reefer_carriers()}
-        dry_codes = {c.code for c in dry_van_carriers()}
+        # Build carrier equipment capability sets from the active carrier list.
+        # Uses TOP_FOODSERVICE_CARRIERS (or monkey-patched global list) to
+        # determine which equipment types each carrier supports.
+        carrier_eq_map: Dict[str, set] = {}
+        for spec in TOP_FOODSERVICE_CARRIERS:
+            carrier_eq_map[spec.code] = set(spec.equipment_types)
+
+        # Carriers capable of each equipment type
+        reefer_codes = {code for code, eqs in carrier_eq_map.items()
+                        if "REEFER" in eqs or "REEFER_CONTAINER" in eqs}
+        dry_codes = {code for code, eqs in carrier_eq_map.items()
+                     if "DRY_VAN" in eqs or "CONTAINER_40" in eqs or "CONTAINER_40HC" in eqs
+                     or "FLATBED" in eqs or "CONTAINER_45" in eqs}
+        # If no carriers match (e.g., all ocean/container), use all carriers as dry-capable
+        if not dry_codes:
+            dry_codes = {c.code for c in self._carriers}
 
         for lane in self._lanes:
             from_site = self._sites_by_id.get(lane.from_site_id)
             to_site = self._sites_by_id.get(lane.to_site_id)
-            lane_touches_ut = any(
-                s and getattr(s, "name", "") and "UT" in s.name
-                for s in (from_site, to_site)
-            )
 
             for equipment in ("REEFER", "DRY_VAN"):
                 candidates = reefer_codes if equipment == "REEFER" else dry_codes
