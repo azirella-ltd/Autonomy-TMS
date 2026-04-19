@@ -95,7 +95,7 @@ def main():
             session=session,
             tms_tenant_id=tenant.id,
             sc_config_id=0,
-            config=OverlayConfig(random_seed=args.seed),
+            config=OverlayConfig(random_seed=args.seed, staging_config_id=188),
         )
 
         logger.info("Phase 1 — seeding global carrier network...")

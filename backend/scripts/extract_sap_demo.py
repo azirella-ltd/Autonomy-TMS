@@ -106,13 +106,15 @@ def persist_to_staging(session, adapter: SAPTMAdapter):
     """
     from datetime import datetime
 
+    SAP_CONFIG_ID = 188  # Matches SCP-side SAP config; scopes SAP staging data
+
     # Sites (plants + customers)
     sites = adapter._extract_sites_from_csv()
     site_rows = []
     for i, s in enumerate(sites):
         site_rows.append({
-            "scp_site_id": i + 10000,  # Synthetic ID to avoid collision with Food Dist
-            "scp_config_id": 0,
+            "scp_site_id": i + 10000,
+            "scp_config_id": SAP_CONFIG_ID,
             "name": s["name"],
             "type": s["type"],
             "master_type": s["type"],
@@ -132,7 +134,7 @@ def persist_to_staging(session, adapter: SAPTMAdapter):
     for i, c in enumerate(carriers):
         tp_rows.append({
             "scp_partner_id": i + 20000,
-            "scp_config_id": 0,
+            "scp_config_id": SAP_CONFIG_ID,
             "name": c["name"],
             "partner_type": "carrier",
             "postal_code": None,
@@ -154,7 +156,7 @@ def persist_to_staging(session, adapter: SAPTMAdapter):
         temp_cat = "dry"  # Industrial parts are always ambient
         prod_rows.append({
             "scp_product_id": f"SAP_{mid}",
-            "scp_config_id": 0,
+            "scp_config_id": SAP_CONFIG_ID,
             "name": m["description"],
             "product_group": m.get("material_group"),
             "temperature_category": temp_cat,
@@ -183,7 +185,7 @@ def persist_to_staging(session, adapter: SAPTMAdapter):
         to_site = plant_to_site.get(f"CUST_{s.get('destination_customer')}")
         ship_rows.append({
             "scp_shipment_id": s["shipment_number"],
-            "scp_config_id": 0,
+            "scp_config_id": SAP_CONFIG_ID,
             "scp_order_id": s["shipment_number"],
             "scp_product_id": f"SAP_{s['items'][0]['material']}" if s.get("items") else None,
             "quantity": s["items"][0]["quantity"] if s.get("items") else 0,

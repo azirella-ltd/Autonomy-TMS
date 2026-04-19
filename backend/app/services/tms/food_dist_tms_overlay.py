@@ -196,6 +196,10 @@ class OverlayConfig:
     reposition_frequency_days: int = 3                 # Check every N days
     reposition_cost_per_mile: float = 1.85             # Deadhead rate
 
+    # Staging scope — filter tms_src_scp_* reads to this config_id.
+    # None = read all staging rows (backward compat with Food Dist).
+    staging_config_id: Optional[int] = None
+
     # Reproducibility
     random_seed: int = 20260414
 
@@ -290,13 +294,20 @@ class FoodDistTMSOverlay:
         # Override sc_config_id so all downstream writes are scoped here
         self.sc_config_id = tms_cfg.id
 
-        # Step 2 — materialize sites
+        # Step 2 — materialize sites (scoped by staging_config_id if set)
+        cfg_filter = ""
+        cfg_params = {}
+        if self.cfg.staging_config_id is not None:
+            cfg_filter = " WHERE scp_config_id = :stg_cfg"
+            cfg_params["stg_cfg"] = self.cfg.staging_config_id
+
         scp_sites = self.session.execute(
-            text("""
+            text(f"""
                 SELECT scp_site_id, name, type, master_type,
                        latitude, longitude, attributes
-                FROM tms_src_scp_site
-            """)
+                FROM tms_src_scp_site{cfg_filter}
+            """),
+            cfg_params,
         ).mappings().all()
 
         existing_tms_sites = self.session.execute(
@@ -323,12 +334,17 @@ class FoodDistTMSOverlay:
 
         # Step 3 — materialize lanes (only internal site→site for now;
         # partner-based lanes need TradingPartner mirrors, deferred)
+        lane_cfg_filter = "WHERE from_site_id IS NOT NULL AND to_site_id IS NOT NULL"
+        if self.cfg.staging_config_id is not None:
+            lane_cfg_filter += " AND scp_config_id = :stg_cfg"
+
         scp_lanes = self.session.execute(
-            text("""
+            text(f"""
                 SELECT scp_lane_id, from_site_id, to_site_id
                 FROM tms_src_scp_lane
-                WHERE from_site_id IS NOT NULL AND to_site_id IS NOT NULL
-            """)
+                {lane_cfg_filter}
+            """),
+            cfg_params,
         ).mappings().all()
 
         existing_tms_lanes = self.session.execute(
@@ -395,12 +411,13 @@ class FoodDistTMSOverlay:
         """
         # Build the list of internal DCs by cross-referencing staging.
         # is_external=0 + internal sites are treated as DCs for placement.
+        int_filter = "WHERE is_external = 0"
+        if self.cfg.staging_config_id is not None:
+            int_filter += " AND scp_config_id = :stg_cfg"
         internal_scp_ids = {
             r[0] for r in self.session.execute(
-                text("""
-                    SELECT scp_site_id FROM tms_src_scp_site
-                    WHERE is_external = 0
-                """)
+                text(f"SELECT scp_site_id FROM tms_src_scp_site {int_filter}"),
+                cfg_params if self.cfg.staging_config_id is not None else {},
             ).all()
         }
         dcs: List[TmsSite] = [
@@ -699,15 +716,20 @@ class FoodDistTMSOverlay:
         from_site_id / to_site_id from SCP IDs to TMS-side IDs via the map."""
         start = datetime.combine(d, datetime.min.time())
         end = start + timedelta(days=1)
+        ship_filter = "WHERE ship_date >= :s AND ship_date < :e"
+        ship_params: dict = {"s": start, "e": end}
+        if self.cfg.staging_config_id is not None:
+            ship_filter += " AND scp_config_id = :stg_cfg"
+            ship_params["stg_cfg"] = self.cfg.staging_config_id
         rows = self.session.execute(
-            text("""
+            text(f"""
                 SELECT scp_shipment_id, scp_order_id, scp_product_id,
                        quantity, from_site_id, to_site_id,
                        ship_date, expected_delivery_date
                 FROM tms_src_scp_shipment
-                WHERE ship_date >= :s AND ship_date < :e
+                {ship_filter}
             """),
-            {"s": start, "e": end},
+            ship_params,
         ).mappings().all()
         out: List[ScpShipmentRow] = []
         for r in rows:
@@ -1150,15 +1172,20 @@ class FoodDistTMSOverlay:
         #    Count SCP shipments departing from each site in [d, d+7)
         window_start = datetime.combine(d, datetime.min.time())
         window_end = window_start + timedelta(days=7)
+        demand_filter = "WHERE s.ship_date >= :s AND s.ship_date < :e"
+        demand_params: dict = {"s": window_start, "e": window_end}
+        if self.cfg.staging_config_id is not None:
+            demand_filter += " AND s.scp_config_id = :stg_cfg"
+            demand_params["stg_cfg"] = self.cfg.staging_config_id
         demand_rows = self.session.execute(
-            text("""
+            text(f"""
                 SELECT s.from_site_id, p.temperature_category, COUNT(*) AS loads
                 FROM tms_src_scp_shipment s
                 LEFT JOIN tms_src_scp_product p ON s.scp_product_id = p.scp_product_id
-                WHERE s.ship_date >= :s AND s.ship_date < :e
+                {demand_filter}
                 GROUP BY s.from_site_id, p.temperature_category
             """),
-            {"s": window_start, "e": window_end},
+            demand_params,
         ).all()
 
         # Translate SCP site ids → TMS site ids and temp → equipment type
