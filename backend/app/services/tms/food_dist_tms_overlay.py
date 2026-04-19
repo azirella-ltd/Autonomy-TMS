@@ -483,10 +483,13 @@ class FoodDistTMSOverlay:
                 candidates = reefer_codes if equipment == "REEFER" else dry_codes
                 eligible = [c for c in self._carriers if c.code in candidates]
 
-                # Prefer UT-hub carriers for UT-touching lanes
+                # Shuffle to avoid always picking the same top-N carriers
+                self.rng.shuffle(eligible)
+
+                # Then stable-sort so UT-hub carriers float to top for UT lanes
                 if lane_touches_ut:
                     eligible.sort(
-                        key=lambda c: (0 if c.code in ut_pref_codes else 1, c.id)
+                        key=lambda c: (0 if c.code in ut_pref_codes else 1),
                     )
 
                 # 3-5 carriers per lane × equipment
@@ -657,6 +660,28 @@ class FoodDistTMSOverlay:
             assigned, tender_count = self._run_tender_waterfall(load, d)
             stats["tenders"] += tender_count
             if assigned:
+                # Backfill load cost from accepted tender
+                accepted_tender = self.session.execute(
+                    select(FreightTender.final_rate).where(
+                        and_(
+                            FreightTender.load_id == load.id,
+                            FreightTender.status == TenderStatus.ACCEPTED,
+                        )
+                    ).limit(1)
+                ).scalar_one_or_none()
+                if accepted_tender:
+                    load.total_cost = accepted_tender
+                    from_site = self._sites_by_id.get(load.origin_site_id)
+                    to_site = self._sites_by_id.get(load.destination_site_id)
+                    miles = haversine_miles(
+                        getattr(from_site, "latitude", None),
+                        getattr(from_site, "longitude", None),
+                        getattr(to_site, "latitude", None),
+                        getattr(to_site, "longitude", None),
+                    ) if from_site and to_site else 500.0
+                    load.total_miles = miles
+                    load.cost_per_mile = accepted_tender / miles if miles > 0 else None
+
                 tms_ship = self._create_tms_shipment(load, assigned, d)
                 stats["tms_shipments"] += 1
                 stats["tracking_events"] += self._emit_tracking_events(tms_ship)
@@ -1060,6 +1085,24 @@ class FoodDistTMSOverlay:
         self, tms_ship: TmsShipment,
         etype: ExceptionType, severity: ExceptionSeverity, desc: str,
     ) -> None:
+        # Realistic delay and cost impact by exception type
+        delay_ranges = {
+            ExceptionType.LATE_DELIVERY: (2.0, 12.0),
+            ExceptionType.LATE_PICKUP: (1.0, 6.0),
+            ExceptionType.DETENTION: (0.5, 4.0),
+            ExceptionType.CARRIER_BREAKDOWN: (4.0, 24.0),
+            ExceptionType.WEATHER_DELAY: (2.0, 48.0),
+            ExceptionType.REFUSED: (8.0, 24.0),
+            ExceptionType.TEMPERATURE_EXCURSION: (0.0, 0.0),
+        }
+        lo, hi = delay_ranges.get(etype, (1.0, 8.0))
+        delay_hrs = self.rng.uniform(lo, hi) if hi > 0 else 0.0
+
+        # Cost impact: detention + re-delivery + claims
+        severity_cost_mult = {"LOW": 0.3, "MEDIUM": 1.0, "HIGH": 2.5, "CRITICAL": 5.0}
+        base_cost = self.rng.uniform(150, 800)
+        cost_impact = base_cost * severity_cost_mult.get(severity.value, 1.0)
+
         self.session.add(ShipmentException(
             shipment_id=tms_ship.id,
             exception_type=etype,
@@ -1067,6 +1110,9 @@ class FoodDistTMSOverlay:
             resolution_status=ExceptionResolutionStatus.DETECTED,
             description=desc,
             detected_at=datetime.utcnow(),
+            estimated_delay_hrs=round(delay_hrs, 1),
+            estimated_cost_impact=round(cost_impact, 2),
+            revenue_at_risk=round(cost_impact * self.rng.uniform(1.5, 4.0), 2),
             detection_source="SYNTHETIC",
             tenant_id=self.tms_tenant_id,
         ))
