@@ -333,8 +333,8 @@ class FoodDistTMSOverlay:
             self._scp_to_tms_site[r["scp_site_id"]] = tms_site.id
             self._sites_by_id[tms_site.id] = tms_site
 
-        # Step 3 — materialize lanes (only internal site→site for now;
-        # partner-based lanes need TradingPartner mirrors, deferred)
+        # Step 3 — materialize lanes
+        # First try explicit lanes from staging
         lane_cfg_filter = "WHERE from_site_id IS NOT NULL AND to_site_id IS NOT NULL"
         if self.cfg.staging_config_id is not None:
             lane_cfg_filter += " AND scp_config_id = :stg_cfg"
@@ -347,6 +347,29 @@ class FoodDistTMSOverlay:
             """),
             cfg_params,
         ).mappings().all()
+
+        # If no explicit lanes, synthesize from shipment transaction graph
+        # (SCP pattern: reverse-engineer network from operational data)
+        if not scp_lanes:
+            ship_cfg_filter = "WHERE from_site_id IS NOT NULL AND to_site_id IS NOT NULL"
+            if self.cfg.staging_config_id is not None:
+                ship_cfg_filter += " AND scp_config_id = :stg_cfg"
+            scp_lanes = self.session.execute(
+                text(f"""
+                    SELECT ROW_NUMBER() OVER () + 50000 AS scp_lane_id,
+                           from_site_id, to_site_id
+                    FROM (
+                        SELECT DISTINCT from_site_id, to_site_id
+                        FROM tms_src_scp_shipment
+                        {ship_cfg_filter}
+                    ) AS distinct_lanes
+                """),
+                cfg_params,
+            ).mappings().all()
+            logger.info(
+                "No explicit lanes in staging; synthesized %d from shipment flows",
+                len(scp_lanes),
+            )
 
         existing_tms_lanes = self.session.execute(
             select(TmsLane).where(TmsLane.config_id == tms_cfg.id)
@@ -445,7 +468,17 @@ class FoodDistTMSOverlay:
             spec = next(
                 (s for s in TOP_FOODSERVICE_CARRIERS if s.code == carrier.code), None
             )
-            if not spec or not spec.is_asset:
+            if not spec:
+                continue
+            # Seed equipment for asset carriers + ocean/rail carriers (even if 3PL,
+            # they manage containers/chassis). Skip pure brokers with no physical assets.
+            has_physical_assets = (
+                spec.is_asset
+                or any(eq in spec.equipment_types for eq in
+                       ("CONTAINER_40", "CONTAINER_40HC", "CONTAINER_20",
+                        "REEFER_CONTAINER", "CONTAINER_53", "RAILCAR_BOX"))
+            )
+            if not has_physical_assets:
                 continue
             if existing_by_carrier.get(carrier.id, 0) > 0:
                 # Already seeded equipment for this carrier
@@ -453,22 +486,40 @@ class FoodDistTMSOverlay:
             # Small fleet: 10-30 trailers per carrier (training scale, not real fleet)
             count = min(30, max(5, spec.approx_fleet_size // 500))
             for i in range(count):
-                eq_type = (
-                    "REEFER" if spec.is_reefer_specialist
-                    or (i % 3 == 0 and "REEFER" in spec.equipment_types)
-                    else "DRY_VAN"
-                )
+                # Pick equipment type from carrier's supported types
+                if spec.equipment_types:
+                    eq_type = spec.equipment_types[i % len(spec.equipment_types)]
+                elif spec.is_reefer_specialist:
+                    eq_type = "REEFER"
+                else:
+                    eq_type = "DRY_VAN"
+
+                # Equipment specs by type
+                eq_specs = {
+                    "DRY_VAN": (53.0, 44000.0, 3489.0, False),
+                    "REEFER": (53.0, 44000.0, 3100.0, True),
+                    "FLATBED": (53.0, 48000.0, 0.0, False),
+                    "CONTAINER_40": (40.0, 59000.0, 2350.0, False),
+                    "CONTAINER_40HC": (40.0, 59000.0, 2700.0, False),
+                    "CONTAINER_20": (20.0, 47000.0, 1170.0, False),
+                    "REEFER_CONTAINER": (40.0, 55000.0, 2100.0, True),
+                    "CONTAINER_53": (53.0, 44000.0, 3489.0, False),
+                    "RAILCAR_BOX": (50.0, 143000.0, 5000.0, False),
+                }
+                length, max_wt, max_vol, is_temp = eq_specs.get(
+                    eq_type, (53.0, 44000.0, 3489.0, False))
+
                 equipment = Equipment(
                     equipment_id=f"{carrier.code}-{eq_type[:3]}-{i:04d}",
                     equipment_type=EquipmentType(eq_type),
                     carrier_id=carrier.id,
-                    length_ft=53.0,
-                    max_weight_lbs=44000.0,
-                    max_volume_cuft=3489.0 if eq_type == "DRY_VAN" else 3100.0,
+                    length_ft=length,
+                    max_weight_lbs=max_wt,
+                    max_volume_cuft=max_vol,
                     is_gps_tracked=True,
-                    is_temperature_controlled=(eq_type == "REEFER"),
-                    temp_min=-10.0 if eq_type == "REEFER" else None,
-                    temp_max=40.0 if eq_type == "REEFER" else None,
+                    is_temperature_controlled=is_temp,
+                    temp_min=-10.0 if is_temp else None,
+                    temp_max=40.0 if is_temp else None,
                     status="AVAILABLE",
                     # Round-robin across DCs so reposition TRM has imbalances
                     current_site_id=dcs[i % len(dcs)].id,
