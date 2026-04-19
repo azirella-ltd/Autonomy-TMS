@@ -184,7 +184,7 @@ def persist_to_staging(session, adapter: SAPTMAdapter):
         from_site = plant_to_site.get(s.get("origin_plant"))
         to_site = plant_to_site.get(f"CUST_{s.get('destination_customer')}")
         ship_rows.append({
-            "scp_shipment_id": s["shipment_number"],
+            "scp_shipment_id": f"SAP_{s['shipment_number']}",
             "scp_config_id": SAP_CONFIG_ID,
             "scp_order_id": s["shipment_number"],
             "scp_product_id": f"SAP_{s['items'][0]['material']}" if s.get("items") else None,
