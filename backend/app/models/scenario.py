@@ -47,6 +47,7 @@ class Scenario(Base):
     (human or AI) take on supply chain roles and make decisions.
     """
     __tablename__ = "scenarios"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), index=True)
@@ -139,6 +140,7 @@ class Scenario(Base):
 class Period(Base):
     """A period within a scenario/simulation."""
     __tablename__ = "periods"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     scenario_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))
@@ -159,6 +161,7 @@ class ScenarioUserAction(Base):
     Records decisions made by scenario users (human or AI) during simulation.
     """
     __tablename__ = "scenario_user_actions"
+    __table_args__ = {"extend_existing": True}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     scenario_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))
