@@ -296,10 +296,11 @@ class FoodDistTMSOverlay:
 
         # Step 2 — materialize sites (scoped by staging_config_id if set)
         cfg_filter = ""
-        cfg_params = {}
+        cfg_params: dict = {}
         if self.cfg.staging_config_id is not None:
             cfg_filter = " WHERE scp_config_id = :stg_cfg"
             cfg_params["stg_cfg"] = self.cfg.staging_config_id
+        self._staging_cfg_params = cfg_params
 
         scp_sites = self.session.execute(
             text(f"""
@@ -417,7 +418,7 @@ class FoodDistTMSOverlay:
         internal_scp_ids = {
             r[0] for r in self.session.execute(
                 text(f"SELECT scp_site_id FROM tms_src_scp_site {int_filter}"),
-                cfg_params if self.cfg.staging_config_id is not None else {},
+                self._staging_cfg_params if self.cfg.staging_config_id is not None else {},
             ).all()
         }
         dcs: List[TmsSite] = [
