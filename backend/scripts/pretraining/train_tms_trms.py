@@ -133,8 +133,8 @@ def load_corpus(trm_type: str, corpus_dir: Path) -> Tuple[np.ndarray, np.ndarray
     if not rows:
         raise ValueError(f"Empty corpus for {trm_type}")
 
-    # Identify numeric state_ columns from first row
-    state_keys = sorted(k for k in rows[0] if k.startswith("state_") and _is_numeric(rows[0][k]))
+    # Identify numeric feature columns (state_* + derived_*) from first row
+    state_keys = sorted(k for k in rows[0] if (k.startswith("state_") or k.startswith("derived_")) and _is_numeric(rows[0][k]))
     logger.info(f"  {len(state_keys)} numeric state features, {len(rows)} samples")
 
     # Extract features + labels
