@@ -1,19 +1,16 @@
-"""
-TMS Heuristic Library — Deterministic Decision Rules for Transportation
+"""TMS Heuristic Library — thin re-export shim.
 
-Provides fallback logic when TRM neural network models are unavailable.
-Each TRM has a corresponding heuristic that encodes industry best practices.
+Pure logic lives in Core at
+`azirella_data_model.powell.tms.heuristic_library`. This module keeps
+the existing `app.services.powell.tms_heuristic_library` import path
+working by re-exporting the Core symbols unchanged.
 
-Replaces the SC heuristic library (sap_heuristics, d365_heuristics, etc.)
-with transportation-specific logic:
-- Carrier waterfall tendering
-- Load consolidation rules
-- Dock appointment optimization
-- Exception escalation rules
-- Equipment rebalancing heuristics
+Extracted to Core on 2026-04-18. See
+`docs/TMS_TRM_TRAINING_DATA_SPECIFICATION.md` for the algorithmic
+reference.
 """
 
-from .base import (
+from azirella_data_model.powell.tms.heuristic_library.base import (  # noqa: F401
     TMSHeuristicDecision,
     CapacityPromiseState,
     ShipmentTrackingState,
@@ -27,7 +24,9 @@ from .base import (
     IntermodalTransferState,
     EquipmentRepositionState,
 )
-from .dispatch import compute_tms_decision
+from azirella_data_model.powell.tms.heuristic_library.dispatch import (  # noqa: F401
+    compute_tms_decision,
+)
 
 __all__ = [
     "TMSHeuristicDecision",
