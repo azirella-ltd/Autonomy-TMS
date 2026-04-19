@@ -398,6 +398,84 @@ def _state_to_flat_dict(state) -> Dict[str, Any]:
     return d
 
 
+def _add_derived_features(row: Dict[str, Any], state: Any, trm_type: str) -> None:
+    """
+    Add derived numeric features that the heuristic internally computes.
+    These are the signals the model actually needs to learn — raw datetime
+    and JSON-list fields are not learnable by the MLP.
+    """
+    if trm_type == "shipment_tracking":
+        # The heuristic decides on: is_late, hours_late, silence_over_threshold, pct_behind
+        hours_to_delivery = state.hours_to_delivery() or 0.0
+        is_late = 1.0 if state.is_late() else 0.0
+        hours_late = 0.0
+        if state.planned_delivery and state.current_eta:
+            hours_late = max(0, (state.current_eta - state.planned_delivery).total_seconds() / 3600)
+        # Conformal: is P90 also late?
+        p90_late = 0.0
+        if state.eta_p90 and state.planned_delivery:
+            p90_late = 1.0 if state.eta_p90 > state.planned_delivery else 0.0
+        row["derived_hours_to_delivery"] = hours_to_delivery
+        row["derived_is_late"] = is_late
+        row["derived_hours_late"] = hours_late
+        row["derived_p90_also_late"] = p90_late
+        row["derived_silence_ratio"] = state.last_update_hours_ago / max(0.1, hours_to_delivery) if hours_to_delivery > 0 else 0
+
+    elif trm_type == "broker_routing":
+        # The heuristic decides on: best broker rate/reliability, premium vs benchmark, time urgency
+        brokers = state.available_brokers or []
+        row["derived_num_brokers"] = len(brokers)
+        if brokers:
+            best_by_cost = min(brokers, key=lambda b: b.get("rate", float("inf")))
+            best_by_rel = max(brokers, key=lambda b: b.get("reliability", 0))
+            benchmark = state.dat_benchmark_rate or state.contract_rate or 1.0
+            row["derived_best_rate"] = best_by_cost.get("rate", 0)
+            row["derived_best_reliability"] = best_by_rel.get("reliability", 0)
+            row["derived_best_rate_premium"] = (best_by_cost.get("rate", 0) - benchmark) / max(1, benchmark)
+            row["derived_avg_fallthrough"] = sum(b.get("fallthrough_rate", 0.1) for b in brokers) / len(brokers)
+        else:
+            row["derived_best_rate"] = 0.0
+            row["derived_best_reliability"] = 0.0
+            row["derived_best_rate_premium"] = 0.0
+            row["derived_avg_fallthrough"] = 0.0
+        # Time urgency
+        row["derived_time_urgency"] = max(0, (6 - state.hours_to_pickup) * 0.10) if state.hours_to_pickup < 6 else 0
+
+    elif trm_type == "exception_management":
+        # Pre-compute the composite priority score
+        import math
+        sev_map = {"LOW": 0.15, "MEDIUM": 0.40, "HIGH": 0.70, "CRITICAL": 1.0}
+        sev_f = sev_map.get(state.severity, 0.40)
+        total_exp = state.penalty_exposure + state.estimated_cost_impact
+        fin_f = min(1.0, total_exp / max(1.0, state.shipment_value + state.penalty_exposure))
+        if state.delivery_window_remaining_hrs <= 0:
+            time_f = 1.0
+        else:
+            time_f = 1.0 - math.exp(-2.0 / max(0.1, state.delivery_window_remaining_hrs))
+        cust_f = max(0.2, 1.0 - (state.customer_tier - 1) * 0.2)
+        cascade_f = min(1.0, state.downstream_shipments_affected / 5.0)
+        priority = 0.25 * sev_f + 0.20 * fin_f + 0.30 * time_f + 0.15 * cust_f + 0.10 * cascade_f
+        row["derived_priority_score"] = priority
+        row["derived_severity_factor"] = sev_f
+        row["derived_financial_factor"] = fin_f
+        row["derived_time_criticality"] = time_f
+        row["derived_within_buffer"] = 1.0 if state.estimated_delay_hrs <= state.appointment_buffer_hrs else 0.0
+
+    elif trm_type == "freight_procurement":
+        # Composite carrier score for primary
+        benchmark = state.dat_benchmark_rate or state.contract_rate or state.primary_carrier_rate
+        if benchmark > 0 and state.primary_carrier_rate > 0:
+            row["derived_primary_cost_factor"] = min(1.0, benchmark / state.primary_carrier_rate)
+        else:
+            row["derived_primary_cost_factor"] = 0.5
+        row["derived_is_short_lead"] = 1.0 if state.lead_time_hours < 4 else 0.0
+        row["derived_num_eligible_backups"] = sum(1 for b in state.backup_carriers if b.get("acceptance_pct", 0.8) >= 0.5)
+        if state.spot_rate > 0 and benchmark > 0:
+            row["derived_spot_premium_vs_benchmark"] = (state.spot_rate - benchmark) / benchmark
+        else:
+            row["derived_spot_premium_vs_benchmark"] = 0.0
+
+
 def generate_corpus(
     trm_type: str,
     n_samples: int,
@@ -415,6 +493,7 @@ def generate_corpus(
         decision = compute_tms_decision(trm_type, state)
 
         row = _state_to_flat_dict(state)
+        _add_derived_features(row, state, trm_type)
         row["action"] = decision.action
         row["action_name"] = {
             0: "ACCEPT", 1: "REJECT", 2: "DEFER", 3: "ESCALATE",
