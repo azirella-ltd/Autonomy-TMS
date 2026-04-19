@@ -142,14 +142,18 @@ def persist_to_staging(session, adapter: SAPTMAdapter):
         session.execute(tms_src_scp_trading_partner.insert(), tp_rows)
     logger.info(f"Staged {len(tp_rows)} carriers/trading partners")
 
-    # Products (materials from MARA/MAKT)
+    # Products (materials from MARA/MAKT — deduplicate by material number)
     materials = adapter._extract_materials_from_csv()
+    seen_materials = set()
     prod_rows = []
     for m in materials:
-        # Infer temperature category from material type/group
+        mid = m["material_number"]
+        if mid in seen_materials:
+            continue
+        seen_materials.add(mid)
         temp_cat = "dry"  # Industrial parts are always ambient
         prod_rows.append({
-            "scp_product_id": m["material_number"],
+            "scp_product_id": f"SAP_{mid}",
             "scp_config_id": 0,
             "name": m["description"],
             "product_group": m.get("material_group"),
@@ -181,7 +185,7 @@ def persist_to_staging(session, adapter: SAPTMAdapter):
             "scp_shipment_id": s["shipment_number"],
             "scp_config_id": 0,
             "scp_order_id": s["shipment_number"],
-            "scp_product_id": s["items"][0]["material"] if s.get("items") else None,
+            "scp_product_id": f"SAP_{s['items'][0]['material']}" if s.get("items") else None,
             "quantity": s["items"][0]["quantity"] if s.get("items") else 0,
             "uom": s["items"][0]["uom"] if s.get("items") else "EA",
             "from_site_id": from_site,
