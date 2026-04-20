@@ -229,7 +229,7 @@ class ScenarioUser(Base):
 
     # Relationships
     scenario: Mapped["Scenario"] = relationship(
-        "Scenario", back_populates="scenario_users", lazy="selectin"
+        "app.models.scenario.Scenario", back_populates="scenario_users", lazy="selectin"
     )
     user: Mapped[Optional["User"]] = relationship(
         "User", lazy="selectin"

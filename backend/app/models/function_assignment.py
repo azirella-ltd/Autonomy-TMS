@@ -91,7 +91,7 @@ class FunctionAssignment(Base):
 
     # Relationships
     scenario: Mapped["Scenario"] = relationship(
-        "Scenario", back_populates="function_assignments", lazy="selectin"
+        "app.models.scenario.Scenario", back_populates="function_assignments", lazy="selectin"
     )
     scenario_user: Mapped["ScenarioUser"] = relationship(
         "ScenarioUser", back_populates="function_assignments", lazy="selectin"
