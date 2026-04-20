@@ -8,20 +8,31 @@ Project rules for Claude Code. Detailed architecture and reference material in [
 
 **Every time code is written, moved, or reviewed — for TMS, Core, SCP, or any other product — you MUST explicitly evaluate where it belongs.**
 
-- **Autonomy-Core** owns platform infrastructure: math, algorithms, schemas, contracts, solver interfaces, RL primitives, data-model types, training loops, reward function scaffolding, scenario samplers, governance tables.
-- **TMS (this repo)** owns transportation domain logic: specific TRMs (LoadBuild, FreightProcurement, DockScheduling, etc.), metric codes seeded per tenant (on_time_delivery, cost_per_mile), hierarchy walker implementations for TMS tables, plan generators that query transportation_plan, TMS-specific feature vectorisations and DisruptionKind extensions (PEAK_PRODUCE_SEASON, CHASSIS_SHORTAGE_Q4, etc.).
+The rule has two tests. Either is sufficient to force Core placement.
 
-Practical heuristic: **if SCP (or another product) will need the same abstraction, it goes in Core. If only TMS's tables, TRMs, or transport-domain semantics reference it, it stays here.**
+**Rule 1 — Cross-product test.** If more than one product's agents, models, or services can reasonably consume it, it belongs in Core.
 
-Drift is the failure mode. Writing cross-product logic in TMS "because the related code lived there" is how Core and product silently diverge. Prevent this by evaluating placement at commit time, not afterwards.
+**Rule 2 — Substrate test.** If it is the physics, canonical state, or cross-cutting infrastructure of the supply chain, it belongs in Core regardless of who consumes it today.
 
-Never skip this evaluation. Never default to "put it here for now, refactor later." Either:
-1. Place it correctly on the first write, or
-2. Call out explicitly that you're deferring the Core extraction and log a follow-up task.
+Applied concretely:
 
-Already in Core (use these; do not duplicate): BSC override model, constrained solver family (LP/MILP/lane-flow), RL harness, scenario sampler, digital twin interface — all under `azirella_data_model.optimization / .ml / .digital_twin / .governance`.
+- **Autonomy-Core owns:** all canonical state and masters (sites, products, BOMs, transportation_lane, trading_partners, geography, transfer_order, purchase_order, inventory, capacity, lifecycle, commitments); all ERP connectors and raw-to-canonical mapping; CDC ingestion; forecast synthesis; scenario engine; digital twin / simulator; conformal prediction; outcome measurement; plane registry; intersection contracts; training infrastructure; context broker; temporal knowledge store; LLM narration framework; BSC framework; governance pipeline framework; provisioning framework.
+- **TMS (this repo) owns *only* the Transport plane's policy modules:** TMS TRMs (TO Execution, Dispatch, LoadBuild, Appointment, Tender, Settlement, Routing, FreightProcurement, DockScheduling, etc.); transport-specific feature engineering (canonical state → TMS agent tensors); transport-specific objective functions (landed cost, service window, carbon, carrier utilisation); VRP / dispatch / consolidation solver configurations; carrier scorecard and freight procurement logic; transport-specific DisruptionKind extensions; transport-specific provisioning step *definitions* (framework moves to Core); dispatcher UI, tracking visualisation, Decision-Stream surfacing filtered to transport.
 
-Stays in TMS: specific TRMs, transportation_plan queries, carrier/lane/dock schemas.
+### Plane-module invariant (this repo)
+
+TMS contains **only** Transport-plane policy modules. Shared infrastructure must not be created here. If you find yourself writing ERP connectors, scenario-engine code, canonical entity models (e.g., a second `TransferOrder`), digital-twin physics, conformal prediction framework code, or intersection-contract logic in this repo, **stop** — that work belongs in Autonomy-Core.
+
+**Drift is the failure mode.** Writing cross-product logic in TMS "because the related code lived there" is how Core and product silently diverge. The previous softer phrasing ("if SCP (or another product) will need the same abstraction") was rationalised around too easily. The two-rule test above is stricter: cross-product plausibility OR substrate status is sufficient to force Core placement.
+
+If you cannot place something correctly on the first write, **add it to [Autonomy-Core/docs/MIGRATION_REGISTER.md](../Autonomy-Core/docs/MIGRATION_REGISTER.md)** with a target tier. Do not silently defer.
+
+### Cross-repo coordination documents
+
+- **[Autonomy-Core/docs/MIGRATION_REGISTER.md](../Autonomy-Core/docs/MIGRATION_REGISTER.md)** — canonical inventory of code migrating from product repos to Core, including TMS items slated for extraction or deprecation.
+- **[Autonomy-Core/docs/CONSUMER_ADOPTION_LOG.md](../Autonomy-Core/docs/CONSUMER_ADOPTION_LOG.md)** — Core changes requiring TMS action.
+- **[Autonomy-Core/docs/SPRINT_1_EXECUTION.md](../Autonomy-Core/docs/SPRINT_1_EXECUTION.md)** — active partition-completion sprint (2026-04-21 → 2026-06-01). TMS-specific tasks listed per week.
+- **[Autonomy-Core/docs/TMS_ADOPTION_GUIDE_20260420.md](../Autonomy-Core/docs/TMS_ADOPTION_GUIDE_20260420.md)** — directional alert. Contains the STOP list (do not continue) and PREPARE list (do as Core commits land) for TMS. **Read before the next TMS commit.**
 
 This directive appears in Autonomy-Core, Autonomy-SCP, and this repo's CLAUDE.md for symmetric enforcement.
 
