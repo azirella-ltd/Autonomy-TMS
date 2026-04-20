@@ -68,3 +68,4 @@ google-services.json
 
 # SAP credentials
 .secrets/
+sandbox/
