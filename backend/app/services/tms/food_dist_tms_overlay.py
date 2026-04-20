@@ -564,12 +564,6 @@ class FoodDistTMSOverlay:
                 # Shuffle to avoid always picking the same top-N carriers
                 self.rng.shuffle(eligible)
 
-                # Then stable-sort so UT-hub carriers float to top for UT lanes
-                if lane_touches_ut:
-                    eligible.sort(
-                        key=lambda c: (0 if c.code in ut_pref_codes else 1),
-                    )
-
                 # 3-5 carriers per lane × equipment
                 picks = eligible[: self.rng.randint(3, 5)]
                 for pos, carrier in enumerate(picks):
