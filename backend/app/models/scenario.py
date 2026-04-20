@@ -152,7 +152,7 @@ class Period(Base):
 
     # Relationships
     scenario: Mapped["Scenario"] = relationship("app.models.scenario.Scenario", back_populates="periods", lazy="selectin")
-    scenario_user_actions: Mapped[List["ScenarioUserAction"]] = relationship("ScenarioUserAction", back_populates="period", lazy="selectin")
+    scenario_user_actions: Mapped[List["ScenarioUserAction"]] = relationship("app.models.scenario.ScenarioUserAction", back_populates="period", lazy="selectin")
 
 
 class ScenarioUserAction(Base):
@@ -172,7 +172,7 @@ class ScenarioUserAction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    period: Mapped["Period"] = relationship("Period", back_populates="scenario_user_actions", lazy="selectin")
+    period: Mapped["Period"] = relationship("app.models.scenario.Period", back_populates="scenario_user_actions", lazy="selectin")
     scenario_user: Mapped["ScenarioUser"] = relationship("ScenarioUser", back_populates="actions", lazy="selectin")
     scenario: Mapped["Scenario"] = relationship("app.models.scenario.Scenario", lazy="selectin")
 

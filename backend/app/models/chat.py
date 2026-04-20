@@ -104,7 +104,7 @@ class AgentSuggestion(Base):
 
     # Relationships
     scenario = relationship("app.models.scenario.Scenario", back_populates="agent_suggestions")
-    scenario_user = relationship("ScenarioUser", back_populates="agent_suggestions")
+    scenario_user = relationship("app.models.participant.ScenarioUser", back_populates="agent_suggestions")
 
     def __repr__(self):
         return f"<AgentSuggestion(id={self.id}, agent={self.agent_name}, quantity={self.order_quantity}, confidence={self.confidence})>"
@@ -140,7 +140,7 @@ class WhatIfAnalysis(Base):
 
     # Relationships
     scenario = relationship("app.models.scenario.Scenario", back_populates="what_if_analyses")
-    scenario_user = relationship("ScenarioUser", back_populates="what_if_analyses")
+    scenario_user = relationship("app.models.participant.ScenarioUser", back_populates="what_if_analyses")
 
     def __repr__(self):
         return f"<WhatIfAnalysis(id={self.id}, scenario_id={self.scenario_id}, question={self.question[:50]})>"
