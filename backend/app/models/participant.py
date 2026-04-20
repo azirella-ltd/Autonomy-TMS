@@ -235,7 +235,7 @@ class ScenarioUser(Base):
         "User", lazy="selectin"
     )
     actions: Mapped[List["ScenarioUserAction"]] = relationship(
-        "ScenarioUserAction", back_populates="scenario_user", lazy="selectin"
+        "app.models.scenario.ScenarioUserAction", back_populates="scenario_user", lazy="selectin"
     )
     inventory: Mapped["ScenarioUserInventory"] = relationship(
         "ScenarioUserInventory", back_populates="scenario_user", lazy="selectin", uselist=False
