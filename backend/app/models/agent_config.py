@@ -19,7 +19,7 @@ class AgentConfig(Base):
     config = Column(JSON, default=dict)  # Agent-specific configuration
 
     # Relationships
-    scenario = relationship("Scenario", back_populates="agent_configs")
+    scenario = relationship("app.models.scenario.Scenario", back_populates="agent_configs")
 
     def __repr__(self):
         return f"<AgentConfig(id={self.id}, scenario_id={self.scenario_id}, role={self.role}, type={self.agent_type})>"

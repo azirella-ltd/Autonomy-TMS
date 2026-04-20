@@ -54,7 +54,7 @@ class Order(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     scenario_user = relationship("ScenarioUser", back_populates="orders")
-    scenario = relationship("Scenario")
+    scenario = relationship("app.models.scenario.Scenario")
 
 
 class ScenarioPeriod(Base):
@@ -83,7 +83,7 @@ class ScenarioPeriod(Base):
     fulfillment_completed_at = Column(DateTime, nullable=True)
     replenishment_completed_at = Column(DateTime, nullable=True)
 
-    scenario = relationship("Scenario", back_populates="supply_chain_periods")
+    scenario = relationship("app.models.scenario.Scenario", back_populates="supply_chain_periods")
     scenario_user_periods = relationship("ScenarioUserPeriod", back_populates="scenario_period")
 
 
