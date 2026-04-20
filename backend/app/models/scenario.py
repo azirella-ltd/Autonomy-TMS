@@ -83,14 +83,9 @@ Scenario.function_assignments = relationship(
 )
 
 
-# ── TMS-specific relationships on Round / ScenarioUserAction ────────────
+# ── TMS-specific relationships on ScenarioUserAction ────────────────────
+# (Round/period relationships are attached after Period class is defined below)
 
-Round.scenario_user_actions = relationship(
-    "ScenarioUserAction", back_populates="round", lazy="selectin"
-)
-ScenarioUserAction.round = relationship(
-    "Round", back_populates="scenario_user_actions", lazy="selectin"
-)
 ScenarioUserAction.scenario_user = relationship(
     "ScenarioUser", back_populates="actions", lazy="selectin"
 )
@@ -129,11 +124,33 @@ Scenario.set_role_assignment = _set_role_assignment
 Scenario.get_agent_config = _get_agent_config
 
 
-# ── TMS-local Period class (extends Core's Round for backward compat) ───
-# Core defines Round with (id, scenario_id, round_number, status, started_at,
-# completed_at, config). TMS uses "Period" with period_number. Since both
-# map to the same table via extend_existing, this is just an alias.
-Period = Round
+# ── TMS-local Period class ───────────────────────────────────────────────
+# TMS uses "periods" table (not Core's "rounds" table). This is a TMS-local
+# model, NOT a re-export from Core.
+
+from .base import Base
+
+class Period(Base):
+    """A period within a TMS scenario/simulation."""
+    __tablename__ = "periods"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scenario_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))
+    period_number: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    scenario = relationship("Scenario", back_populates="periods", lazy="selectin")
+    scenario_user_actions = relationship("ScenarioUserAction", back_populates="period", lazy="selectin")
+
+
+# Attach Period to Scenario (now that Period is defined)
+Scenario.periods = relationship("Period", back_populates="scenario", lazy="selectin")
+
+# Attach period relationship on ScenarioUserAction
+ScenarioUserAction.period = relationship("Period", back_populates="scenario_user_actions", lazy="selectin")
 
 
 # Backward-compat
