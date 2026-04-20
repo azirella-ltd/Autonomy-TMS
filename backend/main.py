@@ -6978,6 +6978,10 @@ api.include_router(auth_router, prefix="/auth", tags=["auth"])
 from app.api.endpoints.demo_date_shift import router as demo_date_shift_router
 api.include_router(demo_date_shift_router, prefix="/demo", tags=["demo"])
 
+# Freight Procurement — carrier waterfall tendering (first TMS-native TRM endpoint)
+from app.api.endpoints.freight_procurement import router as freight_procurement_router
+api.include_router(freight_procurement_router, tags=["freight-procurement"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
