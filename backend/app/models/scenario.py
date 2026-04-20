@@ -151,7 +151,7 @@ class Period(Base):
     config: Mapped[dict] = mapped_column(JSON, default=dict)
 
     # Relationships
-    scenario: Mapped["Scenario"] = relationship("Scenario", back_populates="periods", lazy="selectin")
+    scenario: Mapped["Scenario"] = relationship("app.models.scenario.Scenario", back_populates="periods", lazy="selectin")
     scenario_user_actions: Mapped[List["ScenarioUserAction"]] = relationship("ScenarioUserAction", back_populates="period", lazy="selectin")
 
 
@@ -174,7 +174,7 @@ class ScenarioUserAction(Base):
     # Relationships
     period: Mapped["Period"] = relationship("Period", back_populates="scenario_user_actions", lazy="selectin")
     scenario_user: Mapped["ScenarioUser"] = relationship("ScenarioUser", back_populates="actions", lazy="selectin")
-    scenario: Mapped["Scenario"] = relationship("Scenario", lazy="selectin")
+    scenario: Mapped["Scenario"] = relationship("app.models.scenario.Scenario", lazy="selectin")
 
 
 # Backward-compatibility aliases (temporary - remove in Workstream X)
