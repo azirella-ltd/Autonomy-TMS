@@ -23,7 +23,7 @@ class SupervisorAction(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    scenario = relationship("app.models.scenario.Scenario", back_populates="supervisor_actions")
+    scenario = relationship("Scenario", back_populates="supervisor_actions")
 
     def __repr__(self):
         return f"<SupervisorAction(scenario_id={self.scenario_id}, role={self.role}, original={self.original_order}, adjusted={self.adjusted_order})>"

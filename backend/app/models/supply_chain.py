@@ -39,7 +39,7 @@ class ScenarioUserInventory(Base):
     backorders = Column(Integer, default=0)
     cost = Column(Float, default=0.0)
 
-    scenario_user = relationship("app.models.participant.ScenarioUser", back_populates="inventory")
+    scenario_user = relationship("ScenarioUser", back_populates="inventory")
 
 
 class Order(Base):
@@ -53,8 +53,8 @@ class Order(Base):
     quantity = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    scenario_user = relationship("app.models.participant.ScenarioUser", back_populates="orders")
-    scenario = relationship("app.models.scenario.Scenario")
+    scenario_user = relationship("ScenarioUser", back_populates="orders")
+    scenario = relationship("Scenario")
 
 
 class ScenarioPeriod(Base):
@@ -83,7 +83,7 @@ class ScenarioPeriod(Base):
     fulfillment_completed_at = Column(DateTime, nullable=True)
     replenishment_completed_at = Column(DateTime, nullable=True)
 
-    scenario = relationship("app.models.scenario.Scenario", back_populates="supply_chain_periods")
+    scenario = relationship("Scenario", back_populates="supply_chain_periods")
     scenario_user_periods = relationship("ScenarioUserPeriod", back_populates="scenario_period")
 
 
@@ -129,7 +129,7 @@ class ScenarioUserPeriod(Base):
     replenishment_qty = Column(Integer, nullable=True)
     replenishment_submitted_at = Column(DateTime, nullable=True)
 
-    scenario_user = relationship("app.models.participant.ScenarioUser", back_populates="scenario_user_periods")
+    scenario_user = relationship("ScenarioUser", back_populates="scenario_user_periods")
     scenario_period = relationship("ScenarioPeriod", back_populates="scenario_user_periods")
 
     __table_args__ = (

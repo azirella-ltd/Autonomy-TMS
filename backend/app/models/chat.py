@@ -65,7 +65,7 @@ class ChatMessage(Base):
     read_at = Column(DateTime, nullable=True)
 
     # Relationships
-    scenario = relationship("app.models.scenario.Scenario", back_populates="chat_messages")
+    scenario = relationship("Scenario", back_populates="chat_messages")
 
     def __repr__(self):
         return f"<ChatMessage(id={self.id}, scenario_id={self.scenario_id}, sender={self.sender_name}, type={self.type})>"
@@ -103,8 +103,8 @@ class AgentSuggestion(Base):
     decided_at = Column(DateTime, nullable=True)
 
     # Relationships
-    scenario = relationship("app.models.scenario.Scenario", back_populates="agent_suggestions")
-    scenario_user = relationship("app.models.participant.ScenarioUser", back_populates="agent_suggestions")
+    scenario = relationship("Scenario", back_populates="agent_suggestions")
+    scenario_user = relationship("ScenarioUser", back_populates="agent_suggestions")
 
     def __repr__(self):
         return f"<AgentSuggestion(id={self.id}, agent={self.agent_name}, quantity={self.order_quantity}, confidence={self.confidence})>"
@@ -139,8 +139,8 @@ class WhatIfAnalysis(Base):
     completed_at = Column(DateTime, nullable=True)
 
     # Relationships
-    scenario = relationship("app.models.scenario.Scenario", back_populates="what_if_analyses")
-    scenario_user = relationship("app.models.participant.ScenarioUser", back_populates="what_if_analyses")
+    scenario = relationship("Scenario", back_populates="what_if_analyses")
+    scenario_user = relationship("ScenarioUser", back_populates="what_if_analyses")
 
     def __repr__(self):
         return f"<WhatIfAnalysis(id={self.id}, scenario_id={self.scenario_id}, question={self.question[:50]})>"
