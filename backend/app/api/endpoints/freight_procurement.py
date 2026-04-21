@@ -72,16 +72,16 @@ async def evaluate_load(
     from app.db.session import sync_session_factory
 
     with sync_session_factory() as sync_db:
-        load = sync_db.execute(
-            select(Load).where(
-                and_(Load.id == load_id, Load.tenant_id == user.tenant_id)
-            )
-        ).scalar_one_or_none()
+        load_q = select(Load).where(Load.id == load_id)
+        if user.tenant_id is not None:
+            load_q = load_q.where(Load.tenant_id == user.tenant_id)
+        load = sync_db.execute(load_q).scalar_one_or_none()
         if not load:
             raise HTTPException(404, f"Load {load_id} not found")
 
         from app.services.powell.freight_procurement_trm import FreightProcurementTRM
-        trm = FreightProcurementTRM(sync_db, user.tenant_id, load.config_id or 0)
+        effective_tenant_id = user.tenant_id if user.tenant_id is not None else load.tenant_id
+        trm = FreightProcurementTRM(sync_db, effective_tenant_id, load.config_id or 0)
 
         # Try loading checkpoint
         import os
@@ -92,6 +92,7 @@ async def evaluate_load(
         result = trm.evaluate_and_persist(load)
         if not result:
             raise HTTPException(422, "No carrier candidates for this load")
+        sync_db.commit()
 
         return EvaluationResult(**{k: v for k, v in result.items()
                                    if k in EvaluationResult.model_fields})
@@ -129,60 +130,65 @@ async def get_carrier_waterfall(
     user: User = Depends(get_current_user),
 ):
     """View the carrier waterfall for a load — all candidates ranked by score."""
-    load = (await db.execute(
-        select(Load).where(
-            and_(Load.id == load_id, Load.tenant_id == user.tenant_id)
+    from app.db.session import sync_session_factory
+
+    with sync_session_factory() as sync_db:
+        load_q = select(Load).where(Load.id == load_id)
+        if user.tenant_id is not None:
+            load_q = load_q.where(Load.tenant_id == user.tenant_id)
+        load = sync_db.execute(load_q).scalar_one_or_none()
+        if not load:
+            raise HTTPException(404, f"Load {load_id} not found")
+
+        lane_q = (
+            select(CarrierLane, Carrier)
+            .join(Carrier, CarrierLane.carrier_id == Carrier.id)
+            .where(CarrierLane.is_active.is_(True))
+            .order_by(CarrierLane.priority)
         )
-    )).scalar_one_or_none()
-    if not load:
-        raise HTTPException(404, f"Load {load_id} not found")
+        if user.tenant_id is not None:
+            lane_q = lane_q.where(CarrierLane.tenant_id == user.tenant_id)
+        else:
+            lane_q = lane_q.where(CarrierLane.tenant_id == load.tenant_id)
+        cls = sync_db.execute(lane_q).all()
 
-    # Get carrier lanes with rates
-    cls = (await db.execute(
-        select(CarrierLane, Carrier).join(
-            Carrier, CarrierLane.carrier_id == Carrier.id
-        ).where(
-            and_(
-                CarrierLane.tenant_id == user.tenant_id,
-                CarrierLane.is_active.is_(True),
-            )
-        ).order_by(CarrierLane.priority)
-    )).all()
+        tenders = sync_db.execute(
+            select(FreightTender).where(FreightTender.load_id == load_id)
+        ).scalars().all()
+        tender_status_by_carrier = {t.carrier_id: t.status.value for t in tenders}
 
-    # Get existing tenders for this load
-    tenders = (await db.execute(
-        select(FreightTender).where(FreightTender.load_id == load_id)
-    )).scalars().all()
-    tender_status_by_carrier = {t.carrier_id: t.status.value for t in tenders}
+        entries = []
+        tenant_for_rates = user.tenant_id if user.tenant_id is not None else load.tenant_id
+        for cl, carrier in cls[:20]:
+            rate = sync_db.execute(
+                select(FreightRate.rate_flat).where(
+                    and_(
+                        FreightRate.carrier_id == carrier.id,
+                        FreightRate.tenant_id == tenant_for_rates,
+                        FreightRate.is_active.is_(True),
+                    )
+                ).limit(1)
+            ).scalar_one_or_none()
 
-    entries = []
-    for cl, carrier in cls[:20]:
-        rate = (await db.execute(
-            select(FreightRate.rate_flat).where(
-                and_(
-                    FreightRate.carrier_id == carrier.id,
-                    FreightRate.tenant_id == user.tenant_id,
-                    FreightRate.is_active.is_(True),
-                )
-            ).limit(1)
-        )).scalar_one_or_none()
+            entries.append(WaterfallEntry(
+                carrier_id=carrier.id,
+                carrier_name=carrier.name,
+                carrier_code=carrier.code,
+                rate=float(rate) if rate else 0,
+                priority=cl.priority,
+                acceptance_pct=0.85,
+                tender_status=tender_status_by_carrier.get(carrier.id),
+            ))
 
-        entries.append(WaterfallEntry(
-            carrier_id=carrier.id,
-            carrier_name=carrier.name,
-            carrier_code=carrier.code,
-            rate=float(rate) if rate else 0,
-            priority=cl.priority,
-            acceptance_pct=0.85,
-            tender_status=tender_status_by_carrier.get(carrier.id),
-        ))
+        selected = next(
+            (t.carrier_id for t in tenders if t.status == TenderStatus.ACCEPTED),
+            None,
+        )
 
-    selected = next((t.carrier_id for t in tenders if t.status == TenderStatus.ACCEPTED), None)
-
-    return WaterfallResponse(
-        load_id=load.id,
-        load_number=load.load_number,
-        load_status=load.status.value,
-        carriers=entries,
-        selected_carrier_id=selected,
-    )
+        return WaterfallResponse(
+            load_id=load.id,
+            load_number=load.load_number,
+            load_status=load.status.value,
+            carriers=entries,
+            selected_carrier_id=selected,
+        )

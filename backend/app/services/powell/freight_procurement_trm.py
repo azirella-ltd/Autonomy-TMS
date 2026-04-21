@@ -188,28 +188,17 @@ class FreightProcurementTRM:
             )
             self.db.add(tender)
 
-            # Write to powell_po_decisions (reused for freight procurement)
-            self.db.execute(text("""
-                INSERT INTO powell_po_decisions
-                    (config_id, product_id, site_id, supplier_id, order_qty,
-                     total_cost, priority, confidence, urgency_at_time,
-                     decision_method, decision_reasoning, created_at,
-                     status)
-                VALUES
-                    (:cfg, NULL, :site, :carrier, 1,
-                     :cost, 3, :conf, :urg,
-                     :method, :reasoning, NOW(),
-                     'INFORMED')
-            """), {
-                "cfg": self.config_id,
-                "site": load.origin_site_id,
-                "carrier": result["carrier_id"],
-                "cost": result["offered_rate"],
-                "conf": result["confidence"],
-                "urg": result["urgency"],
-                "method": result["decision_method"],
-                "reasoning": result["reasoning"][:500],
-            })
+            # The authoritative record for a freight-procurement decision is
+            # the FreightTender row written above. We deliberately DO NOT write
+            # a powell_po_decisions row: that table is a purchase-order decision
+            # artefact (product-keyed, site-keyed) whose schema does not fit
+            # freight semantics, and its column naming (`location_id` instead
+            # of `site_id`) is SCP-lineage drift from AWS SC DM canonical
+            # naming anyway.
+            # Sprint 1 Week 4-5 (PREPARE.3 in TMS_ADOPTION_GUIDE_20260420):
+            # switch to dual-writing core.agent_decisions with
+            # decision_type=FREIGHT_PROCUREMENT once the intersection-contract
+            # package ships.
 
             load.status = LoadStatus.TENDERED
             self.db.flush()

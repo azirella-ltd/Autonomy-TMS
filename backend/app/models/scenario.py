@@ -143,14 +143,16 @@ class Period(Base):
     config: Mapped[dict] = mapped_column(JSON, default=dict)
 
     scenario = relationship("Scenario", back_populates="periods", lazy="selectin")
-    scenario_user_actions = relationship("ScenarioUserAction", back_populates="period", lazy="selectin")
+    # NOTE: ScenarioUserAction.period relationship removed — Core's class still
+    # declares `round_id` (FK → rounds.id) while TMS's DB has `period_id`
+    # (FK → periods.id) after migration 20260417_term. Until Core adopts the
+    # rename (or TMS reintroduces a local ScenarioUserAction), there's no FK
+    # the mapper can use to join these tables. Nothing in TMS reads this
+    # relationship today.
 
 
 # Attach Period to Scenario (now that Period is defined)
 Scenario.periods = relationship("Period", back_populates="scenario", lazy="selectin")
-
-# Attach period relationship on ScenarioUserAction
-ScenarioUserAction.period = relationship("Period", back_populates="scenario_user_actions", lazy="selectin")
 
 
 # Backward-compat
