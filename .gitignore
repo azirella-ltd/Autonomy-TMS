@@ -69,3 +69,12 @@ google-services.json
 # SAP credentials
 .secrets/
 sandbox/
+
+# Training artifacts (large, root-owned, regeneratable)
+backend/training_data/
+
+# Symlink into SCP data dir — local-only convenience
+sap_demo_csvs
+
+# Claude Code runtime state
+.claude/scheduled_tasks.lock
