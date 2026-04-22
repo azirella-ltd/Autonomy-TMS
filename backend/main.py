@@ -6992,6 +6992,10 @@ api.include_router(capacity_promise_router, tags=["capacity-promise"])
 from app.api.endpoints.shipment_tracking_trm import router as shipment_tracking_trm_router
 api.include_router(shipment_tracking_trm_router, tags=["shipment-tracking-trm"])
 
+# Exception Management TRM — ASSESS-phase shipment exception triage
+from app.api.endpoints.exception_management import router as exception_management_router
+api.include_router(exception_management_router, tags=["exception-management"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
