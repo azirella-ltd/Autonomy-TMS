@@ -357,7 +357,7 @@ async def get_allocations(
     if product_id:
         query = query.filter(PowellAllocation.product_id == product_id)
     if location_id:
-        query = query.filter(PowellAllocation.location_id == location_id)
+        query = query.filter(PowellAllocation.site_id == location_id)
     rows = query.order_by(PowellAllocation.priority).limit(500).all()
     return [
         AllocationResponse(
@@ -472,7 +472,7 @@ async def get_allocation_timeline(
         select(PowellAllocation).where(
             PowellAllocation.config_id == config_id,
             PowellAllocation.product_id == product_id,
-            PowellAllocation.location_id == location_id,
+            PowellAllocation.site_id == location_id,
             PowellAllocation.is_active == True,
             PowellAllocation.valid_from <= dt_end,
             PowellAllocation.valid_to >= dt_start,
@@ -564,7 +564,7 @@ async def bulk_override_allocations(
             select(PowellAllocation).where(
                 PowellAllocation.config_id == config_id,
                 PowellAllocation.product_id == request.product_id,
-                PowellAllocation.location_id == request.location_id,
+                PowellAllocation.site_id == request.location_id,
                 PowellAllocation.priority == cell.priority,
                 PowellAllocation.allocation_cadence == "daily",
                 PowellAllocation.valid_from >= cell_start,
@@ -583,7 +583,7 @@ async def bulk_override_allocations(
             new_alloc = PowellAllocation(
                 config_id=config_id,
                 product_id=request.product_id,
-                location_id=request.location_id,
+                site_id=request.location_id,
                 priority=cell.priority,
                 allocated_qty=cell.allocated_qty,
                 consumed_qty=0,

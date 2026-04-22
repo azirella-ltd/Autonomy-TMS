@@ -1201,7 +1201,7 @@ def seed_daily_powell_allocations(db: Session, config_id: int, dc_site_id: int):
                 alloc = PowellAllocation(
                     config_id=config_id,
                     product_id=sku,
-                    location_id=location_id,
+                    site_id=location_id,
                     priority=priority,
                     allocated_qty=qty,
                     consumed_qty=consumed,

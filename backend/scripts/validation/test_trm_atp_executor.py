@@ -65,9 +65,9 @@ if __name__ == "__main__":
     alloc_svc.set_allocations(
         allocations=[
             PriorityAllocation(priority=1, product_id="PROD-001",
-                               location_id="LOC-A", allocated_qty=50),
+                               site_id="LOC-A", allocated_qty=50),
             PriorityAllocation(priority=2, product_id="PROD-001",
-                               location_id="LOC-A", allocated_qty=80),
+                               site_id="LOC-A", allocated_qty=80),
         ],
     )
     status = alloc_svc.get_allocation_status("PROD-001", "LOC-A")

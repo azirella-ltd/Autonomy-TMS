@@ -60,11 +60,11 @@ def allocation_service(default_config):
 def sample_allocations():
     """Sample allocations for product SKU-A at location DC-01."""
     return [
-        PriorityAllocation(priority=1, product_id="SKU-A", location_id="DC-01", allocated_qty=300),
-        PriorityAllocation(priority=2, product_id="SKU-A", location_id="DC-01", allocated_qty=250),
-        PriorityAllocation(priority=3, product_id="SKU-A", location_id="DC-01", allocated_qty=200),
-        PriorityAllocation(priority=4, product_id="SKU-A", location_id="DC-01", allocated_qty=150),
-        PriorityAllocation(priority=5, product_id="SKU-A", location_id="DC-01", allocated_qty=100),
+        PriorityAllocation(priority=1, product_id="SKU-A", site_id="DC-01", allocated_qty=300),
+        PriorityAllocation(priority=2, product_id="SKU-A", site_id="DC-01", allocated_qty=250),
+        PriorityAllocation(priority=3, product_id="SKU-A", site_id="DC-01", allocated_qty=200),
+        PriorityAllocation(priority=4, product_id="SKU-A", site_id="DC-01", allocated_qty=150),
+        PriorityAllocation(priority=5, product_id="SKU-A", site_id="DC-01", allocated_qty=100),
     ]
 
 
@@ -202,7 +202,7 @@ class TestPriorityAllocation:
     def test_available_qty_simple(self):
         """available_qty = allocated - consumed, floored at zero."""
         alloc = PriorityAllocation(
-            priority=1, product_id="SKU-A", location_id="DC-01",
+            priority=1, product_id="SKU-A", site_id="DC-01",
             allocated_qty=100, consumed_qty=30,
         )
         assert alloc.available_qty == 70.0
@@ -210,7 +210,7 @@ class TestPriorityAllocation:
     def test_available_qty_floors_at_zero(self):
         """available_qty never goes negative."""
         alloc = PriorityAllocation(
-            priority=1, product_id="SKU-A", location_id="DC-01",
+            priority=1, product_id="SKU-A", site_id="DC-01",
             allocated_qty=50, consumed_qty=80,
         )
         assert alloc.available_qty == 0.0
@@ -218,7 +218,7 @@ class TestPriorityAllocation:
     def test_utilization(self):
         """utilization = consumed / allocated."""
         alloc = PriorityAllocation(
-            priority=2, product_id="SKU-A", location_id="DC-01",
+            priority=2, product_id="SKU-A", site_id="DC-01",
             allocated_qty=200, consumed_qty=100,
         )
         assert alloc.utilization == pytest.approx(0.5)
@@ -226,7 +226,7 @@ class TestPriorityAllocation:
     def test_utilization_zero_allocated(self):
         """utilization is 0 when allocated is zero (no division error)."""
         alloc = PriorityAllocation(
-            priority=3, product_id="SKU-A", location_id="DC-01",
+            priority=3, product_id="SKU-A", site_id="DC-01",
             allocated_qty=0, consumed_qty=0,
         )
         assert alloc.utilization == 0.0
@@ -234,7 +234,7 @@ class TestPriorityAllocation:
     def test_consume_returns_actual_qty(self):
         """consume() returns actually consumed qty, capped at available."""
         alloc = PriorityAllocation(
-            priority=1, product_id="SKU-A", location_id="DC-01",
+            priority=1, product_id="SKU-A", site_id="DC-01",
             allocated_qty=100, consumed_qty=0,
         )
         # Normal consume
@@ -250,14 +250,14 @@ class TestPriorityAllocation:
     def test_to_dict_structure(self):
         """to_dict() returns all expected keys."""
         alloc = PriorityAllocation(
-            priority=1, product_id="SKU-A", location_id="DC-01",
+            priority=1, product_id="SKU-A", site_id="DC-01",
             allocated_qty=100, consumed_qty=25,
             demand_source="key_account", generated_by="tgnn",
         )
         d = alloc.to_dict()
         assert d["priority"] == 1
         assert d["product_id"] == "SKU-A"
-        assert d["location_id"] == "DC-01"
+        assert d["site_id"] == "DC-01"
         assert d["allocated_qty"] == 100
         assert d["consumed_qty"] == 25
         assert d["available_qty"] == 75
@@ -322,8 +322,8 @@ class TestAllocationService:
         allocation_service.set_allocations(sample_allocations)
         # Set new with only 2 priorities
         new_allocs = [
-            PriorityAllocation(priority=1, product_id="SKU-A", location_id="DC-01", allocated_qty=500),
-            PriorityAllocation(priority=2, product_id="SKU-A", location_id="DC-01", allocated_qty=500),
+            PriorityAllocation(priority=1, product_id="SKU-A", site_id="DC-01", allocated_qty=500),
+            PriorityAllocation(priority=2, product_id="SKU-A", site_id="DC-01", allocated_qty=500),
         ]
         allocation_service.set_allocations(new_allocs)
         status = allocation_service.get_allocation_status("SKU-A", "DC-01")
@@ -398,8 +398,8 @@ class TestAllocationService:
         )
         svc = AllocationService(config=reject_config)
         allocs = [
-            PriorityAllocation(priority=1, product_id="SKU-A", location_id="DC-01", allocated_qty=50),
-            PriorityAllocation(priority=2, product_id="SKU-A", location_id="DC-01", allocated_qty=30),
+            PriorityAllocation(priority=1, product_id="SKU-A", site_id="DC-01", allocated_qty=50),
+            PriorityAllocation(priority=2, product_id="SKU-A", site_id="DC-01", allocated_qty=30),
         ]
         svc.set_allocations(allocs)
 
@@ -843,7 +843,7 @@ class TestAllocationServicePeriodManagement:
         svc = AllocationService(config=config)
         today = date.today()
         allocs = [
-            PriorityAllocation(priority=1, product_id="P", location_id="L", allocated_qty=100),
+            PriorityAllocation(priority=1, product_id="P", site_id="L", allocated_qty=100),
         ]
         svc.set_allocations(allocs, period_start=today)
         assert svc._period_end == today + timedelta(weeks=1)
@@ -854,7 +854,7 @@ class TestAllocationServicePeriodManagement:
         svc = AllocationService(config=config)
         today = date.today()
         allocs = [
-            PriorityAllocation(priority=1, product_id="P", location_id="L", allocated_qty=100),
+            PriorityAllocation(priority=1, product_id="P", site_id="L", allocated_qty=100),
         ]
         svc.set_allocations(allocs, period_start=today)
         assert svc._period_end == today + timedelta(days=1)

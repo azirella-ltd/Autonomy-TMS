@@ -86,7 +86,10 @@ TIER_CONFIGS = {
             SyncDataType.RESERVATIONS,
         ],
         workflow_chain=["validate", "cdc_detect", "condition_monitor", "alert"],
-        snapshot_tier=SnapshotTier.BRONZE,
+        # Hourly transactional snapshots are freshest → HOT retention tier.
+        # (Earlier revision used medallion-architecture names BRONZE/SILVER/GOLD;
+        # the actual SnapshotTier enum is HOT/WARM/COLD retention semantics.)
+        snapshot_tier=SnapshotTier.HOT,
     ),
     ImportTier.OPERATIONAL: TierConfig(
         tier=ImportTier.OPERATIONAL,
@@ -97,7 +100,7 @@ TIER_CONFIGS = {
             SyncDataType.ATP_DATA,
         ],
         workflow_chain=["validate", "cdc_detect", "aggregate", "analytics", "condition_monitor", "agent_trigger"],
-        snapshot_tier=SnapshotTier.SILVER,
+        snapshot_tier=SnapshotTier.WARM,
     ),
     ImportTier.TACTICAL: TierConfig(
         tier=ImportTier.TACTICAL,
@@ -113,7 +116,7 @@ TIER_CONFIGS = {
             SyncDataType.ROUTING_MASTER,
         ],
         workflow_chain=["validate", "cdc_detect", "version", "aggregate", "analytics", "soop_trigger"],
-        snapshot_tier=SnapshotTier.GOLD,
+        snapshot_tier=SnapshotTier.COLD,
     ),
 }
 
@@ -710,7 +713,7 @@ class DataImportSchedulerService:
             name=f"{cdc_result.data_type.value}_{cdc_result.version_hash}",
             description=f"Import from {execution.config.name or 'sync'}",
             snapshot_type=SnapshotType.AUTOMATED,
-            tier=tier_config.snapshot_tier if tier_config else SnapshotTier.BRONZE,
+            tier=tier_config.snapshot_tier if tier_config else SnapshotTier.HOT,
             data={"records": data, "metadata": {"execution_id": execution.id}},
             version_hash=cdc_result.version_hash,
             previous_version_id=None,  # Would link to previous snapshot

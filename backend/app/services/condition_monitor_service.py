@@ -388,11 +388,11 @@ class ConditionMonitorService:
                 SupplyChainConfig.tenant_id == tenant_id
             )
 
-            # Find product/location combos where available ATP <= 0
+            # Find product/site combos where available ATP <= 0
             stmt = (
                 select(
                     PowellAllocation.product_id,
-                    PowellAllocation.location_id,
+                    PowellAllocation.site_id,
                     func.sum(
                         PowellAllocation.allocated_qty
                         - PowellAllocation.consumed_qty
@@ -403,7 +403,7 @@ class ConditionMonitorService:
                     PowellAllocation.is_active == True,
                     PowellAllocation.config_id.in_(config_ids_q),
                 )
-                .group_by(PowellAllocation.product_id, PowellAllocation.location_id)
+                .group_by(PowellAllocation.product_id, PowellAllocation.site_id)
                 .having(
                     func.sum(
                         PowellAllocation.allocated_qty
@@ -417,14 +417,14 @@ class ConditionMonitorService:
                 conditions.append(ConditionState(
                     condition_type=ConditionType.ATP_SHORTFALL,
                     entity_type="product_site",
-                    entity_id=f"{row.product_id}_{row.location_id}",
+                    entity_id=f"{row.product_id}_{row.site_id}",
                     tenant_id=tenant_id,
                     current_value=float(row.available),
                     threshold_value=config.threshold_value,
                     deviation=float(config.threshold_value - row.available),
                     context={
                         "product_id": row.product_id,
-                        "site_id": row.location_id,
+                        "site_id": row.site_id,
                     },
                 ))
         except Exception as e:

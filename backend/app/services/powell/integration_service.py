@@ -227,7 +227,7 @@ class PowellIntegrationService:
             for alloc in allocations:
                 allocation_service.update_allocation(
                     product_id=alloc.product_id,
-                    location_id=alloc.location_id,
+                    location_id=alloc.site_id,  # PriorityAllocation field → method param
                     priority=alloc.priority,
                     allocated_qty=alloc.allocated_qty,
                     consumed_qty=alloc.consumed_qty,
@@ -740,7 +740,7 @@ class PowellIntegrationService:
                     and_(
                         PowellAllocation.config_id == config_id,
                         PowellAllocation.product_id == product_id,
-                        PowellAllocation.location_id == location_id,
+                        PowellAllocation.site_id == location_id,
                         PowellAllocation.is_active == True,
                         PowellAllocation.valid_from <= now,
                         PowellAllocation.valid_to >= now,
@@ -752,7 +752,7 @@ class PowellIntegrationService:
             return [
                 PriorityAllocation(
                     product_id=a.product_id,
-                    location_id=a.location_id,
+                    site_id=a.site_id,
                     priority=a.priority,
                     allocated_qty=a.allocated_qty,
                     consumed_qty=a.consumed_qty,
@@ -1347,7 +1347,7 @@ class PowellIntegrationService:
                     select(PowellAllocation).where(and_(
                         PowellAllocation.config_id == config_id,
                         PowellAllocation.product_id == product_id,
-                        PowellAllocation.location_id == location_id,
+                        PowellAllocation.site_id == location_id,
                         PowellAllocation.priority == int(priority),
                         PowellAllocation.is_active == True,
                         PowellAllocation.valid_from <= now,

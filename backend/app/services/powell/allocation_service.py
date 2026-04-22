@@ -53,7 +53,7 @@ class PriorityAllocation:
     """
     priority: int  # 1 = highest priority
     product_id: str
-    location_id: str  # Site ID
+    site_id: str  # AWS SC DM canonical
 
     # Allocation quantities
     allocated_qty: float
@@ -94,7 +94,7 @@ class PriorityAllocation:
         return {
             "priority": self.priority,
             "product_id": self.product_id,
-            "location_id": self.location_id,
+            "site_id": self.site_id,
             "allocated_qty": self.allocated_qty,
             "consumed_qty": self.consumed_qty,
             "available_qty": self.available_qty,
@@ -244,7 +244,7 @@ class AllocationService:
         self._allocations.clear()
 
         for alloc in allocations:
-            key = (alloc.product_id, alloc.location_id)
+            key = (alloc.product_id, alloc.site_id)
             if key not in self._allocations:
                 self._allocations[key] = {}
             self._allocations[key][alloc.priority] = alloc
@@ -301,7 +301,7 @@ class AllocationService:
             allocations.append(PriorityAllocation(
                 priority=priority,
                 product_id=product_id,
-                location_id=location_id,
+                site_id=location_id,  # method param name stays; field is site_id
                 allocated_qty=allocated,
                 generated_by="default",
             ))
@@ -638,7 +638,7 @@ def materialize_allocation_commit(
             db.query(PowellAllocation)
             .filter(
                 PowellAllocation.config_id == config_id,
-                PowellAllocation.location_id == dc_location_id,
+                PowellAllocation.site_id == dc_location_id,
                 PowellAllocation.allocation_source == "cascade",
                 PowellAllocation.valid_from >= datetime.combine(week_start, datetime.min.time()),
                 PowellAllocation.valid_from <= datetime.combine(week_end, datetime.max.time()),
@@ -663,7 +663,7 @@ def materialize_allocation_commit(
             row = PowellAllocation(
                 config_id=config_id,
                 product_id=sku,
-                location_id=dc_location_id,
+                site_id=dc_location_id,
                 priority=priority,
                 allocated_qty=daily_qty,
                 consumed_qty=0.0,
@@ -681,7 +681,7 @@ def materialize_allocation_commit(
         priority_allocs.append(PriorityAllocation(
             priority=priority,
             product_id=sku,
-            location_id=dc_location_id,
+            site_id=dc_location_id,
             allocated_qty=weekly_qty,
             valid_from=week_start,
             valid_to=week_end,
