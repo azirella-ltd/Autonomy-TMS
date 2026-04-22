@@ -6982,6 +6982,10 @@ api.include_router(demo_date_shift_router, prefix="/demo", tags=["demo"])
 from app.api.endpoints.freight_procurement import router as freight_procurement_router
 api.include_router(freight_procurement_router, tags=["freight-procurement"])
 
+# Capacity Promise — SENSE-phase Load-status promotion (PLANNING → READY)
+from app.api.endpoints.capacity_promise import router as capacity_promise_router
+api.include_router(capacity_promise_router, tags=["capacity-promise"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------

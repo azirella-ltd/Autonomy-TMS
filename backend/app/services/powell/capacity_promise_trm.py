@@ -1,0 +1,276 @@
+"""
+CapacityPromiseTRM — Capacity-Promise Agent (SENSE phase)
+
+The second TMS TRM wired end-to-end. Maps to SCP's `atp_executor` slot in
+the Powell site agent but operates on Load-status promotion rather than
+order-level ATP consumption.
+
+Behaviour (v1, per docs/internal/plans/CAPACITY_PROMISE_TRM_DESIGN.md):
+  Load (PLANNING)
+    └─ CapacityPromiseTRM  →  ACCEPT / DEFER / REJECT
+         ACCEPT   → Load.status = READY (unlocks FreightProcurementTRM)
+         DEFER    → leave at PLANNING (re-evaluated next cycle)
+         REJECT   → leave at PLANNING + structured warning log
+
+No `REJECTED` LoadStatus value exists today (audit flagged this in the
+design note); adding one is out of v1 scope. No persistence to a Powell
+decision table — the design note concludes log-only until the
+intersection-contract package ships PREPARE.3's core.agent_decisions
+dual-write.
+
+Uses the Core-hosted deterministic teacher (compute_tms_decision with
+trm_type="capacity_promise") when no BC checkpoint is loaded. Checkpoint
+loading is stubbed for now (no capacity-promise BC model has been
+trained yet).
+"""
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, select
+from sqlalchemy.orm import Session
+
+from app.models.tms_entities import (
+    Carrier, CarrierLane, FreightRate, FreightTender,
+    Load, LoadStatus, TenderStatus, TransportMode,
+)
+
+logger = logging.getLogger(__name__)
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+
+class CapacityPromiseTRM:
+    """
+    Evaluates capacity-promise decisions for loads in PLANNING state.
+
+    Lifecycle:
+        trm = CapacityPromiseTRM(db_session, tenant_id, config_id)
+        trm.load_checkpoint(path)  # optional — falls back to heuristic
+        decisions = trm.evaluate_pending_loads()
+    """
+
+    # Defaults for signals TMS cannot source today — these match the
+    # design note's "Feature-vector population" section. Replace with
+    # real rollups as the lane_performance_actuals / carrier_capacity_state
+    # feedback tables land (Sprint 1 PREPARE.5).
+    DEFAULT_LANE_ACCEPTANCE = 0.85
+    DEFAULT_PRIMARY_OTP = 0.93
+    DEFAULT_MARKET_TIGHTNESS = 0.5
+    DEFAULT_ALLOCATION_COMPLIANCE = 1.0
+    DEFAULT_SPOT_PREMIUM = 0.0
+
+    def __init__(self, db: Session, tenant_id: int, config_id: int):
+        self.db = db
+        self.tenant_id = tenant_id
+        self.config_id = config_id
+        self._model = None
+
+        from azirella_data_model.powell.tms.heuristic_library.dispatch import (
+            compute_tms_decision,
+        )
+        from azirella_data_model.powell.tms.heuristic_library.base import (
+            CapacityPromiseState,
+        )
+        self._compute_decision = compute_tms_decision
+        self._StateClass = CapacityPromiseState
+
+    def load_checkpoint(self, checkpoint_path: str) -> bool:
+        """Load a trained BC checkpoint. Returns True on success.
+
+        No capacity-promise BC model exists today; this is scaffolded
+        identically to FreightProcurementTRM so a future BC corpus can
+        plug in without endpoint changes.
+        """
+        if not TORCH_AVAILABLE:
+            logger.warning("PyTorch not available — using heuristic fallback")
+            return False
+        try:
+            import os
+            if not os.path.exists(checkpoint_path):
+                return False
+            # Intentionally not loading — model class doesn't exist yet.
+            logger.info("CapacityPromise checkpoint path present but loader is a stub")
+            return False
+        except Exception as e:
+            logger.warning("Checkpoint load failed, using heuristic: %s", e)
+            return False
+
+    def find_pending_loads(self) -> List[Load]:
+        """Find loads in PLANNING status (candidates for capacity promise)."""
+        return self.db.execute(
+            select(Load).where(
+                and_(
+                    Load.tenant_id == self.tenant_id,
+                    Load.status == LoadStatus.PLANNING,
+                )
+            ).order_by(Load.planned_departure.nullslast(), Load.id)
+        ).scalars().all()
+
+    def evaluate_load(self, load: Load) -> Optional[Dict[str, Any]]:
+        """
+        Evaluate capacity-promise decision for one load.
+
+        Returns a decision dict with the action, reasoning, and the
+        composite scoring detail. Does NOT mutate the load.
+        """
+        state = self._build_state(load)
+        decision = self._compute_decision("capacity_promise", state)
+
+        action_name = {
+            0: "ACCEPT",
+            1: "REJECT",
+            2: "DEFER",
+            3: "ESCALATE",
+        }.get(decision.action, "UNKNOWN")
+
+        return {
+            "load_id": load.id,
+            "load_number": load.load_number,
+            "load_status": load.status.value,
+            "lane_id": getattr(state, "lane_id", 0),
+            "priority": state.priority,
+            "requested_loads": state.requested_loads,
+            "available_capacity": state.available_capacity(),
+            "action": decision.action,
+            "action_name": action_name,
+            "composite_score": (
+                decision.params_used.get("composite_score")
+                if decision.params_used else None
+            ),
+            "confidence": decision.confidence,
+            "urgency": decision.urgency,
+            "reasoning": decision.reasoning,
+            "decision_method": "trm_model" if self._model else "heuristic",
+            "scoring_detail": decision.params_used,
+        }
+
+    def evaluate_and_promote(self, load: Load) -> Optional[Dict[str, Any]]:
+        """Evaluate + advance Load.status on ACCEPT.
+
+        ACCEPT → PLANNING → READY (unlocks FreightProcurementTRM)
+        DEFER  → no change (load remains in PLANNING for next cycle)
+        REJECT → no change; logs a structured warning. Adding a
+                 LoadStatus.REJECTED enum value is a separate audit
+                 (see design note).
+        """
+        result = self.evaluate_load(load)
+        if not result:
+            return result
+
+        action = result["action"]
+        if action == 0:  # ACCEPT
+            load.status = LoadStatus.READY
+            self.db.flush()
+            logger.info(
+                "CapacityPromise ACCEPT: load %s → READY (score=%s, conf=%.2f, urg=%.2f)",
+                load.load_number,
+                result.get("composite_score"),
+                result["confidence"],
+                result["urgency"],
+            )
+        elif action == 1:  # REJECT
+            logger.warning(
+                "CapacityPromise REJECT: load %s (score=%s, urg=%.2f) — %s",
+                load.load_number,
+                result.get("composite_score"),
+                result["urgency"],
+                result["reasoning"],
+            )
+        # DEFER (2) and any ESCALATE (3) path: leave status untouched.
+
+        return result
+
+    def evaluate_pending_loads(self) -> List[Dict[str, Any]]:
+        """Evaluate every PLANNING load and persist any status changes."""
+        loads = self.find_pending_loads()
+        results = []
+        for load in loads:
+            result = self.evaluate_and_promote(load)
+            if result:
+                results.append(result)
+        self.db.commit()
+        return results
+
+    # ── Helpers ──────────────────────────────────────────────────────────
+
+    def _build_state(self, load: Load):
+        """Construct CapacityPromiseState from load + lane context.
+
+        Honest priors are used for market / carrier-performance signals
+        that TMS cannot source today — see class-level DEFAULT_* constants
+        and the design note's feature-vector population section.
+        """
+        # Committed & total capacity — rough rollup from CarrierLane.
+        # Real capacity-state rollups will arrive with PREPARE.5's
+        # carrier_capacity_state view.
+        lane_rows = self.db.execute(
+            select(CarrierLane).where(
+                and_(
+                    CarrierLane.tenant_id == self.tenant_id,
+                    CarrierLane.is_active.is_(True),
+                )
+            )
+        ).scalars().all()
+        total_capacity = sum(
+            int(getattr(cl, "max_volume_daily", 0) or 0) for cl in lane_rows
+        )
+
+        # Booked loads on the same day = Loads in READY / TENDERED / ASSIGNED
+        # / IN_TRANSIT on the same origin-destination pair around the
+        # planned_departure date. Use a single-day window for v1.
+        booked = 0
+        if load.planned_departure:
+            day_start = load.planned_departure.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            day_end = day_start.replace(hour=23, minute=59, second=59)
+            booked = self.db.execute(
+                select(Load).where(
+                    and_(
+                        Load.tenant_id == self.tenant_id,
+                        Load.origin_site_id == load.origin_site_id,
+                        Load.destination_site_id == load.destination_site_id,
+                        Load.status.in_([
+                            LoadStatus.READY,
+                            LoadStatus.TENDERED,
+                            LoadStatus.ASSIGNED,
+                            LoadStatus.IN_TRANSIT,
+                        ]),
+                        Load.planned_departure >= day_start,
+                        Load.planned_departure <= day_end,
+                    )
+                )
+            ).scalars().all()
+            booked = len(booked)
+
+        primary_available = bool(load.carrier_id) or len(lane_rows) > 0
+        backup_count = max(0, len(lane_rows) - 1)
+
+        # Default priority 3 if the Load doesn't carry one.
+        priority = int(getattr(load, "priority", 3) or 3)
+
+        return self._StateClass(
+            shipment_id=load.id,
+            lane_id=0,
+            requested_date=load.planned_departure,
+            requested_loads=1,
+            mode=(load.mode.value if load.mode else TransportMode.FTL.value),
+            priority=priority,
+            committed_capacity=booked,
+            total_capacity=total_capacity or 0,
+            buffer_capacity=0,
+            forecast_loads=0,
+            booked_loads=booked,
+            primary_carrier_available=primary_available,
+            backup_carriers_count=backup_count,
+            spot_rate_premium_pct=self.DEFAULT_SPOT_PREMIUM,
+            lane_acceptance_rate=self.DEFAULT_LANE_ACCEPTANCE,
+            market_tightness=self.DEFAULT_MARKET_TIGHTNESS,
+            primary_carrier_otp=self.DEFAULT_PRIMARY_OTP,
+            allocation_compliance_pct=self.DEFAULT_ALLOCATION_COMPLIANCE,
+        )
