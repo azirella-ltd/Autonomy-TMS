@@ -6986,6 +6986,12 @@ api.include_router(freight_procurement_router, tags=["freight-procurement"])
 from app.api.endpoints.capacity_promise import router as capacity_promise_router
 api.include_router(capacity_promise_router, tags=["capacity-promise"])
 
+# Shipment Tracking TRM — SENSE-phase in-transit exception detection
+# (distinct from the pre-existing /shipment-tracking/* material-visibility
+#  endpoints; mounted at /shipment-tracking-trm/*)
+from app.api.endpoints.shipment_tracking_trm import router as shipment_tracking_trm_router
+api.include_router(shipment_tracking_trm_router, tags=["shipment-tracking-trm"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
