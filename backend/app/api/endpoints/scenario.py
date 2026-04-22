@@ -6,7 +6,7 @@ from datetime import datetime
 from app.db.session import get_sync_db
 from app.models.scenario import Scenario as ScenarioModel
 from app.models.scenario_user import ScenarioUser
-from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
+from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 from app.schemas.scenario import (
     ScenarioCreate, ScenarioUpdate,
     ScenarioUserCreate, ScenarioUserUpdate, ScenarioUser as ScenarioUserSchema,
@@ -402,7 +402,7 @@ def list_rounds(
     """
     List all rounds for a scenario.
     """
-    rounds = db.query(ScenarioRound).filter(ScenarioRound.scenario_id == scenario_id).all()
+    rounds = db.query(ScenarioPeriod).filter(ScenarioPeriod.scenario_id == scenario_id).all()
     return [ScenarioPeriodResponse.model_validate(round) for round in rounds]
 
 @router.get("/{scenario_id}/rounds/{round_number}", response_model=ScenarioPeriodResponse)
@@ -415,9 +415,9 @@ def get_round(
     """
     Get a specific round for a scenario.
     """
-    scenario_round = db.query(ScenarioRound).filter(
-        ScenarioRound.scenario_id == scenario_id,
-        ScenarioRound.round_number == round_number
+    scenario_round = db.query(ScenarioPeriod).filter(
+        ScenarioPeriod.scenario_id == scenario_id,
+        ScenarioPeriod.round_number == round_number
     ).first()
 
     if not scenario_round:
@@ -444,9 +444,9 @@ def get_current_period(
             detail="Scenario not found"
         )
 
-    scenario_round = db.query(ScenarioRound).filter(
-        ScenarioRound.scenario_id == scenario_id,
-        ScenarioRound.round_number == scenario.current_period
+    scenario_round = db.query(ScenarioPeriod).filter(
+        ScenarioPeriod.scenario_id == scenario_id,
+        ScenarioPeriod.round_number == scenario.current_period
     ).first()
 
     if not scenario_round:
@@ -474,9 +474,9 @@ async def get_round_submission_status(
         raise HTTPException(status_code=404, detail="Scenario not found")
 
     # Get current round
-    current_period = db.query(ScenarioRound).filter(
-        ScenarioRound.scenario_id == scenario_id,
-        ScenarioRound.round_number == scenario.current_period
+    current_period = db.query(ScenarioPeriod).filter(
+        ScenarioPeriod.scenario_id == scenario_id,
+        ScenarioPeriod.round_number == scenario.current_period
     ).first()
 
     if not current_period:
@@ -526,9 +526,9 @@ def get_participant_current_period(
             detail="Scenario not found"
         )
 
-    current_period = db.query(ScenarioRound).filter(
-        ScenarioRound.scenario_id == scenario_id,
-        ScenarioRound.round_number == scenario.current_period
+    current_period = db.query(ScenarioPeriod).filter(
+        ScenarioPeriod.scenario_id == scenario_id,
+        ScenarioPeriod.round_number == scenario.current_period
     ).first()
 
     if not current_period:

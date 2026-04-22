@@ -17,7 +17,7 @@ Execution Flow per Round:
 5. Issue POs to upstream sites
 6. Fulfill POs as sales orders (upstream sites)
 7. Calculate costs and metrics
-8. Save RoundMetric records
+8. Save PeriodMetric records
 """
 
 from typing import List, Optional, Dict, Any, Tuple
@@ -34,7 +34,7 @@ from app.models.sc_entities import OutboundOrderLine, InvLevel, InvPolicy, Produ
 from app.models.purchase_order import PurchaseOrder
 from app.models.transfer_order import TransferOrder
 from app.models.supply_chain_config import Site, SupplyChainConfig, TransportationLane
-from app.models.period_metric import RoundMetric
+from app.models.period_metric import PeriodMetric
 from app.services.order_management_service import OrderManagementService
 from app.services.fulfillment_service import FulfillmentService
 from app.services.atp_calculation_service import ATPCalculationService
@@ -419,7 +419,7 @@ class SimulationExecutionEngine:
         product_id: str,
     ) -> Dict[str, Any]:
         """
-        Calculate per-site costs and KPIs, save to RoundMetric table.
+        Calculate per-site costs and KPIs, save to PeriodMetric table.
 
         Cost rates are loaded from InvPolicy for the config's product.
         Fallback: unit_cost * 0.25 / 52 (holding), * 4 (backlog) from Product.unit_cost.
@@ -507,8 +507,8 @@ class SimulationExecutionEngine:
             # Look up scenario_user assigned to this site
             scenario_user_id = await self._get_participant_for_site(scenario_id, site.id)
 
-            # Create RoundMetric
-            metric = RoundMetric(
+            # Create PeriodMetric
+            metric = PeriodMetric(
                 scenario_id=scenario_id,
                 round_number=current_period,
                 site_id=site.id,
@@ -702,11 +702,11 @@ class SimulationExecutionEngine:
             return 0.0
 
         result = await self.db.execute(
-            select(RoundMetric.cumulative_cost)
+            select(PeriodMetric.cumulative_cost)
             .where(and_(
-                RoundMetric.scenario_id == scenario_id,
-                RoundMetric.site_id == site_id,
-                RoundMetric.round_number == round_number
+                PeriodMetric.scenario_id == scenario_id,
+                PeriodMetric.site_id == site_id,
+                PeriodMetric.period_number == round_number
             ))
         )
         prev_cost = result.scalar_one_or_none()

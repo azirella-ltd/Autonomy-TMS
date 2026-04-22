@@ -21,12 +21,11 @@ from sqlalchemy.orm import Session
 
 from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
-from app.models.supply_chain import ScenarioRound
+from app.models.supply_chain import ScenarioPeriod
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
 Game = Scenario
-ScenarioRound = ScenarioRound
 from app.models.transfer_order import TransferOrder
 from app.models.tenant import Tenant
 from app.models.explainability import ExplainabilityLevel
@@ -109,7 +108,7 @@ class AgentRecommendationService:
         self,
         game: Game,
         scenario_user: ScenarioUser,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         atp: int,
         demand: int,
         backlog: int = 0,
@@ -232,7 +231,7 @@ class AgentRecommendationService:
         self,
         game: Game,
         scenario_user: ScenarioUser,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         current_inventory: int,
         pipeline: List[Dict[str, Any]],
         backlog: int = 0,

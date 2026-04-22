@@ -18,7 +18,7 @@ from app.schemas.scenario import (
 )
 from app.models.scenario import Scenario as ScenarioModel
 from app.models.scenario_user import ScenarioUser
-from app.models.supply_chain import ScenarioRound
+from app.models.supply_chain import ScenarioPeriod
 from app.models.supply_chain_config import Site
 from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserResponse
 from app.services.llm_agent import AutonomyLLMError
@@ -367,7 +367,7 @@ async def submit_fulfillment_decision(
     """
     from app.models.scenario import Scenario
     from app.models.scenario_user import ScenarioUser
-    from app.models.supply_chain import ScenarioRound, RoundPhase
+    from app.models.supply_chain import ScenarioPeriod, PeriodPhase
     from app.api.endpoints.websocket import (
         broadcast_fulfillment_completed,
         broadcast_phase_change,
@@ -392,7 +392,7 @@ async def submit_fulfillment_decision(
 
         # Get round
         round_obj = (
-            scenario_service.db.query(ScenarioRound)
+            scenario_service.db.query(ScenarioPeriod)
             .filter_by(scenario_id=scenario_id, round_number=round_number)
             .first()
         )
@@ -400,7 +400,7 @@ async def submit_fulfillment_decision(
             raise HTTPException(status_code=404, detail="Round not found")
 
         # Verify phase
-        if round_obj.current_phase != RoundPhase.FULFILLMENT:
+        if round_obj.current_phase != PeriodPhase.FULFILLMENT:
             raise HTTPException(
                 status_code=400,
                 detail=f"Round is in {round_obj.current_phase} phase, expected FULFILLMENT"
@@ -510,7 +510,7 @@ async def submit_fulfillment_decision(
 
         # Check if ready to transition to REPLENISHMENT phase
         ready_to_transition = scenario_service._check_phase_transition(
-            scenario, round_obj, RoundPhase.FULFILLMENT, RoundPhase.REPLENISHMENT
+            scenario, round_obj, PeriodPhase.FULFILLMENT, PeriodPhase.REPLENISHMENT
         )
 
         if ready_to_transition:
@@ -521,7 +521,7 @@ async def submit_fulfillment_decision(
                 phase="fulfillment",
             )
 
-            scenario_service._transition_phase(scenario, round_obj, RoundPhase.REPLENISHMENT)
+            scenario_service._transition_phase(scenario, round_obj, PeriodPhase.REPLENISHMENT)
 
             # Broadcast phase change
             await broadcast_phase_change(
@@ -614,7 +614,7 @@ async def submit_replenishment_decision(
     """
     from app.models.scenario import Scenario
     from app.models.scenario_user import ScenarioUser
-    from app.models.supply_chain import ScenarioRound, RoundPhase
+    from app.models.supply_chain import ScenarioPeriod, PeriodPhase
     from app.api.endpoints.websocket import (
         broadcast_replenishment_completed,
         broadcast_phase_change,
@@ -640,7 +640,7 @@ async def submit_replenishment_decision(
 
         # Get round
         round_obj = (
-            scenario_service.db.query(ScenarioRound)
+            scenario_service.db.query(ScenarioPeriod)
             .filter_by(scenario_id=scenario_id, round_number=round_number)
             .first()
         )
@@ -648,7 +648,7 @@ async def submit_replenishment_decision(
             raise HTTPException(status_code=404, detail="Round not found")
 
         # Verify phase
-        if round_obj.current_phase != RoundPhase.REPLENISHMENT:
+        if round_obj.current_phase != PeriodPhase.REPLENISHMENT:
             raise HTTPException(
                 status_code=400,
                 detail=f"Round is in {round_obj.current_phase} phase, expected REPLENISHMENT"
@@ -738,7 +738,7 @@ async def submit_replenishment_decision(
 
         # Check if ready to transition to COMPLETED phase
         ready_to_transition = scenario_service._check_phase_transition(
-            scenario, round_obj, RoundPhase.REPLENISHMENT, RoundPhase.COMPLETED
+            scenario, round_obj, PeriodPhase.REPLENISHMENT, PeriodPhase.COMPLETED
         )
 
         round_completed = False
@@ -750,7 +750,7 @@ async def submit_replenishment_decision(
                 phase="replenishment",
             )
 
-            scenario_service._transition_phase(scenario, round_obj, RoundPhase.COMPLETED)
+            scenario_service._transition_phase(scenario, round_obj, PeriodPhase.COMPLETED)
             round_completed = True
 
             # Broadcast phase change to completed
@@ -960,7 +960,7 @@ def get_fulfillment_recommendation(
     """
     from app.models.scenario_user import ScenarioUser
     from app.models.scenario import Scenario
-    from app.models.supply_chain import ScenarioRound
+    from app.models.supply_chain import ScenarioPeriod
     from dataclasses import asdict
 
     try:
@@ -976,10 +976,10 @@ def get_fulfillment_recommendation(
 
         # Get current round
         current_period = (
-            scenario_service.db.query(ScenarioRound)
+            scenario_service.db.query(ScenarioPeriod)
             .filter(
-                ScenarioRound.scenario_id == scenario_id,
-                ScenarioRound.round_number == scenario.current_period
+                ScenarioPeriod.scenario_id == scenario_id,
+                ScenarioPeriod.round_number == scenario.current_period
             )
             .first()
         )
@@ -1067,7 +1067,7 @@ def get_replenishment_recommendation(
         }
     """
     from app.models.scenario_user import ScenarioUser
-    from app.models.scenario import Scenario, ScenarioRound
+    from app.models.scenario import Scenario, ScenarioPeriod
     from app.models.transfer_order import TransferOrder
     from dataclasses import asdict
 
@@ -1084,10 +1084,10 @@ def get_replenishment_recommendation(
 
         # Get current round
         current_period = (
-            scenario_service.db.query(ScenarioRound)
+            scenario_service.db.query(ScenarioPeriod)
             .filter(
-                ScenarioRound.scenario_id == scenario_id,
-                ScenarioRound.round_number == scenario.current_period
+                ScenarioPeriod.scenario_id == scenario_id,
+                ScenarioPeriod.round_number == scenario.current_period
             )
             .first()
         )
@@ -1189,7 +1189,7 @@ async def get_current_atp(
         # Get current round (may be None if game hasn't started)
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
-            current_period = scenario_service.db.query(ScenarioRound).filter_by(
+            current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
                 scenario_id=scenario_id, round_number=scenario.current_period
             ).first()
 
@@ -1269,7 +1269,7 @@ async def get_atp_projection(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round
-        current_period = scenario_service.db.query(ScenarioRound).filter_by(
+        current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
             scenario_id=scenario_id, round_number=scenario.current_period
         ).first()
 
@@ -1359,7 +1359,7 @@ async def get_probabilistic_atp(
         # Get current round (may be None if game hasn't started)
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
-            current_period = scenario_service.db.query(ScenarioRound).filter_by(
+            current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
                 scenario_id=scenario_id, round_number=scenario.current_period
             ).first()
 
@@ -1605,7 +1605,7 @@ async def get_current_ctp(
             )
 
         # Get current round
-        current_period = scenario_service.db.query(ScenarioRound).filter_by(
+        current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
             scenario_id=scenario_id, round_number=scenario.current_period
         ).first()
         if not current_period:
@@ -1714,7 +1714,7 @@ async def get_probabilistic_ctp(
         # Get current round (may be None if game tracks state in config JSON)
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
-            current_period = scenario_service.db.query(ScenarioRound).filter_by(
+            current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
                 scenario_id=scenario_id, round_number=scenario.current_period
             ).first()
 
@@ -2085,7 +2085,7 @@ async def get_conformal_atp(
         # Get current round (may be None if game hasn't started)
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
-            current_period = scenario_service.db.query(ScenarioRound).filter_by(
+            current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
                 scenario_id=scenario_id, round_number=scenario.current_period
             ).first()
 
@@ -2659,7 +2659,7 @@ async def allocate_atp_to_customers(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round
-        current_period = scenario_service.db.query(ScenarioRound).filter_by(
+        current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
             scenario_id=scenario_id, round_number=scenario.current_period
         ).first()
 
@@ -2781,7 +2781,7 @@ async def calculate_promise_date(
             )
 
         # Get current round
-        current_period = scenario_service.db.query(ScenarioRound).filter_by(
+        current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
             scenario_id=scenario_id, round_number=scenario.current_period
         ).first()
 

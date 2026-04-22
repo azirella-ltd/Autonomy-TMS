@@ -144,6 +144,3 @@ ParticipantInventory = ScenarioUserInventory
 ParticipantPeriod = ScenarioUserPeriod
 PlayerInventory = ScenarioUserInventory
 PlayerPeriod = ScenarioUserPeriod
-AlternativeRound = ScenarioPeriod
-ScenarioRound = ScenarioPeriod  # Legacy alias — hundreds of SCP-fork refs; delete with Workstream X
-RoundPhase = PeriodPhase  # Legacy alias — SCP-fork refs; delete with Workstream X

@@ -51,7 +51,7 @@ def init_db(drop_tables=False):
     
     # 4. Import the models for direct use
     from app.models.user import User, RefreshToken
-    from app.models.scenario import Scenario, ScenarioStatus, Round, ParticipantAction
+    from app.models.scenario import Scenario, ScenarioStatus, Period, ParticipantAction
     from app.models.participant import Participant, ParticipantRole, ParticipantType, ParticipantStrategy
     
     # Create all tables

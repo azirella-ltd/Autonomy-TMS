@@ -10,15 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
-from app.models.supply_chain import ScenarioUserInventory, ScenarioUserPeriod, ScenarioRound
+from app.models.supply_chain import ScenarioUserInventory, ScenarioUserPeriod, ScenarioPeriod
 
 # Aliases for backwards compatibility
 Game = Scenario
 ScenarioUser = ScenarioUser
 ScenarioUserInventory = ScenarioUserInventory
 ScenarioUserPeriod = ScenarioUserPeriod
-ScenarioRound = ScenarioRound
-
 # Mapping between backend role identifiers and the labels expected by the Autonomy LLM
 ROLE_NAME_MAP = {
     "manufacturer": "factory",
@@ -372,11 +370,11 @@ def build_llm_decision_payload(
     engine_state = _coerce_dict(config_raw.get("engine_state", {}))
 
     scenario_user_period_rows = (
-        db.query(ScenarioUserPeriod, ScenarioUser, ScenarioRound)
+        db.query(ScenarioUserPeriod, ScenarioUser, ScenarioPeriod)
         .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
-        .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
+        .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
         .filter(ScenarioUser.scenario_id == game.id)
-        .order_by(ScenarioRound.round_number.asc())
+        .order_by(ScenarioPeriod.round_number.asc())
         .all()
     )
 

@@ -22,12 +22,11 @@ from sqlalchemy.orm import Session
 
 from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
-from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
+from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
 Game = Scenario
-ScenarioRound = ScenarioRound
 ScenarioUserPeriod = ScenarioUserPeriod
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.supply_chain_config import TransportationLane
@@ -189,7 +188,7 @@ class ATPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         include_safety_stock: bool = True,
         use_sap_bridge: bool = False,
         sap_bridge: Optional[Any] = None,
@@ -271,7 +270,7 @@ class ATPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         n_simulations: int = 100,
         include_safety_stock: bool = True,
     ) -> ProbabilisticATPResult:
@@ -432,7 +431,7 @@ class ATPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         periods: int = 8,
     ) -> List[ATPPeriod]:
         """
@@ -755,7 +754,7 @@ class ATPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         period_offset: int,
     ) -> int:
         """
@@ -822,16 +821,16 @@ class ATPService:
             List of demand values (order_received) from recent rounds
         """
         try:
-            # Query ScenarioUserPeriod joined with ScenarioRound to get historical demand
+            # Query ScenarioUserPeriod joined with ScenarioPeriod to get historical demand
             # order_received = incoming orders from downstream (demand)
             historical_rounds = (
                 self.db.query(ScenarioUserPeriod)
-                .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
+                .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
                 .filter(
                     ScenarioUserPeriod.scenario_user_id == scenario_user.id,
-                    ScenarioRound.is_completed == True,  # Only completed rounds
+                    ScenarioPeriod.is_completed == True,  # Only completed rounds
                 )
-                .order_by(ScenarioRound.round_number.desc())
+                .order_by(ScenarioPeriod.round_number.desc())
                 .limit(periods)
                 .all()
             )

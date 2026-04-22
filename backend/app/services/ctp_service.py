@@ -24,14 +24,13 @@ from sqlalchemy.orm import Session
 
 from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
-from app.models.supply_chain import ScenarioRound, ScenarioUserInventory
+from app.models.supply_chain import ScenarioPeriod, ScenarioUserInventory
 from app.models.sc_entities import ProductBom as ProductBOM, Product, SourcingRules, InvLevel
 from app.models.supply_chain_config import Site
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
 Game = Scenario
-ScenarioRound = ScenarioRound
 ScenarioUserInventory = ScenarioUserInventory
 from .atp_service import ATPService, get_atp_service
 
@@ -161,7 +160,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: Optional[ScenarioRound],
+        current_period: Optional[ScenarioPeriod],
         product_id: str,
     ) -> CTPResult:
         """
@@ -257,7 +256,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: Optional[ScenarioRound],
+        current_period: Optional[ScenarioPeriod],
         product_id: str,
         n_simulations: int = 100,
     ) -> ProbabilisticCTPResult:
@@ -401,7 +400,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         item_id: int,
         periods: int = 8,
     ) -> List[CTPPeriod]:
@@ -541,7 +540,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         item_id: int,
         quantity: int,
     ) -> PromiseDateResult:
@@ -706,7 +705,7 @@ class CTPService:
         return 0.95
 
     def _get_production_commitments(
-        self, scenario_user: ScenarioUser, current_period: ScenarioRound
+        self, scenario_user: ScenarioUser, current_period: ScenarioPeriod
     ) -> int:
         """Get current production commitments (WIP + scheduled).
 
@@ -760,7 +759,7 @@ class CTPService:
         scenario_user: ScenarioUser,
         game: Game,
         component_product_id: str,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
     ) -> int:
         """
         Get component ATP from supplier nodes.
@@ -873,7 +872,7 @@ class CTPService:
         self,
         scenario_user: ScenarioUser,
         game: Game,
-        current_period: ScenarioRound,
+        current_period: ScenarioPeriod,
         item_id: str,  # Now uses string product_id (SC compliant)
         max_producible_from_capacity: int,
     ) -> List[ComponentConstraint]:

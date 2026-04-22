@@ -57,7 +57,7 @@ from app.models import (
     ScenarioUserRole,
     ScenarioUserStrategy,
     ScenarioUserType,
-    Round,
+    Period,
     SupplyChainConfig,
     SupplyChainTrainingArtifact,
     SupervisorAction,
@@ -632,7 +632,7 @@ def _delete_node_type_games_for_config(session: Session, config: SupplyChainConf
         )
         session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(synchronize_session=False)
         session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).delete(synchronize_session=False)
-        session.query(Round).filter(Round.scenario_id == game.id).delete(synchronize_session=False)
+        session.query(Period).filter(Period.scenario_id == game.id).delete(synchronize_session=False)
         session.delete(game)
     if node_type_games:
         session.flush()
@@ -4304,7 +4304,7 @@ def _purge_existing_games(session: Session) -> None:
 
     print("[info] Removing existing games, scenario_users, and agent configurations...")
     session.query(PlayerAction).delete(synchronize_session=False)
-    session.query(Round).delete(synchronize_session=False)
+    session.query(Period).delete(synchronize_session=False)
     session.query(SupervisorAction).delete(synchronize_session=False)
     session.query(AgentConfig).delete(synchronize_session=False)
     session.query(ScenarioUser).delete(synchronize_session=False)

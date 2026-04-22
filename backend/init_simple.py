@@ -18,7 +18,7 @@ from app.core.config import settings
 # Import all models to ensure they're registered with SQLAlchemy
 from app.models.base import Base
 from app.models.user import User, RefreshToken
-from app.models.scenario import Scenario, Round, ParticipantAction
+from app.models.scenario import Scenario, Period, ParticipantAction
 from app.models.participant import Participant
 
 def init_db(drop_tables=False):
@@ -45,7 +45,7 @@ def init_db(drop_tables=False):
         RefreshToken.__table__,
         Scenario.__table__,
         Participant.__table__,
-        Round.__table__,
+        Period.__table__,
         ParticipantAction.__table__
     ]
     

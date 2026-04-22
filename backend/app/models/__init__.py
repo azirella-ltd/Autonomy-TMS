@@ -49,16 +49,15 @@ from .function_assignment import FunctionAssignment
 
 # 3. Scenario-related models
 from .supervisor_action import SupervisorAction
-from .scenario import Scenario, ScenarioStatus, Period, ScenarioUserAction, Round  # Round = legacy alias
+from .scenario import Scenario, ScenarioStatus, Period, ScenarioUserAction
 from .agent_config import AgentConfig
 from .auth_models import PasswordHistory, PasswordResetToken
 from .session import TokenBlacklist, UserSession
 # Supply chain models
 from .supply_chain import (
     ScenarioUserInventory, Order, ScenarioPeriod, ScenarioUserPeriod, PeriodPhase, UpstreamOrderType,
-    ScenarioRound,  # Legacy alias for ScenarioPeriod — delete with Workstream X
 )
-from .period_metric import RoundMetric
+from .period_metric import PeriodMetric
 from app.core.time_buckets import TimeBucket
 
 # 4. Supply chain configuration models (must be imported before MonteCarloRun)

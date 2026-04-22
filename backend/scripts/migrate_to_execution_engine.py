@@ -7,7 +7,7 @@ to new AWS SC execution-based engine with full order lifecycle tracking.
 Migration Strategy:
 1. Read ScenarioUserPeriod records (legacy state)
 2. Generate OutboundOrderLine, PurchaseOrder, TransferOrder equivalents
-3. Create RoundMetric records from ScenarioUserPeriod data
+3. Create PeriodMetric records from ScenarioUserPeriod data
 4. Validate data integrity
 5. Enable parallel testing mode
 
@@ -35,7 +35,7 @@ from app.models.supply_chain import ScenarioUserPeriod
 from app.models.sc_entities import OutboundOrderLine, InventoryLevel
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
-from app.models.period_metric import RoundMetric
+from app.models.period_metric import PeriodMetric
 from app.models.supply_chain_config import Site
 
 
@@ -128,7 +128,7 @@ class LegacyToExecutionMigrator:
         # Get latest round per site
         latest_rounds = {}
         for pr in legacy_data:
-            if pr.site_id not in latest_rounds or pr.round_number > latest_rounds[pr.site_id].round_number:
+            if pr.site_id not in latest_rounds or pr.period_number > latest_rounds[pr.site_id].period_number:
                 latest_rounds[pr.site_id] = pr
 
         inventory_count = 0
@@ -181,9 +181,9 @@ class LegacyToExecutionMigrator:
         # Group by round
         rounds_data = {}
         for pr in legacy_data:
-            if pr.round_number not in rounds_data:
-                rounds_data[pr.round_number] = []
-            rounds_data[pr.round_number].append(pr)
+            if pr.period_number not in rounds_data:
+                rounds_data[pr.period_number] = []
+            rounds_data[pr.period_number].append(pr)
 
         # Process each round
         for round_num in sorted(rounds_data.keys()):
@@ -253,7 +253,7 @@ class LegacyToExecutionMigrator:
 
     async def _migrate_round_metrics(self, legacy_data: List[ScenarioUserPeriod]) -> Dict[str, Any]:
         """
-        Migrate ScenarioUserPeriod data to RoundMetric records.
+        Migrate ScenarioUserPeriod data to PeriodMetric records.
 
         Direct 1:1 mapping of legacy metrics.
         """
@@ -262,22 +262,22 @@ class LegacyToExecutionMigrator:
         for pr in legacy_data:
             # Check if metric already exists
             existing = await self.db.execute(
-                select(RoundMetric).where(
+                select(PeriodMetric).where(
                     and_(
-                        RoundMetric.scenario_id == self.scenario_id,
-                        RoundMetric.round_number == pr.round_number,
-                        RoundMetric.site_id == pr.site_id
+                        PeriodMetric.scenario_id == self.scenario_id,
+                        PeriodMetric.period_number == pr.period_number,
+                        PeriodMetric.site_id == pr.site_id
                     )
                 )
             )
             if existing.scalar_one_or_none():
-                self.log(f"Metric already exists for round {pr.round_number}, site {pr.site_id}, skipping")
+                self.log(f"Metric already exists for round {pr.period_number}, site {pr.site_id}, skipping")
                 continue
 
-            # Create RoundMetric
-            metric = RoundMetric(
+            # Create PeriodMetric
+            metric = PeriodMetric(
                 scenario_id=self.scenario_id,
-                round_number=pr.round_number,
+                round_number=pr.period_number,
                 site_id=pr.site_id,
                 scenario_user_id=pr.scenario_user_id,
                 inventory=float(pr.inventory),
@@ -319,7 +319,7 @@ class LegacyToExecutionMigrator:
 
         # Check metrics count
         metrics_result = await self.db.execute(
-            select(RoundMetric).where(RoundMetric.scenario_id == self.scenario_id)
+            select(PeriodMetric).where(PeriodMetric.scenario_id == self.scenario_id)
         )
         metrics_count = len(list(metrics_result.scalars().all()))
 

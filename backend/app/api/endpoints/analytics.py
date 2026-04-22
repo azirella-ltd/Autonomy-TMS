@@ -25,7 +25,7 @@ import io
 from app.db.session import get_db
 from app.services.analytics_service import AnalyticsService
 from app.models.scenario import Scenario
-from app.models.supply_chain import ScenarioUserPeriod, ScenarioRound
+from app.models.supply_chain import ScenarioUserPeriod, ScenarioPeriod
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import List, Optional
@@ -545,7 +545,7 @@ async def get_kpis(
     from sqlalchemy import select
     result = await db.execute(
         select(ScenarioUserPeriod)
-        .join(ScenarioRound)
+        .join(ScenarioPeriod)
         .join(Scenario)
         .where(Scenario.created_at >= start_date)
         .where(Scenario.created_at <= end_date)

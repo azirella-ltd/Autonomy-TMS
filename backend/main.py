@@ -41,7 +41,7 @@ from app.schemas.scenario import ScenarioCreate, PricingConfig, NodePolicy, Dema
 from app.schemas.supply_chain_config import SupplyChainConfigUpdate
 from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserType as ScenarioUserTypeSchema
 from app.db.session import sync_engine
-from app.models.scenario import Scenario as DbScenario, ScenarioStatus as DbScenarioStatus, Round, ScenarioUserAction
+from app.models.scenario import Scenario as DbScenario, ScenarioStatus as DbScenarioStatus, Period, ScenarioUserAction
 from app.models.scenario_user import ScenarioUser, ScenarioUserRole, ScenarioUserStrategy, ScenarioUserType as ScenarioUserModelType
 
 # Local aliases for backward compatibility within this file (main.py is 62K lines)
@@ -73,12 +73,12 @@ SupplyMarketDemandModel = MarketDemand
 from app.models.supply_chain import (
     ScenarioUserInventory,
     Order as SupplyOrder,
-    ScenarioRound as SupplyScenarioRound,
+    ScenarioPeriod as SupplyScenarioPeriod,
     ScenarioUserPeriod as SupplyScenarioUserPeriod,
 )
 # Local aliases for backward compatibility within this file
 ScenarioUserInventory = ScenarioUserInventory
-SupplyScenarioRound = SupplyScenarioRound
+SupplyScenarioPeriod = SupplyScenarioPeriod
 SupplyScenarioUserPeriod = SupplyScenarioUserPeriod
 from app.models.user import User, UserTypeEnum
 from app.core.security import verify_password
@@ -3009,16 +3009,16 @@ def _get_progression_mode(game: DbGame) -> str:
     return mode
 
 
-def _ensure_round(db: Session, game: DbGame, round_number: Optional[int] = None) -> Round:
+def _ensure_round(db: Session, game: DbGame, round_number: Optional[int] = None) -> Period:
     number = round_number or (game.current_round or 1)
     existing = (
-        db.query(Round)
-        .filter(Round.scenario_id == game.id, Round.round_number == number)
+        db.query(Period)
+        .filter(Period.scenario_id == game.id, Period.round_number == number)
         .first()
     )
     if existing:
         return existing
-    round_record = Round(
+    round_record = Period(
         scenario_id=game.id,
         round_number=number,
         status="in_progress",
@@ -3038,7 +3038,7 @@ def _simulation_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     return config.get("simulation_parameters", {})
 
 
-def _all_players_submitted(db: Session, game: DbGame, round_record: Round) -> bool:
+def _all_players_submitted(db: Session, game: DbGame, round_record: Period) -> bool:
     player_roles = {
         str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
         for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
@@ -3540,7 +3540,7 @@ def _finalize_round_if_ready(
     db: Session,
     game: DbGame,
     config: Dict[str, Any],
-    round_record: Round,
+    round_record: Period,
     *,
     force: bool = False,
 ) -> bool:
@@ -5022,9 +5022,9 @@ def _replay_history_from_rounds(
     ]
 
     records = (
-        db.query(Round)
-        .filter(Round.scenario_id == game.id)
-        .order_by(Round.round_number.asc())
+        db.query(Period)
+        .filter(Period.scenario_id == game.id)
+        .order_by(Period.round_number.asc())
         .all()
     )
 
@@ -5060,10 +5060,10 @@ def _replay_history_from_rounds(
             last_recorded_round = max(last_recorded_round, record.round_number)
 
     supply_rounds = (
-        db.query(SupplyScenarioRound)
-        .filter(SupplyScenarioRound.scenario_id == game.id)
-        .filter(SupplyScenarioRound.round_number > last_recorded_round)
-        .order_by(SupplyScenarioRound.round_number.asc())
+        db.query(SupplyScenarioPeriod)
+        .filter(SupplyScenarioPeriod.scenario_id == game.id)
+        .filter(SupplyScenarioPeriod.round_number > last_recorded_round)
+        .order_by(SupplyScenarioPeriod.round_number.asc())
         .all()
     )
     if not supply_rounds:
@@ -6306,15 +6306,15 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
         game = _get_game_for_user(db, user, scenario_id)
 
         # Remove historical round data
-        round_ids = [rid for (rid,) in db.query(Round.id).filter(Round.scenario_id == game.id).all()]
+        round_ids = [rid for (rid,) in db.query(Period.id).filter(Period.scenario_id == game.id).all()]
         if round_ids:
             db.query(PlayerAction).filter(PlayerAction.scenario_id == game.id).delete(synchronize_session=False)
-        db.query(Round).filter(Round.scenario_id == game.id).delete(synchronize_session=False)
+        db.query(Period).filter(Period.scenario_id == game.id).delete(synchronize_session=False)
 
-        sc_round_ids = [rid for (rid,) in db.query(SupplyScenarioRound.id).filter(SupplyScenarioRound.scenario_id == game.id).all()]
+        sc_round_ids = [rid for (rid,) in db.query(SupplyScenarioPeriod.id).filter(SupplyScenarioPeriod.scenario_id == game.id).all()]
         if sc_round_ids:
             db.query(SupplyScenarioUserPeriod).filter(SupplyScenarioUserPeriod.round_id.in_(sc_round_ids)).delete(synchronize_session=False)
-        db.query(SupplyScenarioRound).filter(SupplyScenarioRound.scenario_id == game.id).delete(synchronize_session=False)
+        db.query(SupplyScenarioPeriod).filter(SupplyScenarioPeriod.scenario_id == game.id).delete(synchronize_session=False)
         db.query(SupplyOrder).filter(SupplyOrder.scenario_id == game.id).delete(synchronize_session=False)
 
         config = _coerce_game_config(game)

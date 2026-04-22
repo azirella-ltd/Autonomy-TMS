@@ -1,6 +1,7 @@
 """Scenario — re-exported from azirella_data_model.
 
-Core defines the canonical Scenario, Round, ScenarioUserAction classes.
+Core defines the canonical Scenario, Period, ScenarioUserAction classes
+(Core v0.5.1, MIGRATION_REGISTER item 1.12: rename cascade Round → Period).
 TMS re-exports them and attaches TMS-specific relationships + columns
 post-definition (same pattern as SCP).
 
@@ -16,7 +17,7 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column, Session
 
 from azirella_data_model.simulation import (
     Scenario,
-    Round,
+    Period,
     ScenarioUserAction,
     ScenarioStatus,
 )
@@ -84,7 +85,6 @@ Scenario.function_assignments = relationship(
 
 
 # ── TMS-specific relationships on ScenarioUserAction ────────────────────
-# (Round/period relationships are attached after Period class is defined below)
 
 ScenarioUserAction.scenario_user = relationship(
     "ScenarioUser", back_populates="actions", lazy="selectin"
@@ -124,44 +124,12 @@ Scenario.set_role_assignment = _set_role_assignment
 Scenario.get_agent_config = _get_agent_config
 
 
-# ── TMS-local Period class ───────────────────────────────────────────────
-# TMS uses "periods" table (not Core's "rounds" table). This is a TMS-local
-# model, NOT a re-export from Core.
-
-from .base import Base
-
-class Period(Base):
-    """A period within a TMS scenario/simulation."""
-    __tablename__ = "periods"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    scenario_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))
-    period_number: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(20), default="pending")
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    config: Mapped[dict] = mapped_column(JSON, default=dict)
-
-    scenario = relationship("Scenario", back_populates="periods", lazy="selectin")
-    # NOTE: ScenarioUserAction.period relationship removed — Core's class still
-    # declares `round_id` (FK → rounds.id) while TMS's DB has `period_id`
-    # (FK → periods.id) after migration 20260417_term. Until Core adopts the
-    # rename (or TMS reintroduces a local ScenarioUserAction), there's no FK
-    # the mapper can use to join these tables. Nothing in TMS reads this
-    # relationship today.
-
-
-# Attach Period to Scenario (now that Period is defined)
-Scenario.periods = relationship("Period", back_populates="scenario", lazy="selectin")
-
-
 # Backward-compat
 ParticipantAction = ScenarioUserAction
 
 
 __all__ = [
     "Scenario",
-    "Round",
     "Period",
     "ScenarioUserAction",
     "ScenarioStatus",

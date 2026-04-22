@@ -15,7 +15,7 @@ from app.db.base_class import Base
 # Import models in the correct order to avoid circular dependencies
 from app.models.base import Base
 from app.models.user import User, RefreshToken
-from app.models.scenario import Scenario, ScenarioStatus, Round, ParticipantAction
+from app.models.scenario import Scenario, ScenarioStatus, Period, ParticipantAction
 from app.models.participant import Participant, ParticipantRole, ParticipantType, ParticipantStrategy
 
 # Import all models to ensure they're registered with SQLAlchemy

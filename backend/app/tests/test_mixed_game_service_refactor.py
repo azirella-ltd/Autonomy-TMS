@@ -4,7 +4,7 @@ from app.services.mixed_game_service import MixedScenarioService
 from app.schemas.simulation import RoundContext, NodeState, TopologyConfig, OrderRequest, LaneConfig
 from app.models.scenario import Scenario
 from app.models.participant import Participant, ParticipantRole
-from app.models.supply_chain import ScenarioRound
+from app.models.supply_chain import ScenarioPeriod
 from app.services.agents import AgentManager, AgentType, AgentStrategy
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def mock_context():
 def test_process_ai_players_places_order(mock_service, mock_context):
     # Setup
     game = Scenario(id=1, config={})
-    game_round = ScenarioRound(round_number=1)
+    game_round = ScenarioPeriod(round_number=1)
     player = Participant(id=1, scenario_id=1, role=ParticipantRole.RETAILER, is_ai=True)
     
     mock_service.db.query.return_value.filter.return_value.all.return_value = [player]
@@ -78,7 +78,7 @@ def test_process_ai_players_places_order(mock_service, mock_context):
 
 def test_process_ai_players_skips_if_no_players(mock_service, mock_context):
     game = Scenario(id=1)
-    game_round = ScenarioRound(round_number=1)
+    game_round = ScenarioPeriod(round_number=1)
     mock_service.db.query.return_value.filter.return_value.all.return_value = []
     
     mock_service._resolve_player_mappings = MagicMock()

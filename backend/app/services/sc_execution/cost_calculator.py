@@ -161,14 +161,14 @@ class CostCalculator:
             round_number: Round number
             site_costs: Cost dictionary from calculate_game_cost()
         """
-        from app.models.scenario import ScenarioRound
+        from app.models.scenario import ScenarioPeriod
         from app.models.participant import ScenarioUserPeriod
 
         scenario_round = (
-            self.db.query(ScenarioRound)
+            self.db.query(ScenarioPeriod)
             .filter(
-                ScenarioRound.scenario_id == scenario_id,
-                ScenarioRound.round_number == round_number,
+                ScenarioPeriod.scenario_id == scenario_id,
+                ScenarioPeriod.round_number == round_number,
             )
             .first()
         )

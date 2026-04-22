@@ -3,7 +3,7 @@ from typing import Dict, Any, List, Optional
 
 from ..models.scenario import Scenario, ScenarioStatus
 from ..models.scenario_user import ScenarioUser
-from ..models.supply_chain import ScenarioUserPeriod, ScenarioRound
+from ..models.supply_chain import ScenarioUserPeriod, ScenarioPeriod
 
 
 def _active_statuses() -> List[ScenarioStatus]:
@@ -49,9 +49,9 @@ def get_participant_metrics(db: Session, scenario_user_id: int, scenario_id: int
 
     scenario_user_periods = (
         db.query(ScenarioUserPeriod)
-        .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
-        .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioRound.scenario_id == scenario_id)
-        .order_by(ScenarioRound.round_number.asc())
+        .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
+        .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioPeriod.scenario_id == scenario_id)
+        .order_by(ScenarioPeriod.round_number.asc())
         .all()
     )
 
@@ -122,16 +122,16 @@ def get_time_series_metrics(db: Session, scenario_user_id: int, scenario_id: int
     """Build a period-by-period time series for the requested scenario_user."""
 
     rounds = (
-        db.query(ScenarioRound)
-        .filter(ScenarioRound.scenario_id == scenario_id)
-        .order_by(ScenarioRound.round_number.asc())
+        db.query(ScenarioPeriod)
+        .filter(ScenarioPeriod.scenario_id == scenario_id)
+        .order_by(ScenarioPeriod.round_number.asc())
         .all()
     )
 
     scenario_user_periods = (
         db.query(ScenarioUserPeriod)
-        .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
-        .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioRound.scenario_id == scenario_id)
+        .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
+        .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioPeriod.scenario_id == scenario_id)
         .all()
     )
     rounds_by_id = {pr.round_id: pr for pr in scenario_user_periods}

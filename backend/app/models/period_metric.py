@@ -1,11 +1,8 @@
 """
 Period Metric Database Model
 
-Stores per-round metrics for simulation execution tracking.
-Replaces ParticipantRound for execution-based simulations.
-
-Terminology (Feb 2026):
-- player_id -> scenario_user_id
+Stores per-period metrics for simulation execution tracking.
+Replaces ParticipantPeriod for execution-based simulations.
 """
 
 from sqlalchemy import (
@@ -22,63 +19,57 @@ from datetime import datetime
 from .base import Base
 
 
-class RoundMetric(Base):
+class PeriodMetric(Base):
     """
     Period-level metrics for simulation execution.
 
-    Tracks inventory, backlog, costs, and KPIs for each site in each round.
+    Tracks inventory, backlog, costs, and KPIs for each site in each period.
     Used by the SimulationExecutionEngine to calculate performance metrics.
     """
     __tablename__ = "period_metric"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # Scenario and round identification
     scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False)
     period_number = Column(Integer, nullable=False)
     site_id = Column(Integer, ForeignKey("site.id", ondelete="CASCADE"), nullable=False)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id", ondelete="SET NULL"), nullable=True)
 
-    # Inventory metrics
     inventory = Column(Double, server_default=text("0.0"), nullable=False)
     backlog = Column(Double, server_default=text("0.0"), nullable=False)
-    pipeline_qty = Column(Double, server_default=text("0.0"), nullable=False)  # On order to upstream
-    in_transit_qty = Column(Double, server_default=text("0.0"), nullable=False)  # Shipments arriving
+    pipeline_qty = Column(Double, server_default=text("0.0"), nullable=False)
+    in_transit_qty = Column(Double, server_default=text("0.0"), nullable=False)
 
-    # Cost metrics (classic simulation)
-    holding_cost = Column(Double, server_default=text("0.0"), nullable=False)  # inventory * holding_cost_per_unit
-    backlog_cost = Column(Double, server_default=text("0.0"), nullable=False)  # backlog * backlog_cost_per_unit
-    total_cost = Column(Double, server_default=text("0.0"), nullable=False)  # holding_cost + backlog_cost
-    cumulative_cost = Column(Double, server_default=text("0.0"), nullable=False)  # Sum of all prior rounds
+    holding_cost = Column(Double, server_default=text("0.0"), nullable=False)
+    backlog_cost = Column(Double, server_default=text("0.0"), nullable=False)
+    total_cost = Column(Double, server_default=text("0.0"), nullable=False)
+    cumulative_cost = Column(Double, server_default=text("0.0"), nullable=False)
 
-    # KPI metrics
-    fill_rate = Column(Double, nullable=True)  # orders_fulfilled / orders_received
-    service_level = Column(Double, nullable=True)  # units_fulfilled / units_requested
+    fill_rate = Column(Double, nullable=True)
+    service_level = Column(Double, nullable=True)
     orders_received = Column(Integer, server_default=text("0"), nullable=False)
     orders_fulfilled = Column(Integer, server_default=text("0"), nullable=False)
 
-    # Order flow metrics
-    incoming_order_qty = Column(Double, server_default=text("0.0"), nullable=False)  # Demand from downstream
-    outgoing_order_qty = Column(Double, server_default=text("0.0"), nullable=False)  # Order placed to upstream
-    shipment_qty = Column(Double, server_default=text("0.0"), nullable=False)  # Shipped to downstream
+    incoming_order_qty = Column(Double, server_default=text("0.0"), nullable=False)
+    outgoing_order_qty = Column(Double, server_default=text("0.0"), nullable=False)
+    shipment_qty = Column(Double, server_default=text("0.0"), nullable=False)
 
-    # Audit
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
     updated_at = Column(DateTime, onupdate=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint('scenario_id', 'period_number', 'site_id', name='uq_period_metric_scenario_period_site'),
-        Index('idx_round_metric_scenario', 'scenario_id'),
+        Index('idx_period_metric_scenario', 'scenario_id'),
         Index('idx_period_metric_period', 'scenario_id', 'period_number'),
-        Index('idx_round_metric_site', 'site_id'),
-        Index('idx_round_metric_scenario_user', 'scenario_user_id'),
+        Index('idx_period_metric_site', 'site_id'),
+        Index('idx_period_metric_scenario_user', 'scenario_user_id'),
     )
 
     def __repr__(self):
         return (
-            f"<RoundMetric("
+            f"<PeriodMetric("
             f"scenario_id={self.scenario_id}, "
-            f"round={self.period_number}, "
+            f"period={self.period_number}, "
             f"site_id={self.site_id}, "
             f"inventory={self.inventory}, "
             f"backlog={self.backlog}, "

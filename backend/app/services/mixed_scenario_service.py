@@ -19,7 +19,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.scenario import Scenario, ScenarioStatus as ScenarioStatusDB
 from app.models.scenario_user import ScenarioUser, ScenarioUserRole, ScenarioUserType as ScenarioUserTypeDB, ScenarioUserStrategy as ScenarioUserStrategyDB
-from app.models.supply_chain import ScenarioUserInventory, Order, ScenarioRound, ScenarioUserPeriod
+from app.models.supply_chain import ScenarioUserInventory, Order, ScenarioPeriod, ScenarioUserPeriod
 
 # Aliases for backwards compatibility
 Game = Scenario
@@ -30,7 +30,6 @@ ScenarioUserRole = ScenarioUserRole
 ScenarioUserTypeDB = ScenarioUserTypeDB
 ScenarioUserStrategyDB = ScenarioUserStrategyDB
 ScenarioUserInventory = ScenarioUserInventory
-ScenarioRound = ScenarioRound
 ScenarioUserPeriod = ScenarioUserPeriod
 from app.models.supply_chain_config import SupplyChainConfig, TransportationLane, Site
 from app.models.sc_entities import InvPolicy, Product, InvLevel
@@ -4320,7 +4319,7 @@ class MixedScenarioService:
             lane_views
         )
         
-        # 4. Create or reuse ScenarioRound record
+        # 4. Create or reuse ScenarioPeriod record
         # We need to calculate period start/end
         bucket = normalize_time_bucket(getattr(game, "time_bucket", TimeBucket.WEEK))
         start_date = getattr(game, "start_date", None)
@@ -4338,12 +4337,12 @@ class MixedScenarioService:
         game.current_period_start = period_start
         
         round_record = (
-            self.db.query(ScenarioRound)
-            .filter(ScenarioRound.scenario_id == game.id, ScenarioRound.round_number == round_number)
+            self.db.query(ScenarioPeriod)
+            .filter(ScenarioPeriod.scenario_id == game.id, ScenarioPeriod.round_number == round_number)
             .first()
         )
         if not round_record:
-            round_record = ScenarioRound(
+            round_record = ScenarioPeriod(
                 scenario_id=game.id,
                 round_number=round_number,
                 customer_demand=demand_value,
@@ -6517,10 +6516,10 @@ class MixedScenarioService:
             raise ValueError("ScenarioUser not found for this game")
 
         current_period = (
-            self.db.query(ScenarioRound)
+            self.db.query(ScenarioPeriod)
             .filter(
-                ScenarioRound.scenario_id == scenario_id,
-                ScenarioRound.round_number == game.current_period,
+                ScenarioPeriod.scenario_id == scenario_id,
+                ScenarioPeriod.round_number == game.current_period,
             )
             .first()
         )
@@ -6807,7 +6806,7 @@ class MixedScenarioService:
 
         # If the game was restarted but has lingering rounds/history, clear them.
         existing_rounds = (
-            self.db.query(ScenarioRound).filter(ScenarioRound.scenario_id == game.id).all()
+            self.db.query(ScenarioPeriod).filter(ScenarioPeriod.scenario_id == game.id).all()
         )
         if existing_rounds:
             for r in existing_rounds:
@@ -7240,7 +7239,7 @@ class MixedScenarioService:
             if sleep_seconds:
                 time.sleep(sleep_seconds)
     
-    def start_new_round(self, game: Union[int, Game]) -> Optional[ScenarioRound]:
+    def start_new_round(self, game: Union[int, Game]) -> Optional[ScenarioPeriod]:
         """
         Advance the game to the next round.
 
@@ -7294,7 +7293,7 @@ class MixedScenarioService:
         else:
             return self._start_round_legacy(game_obj)
 
-    def _start_round_sc_execution(self, game_obj: Game) -> Optional[ScenarioRound]:
+    def _start_round_sc_execution(self, game_obj: Game) -> Optional[ScenarioPeriod]:
         """
         SC Execution Mode round processing.
 
@@ -7314,10 +7313,10 @@ class MixedScenarioService:
 
         total_rounds = game_obj.max_periods or 52
 
-        latest_round: Optional[ScenarioRound] = (
-            self.db.query(ScenarioRound)
-            .filter(ScenarioRound.scenario_id == game_obj.id)
-            .order_by(ScenarioRound.round_number.desc())
+        latest_round: Optional[ScenarioPeriod] = (
+            self.db.query(ScenarioPeriod)
+            .filter(ScenarioPeriod.scenario_id == game_obj.id)
+            .order_by(ScenarioPeriod.round_number.desc())
             .first()
         )
         if latest_round:
@@ -7366,8 +7365,8 @@ class MixedScenarioService:
             market_demand=market_demand,
         )
 
-        # Create ScenarioRound record
-        round_record = ScenarioRound(
+        # Create ScenarioPeriod record
+        round_record = ScenarioPeriod(
             scenario_id=game_obj.id,
             round_number=target_round,
             customer_demand=int(market_demand),
@@ -7449,7 +7448,7 @@ class MixedScenarioService:
     def _persist_sc_execution_period(
         self,
         game_obj: Game,
-        round_record: ScenarioRound,
+        round_record: ScenarioPeriod,
         round_result: Dict,
     ) -> None:
         """
@@ -7461,7 +7460,7 @@ class MixedScenarioService:
 
         Args:
             game_obj: Game/Scenario instance
-            round_record: The ScenarioRound just created for this round
+            round_record: The ScenarioPeriod just created for this round
             round_result: Dict returned by SimulationExecutor.execute_round()
         """
         from app.models.supply_chain_config import Site
@@ -7521,7 +7520,7 @@ class MixedScenarioService:
             )
             self.db.add(period)
 
-    def _start_round_legacy(self, game_obj: Game) -> Optional[ScenarioRound]:
+    def _start_round_legacy(self, game_obj: Game) -> Optional[ScenarioPeriod]:
         """
         Legacy Simulation Engine round processing.
 
@@ -7530,10 +7529,10 @@ class MixedScenarioService:
         total_rounds = game_obj.max_periods or 50  # Default
 
         # Determine target round based on existing round records
-        latest_round: Optional[ScenarioRound] = (
-            self.db.query(ScenarioRound)
-            .filter(ScenarioRound.scenario_id == game_obj.id)
-            .order_by(ScenarioRound.round_number.desc())
+        latest_round: Optional[ScenarioPeriod] = (
+            self.db.query(ScenarioPeriod)
+            .filter(ScenarioPeriod.scenario_id == game_obj.id)
+            .order_by(ScenarioPeriod.round_number.desc())
             .first()
         )
         if latest_round:
@@ -7589,7 +7588,7 @@ class MixedScenarioService:
 
         return context.round_record
 
-    def _start_round_sc_planning(self, game_obj: Game) -> Optional[ScenarioRound]:
+    def _start_round_sc_planning(self, game_obj: Game) -> Optional[ScenarioPeriod]:
         """
         Supply Chain Planning Mode round processing.
 
@@ -7618,10 +7617,10 @@ class MixedScenarioService:
 
         # Determine target round
         total_rounds = game_obj.max_periods or 50
-        latest_round: Optional[ScenarioRound] = (
-            self.db.query(ScenarioRound)
-            .filter(ScenarioRound.scenario_id == game_obj.id)
-            .order_by(ScenarioRound.round_number.desc())
+        latest_round: Optional[ScenarioPeriod] = (
+            self.db.query(ScenarioPeriod)
+            .filter(ScenarioPeriod.scenario_id == game_obj.id)
+            .order_by(ScenarioPeriod.round_number.desc())
             .first()
         )
 
@@ -7650,7 +7649,7 @@ class MixedScenarioService:
 
         return round_record
 
-    async def _run_sc_planning_async(self, game_obj: Game, target_round: int) -> Optional[ScenarioRound]:
+    async def _run_sc_planning_async(self, game_obj: Game, target_round: int) -> Optional[ScenarioPeriod]:
         """
         Async helper for SC EXECUTION workflow (REFACTORED for execution, not planning).
 
@@ -7766,11 +7765,11 @@ class MixedScenarioService:
                 work_orders_created = await adapter.create_work_orders_batch(scenario_user_orders, target_round)
                 logger.info(f"  ✓ Created {work_orders_created} work orders (BATCH)")
 
-            # Step 7: Create ScenarioRound record
-            logger.info(f"  Step 7: Creating ScenarioRound record...")
-            from app.models.supply_chain import ScenarioRound as ScenarioRoundModel
+            # Step 7: Create ScenarioPeriod record
+            logger.info(f"  Step 7: Creating ScenarioPeriod record...")
+            from app.models.supply_chain import ScenarioPeriod as ScenarioPeriodModel
 
-            game_round = ScenarioRoundModel(
+            game_round = ScenarioPeriodModel(
                 scenario_id=game.id,
                 round_number=target_round,
                 started_at=datetime.utcnow(),
@@ -7796,7 +7795,7 @@ class MixedScenarioService:
             # Return the game round (sync session will need to re-query it)
             return game_round
 
-    def _start_round_dag_sequential(self, game_obj: Game) -> Optional[ScenarioRound]:
+    def _start_round_dag_sequential(self, game_obj: Game) -> Optional[ScenarioPeriod]:
         """
         DAG-ordered sequential round execution (Phase 1 implementation).
 
@@ -7812,22 +7811,22 @@ class MixedScenarioService:
             game_obj: Game instance with use_dag_sequential=True
 
         Returns:
-            ScenarioRound record or None if game finished
+            ScenarioPeriod record or None if game finished
         """
-        from app.models.supply_chain import RoundPhase
+        from app.models.supply_chain import PeriodPhase
 
         total_rounds = game_obj.max_periods or 50
 
         # Determine target round
-        latest_round: Optional[ScenarioRound] = (
-            self.db.query(ScenarioRound)
-            .filter(ScenarioRound.scenario_id == game_obj.id)
-            .order_by(ScenarioRound.round_number.desc())
+        latest_round: Optional[ScenarioPeriod] = (
+            self.db.query(ScenarioPeriod)
+            .filter(ScenarioPeriod.scenario_id == game_obj.id)
+            .order_by(ScenarioPeriod.round_number.desc())
             .first()
         )
 
         if latest_round:
-            if latest_round.is_completed and latest_round.current_phase == RoundPhase.COMPLETED:
+            if latest_round.is_completed and latest_round.current_phase == PeriodPhase.COMPLETED:
                 target_round = latest_round.round_number + 1
             else:
                 # Round in progress - return existing round
@@ -7844,13 +7843,13 @@ class MixedScenarioService:
         game_obj.current_period = target_round
 
         # Create new round with FULFILLMENT phase
-        round_record = ScenarioRound(
+        round_record = ScenarioPeriod(
             scenario_id=game_obj.id,
             round_number=target_round,
             customer_demand=0,  # Will be set later
             is_completed=False,
             started_at=datetime.datetime.utcnow(),
-            current_phase=RoundPhase.FULFILLMENT,
+            current_phase=PeriodPhase.FULFILLMENT,
             phase_started_at=datetime.datetime.utcnow(),
         )
         self.db.add(round_record)
@@ -7901,7 +7900,7 @@ class MixedScenarioService:
     def _process_autonomous_agent_fulfillment(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound,
+        round_obj: ScenarioPeriod,
         scenario_users: List[ScenarioUser]
     ) -> None:
         """
@@ -7968,7 +7967,7 @@ class MixedScenarioService:
     def _process_autonomous_agent_replenishment(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound,
+        round_obj: ScenarioPeriod,
         scenario_users: List[ScenarioUser]
     ) -> None:
         """
@@ -8084,16 +8083,16 @@ class MixedScenarioService:
     def _check_and_transition_fulfillment_phase(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound
+        round_obj: ScenarioPeriod
     ) -> None:
         """Check if all scenario_users completed fulfillment and transition to replenishment."""
-        from app.models.supply_chain import RoundPhase
+        from app.models.supply_chain import PeriodPhase
 
         if self._check_phase_transition(
             game_obj, round_obj,
-            RoundPhase.FULFILLMENT, RoundPhase.REPLENISHMENT
+            PeriodPhase.FULFILLMENT, PeriodPhase.REPLENISHMENT
         ):
-            self._transition_phase(game_obj, round_obj, RoundPhase.REPLENISHMENT)
+            self._transition_phase(game_obj, round_obj, PeriodPhase.REPLENISHMENT)
 
             # Process autonomous agents' replenishment decisions
             scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game_obj.id).all()
@@ -8102,21 +8101,21 @@ class MixedScenarioService:
     def _check_and_transition_replenishment_phase(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound
+        round_obj: ScenarioPeriod
     ) -> None:
         """Check if all scenario_users completed replenishment and transition to completed."""
-        from app.models.supply_chain import RoundPhase
+        from app.models.supply_chain import PeriodPhase
 
         if self._check_phase_transition(
             game_obj, round_obj,
-            RoundPhase.REPLENISHMENT, RoundPhase.COMPLETED
+            PeriodPhase.REPLENISHMENT, PeriodPhase.COMPLETED
         ):
-            self._transition_phase(game_obj, round_obj, RoundPhase.COMPLETED)
+            self._transition_phase(game_obj, round_obj, PeriodPhase.COMPLETED)
 
     def _process_node_fulfillment_decision(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound,
+        round_obj: ScenarioPeriod,
         scenario_user: ScenarioUser,
         fulfill_qty: int
     ) -> Optional[TransferOrder]:
@@ -8216,7 +8215,7 @@ class MixedScenarioService:
     def _process_node_replenishment_decision(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound,
+        round_obj: ScenarioPeriod,
         scenario_user: ScenarioUser,
         order_qty: int
     ) -> Optional[TransferOrder]:
@@ -8325,7 +8324,7 @@ class MixedScenarioService:
     def _check_phase_transition(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound,
+        round_obj: ScenarioPeriod,
         from_phase: str,
         to_phase: str
     ) -> bool:
@@ -8343,13 +8342,13 @@ class MixedScenarioService:
         Returns:
             True if ready to transition, False otherwise
         """
-        from app.models.supply_chain import RoundPhase
+        from app.models.supply_chain import PeriodPhase
 
         # Get all scenario_users in game
         scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game_obj.id).all()
         scenario_user_count = len(scenario_users)
 
-        if from_phase == RoundPhase.FULFILLMENT and to_phase == RoundPhase.REPLENISHMENT:
+        if from_phase == PeriodPhase.FULFILLMENT and to_phase == PeriodPhase.REPLENISHMENT:
             # Check if all scenario_users have submitted fulfillment decisions
             # Using explicit fulfillment_submitted_at timestamp
             fulfilled_count = (
@@ -8362,7 +8361,7 @@ class MixedScenarioService:
             )
             return fulfilled_count >= scenario_user_count
 
-        elif from_phase == RoundPhase.REPLENISHMENT and to_phase == RoundPhase.COMPLETED:
+        elif from_phase == PeriodPhase.REPLENISHMENT and to_phase == PeriodPhase.COMPLETED:
             # Check if all scenario_users have submitted replenishment orders
             # Using explicit replenishment_submitted_at timestamp
             replenished_count = (
@@ -8380,7 +8379,7 @@ class MixedScenarioService:
     def _transition_phase(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound,
+        round_obj: ScenarioPeriod,
         new_phase: str
     ) -> None:
         """
@@ -8393,16 +8392,16 @@ class MixedScenarioService:
             round_obj: Current round
             new_phase: Target phase (FULFILLMENT, REPLENISHMENT, COMPLETED)
         """
-        from app.models.supply_chain import RoundPhase
+        from app.models.supply_chain import PeriodPhase
 
         old_phase = round_obj.current_phase
         round_obj.current_phase = new_phase
         round_obj.phase_started_at = datetime.datetime.utcnow()
 
         # Update phase completion timestamps
-        if new_phase == RoundPhase.REPLENISHMENT:
+        if new_phase == PeriodPhase.REPLENISHMENT:
             round_obj.fulfillment_completed_at = datetime.datetime.utcnow()
-        elif new_phase == RoundPhase.COMPLETED:
+        elif new_phase == PeriodPhase.COMPLETED:
             round_obj.replenishment_completed_at = datetime.datetime.utcnow()
             round_obj.completed_at = datetime.datetime.utcnow()
             round_obj.is_completed = True
@@ -8435,7 +8434,7 @@ class MixedScenarioService:
     def _update_rlhf_preference_labels(
         self,
         game_obj: Game,
-        round_obj: ScenarioRound
+        round_obj: ScenarioPeriod
     ) -> None:
         """
         Phase 2: Update RLHF preference labels after round completes.
@@ -8676,7 +8675,7 @@ class MixedScenarioService:
 
 
 
-    def process_ai_scenario_users(self, game: Game, game_round: ScenarioRound, context: RoundContext) -> None:
+    def process_ai_scenario_users(self, game: Game, game_round: ScenarioPeriod, context: RoundContext) -> None:
         """Process AI scenario_users' moves for the current round."""
         scenario_users = self.db.query(ScenarioUser).filter(
             ScenarioUser.scenario_id == game.id,
@@ -8723,7 +8722,7 @@ class MixedScenarioService:
         node_key: str, 
         scenario_user: ScenarioUser, 
         game: Game, 
-        game_round: ScenarioRound, 
+        game_round: ScenarioPeriod, 
         context: RoundContext
     ) -> None:
         """Process decision for a single AI agent."""
@@ -9013,7 +9012,7 @@ class MixedScenarioService:
         node_state: NodeState,
         upstream_node: str,
         quantity: int,
-        game_round: ScenarioRound,
+        game_round: ScenarioPeriod,
         current_period_number: int,
     ) -> None:
         """Place a single order to a specific upstream supplier.
@@ -9157,7 +9156,7 @@ class MixedScenarioService:
             node_to_scenario_users[node_key] = unique
         return node_to_scenario_users
     
-    def complete_round(self, game_round: ScenarioRound) -> None:
+    def complete_round(self, game_round: ScenarioPeriod) -> None:
         """Complete the current round, updating scenario_user inventories and costs."""
         # Get all scenario_user rounds for this game round
         scenario_user_periods = self.db.query(ScenarioUserPeriod).filter(
@@ -9209,11 +9208,11 @@ class MixedScenarioService:
         game_round.completed_at = timestamp
         self.db.commit()
     
-    def get_current_period(self, scenario_id: int) -> Optional[ScenarioRound]:
+    def get_current_period(self, scenario_id: int) -> Optional[ScenarioPeriod]:
         """Get the current round for a game."""
-        return self.db.query(ScenarioRound).filter(
-            ScenarioRound.scenario_id == scenario_id,
-            ScenarioRound.ended_at.is_(None)
+        return self.db.query(ScenarioPeriod).filter(
+            ScenarioPeriod.scenario_id == scenario_id,
+            ScenarioPeriod.ended_at.is_(None)
         ).first()
 
     @staticmethod
@@ -9393,9 +9392,9 @@ class MixedScenarioService:
         config_history_payload = MixedScenarioService._json_clone(cfg.get("history") or [])
         config_history_observed_types: Set[str] = set()
         rounds = (
-            self.db.query(ScenarioRound)
-            .filter(ScenarioRound.scenario_id == scenario_id)
-            .order_by(ScenarioRound.round_number.asc())
+            self.db.query(ScenarioPeriod)
+            .filter(ScenarioPeriod.scenario_id == scenario_id)
+            .order_by(ScenarioPeriod.round_number.asc())
             .all()
         )
 
@@ -9431,7 +9430,7 @@ class MixedScenarioService:
             first = rounds[0]
             placeholder_start = compute_period_start(start_date, 0, bucket)
             placeholder_end = compute_period_end(placeholder_start, bucket)
-            placeholder = ScenarioRound(
+            placeholder = ScenarioPeriod(
                 scenario_id=first.scenario_id,
                 round_number=1,
                 customer_demand=first.customer_demand,
@@ -9471,11 +9470,11 @@ class MixedScenarioService:
             )
 
         scenario_user_period_records = (
-            self.db.query(ScenarioUserPeriod, ScenarioRound, ScenarioUser)
-            .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
+            self.db.query(ScenarioUserPeriod, ScenarioPeriod, ScenarioUser)
+            .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
             .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
-            .filter(ScenarioRound.scenario_id == scenario_id)
-            .order_by(ScenarioRound.round_number.asc())
+            .filter(ScenarioPeriod.scenario_id == scenario_id)
+            .order_by(ScenarioPeriod.round_number.asc())
             .all()
         )
 

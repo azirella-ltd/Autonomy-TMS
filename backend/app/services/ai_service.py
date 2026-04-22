@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.scenario_user import ScenarioUser, ScenarioUserRole
 from app.models.scenario import Scenario
-from app.models.supply_chain import ScenarioUserInventory, ScenarioRound, ScenarioUserPeriod
+from app.models.supply_chain import ScenarioUserInventory, ScenarioPeriod, ScenarioUserPeriod
 from app.schemas.scenario import ScenarioUserState, ScenarioState
 
 
@@ -179,23 +179,23 @@ class AIService:
         lead_time = 2
         return 1.65 * std_dev * (lead_time ** 0.5)
     
-    def _get_current_period(self, scenario_id: int) -> Optional[ScenarioRound]:
+    def _get_current_period(self, scenario_id: int) -> Optional[ScenarioPeriod]:
         """Get the current period for a scenario."""
-        return self.db.query(ScenarioRound).join(Scenario).filter(
+        return self.db.query(ScenarioPeriod).join(Scenario).filter(
             Scenario.id == scenario_id
         ).order_by(
-            ScenarioRound.round_number.desc()
+            ScenarioPeriod.round_number.desc()
         ).first()
     
     def _get_participant_history(self, scenario_user_id: int, current_period: int, limit: int = 10) -> List[Dict]:
         """Get the scenario_user's order history."""
-        history = self.db.query(ScenarioUserPeriod, ScenarioRound).join(
-            ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id
+        history = self.db.query(ScenarioUserPeriod, ScenarioPeriod).join(
+            ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id
         ).filter(
             ScenarioUserPeriod.scenario_user_id == scenario_user_id,
-            ScenarioRound.round_number < current_period
+            ScenarioPeriod.round_number < current_period
         ).order_by(
-            ScenarioRound.round_number.desc()
+            ScenarioPeriod.round_number.desc()
         ).limit(limit).all()
         
         return [

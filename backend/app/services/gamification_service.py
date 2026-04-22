@@ -12,13 +12,12 @@ from app.models.achievement import (
     LeaderboardEntry, ScenarioUserBadge, AchievementNotification
 )
 from app.models.scenario_user import ScenarioUser
-from app.models.scenario import Scenario, Round as ScenarioRound
+from app.models.scenario import Scenario, Round as ScenarioPeriod
 from app.models.supply_chain import ScenarioUserPeriod
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
 Game = Scenario
-ScenarioRound = ScenarioRound
 ScenarioUserPeriod = ScenarioUserPeriod
 from app.schemas.gamification import (
     AchievementCheckResponse, ScenarioUserProgressResponse,

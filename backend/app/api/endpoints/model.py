@@ -12,7 +12,7 @@ import json
 from app.db.session import get_db
 from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
-from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
+from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 from app.schemas.scenario import ScenarioUserPeriod as ScenarioUserPeriodSchema
 
 router = APIRouter()
@@ -264,9 +264,9 @@ async def get_game_metrics(
 
     # Get all rounds for this scenario
     rounds_result = await db.execute(
-        select(ScenarioRound)
-        .where(ScenarioRound.scenario_id == scenario_id)
-        .order_by(ScenarioRound.round_number)
+        select(ScenarioPeriod)
+        .where(ScenarioPeriod.scenario_id == scenario_id)
+        .order_by(ScenarioPeriod.round_number)
     )
     rounds = rounds_result.scalars().all()
     
@@ -282,8 +282,8 @@ async def get_game_metrics(
     # Get all scenario_user rounds
     scenario_user_periods_result = await db.execute(
         select(ScenarioUserPeriod)
-        .join(ScenarioRound)
-        .where(ScenarioRound.scenario_id == scenario_id)
+        .join(ScenarioPeriod)
+        .where(ScenarioPeriod.scenario_id == scenario_id)
     )
     scenario_user_periods = scenario_user_periods_result.scalars().all()
     

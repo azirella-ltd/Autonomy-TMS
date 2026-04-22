@@ -34,7 +34,7 @@ from app.models.scenario import Scenario
 from app.models.sc_entities import OutboundOrderLine, InvLevel
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
-from app.models.period_metric import RoundMetric
+from app.models.period_metric import PeriodMetric
 from app.models.supply_chain_config import Site
 from app.services.simulation_execution_engine import SimulationExecutionEngine
 from app.services.order_management_service import OrderManagementService
@@ -149,7 +149,7 @@ class BacklogReportResponse(BaseModel):
     orders: List[OrderResponse]
 
 
-class RoundMetricResponse(BaseModel):
+class PeriodMetricResponse(BaseModel):
     """Round metric response"""
     id: int
     scenario_id: int
@@ -667,7 +667,7 @@ async def get_arriving_shipments(
 # Metrics Endpoints
 # ============================================================================
 
-@router.get("/metrics", response_model=List[RoundMetricResponse])
+@router.get("/metrics", response_model=List[PeriodMetricResponse])
 @require_capabilities(["view_simulations"])
 async def list_metrics(
     *,
@@ -688,15 +688,15 @@ async def list_metrics(
     Returns:
         List of round metrics
     """
-    query = select(RoundMetric).where(RoundMetric.scenario_id == scenario_id)
+    query = select(PeriodMetric).where(PeriodMetric.scenario_id == scenario_id)
 
     if round_number is not None:
-        query = query.where(RoundMetric.round_number == round_number)
+        query = query.where(PeriodMetric.period_number == round_number)
 
     if site_id is not None:
-        query = query.where(RoundMetric.site_id == site_id)
+        query = query.where(PeriodMetric.site_id == site_id)
 
-    query = query.order_by(RoundMetric.round_number, RoundMetric.site_id)
+    query = query.order_by(PeriodMetric.period_number, PeriodMetric.site_id)
 
     result = await db.execute(query)
     metrics = result.scalars().all()
@@ -704,7 +704,7 @@ async def list_metrics(
     responses = []
     for metric in metrics:
         site = await db.get(Site, metric.site_id) if metric.site_id else None
-        responses.append(RoundMetricResponse(
+        responses.append(PeriodMetricResponse(
             **metric.__dict__,
             site_name=site.name if site else None
         ))
@@ -733,7 +733,7 @@ async def get_metrics_summary(
     """
     # Get all metrics for scenario
     result = await db.execute(
-        select(RoundMetric).where(RoundMetric.scenario_id == scenario_id)
+        select(PeriodMetric).where(PeriodMetric.scenario_id == scenario_id)
     )
     metrics = result.scalars().all()
 
@@ -741,12 +741,12 @@ async def get_metrics_summary(
         raise HTTPException(status_code=404, detail=f"No metrics found for scenario {scenario_id}")
 
     # Calculate aggregates
-    total_rounds = max(m.round_number for m in metrics)
+    total_rounds = max(m.period_number for m in metrics)
     total_cost = sum(m.total_cost for m in metrics)
     avg_cost_per_round = total_cost / total_rounds if total_rounds > 0 else 0.0
 
     # Current state (latest round)
-    latest_metrics = [m for m in metrics if m.round_number == total_rounds]
+    latest_metrics = [m for m in metrics if m.period_number == total_rounds]
     total_inventory = sum(m.inventory for m in latest_metrics)
     total_backlog = sum(m.backlog for m in latest_metrics)
 

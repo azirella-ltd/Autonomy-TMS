@@ -16,13 +16,12 @@ from statistics import mean, stdev
 
 from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
-from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
+from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 from app.models.user import User
 
 # Aliases for backwards compatibility
 Game = Scenario
 ScenarioUser = ScenarioUser
-ScenarioRound = ScenarioRound
 ScenarioUserPeriod = ScenarioUserPeriod
 
 

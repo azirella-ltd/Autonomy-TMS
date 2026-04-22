@@ -10,12 +10,12 @@ import os
 from typing import Dict, Any, Iterable
 
 from main import SessionLocal, _coerce_game_config
-from app.models.scenario import Scenario, Round
+from app.models.scenario import Scenario, Period
 
 ROLES = ["retailer", "wholesaler", "distributor", "manufacturer"]
 
 CSV_COLUMNS = [
-    "Round",
+    "Period",
     "Node",
     "Starting Inventory",
     "Demand",
@@ -43,7 +43,7 @@ def export_game(scenario_id: int, output_dir: str) -> str:
         config = _coerce_game_config(scenario)
         history = config.get("history", [])
         if not history:
-            rounds = session.query(Round).filter(Round.scenario_id == scenario_id).order_by(Round.round_number.asc()).all()
+            rounds = session.query(Period).filter(Period.scenario_id == scenario_id).order_by(Period.round_number.asc()).all()
             history = []
             for round_record in rounds:
                 payload = round_record.config or {}
@@ -89,7 +89,7 @@ def export_game(scenario_id: int, output_dir: str) -> str:
         writer = csv.writer(fh)
         writer.writerow(CSV_COLUMNS)
 
-        # Round 0 baseline
+        # Period 0 baseline
         for role in ROLES:
             base_state = initial_state.get(role, {})
             starting_inventory = _net_inventory(base_state)

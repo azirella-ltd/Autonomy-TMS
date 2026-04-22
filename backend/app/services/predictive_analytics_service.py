@@ -26,12 +26,11 @@ except ImportError:
     SHAP_AVAILABLE = False
     logging.warning("SHAP not available. Install with: pip install shap")
 
-from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
+from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-ScenarioRound = ScenarioRound
 ScenarioUserPeriod = ScenarioUserPeriod
 Game = Scenario
 ScenarioUser = ScenarioUser
