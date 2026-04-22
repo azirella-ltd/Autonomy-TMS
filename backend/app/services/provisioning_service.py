@@ -2364,7 +2364,10 @@ class ProvisioningService:
                 bsc = ContextualBSC()
 
                 # For each TRM type, simulate N situations and update template priors
-                trm_types = ["atp_executor", "po_creation", "inventory_rebalancing",
+                # po_creation retired (TMS uses FreightProcurementTRM for the
+                # ACQUIRE phase); other SCP-named slots still listed until
+                # their TMS-named replacements land.
+                trm_types = ["atp_executor", "inventory_rebalancing",
                              "order_tracking", "mo_execution", "to_execution"]
                 total_scenarios = 0
 
@@ -2787,14 +2790,8 @@ def _build_trm_instances(
     """
     instances = {}
 
-    if "po_creation" in active_trms:
-        try:
-            from app.services.powell.po_creation_trm import POCreationTRM
-            instances["po_creation"] = POCreationTRM(
-                db=db, config_id=config_id, use_heuristic_fallback=True,
-            )
-        except Exception as e:
-            logger.debug("po_creation TRM init: %s", e)
+    # po_creation TRM removed — replaced by FreightProcurementTRM in TMS.
+    # See .claude/rules/trm-mapping.md.
 
     if "order_tracking" in active_trms:
         try:
@@ -2928,10 +2925,9 @@ def _build_trm_executors(
 
     executors = {}
 
-    if "po_creation" in trm_instances:
-        def _run_po(trm=trm_instances["po_creation"]):
-            _safe_exec(lambda: _evaluate_po_for_site(trm, db, config_id, site_id))
-        executors["po_creation"] = _run_po
+    # po_creation executor removed — _evaluate_po_for_site retired alongside
+    # POCreationTRM. TMS FreightProcurementTRM is invoked through its own
+    # endpoint/TRM decision cycle path, not this provisioning executor map.
 
     if "order_tracking" in trm_instances:
         def _run_ot(trm=trm_instances["order_tracking"]):
@@ -2961,106 +2957,6 @@ def _build_trm_executors(
 
 
 # ── Per-TRM site-level evaluation helpers ──────────────────────────────────
-
-def _evaluate_po_for_site(trm, db, config_id: int, site_id: int):
-    """Evaluate PO needs for all products stocked at a site."""
-    from app.services.powell.po_creation_trm import (
-        POCreationState, InventoryPosition, SupplierInfo,
-    )
-
-    rows = db.execute(
-        text("""
-            SELECT DISTINCT il.product_id,
-                   COALESCE(SUM(il.on_hand_qty), 0) AS on_hand,
-                   COALESCE(SUM(il.in_transit_qty), 0) AS in_transit,
-                   COALESCE(SUM(il.allocated_qty), 0) AS allocated,
-                   COALESCE(AVG(f.forecast_p50), 0) AS forecast_30
-            FROM inv_level il
-            LEFT JOIN forecast f
-                ON f.product_id = il.product_id
-                AND f.site_id = il.site_id
-                AND f.forecast_date >= CURRENT_DATE
-                AND f.forecast_date < CURRENT_DATE + INTERVAL '30 days'
-            WHERE il.site_id = :site_id
-            GROUP BY il.product_id
-            LIMIT 50
-        """),
-        {"site_id": site_id},
-    ).fetchall()
-
-    for product_id, on_hand, in_transit, allocated, forecast_30 in rows:
-        try:
-            # Find suppliers for this product (use savepoint to recover on SQL error)
-            sp = db.begin_nested()
-            try:
-                supplier_rows = db.execute(
-                    text("""
-                        SELECT vp.tpartner_id, COALESCE(vp.vendor_unit_cost, 10.0),
-                               COALESCE(vlt.lead_time_days, 7) AS lead_time,
-                               0.95 AS reliability
-                        FROM vendor_product vp
-                        LEFT JOIN vendor_lead_time vlt
-                            ON vlt.tpartner_id = vp.tpartner_id
-                            AND vlt.product_id = vp.product_id
-                        WHERE vp.product_id = :product_id
-                        LIMIT 5
-                    """),
-                    {"product_id": product_id},
-                ).fetchall()
-                sp.commit()
-            except Exception:
-                sp.rollback()
-                supplier_rows = []
-
-            pid = str(product_id)
-            sid = str(site_id)
-            suppliers = [
-                SupplierInfo(
-                    supplier_id=str(s[0]),
-                    product_id=pid,
-                    lead_time_days=float(s[2]),
-                    lead_time_variability=float(s[2]) * 0.15,
-                    unit_cost=float(s[1]),
-                    order_cost=float(s[1]) * 0.1,
-                    min_order_qty=0.0,
-                    max_order_qty=999999.0,
-                )
-                for s in supplier_rows
-            ]
-            if not suppliers:
-                suppliers = [SupplierInfo(
-                    supplier_id="default", product_id=pid,
-                    lead_time_days=7.0, lead_time_variability=1.0,
-                    unit_cost=10.0, order_cost=1.0,
-                    min_order_qty=0.0, max_order_qty=999999.0,
-                )]
-
-            ss_val = float(forecast_30) * 0.3
-            avg_daily = float(forecast_30) / 30.0 if forecast_30 else 1.0
-            state = POCreationState(
-                product_id=pid,
-                location_id=sid,
-                inventory_position=InventoryPosition(
-                    product_id=pid,
-                    location_id=sid,
-                    on_hand=float(on_hand),
-                    in_transit=float(in_transit),
-                    on_order=0.0,
-                    committed=float(allocated),
-                    backlog=0.0,
-                    safety_stock=ss_val,
-                    reorder_point=ss_val * 1.5,
-                    target_inventory=ss_val * 2.0,
-                    average_daily_demand=avg_daily,
-                    demand_variability=avg_daily * 0.3,
-                ),
-                suppliers=suppliers,
-                forecast_next_30_days=float(forecast_30),
-                forecast_uncertainty=float(forecast_30) * 0.2,
-            )
-            trm.evaluate_po_need(state)
-        except Exception as e:
-            logger.warning("PO eval for product %s at site %s: %s", product_id, site_id, e)
 
 
 def _evaluate_order_tracking_for_site(trm, db, config_id: int, site_id: int):

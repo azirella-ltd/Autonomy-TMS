@@ -11,7 +11,7 @@ Pipeline:
   2. Materialize AllocationCommit → PowellAllocations
   3. ATP Execution (ATPExecutorTRM with priority consumption)
   4. Inventory Rebalancing (InventoryRebalancingTRM)
-  5. PO Creation (POCreationTRM)
+  5. (retired — PO Creation; see FreightProcurementTRM for the TMS replacement)
   6. Order Tracking (OrderTrackingTRM)
   7. Summary
 
@@ -355,77 +355,9 @@ def step4_inventory_rebalancing(db: Session, config_id: int, dc_location_id: str
 
 
 # ===================================================================
-# Step 5: PO Creation
-# ===================================================================
-
-def step5_po_creation(db: Session, config_id: int, dc_location_id: str):
-    """Run PO creation evaluation for all SKUs."""
-    print("\n  Running PO Creation evaluation...")
-    from app.services.powell.po_creation_trm import (
-        POCreationTRM, POCreationState, InventoryPosition, SupplierInfo,
-    )
-
-    trm = POCreationTRM(db=db, config_id=config_id)
-    total_recs = 0
-
-    for sku in ALL_SKUS:
-        base_demand = SKU_BASE_DEMAND.get(sku, 100)
-        daily_demand = base_demand / 7
-        supplier_id = SKU_SUPPLIER.get(sku, "UNKNOWN")
-        lead_time = SUPPLIER_LEAD_TIMES.get(supplier_id, 4)
-
-        # Randomize inventory state - some below reorder point
-        inv_factor = random.uniform(0.3, 1.5)
-        on_hand = daily_demand * 10 * inv_factor
-        safety_stock = daily_demand * 5
-        reorder_point = safety_stock + daily_demand * lead_time
-
-        inv_pos = InventoryPosition(
-            product_id=sku,
-            location_id=dc_location_id,
-            on_hand=on_hand,
-            in_transit=daily_demand * random.uniform(0, 5),
-            on_order=daily_demand * random.uniform(0, 3),
-            committed=daily_demand * random.uniform(1, 4),
-            backlog=daily_demand * random.uniform(0, 1),
-            safety_stock=safety_stock,
-            reorder_point=reorder_point,
-            target_inventory=daily_demand * 21,
-            average_daily_demand=daily_demand,
-            demand_variability=daily_demand * 0.3,
-        )
-
-        supplier = SupplierInfo(
-            supplier_id=supplier_id,
-            product_id=sku,
-            lead_time_days=lead_time,
-            lead_time_variability=lead_time * 0.2,
-            unit_cost=random.uniform(2, 25),
-            order_cost=random.uniform(50, 200),
-            min_order_qty=max(10, base_demand // 4),
-            on_time_rate=random.uniform(0.85, 0.99),
-        )
-
-        state = POCreationState(
-            product_id=sku,
-            location_id=dc_location_id,
-            inventory_position=inv_pos,
-            suppliers=[supplier],
-            forecast_next_30_days=daily_demand * 30,
-            forecast_uncertainty=daily_demand * 5,
-            supply_risk_score=random.uniform(0, 0.4),
-            demand_volatility_score=random.uniform(0.1, 0.5),
-        )
-
-        recs = trm.evaluate_po_need(state)
-        total_recs += len(recs)
-
-    db.commit()
-    print(f"    {total_recs} PO recommendations for {len(ALL_SKUS)} SKUs.")
-
-
-# ===================================================================
-# Step 6: Order Tracking
+# Step 5: Order Tracking
+# (Step 5 was PO Creation; POCreationTRM replaced by FreightProcurementTRM.
+#  The old step5_po_creation has been retired — renumbering deferred.)
 # ===================================================================
 
 def step6_order_tracking(db: Session, config_id: int, dc_location_id: str):
@@ -607,11 +539,9 @@ def main():
         print("-" * 60)
         step4_inventory_rebalancing(db, config.id, dc_location_id)
 
-        # ------------- Step 5: PO Creation -------------
-        print("\n" + "-" * 60)
-        print("Step 5: PO Creation")
-        print("-" * 60)
-        step5_po_creation(db, config.id, dc_location_id)
+        # Step 5 (PO Creation) retired: POCreationTRM replaced by
+        # FreightProcurementTRM. Renumbering deferred until surrounding
+        # SCP-named steps also migrate.
 
         # ------------- Step 6: Order Tracking -------------
         print("\n" + "-" * 60)

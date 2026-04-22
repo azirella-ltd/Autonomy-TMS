@@ -46,14 +46,8 @@ TRM_SPECS = {
         "decision_model": "PowellRebalanceDecision",
         "table": "powell_rebalance_decisions",
     },
-    "po_creation": {
-        "module": "app.services.powell.po_creation_trm",
-        "class": "POCreationTRM",
-        "engine_module": "app.services.powell.engines.mrp_engine",
-        "engine_class": "MRPEngine",
-        "decision_model": "PowellPODecision",
-        "table": "powell_po_decisions",
-    },
+    # po_creation entry removed: POCreationTRM replaced by TMS's
+    # FreightProcurementTRM (ACQUIRE phase). See .claude/rules/trm-mapping.md.
     "order_tracking": {
         "module": "app.services.powell.order_tracking_trm",
         "class": "OrderTrackingTRM",

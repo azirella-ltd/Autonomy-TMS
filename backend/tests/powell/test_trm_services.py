@@ -37,15 +37,7 @@ from app.services.powell.inventory_rebalancing_trm import (
     RebalanceRecommendation,
     RebalanceReason,
 )
-from app.services.powell.po_creation_trm import (
-    POCreationTRM,
-    POCreationState,
-    SupplierInfo,
-    InventoryPosition,
-    PORecommendation,
-    POTriggerReason,
-    POUrgency,
-)
+# POCreationTRM import removed: replaced by FreightProcurementTRM.
 
 
 # ---------------------------------------------------------------------------
@@ -768,99 +760,6 @@ class TestInventoryRebalancingTRM:
 
 
 # ===========================================================================
-# 7. POCreationTRM Tests (4 tests)
-# ===========================================================================
-
-class TestPOCreationTRM:
-    """Tests for POCreationTRM."""
-
-    def test_evaluate_below_reorder_point(self, supplier_info, inventory_position_low):
-        """PO recommended when inventory position is below reorder point."""
-        trm = POCreationTRM(use_heuristic_fallback=True)
-        state = POCreationState(
-            product_id="SKU-A",
-            location_id="DC-01",
-            inventory_position=inventory_position_low,
-            suppliers=[supplier_info],
-            forecast_next_30_days=600,
-            forecast_uncertainty=50,
-        )
-        recs = trm.evaluate_po_need(state)
-        assert len(recs) >= 1
-        rec = recs[0]
-        assert rec.product_id == "SKU-A"
-        assert rec.supplier_id == "SUP-01"
-        assert rec.recommended_qty > 0
-        assert rec.create_now is True  # Should be HIGH urgency (below safety stock)
-
-    def test_evaluate_above_reorder_point(self, supplier_info, inventory_position_high):
-        """No PO recommended when inventory is well above reorder point."""
-        trm = POCreationTRM(use_heuristic_fallback=True)
-        state = POCreationState(
-            product_id="SKU-A",
-            location_id="DC-01",
-            inventory_position=inventory_position_high,
-            suppliers=[supplier_info],
-            forecast_next_30_days=600,
-            forecast_uncertainty=50,
-        )
-        recs = trm.evaluate_po_need(state)
-        assert len(recs) == 0
-
-    def test_evaluate_critical_urgency(self, supplier_info):
-        """CRITICAL urgency when available is zero."""
-        inv = InventoryPosition(
-            product_id="SKU-A", location_id="DC-01",
-            on_hand=5, in_transit=0, on_order=0,
-            committed=10, backlog=5,
-            safety_stock=100, reorder_point=200,
-            target_inventory=500,
-            average_daily_demand=20, demand_variability=5,
-        )
-        trm = POCreationTRM(use_heuristic_fallback=True)
-        state = POCreationState(
-            product_id="SKU-A",
-            location_id="DC-01",
-            inventory_position=inv,
-            suppliers=[supplier_info],
-            forecast_next_30_days=600,
-            forecast_uncertainty=50,
-        )
-        recs = trm.evaluate_po_need(state)
-        assert len(recs) >= 1
-        assert recs[0].urgency == POUrgency.CRITICAL
-        assert recs[0].trigger_reason == POTriggerReason.EXPEDITE
-
-    def test_evaluate_respects_supplier_constraints(self, inventory_position_low):
-        """PO quantity respects min_order_qty and order_multiple."""
-        supplier = SupplierInfo(
-            supplier_id="SUP-02",
-            product_id="SKU-A",
-            lead_time_days=5,
-            lead_time_variability=1.0,
-            unit_cost=8.0,
-            order_cost=100.0,
-            min_order_qty=50,
-            max_order_qty=1000,
-            order_multiple=25,
-        )
-        trm = POCreationTRM(use_heuristic_fallback=True)
-        state = POCreationState(
-            product_id="SKU-A",
-            location_id="DC-01",
-            inventory_position=inventory_position_low,
-            suppliers=[supplier],
-            forecast_next_30_days=600,
-            forecast_uncertainty=50,
-        )
-        recs = trm.evaluate_po_need(state)
-        assert len(recs) >= 1
-        rec = recs[0]
-        assert rec.recommended_qty >= 50  # min_order_qty
-        assert rec.recommended_qty % 25 == 0  # order_multiple
-
-
-# ===========================================================================
 # 8. ATPState.to_features Test (1 test)
 # ===========================================================================
 
@@ -1053,28 +952,3 @@ class TestRebalanceRecommendationSerialization:
         assert d["source_dos"]["before"] == 45
         assert d["dest_dos"]["after"] == 23
 
-
-class TestPORecommendationSerialization:
-    """Tests for PORecommendation serialization."""
-
-    def test_to_dict(self):
-        """PORecommendation.to_dict() includes all expected fields."""
-        rec = PORecommendation(
-            product_id="SKU-A", location_id="DC-01",
-            supplier_id="SUP-01",
-            recommended_qty=500, min_qty=50, max_qty=1000,
-            create_now=True,
-            urgency=POUrgency.HIGH,
-            trigger_reason=POTriggerReason.INVENTORY_BUFFER,
-            expected_receipt_date="2026-03-01",
-            expected_cost=5050.0,
-            expected_inventory_position_after=535,
-            confidence=0.85,
-            reasoning="Below safety stock",
-        )
-        d = rec.to_dict()
-        assert d["product_id"] == "SKU-A"
-        assert d["urgency"] == "high"
-        assert d["trigger_reason"] == "inventory_buffer"
-        assert d["create_now"] is True
-        assert d["expected_cost"] == 5050.0

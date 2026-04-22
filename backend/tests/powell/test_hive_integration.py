@@ -201,85 +201,6 @@ class TestRebalancingSignals:
             assert direction == "relief"
 
 
-# ---------- PO Creation signal integration ----------
-
-from app.services.powell.po_creation_trm import (
-    POCreationTRM,
-    POCreationState,
-    InventoryPosition,
-    SupplierInfo,
-)
-
-
-class TestPOCreationSignals:
-    """Test signal wiring in POCreationTRM."""
-
-    def _make_state(self, available: float = 0) -> POCreationState:
-        return POCreationState(
-            product_id="PROD-001",
-            location_id="LOC-001",
-            inventory_position=InventoryPosition(
-                product_id="PROD-001", location_id="LOC-001",
-                on_hand=available, in_transit=0, on_order=0,
-                committed=0, backlog=0,
-                safety_stock=50, reorder_point=100, target_inventory=200,
-                average_daily_demand=10, demand_variability=3,
-            ),
-            suppliers=[
-                SupplierInfo(
-                    supplier_id="SUP-001", product_id="PROD-001",
-                    lead_time_days=5, lead_time_variability=1,
-                    unit_cost=10.0, order_cost=50.0,
-                    min_order_qty=10, on_time_rate=0.95,
-                ),
-            ],
-            forecast_next_30_days=300,
-            forecast_uncertainty=50,
-        )
-
-    def test_no_bus_works(self):
-        """PO Creation works without signal bus."""
-        trm = POCreationTRM()
-        state = self._make_state(available=0)
-        recs = trm.evaluate_po_need(state)
-        assert isinstance(recs, list)
-
-    def test_reads_atp_shortage(self):
-        """PO Creation reads ATP_SHORTAGE signals."""
-        trm = POCreationTRM()
-        bus = HiveSignalBus()
-        trm.signal_bus = bus
-
-        # Pre-populate an ATP shortage signal
-        bus.emit(HiveSignal(
-            source_trm="atp_executor",
-            signal_type=HiveSignalType.ATP_SHORTAGE,
-            urgency=0.8,
-            direction="shortage",
-            magnitude=200,
-            product_id="PROD-001",
-        ))
-
-        state = self._make_state(available=0)
-        recs = trm.evaluate_po_need(state)
-        # The PO should recommend ordering (critical shortage)
-        assert len(recs) >= 1
-
-    def test_emits_po_expedite_on_critical(self):
-        """PO Creation emits PO_EXPEDITE on critical urgency."""
-        trm = POCreationTRM()
-        bus = HiveSignalBus()
-        trm.signal_bus = bus
-
-        state = self._make_state(available=0)  # Critical: zero inventory
-        recs = trm.evaluate_po_need(state)
-
-        if recs:
-            expedites = bus.read("rebalancing", types={HiveSignalType.PO_EXPEDITE})
-            assert len(expedites) >= 1
-            assert expedites[0].direction == "relief"
-
-
 # ---------- Order Tracking signal integration ----------
 
 from app.services.powell.order_tracking_trm import (
@@ -338,41 +259,6 @@ class TestOrderTrackingSignals:
 
 class TestCrossTRMCascade:
     """Test signal flow across multiple TRMs via shared bus."""
-
-    def test_atp_to_po_cascade(self):
-        """ATP shortage → PO expedite cascade via shared signal bus."""
-        bus = HiveSignalBus()
-
-        # Setup ATP executor with shared bus
-        alloc_svc = AllocationService(AllocationConfig())
-        atp = ATPExecutorTRM(allocation_service=alloc_svc, signal_bus=bus)
-
-        # Setup PO creation with same bus
-        po = POCreationTRM()
-        po.signal_bus = bus
-
-        # ATP processes an order → shortage (no allocations)
-        atp_request = ATPRequest(
-            order_id="ORD-001",
-            product_id="PROD-001",
-            location_id="LOC-001",
-            requested_qty=100,
-            priority=2,
-        )
-        atp.check_atp(atp_request)
-
-        # PO should be able to read the ATP shortage signal
-        po_signals = bus.read(
-            "po_creation",
-            types={HiveSignalType.ATP_SHORTAGE},
-        )
-        assert len(po_signals) >= 1
-        assert po_signals[0].source_trm == "atp_executor"
-        assert po_signals[0].direction == "shortage"
-
-        # Urgency vector reflects ATP state
-        atp_urg, atp_dir, _ = bus.urgency.read("atp_executor")
-        assert atp_urg > 0
 
     def test_health_metrics_after_cascade(self):
         """HiveHealthMetrics correctly reflects state after signal cascade."""
