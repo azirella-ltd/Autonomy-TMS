@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
 from app.models.tms_entities import (
     Load, LoadStatus, Carrier, CarrierLane, FreightRate, FreightTender,
+    TenderStatus,
 )
 from app.models.user import User
 

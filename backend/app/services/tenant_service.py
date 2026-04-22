@@ -305,6 +305,13 @@ class TenantService:
                         cfg.id, e,
                     )
 
+            # TODO(sprint-1-week-1): PlaneRegistry.register once Core ships
+            # MIGRATION_REGISTER item 1.9 (2026-04-21 Monday target):
+            #   from azirella_data_model.planes import PlaneRegistry, Plane
+            #   PlaneRegistry.register(prod_tenant.id, Plane.TRANSPORT, config_id=None)
+            #   PlaneRegistry.register(learn_tenant.id, Plane.TRANSPORT, config_id=None)
+            # Per TMS_ADOPTION_GUIDE_20260420 §PREPARE.2 — register once per
+            # tenant with config_id=None (wildcard). Tier 0b (TMS-alone) path.
             self.db.commit()
             self.db.refresh(prod_tenant)
             return prod_tenant
