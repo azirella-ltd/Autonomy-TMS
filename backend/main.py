@@ -6996,6 +6996,10 @@ api.include_router(shipment_tracking_trm_router, tags=["shipment-tracking-trm"])
 from app.api.endpoints.exception_management import router as exception_management_router
 api.include_router(exception_management_router, tags=["exception-management"])
 
+# Broker Routing TRM — ACQUIRE-phase broker-vs-asset-carrier routing
+from app.api.endpoints.broker_routing import router as broker_routing_router
+api.include_router(broker_routing_router, tags=["broker-routing"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------

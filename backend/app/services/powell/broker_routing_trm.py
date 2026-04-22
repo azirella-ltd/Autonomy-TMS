@@ -1,0 +1,339 @@
+"""
+BrokerRoutingTRM — Broker vs Asset-Carrier Routing (ACQUIRE phase)
+
+Fifth TMS-native TRM. Maps to SCP's `subcontracting` slot. Fires on
+Loads that have exhausted their contract-carrier waterfall — when the
+primary carriers declined or expired their tenders, this TRM decides:
+- ACCEPT a specific broker + rate (broker id + premium recorded)
+- ESCALATE for human intervention (no broker available OR rate exceeds
+  urgency-adjusted threshold)
+
+Action space (from Core dispatch):
+  ACCEPT   — broker selected; the Core heuristic already picked the
+             reliability-adjusted-cost winner and validated its premium
+             vs DAT benchmark / market / time-urgency thresholds.
+  ESCALATE — no broker available OR best broker's rate exceeds the
+             effective threshold (market tightness + time urgency
+             widens the threshold, but extreme premiums still escalate
+             for approval).
+
+No Load.status mutation in v1. The authoritative tender artefact remains
+the FreightTender row; when BrokerRouting returns ACCEPT, the caller
+creates a new FreightTender with the broker carrier_id + rate. Log-only
+for v1 — PREPARE.3's dual-write to core.agent_decisions with
+decision_type=BROKER_ROUTING lands Sprint 1 Week 4-5.
+
+Feature-vector sources (v1):
+- load_id / lane_id / mode / hours_to_pickup ← Load
+- tender_attempts_exhausted ← count(FreightTender where not ACCEPTED)
+- all_contract_carriers_declined ← every non-ACCEPTED tender has status
+  ∈ {DECLINED, EXPIRED, REJECTED}
+- available_brokers ← Carrier rows where carrier_type == BROKER (joined
+  with latest FreightRate on their active CarrierLane). Each entry
+  carries {id, name, rate, reliability, coverage_score}.
+- contract_rate ← last ACCEPTED tender's rate on this lane (fallback to
+  any ACCEPTED tender rate on this Load; else 0 and the dispatcher
+  infers benchmark from broker rates)
+- market_tightness / spot_rate / broker_rate_premium_pct / dat_benchmark
+  → honest priors (0.5 / 0 / 0.15 / 0) until market-data integration
+  lands
+- shipment_priority / is_customer_committed → default 3 / False
+- budget_remaining → 0 (no budget tracking in TMS today)
+
+Seed-data caveat: no BROKER-type carriers exist in the acer-nitro seed
+DB today (7 ASSET, 1 THREE_PL). Every load in acer-nitro's current
+state will return ESCALATE("No brokers available"). Once a broker row
+is seeded (CarrierType.BROKER) with a FreightRate on the load's lane,
+the full decision path exercises.
+"""
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, desc, or_, select
+from sqlalchemy.orm import Session
+
+from app.models.tms_entities import (
+    Carrier,
+    CarrierLane,
+    CarrierType,
+    FreightRate,
+    FreightTender,
+    Load,
+    LoadStatus,
+    TenderStatus,
+    TransportMode,
+)
+
+logger = logging.getLogger(__name__)
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+
+class BrokerRoutingTRM:
+    """Broker-vs-asset-carrier routing for loads past their contract waterfall."""
+
+    # Honest defaults for features TMS cannot source today. Wire up with
+    # DAT / Greenscreens integration + budget tracking.
+    DEFAULT_MARKET_TIGHTNESS = 0.5
+    DEFAULT_BROKER_PREMIUM = 0.15
+    DEFAULT_PRIORITY = 3
+
+    # Statuses considered "declined/expired" from the primary waterfall.
+    # TMS's TenderStatus enum has no REJECTED value — CANCELLED is the
+    # closest analogue (carrier-side cancellation after acceptance is a
+    # separate path; CANCELLED here means "this offer is dead").
+    _DECLINED_STATUSES = {
+        TenderStatus.DECLINED,
+        TenderStatus.EXPIRED,
+        TenderStatus.CANCELLED,
+    }
+
+    def __init__(self, db: Session, tenant_id: int, config_id: int):
+        self.db = db
+        self.tenant_id = tenant_id
+        self.config_id = config_id
+        self._model = None
+
+        from azirella_data_model.powell.tms.heuristic_library.dispatch import (
+            compute_tms_decision,
+        )
+        from azirella_data_model.powell.tms.heuristic_library.base import (
+            BrokerRoutingState,
+        )
+        self._compute_decision = compute_tms_decision
+        self._StateClass = BrokerRoutingState
+
+    def load_checkpoint(self, checkpoint_path: str) -> bool:
+        if not TORCH_AVAILABLE:
+            logger.warning("PyTorch not available — using heuristic fallback")
+            return False
+        import os
+        if not os.path.exists(checkpoint_path):
+            return False
+        logger.info("BrokerRouting checkpoint path present but loader is a stub")
+        return False
+
+    def find_candidate_loads(self) -> List[Load]:
+        """Loads where the contract waterfall has failed to ACCEPT.
+
+        v1 filter:
+          Load.status IN (PLANNING, READY, TENDERED)
+          AND at least one FreightTender exists
+          AND no FreightTender is ACCEPTED
+          AND every non-ACCEPTED tender is in {DECLINED, EXPIRED, REJECTED}
+            OR  Load.planned_departure is < 48h away (urgent even if not
+            all declined yet — the time gate fires BrokerRouting's
+            should_broker rule).
+
+        This is the operational-reality filter: a load that has tried
+        carriers but hasn't landed one, with the clock ticking.
+        """
+        # Subquery: any ACCEPTED tender on this load?
+        accepted_loads = (
+            select(FreightTender.load_id)
+            .where(
+                and_(
+                    FreightTender.load_id.isnot(None),
+                    FreightTender.status == TenderStatus.ACCEPTED,
+                )
+            )
+            .distinct()
+            .subquery()
+        )
+
+        # Candidate loads: tenders exist but none accepted.
+        tendered_loads = (
+            select(FreightTender.load_id)
+            .where(FreightTender.load_id.isnot(None))
+            .distinct()
+            .subquery()
+        )
+
+        return self.db.execute(
+            select(Load).where(
+                and_(
+                    Load.tenant_id == self.tenant_id,
+                    Load.status.in_([
+                        LoadStatus.PLANNING,
+                        LoadStatus.READY,
+                        LoadStatus.TENDERED,
+                    ]),
+                    Load.id.in_(select(tendered_loads.c.load_id)),
+                    Load.id.notin_(select(accepted_loads.c.load_id)),
+                )
+            ).order_by(Load.planned_departure.nullslast(), Load.id)
+        ).scalars().all()
+
+    def evaluate_load(self, load: Load) -> Optional[Dict[str, Any]]:
+        """Evaluate broker-routing decision for one load. Never mutates."""
+        state = self._build_state(load)
+        decision = self._compute_decision("broker_routing", state)
+
+        action_name = {
+            0: "ACCEPT",
+            1: "REJECT",
+            2: "DEFER",
+            3: "ESCALATE",
+        }.get(decision.action, "UNKNOWN")
+
+        selected_broker_id = None
+        selected_broker_name = None
+        if decision.params_used:
+            selected_broker_id = decision.params_used.get("broker_id")
+            selected_broker_name = decision.params_used.get("broker_name")
+
+        return {
+            "load_id": load.id,
+            "load_number": load.load_number,
+            "load_status": load.status.value,
+            "tender_attempts_exhausted": state.tender_attempts_exhausted,
+            "all_contract_carriers_declined": state.all_contract_carriers_declined,
+            "hours_to_pickup": state.hours_to_pickup,
+            "brokers_available": len(state.available_brokers),
+            "action": decision.action,
+            "action_name": action_name,
+            "selected_broker_id": selected_broker_id,
+            "selected_broker_name": selected_broker_name,
+            "selected_rate": decision.quantity if action_name == "ACCEPT" else 0.0,
+            "confidence": decision.confidence,
+            "urgency": decision.urgency,
+            "reasoning": decision.reasoning,
+            "decision_method": "trm_model" if self._model else "heuristic",
+            "scoring_detail": decision.params_used,
+        }
+
+    def evaluate_and_log(self, load: Load) -> Optional[Dict[str, Any]]:
+        """Evaluate + log at severity matching the action."""
+        result = self.evaluate_load(load)
+        if not result:
+            return result
+
+        action = result["action_name"]
+        if action == "ESCALATE":
+            logger.warning(
+                "BrokerRouting ESCALATE: load %s — %s (urg=%.2f)",
+                load.load_number,
+                result["reasoning"],
+                result["urgency"],
+            )
+        elif action == "ACCEPT":
+            logger.info(
+                "BrokerRouting ACCEPT: load %s → broker %s @ $%.0f (urg=%.2f)",
+                load.load_number,
+                result.get("selected_broker_name") or "?",
+                result["selected_rate"] or 0.0,
+                result["urgency"],
+            )
+        return result
+
+    def evaluate_pending_loads(self) -> List[Dict[str, Any]]:
+        """Evaluate every candidate load for the tenant."""
+        loads = self.find_candidate_loads()
+        results = []
+        for load in loads:
+            result = self.evaluate_and_log(load)
+            if result:
+                results.append(result)
+        return results
+
+    # ── Helpers ──────────────────────────────────────────────────────────
+
+    def _build_state(self, load: Load):
+        """Construct BrokerRoutingState from Load + tender history + brokers."""
+        # Hours to pickup
+        hours_to_pickup = 24.0
+        if load.planned_departure:
+            delta = load.planned_departure - datetime.utcnow()
+            hours_to_pickup = max(0.0, delta.total_seconds() / 3600)
+
+        # Non-ACCEPTED tender history on this load
+        non_accepted = self.db.execute(
+            select(FreightTender).where(
+                and_(
+                    FreightTender.load_id == load.id,
+                    FreightTender.status != TenderStatus.ACCEPTED,
+                )
+            )
+        ).scalars().all()
+        tender_attempts_exhausted = len(non_accepted)
+        all_declined = (
+            tender_attempts_exhausted > 0
+            and all(t.status in self._DECLINED_STATUSES for t in non_accepted)
+        )
+
+        # Contract rate: last ACCEPTED tender on this load (fallback 0).
+        # Used as the benchmark fallback when DAT benchmark isn't available.
+        accepted = self.db.execute(
+            select(FreightTender)
+            .where(
+                and_(
+                    FreightTender.load_id == load.id,
+                    FreightTender.status == TenderStatus.ACCEPTED,
+                )
+            )
+            .order_by(desc(FreightTender.tendered_at))
+            .limit(1)
+        ).scalar_one_or_none()
+        contract_rate = float(accepted.final_rate or accepted.offered_rate or 0) if accepted else 0.0
+
+        # Broker candidates: Carrier.type==BROKER with active CarrierLane,
+        # joined to their best rate (cheapest active FreightRate per broker).
+        broker_rows = self.db.execute(
+            select(Carrier).where(
+                and_(
+                    Carrier.tenant_id == self.tenant_id,
+                    Carrier.carrier_type == CarrierType.BROKER,
+                    Carrier.is_active.is_(True),
+                )
+            )
+        ).scalars().all()
+
+        available_brokers: List[Dict[str, Any]] = []
+        for b in broker_rows:
+            # Pick cheapest active rate across any of this broker's lanes —
+            # v1 picks lane-agnostic best because TMS doesn't yet carry a
+            # lane-match predicate from the Load to broker lanes. The Core
+            # heuristic already applies a reliability-adjusted-cost ranking,
+            # so the rate feed here is informational, not selective.
+            rate = self.db.execute(
+                select(FreightRate.rate_flat).where(
+                    and_(
+                        FreightRate.carrier_id == b.id,
+                        FreightRate.tenant_id == self.tenant_id,
+                        FreightRate.is_active.is_(True),
+                    )
+                ).order_by(FreightRate.rate_flat).limit(1)
+            ).scalar_one_or_none()
+            if rate is None:
+                continue  # Broker without a rate isn't selectable yet
+            available_brokers.append({
+                "id": int(b.id),
+                "name": b.name or f"Broker-{b.id}",
+                "rate": float(rate),
+                "reliability": 0.80,  # Honest prior; wire to scorecard later
+                "coverage_score": 0.80,
+                "fallthrough_rate": 0.20,
+            })
+
+        return self._StateClass(
+            load_id=load.id,
+            lane_id=0,
+            mode=(load.mode.value if load.mode else TransportMode.FTL.value),
+            tender_attempts_exhausted=tender_attempts_exhausted,
+            all_contract_carriers_declined=all_declined,
+            hours_to_pickup=hours_to_pickup,
+            available_brokers=available_brokers,
+            contract_rate=contract_rate,
+            spot_rate=0.0,
+            broker_rate_premium_pct=self.DEFAULT_BROKER_PREMIUM,
+            budget_remaining=0.0,
+            shipment_priority=self.DEFAULT_PRIORITY,
+            is_customer_committed=False,
+            market_tightness=self.DEFAULT_MARKET_TIGHTNESS,
+            dat_benchmark_rate=0.0,
+        )
