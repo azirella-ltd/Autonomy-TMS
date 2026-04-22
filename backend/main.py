@@ -7000,6 +7000,10 @@ api.include_router(exception_management_router, tags=["exception-management"])
 from app.api.endpoints.broker_routing import router as broker_routing_router
 api.include_router(broker_routing_router, tags=["broker-routing"])
 
+# Dock Scheduling TRM — PROTECT-phase dock-door appointment triage
+from app.api.endpoints.dock_scheduling import router as dock_scheduling_router
+api.include_router(dock_scheduling_router, tags=["dock-scheduling"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
