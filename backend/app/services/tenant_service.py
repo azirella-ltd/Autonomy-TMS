@@ -156,6 +156,24 @@ class TenantService:
                 TenantIndustry(tenant_in.industry.value)
                 if tenant_in.industry else None
             )
+
+            # ── Customer (parent of the prod + learning tenant pair) ────
+            # TMS provisioning purchases the "tms" solution by default.
+            # Operators add slugs (e.g. "scp") later when expanding
+            # entitlement; the connector framework reads this list to
+            # gate ERP extraction modules.
+            # See Autonomy-Core MIGRATION_REGISTER item 1.14 (Customer)
+            # and CONSUMER_ADOPTION_LOG 2026-04-22 (late pm) entry.
+            from azirella_data_model.tenant import Customer, CustomerStatus
+            customer = Customer(
+                name=tenant_in.name,
+                slug=f"{prod_slug}-cust",
+                status=CustomerStatus.ACTIVE,
+                purchased_solutions=["tms"],
+            )
+            self.db.add(customer)
+            self.db.flush()
+
             prod_tenant = Tenant(
                 name=tenant_in.name,
                 slug=prod_slug,
@@ -165,6 +183,7 @@ class TenantService:
                 admin_id=prod_admin.id,
                 mode=TenantMode.PRODUCTION,
                 industry=industry_val,
+                customer_id=customer.id,
             )
             self.db.add(prod_tenant)
             self.db.flush()
@@ -211,6 +230,7 @@ class TenantService:
                 admin_id=learn_admin.id,
                 mode=TenantMode.LEARNING,
                 industry=industry_val,
+                customer_id=customer.id,  # Same Customer owns both tenants
             )
             self.db.add(learn_tenant)
             self.db.flush()
