@@ -49,12 +49,8 @@ from app.services.powell import (
     SiteInventoryState,
     TransferLane,
     RebalanceRecommendation,
-    # PO Creation TRM
-    POCreationTRM,
-    POCreationState,
-    InventoryPosition,
-    SupplierInfo,
-    PORecommendation,
+    # PO Creation TRM retired — see commit 3dc1d72e. TMS uses
+    # FreightProcurementTRM for the ACQUIRE phase.
     # Order Tracking TRM
     OrderTrackingTRM,
     OrderState,
@@ -309,9 +305,7 @@ def get_rebalancing_trm() -> InventoryRebalancingTRM:
     return InventoryRebalancingTRM(use_heuristic_fallback=True)
 
 
-def get_po_creation_trm() -> POCreationTRM:
-    """Get PO creation TRM"""
-    return POCreationTRM(use_heuristic_fallback=True)
+# get_po_creation_trm retired — see commit 3dc1d72e.
 
 
 def get_order_tracking_trm() -> OrderTrackingTRM:
@@ -850,120 +844,6 @@ async def execute_rebalancing(
 # ============================================================================
 # PO Creation Endpoints
 # ============================================================================
-
-@router.post("/po-recommendations/{config_id}", response_model=List[PORecommendationResponse])
-async def get_po_recommendations(
-    config_id: int,
-    request: PORecommendationRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Get PO creation recommendations for a product-location.
-
-    Returns recommendations with timing, quantity, and supplier selection.
-    """
-    trm = get_po_creation_trm()
-
-    # Build state (would come from inventory and supplier services)
-    inv_position = InventoryPosition(
-        product_id=request.product_id,
-        location_id=request.location_id,
-        on_hand=50,
-        in_transit=0,
-        on_order=0,
-        committed=10,
-        backlog=0,
-        safety_stock=20,
-        reorder_point=40,
-        target_inventory=100,
-        average_daily_demand=5,
-        demand_variability=2
-    )
-
-    suppliers = [
-        SupplierInfo(
-            supplier_id="SUP-001",
-            product_id=request.product_id,
-            lead_time_days=7,
-            lead_time_variability=1,
-            unit_cost=10.0,
-            order_cost=50.0,
-            min_order_qty=10,
-            on_time_rate=0.95
-        ),
-        SupplierInfo(
-            supplier_id="SUP-002",
-            product_id=request.product_id,
-            lead_time_days=5,
-            lead_time_variability=2,
-            unit_cost=12.0,
-            order_cost=30.0,
-            min_order_qty=5,
-            on_time_rate=0.90
-        )
-    ]
-
-    state = POCreationState(
-        product_id=request.product_id,
-        location_id=request.location_id,
-        inventory_position=inv_position,
-        suppliers=suppliers,
-        forecast_next_30_days=150,
-        forecast_uncertainty=30
-    )
-
-    recommendations = trm.evaluate_po_need(state)
-
-    return [
-        PORecommendationResponse(
-            product_id=r.product_id,
-            location_id=r.location_id,
-            supplier_id=r.supplier_id,
-            recommended_qty=r.recommended_qty,
-            urgency=r.urgency.value,
-            trigger_reason=r.trigger_reason.value,
-            expected_receipt_date=r.expected_receipt_date,
-            expected_cost=r.expected_cost,
-            confidence=r.confidence,
-            reasoning=r.reasoning
-        )
-        for r in recommendations
-    ]
-
-
-@router.post("/po-recommendations/{config_id}/execute")
-async def execute_po_recommendation(
-    config_id: int,
-    recommendation: PORecommendationResponse,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Execute a PO recommendation by creating a purchase order.
-    """
-    # Create purchase order via InboundOrder entity
-    from app.models.sc_entities import InboundOrder
-    po_id = f"PO-{recommendation.supplier_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    order = InboundOrder(
-        id=po_id,
-        order_type="PURCHASE",
-        order_status="DRAFT",
-        supplier_id=recommendation.supplier_id,
-        order_date=await config_today(config_id, db),
-        expected_delivery_date=recommendation.expected_receipt_date,
-        total_quantity=recommendation.recommended_qty,
-    )
-    db.add(order)
-    db.commit()
-    return {
-        "status": "executed",
-        "purchase_order_id": po_id,
-        "quantity": recommendation.recommended_qty,
-        "supplier_id": recommendation.supplier_id,
-        "expected_receipt_date": recommendation.expected_receipt_date,
-    }
-
 
 # ============================================================================
 # Order Tracking / Exception Endpoints

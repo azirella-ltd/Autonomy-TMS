@@ -43,12 +43,14 @@ from app.services.powell.atp_executor import (
     ATPRequest,
     ATPResponse,
 )
-from app.services.powell.po_creation_trm import (
-    POCreationTRM,
-    PORecommendation,
-    InventoryPosition,
-    SupplierInfo,
-)
+# po_creation_trm retired — TMS uses FreightProcurementTRM for the ACQUIRE
+# phase (commit 3dc1d72e). The _get_po_trm / evaluate_po_recommendations
+# paths below now raise NotImplementedError at call time; a future
+# FreightProcurement equivalent will replace them.
+from typing import Any as _PORecommendation  # placeholder return type
+PORecommendation = _PORecommendation
+InventoryPosition = Any  # type: ignore
+SupplierInfo = Any  # type: ignore
 from app.services.powell.order_tracking_trm import (
     OrderTrackingTRM,
     OrderState,
@@ -78,7 +80,7 @@ class IntegrationConfig:
 
     # Enable/disable individual TRMs
     enable_atp_executor: bool = True
-    enable_po_trm: bool = True
+    enable_po_trm: bool = False  # retired — see _get_po_trm
     enable_exception_trm: bool = True
     enable_rebalancing_trm: bool = True
 
@@ -123,7 +125,7 @@ class PowellIntegrationService:
         # Initialize Powell services (lazy - created on first use)
         self._allocation_service: Optional[AllocationService] = None
         self._atp_executor: Optional[ATPExecutorTRM] = None
-        self._po_trm: Optional[POCreationTRM] = None
+        self._po_trm: Optional[Any] = None  # retired; see _get_po_trm
         self._exception_trm: Optional[OrderTrackingTRM] = None
         self._rebalancing_trm: Optional[InventoryRebalancingTRM] = None
 
@@ -149,11 +151,16 @@ class PowellIntegrationService:
             self._atp_executor = ATPExecutorTRM()
         return self._atp_executor
 
-    def _get_po_trm(self) -> POCreationTRM:
-        """Get or create PO creation TRM."""
-        if self._po_trm is None:
-            self._po_trm = POCreationTRM()
-        return self._po_trm
+    def _get_po_trm(self):
+        """PO-creation TRM retired. TMS's ACQUIRE path is FreightProcurementTRM,
+        which does not share this interface. This stub keeps callers that
+        pass `enable_po_trm=True` from silent-succeeding against missing
+        substrate — they will fail fast with a clear message instead."""
+        raise NotImplementedError(
+            "POCreationTRM has been retired (commit 3dc1d72e). "
+            "Use FreightProcurementTRM via /api/v1/freight-procurement/* for "
+            "the TMS ACQUIRE phase."
+        )
 
     def _get_exception_trm(self) -> OrderTrackingTRM:
         """Get or create order tracking TRM."""

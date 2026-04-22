@@ -128,15 +128,8 @@ from .inventory_rebalancing_trm import (
     RebalancingState,
     InventoryRebalancingTRM,
 )
-from .po_creation_trm import (
-    POTriggerReason,
-    POUrgency,
-    SupplierInfo,
-    InventoryPosition,
-    PORecommendation,
-    POCreationState,
-    POCreationTRM,
-)
+# po_creation_trm retired — TMS uses FreightProcurementTRM for the ACQUIRE
+# phase (see .claude/rules/trm-mapping.md; commit 3dc1d72e).
 from .order_tracking_trm import (
     OrderType,
     OrderStatus,
@@ -352,14 +345,7 @@ __all__ = [
     "RebalanceRecommendation",
     "RebalancingState",
     "InventoryRebalancingTRM",
-    # PO Creation TRM (Phase 5 - Narrow TRM)
-    "POTriggerReason",
-    "POUrgency",
-    "SupplierInfo",
-    "InventoryPosition",
-    "PORecommendation",
-    "POCreationState",
-    "POCreationTRM",
+    # PO Creation TRM retired — see import block above.
     # Order Tracking TRM (Phase 5 - Narrow TRM)
     "OrderType",
     "OrderStatus",
