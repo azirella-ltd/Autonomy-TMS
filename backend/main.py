@@ -7004,6 +7004,10 @@ api.include_router(broker_routing_router, tags=["broker-routing"])
 from app.api.endpoints.dock_scheduling import router as dock_scheduling_router
 api.include_router(dock_scheduling_router, tags=["dock-scheduling"])
 
+# Load Build TRM — BUILD-phase shipment→load consolidation
+from app.api.endpoints.load_build import router as load_build_router
+api.include_router(load_build_router, tags=["load-build"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
