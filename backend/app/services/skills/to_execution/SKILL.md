@@ -6,8 +6,8 @@ decide whether to release, expedite, consolidate, or defer the transfer.
 
 ## Input State Features
 - `to_id`: Transfer order identifier
-- `source_site`: Origin location
-- `dest_site`: Destination location
+- `source_site`: Origin site
+- `dest_site`: Destination site
 - `product_id`: Product being transferred
 - `quantity`: Transfer quantity
 - `due_date`: Required arrival date

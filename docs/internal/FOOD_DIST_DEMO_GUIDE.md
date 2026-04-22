@@ -139,7 +139,7 @@ The demo week (Mon Feb 24 – Fri Feb 28, 2026) features six interconnected stor
 
 ### Story 5: QUICKSERV Arizona Expansion
 
-> Three new Phoenix locations opening March 1 with above-average stocking orders.
+> Three new Phoenix sites opening March 1 with above-average stocking orders.
 
 - **Products**: Chicken Breast IQF
 - **Trigger**: Sales team input — new store opening plan
@@ -412,7 +412,7 @@ The storylines are not isolated — they create cascading effects:
 #### Rebalancing Worklist
 **Navigation**: Planning Cascade > TRM Worklists > **Rebalancing Worklist** (`/planning/execution/rebalancing-worklist`)
 
-**What you see**: 4 cross-location transfer recommendations
+**What you see**: 4 cross-site transfer recommendations
 - Executed transfers from overflow storage
 - Pre-positioning transfer to Phoenix staging
 - Emergency transfer from alternate DC

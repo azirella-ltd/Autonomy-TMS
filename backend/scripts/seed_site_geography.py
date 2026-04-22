@@ -3,9 +3,9 @@
 Seed geography data for simulation sites using AWS SC DM approach.
 
 Creates realistic geography records based on site types:
-- Retailers: Major retail/grocery chain locations
+- Retailers: Major retail/grocery chain sites
 - Wholesalers: Regional distribution hubs
-- Distributors: Major logistics DC locations
+- Distributors: Major logistics DC sites
 - Manufacturers/Factories: Brewery/manufacturing facilities
 - Vendor: Raw material supplier regions
 - Customer: Consumer market metropolitan areas
@@ -28,11 +28,11 @@ from app.models.supply_chain_config import Site, SupplyChainConfig
 
 
 # Realistic geography data by site type
-# Using actual business locations for authenticity
+# Using actual business sites for authenticity
 
 GEOGRAPHY_DATA = {
     # ============================================================
-    # RETAILER LOCATIONS - Major grocery/retail chain locations
+    # RETAILER SITES - Major grocery/retail chain sites
     # ============================================================
     "retailer": {
         "name": "Retailer",
@@ -196,7 +196,7 @@ GEOGRAPHY_DATA = {
     },
 }
 
-# Alternative locations for sites with same type (to avoid all same locations)
+# Alternative sites for sites with same type (to avoid all same sites)
 ALTERNATIVE_LOCATIONS = {
     "retailer": [
         {"city": "Dallas", "state_prov": "TX", "latitude": 32.7767, "longitude": -96.7970, "desc": "Kroger - Dallas Division"},
@@ -237,14 +237,14 @@ def create_geography_id(config_id: int, site_type: str, index: int = 0) -> str:
 
 
 def get_location_for_site(site_type: str, index: int = 0) -> dict:
-    """Get location data for a site type, using alternatives for duplicates."""
+    """Get site data for a site type, using alternatives for duplicates."""
     dag_type = site_type.lower()
 
-    # Get base location
+    # Get base site
     if dag_type in GEOGRAPHY_DATA:
         base = GEOGRAPHY_DATA[dag_type].copy()
     else:
-        # Default to a generic location
+        # Default to a generic site
         base = GEOGRAPHY_DATA.get("distributor", {}).copy()
         base["description"] = f"Generic Location - {site_type}"
 
@@ -298,7 +298,7 @@ def seed_geography_for_config(db: Session, config: SupplyChainConfig) -> int:
         existing_geo = db.query(Geography).filter(Geography.id == geo_id).first()
 
         if not existing_geo:
-            # Get location data
+            # Get site data
             loc = get_location_for_site(dag_type, index)
 
             # Create geography record

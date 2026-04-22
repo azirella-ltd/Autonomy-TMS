@@ -106,7 +106,7 @@ async def calculate_ctp(
 Autonomy implements **AWS Supply Chain compliant Transfer Orders** with full in-transit tracking.
 
 **Architecture**: AWS SC Site-Based
-- All supply chain locations use AWS SC `Site` entity
+- All supply chain sites use AWS SC `Site` entity
 - Transfer Orders use Integer ForeignKeys (site.id)
 - BeerGameIdMapper provides bidirectional translation (names ↔ IDs)
 
@@ -463,7 +463,7 @@ class InvLevel(Base):
 
     # Metadata
     last_updated: datetime
-    location_id: Optional[str]  # Warehouse location
+    site_id: Optional[str]  # Warehouse site
     lot_id: Optional[str]  # Batch/lot tracking
 ```
 

@@ -4,7 +4,7 @@ Powell Framework API Endpoints
 Exposes the Powell SDAM framework services through REST API:
 - Allocations: Priority × Product × Location allocation management
 - ATP: Allocated Available-to-Promise checks and commits
-- Rebalancing: Cross-location inventory transfer recommendations
+- Rebalancing: Cross-site inventory transfer recommendations
 - PO Creation: Purchase order timing and quantity recommendations
 - Order Tracking: Exception detection and recommended actions
 - Training: TRM training status and triggers
@@ -176,7 +176,7 @@ class ATPCheckResponse(BaseModel):
     risk_assessment: Optional[Dict[str, Any]] = Field(
         None, description="Full CDT diagnostic: threshold, calibration_size, interval_width"
     )
-    # Demand conformal interval for the order's product-location
+    # Demand conformal interval for the order's product-site
     demand_interval: Optional[Dict[str, Any]] = Field(
         None, description="Conformal demand interval: {lower, upper, point, coverage, method}"
     )
@@ -417,12 +417,12 @@ async def create_allocation(
 async def generate_allocations(
     config_id: int,
     product_ids: List[str],
-    location_ids: List[str],
+    site_ids: List[str],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Trigger tGNN to generate allocations for products/locations.
+    Trigger tGNN to generate allocations for products/sites.
 
     This would call the Execution tGNN to compute priority allocations.
     """
@@ -430,15 +430,15 @@ async def generate_allocations(
     service = get_allocation_service(config_id)
     generated = 0
     for pid in product_ids:
-        for lid in location_ids:
+        for sid in site_ids:
             for priority in range(1, 6):
-                service.set_allocation(pid, lid, priority, quantity=0,
+                service.set_allocation(pid, sid, priority, quantity=0,
                                        valid_from=datetime.now(),
                                        valid_to=datetime.now() + timedelta(days=7))
                 generated += 1
     return {
         "status": "completed",
-        "message": f"Generated {generated} allocation slots for {len(product_ids)} products x {len(location_ids)} locations x 5 priorities",
+        "message": f"Generated {generated} allocation slots for {len(product_ids)} products x {len(site_ids)} sites x 5 priorities",
         "config_id": config_id,
         "generated": generated,
     }
@@ -455,7 +455,7 @@ async def get_allocation_timeline(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get allocation timeline for a product/location.
+    Get allocation timeline for a product/site.
 
     Returns daily buckets aggregated by priority class (P1-P5)
     for the specified date window (default: 5 past + today + 9 future = 15 days).

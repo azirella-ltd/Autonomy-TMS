@@ -75,7 +75,7 @@ class RiskStatus(str, Enum):
 
 
 class InventoryRisk(BaseModel):
-    """Inventory risk summary for a location/product combination."""
+    """Inventory risk summary for a site/product combination."""
     id: str
     location_name: str
     product_name: str
@@ -88,8 +88,8 @@ class InventoryRisk(BaseModel):
     projected_inventory: List[int] = Field(description="Projected inventory for next N periods")
 
 
-class LocationState(BaseModel):
-    """State of a single location."""
+class SiteState(BaseModel):
+    """State of a single site."""
     name: str
     available: int
     min_qty: int
@@ -100,7 +100,7 @@ class LocationState(BaseModel):
 
 class BeforeAfterState(BaseModel):
     """Before/after comparison for a recommendation."""
-    locations: List[LocationState]
+    sites: List[SiteState]
 
 
 class Recommendation(BaseModel):
@@ -247,7 +247,7 @@ def accept_recommendation(
     Accept a recommendation and execute the suggested action.
 
     Creates a TransferOrder in the database based on the recommendation's
-    deficit quantity and target location. Captures pre-execution snapshot
+    deficit quantity and target site. Captures pre-execution snapshot
     for potential rollback.
     """
     rec = _get_recommendation(recommendation_id)
@@ -259,13 +259,13 @@ def accept_recommendation(
 
     # Extract recommendation details
     before = rec.get("before_state", {})
-    locations = before.get("locations", [{}])
-    location = locations[0] if locations else {}
-    transfer_qty = max(0, location.get("target", 0) - location.get("available", 0))
-    location_name = location.get("name", "Unknown")
+    sites = before.get("sites", [{}])
+    site = sites[0] if sites else {}
+    transfer_qty = max(0, site.get("target", 0) - site.get("available", 0))
+    site_name = site.get("name", "Unknown")
 
     # Look up target site from DB by name
-    target_site = db.query(Site).filter(Site.name.ilike(f"%{location_name}%")).first()
+    target_site = db.query(Site).filter(Site.name.ilike(f"%{site_name}%")).first()
     target_site_id = target_site.id if target_site else None
 
     # Find a source site with surplus inventory for the same product
@@ -458,12 +458,12 @@ def batch_execute_recommendations(
 
             # Extract transfer details
             before = rec.get("before_state", {})
-            locations = before.get("locations", [{}])
-            location = locations[0] if locations else {}
-            transfer_qty = max(0, location.get("target", 0) - location.get("available", 0))
-            location_name = location.get("name", "Unknown")
+            sites = before.get("sites", [{}])
+            site = sites[0] if sites else {}
+            transfer_qty = max(0, site.get("target", 0) - site.get("available", 0))
+            site_name = site.get("name", "Unknown")
 
-            target_site = db.query(Site).filter(Site.name.ilike(f"%{location_name}%")).first()
+            target_site = db.query(Site).filter(Site.name.ilike(f"%{site_name}%")).first()
             target_site_id = target_site.id if target_site else 0
 
             source_site_id = 0
@@ -711,19 +711,19 @@ def execute_recommendation(
 
     # Extract transfer details from before_state
     before = rec.get("before_state", {})
-    locations = before.get("locations", [{}])
-    location = locations[0] if locations else {}
-    transfer_qty = max(0, location.get("target", 0) - location.get("available", 0))
-    location_name = location.get("name", "Unknown")
+    sites = before.get("sites", [{}])
+    site = sites[0] if sites else {}
+    transfer_qty = max(0, site.get("target", 0) - site.get("available", 0))
+    site_name = site.get("name", "Unknown")
 
     # Capture pre-execution snapshot from current inventory
-    target_site = db.query(Site).filter(Site.name.ilike(f"%{location_name}%")).first()
+    target_site = db.query(Site).filter(Site.name.ilike(f"%{site_name}%")).first()
     target_site_id = target_site.id if target_site else None
 
     source_site_id = None
     execution_snapshot = {
         "captured_at": datetime.utcnow().isoformat(),
-        "target_location": location_name,
+        "target_site": site_name,
         "transfer_quantity": transfer_qty,
     }
 
@@ -1198,10 +1198,10 @@ def simulate_recommendation_impact(
 
     # Extract parameters from real recommendation
     before = rec.get("before_state", {})
-    locations = before.get("locations", [{}])
-    location = locations[0] if locations else {}
-    current_inventory = location.get("available", 950)
-    target_inventory = location.get("target", 1500)
+    sites = before.get("sites", [{}])
+    site = sites[0] if sites else {}
+    current_inventory = site.get("available", 950)
+    target_inventory = site.get("target", 1500)
     transfer_qty = max(0, target_inventory - current_inventory)
     shipping_cost_total = rec.get("shipping_cost", 0)
 
@@ -1447,7 +1447,7 @@ def _generate_recommendations_from_risks(db: Session, risks: List[InventoryRisk]
         if deficit <= 0:
             continue
 
-        # Look for a surplus location for the same product
+        # Look for a surplus site for the same product
         # (simplified: suggest transfer from any site with excess)
         rec_idx += 1
         shipping_cost = round(deficit * 4.0, 2)  # Estimate $4/unit shipping
@@ -1463,7 +1463,7 @@ def _generate_recommendations_from_risks(db: Session, risks: List[InventoryRisk]
             emissions_kg=emissions,
             shipping_cost=shipping_cost,
             before_state=BeforeAfterState(
-                locations=[LocationState(
+                sites=[SiteState(
                     name=risk.location_name,
                     available=risk.current_inventory,
                     min_qty=risk.min_qty,
@@ -1473,7 +1473,7 @@ def _generate_recommendations_from_risks(db: Session, risks: List[InventoryRisk]
                 )]
             ),
             after_state=BeforeAfterState(
-                locations=[LocationState(
+                sites=[SiteState(
                     name=risk.location_name,
                     available=risk.current_inventory + deficit,
                     min_qty=risk.min_qty,

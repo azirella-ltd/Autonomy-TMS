@@ -226,14 +226,14 @@ class NetworkOptimization(Base):
     AWS SC Entity: network_optimization
 
     Optimizes network structure:
-    - DC location optimization
+    - DC site optimization
     - Production allocation
     - Transportation lane optimization
     - Network cost minimization
 
     AWS SC Core Fields:
     - company_id, optimization_date
-    - optimization_type (location, allocation, flow)
+    - optimization_type (site, allocation, flow)
     - recommended_network_changes
     - expected_cost_reduction
     """

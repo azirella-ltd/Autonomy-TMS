@@ -233,7 +233,7 @@ Each TRM head has a corresponding service in `backend/app/services/powell/`:
 | Service File | Decision Scope |
 |-------------|---------------|
 | `atp_executor.py` | Per-order AATP consumption with priority sequence |
-| `inventory_rebalancing_trm.py` | Cross-location transfer recommendations |
+| `inventory_rebalancing_trm.py` | Cross-site transfer recommendations |
 | `po_creation_trm.py` | Purchase order timing and quantity |
 | `order_tracking_trm.py` | Exception detection and recommended actions |
 | `mo_execution_trm.py` | Manufacturing order release/sequence/expedite/defer |

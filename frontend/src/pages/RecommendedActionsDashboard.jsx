@@ -97,7 +97,7 @@ const InventoryTimelineBar = ({ projections, target, min, maxValue }) => {
 };
 
 /**
- * Inventory Risk Summary Card - Shows a single location's risk status
+ * Inventory Risk Summary Card - Shows a single site's risk status
  */
 const InventoryRiskSummaryCard = ({ risk }) => {
   const statusVariants = {
@@ -256,8 +256,8 @@ const RecommendationCard = ({ recommendation, onAccept, isSelected }) => {
  */
 const BeforeAfterComparison = ({ beforeState, afterState }) => {
   const maxInventory = Math.max(
-    ...beforeState.locations.map(l => l.available),
-    ...afterState.locations.map(l => l.available)
+    ...beforeState.sites.map(s => s.available),
+    ...afterState.sites.map(s => s.available)
   );
 
   return (
@@ -271,7 +271,7 @@ const BeforeAfterComparison = ({ beforeState, afterState }) => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Location</TableHead>
+              <TableHead>Site</TableHead>
               <TableHead className="text-right">Available</TableHead>
               <TableHead className="text-right">Min Qty</TableHead>
               <TableHead className="text-right">Days of Cover</TableHead>
@@ -279,15 +279,15 @@ const BeforeAfterComparison = ({ beforeState, afterState }) => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {afterState.locations.map((location, idx) => {
-              const before = beforeState.locations[idx];
-              const change = location.available - before.available;
+            {afterState.sites.map((site, idx) => {
+              const before = beforeState.sites[idx];
+              const change = site.available - before.available;
 
               return (
-                <TableRow key={location.name}>
+                <TableRow key={site.name}>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <span>{location.name}</span>
+                      <span>{site.name}</span>
                       {change !== 0 && (
                         <Badge
                           variant={change > 0 ? 'success' : 'destructive'}
@@ -298,16 +298,16 @@ const BeforeAfterComparison = ({ beforeState, afterState }) => {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className={`text-right font-bold ${location.available <= location.min_qty ? 'text-red-500' : ''}`}>
-                    {location.available.toLocaleString()}
+                  <TableCell className={`text-right font-bold ${site.available <= site.min_qty ? 'text-red-500' : ''}`}>
+                    {site.available.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right">{location.min_qty.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">{location.days_of_cover}</TableCell>
+                  <TableCell className="text-right">{site.min_qty.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">{site.days_of_cover}</TableCell>
                   <TableCell>
                     <InventoryTimelineBar
-                      projections={location.projected}
-                      target={location.target}
-                      min={location.min_qty}
+                      projections={site.projected}
+                      target={site.target}
+                      min={site.min_qty}
                       maxValue={maxInventory}
                     />
                   </TableCell>

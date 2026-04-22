@@ -28,7 +28,7 @@ Detect order exceptions and recommend corrective actions.
 
 ## Transit Exception Rules
 - **stuck_in_transit**: Transit time > 2x typical transit time for this lane
-- **routing_deviation**: Current location not on planned route segments
+- **routing_deviation**: Current position not on planned route segments
 
 ## Recommended Actions (9)
 1. **expedite** — Rush the order

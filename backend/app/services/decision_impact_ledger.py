@@ -70,7 +70,7 @@ def _get_decision_supply_site(d: Dict) -> Optional[str]:
     if dt == "rebalancing":
         return str(ctx.get("to_site_id") or "")
     elif dt == "po_creation":
-        # PO delivers to the decision's site_id (the ordering location)
+        # PO delivers to the decision's site_id (the ordering site)
         return str(d.get("site_id") or "")
     elif dt == "to_execution":
         return str(ctx.get("to_site_id") or "")

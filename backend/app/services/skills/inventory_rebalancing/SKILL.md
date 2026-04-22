@@ -1,43 +1,43 @@
 # Inventory Rebalancing Skill
 
 ## Role
-You are an inventory rebalancing agent. Given inventory levels across multiple locations,
-recommend cross-location transfers to balance stock and prevent stockouts.
+You are an inventory rebalancing agent. Given inventory levels across multiple sites,
+recommend cross-site transfers to balance stock and prevent stockouts.
 
 ## Input State Features
-- `locations`: Array of location objects, each containing:
-  - `site_key`: Location identifier
+- `sites`: Array of site objects, each containing:
+  - `site_key`: Site identifier
   - `current_inventory`: On-hand quantity
   - `safety_stock`: Target safety stock
-  - `avg_daily_demand`: Average daily demand at this location
+  - `avg_daily_demand`: Average daily demand at this site
   - `days_of_supply`: current_inventory / avg_daily_demand
   - `target_dos`: Target days of supply
   - `backlog`: Outstanding unmet demand
 - `transportation_lanes`: Available transfer lanes with:
-  - `source_site`: Origin location
-  - `dest_site`: Destination location
+  - `source_site`: Origin site
+  - `dest_site`: Destination site
   - `transit_time_days`: Transfer lead time
   - `max_quantity`: Lane capacity constraint
   - `cost_per_unit`: Transfer cost
 
 ## Decision Rules (Priority Order)
 
-### 1. Identify Excess Locations
-A location has **excess** if: `days_of_supply > target_dos * 1.5`
+### 1. Identify Excess Sites
+A site has **excess** if: `days_of_supply > target_dos * 1.5`
 - Transferable excess = `current_inventory - (target_dos * avg_daily_demand)`
 
-### 2. Identify Deficit Locations
-A location has **deficit** if: `days_of_supply < target_dos * 0.75`
+### 2. Identify Deficit Sites
+A site has **deficit** if: `days_of_supply < target_dos * 0.75`
 - Deficit amount = `(target_dos * avg_daily_demand) - current_inventory`
-- Priority: locations with backlog > 0 are served first
+- Priority: sites with backlog > 0 are served first
 
 ### 3. Match Excess to Deficit
-- Pair each deficit location with the nearest excess location (by transit time)
+- Pair each deficit site with the nearest excess site (by transit time)
 - Transfer quantity = `min(source_excess, dest_deficit, lane_max_quantity)`
 - Only recommend transfer if: transfer cost < holding cost savings
 
 ### 4. No Action
-If no locations have both excess AND deficit simultaneously, no rebalancing needed.
+If no sites have both excess AND deficit simultaneously, no rebalancing needed.
 
 ## Constraints
 - Never transfer below safety stock at source (source must retain safety_stock)
@@ -108,6 +108,6 @@ dest_dos_after = (available + transfer_qty) / dest_daily
 
 ## Escalation Triggers
 - **No excess site found**: All sites are at or below their target days of supply. There is no source of excess inventory to redistribute; the problem requires new supply, not rebalancing.
-- **Deficit sites isolated**: All deficit sites have no inbound transportation lanes from any excess site. The network topology does not support rebalancing for these locations.
+- **Deficit sites isolated**: All deficit sites have no inbound transportation lanes from any excess site. The network topology does not support rebalancing for these sites.
 - **Transfer cost exceeds savings for all pairs**: Every candidate source-deficit pair fails the cost-benefit check (transfer cost >= holding cost savings). Rebalancing is economically unviable across the entire network.
 - **Shared capacity conflict**: Rebalancing proposals for different product groups compete for the same lane capacity. Prioritization across product groups exceeds the scope of single-product rebalancing logic and requires cross-product coordination.

@@ -144,7 +144,7 @@ Professional supply chain planning and execution following AWS SC data model and
 - **ATP/CTP Calculations**: On-hand + scheduled receipts - committed orders (ATP), plus production capacity (CTP)
 - **Order Promising**: Full order promise lifecycle with partial fulfillment support
 - **Stochastic Projections**: P10/P50/P90 forward-looking inventory with confidence intervals
-- Multi-location inventory visibility and rebalancing (via InventoryRebalancingTRM)
+- Multi-site inventory visibility and rebalancing (via InventoryRebalancingTRM)
 
 ---
 

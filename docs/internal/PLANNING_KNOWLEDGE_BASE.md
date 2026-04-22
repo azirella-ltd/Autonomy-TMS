@@ -141,7 +141,7 @@ where:
 **Multi-Echelon Safety Stock Placement**:
 - **Push Strategy**: Hold safety stock upstream (cheaper holding cost)
 - **Pull Strategy**: Hold safety stock downstream (better responsiveness)
-- **Decoupling Points**: Strategic locations to buffer against uncertainty
+- **Decoupling Points**: Strategic sites to buffer against uncertainty
 - **Risk Pooling**: Aggregate demand at higher echelons reduces total safety stock
 
 **Safety Stock Formula** (continuous review):

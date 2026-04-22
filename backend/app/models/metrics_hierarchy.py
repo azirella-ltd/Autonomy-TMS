@@ -143,7 +143,7 @@ GARTNER_METRICS: Dict[str, MetricDefinition] = {
     "IRA": MetricDefinition(
         code="IRA", name="Inventory Record Accuracy",
         level=GartnerLevel.L3_OPERATIONAL, unit="%", higher_is_better=True,
-        description="% of locations where system quantity matches physical count.",
+        description="% of sites where system quantity matches physical count.",
         scor_process="Plan",
     ),
     "LTBIAS": MetricDefinition(
@@ -189,7 +189,7 @@ GARTNER_METRICS: Dict[str, MetricDefinition] = {
     "NBS": MetricDefinition(
         code="NBS", name="Net Balance Score",
         level=GartnerLevel.L4_EXECUTION, unit="ratio", higher_is_better=True,
-        description="Aggregate inventory balance across locations; 1.0 = perfectly balanced.",
+        description="Aggregate inventory balance across sites; 1.0 = perfectly balanced.",
         scor_process="Plan",
     ),
     "TER": MetricDefinition(

@@ -8,7 +8,7 @@ Consolidated analytics and optimization endpoints.
 Key Features:
 - Inventory optimization (safety stock, reorder points)
 - Capacity optimization (resource leveling, bottleneck resolution)
-- Network optimization (DC location, production allocation)
+- Network optimization (DC site, production allocation)
 - KPI configuration and monitoring
 
 Endpoints organized by entity type with standard CRUD operations.

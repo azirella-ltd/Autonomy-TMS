@@ -267,11 +267,11 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
 
   useEffect(() => { if (configId) loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
 
-  // Product & location selection
+  // Product & site selection
   const [products, setProducts] = useState([]);
-  const [locations, setLocations] = useState([]);
+  const [sites, setSites] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState('');
+  const [selectedSite, setSelectedSite] = useState('');
 
   // Timeline data
   const [timelineData, setTimelineData] = useState(null);
@@ -290,7 +290,7 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
   const [overrideReason, setOverrideReason] = useState('');
 
   // -------------------------------------------------------------------------
-  // Load product and location lists
+  // Load product and site lists
   // -------------------------------------------------------------------------
   useEffect(() => {
     const loadOptions = async () => {
@@ -305,11 +305,11 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
         const sites = (siteRes.data || []).filter(
           (s) => s.master_type === 'INVENTORY' || s.dag_type === 'INVENTORY'
         );
-        setLocations(sites);
+        setSites(sites);
 
         // Auto-select first if available
         if (prods.length > 0) setSelectedProduct(prods[0].id || prods[0].product_id || '');
-        if (sites.length > 0) setSelectedLocation(String(sites[0].id));
+        if (sites.length > 0) setSelectedSite(String(sites[0].id));
       } catch (err) {
         console.error('Failed to load products/sites', err);
         setError('Failed to load product and site options.');
@@ -322,11 +322,11 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
   // Load timeline data
   // -------------------------------------------------------------------------
   const loadTimeline = useCallback(async () => {
-    if (!selectedProduct || !selectedLocation) return;
+    if (!selectedProduct || !selectedSite) return;
     try {
       setLoading(true);
       setError(null);
-      const data = await getAllocationTimeline(configId, selectedProduct, selectedLocation);
+      const data = await getAllocationTimeline(configId, selectedProduct, selectedSite);
       setTimelineData(data);
       setEditedCells({});
       setEditingCell(null);
@@ -336,7 +336,7 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
     } finally {
       setLoading(false);
     }
-  }, [configId, selectedProduct, selectedLocation]);
+  }, [configId, selectedProduct, selectedSite]);
 
   useEffect(() => {
     loadTimeline();
@@ -440,7 +440,7 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
         return { priority, date: dateStr, allocated_qty: qty };
       });
 
-      await submitAllocationOverrides(configId, selectedProduct, selectedLocation, overrides, overrideReason || null);
+      await submitAllocationOverrides(configId, selectedProduct, selectedSite, overrides, overrideReason || null);
       setSuccessMsg(`${overrides.length} allocation override(s) saved.`);
       setEditedCells({});
       setOverrideReason('');
@@ -506,13 +506,13 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
 
         <TextField
           select
-          label="Location"
+          label="Site"
           size="small"
-          value={selectedLocation}
-          onChange={(e) => setSelectedLocation(e.target.value)}
+          value={selectedSite}
+          onChange={(e) => setSelectedSite(e.target.value)}
           sx={{ minWidth: 200 }}
         >
-          {locations.map((s) => (
+          {sites.map((s) => (
             <MenuItem key={s.id} value={String(s.id)}>
               {formatSite(s.id, s.name || s.site_name)}
             </MenuItem>
@@ -557,7 +557,7 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
       {/* No data */}
       {!loading && !timelineData && !error && (
         <Alert severity="info">
-          Select a product and location to view the allocation timeline.
+          Select a product and site to view the allocation timeline.
         </Alert>
       )}
 

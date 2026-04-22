@@ -258,7 +258,7 @@ Heuristic rules (used before training):
 
 ### 4. Rebalancing Engine → Inventory Rebalancing TRM
 
-**Purpose**: Cross-location inventory transfers. Identify excess/deficit sites and recommend transfers.
+**Purpose**: Cross-site inventory transfers. Identify excess/deficit sites and recommend transfers.
 
 **Engine**: `engines/rebalancing_engine.py` — `RebalancingEngine`
 
@@ -903,7 +903,7 @@ Training runs every 12h at :50 via the relearning jobs scheduler.
 | `engines/aatp_engine.py` | `AATPEngine` | Priority-based ATP consumption |
 | `engines/mrp_engine.py` | `MRPEngine` | Netting, BOM explosion, lot sizing |
 | `engines/safety_stock_calculator.py` | `SafetyStockCalculator` | 4+1 AWS SC policy types (incl. sl_fitted) |
-| `engines/rebalancing_engine.py` | `RebalancingEngine` | Cross-location transfer rules |
+| `engines/rebalancing_engine.py` | `RebalancingEngine` | Cross-site transfer rules |
 | `engines/order_tracking_engine.py` | `OrderTrackingEngine` | Threshold-based exception detection |
 | `engines/mo_execution_engine.py` | `MOExecutionEngine` | MO release, sequencing, capacity check |
 | `engines/to_execution_engine.py` | `TOExecutionEngine` | TO release, consolidation, routing |

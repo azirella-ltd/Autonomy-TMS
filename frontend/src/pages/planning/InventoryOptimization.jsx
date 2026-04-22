@@ -520,8 +520,8 @@ const InventoryOptimization = () => {
           </p>
           <div className="space-y-2">
             {[
-              { level: 1, name: 'Product + Site', desc: 'Most specific - individual SKU at specific location' },
-              { level: 2, name: 'Product Group + Site', desc: 'Category-level policy at specific location' },
+              { level: 1, name: 'Product + Site', desc: 'Most specific - individual SKU at specific site' },
+              { level: 2, name: 'Product Group + Site', desc: 'Category-level policy at specific site' },
               { level: 3, name: 'Product + Geography', desc: 'SKU-level policy for a region' },
               { level: 4, name: 'Product Group + Geography', desc: 'Category policy for a region' },
               { level: 5, name: 'Segment', desc: 'Market segment default' },

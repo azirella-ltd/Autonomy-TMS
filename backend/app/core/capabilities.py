@@ -1126,7 +1126,7 @@ POWELL_ROLE_DESCRIPTIONS = {
         "name": "Allocation Manager",
         "level": "Tactical",
         "description": "Reviews and overrides inventory allocation decisions across sites by priority and time bucket",
-        "scope": "Allocation decisions (priority × product × location)",
+        "scope": "Allocation decisions (priority × product × site)",
     },
     "ORDER_PROMISE_MANAGER": {
         "name": "Order Promise Manager",

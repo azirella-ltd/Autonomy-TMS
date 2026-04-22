@@ -517,7 +517,7 @@ Order at priority P=1: consume [1, 5, 4, 3, 2] (all tiers)
 | SAP Step | Autonomy Feature |
 |----------|-----------------|
 | Cross-company coordination | **Agentic Authorization Protocol (AAP)** — AAP Protocol cross-site authorization |
-| Transfer decisions | **Inventory Rebalancing TRM** — Cross-location transfer optimization |
+| Transfer decisions | **Inventory Rebalancing TRM** — Cross-site transfer optimization |
 | Multi-site visibility | **Execution tGNN** — Network-wide priority allocations |
 
 **Demo Value**: SAP intercompany sales is a manual, document-driven process. Autonomy's AAP enables autonomous cross-site decisions at machine speed — agents evaluate trade-offs via the Balanced Scorecard and request authorization for actions outside their authority domain. The tGNN provides network-wide visibility that SAP's siloed plant-level view cannot offer.

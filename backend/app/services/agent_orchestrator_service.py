@@ -1112,7 +1112,7 @@ class AgentOrchestratorService:
             total_on_hand = float(inv_row.total_on_hand or 0) if inv_row else 0
 
             # Approximate service level from inventory coverage
-            # (locations with positive inventory / total locations)
+            # (sites with positive inventory / total sites)
             if inv_row and inv_row.location_count and inv_row.location_count > 0:
                 covered_result = await self.db.execute(
                     select(func.count(InvLevel.id)).where(InvLevel.on_hand_qty > 0)

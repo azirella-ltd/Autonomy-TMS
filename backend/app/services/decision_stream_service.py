@@ -492,7 +492,7 @@ class DecisionStreamService(BaseDecisionStreamService):
         )
         cache = name_cache or {}
         product = cache.get("products", {}).get(raw_product, raw_product)
-        location = cache.get("sites", {}).get(str(raw_location), str(raw_location))
+        site = cache.get("sites", {}).get(str(raw_location), str(raw_location))
 
         if product == raw_product and "_" in product:
             parts = product.split("_", 1)
@@ -503,7 +503,7 @@ class DecisionStreamService(BaseDecisionStreamService):
 
         if decision_type == "atp":
             qty = fmt_qty_int(getattr(decision, "requested_qty", None))
-            return f"ATP: Fulfill {qty} units of {product} at {location}"
+            return f"ATP: Fulfill {qty} units of {product} at {site}"
         elif decision_type == "rebalancing":
             qty = fmt_qty_int(getattr(decision, "recommended_qty", None))
             raw_src = str(getattr(decision, "from_site", "?"))
@@ -511,7 +511,7 @@ class DecisionStreamService(BaseDecisionStreamService):
             return f"Rebalance: Transfer {qty} of {product} from {sites.get(raw_src, raw_src)} to {sites.get(raw_dest, raw_dest)}"
         elif decision_type == "po_creation":
             qty = fmt_qty_int(getattr(decision, "recommended_qty", None))
-            return f"PO: Order {qty} units of {product} at {location}"
+            return f"PO: Order {qty} units of {product} at {site}"
         elif decision_type == "order_tracking":
             desc_text = getattr(decision, "description", "") or ""
             order_id = getattr(decision, "order_id", "?")
@@ -522,7 +522,7 @@ class DecisionStreamService(BaseDecisionStreamService):
             return f"Order Exception ({severity}): {exc_type} on {order_id}"
         elif decision_type == "mo_execution":
             dt = getattr(decision, "decision_type", "release")
-            return f"MO {dt}: {product} at {location}"
+            return f"MO {dt}: {product} at {site}"
         elif decision_type == "to_execution":
             dt = getattr(decision, "decision_type", "release")
             raw_src = str(getattr(decision, "source_site_id", None) or raw_location)
@@ -531,14 +531,14 @@ class DecisionStreamService(BaseDecisionStreamService):
             dest = sites.get(raw_dest, raw_dest)
             if src and dest:
                 return f"TO {dt}: {product} from {src} to {dest}"
-            return f"TO {dt}: {product} at {src or dest or location}"
+            return f"TO {dt}: {product} at {src or dest or site}"
         elif decision_type == "quality":
             disposition = getattr(decision, "disposition", "?")
-            return f"Quality {disposition}: {product} at {location}"
+            return f"Quality {disposition}: {product} at {site}"
         elif decision_type == "maintenance":
             dt = getattr(decision, "decision_type", "schedule")
             asset = getattr(decision, "asset_id", "?")
-            return f"Maintenance {dt}: Asset {asset} at {location}"
+            return f"Maintenance {dt}: Asset {asset} at {site}"
         elif decision_type == "subcontracting":
             routing = getattr(decision, "routing_decision", "?")
             return f"Subcontracting {routing}: {product}"
@@ -551,9 +551,9 @@ class DecisionStreamService(BaseDecisionStreamService):
             base = getattr(decision, "baseline_ss", None)
             adj = getattr(decision, "adjusted_ss", None)
             if base and adj:
-                return f"Buffer {reason_text}: {product} at {location} ({base:.0f} -> {adj:.0f})"
-            return f"Buffer {reason_text}: {product} at {location}"
-        return f"{decision_type}: {product} at {location}"
+                return f"Buffer {reason_text}: {product} at {site} ({base:.0f} -> {adj:.0f})"
+            return f"Buffer {reason_text}: {product} at {site}"
+        return f"{decision_type}: {product} at {site}"
 
     # ------------------------------------------------------------------
     # Hook: suggested action

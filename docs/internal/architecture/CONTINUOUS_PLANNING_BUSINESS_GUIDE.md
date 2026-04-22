@@ -327,7 +327,7 @@ Conformal prediction and centralized/decentralized planning aren't just for one 
 ### Strategic Planning (12-24 Month Horizon)
 
 **Centralized vs. Decentralized**:
-- **Centralized**: Corporate planning team designs network (factory locations, DC locations, sourcing strategy)
+- **Centralized**: Corporate planning team designs network (factory sites, DC sites, sourcing strategy)
 - **Decentralized**: Regional teams propose local network changes, negotiate with central team
 - **Hybrid**: Central team sets framework, regions optimize within guidelines
 
