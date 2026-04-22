@@ -305,13 +305,22 @@ class TenantService:
                         cfg.id, e,
                     )
 
-            # TODO(sprint-1-week-1): PlaneRegistry.register once Core ships
-            # MIGRATION_REGISTER item 1.9 (2026-04-21 Monday target):
-            #   from azirella_data_model.planes import PlaneRegistry, Plane
-            #   PlaneRegistry.register(prod_tenant.id, Plane.TRANSPORT, config_id=None)
-            #   PlaneRegistry.register(learn_tenant.id, Plane.TRANSPORT, config_id=None)
-            # Per TMS_ADOPTION_GUIDE_20260420 §PREPARE.2 — register once per
-            # tenant with config_id=None (wildcard). Tier 0b (TMS-alone) path.
+            # Register the Transport plane for both tenants so cross-plane
+            # callers (intersection contracts, Sprint 1 Week 4-5) can
+            # distinguish Tier 0b (TMS alone) from Tier 1 (both Supply +
+            # Transport). config_id=None is the wildcard scope — applies
+            # across every config in the tenant. See MIGRATION_REGISTER 1.9
+            # and TMS_ADOPTION_GUIDE_20260420 §PREPARE.2.
+            try:
+                from azirella_data_model.planes import Plane, PlaneRegistry
+                PlaneRegistry.register(self.db, prod_tenant.id, Plane.TRANSPORT)
+                PlaneRegistry.register(self.db, learn_tenant.id, Plane.TRANSPORT)
+            except Exception as e:  # noqa: BLE001 — registry must not block tenant create
+                logger.warning(
+                    "Plane registration failed for tenant %s (prod) / %s (learn): %s",
+                    prod_tenant.id, learn_tenant.id, e,
+                )
+
             self.db.commit()
             self.db.refresh(prod_tenant)
             return prod_tenant
