@@ -36,6 +36,7 @@ from .risk import RiskAlert, Watchlist
 from .user import RefreshToken  # Must be imported before User to avoid circular import
 from .user import User, user_scenarios
 from .tenant import Tenant, TenantMode, ClockMode
+from .customer import Customer, CustomerStatus
 
 # 3. Models that depend on User
 from .participant import (
@@ -449,6 +450,8 @@ __all__ = [
     'Base',
     'User',
     'Tenant',
+    'Customer',
+    'CustomerStatus',
     'RefreshToken',
     'NodeType',
     'SupplyChainConfig',
