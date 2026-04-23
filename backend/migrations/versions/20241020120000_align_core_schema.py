@@ -443,10 +443,18 @@ def ensure_supply_chain_tables() -> None:
 def backfill_defaults() -> None:
     bind = op.get_bind()
 
+    # Fresh-install guard: if the tables are empty (green-field migration run),
+    # backfill UPDATEs serve no purpose and trigger PG enum-cast quirks for
+    # values that don't yet exist. Skip entirely in that case.
+    if _table_exists("users"):
+        row_count = bind.execute(text("SELECT COUNT(*) FROM users")).scalar() or 0
+        if row_count == 0:
+            return
+
     if _column_exists("users", "user_type"):
         bind.execute(
             text(
-                "UPDATE users SET user_type = CASE WHEN is_superuser THEN 'SYSTEM_ADMIN' ELSE 'PLAYER' END "
+                "UPDATE users SET user_type = (CASE WHEN is_superuser THEN 'SYSTEM_ADMIN' ELSE 'PLAYER' END)::user_type_enum "
                 "WHERE user_type IS NULL OR user_type::text = ''"
             )
         )
@@ -467,19 +475,19 @@ def backfill_defaults() -> None:
         )
 
     if _column_exists("users", "mfa_enabled"):
-        bind.execute(text("UPDATE users SET mfa_enabled = 0 WHERE mfa_enabled IS NULL"))
+        bind.execute(text("UPDATE users SET mfa_enabled = false WHERE mfa_enabled IS NULL"))
 
     if _column_exists("players", "type"):
         bind.execute(
             text(
-                "UPDATE players SET type = CASE WHEN is_ai THEN 'ai' ELSE 'human' END "
+                "UPDATE players SET type = (CASE WHEN is_ai THEN 'ai' ELSE 'human' END)::player_type_enum "
                 "WHERE type IS NULL"
             )
         )
 
     if _column_exists("players", "strategy"):
         bind.execute(
-            text("UPDATE players SET strategy = 'manual' WHERE strategy IS NULL OR strategy = ''")
+            text("UPDATE players SET strategy = 'manual'::player_strategy_enum WHERE strategy IS NULL OR strategy::text = ''")
         )
 
     for numeric_column in ("inventory", "backlog", "cost"):
@@ -491,10 +499,10 @@ def backfill_defaults() -> None:
             )
 
     if _column_exists("players", "is_ready"):
-        bind.execute(text("UPDATE players SET is_ready = 0 WHERE is_ready IS NULL"))
+        bind.execute(text("UPDATE players SET is_ready = false WHERE is_ready IS NULL"))
 
     if _column_exists("players", "can_see_demand"):
-        bind.execute(text("UPDATE players SET can_see_demand = 0 WHERE can_see_demand IS NULL"))
+        bind.execute(text("UPDATE players SET can_see_demand = false WHERE can_see_demand IS NULL"))
 
     if _column_exists("players", "llm_model"):
         bind.execute(
@@ -511,7 +519,7 @@ def backfill_defaults() -> None:
         bind.execute(text("UPDATE games SET role_assignments = '{}' WHERE role_assignments IS NULL"))
 
     if _column_exists("games", "is_public"):
-        bind.execute(text("UPDATE games SET is_public = 0 WHERE is_public IS NULL"))
+        bind.execute(text("UPDATE games SET is_public = false WHERE is_public IS NULL"))
 
     if _column_exists("games", "round_time_limit"):
         bind.execute(

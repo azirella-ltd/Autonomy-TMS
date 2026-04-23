@@ -30,6 +30,14 @@ def upgrade() -> None:
     dialect = bind.dialect.name
 
     if dialect == "postgresql":
+        # Guard: `playerrole` enum may not exist (e.g. green-field where
+        # the enum was named differently or is created later by a
+        # subsequent migration). Skip silently if absent.
+        enum_present = bind.execute(
+            sa.text("SELECT 1 FROM pg_type WHERE typname = 'playerrole'")
+        ).scalar()
+        if not enum_present:
+            return
         for value in NEW_VALUES:
             op.execute(
                 sa.text(
