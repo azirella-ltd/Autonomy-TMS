@@ -492,7 +492,7 @@ async def submit_fulfillment_decision(
         fulfilled_count = (
             scenario_service.db.query(ScenarioUserPeriod)
             .filter(
-                ScenarioUserPeriod.round_id == round_obj.id,
+                ScenarioUserPeriod.scenario_period_id == round_obj.id,
                 ScenarioUserPeriod.fulfillment_submitted_at.isnot(None)
             )
             .count()
@@ -539,7 +539,7 @@ async def submit_fulfillment_decision(
         # Get awaiting scenario_users (those who haven't submitted)
         submitted_participants = (
             scenario_service.db.query(ScenarioUserPeriod.scenario_user_id)
-            .filter(ScenarioUserPeriod.round_id == round_obj.id)
+            .filter(ScenarioUserPeriod.scenario_period_id == round_obj.id)
             .all()
         )
         submitted_ids = {p[0] for p in submitted_participants}
@@ -720,7 +720,7 @@ async def submit_replenishment_decision(
         replenished_count = (
             scenario_service.db.query(ScenarioUserPeriod)
             .filter(
-                ScenarioUserPeriod.round_id == round_obj.id,
+                ScenarioUserPeriod.scenario_period_id == round_obj.id,
                 ScenarioUserPeriod.replenishment_submitted_at.isnot(None)
             )
             .count()

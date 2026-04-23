@@ -258,7 +258,7 @@ def save_synthetic_game(db: Session, game_data: Dict[str, Any]) -> models.Game:
                 db, scenario_id=game.id, role=decision["role"]
             )
             decision_in = schemas.DecisionCreate(
-                round_id=db_round.id,
+                period_id=db_round.id,
                 scenario_user_id=scenario_user.id,
                 role=decision["role"],
                 order_quantity=decision["order_quantity"],

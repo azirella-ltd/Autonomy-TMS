@@ -49,7 +49,7 @@ def get_participant_metrics(db: Session, scenario_user_id: int, scenario_id: int
 
     scenario_user_periods = (
         db.query(ScenarioUserPeriod)
-        .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
+        .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
         .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioPeriod.scenario_id == scenario_id)
         .order_by(ScenarioPeriod.round_number.asc())
         .all()
@@ -130,11 +130,11 @@ def get_time_series_metrics(db: Session, scenario_user_id: int, scenario_id: int
 
     scenario_user_periods = (
         db.query(ScenarioUserPeriod)
-        .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
+        .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
         .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioPeriod.scenario_id == scenario_id)
         .all()
     )
-    rounds_by_id = {pr.round_id: pr for pr in scenario_user_periods}
+    rounds_by_id = {pr.scenario_period_id: pr for pr in scenario_user_periods}
 
     series: List[Dict[str, Any]] = []
     for round_ in rounds:

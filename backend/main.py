@@ -3051,7 +3051,7 @@ def _all_players_submitted(db: Session, game: DbGame, round_record: Period) -> b
         .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
         .filter(
             PlayerAction.scenario_id == game.id,
-            PlayerAction.round_id == round_record.id,
+            PlayerAction.period_id == round_record.id,
             PlayerAction.action_type == "order",
         )
         .all()
@@ -3572,7 +3572,7 @@ def _finalize_round_if_ready(
         .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
         .filter(
             PlayerAction.scenario_id == game.id,
-            PlayerAction.round_id == round_record.id,
+            PlayerAction.period_id == round_record.id,
             PlayerAction.action_type == "order",
         )
         .all()
@@ -4094,7 +4094,7 @@ def _finalize_round_if_ready(
         if action_obj is None:
             action_obj = PlayerAction(
                 scenario_id=game.id,
-                round_id=round_record.id,
+                period_id=round_record.id,
                 scenario_user_id=scenario_user.id,
                 action_type="order",
                 quantity=order_qty,
@@ -5099,13 +5099,13 @@ def _replay_history_from_rounds(
 
     scenario_user_periods = (
         db.query(SupplyScenarioUserPeriod)
-        .filter(SupplyScenarioUserPeriod.round_id.in_(rounds_by_id.keys()))
-        .order_by(SupplyScenarioUserPeriod.round_id.asc(), SupplyScenarioUserPeriod.id.asc())
+        .filter(SupplyScenarioUserPeriod.scenario_period_id.in_(rounds_by_id.keys()))
+        .order_by(SupplyScenarioUserPeriod.scenario_period_id.asc(), SupplyScenarioUserPeriod.id.asc())
         .all()
     )
 
     for pr in scenario_user_periods:
-        entry = entry_map.get(pr.round_id)
+        entry = entry_map.get(pr.scenario_period_id)
         if not entry:
             continue
         scenario_user = scenario_users.get(pr.scenario_user_id)
@@ -5893,7 +5893,7 @@ async def submit_order(
             .filter(
                 PlayerAction.scenario_id == game.id,
                 PlayerAction.scenario_user_id == scenario_user.id,
-                PlayerAction.round_id == round_record.id,
+                PlayerAction.period_id == round_record.id,
                 PlayerAction.action_type == "order",
             )
             .first()
@@ -5907,7 +5907,7 @@ async def submit_order(
         else:
             action = PlayerAction(
                 scenario_id=game.id,
-                round_id=round_record.id,
+                period_id=round_record.id,
                 scenario_user_id=scenario_user.id,
                 action_type="order",
                 quantity=submission.quantity,
@@ -5947,7 +5947,7 @@ async def submit_order(
                 .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
                 .filter(
                     PlayerAction.scenario_id == game.id,
-                    PlayerAction.round_id == round_record.id,
+                    PlayerAction.period_id == round_record.id,
                     PlayerAction.action_type == "order",
                 )
             },
@@ -6313,7 +6313,7 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
 
         sc_round_ids = [rid for (rid,) in db.query(SupplyScenarioPeriod.id).filter(SupplyScenarioPeriod.scenario_id == game.id).all()]
         if sc_round_ids:
-            db.query(SupplyScenarioUserPeriod).filter(SupplyScenarioUserPeriod.round_id.in_(sc_round_ids)).delete(synchronize_session=False)
+            db.query(SupplyScenarioUserPeriod).filter(SupplyScenarioUserPeriod.scenario_period_id.in_(sc_round_ids)).delete(synchronize_session=False)
         db.query(SupplyScenarioPeriod).filter(SupplyScenarioPeriod.scenario_id == game.id).delete(synchronize_session=False)
         db.query(SupplyOrder).filter(SupplyOrder.scenario_id == game.id).delete(synchronize_session=False)
 

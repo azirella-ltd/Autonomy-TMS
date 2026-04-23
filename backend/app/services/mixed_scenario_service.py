@@ -6539,7 +6539,7 @@ class MixedScenarioService:
             self.db.query(ScenarioUserPeriod)
             .filter(
                 ScenarioUserPeriod.scenario_user_id == scenario_user_id,
-                ScenarioUserPeriod.round_id == current_period.id,
+                ScenarioUserPeriod.scenario_period_id == current_period.id,
             )
             .first()
         )
@@ -6554,7 +6554,7 @@ class MixedScenarioService:
             starting_backlog = getattr(inventory, "backorders", 0) if inventory else 0
             scenario_user_period = ScenarioUserPeriod(
                 scenario_user_id=scenario_user_id,
-                round_id=current_period.id,
+                scenario_period_id=current_period.id,
                 order_placed=order_quantity,
                 order_received=0,
                 inventory_before=starting_stock,
@@ -7507,7 +7507,7 @@ class MixedScenarioService:
 
             period = ScenarioUserPeriod(
                 scenario_user_id=su.id,
-                scenario_round_id=round_record.id,
+                scenario_period_id=round_record.id,
                 order_placed=order_placed,
                 order_received=0,
                 inventory_before=int(on_hand),
@@ -7863,7 +7863,7 @@ class MixedScenarioService:
         for scenario_user in scenario_users:
             scenario_user_period = ScenarioUserPeriod(
                 scenario_user_id=scenario_user.id,
-                round_id=round_record.id,
+                scenario_period_id=round_record.id,
                 order_placed=0,
                 order_received=0,
                 inventory_before=scenario_user.current_stock,
@@ -8190,7 +8190,7 @@ class MixedScenarioService:
             self.db.query(ScenarioUserPeriod)
             .filter(
                 ScenarioUserPeriod.scenario_user_id == scenario_user.id,
-                ScenarioUserPeriod.round_id == round_obj.id
+                ScenarioUserPeriod.scenario_period_id == round_obj.id
             )
             .first()
         )
@@ -8278,7 +8278,7 @@ class MixedScenarioService:
             self.db.query(ScenarioUserPeriod)
             .filter(
                 ScenarioUserPeriod.scenario_user_id == scenario_user.id,
-                ScenarioUserPeriod.round_id == round_obj.id
+                ScenarioUserPeriod.scenario_period_id == round_obj.id
             )
             .first()
         )
@@ -8354,7 +8354,7 @@ class MixedScenarioService:
             fulfilled_count = (
                 self.db.query(ScenarioUserPeriod)
                 .filter(
-                    ScenarioUserPeriod.round_id == round_obj.id,
+                    ScenarioUserPeriod.scenario_period_id == round_obj.id,
                     ScenarioUserPeriod.fulfillment_submitted_at.isnot(None)
                 )
                 .count()
@@ -8367,7 +8367,7 @@ class MixedScenarioService:
             replenished_count = (
                 self.db.query(ScenarioUserPeriod)
                 .filter(
-                    ScenarioUserPeriod.round_id == round_obj.id,
+                    ScenarioUserPeriod.scenario_period_id == round_obj.id,
                     ScenarioUserPeriod.replenishment_submitted_at.isnot(None)
                 )
                 .count()
@@ -8472,7 +8472,7 @@ class MixedScenarioService:
             from app.models.supply_chain import ScenarioUserPeriod
             scenario_user_periods = (
                 self.db.query(ScenarioUserPeriod)
-                .filter(ScenarioUserPeriod.round_id == round_obj.id)
+                .filter(ScenarioUserPeriod.scenario_period_id == round_obj.id)
                 .all()
             )
             scenario_user_period_map = {pr.scenario_user_id: pr for pr in scenario_user_periods}
@@ -9160,7 +9160,7 @@ class MixedScenarioService:
         """Complete the current round, updating scenario_user inventories and costs."""
         # Get all scenario_user rounds for this game round
         scenario_user_periods = self.db.query(ScenarioUserPeriod).filter(
-            ScenarioUserPeriod.round_id == game_round.id
+            ScenarioUserPeriod.scenario_period_id == game_round.id
         ).all()
         
         for pr in scenario_user_periods:
@@ -9471,7 +9471,7 @@ class MixedScenarioService:
 
         scenario_user_period_records = (
             self.db.query(ScenarioUserPeriod, ScenarioPeriod, ScenarioUser)
-            .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
+            .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
             .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
             .filter(ScenarioPeriod.scenario_id == scenario_id)
             .order_by(ScenarioPeriod.round_number.asc())

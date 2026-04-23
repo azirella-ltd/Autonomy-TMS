@@ -825,7 +825,7 @@ class ATPService:
             # order_received = incoming orders from downstream (demand)
             historical_rounds = (
                 self.db.query(ScenarioUserPeriod)
-                .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
+                .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
                 .filter(
                     ScenarioUserPeriod.scenario_user_id == scenario_user.id,
                     ScenarioPeriod.is_completed == True,  # Only completed rounds

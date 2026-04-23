@@ -293,7 +293,7 @@ class GamificationService:
                     ScenarioUserPeriod.scenario_id == scenario_id,
                     ScenarioUserPeriod.scenario_user_id == scenario_user_id
                 ))
-                .order_by(ScenarioUserPeriod.round_id)
+                .order_by(ScenarioUserPeriod.scenario_period_id)
             )
             service_levels = [row[0] for row in rounds_result.all()]
 

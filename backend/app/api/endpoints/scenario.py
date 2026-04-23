@@ -488,7 +488,7 @@ async def get_round_submission_status(
 
     # Get scenario_users who have submitted for the current round
     submitted_participants = db.query(ScenarioUserPeriod).filter(
-        ScenarioUserPeriod.round_id == current_period.id
+        ScenarioUserPeriod.scenario_period_id == current_period.id
     ).all()
     submitted_count = len(submitted_participants)
 
@@ -540,14 +540,14 @@ def get_participant_current_period(
     # Get the scenario_user's round
     participant_round = db.query(ScenarioUserPeriod).filter(
         ScenarioUserPeriod.scenario_user_id == scenario_user_id,
-        ScenarioUserPeriod.round_id == current_period.id
+        ScenarioUserPeriod.scenario_period_id == current_period.id
     ).first()
 
     if not participant_round:
         # If the scenario_user hasn't taken their turn yet, create a new scenario_user round
         participant_round = ScenarioUserPeriod(
             scenario_user_id=scenario_user_id,
-            round_id=current_period.id,
+            scenario_period_id=current_period.id,
             order_placed=0,  # Default to 0, will be updated when order is placed
             order_received=0,
             inventory_before=0,

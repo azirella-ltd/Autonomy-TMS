@@ -372,7 +372,7 @@ def build_llm_decision_payload(
     scenario_user_period_rows = (
         db.query(ScenarioUserPeriod, ScenarioUser, ScenarioPeriod)
         .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
-        .join(ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id)
+        .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
         .filter(ScenarioUser.scenario_id == game.id)
         .order_by(ScenarioPeriod.round_number.asc())
         .all()

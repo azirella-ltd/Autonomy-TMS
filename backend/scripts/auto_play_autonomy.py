@@ -237,7 +237,7 @@ def auto_play_autonomy_scenarios() -> None:
 
                     action = session.query(ScenarioUserAction).filter(
                         ScenarioUserAction.scenario_id == scenario.id,
-                        ScenarioUserAction.round_id == round_record.id,
+                        ScenarioUserAction.period_id == round_record.id,
                         ScenarioUserAction.scenario_user_id == scenario_user.id,
                         ScenarioUserAction.action_type == 'order',
                     ).first()
@@ -247,7 +247,7 @@ def auto_play_autonomy_scenarios() -> None:
                     else:
                         action = ScenarioUserAction(
                             scenario_id=scenario.id,
-                            round_id=round_record.id,
+                            period_id=round_record.id,
                             scenario_user_id=scenario_user.id,
                             action_type='order',
                             quantity=quantity,

@@ -190,7 +190,7 @@ class AIService:
     def _get_participant_history(self, scenario_user_id: int, current_period: int, limit: int = 10) -> List[Dict]:
         """Get the scenario_user's order history."""
         history = self.db.query(ScenarioUserPeriod, ScenarioPeriod).join(
-            ScenarioPeriod, ScenarioUserPeriod.round_id == ScenarioPeriod.id
+            ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id
         ).filter(
             ScenarioUserPeriod.scenario_user_id == scenario_user_id,
             ScenarioPeriod.round_number < current_period
