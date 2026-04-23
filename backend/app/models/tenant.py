@@ -44,7 +44,7 @@ class TenantIndustry(str, Enum):
 class ClockMode(str, Enum):
     """Clock progression mode for Learning tenants.
 
-    Pre-AIIO legacy (Beer Game simulation). Kept for backward compatibility
+    Pre-AIIO legacy (Beer Scenario simulation). Kept for backward compatibility
     with existing TMS seed scripts and config generators that reference it.
     """
     TURN_BASED = "turn_based"

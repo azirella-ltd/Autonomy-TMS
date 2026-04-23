@@ -88,7 +88,7 @@ PERMISSIONS = [
     ("create_simulation", "simulations", "create", "Create new simulation sessions", "Simulation"),
     ("play_simulation", "simulations", "play", "Participate in simulations", "Simulation"),
     ("manage_simulations", "simulations", "manage", "Administer simulation sessions", "Simulation"),
-    ("view_scenario_analytics", "game_analytics", "view", "View simulation performance metrics", "Simulation"),
+    ("view_scenario_analytics", "scenario_analytics", "view", "View simulation performance metrics", "Simulation"),
 
     # Administration (6)
     ("view_users", "users", "view", "View user list", "Administration"),

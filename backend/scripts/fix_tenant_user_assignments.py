@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fix tenant/user/config assignments.
 
-1. Create TBG_admin as tenant admin for Tenant 1 (The Beer Game learning tenant)
+1. Create TBG_admin as tenant admin for Tenant 1 (The Beer Scenario learning tenant)
 2. Detach systemadmin from tenant ownership (set tenant_id=NULL, default_config_id=NULL)
 3. Ensure each production tenant has its own admin user
 4. Verify decision stream scoping per tenant
@@ -117,7 +117,7 @@ def run(db: Session):
     db.commit()
     logger.info("=== Done ===")
     logger.info("systemadmin@autonomy.com is now tenant-agnostic (tenant_id=NULL)")
-    logger.info("tbg_admin@autonomy.com owns Tenant 1 (The Beer Game)")
+    logger.info("tbg_admin@autonomy.com owns Tenant 1 (The Beer Scenario)")
     logger.info("")
     logger.info("Next steps:")
     logger.info("  1. Update frontend config resolution for SYSTEM_ADMIN with NULL tenant_id")

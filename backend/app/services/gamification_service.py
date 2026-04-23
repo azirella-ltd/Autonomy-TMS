@@ -17,7 +17,6 @@ from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
-Game = Scenario
 from app.schemas.gamification import (
     AchievementCheckResponse, ScenarioUserProgressResponse,
     LeaderboardResponse, LeaderboardEntryWithScenarioUser
@@ -56,19 +55,19 @@ class GamificationService:
         scenario_id: int,
         won: bool
     ) -> ScenarioUserStats:
-        """Update scenario_user stats after game completion."""
+        """Update scenario_user stats after scenario completion."""
         stats = await self.get_or_create_scenario_user_stats(scenario_user_id)
 
-        # Get game data
-        game_result = await self.db.execute(
-            select(Game).where(Game.id == scenario_id)
+        # Get scenario data
+        scenario_result = await self.db.execute(
+            select(Scenario).where(Scenario.id == scenario_id)
         )
-        game = game_result.scalar_one_or_none()
+        scenario = scenario_result.scalar_one_or_none()
 
-        if not game:
+        if not scenario:
             return stats
 
-        # Get scenario_user's game performance
+        # Get scenario_user's scenario performance
         scenario_user_periods_result = await self.db.execute(
             select(ScenarioUserPeriod)
             .where(and_(
@@ -273,14 +272,14 @@ class GamificationService:
 
         # Win with cost under threshold
         if 'win_with_cost_under' in criteria and scenario_id:
-            game_result = await self.db.execute(
+            scenario_result = await self.db.execute(
                 select(func.sum(ScenarioUserPeriod.round_cost))
                 .where(and_(
                     ScenarioUserPeriod.scenario_id == scenario_id,
                     ScenarioUserPeriod.scenario_user_id == scenario_user_id
                 ))
             )
-            total_cost = game_result.scalar() or 0
+            total_cost = scenario_result.scalar() or 0
             if total_cost >= criteria['win_with_cost_under']:
                 return False
 
@@ -346,7 +345,7 @@ class GamificationService:
 
         # Win with bullwhip ratio under
         if 'win_with_bullwhip_under' in criteria and scenario_id:
-            # Would need to calculate bullwhip effect from game data
+            # Would need to calculate bullwhip effect from scenario data
             # Placeholder for now
             pass
 

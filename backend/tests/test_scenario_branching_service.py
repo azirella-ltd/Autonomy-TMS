@@ -144,7 +144,7 @@ def mock_session():
 
 @pytest.fixture
 def baseline_nodes():
-    """Create the 6 baseline Beer Game nodes."""
+    """Create the 6 baseline Beer Scenario nodes."""
     config_id = 100  # baseline config id
     market_demand = _make_node(config_id, "Customer", "MARKET_DEMAND",
                                {"demand_mean": 10, "demand_std": 2}, 0, 0, 0, node_id=10)

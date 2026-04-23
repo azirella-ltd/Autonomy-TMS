@@ -34,7 +34,7 @@ class AgentGameDemo:
     def create_scenario(self) -> Dict[str, Any]:
         """Create a new agent scenario."""
         print("\n=== Creating a new agent scenario ===")
-        game_data = {
+        scenario_data = {
             "name": "AI Agent Demo Scenario",
             "max_periods": 10,
             "demand_pattern": {
@@ -48,9 +48,9 @@ class AgentGameDemo:
         }
         
         response = requests.post(
-            f"{BASE_URL}/agent-games/",
+            f"{BASE_URL}/agent-scenarios/",
             headers=self.headers,
-            json=game_data
+            json=scenario_data
         )
         response.raise_for_status()
         
@@ -66,7 +66,7 @@ class AgentGameDemo:
 
         print("\n=== Starting the scenario ===")
         response = requests.post(
-            f"{BASE_URL}/agent-games/{self.scenario_id}/start",
+            f"{BASE_URL}/agent-scenarios/{self.scenario_id}/start",
             headers=self.headers
         )
         response.raise_for_status()
@@ -90,7 +90,7 @@ class AgentGameDemo:
         
         for role, strategy in strategies.items():
             response = requests.put(
-                f"{BASE_URL}/agent-games/{self.scenario_id}/agent-strategy",
+                f"{BASE_URL}/agent-scenarios/{self.scenario_id}/agent-strategy",
                 params={"role": role, "strategy": strategy},
                 headers=self.headers
             )
@@ -104,7 +104,7 @@ class AgentGameDemo:
             
         print(f"\n=== Setting demand visibility to {visible} ===")
         response = requests.put(
-            f"{BASE_URL}/agent-games/{self.scenario_id}/demand-visibility",
+            f"{BASE_URL}/agent-scenarios/{self.scenario_id}/demand-visibility",
             params={"visible": visible},
             headers=self.headers
         )
@@ -117,7 +117,7 @@ class AgentGameDemo:
             raise ValueError("No scenario ID. Create a scenario first.")
             
         response = requests.post(
-            f"{BASE_URL}/agent-games/{self.scenario_id}/play-round",
+            f"{BASE_URL}/agent-scenarios/{self.scenario_id}/play-round",
             headers=self.headers
         )
         response.raise_for_status()
@@ -131,7 +131,7 @@ class AgentGameDemo:
             raise ValueError("No scenario ID. Create a scenario first.")
             
         response = requests.get(
-            f"{BASE_URL}/agent-games/{self.scenario_id}/state",
+            f"{BASE_URL}/agent-scenarios/{self.scenario_id}/state",
             headers=self.headers
         )
         response.raise_for_status()

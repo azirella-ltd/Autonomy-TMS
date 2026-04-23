@@ -2,7 +2,7 @@
 Agent Performance Tracker Service
 
 Phase 4: Multi-Agent Orchestration (Week 13)
-Tracks and benchmarks agent performance across games, rounds, and decision types.
+Tracks and benchmarks agent performance across scenarios, rounds, and decision types.
 
 Metrics Tracked:
 - Accuracy: Deviation from optimal/baseline decisions
@@ -32,7 +32,6 @@ from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
-Game = Scenario
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +160,7 @@ class AgentPerformanceTracker:
 
         Args:
             scenario_user_id: Filter by scenario_user
-            scenario_id: Filter by game
+            scenario_id: Filter by scenario
             agent_type: Filter by agent type (llm, gnn, trm)
             min_rounds: Minimum rounds for statistical significance
 
@@ -212,7 +211,7 @@ class AgentPerformanceTracker:
         Args:
             agent_type: Agent to evaluate (llm, gnn, trm)
             baseline_type: Baseline to compare against (naive, optimal)
-            scenario_id: Game context
+            scenario_id: Scenario context
 
         Returns:
             PerformanceComparison with relative metrics
@@ -381,13 +380,13 @@ class AgentPerformanceTracker:
         Get scenario_user leaderboard sorted by performance metric.
 
         Args:
-            scenario_id: Game to analyze
+            scenario_id: Scenario to analyze
             metric: Metric to sort by (total_cost, service_level, etc.)
 
         Returns:
             List of scenario_users with aggregate metrics, sorted by performance
         """
-        # Get all scenario_users in game
+        # Get all scenario_users in scenario
         scenario_users = self.db.query(ScenarioUser).filter_by(scenario_id=scenario_id).all()
 
         leaderboard = []

@@ -35,7 +35,7 @@ class PermissionChecker:
 
         Args:
             user: User to check
-            permission_name: Permission name (e.g., "games.create")
+            permission_name: Permission name (e.g., "scenarios.create")
 
         Returns:
             bool: True if user has permission
@@ -68,7 +68,7 @@ class PermissionChecker:
 
         Args:
             user: User to check
-            resource: Resource name (e.g., "games")
+            resource: Resource name (e.g., "scenarios")
             action: Action name (e.g., "create")
 
         Returns:
@@ -155,9 +155,9 @@ class RequirePermission:
     FastAPI dependency for requiring specific permissions
 
     Usage:
-        @router.get("/games")
-        async def list_games(
-            user: User = Depends(RequirePermission("games.read"))
+        @router.get("/scenarios")
+        async def list_scenarios(
+            user: User = Depends(RequirePermission("scenarios.read"))
         ):
             ...
     """
@@ -192,9 +192,9 @@ class RequireResourceAction:
     FastAPI dependency for requiring resource.action permissions
 
     Usage:
-        @router.post("/games")
-        async def create_game(
-            user: User = Depends(RequireResourceAction("games", "create"))
+        @router.post("/scenarios")
+        async def create_scenario(
+            user: User = Depends(RequireResourceAction("scenarios", "create"))
         ):
             ...
     """
@@ -269,9 +269,9 @@ class RequireAllPermissions:
     FastAPI dependency for requiring all of multiple permissions
 
     Usage:
-        @router.delete("/games/{scenario_id}")
-        async def delete_game(
-            user: User = Depends(RequireAllPermissions(["games.read", "games.delete"]))
+        @router.delete("/scenarios/{scenario_id}")
+        async def delete_scenario(
+            user: User = Depends(RequireAllPermissions(["scenarios.read", "scenarios.delete"]))
         ):
             ...
     """

@@ -18,11 +18,11 @@ def create_agent_config(
 ):
     """Create a new agent configuration"""
     # Verify user has access to the scenario
-    scenario = crud.game.get(db, config.scenario_id)
+    scenario = crud.scenario.get(db, config.scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
 
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, scenario.id, db):
+    if not crud.user.is_superuser(current_user) and not crud.user.has_scenario_access(current_user.id, scenario.id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     return crud.agent_config.create(db, obj_in=config)
@@ -38,7 +38,7 @@ def read_agent_config(
     if not config:
         raise HTTPException(status_code=404, detail="Agent configuration not found")
     
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, config.scenario_id, db):
+    if not crud.user.is_superuser(current_user) and not crud.user.has_scenario_access(current_user.id, config.scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     return config
@@ -52,7 +52,7 @@ def read_scenario_agent_configs(
     current_user: models.User = Depends(get_current_active_user)
 ):
     """Get all agent configurations for a scenario"""
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, scenario_id, db):
+    if not crud.user.is_superuser(current_user) and not crud.user.has_scenario_access(current_user.id, scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     return crud.agent_config.get_multi_by_game(db, scenario_id=scenario_id, skip=skip, limit=limit)
@@ -69,7 +69,7 @@ def update_agent_config(
     if not config:
         raise HTTPException(status_code=404, detail="Agent configuration not found")
     
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, config.scenario_id, db):
+    if not crud.user.is_superuser(current_user) and not crud.user.has_scenario_access(current_user.id, config.scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     return crud.agent_config.update(db, db_obj=config, obj_in=config_in)
@@ -82,11 +82,11 @@ def get_role_assignments(
     current_user: models.User = Depends(get_current_active_user)
 ):
     """Get all role assignments for a scenario"""
-    scenario = crud.game.get(db, scenario_id)
+    scenario = crud.scenario.get(db, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
 
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, scenario_id, db):
+    if not crud.user.is_superuser(current_user) and not crud.user.has_scenario_access(current_user.id, scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
     return scenario.role_assignments or {}
@@ -100,11 +100,11 @@ def update_role_assignment(
     current_user: models.User = Depends(get_current_active_user)
 ):
     """Update role assignment for a specific role in a scenario"""
-    scenario = crud.game.get(db, scenario_id)
+    scenario = crud.scenario.get(db, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
 
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, scenario_id, db):
+    if not crud.user.is_superuser(current_user) and not crud.user.has_scenario_access(current_user.id, scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
     # If assigning to a user, verify the user exists and is part of the scenario

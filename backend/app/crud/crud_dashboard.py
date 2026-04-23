@@ -29,7 +29,7 @@ def get_active_scenario_for_user(db: Session, user_id: int) -> Optional[Scenario
 
 
 # Backward compatible alias
-get_active_game_for_user = get_active_scenario_for_user
+get_active_scenario_for_user = get_active_scenario_for_user
 
 
 def _fallback_numeric(value: Optional[float]) -> float:

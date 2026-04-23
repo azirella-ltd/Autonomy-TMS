@@ -861,7 +861,7 @@ def _run_demo_date_shift() -> None:
     - SAP Demo (frozen at 2025-11-20) — CAL FAA reference date, must not drift
     - D365/Odoo/Infor/B1 demos — anchored to their respective extraction
       reference dates; shifting corrupts ERP transactional coherence
-    - Beer Game / Complex SC — learning tenants use simulation time, not
+    - Beer Scenario / Complex SC — learning tenants use simulation time, not
       calendar time
     - Any future production customer tenant — real data, never shifted
 

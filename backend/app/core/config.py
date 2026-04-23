@@ -176,12 +176,12 @@ class Settings(BaseSettings):
     WEBSOCKET_MAX_MESSAGE_SIZE: int = 1024 * 1024  # 1MB
     
     # Scenario Settings
-    # DEPRECATED: The three constants below are legacy Beer Game defaults.
+    # DEPRECATED: The three constants below are legacy Beer Scenario defaults.
     # New scenarios must seed InvLevel.on_hand_qty via the AWS SC seed script.
     # Cost rates must come from InvPolicy.holding_cost_range / backlog_cost_range.
-    INITIAL_INVENTORY: int = 12          # DEPRECATED — legacy Beer Game init
-    HOLDING_COST_PER_UNIT: float = 0.5   # DEPRECATED — legacy Beer Game cost
-    BACKORDER_COST_PER_UNIT: float = 1.0  # DEPRECATED — legacy Beer Game cost
+    INITIAL_INVENTORY: int = 12          # DEPRECATED — legacy Beer Scenario init
+    HOLDING_COST_PER_UNIT: float = 0.5   # DEPRECATED — legacy Beer Scenario cost
+    BACKORDER_COST_PER_UNIT: float = 1.0  # DEPRECATED — legacy Beer Scenario cost
     DEFAULT_MAX_ROUNDS: int = 52
     
     # AI Settings

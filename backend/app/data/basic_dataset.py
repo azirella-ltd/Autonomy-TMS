@@ -20,7 +20,7 @@ class BasicSupplyChainDataset(Dataset):
             data_dir: Directory to store/load the data
             seq_len: Length of input sequences
             pred_len: Length of prediction sequences
-            num_nodes: Number of supply chain nodes (sites). Default 4 for Beer Game compat.
+            num_nodes: Number of supply chain nodes (sites). Default 4 for Beer Scenario compat.
             transform: Optional data transformation
         """
         self.data_dir = data_dir

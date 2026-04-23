@@ -25,7 +25,6 @@ from app.models.supply_chain import ScenarioPeriod
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
-Game = Scenario
 from app.models.transfer_order import TransferOrder
 from app.models.tenant import Tenant
 from app.models.explainability import ExplainabilityLevel
@@ -106,7 +105,7 @@ class AgentRecommendationService:
 
     def get_fulfillment_recommendation(
         self,
-        game: Game,
+        scenario: Scenario,
         scenario_user: ScenarioUser,
         current_period: ScenarioPeriod,
         atp: int,
@@ -117,9 +116,9 @@ class AgentRecommendationService:
         Get agent recommendation for fulfillment decision (ATP-based shipment).
 
         Args:
-            game: Game instance
+            scenario: Scenario instance
             scenario_user: ScenarioUser instance with agent configuration
-            current_period: Current game round
+            current_period: Current scenario round
             atp: Available to Promise quantity
             demand: Downstream demand (including backlog)
             backlog: Current backlog
@@ -133,8 +132,8 @@ class AgentRecommendationService:
 
         # Get config-specific model path
         model_path = getattr(
-            game.supply_chain_config, "trained_model_path", None
-        ) if game.supply_chain_config else None
+            scenario.supply_chain_config, "trained_model_path", None
+        ) if scenario.supply_chain_config else None
 
         # Create agent instance with model path
         agent = self._create_agent(scenario_user, agent_strategy, model_path=model_path)
@@ -229,7 +228,7 @@ class AgentRecommendationService:
 
     def get_replenishment_recommendation(
         self,
-        game: Game,
+        scenario: Scenario,
         scenario_user: ScenarioUser,
         current_period: ScenarioPeriod,
         current_inventory: int,
@@ -241,9 +240,9 @@ class AgentRecommendationService:
         Get agent recommendation for replenishment decision (upstream order).
 
         Args:
-            game: Game instance
+            scenario: Scenario instance
             scenario_user: ScenarioUser instance with agent configuration
-            current_period: Current game round
+            current_period: Current scenario round
             current_inventory: Current on-hand inventory
             pipeline: List of in-transit shipments
             backlog: Current backlog

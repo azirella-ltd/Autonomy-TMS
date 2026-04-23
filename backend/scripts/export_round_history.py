@@ -9,7 +9,7 @@ import json
 import os
 from typing import Dict, Any, Iterable
 
-from main import SessionLocal, _coerce_game_config
+from main import SessionLocal, _coerce_scenario_config
 from app.models.scenario import Scenario, Period
 
 ROLES = ["retailer", "wholesaler", "distributor", "manufacturer"]
@@ -40,7 +40,7 @@ def export_game(scenario_id: int, output_dir: str) -> str:
         if not scenario:
             raise RuntimeError(f"Scenario {scenario_id} not found")
 
-        config = _coerce_game_config(scenario)
+        config = _coerce_scenario_config(scenario)
         history = config.get("history", [])
         if not history:
             rounds = session.query(Period).filter(Period.scenario_id == scenario_id).order_by(Period.round_number.asc()).all()

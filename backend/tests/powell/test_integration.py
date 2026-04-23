@@ -24,7 +24,7 @@ from app.services.powell.engines import Priority
 
 
 class TestSiteAgentPolicy:
-    """Tests for SiteAgentPolicy (Beer Game integration)"""
+    """Tests for SiteAgentPolicy (Beer Scenario integration)"""
 
     def test_policy_creation(self):
         """Test policy can be created"""
@@ -286,7 +286,7 @@ class TestAgentStrategyIntegration:
         assert hasattr(AgentStrategy, 'SITE_AGENT')
         assert AgentStrategy.SITE_AGENT.value == "site_agent"
 
-    def test_beer_game_agent_site_agent_strategy(self):
+    def test_beer_scenario_agent_site_agent_strategy(self):
         """Test SimulationAgent can use site_agent strategy"""
         from app.services.agents import SimulationAgent, AgentType, AgentStrategy
 

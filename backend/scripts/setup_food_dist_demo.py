@@ -133,7 +133,7 @@ def build_scenario_config(session, config_id):
             "description": product.description or "",
         })
 
-    # Demand pattern (classic beer game step pattern adapted for food dist)
+    # Demand pattern (classic beer scenario step pattern adapted for food dist)
     demand_pattern = {
         "type": "classic",
         "params": {

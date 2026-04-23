@@ -6,7 +6,7 @@ enabling stochastic sampling of operational variables (lead times, capacities, y
 
 Key Features:
 - Sample from distribution or fallback to deterministic value (backward compatible)
-- Per-game seeding for reproducibility
+- Per-scenario seeding for reproducibility
 - Caching of parsed distributions for performance
 - Integration with ExecutionCache
 
@@ -52,7 +52,7 @@ class StochasticSampler:
         Initialize stochastic sampler
 
         Args:
-            scenario_id: Game ID (used as seed for reproducibility)
+            scenario_id: Scenario ID (used as seed for reproducibility)
             use_cache: Enable distribution caching (default: True)
         """
         self.scenario_id = scenario_id

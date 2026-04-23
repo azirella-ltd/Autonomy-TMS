@@ -47,7 +47,7 @@ from app.models.scenario_user import ScenarioUser, ScenarioUserRole, ScenarioUse
 # Local aliases for backward compatibility within this file (main.py is 62K lines)
 DbGame = DbScenario
 DbScenarioStatus = DbScenarioStatus
-GameCreate = ScenarioCreate
+ScenarioCreate = ScenarioCreate
 ScenarioUser = ScenarioUser
 from app.models.supply_chain_config import (
     SupplyChainConfig,
@@ -1762,7 +1762,7 @@ async def secure_ping(user: Dict[str, Any] = Depends(get_current_user)):
     return {"message": f"pong, {user['email']}", "role": user["role"]}
 
 # ------------------------------------------------------------------------------
-# System config (master ranges) and Model config (game model setup)
+# System config (master ranges) and Model config (scenario model setup)
 # ------------------------------------------------------------------------------
 from pydantic import Field, validator
 from typing import List, Optional, Mapping
@@ -2908,8 +2908,8 @@ def _strategy_for_player(scenario_user: ScenarioUser) -> AgentStrategyEnum:
         return AgentStrategyEnum.AUTONOMY_DTCE
 
 
-def _coerce_game_config(game: DbGame) -> Dict[str, Any]:
-    raw = game.config or {}
+def _coerce_scenario_config(scenario: DbGame) -> Dict[str, Any]:
+    raw = scenario.config or {}
     if isinstance(raw, dict):
         return raw
     if isinstance(raw, str):
@@ -2921,22 +2921,22 @@ def _coerce_game_config(game: DbGame) -> Dict[str, Any]:
 
 
 def _debug_note(
-    game: DbGame,
+    scenario: DbGame,
     message: str,
     details: Optional[Dict[str, Any]] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Write a diagnostic note into the game's debug log (best-effort)."""
+    """Write a diagnostic note into the scenario's debug log (best-effort)."""
     try:
-        cfg = dict(config or _coerce_game_config(game) or {})
+        cfg = dict(config or _coerce_scenario_config(scenario) or {})
         cfg = _normalize_debug_config(cfg)
         # Force-enable for diagnostic notes so we always get a breadcrumb.
         cfg["enabled"] = True
         # Ensure the log file exists and path is set before writing
-        _ensure_debug_log_file(cfg, game)
-        _append_debug_error(cfg, game, message, details=details)
+        _ensure_debug_log_file(cfg, scenario)
+        _append_debug_error(cfg, scenario, message, details=details)
     except Exception:  # noqa: BLE001
-        logger.debug("Unable to write debug note for game %s", getattr(game, "id", "?"))
+        logger.debug("Unable to write debug note for scenario %s", getattr(scenario, "id", "?"))
 
 
 def _normalize_legacy_engine_queues(config: Dict[str, Any]) -> bool:
@@ -2989,33 +2989,33 @@ def _safe_int(value: Any) -> int:
         return 0
 
 
-def _save_game_config(db: Session, game: DbGame, config: Dict[str, Any]) -> None:
+def _save_scenario_config(db: Session, scenario: DbGame, config: Dict[str, Any]) -> None:
     # Assign a shallow copy and flag the attribute as modified so SQLAlchemy
     # persists JSON changes even when only nested keys are updated.
-    game.config = dict(config)
-    flag_modified(game, "config")
-    db.add(game)
+    scenario.config = dict(config)
+    flag_modified(scenario, "config")
+    db.add(scenario)
 
 
-def _get_progression_mode(game: DbGame) -> str:
-    config = _coerce_game_config(game)
+def _get_progression_mode(scenario: DbGame) -> str:
+    config = _coerce_scenario_config(scenario)
     mode = config.get("progression_mode", PROGRESSION_SUPERVISED)
     if mode not in {PROGRESSION_SUPERVISED, PROGRESSION_UNSUPERVISED}:
         return PROGRESSION_SUPERVISED
     return mode
 
 
-def _ensure_round(db: Session, game: DbGame, round_number: Optional[int] = None) -> Period:
-    number = round_number or (game.current_round or 1)
+def _ensure_round(db: Session, scenario: DbGame, round_number: Optional[int] = None) -> Period:
+    number = round_number or (scenario.current_round or 1)
     existing = (
         db.query(Period)
-        .filter(Period.scenario_id == game.id, Period.round_number == number)
+        .filter(Period.scenario_id == scenario.id, Period.round_number == number)
         .first()
     )
     if existing:
         return existing
     round_record = Period(
-        scenario_id=game.id,
+        scenario_id=scenario.id,
         round_number=number,
         status="in_progress",
         started_at=datetime.utcnow(),
@@ -3034,10 +3034,10 @@ def _simulation_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     return config.get("simulation_parameters", {})
 
 
-def _all_players_submitted(db: Session, game: DbGame, round_record: Period) -> bool:
+def _all_players_submitted(db: Session, scenario: DbGame, round_record: Period) -> bool:
     player_roles = {
         str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
-        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
     }
     if not player_roles:
         return False
@@ -3046,7 +3046,7 @@ def _all_players_submitted(db: Session, game: DbGame, round_record: Period) -> b
         db.query(ScenarioUserAction, ScenarioUser)
         .join(ScenarioUser, ScenarioUser.id == ScenarioUserAction.scenario_user_id)
         .filter(
-            ScenarioUserAction.scenario_id == game.id,
+            ScenarioUserAction.scenario_id == scenario.id,
             ScenarioUserAction.period_id == round_record.id,
             ScenarioUserAction.action_type == "order",
         )
@@ -3060,8 +3060,8 @@ def _all_players_submitted(db: Session, game: DbGame, round_record: Period) -> b
     return player_roles.issubset(submitted_roles)
 
 
-def _compute_customer_demand(game: DbGame, round_number: int) -> int:
-    config = _coerce_game_config(game)
+def _compute_customer_demand(scenario: DbGame, round_number: int) -> int:
+    config = _coerce_scenario_config(scenario)
     params = _simulation_parameters(config)
     initial = int(params.get("initial_demand", 4))
     change_week = int(params.get("demand_change_week", params.get("change_week", 20)))
@@ -3124,13 +3124,13 @@ def _compute_customer_demand(game: DbGame, round_number: int) -> int:
             config = dict(config)
             config["demand_pattern"] = pattern
         try:
-            game.demand_pattern = pattern
-            flag_modified(game, "demand_pattern")
+            scenario.demand_pattern = pattern
+            flag_modified(scenario, "demand_pattern")
         except Exception:
             pass
         try:
-            game.config = config
-            flag_modified(game, "config")
+            scenario.config = config
+            flag_modified(scenario, "config")
         except Exception:
             pass
 
@@ -3386,7 +3386,7 @@ def _ensure_simulation_state(config: Dict[str, Any]) -> Dict[str, Any]:
     return state
 
 
-def _log_initialisation_debug(config: Dict[str, Any], game: DbGame, db: Session) -> None:
+def _log_initialisation_debug(config: Dict[str, Any], scenario: DbGame, db: Session) -> None:
     """Persist the initial state of each node to the debug log."""
 
     debug_cfg = _normalize_debug_config(config)
@@ -3395,7 +3395,7 @@ def _log_initialisation_debug(config: Dict[str, Any], game: DbGame, db: Session)
         return
 
     config["debug_logging"] = debug_cfg
-    path = _ensure_debug_log_file(config, game)
+    path = _ensure_debug_log_file(config, scenario)
     if not path:
         return
 
@@ -3413,11 +3413,11 @@ def _log_initialisation_debug(config: Dict[str, Any], game: DbGame, db: Session)
     mean = stats_cfg.get("mean")
     variance = stats_cfg.get("variance")
     if mean is None or variance is None:
-        pattern = config.get("demand_pattern") or getattr(game, "demand_pattern", None) or DEFAULT_DEMAND_PATTERN
+        pattern = config.get("demand_pattern") or getattr(scenario, "demand_pattern", None) or DEFAULT_DEMAND_PATTERN
         try:
             mean, variance = estimate_demand_stats(pattern)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Falling back to zeroed demand stats for game %s: %s", getattr(game, "id", "?"), exc)
+            logger.debug("Falling back to zeroed demand stats for scenario %s: %s", getattr(scenario, "id", "?"), exc)
             mean, variance = 0.0, 0.0
 
     items = config.get("items") or []
@@ -3449,7 +3449,7 @@ def _log_initialisation_debug(config: Dict[str, Any], game: DbGame, db: Session)
         if product_id is not None and product_name:
             product_name_by_id[str(product_id)] = str(product_name)
 
-    supply_chain_config_id = getattr(game, "supply_chain_config_id", None)
+    supply_chain_config_id = getattr(scenario, "supply_chain_config_id", None)
     if supply_chain_config_id is not None and not product_catalog_payload:
         db_products = (
             db.query(SupplyProductModel)
@@ -3497,8 +3497,8 @@ def _log_initialisation_debug(config: Dict[str, Any], game: DbGame, db: Session)
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug(
-                "Unable to compute initial condition details for game %s node %s: %s",
-                getattr(game, "id", "?"),
+                "Unable to compute initial condition details for scenario %s node %s: %s",
+                getattr(scenario, "id", "?"),
                 node,
                 exc,
             )
@@ -3524,8 +3524,8 @@ def _log_initialisation_debug(config: Dict[str, Any], game: DbGame, db: Session)
                 handle.write("\n\n")
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "Failed writing debug initialisation data for game %s node %s: %s",
-                getattr(game, "id", "?"),
+                "Failed writing debug initialisation data for scenario %s node %s: %s",
+                getattr(scenario, "id", "?"),
                 node,
                 exc,
             )
@@ -3534,24 +3534,24 @@ def _log_initialisation_debug(config: Dict[str, Any], game: DbGame, db: Session)
 
 def _finalize_round_if_ready(
     db: Session,
-    game: DbGame,
+    scenario: DbGame,
     config: Dict[str, Any],
     round_record: Period,
     *,
     force: bool = False,
 ) -> bool:
     pending = _pending_orders(config)
-    if not force and _get_progression_mode(game) != PROGRESSION_UNSUPERVISED:
+    if not force and _get_progression_mode(scenario) != PROGRESSION_UNSUPERVISED:
         return False
 
-    if not force and not _all_players_submitted(db, game, round_record):
+    if not force and not _all_players_submitted(db, scenario, round_record):
         return False
 
     timestamp = datetime.utcnow()
     round_number = round_record.round_number
-    external_demand = _compute_customer_demand(game, round_number)
+    external_demand = _compute_customer_demand(scenario, round_number)
 
-    scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+    scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
     players_by_role = {
         str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower(): scenario_user
         for scenario_user in scenario_users
@@ -3567,7 +3567,7 @@ def _finalize_round_if_ready(
         db.query(ScenarioUserAction, ScenarioUser)
         .join(ScenarioUser, ScenarioUser.id == ScenarioUserAction.scenario_user_id)
         .filter(
-            ScenarioUserAction.scenario_id == game.id,
+            ScenarioUserAction.scenario_id == scenario.id,
             ScenarioUserAction.period_id == round_record.id,
             ScenarioUserAction.action_type == "order",
         )
@@ -3971,14 +3971,14 @@ def _finalize_round_if_ready(
                     try:
                         llm_payload = build_llm_decision_payload(
                             db,
-                            game,
+                            scenario,
                             round_number=round_number,
                             action_role=node_key,
                         )
                     except Exception as exc:  # noqa: BLE001
                         logger.exception(
-                            "Failed to build Autonomy LLM payload | game=%s role=%s strategy=%s",
-                            getattr(game, "id", "?"),
+                            "Failed to build Autonomy LLM payload | scenario=%s role=%s strategy=%s",
+                            getattr(scenario, "id", "?"),
                             node_key,
                             strategy_enum.value,
                         )
@@ -4089,7 +4089,7 @@ def _finalize_round_if_ready(
         action_obj = actions_by_role.get(node_key)
         if action_obj is None:
             action_obj = ScenarioUserAction(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 period_id=round_record.id,
                 scenario_user_id=scenario_user.id,
                 action_type="order",
@@ -4770,7 +4770,7 @@ def _finalize_round_if_ready(
 
     _append_debug_round_log(
         config,
-        game,
+        scenario,
         round_number=round_number,
         timestamp=timestamp,
         entries=ordered_debug_entries,
@@ -4816,29 +4816,29 @@ def _finalize_round_if_ready(
     if shipments_map:
         round_record.config["shipments"] = {source: dict(targets) for source, targets in shipments_map.items()}
 
-    if game.max_rounds and round_number >= game.max_rounds:
-        game.status = DbScenarioStatus.FINISHED
-        game.current_round = round_number
+    if scenario.max_rounds and round_number >= scenario.max_rounds:
+        scenario.status = DbScenarioStatus.FINISHED
+        scenario.current_round = round_number
     else:
-        game.current_round = round_number + 1
-        next_round = _ensure_round(db, game, game.current_round)
+        scenario.current_round = round_number + 1
+        next_round = _ensure_round(db, scenario, scenario.current_round)
         next_round.status = "in_progress"
         next_round.started_at = datetime.utcnow()
-        game.status = (
+        scenario.status = (
             DbScenarioStatus.PERIOD_IN_PROGRESS
-            if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED
+            if _get_progression_mode(scenario) == PROGRESSION_UNSUPERVISED
             else DbScenarioStatus.STARTED
         )
 
-    _touch_game(game)
-    _save_game_config(db, game, config)
+    _touch_game(scenario)
+    _save_scenario_config(db, scenario, config)
     db.add(round_record)
-    db.add(game)
+    db.add(scenario)
     db.flush()
     return True
 
 
-def _auto_advance_unsupervised_game_sync(
+def _auto_advance_unsupervised_scenario_sync(
     scenario_id: int,
     *,
     sleep_seconds: float = 0.35,
@@ -4847,38 +4847,38 @@ def _auto_advance_unsupervised_game_sync(
     session = SyncSessionLocal()
     try:
         service = MixedScenarioService(session)
-        game = session.query(DbGame).filter(DbGame.id == scenario_id).first()
-        if not game:
-            logger.warning("Auto-advance aborted: game %s not found", scenario_id)
+        scenario = session.query(DbGame).filter(DbGame.id == scenario_id).first()
+        if not scenario:
+            logger.warning("Auto-advance aborted: scenario %s not found", scenario_id)
             try:
-                _debug_note(game, "Auto-advance aborted: game not found")
+                _debug_note(scenario, "Auto-advance aborted: scenario not found")
             except Exception:
                 pass
             return
 
-        if _get_progression_mode(game) != PROGRESSION_UNSUPERVISED:
-            logger.debug("Game %s is not unsupervised; skipping auto advance", scenario_id)
+        if _get_progression_mode(scenario) != PROGRESSION_UNSUPERVISED:
+            logger.debug("Scenario %s is not unsupervised; skipping auto advance", scenario_id)
             _debug_note(
-                game,
+                scenario,
                 "Auto-advance skipped: progression mode is not unsupervised",
-                details={"progression_mode": _get_progression_mode(game)},
+                details={"progression_mode": _get_progression_mode(scenario)},
             )
             return
 
-        scenario_users = session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        scenario_users = session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
         if not scenario_users:
-            logger.warning("Auto-advance aborted: no scenario_users for game %s", scenario_id)
-            _debug_note(game, "Auto-advance aborted: no scenario_users found")
+            logger.warning("Auto-advance aborted: no scenario_users for scenario %s", scenario_id)
+            _debug_note(scenario, "Auto-advance aborted: no scenario_users found")
             return
 
         has_human_players = any(not p.is_ai for p in scenario_users)
         if has_human_players:
             logger.info(
-                "Auto-advance skipped for game %s: unsupervised mode requires AI-only scenario_users",
+                "Auto-advance skipped for scenario %s: unsupervised mode requires AI-only scenario_users",
                 scenario_id,
             )
             _debug_note(
-                game,
+                scenario,
                 "Auto-advance skipped: human scenario_users present",
                 details={
                     "ai_players": sum(1 for p in scenario_users if p.is_ai),
@@ -4887,11 +4887,11 @@ def _auto_advance_unsupervised_game_sync(
             )
             return
 
-        logger.info("Auto-advance starting for game %s (max_rounds=%s)", scenario_id, game.max_rounds)
+        logger.info("Auto-advance starting for scenario %s (max_rounds=%s)", scenario_id, scenario.max_rounds)
         _debug_note(
-            game,
+            scenario,
             "Auto-advance starting",
-            details={"max_rounds": game.max_rounds, "progression_mode": _get_progression_mode(game)},
+            details={"max_rounds": scenario.max_rounds, "progression_mode": _get_progression_mode(scenario)},
         )
         iteration = 0
 
@@ -4899,65 +4899,65 @@ def _auto_advance_unsupervised_game_sync(
             iteration += 1
             if iteration_limit and iteration > iteration_limit:
                 logger.warning(
-                    "Auto-advance stopped for game %s after reaching the iteration limit",
+                    "Auto-advance stopped for scenario %s after reaching the iteration limit",
                     scenario_id,
                 )
                 _debug_note(
-                    game,
+                    scenario,
                     "Auto-advance stopped: iteration limit reached",
                     details={"iteration_limit": iteration_limit},
                 )
                 break
 
             session.expire_all()
-            game = session.query(DbGame).filter(DbGame.id == scenario_id).first()
-            if not game:
-                logger.debug("Game %s disappeared mid-run; stopping auto advance", scenario_id)
+            scenario = session.query(DbGame).filter(DbGame.id == scenario_id).first()
+            if not scenario:
+                logger.debug("Scenario %s disappeared mid-run; stopping auto advance", scenario_id)
                 break
 
-            if _get_progression_mode(game) != PROGRESSION_UNSUPERVISED:
+            if _get_progression_mode(scenario) != PROGRESSION_UNSUPERVISED:
                 logger.debug(
-                    "Game %s progression mode changed away from unsupervised; stopping",
+                    "Scenario %s progression mode changed away from unsupervised; stopping",
                     scenario_id,
                 )
                 break
 
-            if game.status == DbScenarioStatus.FINISHED:
+            if scenario.status == DbScenarioStatus.FINISHED:
                 break
 
             try:
-                round_record = service.start_new_round(game)
+                round_record = service.start_new_round(scenario)
             except Exception as exc:  # noqa: BLE001
                 _debug_note(
-                    game,
+                    scenario,
                     "Auto-advance stopped: start_new_round raised",
                     details={"iteration": iteration, "error": str(exc)},
                 )
-                logger.exception("start_new_round failed for game %s", scenario_id)
+                logger.exception("start_new_round failed for scenario %s", scenario_id)
                 break
             if round_record is None:
                 _debug_note(
-                    game,
+                    scenario,
                     "Auto-advance stopped: start_new_round returned None",
                     details={"iteration": iteration},
                 )
                 break
 
-            session.refresh(game)
+            session.refresh(scenario)
 
-            if game.status == DbScenarioStatus.FINISHED:
+            if scenario.status == DbScenarioStatus.FINISHED:
                 break
 
             if sleep_seconds:
                 time.sleep(sleep_seconds)
-        logger.info("Auto-advance finished for game %s after %s iterations", scenario_id, iteration)
+        logger.info("Auto-advance finished for scenario %s after %s iterations", scenario_id, iteration)
         _debug_note(
-            game,
+            scenario,
             "Auto-advance finished",
-            details={"iterations": iteration, "status": str(game.status)},
+            details={"iterations": iteration, "status": str(scenario.status)},
         )
     except Exception:
-        logger.exception("Auto-advance failed for game %s", scenario_id)
+        logger.exception("Auto-advance failed for scenario %s", scenario_id)
     finally:
         session.close()
 
@@ -4971,7 +4971,7 @@ async def _schedule_unsupervised_autoplay(scenario_id: int) -> None:
     async def runner() -> None:
         current_task = asyncio.current_task()
         try:
-            await asyncio.to_thread(_auto_advance_unsupervised_game_sync, scenario_id)
+            await asyncio.to_thread(_auto_advance_unsupervised_scenario_sync, scenario_id)
         finally:
             with _AUTO_TASKS_LOCK:
                 if _AUTO_ADVANCE_TASKS.get(scenario_id) is current_task:
@@ -4980,7 +4980,7 @@ async def _schedule_unsupervised_autoplay(scenario_id: int) -> None:
     task = asyncio.create_task(runner())
     with _AUTO_TASKS_LOCK:
         _AUTO_ADVANCE_TASKS[scenario_id] = task
-    logger.info("Scheduled unsupervised auto-advance for game %s", scenario_id)
+    logger.info("Scheduled unsupervised auto-advance for scenario %s", scenario_id)
 
 
 def _cancel_unsupervised_autoplay(scenario_id: int) -> None:
@@ -5003,13 +5003,13 @@ def _normalize_node_key(value: Any) -> str:
 
 def _replay_history_from_rounds(
     db: Session,
-    game: DbGame,
+    scenario: DbGame,
     config: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Rebuild round history from persisted round tables when config lacks it."""
 
     if config is None:
-        config = _coerce_game_config(game)
+        config = _coerce_scenario_config(scenario)
     site_type_definitions, _ = _ensure_site_type_definitions(config or {})
     site_type_sequence = [
         MixedScenarioService._normalise_node_type(defn.get("type"))
@@ -5019,7 +5019,7 @@ def _replay_history_from_rounds(
 
     records = (
         db.query(Period)
-        .filter(Period.scenario_id == game.id)
+        .filter(Period.scenario_id == scenario.id)
         .order_by(Period.round_number.asc())
         .all()
     )
@@ -5057,7 +5057,7 @@ def _replay_history_from_rounds(
 
     supply_rounds = (
         db.query(SupplyScenarioPeriod)
-        .filter(SupplyScenarioPeriod.scenario_id == game.id)
+        .filter(SupplyScenarioPeriod.scenario_id == scenario.id)
         .filter(SupplyScenarioPeriod.round_number > last_recorded_round)
         .order_by(SupplyScenarioPeriod.round_number.asc())
         .all()
@@ -5077,7 +5077,7 @@ def _replay_history_from_rounds(
 
     scenario_users = {
         scenario_user.id: scenario_user
-        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
     }
 
     rounds_by_id = {round_rec.id: round_rec for round_rec in supply_rounds}
@@ -5186,8 +5186,8 @@ def _replay_history_from_rounds(
     return history
 
 
-def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
-    config = _coerce_game_config(game)
+def _compute_scenario_report(db: Session, scenario: DbGame) -> Dict[str, Any]:
+    config = _coerce_scenario_config(scenario)
     site_type_definitions, site_type_labels = _ensure_site_type_definitions(config)
     site_type_sequence = [
         MixedScenarioService._normalise_node_type(defn.get("type"))
@@ -5196,11 +5196,11 @@ def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
     ]
     history = list(config.get("history", []))
 
-    supply_chain_config_id = getattr(game, "supply_chain_config_id", None)
+    supply_chain_config_id = getattr(scenario, "supply_chain_config_id", None)
     supply_chain_name = config.get("supply_chain_name")
 
     try:
-        supply_chain_obj = getattr(game, "supply_chain_config", None)
+        supply_chain_obj = getattr(scenario, "supply_chain_config", None)
     except Exception:  # noqa: BLE001 - defensive: relationship access shouldn't fail
         supply_chain_obj = None
 
@@ -5220,7 +5220,7 @@ def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
             supply_chain_name = sc_record.name
 
     if not history:
-        history = _replay_history_from_rounds(db, game, config)
+        history = _replay_history_from_rounds(db, scenario, config)
 
     config_history = config.get("history")
     for idx, entry in enumerate(history):
@@ -5509,10 +5509,10 @@ def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
     }
 
     try:
-        _write_sankey_log(game, history)
+        _write_sankey_log(scenario, history)
     except Exception:  # noqa: BLE001 - log and continue without failing report generation
         logger.exception(
-            "Failed to write Sankey log for game %s", getattr(game, "id", "?")
+            "Failed to write Sankey log for scenario %s", getattr(scenario, "id", "?")
         )
 
     raw_product_catalog = config.get("product_catalog") or config.get("item_catalog")
@@ -5531,11 +5531,11 @@ def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
         products_payload = list(product_catalog_serialized)
 
     return {
-        "scenario_id": game.id,
-        "name": game.name,
+        "scenario_id": scenario.id,
+        "name": scenario.name,
         "supply_chain_config_id": supply_chain_config_id,
         "supply_chain_name": supply_chain_name,
-        "progression_mode": _get_progression_mode(game),
+        "progression_mode": _get_progression_mode(scenario),
         "total_cost": round(total_cost, 2),
         "totals": formatted_totals,
         "history": history,
@@ -5555,21 +5555,21 @@ def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
     }
 
 
-def _serialize_game(game: DbGame) -> Dict[str, Any]:
-    if isinstance(game.status, DbScenarioStatus):
-        status = STATUS_REMAPPING.get(game.status, game.status.value)
+def _serialize_game(scenario: DbGame) -> Dict[str, Any]:
+    if isinstance(scenario.status, DbScenarioStatus):
+        status = STATUS_REMAPPING.get(scenario.status, scenario.status.value)
     else:
-        status = str(game.status or "")
+        status = str(scenario.status or "")
 
-    config = dict(_coerce_game_config(game))
+    config = dict(_coerce_scenario_config(scenario))
     _ensure_site_type_definitions(config)
-    demand_pattern = game.demand_pattern or config.get("demand_pattern") or {}
+    demand_pattern = scenario.demand_pattern or config.get("demand_pattern") or {}
 
-    supply_chain_config_id = getattr(game, "supply_chain_config_id", None)
+    supply_chain_config_id = getattr(scenario, "supply_chain_config_id", None)
     supply_chain_name = config.get("supply_chain_name")
 
     try:
-        supply_chain_obj = getattr(game, "supply_chain_config", None)
+        supply_chain_obj = getattr(scenario, "supply_chain_config", None)
     except Exception:  # noqa: BLE001 - defensive: relationship access shouldn't fail
         supply_chain_obj = None
 
@@ -5585,20 +5585,20 @@ def _serialize_game(game: DbGame) -> Dict[str, Any]:
         config.setdefault("supply_chain_name", supply_chain_name)
 
     payload = {
-        "id": game.id,
-        "name": game.name,
-        "description": game.description,
+        "id": scenario.id,
+        "name": scenario.name,
+        "description": scenario.description,
         "status": str(status).upper(),
-        "current_round": game.current_round or 0,
-        "max_rounds": game.max_rounds or 0,
-        "created_at": _iso(game.created_at),
-        "updated_at": _iso(getattr(game, "updated_at", None)),
-        "tenant_id": game.tenant_id,
-        "created_by": game.created_by,
-        "is_public": bool(getattr(game, "is_public", True)),
+        "current_round": scenario.current_round or 0,
+        "max_rounds": scenario.max_rounds or 0,
+        "created_at": _iso(scenario.created_at),
+        "updated_at": _iso(getattr(scenario, "updated_at", None)),
+        "tenant_id": scenario.tenant_id,
+        "created_by": scenario.created_by,
+        "is_public": bool(getattr(scenario, "is_public", True)),
         "config": config,
         "demand_pattern": demand_pattern,
-        "progression_mode": _get_progression_mode(game),
+        "progression_mode": _get_progression_mode(scenario),
     }
 
     if supply_chain_config_id is not None:
@@ -5609,31 +5609,31 @@ def _serialize_game(game: DbGame) -> Dict[str, Any]:
     return payload
 
 
-def _get_game_for_user(db: Session, user: Any, scenario_id: int) -> DbGame:
-    game = db.query(DbGame).filter(DbGame.id == scenario_id).first()
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
+def _get_scenario_for_user(db: Session, user: Any, scenario_id: int) -> DbGame:
+    scenario = db.query(DbGame).filter(DbGame.id == scenario_id).first()
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
     if _is_system_admin_user(user):
-        return game
+        return scenario
     user_tenant_id = _extract_tenant_id(user)
-    if user_tenant_id is None or user_tenant_id != game.tenant_id:
+    if user_tenant_id is None or user_tenant_id != scenario.tenant_id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    return game
+    return scenario
 
 
-def _touch_game(game: DbGame) -> None:
-    game.updated_at = datetime.utcnow()
+def _touch_game(scenario: DbGame) -> None:
+    scenario.updated_at = datetime.utcnow()
 
 
 @api.post("/mixed-scenarios/", status_code=201)
-async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depends(get_current_user)):
+async def create_mixed_scenario(payload: ScenarioCreate, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
         tenant_id = _extract_tenant_id(user)
         if tenant_id is None and not _is_system_admin_user(user):
-            raise HTTPException(status_code=403, detail="Tenant membership required to create games")
+            raise HTTPException(status_code=403, detail="Tenant membership required to create scenarios")
         if payload.supply_chain_config_id is None:
-            raise HTTPException(status_code=400, detail="supply_chain_config_id is required to create a mixed game")
+            raise HTTPException(status_code=400, detail="supply_chain_config_id is required to create a mixed scenario")
 
         config: Dict[str, Any] = {
             "demand_pattern": payload.demand_pattern.dict() if payload.demand_pattern else {},
@@ -5646,7 +5646,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
             "history": [],
         }
 
-        game = DbGame(
+        scenario = DbGame(
             name=payload.name,
             description=payload.description,
             status=DbScenarioStatus.CREATED,
@@ -5660,7 +5660,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
             config=config,
             supply_chain_config_id=int(payload.supply_chain_config_id),
         )
-        db.add(game)
+        db.add(scenario)
         db.flush()
 
         role_enum_map = {
@@ -5686,7 +5686,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
                 strategy_value = assignment.strategy.value if hasattr(assignment.strategy, "value") else str(assignment.strategy)
 
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 user_id=None if is_agent else assignment.user_id,
                 name=f"{role_enum_name.title().replace('_', ' ')} ({'AI' if is_agent else 'Human'})",
                 role=ScenarioUserRole[role_enum_name],
@@ -5699,13 +5699,13 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
             db.add(scenario_user)
 
         _ensure_simulation_state(config)
-        _save_game_config(db, game, config)
-        db.add(game)
+        _save_scenario_config(db, scenario, config)
+        db.add(scenario)
         db.commit()
-        db.refresh(game)
-        payload = _serialize_game(game)
-        if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED:
-            await _schedule_unsupervised_autoplay(game.id)
+        db.refresh(scenario)
+        payload = _serialize_game(scenario)
+        if _get_progression_mode(scenario) == PROGRESSION_UNSUPERVISED:
+            await _schedule_unsupervised_autoplay(scenario.id)
         return payload
     finally:
         db.close()
@@ -5713,13 +5713,13 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
 
 def _apply_player_assignments_for_update(
     db: Session,
-    game: DbGame,
+    scenario: DbGame,
     assignments: List[ScenarioUserAssignment],
     config: Dict[str, Any],
 ) -> None:
     existing_scenario_users = {
         (scenario_user.role.name if hasattr(scenario_user.role, "name") else str(scenario_user.role).upper()): scenario_user
-        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
     }
 
     role_assignments: Dict[str, Dict[str, Any]] = {}
@@ -5736,7 +5736,7 @@ def _apply_player_assignments_for_update(
         scenario_user = existing_scenario_users.pop(role_enum.name, None)
         if scenario_user is None:
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=role_enum,
                 name=role_enum.name.title(),
             )
@@ -5777,7 +5777,7 @@ def _apply_player_assignments_for_update(
     else:
         config.pop("autonomy_overrides", None)
 
-    game.role_assignments = role_assignments
+    scenario.role_assignments = role_assignments
 
 @api.get("/mixed-scenarios/")
 async def list_mixed_scenarios(user: Dict[str, Any] = Depends(get_current_user)):
@@ -5789,20 +5789,20 @@ async def list_mixed_scenarios(user: Dict[str, Any] = Depends(get_current_user))
             if tenant_id is None:
                 return []
             query = query.filter(DbGame.tenant_id == tenant_id)
-        games = query.all()
-        if not games:
+        scenarios = query.all()
+        if not scenarios:
             ensure_default_tenant_and_scenario(db)
             db.expire_all()
-            games = query.all()
+            scenarios = query.all()
 
         payload: List[Dict[str, Any]] = []
-        for game in games:
-            if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED and game.status in {
+        for scenario in scenarios:
+            if _get_progression_mode(scenario) == PROGRESSION_UNSUPERVISED and scenario.status in {
                 DbScenarioStatus.STARTED,
                 DbScenarioStatus.PERIOD_IN_PROGRESS,
             }:
-                await _schedule_unsupervised_autoplay(game.id)
-            payload.append(_serialize_game(game))
+                await _schedule_unsupervised_autoplay(scenario.id)
+            payload.append(_serialize_game(scenario))
         return payload
     finally:
         db.close()
@@ -5816,29 +5816,29 @@ async def update_mixed_scenario(
 ):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        if game.status not in {DbScenarioStatus.CREATED}:
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        if scenario.status not in {DbScenarioStatus.CREATED}:
             raise HTTPException(
                 status_code=400,
                 detail="Games can only be edited while in the CREATED state.",
             )
 
-        config = _coerce_game_config(game)
+        config = _coerce_scenario_config(scenario)
         update_data = payload.dict(exclude_unset=True)
 
         if "name" in update_data:
-            game.name = update_data["name"]
+            scenario.name = update_data["name"]
         if "description" in update_data:
-            game.description = update_data["description"]
+            scenario.description = update_data["description"]
         if "is_public" in update_data:
-            game.is_public = bool(update_data["is_public"])
+            scenario.is_public = bool(update_data["is_public"])
         if "max_rounds" in update_data:
-            game.max_rounds = update_data["max_rounds"]
+            scenario.max_rounds = update_data["max_rounds"]
         if "progression_mode" in update_data:
             config["progression_mode"] = update_data["progression_mode"]
         if payload.demand_pattern is not None:
             config["demand_pattern"] = payload.demand_pattern.dict()
-            game.demand_pattern = config["demand_pattern"]
+            scenario.demand_pattern = config["demand_pattern"]
         if payload.pricing_config is not None:
             config["pricing_config"] = payload.pricing_config.dict()
         if payload.node_policies is not None:
@@ -5850,20 +5850,20 @@ async def update_mixed_scenario(
         if payload.global_policy is not None:
             config["global_policy"] = payload.global_policy
         if payload.player_assignments is not None:
-            _apply_player_assignments_for_update(db, game, payload.player_assignments, config)
+            _apply_player_assignments_for_update(db, scenario, payload.player_assignments, config)
 
         _ensure_simulation_state(config)
-        _save_game_config(db, game, config)
-        _touch_game(game)
-        db.add(game)
+        _save_scenario_config(db, scenario, config)
+        _touch_game(scenario)
+        db.add(scenario)
         db.commit()
-        db.refresh(game)
-        return _serialize_game(game)
+        db.refresh(scenario)
+        return _serialize_game(scenario)
     finally:
         db.close()
 
 
-@api.post("/games/{scenario_id}/scenario_users/{scenario_user_id}/orders")
+@api.post("/scenarios/{scenario_id}/scenario_users/{scenario_user_id}/orders")
 async def submit_order(
     scenario_id: int,
     scenario_user_id: int,
@@ -5875,19 +5875,19 @@ async def submit_order(
         if submission.quantity < 0:
             raise HTTPException(status_code=400, detail="Quantity must be non-negative")
 
-        game = _get_game_for_user(db, user, scenario_id)
-        scenario_user = db.query(ScenarioUser).filter(ScenarioUser.id == scenario_user_id, ScenarioUser.scenario_id == game.id).first()
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        scenario_user = db.query(ScenarioUser).filter(ScenarioUser.id == scenario_user_id, ScenarioUser.scenario_id == scenario.id).first()
         if not scenario_user:
-            raise HTTPException(status_code=404, detail="ScenarioUser not found for this game")
+            raise HTTPException(status_code=404, detail="ScenarioUser not found for this scenario")
 
-        config = _coerce_game_config(game)
-        round_record = _ensure_round(db, game)
+        config = _coerce_scenario_config(scenario)
+        round_record = _ensure_round(db, scenario)
 
         # Record scenario_user action for auditing
         action = (
             db.query(ScenarioUserAction)
             .filter(
-                ScenarioUserAction.scenario_id == game.id,
+                ScenarioUserAction.scenario_id == scenario.id,
                 ScenarioUserAction.scenario_user_id == scenario_user.id,
                 ScenarioUserAction.period_id == round_record.id,
                 ScenarioUserAction.action_type == "order",
@@ -5902,7 +5902,7 @@ async def submit_order(
             action.created_at = timestamp
         else:
             action = ScenarioUserAction(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 period_id=round_record.id,
                 scenario_user_id=scenario_user.id,
                 action_type="order",
@@ -5920,16 +5920,16 @@ async def submit_order(
             "submitted_at": timestamp.isoformat() + "Z",
         }
 
-        _save_game_config(db, game, config)
-        db.add(game)
+        _save_scenario_config(db, scenario, config)
+        db.add(scenario)
         db.flush()
 
-        auto_advanced = _finalize_round_if_ready(db, game, config, round_record, force=False)
+        auto_advanced = _finalize_round_if_ready(db, scenario, config, round_record, force=False)
         db.commit()
 
-        progression_mode = _get_progression_mode(game)
+        progression_mode = _get_progression_mode(scenario)
         if progression_mode == PROGRESSION_UNSUPERVISED:
-            await _schedule_unsupervised_autoplay(game.id)
+            await _schedule_unsupervised_autoplay(scenario.id)
 
         return {
             "status": "recorded",
@@ -5942,7 +5942,7 @@ async def submit_order(
                 for act, p in db.query(ScenarioUserAction, ScenarioUser)
                 .join(ScenarioUser, ScenarioUser.id == ScenarioUserAction.scenario_user_id)
                 .filter(
-                    ScenarioUserAction.scenario_id == game.id,
+                    ScenarioUserAction.scenario_id == scenario.id,
                     ScenarioUserAction.period_id == round_record.id,
                     ScenarioUserAction.action_type == "order",
                 )
@@ -5957,12 +5957,12 @@ async def submit_order(
 async def list_rounds(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        config = _coerce_game_config(game)
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        config = _coerce_scenario_config(scenario)
         history = config.get("history", [])
         if not history:
-            history = _replay_history_from_rounds(db, game, config)
-        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+            history = _replay_history_from_rounds(db, scenario, config)
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
         players_by_role = {
             str(p.role.value if hasattr(p.role, "value") else p.role).lower(): p
             for p in scenario_users
@@ -5997,7 +5997,7 @@ async def list_rounds(scenario_id: int, user: Dict[str, Any] = Depends(get_curre
         db.close()
 
 
-@api.get("/games/{scenario_id}/rounds")
+@api.get("/scenarios/{scenario_id}/rounds")
 async def list_rounds_alias(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     return await list_rounds(scenario_id, user)
 
@@ -6006,10 +6006,10 @@ async def list_rounds_alias(scenario_id: int, user: Dict[str, Any] = Depends(get
 async def current_round_status(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        config = _coerce_game_config(game)
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        config = _coerce_scenario_config(scenario)
         pending = _pending_orders(config)
-        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
         all_roles = {
             str(p.role.value if hasattr(p.role, "value") else p.role).lower(): p.id
             for p in scenario_users
@@ -6017,9 +6017,9 @@ async def current_round_status(scenario_id: int, user: Dict[str, Any] = Depends(
         submitted = {role for role, data in pending.items() if data.get("quantity") is not None}
         outstanding = [role for role in all_roles.keys() if role not in submitted]
         return {
-            "scenario_id": game.id,
-            "current_round": game.current_round or 1,
-            "progression_mode": _get_progression_mode(game),
+            "scenario_id": scenario.id,
+            "current_round": scenario.current_round or 1,
+            "progression_mode": _get_progression_mode(scenario),
             "submitted_roles": list(submitted),
             "outstanding_roles": outstanding,
         }
@@ -6027,28 +6027,28 @@ async def current_round_status(scenario_id: int, user: Dict[str, Any] = Depends(
         db.close()
 
 
-@api.get("/games/{scenario_id}/rounds/current/status")
+@api.get("/scenarios/{scenario_id}/rounds/current/status")
 async def current_round_status_alias(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     return await current_round_status(scenario_id, user)
 
 
 @api.get("/mixed-scenarios/{scenario_id}/report")
-async def get_game_report(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+async def get_scenario_report(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        return _compute_game_report(db, game)
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        return _compute_scenario_report(db, scenario)
     finally:
         db.close()
 
 
 @api.get("/mixed-scenarios/{scenario_id}/state")
-async def get_game_state(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+async def get_scenario_state(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        config = _coerce_game_config(game)
-        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        config = _coerce_scenario_config(scenario)
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
         players_payload = [
             {
                 "id": scenario_user.id,
@@ -6060,14 +6060,14 @@ async def get_game_state(scenario_id: int, user: Dict[str, Any] = Depends(get_cu
             }
             for scenario_user in scenario_users
         ]
-        round_record = _ensure_round(db, game, game.current_round or 1)
+        round_record = _ensure_round(db, scenario, scenario.current_round or 1)
         pending = _pending_orders(config)
         history = config.get("history", [])
         if not history:
-            history = _replay_history_from_rounds(db, game, config)
+            history = _replay_history_from_rounds(db, scenario, config)
         return {
-            "game": _serialize_game(game),
-            "progression_mode": _get_progression_mode(game),
+            "scenario": _serialize_game(scenario),
+            "progression_mode": _get_progression_mode(scenario),
             "round": round_record.round_number,
             "pending_orders": pending,
             "history": history,
@@ -6077,13 +6077,13 @@ async def get_game_state(scenario_id: int, user: Dict[str, Any] = Depends(get_cu
         db.close()
 
 
-@api.get("/games/{scenario_id}")
+@api.get("/scenarios/{scenario_id}")
 async def get_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        payload = _serialize_game(game)
-        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        payload = _serialize_game(scenario)
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
         payload["scenario_users"] = [
             {
                 "id": scenario_user.id,
@@ -6101,12 +6101,12 @@ async def get_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current_
         db.close()
 
 
-@api.get("/games/{scenario_id}/scenario_users")
+@api.get("/scenarios/{scenario_id}/scenario_users")
 async def list_players(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
         return [
             {
                 "id": scenario_user.id,
@@ -6131,10 +6131,10 @@ async def start_game(
 ):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        if game.status == DbScenarioStatus.FINISHED:
-            raise HTTPException(status_code=400, detail="Game is already finished")
-        game.started_at = datetime.utcnow()
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        if scenario.status == DbScenarioStatus.FINISHED:
+            raise HTTPException(status_code=400, detail="Scenario is already finished")
+        scenario.started_at = datetime.utcnow()
         request_payload: Dict[str, Any] = {}
         try:
             if request.headers.get("content-length") not in (None, "0"):
@@ -6144,20 +6144,20 @@ async def start_game(
         if not isinstance(request_payload, dict):
             request_payload = {}
 
-        config = _coerce_game_config(game)
+        config = _coerce_scenario_config(scenario)
         legacy_normalized = _normalize_legacy_engine_queues(config)
         if legacy_normalized:
-            _save_game_config(db, game, config)
-            db.add(game)
+            _save_scenario_config(db, scenario, config)
+            db.add(scenario)
             db.commit()
-            db.refresh(game)
+            db.refresh(scenario)
 
-        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
         human_count = sum(1 for p in scenario_users if not getattr(p, "is_ai", False))
         ai_count = len(scenario_users) - human_count
         all_ai_players = bool(scenario_users) and human_count == 0
-        # If the game is AI-only and progression mode isn't set, default to unsupervised so it can autoplay.
-        if _get_progression_mode(game) != PROGRESSION_UNSUPERVISED and all_ai_players:
+        # If the scenario is AI-only and progression mode isn't set, default to unsupervised so it can autoplay.
+        if _get_progression_mode(scenario) != PROGRESSION_UNSUPERVISED and all_ai_players:
             config["progression_mode"] = PROGRESSION_UNSUPERVISED
 
         raw_debug = (
@@ -6184,9 +6184,9 @@ async def start_game(
         config["debug_logging"] = debug_cfg
         debug_requested = bool(debug_cfg.get("enabled"))
         if debug_requested:
-            _ensure_debug_log_file(config, game)
+            _ensure_debug_log_file(config, scenario)
             _debug_note(
-                game,
+                scenario,
                 "Start requested",
                 details={
                     "progression_mode": config.get("progression_mode"),
@@ -6201,36 +6201,36 @@ async def start_game(
             pending.clear()
             config.setdefault("history", [])
             _ensure_simulation_state(config)
-            _log_initialisation_debug(config, game, db)
+            _log_initialisation_debug(config, scenario, db)
 
-            if game.current_round is None or game.current_round <= 0:
-                game.current_round = 1
-            round_record = _ensure_round(db, game, game.current_round)
+            if scenario.current_round is None or scenario.current_round <= 0:
+                scenario.current_round = 1
+            round_record = _ensure_round(db, scenario, scenario.current_round)
             round_record.status = "in_progress"
             round_record.started_at = datetime.utcnow()
 
-            game.status = (
+            scenario.status = (
                 DbScenarioStatus.PERIOD_IN_PROGRESS
-                if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED
+                if _get_progression_mode(scenario) == PROGRESSION_UNSUPERVISED
                 else DbScenarioStatus.STARTED
             )
-            _touch_game(game)
-            _save_game_config(db, game, config)
+            _touch_game(scenario)
+            _save_scenario_config(db, scenario, config)
             db.add(round_record)
-            db.add(game)
+            db.add(scenario)
             db.commit()
-            db.refresh(game)
-            unsupervised = _get_progression_mode(game) == PROGRESSION_UNSUPERVISED
+            db.refresh(scenario)
+            unsupervised = _get_progression_mode(scenario) == PROGRESSION_UNSUPERVISED
             if unsupervised and all_ai_players:
                 try:
                     # Run synchronously so the first request produces rounds/logs immediately.
-                    _auto_advance_unsupervised_game_sync(game.id, sleep_seconds=0.0)
+                    _auto_advance_unsupervised_scenario_sync(scenario.id, sleep_seconds=0.0)
                 except Exception as autoplay_exc:  # noqa: BLE001
-                    logger.exception("Auto-advance failed for game %s", game.id)
+                    logger.exception("Auto-advance failed for scenario %s", scenario.id)
                     if debug_requested:
                         _append_debug_error(
                             config,
-                            game,
+                            scenario,
                             "Auto-advance failed",
                             details={"request_payload": request_payload},
                             exc=autoplay_exc,
@@ -6238,26 +6238,26 @@ async def start_game(
                     startup_notices = config.setdefault("startup_notices", [])
                     if isinstance(startup_notices, list):
                         startup_notices.append(f"Auto-advance failed: {autoplay_exc}")
-                        _save_game_config(db, game, config)
-                        db.add(game)
+                        _save_scenario_config(db, scenario, config)
+                        db.add(scenario)
                         db.commit()
-                        db.refresh(game)
+                        db.refresh(scenario)
                 else:
                     _debug_note(
-                        game,
+                        scenario,
                         "Auto-advance completed synchronously",
-                        details={"status": str(game.status)},
+                        details={"status": str(scenario.status)},
                     )
             elif unsupervised:
-                await _schedule_unsupervised_autoplay(game.id)
-            db.refresh(game)
-            return _serialize_game(game)
+                await _schedule_unsupervised_autoplay(scenario.id)
+            db.refresh(scenario)
+            return _serialize_game(scenario)
         except Exception as exc:  # noqa: BLE001
             if debug_requested:
                 _append_debug_error(
                     config,
-                    game,
-                    "Failed to start game",
+                    scenario,
+                    "Failed to start scenario",
                     details={"request_payload": request_payload},
                     exc=exc,
                 )
@@ -6271,25 +6271,25 @@ async def stop_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current
     db = SyncSessionLocal()
     try:
         _cancel_unsupervised_autoplay(scenario_id)
-        game = _get_game_for_user(db, user, scenario_id)
-        config = _coerce_game_config(game)
-        round_record = _ensure_round(db, game, game.current_round or 1)
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        config = _coerce_scenario_config(scenario)
+        round_record = _ensure_round(db, scenario, scenario.current_round or 1)
         pending = _pending_orders(config)
 
-        if pending and not _finalize_round_if_ready(db, game, config, round_record, force=True):
-            _save_game_config(db, game, config)
+        if pending and not _finalize_round_if_ready(db, scenario, config, round_record, force=True):
+            _save_scenario_config(db, scenario, config)
 
-        game.status = DbScenarioStatus.FINISHED
-        if game.max_rounds:
-            game.current_round = max(game.current_round or 0, game.max_rounds)
+        scenario.status = DbScenarioStatus.FINISHED
+        if scenario.max_rounds:
+            scenario.current_round = max(scenario.current_round or 0, scenario.max_rounds)
 
-        _touch_game(game)
-        _save_game_config(db, game, config)
+        _touch_game(scenario)
+        _save_scenario_config(db, scenario, config)
         db.add(round_record)
-        db.add(game)
+        db.add(scenario)
         db.commit()
-        db.refresh(game)
-        return _serialize_game(game)
+        db.refresh(scenario)
+        return _serialize_game(scenario)
     finally:
         db.close()
 
@@ -6299,21 +6299,21 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
     _cancel_unsupervised_autoplay(scenario_id)
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
+        scenario = _get_scenario_for_user(db, user, scenario_id)
 
         # Remove historical round data
-        round_ids = [rid for (rid,) in db.query(Period.id).filter(Period.scenario_id == game.id).all()]
+        round_ids = [rid for (rid,) in db.query(Period.id).filter(Period.scenario_id == scenario.id).all()]
         if round_ids:
-            db.query(ScenarioUserAction).filter(ScenarioUserAction.scenario_id == game.id).delete(synchronize_session=False)
-        db.query(Period).filter(Period.scenario_id == game.id).delete(synchronize_session=False)
+            db.query(ScenarioUserAction).filter(ScenarioUserAction.scenario_id == scenario.id).delete(synchronize_session=False)
+        db.query(Period).filter(Period.scenario_id == scenario.id).delete(synchronize_session=False)
 
-        sc_round_ids = [rid for (rid,) in db.query(SupplyScenarioPeriod.id).filter(SupplyScenarioPeriod.scenario_id == game.id).all()]
+        sc_round_ids = [rid for (rid,) in db.query(SupplyScenarioPeriod.id).filter(SupplyScenarioPeriod.scenario_id == scenario.id).all()]
         if sc_round_ids:
             db.query(SupplyScenarioUserPeriod).filter(SupplyScenarioUserPeriod.scenario_period_id.in_(sc_round_ids)).delete(synchronize_session=False)
-        db.query(SupplyScenarioPeriod).filter(SupplyScenarioPeriod.scenario_id == game.id).delete(synchronize_session=False)
-        db.query(SupplyOrder).filter(SupplyOrder.scenario_id == game.id).delete(synchronize_session=False)
+        db.query(SupplyScenarioPeriod).filter(SupplyScenarioPeriod.scenario_id == scenario.id).delete(synchronize_session=False)
+        db.query(SupplyOrder).filter(SupplyOrder.scenario_id == scenario.id).delete(synchronize_session=False)
 
-        config = _coerce_game_config(game)
+        config = _coerce_scenario_config(scenario)
         config["pending_orders"] = {}
         config["history"] = []
         config.pop("simulation_state", None)
@@ -6322,7 +6322,7 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
         node_policies = config.get("node_policies", {})
         sim_params = _simulation_parameters(config)
 
-        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
         for scenario_user in scenario_users:
             role_key = _role_key(scenario_user)
             policy_cfg = MixedScenarioService._policy_for_node(node_policies, role_key)
@@ -6354,18 +6354,18 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
             scenario_user.is_ready = False
 
         _ensure_simulation_state(config)
-        _save_game_config(db, game, config)
+        _save_scenario_config(db, scenario, config)
 
-        game.current_round = 0
-        game.status = DbScenarioStatus.CREATED
-        game.started_at = None
-        game.finished_at = None
-        game.completed_at = None
-        _touch_game(game)
-        db.add(game)
+        scenario.current_round = 0
+        scenario.status = DbScenarioStatus.CREATED
+        scenario.started_at = None
+        scenario.finished_at = None
+        scenario.completed_at = None
+        _touch_game(scenario)
+        db.add(scenario)
         db.commit()
-        db.refresh(game)
-        return _serialize_game(game)
+        db.refresh(scenario)
+        return _serialize_game(scenario)
     finally:
         db.close()
 
@@ -6374,21 +6374,21 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
 async def next_round(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED:
-            raise HTTPException(status_code=400, detail="Unsupervised games advance automatically")
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        if _get_progression_mode(scenario) == PROGRESSION_UNSUPERVISED:
+            raise HTTPException(status_code=400, detail="Unsupervised scenarios advance automatically")
 
-        config = _coerce_game_config(game)
-        round_record = _ensure_round(db, game, game.current_round or 1)
-        if not _all_players_submitted(db, game, round_record):
+        config = _coerce_scenario_config(scenario)
+        round_record = _ensure_round(db, scenario, scenario.current_round or 1)
+        if not _all_players_submitted(db, scenario, round_record):
             raise HTTPException(status_code=400, detail="All scenario_users must submit orders before advancing")
 
-        if not _finalize_round_if_ready(db, game, config, round_record, force=True):
+        if not _finalize_round_if_ready(db, scenario, config, round_record, force=True):
             raise HTTPException(status_code=400, detail="Unable to advance round")
 
         db.commit()
-        db.refresh(game)
-        return _serialize_game(game)
+        db.refresh(scenario)
+        return _serialize_game(scenario)
     finally:
         db.close()
 
@@ -6397,23 +6397,23 @@ async def next_round(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
 async def finish_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, scenario_id)
-        config = _coerce_game_config(game)
-        round_record = _ensure_round(db, game, game.current_round or 1)
+        scenario = _get_scenario_for_user(db, user, scenario_id)
+        config = _coerce_scenario_config(scenario)
+        round_record = _ensure_round(db, scenario, scenario.current_round or 1)
         pending = _pending_orders(config)
-        if pending and not _finalize_round_if_ready(db, game, config, round_record, force=True):
-            _save_game_config(db, game, config)
+        if pending and not _finalize_round_if_ready(db, scenario, config, round_record, force=True):
+            _save_scenario_config(db, scenario, config)
 
-        game.status = DbScenarioStatus.FINISHED
-        if game.max_rounds:
-            game.current_round = max(game.current_round or 0, game.max_rounds)
-        _touch_game(game)
-        _save_game_config(db, game, config)
+        scenario.status = DbScenarioStatus.FINISHED
+        if scenario.max_rounds:
+            scenario.current_round = max(scenario.current_round or 0, scenario.max_rounds)
+        _touch_game(scenario)
+        _save_scenario_config(db, scenario, config)
         db.add(round_record)
-        db.add(game)
+        db.add(scenario)
         db.commit()
-        db.refresh(game)
-        return _serialize_game(game)
+        db.refresh(scenario)
+        return _serialize_game(scenario)
     finally:
         db.close()
 
@@ -6614,7 +6614,7 @@ from app.api.endpoints.invoices import router as invoices_router
 api.include_router(invoices_router)  # Invoice router has prefix="/invoices" in endpoint file
 api.include_router(transfer_orders_router)  # TO router has prefix="/transfer-orders" in endpoint file
 
-# Mixed Game ATP/CTP endpoints (Phase 3)
+# Mixed Scenario ATP/CTP endpoints (Phase 3)
 from app.api.endpoints.mixed_scenario import router as mixed_scenario_router
 api.include_router(mixed_scenario_router)  # Mixed scenario router has /mixed-scenarios prefix in routes
 

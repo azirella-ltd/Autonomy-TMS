@@ -21,8 +21,8 @@ Work Order Types:
 - PO (Purchase Order):      From external market (if market_supply node exists)
 
 Planning vs Execution Separation:
-- Planning: Happens BEFORE the game starts (forecast, inv policies, sourcing rules)
-- Execution: Happens DURING the game rounds (work orders, fulfillment, inventory updates)
+- Planning: Happens BEFORE the scenario starts (forecast, inv policies, sourcing rules)
+- Execution: Happens DURING the scenario rounds (work orders, fulfillment, inventory updates)
 
 References:
 - SC Work Orders: https://docs.[removed]
@@ -39,7 +39,6 @@ from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-Game = Scenario
 ScenarioUser = ScenarioUser
 from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product
@@ -62,33 +61,33 @@ class SimulationExecutionAdapter:
     Adapter to translate simulation execution to/from SC work order entities
 
     This class manages the execution lifecycle:
-    1. Sync current game state (inventory, backlog) → inv_level
+    1. Sync current scenario state (inventory, backlog) → inv_level
     2. Record customer demand → outbound_order_line
     3. Create scenario_user orders → inbound_order_line (work orders)
     4. Process order deliveries → update quantity_received, inventory
-    5. Extract orders from work orders → scenario_user orders for game engine
+    5. Extract orders from work orders → scenario_user orders for scenario engine
     """
 
-    def __init__(self, game: Game, db: AsyncSession, use_cache: bool = True):
+    def __init__(self, scenario: Scenario, db: AsyncSession, use_cache: bool = True):
         """
         Initialize execution adapter
 
         Args:
-            game: The simulation instance
+            scenario: The simulation instance
             db: Database session
             use_cache: Enable execution cache for performance (default: True)
         """
-        self.game = game
+        self.scenario = scenario
         self.db = db
-        self.config = game.supply_chain_config
-        self.tenant_id = game.tenant_id
-        self.config_id = game.supply_chain_config_id
+        self.config = scenario.supply_chain_config
+        self.tenant_id = scenario.tenant_id
+        self.config_id = scenario.supply_chain_config_id
 
         if not self.tenant_id:
-            raise ValueError(f"Game {game.id} has no tenant_id - cannot use SC execution")
+            raise ValueError(f"Scenario {scenario.id} has no tenant_id - cannot use SC execution")
 
         if not self.config_id:
-            raise ValueError(f"Game {game.id} has no config_id - cannot use SC execution")
+            raise ValueError(f"Scenario {scenario.id} has no config_id - cannot use SC execution")
 
         # Phase 3: Execution cache for performance
         self.cache: Optional[ExecutionCache] = None
@@ -96,7 +95,7 @@ class SimulationExecutionAdapter:
             self.cache = ExecutionCache(db, self.config_id, self.tenant_id)
 
         # Phase 5: Stochastic sampler for distribution sampling
-        self.stochastic_sampler = StochasticSampler(scenario_id=game.id, use_cache=use_cache)
+        self.stochastic_sampler = StochasticSampler(scenario_id=scenario.id, use_cache=use_cache)
 
     # ============================================================================
     # CONFIG HELPERS (replaces removed config.items / config.nodes / config.lanes)
@@ -121,27 +120,27 @@ class SimulationExecutionAdapter:
         await self.db.refresh(self.config, ['transportation_lanes'])
 
     # ============================================================================
-    # STATE SYNCHRONIZATION (Game → SC)
+    # STATE SYNCHRONIZATION (Scenario → SC)
     # ============================================================================
 
     async def sync_inventory_levels(self, round_number: int) -> int:
         """
-        Sync current game inventory to inv_level table (execution snapshot)
+        Sync current scenario inventory to inv_level table (execution snapshot)
 
-        Reads scenario_user inventory from game state and writes to inv_level
+        Reads scenario_user inventory from scenario state and writes to inv_level
         so SC can track on-hand quantities during execution.
 
         Args:
-            round_number: Current game round
+            round_number: Current scenario round
 
         Returns:
             Number of inv_level records created/updated
         """
         print(f"  Syncing inventory levels for round {round_number}...")
 
-        # Get all scenario_users in this game
+        # Get all scenario_users in this scenario
         result = await self.db.execute(
-            select(ScenarioUser).filter(ScenarioUser.scenario_id == self.game.id)
+            select(ScenarioUser).filter(ScenarioUser.scenario_id == self.scenario.id)
         )
         scenario_users = result.scalars().all()
 
@@ -149,7 +148,7 @@ class SimulationExecutionAdapter:
         await self._refresh_sites()
         item = await self._get_product()
 
-        # Delete old snapshots for this game round
+        # Delete old snapshots for this scenario round
         await self.db.execute(
             delete(InvLevel).filter(
                 InvLevel.tenant_id == self.tenant_id,
@@ -158,7 +157,7 @@ class SimulationExecutionAdapter:
         )
 
         records_created = 0
-        snapshot_date = self.game.start_date + timedelta(days=round_number * 7)
+        snapshot_date = self.scenario.start_date + timedelta(days=round_number * 7)
 
         # Get item (simulation typically has 1 product)
         if not item:
@@ -173,7 +172,7 @@ class SimulationExecutionAdapter:
                 print(f"    ⚠️  No node found for scenario_user role {scenario_user.role}")
                 continue
 
-            # Get scenario_user's current inventory and backlog from game state
+            # Get scenario_user's current inventory and backlog from scenario state
             inventory_qty, backlog_qty = self._get_scenario_user_inventory_and_backlog(
                 scenario_user, round_number
             )
@@ -226,7 +225,7 @@ class SimulationExecutionAdapter:
                     InboundOrderLine.to_site_id == site_id,
                     InboundOrderLine.tenant_id == self.tenant_id,
                     InboundOrderLine.config_id == self.config_id,
-                    InboundOrderLine.scenario_id == self.game.id,
+                    InboundOrderLine.scenario_id == self.scenario.id,
                     InboundOrderLine.status.in_(['open', 'confirmed']),
                     InboundOrderLine.quantity_received == None
                 )
@@ -243,7 +242,7 @@ class SimulationExecutionAdapter:
         round_number: int
     ) -> Tuple[float, float]:
         """
-        Extract scenario_user's current inventory and backlog from game state
+        Extract scenario_user's current inventory and backlog from scenario state
 
         Args:
             scenario_user: ScenarioUser instance
@@ -252,8 +251,8 @@ class SimulationExecutionAdapter:
         Returns:
             Tuple of (inventory, backlog)
         """
-        game_config = self.game.config or {}
-        nodes_state = game_config.get('nodes', {})
+        scenario_config = self.scenario.config or {}
+        nodes_state = scenario_config.get('nodes', {})
         scenario_user_state = nodes_state.get(scenario_user.role, {})
 
         inventory = scenario_user_state.get('inventory', 12)
@@ -280,7 +279,7 @@ class SimulationExecutionAdapter:
         Args:
             role: ScenarioUser role (typically Retailer)
             demand_qty: Actual demand quantity
-            round_number: Current game round
+            round_number: Current scenario round
         """
         print(f"    Recording customer demand: {role} = {demand_qty}")
 
@@ -293,11 +292,11 @@ class SimulationExecutionAdapter:
             print(f"    ⚠️  Cannot record demand: node or item not found")
             return
 
-        order_date = self.game.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
 
         # Create outbound order line (execution record)
         order_line = OutboundOrderLine(
-            order_id=f"GAME_{self.game.id}_R{round_number}",
+            order_id=f"SCENARIO_{self.scenario.id}_R{round_number}",
             line_number=1,
             product_id=item.id,
             site_id=node.id,
@@ -317,7 +316,7 @@ class SimulationExecutionAdapter:
             # Multi-tenancy
             tenant_id=self.tenant_id,
             config_id=self.config_id,
-            scenario_id=self.game.id,
+            scenario_id=self.scenario.id,
             round_number=round_number
         )
 
@@ -342,7 +341,7 @@ class SimulationExecutionAdapter:
 
         Args:
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current game round
+            round_number: Current scenario round
 
         Returns:
             Number of work orders created
@@ -357,7 +356,7 @@ class SimulationExecutionAdapter:
             print(f"    ⚠️  No item found")
             return 0
 
-        order_date = self.game.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
         orders_created = 0
 
         for role, order_qty in scenario_user_orders.items():
@@ -398,7 +397,7 @@ class SimulationExecutionAdapter:
 
             # Create inbound order line (work order)
             inbound_order = InboundOrderLine(
-                order_id=f"GAME_{self.game.id}_R{round_number}_{role}",
+                order_id=f"SCENARIO_{self.scenario.id}_R{round_number}_{role}",
                 line_number=1,
                 product_id=item.id,
                 to_site_id=node.id,
@@ -426,7 +425,7 @@ class SimulationExecutionAdapter:
                 # Multi-tenancy
                 tenant_id=self.tenant_id,
                 config_id=self.config_id,
-                scenario_id=self.game.id,
+                scenario_id=self.scenario.id,
                 round_number=round_number
             )
 
@@ -449,12 +448,12 @@ class SimulationExecutionAdapter:
         """
         Create inbound work orders using batch insert (PHASE 3 - Performance optimization)
 
-        This method is 10-20x faster than create_work_orders() for multi-scenario_user games
+        This method is 10-20x faster than create_work_orders() for multi-scenario_user scenarios
         because it uses a single batch insert instead of individual inserts.
 
         Args:
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current game round
+            round_number: Current scenario round
 
         Returns:
             Number of work orders created
@@ -474,7 +473,7 @@ class SimulationExecutionAdapter:
             print(f"    ⚠️  No item found")
             return 0
 
-        order_date = self.game.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
 
         # Build all work orders in memory first
         work_orders = []
@@ -533,7 +532,7 @@ class SimulationExecutionAdapter:
 
             # Create work order object (don't add to session yet)
             work_order = InboundOrderLine(
-                order_id=f"GAME_{self.game.id}_R{round_number}_{role}",
+                order_id=f"SCENARIO_{self.scenario.id}_R{round_number}_{role}",
                 line_number=1,
                 product_id=item.id,
                 to_site_id=node.id,
@@ -555,7 +554,7 @@ class SimulationExecutionAdapter:
                 lead_time_days=lead_time_days,
                 tenant_id=self.tenant_id,
                 config_id=self.config_id,
-                scenario_id=self.game.id,
+                scenario_id=self.scenario.id,
                 round_number=round_number
             )
 
@@ -635,14 +634,14 @@ class SimulationExecutionAdapter:
         and marks them as received.
 
         Args:
-            round_number: Current game round
+            round_number: Current scenario round
 
         Returns:
             Dict mapping role → total received quantity
         """
         print(f"  Processing deliveries for round {round_number}...")
 
-        current_date = self.game.start_date + timedelta(days=round_number * 7)
+        current_date = self.scenario.start_date + timedelta(days=round_number * 7)
 
         # Find all open orders due for delivery
         result = await self.db.execute(
@@ -650,7 +649,7 @@ class SimulationExecutionAdapter:
                 and_(
                     InboundOrderLine.tenant_id == self.tenant_id,
                     InboundOrderLine.config_id == self.config_id,
-                    InboundOrderLine.scenario_id == self.game.id,
+                    InboundOrderLine.scenario_id == self.scenario.id,
                     InboundOrderLine.status == 'open',
                     InboundOrderLine.expected_delivery_date <= current_date
                 )
@@ -699,7 +698,7 @@ class SimulationExecutionAdapter:
         """
         result = await self.db.execute(
             select(ScenarioUser).filter(
-                ScenarioUser.scenario_id == self.game.id,
+                ScenarioUser.scenario_id == self.scenario.id,
                 ScenarioUser.role == role
             )
         )
@@ -709,7 +708,7 @@ class SimulationExecutionAdapter:
             return 0.0
 
         inventory, _ = self._get_scenario_user_inventory_and_backlog(
-            scenario_user, self.game.current_period
+            scenario_user, self.scenario.current_period
         )
         return inventory
 
@@ -730,7 +729,7 @@ class SimulationExecutionAdapter:
 
         Args:
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current game round
+            round_number: Current scenario round
 
         Returns:
             {
@@ -755,7 +754,7 @@ class SimulationExecutionAdapter:
             print(f"    ⚠️  No item found")
             return {'created': [], 'queued': [], 'rejected': [], 'capacity_used': {}}
 
-        order_date = self.game.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
 
         created = []
         queued = []
@@ -917,7 +916,7 @@ class SimulationExecutionAdapter:
             order_type: TO/MO/PO
             lead_time_days: Lead time in days
             order_date: Order date
-            round_number: Game round
+            round_number: Scenario round
 
         Returns:
             InboundOrderLine object (not yet added to session)
@@ -925,7 +924,7 @@ class SimulationExecutionAdapter:
         expected_delivery = order_date + timedelta(days=lead_time_days)
 
         return InboundOrderLine(
-            order_id=f"GAME_{self.game.id}_R{round_number}_{role}",
+            order_id=f"SCENARIO_{self.scenario.id}_R{round_number}_{role}",
             line_number=1,
             product_id=item.id,
             to_site_id=node.id,
@@ -947,7 +946,7 @@ class SimulationExecutionAdapter:
             lead_time_days=lead_time_days,
             tenant_id=self.tenant_id,
             config_id=self.config_id,
-            scenario_id=self.game.id,
+            scenario_id=self.scenario.id,
             round_number=round_number
         )
 
@@ -992,7 +991,7 @@ class SimulationExecutionAdapter:
 
         Args:
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current game round
+            round_number: Current scenario round
             use_capacity: Enforce capacity constraints (default: False)
 
         Returns:
@@ -1022,7 +1021,7 @@ class SimulationExecutionAdapter:
                 'capacity_used': {}, 'cost_savings': 0.0
             }
 
-        order_date = self.game.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
 
         # Step 1: Group orders by upstream site
         upstream_groups = {}  # {(upstream_site_id, product_id): [(role, qty, node, upstream, lead_time, order_type), ...]}
@@ -1191,14 +1190,14 @@ class SimulationExecutionAdapter:
                 first_role, adjusted_qty, item, first_node, upstream_node,
                 order_type, lead_time_days, order_date, round_number
             )
-            work_order.order_id = f"GAME_{self.game.id}_R{round_number}_AGG_{upstream_node.name}"
+            work_order.order_id = f"SCENARIO_{self.scenario.id}_R{round_number}_AGG_{upstream_node.name}"
             created.append(work_order)
 
             # Step 8: Create aggregation tracking record
             source_order_ids = ','.join([f"{role}" for (role, _, _, _, _, _) in orders])
             agg_record = AggregatedOrder(
                 policy_id=policy.id,
-                scenario_id=self.game.id,
+                scenario_id=self.scenario.id,
                 round_number=round_number,
                 from_site_id=first_node.id,
                 to_site_id=upstream_node.id,

@@ -48,13 +48,13 @@ def parse_args() -> argparse.Namespace:
         help="Skip synthetic dataset generation and temporal GNN training.",
     )
     parser.add_argument(
-        "--skip-autonomy-games",
+        "--skip-autonomy-scenarios",
         action="store_true",
-        help="Do not create or update the showcase Autonomy games.",
+        help="Do not create or update the showcase Autonomy scenarios.",
     )
     parser.add_argument(
         action="store_true",
-        help="Preserve existing games instead of rebuilding them from scratch.",
+        help="Preserve existing scenarios instead of rebuilding them from scratch.",
     )
     parser.add_argument(
         "--agent-strategy",
@@ -114,7 +114,7 @@ def bootstrap_system(args: argparse.Namespace) -> None:
         preferred_llm_model=args.llm_model,
     )
 
-    logger.info("[2/4] Seeding default users, groups, and games...")
+    logger.info("[2/4] Seeding default users, groups, and scenarios...")
     run_seed_with_session(factory, seed_options)
     logger.info("Seed workflow complete.")
 

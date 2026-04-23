@@ -1,7 +1,7 @@
 """Dashboard schemas for simulation performance metrics.
 
 Terminology (Feb 2026):
-- Game -> Scenario
+- Scenario -> Scenario
 - ScenarioUser -> ScenarioUser
 - Round -> Period
 """
@@ -45,7 +45,7 @@ class DashboardResponse(BaseModel):
 
     scenario_id: int = Field(..., alias="scenario_id", description="Identifier of the active scenario")
     scenario_user_id: int = Field(..., alias="scenario_user_id", description="Identifier of the scenario_user viewing the dashboard")
-    scenario_name: str = Field(..., alias="game_name", description="Name of the current scenario")
+    scenario_name: str = Field(..., alias="scenario_name", description="Name of the current scenario")
     current_period: int = Field(..., alias="current_period", description="Current period number in the scenario")
     max_periods: int = Field(..., alias="max_periods", description="Total number of periods configured for the scenario")
     participant_role: str = Field(..., alias="scenario_user_role", description="ScenarioUser's role in the scenario")

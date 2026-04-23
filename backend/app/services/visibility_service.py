@@ -54,7 +54,7 @@ class VisibilityService:
         - Backlog pressure (10%): Unfulfilled orders
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             round_number: Specific round to analyze (None = latest)
 
         Returns:
@@ -72,7 +72,7 @@ class VisibilityService:
             }
         """
         try:
-            # Get game metrics
+            # Get scenario metrics
             if round_number is None:
                 # Get latest round
                 query = text("""
@@ -357,7 +357,7 @@ class VisibilityService:
         - Service level < 0.7
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             round_number: Specific round (None = latest)
 
         Returns:
@@ -489,7 +489,7 @@ class VisibilityService:
         Bullwhip effect = demand variance amplification upstream.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             window_size: Number of rounds to analyze
 
         Returns:
@@ -616,7 +616,7 @@ class VisibilityService:
         Set visibility sharing permissions for a scenario_user.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser ID
             share_inventory: Share inventory levels
             share_backlog: Share backlog levels
@@ -674,7 +674,7 @@ class VisibilityService:
         scenario_id: int
     ) -> Dict[str, Any]:
         """
-        Get visibility permissions for all scenario_users in a game.
+        Get visibility permissions for all scenario_users in a scenario.
 
         Returns:
             {
@@ -740,7 +740,7 @@ class VisibilityService:
         - Per-scenario_user metrics (if shared)
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             round_number: Round number
 
         Returns:
@@ -829,7 +829,7 @@ class VisibilityService:
         Get historical visibility snapshots.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             limit: Maximum snapshots to return
 
         Returns:

@@ -22,16 +22,16 @@ def load_synthetic_data(data_path: str, num_episodes: int = 100):
         num_episodes: Maximum number of episodes to load
         
     Returns:
-        List of game data dictionaries
+        List of scenario data dictionaries
     """
     import json
     with open(data_path, 'r') as f:
-        games = json.load(f)
-    return games[:num_episodes]
+        scenarios = json.load(f)
+    return scenarios[:num_episodes]
 
 def prepare_training_data(data_path: str, num_episodes: int = 100, seq_len: int = 10):
     """
-    Prepare training data from synthetic game data.
+    Prepare training data from synthetic scenario data.
     
     Args:
         data_path: Path to the JSON file containing synthetic data
@@ -41,14 +41,14 @@ def prepare_training_data(data_path: str, num_episodes: int = 100, seq_len: int 
     Returns:
         List of (observation, action, reward, next_observation, done) tuples
     """
-    # Load games from JSON file
-    games = load_synthetic_data(data_path, num_episodes)
+    # Load scenarios from JSON file
+    scenarios = load_synthetic_data(data_path, num_episodes)
     training_data = []
     
-    for game in games:
-        rounds = game.get('rounds', [])
+    for scenario in scenarios:
+        rounds = scenario.get('rounds', [])
         
-        # Skip games with too few rounds
+        # Skip scenarios with too few rounds
         if len(rounds) < seq_len + 1:
             continue
             

@@ -37,7 +37,7 @@ from app.utils.device import device_scope, empty_cache, get_available_device
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-DEFAULT_CONFIG_NAME = "Case Beer Game"
+DEFAULT_CONFIG_NAME = "Case Beer Scenario"
 
 
 @dataclass

@@ -2,7 +2,7 @@
 Legacy Scenario-Scoped WebSocket — Replaced by Tenant-Scoped Decision Stream
 
 This module previously provided per-scenario WebSocket connections for real-time
-Beer Game updates. It was never registered in main.py (dead code). All real-time
+Beer Scenario updates. It was never registered in main.py (dead code). All real-time
 functionality is now served by:
 
   - Decision Stream WS: /ws/decision-stream/{tenant_id}
@@ -32,13 +32,13 @@ class ConnectionManager:
     def disconnect(self, *args, **kwargs):
         pass
 
-    async def broadcast_game_state(self, *args, **kwargs):
+    async def broadcast_scenario_state(self, *args, **kwargs):
         pass
 
     async def send_personal_message(self, *args, **kwargs):
         pass
 
-    async def broadcast_to_game(self, *args, **kwargs):
+    async def broadcast_to_scenario(self, *args, **kwargs):
         pass
 
     async def broadcast_to_scenario(self, *args, **kwargs):

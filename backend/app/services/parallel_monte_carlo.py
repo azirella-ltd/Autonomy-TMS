@@ -77,7 +77,7 @@ class ParallelMonteCarloRunner:
             self.num_workers = min(config.num_workers, mp.cpu_count(), config.num_runs)
 
         logger.info(f"ParallelMonteCarloRunner initialized with {self.num_workers} workers")
-        logger.info(f"Running {config.num_runs} simulations for game {config.scenario_id}")
+        logger.info(f"Running {config.num_runs} simulations for scenario {config.scenario_id}")
 
     def run(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> List[SimulationResult]:
         """
@@ -431,14 +431,14 @@ def compare_parallel_vs_sequential(num_runs: int = 100, scenario_id: int = 1) ->
 
     Args:
         num_runs: Number of Monte Carlo runs
-        scenario_id: Game ID to simulate
+        scenario_id: Scenario ID to simulate
 
     Returns:
         Dictionary with comparison results
     """
     print(f"\n{'='*80}")
     print(f"PARALLEL vs SEQUENTIAL BENCHMARK")
-    print(f"Runs: {num_runs}, Game ID: {scenario_id}")
+    print(f"Runs: {num_runs}, Scenario ID: {scenario_id}")
     print(f"{'='*80}\n")
 
     config = ParallelMonteCarloConfig(

@@ -4,7 +4,7 @@ from enum import Enum
 
 class WebSocketMessageType(str, Enum):
     AUTH = "auth"
-    GAME_STATE = "game_state"
+    SCENARIO_STATE = "scenario_state"
     SCENARIO_USER_ACTION = "scenario_user_action"
     CHAT = "chat"
     ERROR = "error"
@@ -22,9 +22,9 @@ class AuthMessage(WebSocketMessage):
     data: Dict[str, str] = Field(..., description="Must contain 'token' field with JWT token")
 
 class GameStateMessage(WebSocketMessage):
-    """Game state update message schema"""
-    type: WebSocketMessageType = WebSocketMessageType.GAME_STATE
-    data: Dict[str, Any] = Field(..., description="Complete game state")
+    """Scenario state update message schema"""
+    type: WebSocketMessageType = WebSocketMessageType.SCENARIO_STATE
+    data: Dict[str, Any] = Field(..., description="Complete scenario state")
 
 class ScenarioUserActionMessage(WebSocketMessage):
     """Scenario user action message schema"""

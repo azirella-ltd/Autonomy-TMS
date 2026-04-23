@@ -1,7 +1,7 @@
 """Supervisor action model for tracking AI supervisor decisions.
 
 Terminology (Feb 2026):
-- Game -> Scenario
+- Scenario -> Scenario
 """
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey

@@ -500,7 +500,7 @@ class ShapleyValueExplainer:
     """
     Shapley value-based explanations (simplified implementation).
 
-    Computes feature contributions based on cooperative game theory.
+    Computes feature contributions based on cooperative scenario theory.
     """
 
     def __init__(self, model: Callable, background_data: np.ndarray):

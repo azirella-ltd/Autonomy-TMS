@@ -250,7 +250,7 @@ def check_autonomy_llm_access(
     try:
         session = AutonomyStrategistSession(model=target_model)
         session.reset()
-        # Minimal ping state — uses AWS SC master_type, no Beer Game role names or hardcoded values
+        # Minimal ping state — uses AWS SC master_type, no Beer Scenario role names or hardcoded values
         ping_state: Dict[str, Any] = {
             "master_type": "INVENTORY",
             "period": 0,

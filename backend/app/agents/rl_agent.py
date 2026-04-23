@@ -324,7 +324,7 @@ class RLAgent(BasePolicy):
 
         Args:
             node: Node object with inventory, backlog, etc.
-            context: Game context
+            context: Scenario context
 
         Returns:
             order_quantity: Integer order quantity

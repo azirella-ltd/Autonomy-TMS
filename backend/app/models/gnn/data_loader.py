@@ -21,7 +21,7 @@ class SupplyChainDataset(Dataset):
                  ]):
         """
         Args:
-            data_path: Path to the JSON file containing game data
+            data_path: Path to the JSON file containing scenario data
             seq_len: Length of the sequence to use for each sample
             node_features: List of node features to include
             edge_attr: List of edge attributes to include
@@ -33,18 +33,18 @@ class SupplyChainDataset(Dataset):
         
         # Load and process data
         with open(data_path, 'r') as f:
-            self.games = json.load(f)
+            self.scenarios = json.load(f)
         
         # Preprocess data
         self.samples = self._preprocess_data()
         
     def _preprocess_data(self) -> List[Dict]:
-        """Convert raw game data into training samples."""
+        """Convert raw scenario data into training samples."""
         samples = []
         
-        for game in self.games:
-            num_rounds = len(game['rounds'])
-            roles = game['roles']
+        for scenario in self.scenarios:
+            num_rounds = len(scenario['rounds'])
+            roles = scenario['roles']
             num_roles = len(roles)
             
             # Create edge indices (fully connected graph)
@@ -71,7 +71,7 @@ class SupplyChainDataset(Dataset):
                 
                 # Fill node features
                 for i in range(self.seq_len):
-                    round_data = game['rounds'][seq_start + i]
+                    round_data = scenario['rounds'][seq_start + i]
                     for j, role in enumerate(roles):
                         # Find decision for this role
                         for decision in round_data['decisions']:
@@ -84,7 +84,7 @@ class SupplyChainDataset(Dataset):
                                 break
                 
                 # Set targets (next time step)
-                next_round = game['rounds'][seq_end]
+                next_round = scenario['rounds'][seq_end]
                 for j, role in enumerate(roles):
                     for decision in next_round['decisions']:
                         if decision['role'] == role:
@@ -101,7 +101,7 @@ class SupplyChainDataset(Dataset):
                     'edge_attr': edge_attr,
                     'y_order': y_order,
                     'y_demand': y_demand,
-                    'scenario_id': game['name'],
+                    'scenario_id': scenario['name'],
                     'round_num': t
                 })
         
@@ -148,7 +148,7 @@ def create_data_loaders(
     Create train, validation, and test data loaders.
     
     Args:
-        data_path: Path to the JSON file containing game data
+        data_path: Path to the JSON file containing scenario data
         batch_size: Batch size for data loaders
         seq_len: Length of the sequence to use for each sample
         train_ratio: Ratio of data to use for training

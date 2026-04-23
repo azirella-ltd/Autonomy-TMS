@@ -39,13 +39,13 @@ class ExecutionCache:
     """
     In-memory cache for SC planning entities
 
-    Caches frequently accessed reference data that doesn't change during game execution:
+    Caches frequently accessed reference data that doesn't change during scenario execution:
     - Inventory policies (target levels, safety stock)
     - Sourcing rules (lead times, supplier relationships)
     - Nodes, items, lanes (supply chain structure)
     - Production processes (manufacturing capacity)
 
-    This cache is loaded once at game start and used throughout execution,
+    This cache is loaded once at scenario start and used throughout execution,
     eliminating repeated database queries.
     """
 
@@ -93,7 +93,7 @@ class ExecutionCache:
         """
         Preload all reference data into cache
 
-        This method is called once at game start to populate the cache.
+        This method is called once at scenario start to populate the cache.
         All subsequent lookups will be served from memory.
 
         Returns:

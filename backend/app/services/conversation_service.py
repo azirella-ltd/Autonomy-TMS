@@ -17,7 +17,6 @@ from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-Game = Scenario
 ScenarioUser = ScenarioUser
 from app.services.llm_suggestion_service import get_llm_service
 
@@ -43,7 +42,7 @@ class ConversationService:
         Send a message in conversation and get AI response.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser ID
             message: User message content
             parent_message_id: Optional parent message for threading
@@ -52,8 +51,8 @@ class ConversationService:
             Dict containing user message and AI response
         """
         try:
-            # Get game and scenario_user
-            game = await self._get_game(scenario_id)
+            # Get scenario and scenario_user
+            scenario = await self._get_game(scenario_id)
             scenario_user = await self._get_scenario_user(scenario_user_id)
 
             # Get conversation history
@@ -62,7 +61,7 @@ class ConversationService:
             )
 
             # Build context snapshot
-            context_snapshot = await self._build_context_snapshot(game, scenario_user)
+            context_snapshot = await self._build_context_snapshot(scenario, scenario_user)
 
             # Save user message
             user_message = await self._save_message(
@@ -121,10 +120,10 @@ class ConversationService:
         include_context: bool = False,
     ) -> List[Dict[str, Any]]:
         """
-        Get conversation history for a scenario_user in a game.
+        Get conversation history for a scenario_user in a scenario.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser ID
             limit: Maximum number of messages
             include_context: Whether to include full context snapshots
@@ -134,7 +133,7 @@ class ConversationService:
         """
         # In a real implementation, this would query conversation_messages table
         # For now, we'll return empty list and implement when table is created
-        logger.info(f"Getting conversation history for game {scenario_id}, scenario_user {scenario_user_id}")
+        logger.info(f"Getting conversation history for scenario {scenario_id}, scenario_user {scenario_user_id}")
         return []
 
     async def clear_conversation(self, scenario_id: int, scenario_user_id: int) -> bool:
@@ -142,14 +141,14 @@ class ConversationService:
         Clear conversation history for a scenario_user.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser ID
 
         Returns:
             True if successful
         """
         # Implementation will mark messages as deleted or archive them
-        logger.info(f"Clearing conversation for game {scenario_id}, scenario_user {scenario_user_id}")
+        logger.info(f"Clearing conversation for scenario {scenario_id}, scenario_user {scenario_user_id}")
         return True
 
     async def get_conversation_summary(
@@ -159,7 +158,7 @@ class ConversationService:
         Get conversation summary with key metrics.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser ID
 
         Returns:
@@ -200,7 +199,7 @@ The scenario_user is asking: "{message}"
 
 {conversation_context}
 
-Current Game State:
+Current Scenario State:
 - Round: {context.get('current_period', 0)}
 - Inventory: {context.get('current_inventory', 0)} units
 - Backlog: {context.get('current_backlog', 0)} units
@@ -224,9 +223,9 @@ Respond in JSON format:
         return prompt
 
     async def _build_context_snapshot(
-        self, game: Game, scenario_user: ScenarioUser
+        self, scenario: Scenario, scenario_user: ScenarioUser
     ) -> Dict[str, Any]:
-        """Build game context snapshot for this conversation turn."""
+        """Build scenario context snapshot for this conversation turn."""
 
         # Get current scenario_user round data
         from app.models.supply_chain import ScenarioUserPeriod
@@ -236,7 +235,7 @@ Respond in JSON format:
             .filter(
                 and_(
                     ScenarioUserPeriod.scenario_user_id == scenario_user.id,
-                    ScenarioUserPeriod.round == game.current_period
+                    ScenarioUserPeriod.round == scenario.current_period
                 )
             )
         )
@@ -254,9 +253,9 @@ Respond in JSON format:
         recent_demand = [r.demand for r in reversed(recent_rounds) if r.demand]
 
         return {
-            "scenario_id": game.id,
+            "scenario_id": scenario.id,
             "scenario_user_id": scenario_user.id,
-            "current_period": game.current_period,
+            "current_period": scenario.current_period,
             "current_inventory": current_period.current_inventory if current_period else 0,
             "current_backlog": current_period.current_backlog if current_period else 0,
             "incoming_shipment": current_period.incoming_shipment if current_period else 0,
@@ -289,18 +288,18 @@ Respond in JSON format:
             "created_at": datetime.utcnow().isoformat(),
         }
 
-        logger.info(f"Saved {role} message for scenario_user {scenario_user_id} in game {scenario_id}")
+        logger.info(f"Saved {role} message for scenario_user {scenario_user_id} in scenario {scenario_id}")
         return message
 
-    async def _get_game(self, scenario_id: int) -> Game:
-        """Get game by ID."""
+    async def _get_game(self, scenario_id: int) -> Scenario:
+        """Get scenario by ID."""
         result = await self.db.execute(
-            select(Game).filter(Game.id == scenario_id)
+            select(Scenario).filter(Scenario.id == scenario_id)
         )
-        game = result.scalars().first()
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
-        return game
+        scenario = result.scalars().first()
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
+        return scenario
 
     async def _get_scenario_user(self, scenario_user_id: int) -> ScenarioUser:
         """Get scenario_user by ID."""

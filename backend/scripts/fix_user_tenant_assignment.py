@@ -64,7 +64,7 @@ def main():
 
             # Get or create default tenant
             default_tenant = db.execute(
-                select(Tenant).where(Tenant.name == "Beer Game")
+                select(Tenant).where(Tenant.name == "Beer Scenario")
             ).scalars().first()
 
             if not default_tenant:
@@ -82,7 +82,7 @@ def main():
                     return
 
                 default_tenant = Tenant(
-                    name="Beer Game",
+                    name="Beer Scenario",
                     description="Default simulation tenant",
                     admin_id=first_user.id
                 )

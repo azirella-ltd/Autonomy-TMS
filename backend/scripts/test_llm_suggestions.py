@@ -2,7 +2,7 @@
 Test LLM-powered agent suggestions.
 Phase 7 Sprint 3
 
-This script tests the LLM suggestion generation with various game scenarios.
+This script tests the LLM suggestion generation with various scenario scenarios.
 """
 
 import asyncio

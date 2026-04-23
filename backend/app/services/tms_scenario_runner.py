@@ -10,7 +10,7 @@ Runs the three TMS scenario types end-to-end against a tenant's network:
       optimising under cost / transit / sustainability constraints
 
 The audit flagged that the existing /mixed-scenarios runtime is the
-generic Beer Game stepper; the TMS templates point at it but the per-
+generic Beer Scenario stepper; the TMS templates point at it but the per-
 round logic is supply-chain-shaped, not transport-shaped. This module
 provides the transport-native logic, called via a lightweight REST
 endpoint that produces a `ScenarioRunResult` with measurable outcomes

@@ -4,7 +4,7 @@ from .crud_dashboard import (
     get_participant_metrics,
     get_time_series_metrics,
     # Backward compatible aliases
-    get_active_game_for_user,
+    get_active_scenario_for_user,
     get_player_metrics,
 )
 from .crud_supply_chain_config import (
@@ -25,7 +25,7 @@ __all__ = [
     'get_participant_metrics',
     'get_time_series_metrics',
     # Backward compatible aliases
-    'get_active_game_for_user',
+    'get_active_scenario_for_user',
     'get_player_metrics',
     'supply_chain_config',
     'product',  # AWS SC DM: Product

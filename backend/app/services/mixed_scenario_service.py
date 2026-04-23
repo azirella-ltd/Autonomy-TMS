@@ -22,8 +22,7 @@ from app.models.scenario_user import ScenarioUser, ScenarioUserRole, ScenarioUse
 from app.models.supply_chain import ScenarioUserInventory, Order, ScenarioPeriod, ScenarioUserPeriod
 
 # Aliases for backwards compatibility
-Game = Scenario
-GameStatus = ScenarioStatusDB
+ScenarioStatus = ScenarioStatusDB
 GameStatusDB = ScenarioStatusDB
 ScenarioUser = ScenarioUser
 from app.models.supply_chain_config import SupplyChainConfig, TransportationLane, Site
@@ -50,10 +49,10 @@ from app.schemas.scenario import (
 from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserType, ScenarioUserStrategy
 
 # Aliases for backwards compatibility
-GameCreate = ScenarioCreate
-GameState = ScenarioState
-GameStatus = ScenarioStatus
-GameInDBBase = ScenarioInDBBase
+ScenarioCreate = ScenarioCreate
+ScenarioState = ScenarioState
+ScenarioStatus = ScenarioStatus
+ScenarioInDBBase = ScenarioInDBBase
 from app.schemas.simulation import (
     OrderRequest,
     Shipment,
@@ -118,12 +117,12 @@ def read_system_cfg():
         return None
 
 class MixedScenarioService:
-    """Service for managing games with mixed human and AI scenario_users."""
+    """Service for managing scenarios with mixed human and AI scenario_users."""
     
     def __init__(self, db: Session):
         self.db = db
         self.agent_manager = AgentManager()
-        self._game_columns_cache: Optional[Sequence[str]] = None
+        self._scenario_columns_cache: Optional[Sequence[str]] = None
         self._autonomy_probe_cache: Dict[str, Tuple[bool, str]] = {}
 
     def _get_cost_rates_sync(self, config_id: int) -> tuple:
@@ -207,7 +206,7 @@ class MixedScenarioService:
     @staticmethod
     def _record_startup_notice(
         cfg: Dict[str, Any],
-        game: Game,
+        scenario: Scenario,
         message: str,
         *,
         details: Optional[Dict[str, Any]] = None,
@@ -219,17 +218,17 @@ class MixedScenarioService:
         cfg["startup_notices"] = notices
 
         try:
-            ensure_debug_log_file(cfg, game)
+            ensure_debug_log_file(cfg, scenario)
         except Exception:
             logger.debug(
-                "Unable to prepare debug log for startup notice in game %s", getattr(game, "id", "?")
+                "Unable to prepare debug log for startup notice in scenario %s", getattr(scenario, "id", "?")
             )
 
         try:
-            append_debug_error(cfg, game, message, details=details)
+            append_debug_error(cfg, scenario, message, details=details)
         except Exception:
             logger.debug(
-                "Unable to append startup notice for game %s", getattr(game, "id", "?"), exc_info=True
+                "Unable to append startup notice for scenario %s", getattr(scenario, "id", "?"), exc_info=True
             )
 
     @staticmethod
@@ -275,7 +274,7 @@ class MixedScenarioService:
     @staticmethod
     def _log_initialisation_debug(
         cfg: Dict[str, Any],
-        game: Game,
+        scenario: Scenario,
         *,
         node_label: str,
         calculation_details: Dict[str, Any],
@@ -288,7 +287,7 @@ class MixedScenarioService:
             return
 
         cfg["debug_logging"] = debug_cfg
-        ensure_debug_log_file(cfg, game)
+        ensure_debug_log_file(cfg, scenario)
         debug_cfg = normalize_debug_config(cfg)
         file_path = debug_cfg.get("file_path")
         if not file_path:
@@ -335,18 +334,18 @@ class MixedScenarioService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _get_game_columns(self) -> Sequence[str]:
-        if self._game_columns_cache is not None:
-            return self._game_columns_cache
+    def _get_scenario_columns(self) -> Sequence[str]:
+        if self._scenario_columns_cache is not None:
+            return self._scenario_columns_cache
 
         try:
             inspector = inspect(self.db.bind)
-            columns = inspector.get_columns(Game.__tablename__)
-            self._game_columns_cache = [column['name'] for column in columns]
+            columns = inspector.get_columns(Scenario.__tablename__)
+            self._scenario_columns_cache = [column['name'] for column in columns]
         except Exception:
             # Fallback to model metadata if inspection fails
-            self._game_columns_cache = [column.name for column in Game.__table__.columns]
-        return self._game_columns_cache
+            self._scenario_columns_cache = [column.name for column in Scenario.__table__.columns]
+        return self._scenario_columns_cache
 
     def _ensure_autonomy_llm_ready(self, model: Optional[str]) -> None:
         """Verify Autonomy LLM availability once per model and raise with detail when unavailable."""
@@ -390,16 +389,16 @@ class MixedScenarioService:
         default_factory: Callable[[], Any],
         context: str,
         field_name: Optional[str] = None,
-        game: Optional[Game] = None,
+        scenario: Optional[Scenario] = None,
         allow_map_to_list: bool = False,
         auto_commit: bool = False,
     ) -> Tuple[Any, bool]:
         """Normalize legacy JSON payloads by updating stored data instead of coercing."""
 
         def _persist(updated: Any) -> None:
-            if game is not None and field_name:
-                setattr(game, field_name, updated)
-                flag_modified(game, field_name)
+            if scenario is not None and field_name:
+                setattr(scenario, field_name, updated)
+                flag_modified(scenario, field_name)
                 if auto_commit:
                     try:
                         self.db.commit()
@@ -526,10 +525,10 @@ class MixedScenarioService:
             return TimeBucket.WEEK
         return normalize_time_bucket(getattr(record, "time_bucket", TimeBucket.WEEK))
 
-    def _fallback_game_config_from_supply_chain(
+    def _fallback_scenario_config_from_supply_chain(
         self,
         cfg: Dict[str, Any],
-        game: Game,
+        scenario: Scenario,
         *,
         snapshot: Optional[Dict[str, Any]],
         sc_service_factory: Optional[Callable[[Session], Any]] = None,
@@ -555,13 +554,13 @@ class MixedScenarioService:
         service_builder = sc_service_factory or self._build_supply_chain_config_service
         try:
             sc_service = service_builder(self.db)
-            return sc_service.create_game_from_config(
+            return sc_service.create_scenario_from_config(
                 supply_chain_id_int,
                 {
-                    "name": getattr(game, "name", "") or "",
-                    "description": getattr(game, "description", "") or "",
-                    "max_periods": getattr(game, "max_periods", 40) or 40,
-                    "is_public": getattr(game, "is_public", True),
+                    "name": getattr(scenario, "name", "") or "",
+                    "description": getattr(scenario, "description", "") or "",
+                    "max_periods": getattr(scenario, "max_periods", 40) or 40,
+                    "is_public": getattr(scenario, "is_public", True),
                 },
             )
         except Exception:
@@ -2122,7 +2121,7 @@ class MixedScenarioService:
 
     @staticmethod
     def _compute_market_round_demand(
-        game: Game,
+        scenario: Scenario,
         cfg: Dict[str, Any],
         round_number: int,
         lane_views: Optional[Dict[str, Any]] = None,
@@ -2842,7 +2841,7 @@ class MixedScenarioService:
         Lead time comes from TransportationLane.supply_lead_time (AWS SC compliant).
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser placing order (destination scenario_user)
             source_site_id: Source site ID
             destination_site_id: Destination site ID
@@ -2927,14 +2926,14 @@ class MixedScenarioService:
         - ScenarioUserPeriod.order_received += quantity (handled by caller)
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             current_period: Current round number
 
         Returns:
             List of arrived TransferOrders
 
         Notes:
-            - Uses idx_to_game_arrival index for fast queries
+            - Uses idx_to_scenario_arrival index for fast queries
             - Caller must update ScenarioUserPeriod.order_received
         """
         # Query arriving TOs using index-optimized query
@@ -3516,9 +3515,9 @@ class MixedScenarioService:
         state.debug_post_supply_queue = {}
         state.matured_orders = []
 
-    def _record_round_history(self, game: Game, context: RoundContext) -> None:
+    def _record_round_history(self, scenario: Scenario, context: RoundContext) -> None:
         """Append a concise history/debug snapshot for the completed round."""
-        cfg = game.config or {}
+        cfg = scenario.config or {}
         round_record = context.round_record
         round_index = getattr(round_record, "round_number", None) or context.round_number
 
@@ -3657,17 +3656,17 @@ class MixedScenarioService:
             order_total = sum(max(0, int(v)) for v in state.current_round_demand.values()) if state.current_round_demand else 0
 
             # Per-unit holding/backlog cost rates from InvPolicy (config-derived, not hardcoded)
-            config_id = getattr(game, "supply_chain_config_id", None)
+            config_id = getattr(scenario, "supply_chain_config_id", None)
             if config_id:
                 try:
                     holding_rate, backlog_rate = self._get_cost_rates_sync(config_id)
                 except ValueError as _cost_err:
                     raise ValueError(
-                        f"Cannot compute round costs for scenario {game.id}: {_cost_err}"
+                        f"Cannot compute round costs for scenario {scenario.id}: {_cost_err}"
                     ) from _cost_err
             else:
                 raise ValueError(
-                    f"Scenario {game.id} has no supply_chain_config_id. "
+                    f"Scenario {scenario.id} has no supply_chain_config_id. "
                     f"Cannot load cost rates from InvPolicy. "
                     f"Ensure the scenario is linked to a supply chain config."
                 )
@@ -3917,8 +3916,8 @@ class MixedScenarioService:
         history_payload.append(history_entry)
         history_payload.sort(key=lambda item: item.get("round", 0))
         cfg["history"] = history_payload
-        game.config = dict(cfg)
-        flag_modified(game, "config")
+        scenario.config = dict(cfg)
+        flag_modified(scenario, "config")
 
         # Write round debug log to file if enabled
         debug_cfg = normalize_debug_config(cfg)
@@ -3926,27 +3925,27 @@ class MixedScenarioService:
         if debug_cfg.get("enabled") and debug_payload:
             append_debug_round_log(
                 cfg,
-                game,
+                scenario,
                 round_number=round_index,
                 timestamp=datetime.utcnow(),
                 entries=debug_payload,
             )
-            # If game finished, auto-split the log for convenience
+            # If scenario finished, auto-split the log for convenience
             try:
                 should_split = debug_cfg.get("split_logs")
-                finished = getattr(game, "current_period", 0) >= getattr(game, "max_periods", 0) or getattr(game, "status", None) == GameStatusDB.FINISHED
+                finished = getattr(scenario, "current_period", 0) >= getattr(scenario, "max_periods", 0) or getattr(scenario, "status", None) == GameStatusDB.FINISHED
                 if should_split and finished:
-                    path = ensure_debug_log_file(cfg, game)
+                    path = ensure_debug_log_file(cfg, scenario)
                     if path:
                         split_debug_log_file(path, cfg=cfg)
             except Exception:
-                logger.debug("Auto-split of debug log failed for game %s", getattr(game, 'id', '?'))
+                logger.debug("Auto-split of debug log failed for scenario %s", getattr(scenario, 'id', '?'))
 
-    def _finalize_round(self, game: Game, context: RoundContext) -> None:
+    def _finalize_round(self, scenario: Scenario, context: RoundContext) -> None:
         # Persist state and finalize round
-        if not game.config:
-            game.config = {}
-        cfg: Dict[str, Any] = dict(game.config)
+        if not scenario.config:
+            scenario.config = {}
+        cfg: Dict[str, Any] = dict(scenario.config)
 
         # 1. Update Engine State in Config
         engine_state = cfg.get('engine_state', {})
@@ -4018,7 +4017,7 @@ class MixedScenarioService:
 
             engine_state[node_key] = state_dict
 
-        game.config["engine_state"] = engine_state
+        scenario.config["engine_state"] = engine_state
 
         # 2. Distribute new shipments (from context.inbound_supply) to destination nodes
         shipments_for_history: List[Shipment] = list(getattr(context, "inbound_supply", []) or [])
@@ -4066,7 +4065,7 @@ class MixedScenarioService:
                 state_dict.pop(key, None)
             engine_state[node_key] = state_dict
             
-        game.config['engine_state'] = engine_state
+        scenario.config['engine_state'] = engine_state
 
         # 4. Mark round completion metadata
         timestamp = datetime.utcnow()
@@ -4078,37 +4077,37 @@ class MixedScenarioService:
             self.db.add(round_record)
 
         # 5. Record history and per-round debug log
-        self._record_round_history(game, context)
+        self._record_round_history(scenario, context)
         
-        # 6. Update game status when finished
-        total_rounds = game.max_periods or 50
-        if (round_record and round_record.round_number >= total_rounds) or (game.current_period or 0) >= total_rounds:
-            game.status = GameStatusDB.FINISHED
-            game.current_period = total_rounds
+        # 6. Update scenario status when finished
+        total_rounds = scenario.max_periods or 50
+        if (round_record and round_record.round_number >= total_rounds) or (scenario.current_period or 0) >= total_rounds:
+            scenario.status = GameStatusDB.FINISHED
+            scenario.current_period = total_rounds
         else:
-            game.status = GameStatusDB.STARTED
+            scenario.status = GameStatusDB.STARTED
         # Ensure SQLAlchemy notices JSON mutations
-        game.config = dict(game.config or {})
-        flag_modified(game, "config")
+        scenario.config = dict(scenario.config or {})
+        flag_modified(scenario, "config")
 
         # 7. Commit changes so the round, config, and history persist
-        self.db.add(game)
+        self.db.add(scenario)
         self.db.commit()
 
-    def _initialize_round(self, game: Game, *, round_number: Optional[int] = None) -> Optional[RoundContext]:
+    def _initialize_round(self, scenario: Scenario, *, round_number: Optional[int] = None) -> Optional[RoundContext]:
         """Initialize the round context, loading configuration and state."""
-        if not game or not game.config:
+        if not scenario or not scenario.config:
             return None
 
-        cfg = game.config
-        round_number = round_number if round_number is not None else (game.current_period or 0) + 1
+        cfg = scenario.config
+        round_number = round_number if round_number is not None else (scenario.current_period or 0) + 1
 
-        # Rotate debug log per game run so each start creates a fresh file
+        # Rotate debug log per scenario run so each start creates a fresh file
         debug_cfg = normalize_debug_config(cfg)
         if debug_cfg.get("enabled") and round_number == 1:
             debug_cfg.pop("file_path", None)
             cfg["debug_logging"] = debug_cfg
-            ensure_debug_log_file(cfg, game)
+            ensure_debug_log_file(cfg, scenario)
         
         # 1. Build Topology
         node_policies = cfg.get("node_policies", {})
@@ -4303,7 +4302,7 @@ class MixedScenarioService:
         # 3. Calculate Market Demand (Initial)
         # This is needed to populate market_demand_map and create the round record with demand info
         demand_map, demand_value = self._compute_market_round_demand(
-            game,
+            scenario,
             cfg,
             round_number,
             lane_views
@@ -4311,8 +4310,8 @@ class MixedScenarioService:
         
         # 4. Create or reuse ScenarioPeriod record
         # We need to calculate period start/end
-        bucket = normalize_time_bucket(getattr(game, "time_bucket", TimeBucket.WEEK))
-        start_date = getattr(game, "start_date", None)
+        bucket = normalize_time_bucket(getattr(scenario, "time_bucket", TimeBucket.WEEK))
+        start_date = getattr(scenario, "start_date", None)
         if isinstance(start_date, str):
             try:
                 start_date = date.fromisoformat(start_date)
@@ -4320,20 +4319,20 @@ class MixedScenarioService:
                 start_date = None
         if start_date is None:
             start_date = DEFAULT_START_DATE
-            game.start_date = start_date
+            scenario.start_date = start_date
             
         period_start = compute_period_start(start_date, round_number - 1, bucket)
         period_end = compute_period_end(period_start, bucket)
-        game.current_period_start = period_start
+        scenario.current_period_start = period_start
         
         round_record = (
             self.db.query(ScenarioPeriod)
-            .filter(ScenarioPeriod.scenario_id == game.id, ScenarioPeriod.round_number == round_number)
+            .filter(ScenarioPeriod.scenario_id == scenario.id, ScenarioPeriod.round_number == round_number)
             .first()
         )
         if not round_record:
             round_record = ScenarioPeriod(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 round_number=round_number,
                 customer_demand=demand_value,
                 started_at=datetime.utcnow(),
@@ -4354,7 +4353,7 @@ class MixedScenarioService:
 
         context = RoundContext(
             round_number=round_number,
-            scenario_id=game.id,
+            scenario_id=scenario.id,
             topology=topology,
             config=cfg,
             node_states=node_states,
@@ -4993,7 +4992,7 @@ class MixedScenarioService:
     ) -> Any:
         """
         Legacy coercion is no longer supported. If inbound_supply is not a list of
-        dict entries, treat it as a fatal validation error so the game does not
+        dict entries, treat it as a fatal validation error so the scenario does not
         proceed with ambiguous state.
         """
         if not isinstance(queue, list) or not all(isinstance(entry, dict) for entry in queue):
@@ -5259,7 +5258,7 @@ class MixedScenarioService:
         lane_views: Dict[str, Any],
         mean_demand: float,
         variance: float,
-        game: Optional[Game] = None,
+        scenario: Optional[Scenario] = None,
     ) -> Dict[str, Any]:
         """Reset engine_state with per-item seeding along demand lanes."""
 
@@ -5366,14 +5365,14 @@ class MixedScenarioService:
             for product_id, qty in items.items():
                 propagate(md_node, product_id, qty)
 
-        if revisit_events and game is not None:
+        if revisit_events and scenario is not None:
             try:
                 dbg_cfg = normalize_debug_config(dict(cfg or {}))
                 dbg_cfg["enabled"] = True
-                ensure_debug_log_file(dbg_cfg, game)
+                ensure_debug_log_file(dbg_cfg, scenario)
                 append_debug_error(
                     dbg_cfg,
-                    game,
+                    scenario,
                     "Cycle detected while reseeding demand",
                     details={
                         "revisit_count": len(revisit_events),
@@ -5385,7 +5384,7 @@ class MixedScenarioService:
                 )
             except Exception:
                 logger.debug(
-                    "Unable to log demand reseed cycle for game %s", getattr(game, "id", "?")
+                    "Unable to log demand reseed cycle for scenario %s", getattr(scenario, "id", "?")
                 )
 
         for node in lane_views.get("all_nodes", []):
@@ -5826,29 +5825,29 @@ class MixedScenarioService:
         return None
 
     @staticmethod
-    def _schema_status_to_db_values(status: GameStatus) -> List[str]:
+    def _schema_status_to_db_values(status: ScenarioStatus) -> List[str]:
         mapping = {
-            GameStatus.CREATED: [GameStatusDB.CREATED.value],
-            GameStatus.IN_PROGRESS: [
+            ScenarioStatus.CREATED: [GameStatusDB.CREATED.value],
+            ScenarioStatus.IN_PROGRESS: [
                 GameStatusDB.STARTED.value,
                 getattr(GameStatusDB, "IN_PROGRESS", GameStatusDB.STARTED).value
                 if hasattr(GameStatusDB, "IN_PROGRESS")
                 else GameStatusDB.STARTED.value,
                 getattr(GameStatusDB, "PERIOD_IN_PROGRESS", GameStatusDB.STARTED).value,
                 getattr(GameStatusDB, "PERIOD_COMPLETED", GameStatusDB.STARTED).value,
-                GameStatus.IN_PROGRESS.value,
+                ScenarioStatus.IN_PROGRESS.value,
             ],
-            GameStatus.COMPLETED: [
+            ScenarioStatus.COMPLETED: [
                 getattr(GameStatusDB, "FINISHED", GameStatusDB.CREATED).value,
-                GameStatus.COMPLETED.value,
+                ScenarioStatus.COMPLETED.value,
             ],
-            GameStatus.PAUSED: [GameStatus.PAUSED.value, "PAUSED", "paused"],
+            ScenarioStatus.PAUSED: [ScenarioStatus.PAUSED.value, "PAUSED", "paused"],
         }
         return mapping.get(status, [status.value])
 
     @staticmethod
-    def _map_status_to_schema(status_value: Any) -> GameStatus:
-        if isinstance(status_value, GameStatus):
+    def _map_status_to_schema(status_value: Any) -> ScenarioStatus:
+        if isinstance(status_value, ScenarioStatus):
             return status_value
         if isinstance(status_value, GameStatusDB):
             raw = status_value.value
@@ -5858,22 +5857,22 @@ class MixedScenarioService:
             raw = str(status_value or "")
 
         mapping = {
-            GameStatusDB.CREATED.value: GameStatus.CREATED,
-            "CREATED": GameStatus.CREATED,
-            "created": GameStatus.CREATED,
-            GameStatusDB.STARTED.value: GameStatus.IN_PROGRESS,
-            getattr(GameStatusDB, "IN_PROGRESS", GameStatusDB.STARTED).value: GameStatus.IN_PROGRESS,
-            getattr(GameStatusDB, "PERIOD_IN_PROGRESS", GameStatusDB.STARTED).value: GameStatus.IN_PROGRESS,
-            getattr(GameStatusDB, "PERIOD_COMPLETED", GameStatusDB.STARTED).value: GameStatus.IN_PROGRESS,
-            "started": GameStatus.IN_PROGRESS,
-            "IN_PROGRESS": GameStatus.IN_PROGRESS,
-            "in_progress": GameStatus.IN_PROGRESS,
-            (GameStatusDB.FINISHED.value if hasattr(GameStatusDB, "FINISHED") else "FINISHED"): GameStatus.COMPLETED,
-            "finished": GameStatus.COMPLETED,
-            "completed": GameStatus.COMPLETED,
-            "COMPLETED": GameStatus.COMPLETED,
-            "PAUSED": GameStatus.PAUSED,
-            "paused": GameStatus.PAUSED,
+            GameStatusDB.CREATED.value: ScenarioStatus.CREATED,
+            "CREATED": ScenarioStatus.CREATED,
+            "created": ScenarioStatus.CREATED,
+            GameStatusDB.STARTED.value: ScenarioStatus.IN_PROGRESS,
+            getattr(GameStatusDB, "IN_PROGRESS", GameStatusDB.STARTED).value: ScenarioStatus.IN_PROGRESS,
+            getattr(GameStatusDB, "PERIOD_IN_PROGRESS", GameStatusDB.STARTED).value: ScenarioStatus.IN_PROGRESS,
+            getattr(GameStatusDB, "PERIOD_COMPLETED", GameStatusDB.STARTED).value: ScenarioStatus.IN_PROGRESS,
+            "started": ScenarioStatus.IN_PROGRESS,
+            "IN_PROGRESS": ScenarioStatus.IN_PROGRESS,
+            "in_progress": ScenarioStatus.IN_PROGRESS,
+            (GameStatusDB.FINISHED.value if hasattr(GameStatusDB, "FINISHED") else "FINISHED"): ScenarioStatus.COMPLETED,
+            "finished": ScenarioStatus.COMPLETED,
+            "completed": ScenarioStatus.COMPLETED,
+            "COMPLETED": ScenarioStatus.COMPLETED,
+            "PAUSED": ScenarioStatus.PAUSED,
+            "paused": ScenarioStatus.PAUSED,
         }
 
         for token in {raw, raw.upper(), raw.lower()}:
@@ -5881,39 +5880,39 @@ class MixedScenarioService:
             if normalized:
                 return normalized
 
-        if raw in GameStatus.__members__:
-            return GameStatus[raw]
+        if raw in ScenarioStatus.__members__:
+            return ScenarioStatus[raw]
 
-        if raw in GameStatus._value2member_map_:
-            return GameStatus(raw)
+        if raw in ScenarioStatus._value2member_map_:
+            return ScenarioStatus(raw)
 
-        return GameStatus.CREATED
+        return ScenarioStatus.CREATED
 
     @staticmethod
-    def _compute_updated_at(game: Game) -> datetime:
+    def _compute_updated_at(scenario: Scenario) -> datetime:
         for attr in ("updated_at", "finished_at", "completed_at", "started_at", "created_at"):
-            value = getattr(game, attr, None)
+            value = getattr(scenario, attr, None)
             if value:
                 return value
         return datetime.utcnow()
 
-    def _serialize_game(self, game: Any) -> GameInDBBase:
+    def _serialize_game(self, scenario: Any) -> ScenarioInDBBase:
         config, _config_upgraded = self._upgrade_json_value(
-            getattr(game, "config", {}) or {},
+            getattr(scenario, "config", {}) or {},
             dict,
             default_factory=dict,
             context="MixedScenarioService._serialize_game",
             field_name="config",
-            game=game if isinstance(game, Game) else None,
+            scenario=scenario if isinstance(scenario, Scenario) else None,
             auto_commit=True,
         )
-        demand_pattern_source = getattr(game, "demand_pattern", None) or config.get("demand_pattern") or DEFAULT_DEMAND_PATTERN
+        demand_pattern_source = getattr(scenario, "demand_pattern", None) or config.get("demand_pattern") or DEFAULT_DEMAND_PATTERN
         try:
             demand_pattern = normalize_demand_pattern(demand_pattern_source)
         except Exception:
             demand_pattern = normalize_demand_pattern(DEFAULT_DEMAND_PATTERN)
 
-        tenant_id = getattr(game, "tenant_id", None) or config.get("tenant_id")
+        tenant_id = getattr(scenario, "tenant_id", None) or config.get("tenant_id")
         if tenant_id is not None and "tenant_id" not in config:
             config["tenant_id"] = tenant_id
 
@@ -5922,7 +5921,7 @@ class MixedScenarioService:
             progression_mode = "supervised"
             config.setdefault("progression_mode", progression_mode)
 
-        supply_chain_config_id = config.get("supply_chain_config_id") or getattr(game, "supply_chain_config_id", None)
+        supply_chain_config_id = config.get("supply_chain_config_id") or getattr(scenario, "supply_chain_config_id", None)
         if supply_chain_config_id is not None:
             try:
                 supply_chain_config_id = int(supply_chain_config_id)
@@ -5933,7 +5932,7 @@ class MixedScenarioService:
 
         supply_chain_name = (
             config.get("supply_chain_name")
-            or getattr(game, "supply_chain_name", None)
+            or getattr(scenario, "supply_chain_name", None)
         )
         if not supply_chain_name and supply_chain_config_id is not None:
             supply_chain_name = self._resolve_supply_chain_name(supply_chain_config_id)
@@ -5941,17 +5940,17 @@ class MixedScenarioService:
             config["supply_chain_name"] = supply_chain_name
 
         payload: Dict[str, Any] = {
-            "id": game.id,
-            "name": getattr(game, "name", f"Game {game.id}") or f"Game {game.id}",
-            "status": self._map_status_to_schema(getattr(game, "status", None)),
-            "current_period": getattr(game, "current_period", 0) or 0,
-            "max_periods": getattr(game, "max_periods", 0) or 0,
+            "id": scenario.id,
+            "name": getattr(scenario, "name", f"Scenario {scenario.id}") or f"Scenario {scenario.id}",
+            "status": self._map_status_to_schema(getattr(scenario, "status", None)),
+            "current_period": getattr(scenario, "current_period", 0) or 0,
+            "max_periods": getattr(scenario, "max_periods", 0) or 0,
             "demand_pattern": demand_pattern,
-            "created_at": getattr(game, "created_at", datetime.utcnow()),
-            "updated_at": self._compute_updated_at(game),
-            "started_at": getattr(game, "started_at", None),
-            "completed_at": getattr(game, "completed_at", None) or getattr(game, "finished_at", None),
-            "created_by": getattr(game, "created_by", None),
+            "created_at": getattr(scenario, "created_at", datetime.utcnow()),
+            "updated_at": self._compute_updated_at(scenario),
+            "started_at": getattr(scenario, "started_at", None),
+            "completed_at": getattr(scenario, "completed_at", None) or getattr(scenario, "finished_at", None),
+            "created_by": getattr(scenario, "created_by", None),
             "tenant_id": tenant_id,
             "config": config,
             "progression_mode": progression_mode,
@@ -5975,39 +5974,39 @@ class MixedScenarioService:
             payload["autonomy_llm"] = config["autonomy_llm"]
 
         try:
-            return GameInDBBase.model_validate(payload)
+            return ScenarioInDBBase.model_validate(payload)
         except Exception:
             # Fallback to minimal payload if custom config fails validation
             for key in ("pricing_config", "node_policies", "system_config", "global_policy"):
                 payload.pop(key, None)
             payload["demand_pattern"] = normalize_demand_pattern(DEFAULT_DEMAND_PATTERN)
-            return GameInDBBase.model_validate(payload)
+            return ScenarioInDBBase.model_validate(payload)
     
-    def create_game(self, game_data: GameCreate, created_by: int = None) -> Game:
-        """Create a new game with mixed human/agent scenario_users.
+    def create_scenario(self, scenario_data: ScenarioCreate, created_by: int = None) -> Scenario:
+        """Create a new scenario with mixed human/agent scenario_users.
 
-        Persists extended configuration into Game.config JSON to avoid schema changes.
+        Persists extended configuration into Scenario.config JSON to avoid schema changes.
         """
-        # Create the game
+        # Create the scenario
         normalized_pattern = (
-            normalize_demand_pattern(game_data.demand_pattern.dict())
-            if game_data.demand_pattern
+            normalize_demand_pattern(scenario_data.demand_pattern.dict())
+            if scenario_data.demand_pattern
             else normalize_demand_pattern(DEFAULT_DEMAND_PATTERN)
         )
 
         config: Dict[str, Any] = {
             "demand_pattern": normalized_pattern,
-            "pricing_config": game_data.pricing_config.dict() if hasattr(game_data, 'pricing_config') else {},
-            "node_policies": (game_data.node_policies or {}),
-            "system_config": (game_data.system_config or {}),
-            "global_policy": (game_data.global_policy or {}),
-            "progression_mode": getattr(game_data, "progression_mode", "supervised"),
+            "pricing_config": scenario_data.pricing_config.dict() if hasattr(scenario_data, 'pricing_config') else {},
+            "node_policies": (scenario_data.node_policies or {}),
+            "system_config": (scenario_data.system_config or {}),
+            "global_policy": (scenario_data.global_policy or {}),
+            "progression_mode": getattr(scenario_data, "progression_mode", "supervised"),
         }
-        if getattr(game_data, "autonomy_llm", None):
-            config["autonomy_llm"] = game_data.autonomy_llm.model_dump()
-        supply_chain_id = getattr(game_data, "supply_chain_config_id", None)
+        if getattr(scenario_data, "autonomy_llm", None):
+            config["autonomy_llm"] = scenario_data.autonomy_llm.model_dump()
+        supply_chain_id = getattr(scenario_data, "supply_chain_config_id", None)
         if supply_chain_id is None:
-            raise ValueError("supply_chain_config_id is required to create a game from a supply chain configuration")
+            raise ValueError("supply_chain_config_id is required to create a scenario from a supply chain configuration")
         try:
             config["supply_chain_config_id"] = int(supply_chain_id)
         except (TypeError, ValueError) as exc:
@@ -6019,7 +6018,7 @@ class MixedScenarioService:
             )
 
         supply_chain_name = (
-            getattr(game_data, "supply_chain_name", None)
+            getattr(scenario_data, "supply_chain_name", None)
             or getattr(config_record, "name", None)
             or self._resolve_supply_chain_name(config["supply_chain_config_id"])
         )
@@ -6035,35 +6034,35 @@ class MixedScenarioService:
         )
         config["time_bucket"] = time_bucket.value
         config["start_date"] = DEFAULT_START_DATE.isoformat()
-        game = Game(
-            name=game_data.name,
-            max_periods=game_data.max_periods,
-            status=GameStatus.CREATED,
+        scenario = Scenario(
+            name=scenario_data.name,
+            max_periods=scenario_data.max_periods,
+            status=ScenarioStatus.CREATED,
             config=config,
             supply_chain_config_id=config["supply_chain_config_id"],
             time_bucket=time_bucket.value,
             start_date=DEFAULT_START_DATE,
             tenant_id=config_tenant_id,
         )
-        self.db.add(game)
+        self.db.add(scenario)
         self.db.flush()
 
         # Persist creator/metadata into columns if present in schema (fallback-safe via raw SQL)
         try:
             from sqlalchemy import text
-            dp = json.dumps(normalized_pattern) if getattr(game_data, 'demand_pattern', None) else None
-            desc = getattr(game_data, 'description', None)
-            is_public = getattr(game_data, 'is_public', True)
+            dp = json.dumps(normalized_pattern) if getattr(scenario_data, 'demand_pattern', None) else None
+            desc = getattr(scenario_data, 'description', None)
+            is_public = getattr(scenario_data, 'is_public', True)
             self.db.execute(
                 text(
-                    "UPDATE games SET description = :desc, is_public = :is_public, demand_pattern = :dp, created_by = :creator WHERE id = :id"
+                    "UPDATE scenarios SET description = :desc, is_public = :is_public, demand_pattern = :dp, created_by = :creator WHERE id = :id"
                 ),
                 {
                     "desc": desc,
                     "is_public": bool(is_public),
                     "dp": dp,
                     "creator": created_by if created_by is not None else None,
-                    "id": game.id,
+                    "id": scenario.id,
                 },
             )
         except Exception as _e:
@@ -6083,7 +6082,7 @@ class MixedScenarioService:
                 raise ValueError(f"{key} below minimum {lo}")
             if hi is not None and val > hi:
                 raise ValueError(f"{key} above maximum {hi}")
-        for node, pol in (game_data.node_policies or {}).items():
+        for node, pol in (scenario_data.node_policies or {}).items():
             _check_range('order_leadtime', getattr(pol, 'order_leadtime', 0))
             _check_range('supply_leadtime', getattr(pol, 'supply_leadtime', 0))
             _check_range('init_inventory', pol.init_inventory)
@@ -6092,12 +6091,12 @@ class MixedScenarioService:
             _check_range('variable_cost', pol.variable_cost)
             _check_range('min_order_qty', pol.min_order_qty)
 
-        cfg = game.config if game.config else {}
+        cfg = scenario.config if scenario.config else {}
 
-        for i, assignment in enumerate(game_data.player_assignments):
+        for i, assignment in enumerate(scenario_data.player_assignments):
             is_ai = assignment.scenario_user_type == ScenarioUserType.AGENT
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=assignment.role,
                 name=f"{assignment.role.capitalize()} ({'AI' if is_ai else 'Human'})",
                 is_ai=is_ai,
@@ -6181,18 +6180,18 @@ class MixedScenarioService:
                     # Fallback: ignore if mapping not supported
                     pass
 
-        game.config = cfg
+        scenario.config = cfg
 
         self.db.commit()
-        self.db.refresh(game)
-        return game
+        self.db.refresh(scenario)
+        return scenario
 
     def add_scenario_user(self, scenario_id: int, scenario_user_data: ScenarioUserCreate) -> ScenarioUser:
-        """Add a human or AI scenario_user to an existing game."""
+        """Add a human or AI scenario_user to an existing scenario."""
 
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError("Game not found")
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError("Scenario not found")
 
         existing = (
             self.db.query(ScenarioUser)
@@ -6200,7 +6199,7 @@ class MixedScenarioService:
             .first()
         )
         if existing:
-            raise ValueError(f"A {scenario_user_data.role.value.lower()} is already registered for this game")
+            raise ValueError(f"A {scenario_user_data.role.value.lower()} is already registered for this scenario")
 
         is_ai = bool(scenario_user_data.is_ai)
         db_role = ScenarioUserRole[scenario_user_data.role.name]
@@ -6216,7 +6215,7 @@ class MixedScenarioService:
         )
         self.db.add(scenario_user)
 
-        cfg = dict(getattr(game, "config", {}) or {})
+        cfg = dict(getattr(scenario, "config", {}) or {})
         node_policies = cfg.get("node_policies") or {}
         role_key = self._normalise_key(scenario_user_data.role.value)
         policy = node_policies.get(role_key, {})
@@ -6232,7 +6231,7 @@ class MixedScenarioService:
                 )
         else:
             # No init_inventory in scenario config — load from InvLevel for this config
-            config_id = getattr(game, "supply_chain_config_id", None)
+            config_id = getattr(scenario, "supply_chain_config_id", None)
             if config_id:
                 _inv_site = (
                     self.db.query(Site)
@@ -6299,22 +6298,22 @@ class MixedScenarioService:
         cfg["player_assignments"] = assignments
 
         role_assignments, assignments_upgraded = self._upgrade_json_value(
-            getattr(game, "role_assignments", {}) or {},
+            getattr(scenario, "role_assignments", {}) or {},
             dict,
             default_factory=dict,
             context="MixedScenarioService.add_scenario_user role_assignments",
             field_name="role_assignments",
-            game=game,
+            scenario=scenario,
         )
         role_assignments[role_key] = {
             "is_ai": is_ai,
             "agent_config_id": None,
             "user_id": None if is_ai else scenario_user_data.user_id,
         }
-        game.role_assignments = role_assignments
-        game.config = cfg
+        scenario.role_assignments = role_assignments
+        scenario.config = cfg
         if assignments_upgraded:
-            flag_modified(game, "role_assignments")
+            flag_modified(scenario, "role_assignments")
 
         if is_ai:
             try:
@@ -6327,25 +6326,25 @@ class MixedScenarioService:
         self.db.refresh(scenario_user)
         return scenario_user
 
-    def update_game(self, scenario_id: int, payload: Dict[str, Any]) -> Game:
-        game = (
-            self.db.query(Game)
-            .filter(Game.id == scenario_id)
+    def update_game(self, scenario_id: int, payload: Dict[str, Any]) -> Scenario:
+        scenario = (
+            self.db.query(Scenario)
+            .filter(Scenario.id == scenario_id)
             .first()
         )
-        if not game:
-            raise ValueError("Game not found")
+        if not scenario:
+            raise ValueError("Scenario not found")
 
-        cfg: Dict[str, Any] = dict(game.config or {})
+        cfg: Dict[str, Any] = dict(scenario.config or {})
         sys_cfg = read_system_cfg()
         ranges = sys_cfg.dict() if sys_cfg else {}
 
-        if game.tenant_id is None:
+        if scenario.tenant_id is None:
             existing_config = self._get_supply_chain_config(
-                cfg.get("supply_chain_config_id") or game.supply_chain_config_id
+                cfg.get("supply_chain_config_id") or scenario.supply_chain_config_id
             )
             if existing_config and getattr(existing_config, "tenant_id", None) is not None:
-                game.tenant_id = existing_config.tenant_id
+                scenario.tenant_id = existing_config.tenant_id
                 cfg.setdefault("tenant_id", existing_config.tenant_id)
 
         def _check_range(key: str, value: Optional[Any]) -> None:
@@ -6366,17 +6365,17 @@ class MixedScenarioService:
 
         # --- Update simple fields ---
         if "name" in payload and payload["name"]:
-            game.name = str(payload["name"]).strip()
+            scenario.name = str(payload["name"]).strip()
 
         if "description" in payload:
-            game.description = payload.get("description")
+            scenario.description = payload.get("description")
 
         if "is_public" in payload:
-            game.is_public = bool(payload.get("is_public"))
+            scenario.is_public = bool(payload.get("is_public"))
 
         if "max_periods" in payload and payload["max_periods"] is not None:
             try:
-                game.max_periods = int(payload["max_periods"])
+                scenario.max_periods = int(payload["max_periods"])
             except (TypeError, ValueError) as exc:
                 raise ValueError("max_periods must be an integer") from exc
 
@@ -6390,7 +6389,7 @@ class MixedScenarioService:
             except Exception as exc:
                 raise ValueError(f"Invalid demand pattern: {exc}") from exc
             cfg["demand_pattern"] = normalized_pattern
-            game.demand_pattern = normalized_pattern
+            scenario.demand_pattern = normalized_pattern
 
         # Config blocks
         node_policies = payload.get("node_policies")
@@ -6441,7 +6440,7 @@ class MixedScenarioService:
                 )
 
             cfg["supply_chain_config_id"] = supply_id_int
-            game.supply_chain_config_id = supply_id_int
+            scenario.supply_chain_config_id = supply_id_int
 
             supply_name = (
                 payload.get("supply_chain_name")
@@ -6455,13 +6454,13 @@ class MixedScenarioService:
 
             config_tenant_id = getattr(config_record, "tenant_id", None)
             if config_tenant_id is not None:
-                game.tenant_id = config_tenant_id
+                scenario.tenant_id = config_tenant_id
                 cfg["tenant_id"] = config_tenant_id
 
             time_bucket = normalize_time_bucket(
                 getattr(config_record, "time_bucket", TimeBucket.WEEK)
             )
-            game.time_bucket = time_bucket.value
+            scenario.time_bucket = time_bucket.value
             cfg["time_bucket"] = time_bucket.value
         elif "supply_chain_name" in payload and cfg.get("supply_chain_config_id") is not None:
             supply_name = payload.get("supply_chain_name")
@@ -6476,13 +6475,13 @@ class MixedScenarioService:
 
         scenario_user_assignments_payload = payload.get("player_assignments")
         if scenario_user_assignments_payload is not None:
-            self._apply_scenario_user_updates(game, cfg, scenario_user_assignments_payload)
+            self._apply_scenario_user_updates(scenario, cfg, scenario_user_assignments_payload)
 
-        game.config = cfg
-        self.db.add(game)
+        scenario.config = cfg
+        self.db.add(scenario)
         self.db.commit()
-        self.db.refresh(game)
-        return game
+        self.db.refresh(scenario)
+        return scenario
 
     def submit_order(
         self,
@@ -6493,9 +6492,9 @@ class MixedScenarioService:
     ) -> ScenarioUserPeriod:
         """Record or update a scenario_user's order for the active round."""
 
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game or MixedScenarioService._map_status_to_schema(game.status) != GameStatus.IN_PROGRESS:
-            raise ValueError("Game is not in progress")
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario or MixedScenarioService._map_status_to_schema(scenario.status) != ScenarioStatus.IN_PROGRESS:
+            raise ValueError("Scenario is not in progress")
 
         scenario_user = (
             self.db.query(ScenarioUser)
@@ -6503,13 +6502,13 @@ class MixedScenarioService:
             .first()
         )
         if not scenario_user:
-            raise ValueError("ScenarioUser not found for this game")
+            raise ValueError("ScenarioUser not found for this scenario")
 
         current_period = (
             self.db.query(ScenarioPeriod)
             .filter(
                 ScenarioPeriod.scenario_id == scenario_id,
-                ScenarioPeriod.round_number == game.current_period,
+                ScenarioPeriod.round_number == scenario.current_period,
             )
             .first()
         )
@@ -6563,7 +6562,7 @@ class MixedScenarioService:
 
     def _apply_scenario_user_updates(
         self,
-        game: Game,
+        scenario: Scenario,
         cfg: Dict[str, Any],
         assignments_payload: Any,
     ) -> None:
@@ -6578,14 +6577,14 @@ class MixedScenarioService:
         if not assignments:
             raise ValueError("At least one scenario_user assignment is required")
 
-        scenario_user_lookup: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in list(game.scenario_users or [])}
+        scenario_user_lookup: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in list(scenario.scenario_users or [])}
         prior_assignments, role_assignments_upgraded = self._upgrade_json_value(
-            getattr(game, "role_assignments", {}) or {},
+            getattr(scenario, "role_assignments", {}) or {},
             dict,
             default_factory=dict,
             context="MixedScenarioService._apply_scenario_user_updates role_assignments",
             field_name="role_assignments",
-            game=game,
+            scenario=scenario,
         )
         assignment_to_scenario_user: Dict[str, ScenarioUser] = {}
         for assignment_key, payload in prior_assignments.items():
@@ -6599,7 +6598,7 @@ class MixedScenarioService:
             assignment_to_scenario_user = {
                 self._normalise_key(getattr(scenario_user.role, "value", scenario_user.role)):
                     scenario_user
-                for scenario_user in list(game.scenario_users or [])
+                for scenario_user in list(scenario.scenario_users or [])
             }
 
         seen_assignments: Set[str] = set()
@@ -6611,7 +6610,7 @@ class MixedScenarioService:
             default_factory=dict,
             context="MixedScenarioService._apply_scenario_user_updates autonomy_overrides",
             field_name="config",
-            game=game,
+            scenario=scenario,
         )
 
         for assignment in assignments:
@@ -6655,7 +6654,7 @@ class MixedScenarioService:
             scenario_user = assignment_to_scenario_user.get(assignment_key)
             if scenario_user is None:
                 scenario_user = ScenarioUser(
-                    scenario_id=game.id,
+                    scenario_id=scenario.id,
                     role=db_role,
                     name=f"{assignment.role.value.title()} ({'AI' if is_ai else 'Human'})",
                     is_ai=is_ai,
@@ -6740,12 +6739,12 @@ class MixedScenarioService:
             else:
                 overrides.pop(assignment_key, None)
 
-        # Remove scenario_users no longer present (only for games not yet started)
+        # Remove scenario_users no longer present (only for scenarios not yet started)
         for assignment_key, scenario_user in list(assignment_to_scenario_user.items()):
             if assignment_key in seen_assignments:
                 continue
             overrides.pop(assignment_key, None)
-            if game.status == GameStatusDB.CREATED:
+            if scenario.status == GameStatusDB.CREATED:
                 self.db.delete(scenario_user)
 
         cfg["player_assignments"] = config_assignments
@@ -6754,28 +6753,28 @@ class MixedScenarioService:
         else:
             cfg.pop("autonomy_overrides", None)
         if overrides_upgraded:
-            flag_modified(game, "config")
+            flag_modified(scenario, "config")
 
-        game.role_assignments = role_assignments
+        scenario.role_assignments = role_assignments
         if role_assignments_upgraded:
-            flag_modified(game, "role_assignments")
+            flag_modified(scenario, "role_assignments")
     
-    def start_game(self, scenario_id: int, debug_logging: bool = False) -> Game:
-        """Start a game, initializing the first round."""
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError("Game not found")
+    def start_game(self, scenario_id: int, debug_logging: bool = False) -> Scenario:
+        """Start a scenario, initializing the first round."""
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError("Scenario not found")
             
-        if MixedScenarioService._map_status_to_schema(game.status) != GameStatus.CREATED:
-            raise ValueError("Game has already started")
+        if MixedScenarioService._map_status_to_schema(scenario.status) != ScenarioStatus.CREATED:
+            raise ValueError("Scenario has already started")
             
-        # Update game status
-        game.status = GameStatusDB.STARTED
-        game.current_period = 0  # Will be incremented in start_new_round
-        game.started_at = datetime.utcnow()
+        # Update scenario status
+        scenario.status = GameStatusDB.STARTED
+        scenario.current_period = 0  # Will be incremented in start_new_round
+        scenario.started_at = datetime.utcnow()
 
         # Initialize simple engine state if not present
-        cfg = self._coerce_dict(getattr(game, "config", {}) or {})
+        cfg = self._coerce_dict(getattr(scenario, "config", {}) or {})
         previous_notices = cfg.get("startup_notices")
         cfg["startup_notices"] = []
         config_upgraded = previous_notices not in (None, [])
@@ -6790,20 +6789,20 @@ class MixedScenarioService:
         if debug_cfg.get("enabled"):
             # Ensure a debug log file is prepared up-front so initial conditions are captured consistently.
             try:
-                ensure_debug_log_file(cfg, game)
+                ensure_debug_log_file(cfg, scenario)
             except Exception:
-                logger.debug("Unable to prepare debug log file during start_game for game %s", game.id)
+                logger.debug("Unable to prepare debug log file during start_game for scenario %s", scenario.id)
 
-        # If the game was restarted but has lingering rounds/history, clear them.
+        # If the scenario was restarted but has lingering rounds/history, clear them.
         existing_rounds = (
-            self.db.query(ScenarioPeriod).filter(ScenarioPeriod.scenario_id == game.id).all()
+            self.db.query(ScenarioPeriod).filter(ScenarioPeriod.scenario_id == scenario.id).all()
         )
         if existing_rounds:
             for r in existing_rounds:
                 self.db.delete(r)
             cfg["history"] = []
-            game.current_period = 0
-            flag_modified(game, "config")
+            scenario.current_period = 0
+            flag_modified(scenario, "config")
 
         demand_pattern_cfg, demand_pattern_changed = self._upgrade_config_entry(
             cfg,
@@ -6814,12 +6813,12 @@ class MixedScenarioService:
         )
         if not demand_pattern_cfg:
             demand_pattern_cfg, pattern_upgraded = self._upgrade_json_value(
-                getattr(game, 'demand_pattern', {}) or DEFAULT_DEMAND_PATTERN,
+                getattr(scenario, 'demand_pattern', {}) or DEFAULT_DEMAND_PATTERN,
                 dict,
                 default_factory=lambda: dict(DEFAULT_DEMAND_PATTERN),
                 context="MixedScenarioService.start_game demand_pattern fallback",
                 field_name="demand_pattern",
-                game=game,
+                scenario=scenario,
             )
             demand_pattern_changed = demand_pattern_changed or pattern_upgraded
         cfg['demand_pattern'] = demand_pattern_cfg or dict(DEFAULT_DEMAND_PATTERN)
@@ -6857,9 +6856,9 @@ class MixedScenarioService:
             context="MixedScenarioService.start_game",
         )
         if not raw_policies:
-            fallback_config = self._fallback_game_config_from_supply_chain(
+            fallback_config = self._fallback_scenario_config_from_supply_chain(
                 cfg,
-                game,
+                scenario,
                 snapshot=_ensure_snapshot(),
             )
 
@@ -6869,8 +6868,8 @@ class MixedScenarioService:
                 try:
                     MixedScenarioService._record_startup_notice(
                         cfg,
-                        game,
-                        "Node policies were regenerated from the linked supply chain configuration because they were missing from the game setup.",
+                        scenario,
+                        "Node policies were regenerated from the linked supply chain configuration because they were missing from the scenario setup.",
                         details={
                             "supply_chain_config_id": cfg.get("supply_chain_config_id"),
                             "supply_chain_name": cfg.get("supply_chain_name"),
@@ -6880,7 +6879,7 @@ class MixedScenarioService:
                     )
                 except Exception:
                     logger.debug(
-                        "Unable to record startup fallback notice for game %s", getattr(game, "id", "?")
+                        "Unable to record startup fallback notice for scenario %s", getattr(scenario, "id", "?")
                     )
                 for key in (
                     "lanes",
@@ -6895,13 +6894,13 @@ class MixedScenarioService:
                         cfg[key] = MixedScenarioService._json_clone(fallback_config.get(key))
             else:
                 error_message = (
-                    "Game configuration is missing node_policies; reseed the supply-chain configuration "
+                    "Scenario configuration is missing node_policies; reseed the supply-chain configuration "
                     "so every node includes lead times and inventory parameters."
                 )
                 try:
                     MixedScenarioService._record_startup_notice(
                         cfg,
-                        game,
+                        scenario,
                         error_message,
                         details={
                             "supply_chain_config_id": cfg.get("supply_chain_config_id"),
@@ -6911,7 +6910,7 @@ class MixedScenarioService:
                     )
                 except Exception:
                     logger.debug(
-                        "Unable to record startup failure notice for game %s", getattr(game, "id", "?")
+                        "Unable to record startup failure notice for scenario %s", getattr(scenario, "id", "?")
                     )
                 raise ValueError(error_message)
         node_policies = {}
@@ -6973,7 +6972,7 @@ class MixedScenarioService:
             lanes_upgraded,
             node_sequence_upgraded,
         ]):
-            flag_modified(game, "config")
+            flag_modified(scenario, "config")
         pattern_for_stats = cfg.get('demand_pattern') or DEFAULT_DEMAND_PATTERN
         mean_demand, variance = estimate_demand_stats(pattern_for_stats)
         steady_quantity = MixedScenarioService._baseline_flow(mean_demand)
@@ -7008,7 +7007,7 @@ class MixedScenarioService:
         lane_lookup = lane_views.get('lane_lookup', {})
 
         # Reseed using unified inbound queues and log initial conditions only
-        cfg = self._reseed_engine_state(cfg, lane_views, mean_demand, variance, game)
+        cfg = self._reseed_engine_state(cfg, lane_views, mean_demand, variance, scenario)
         engine = cfg.get("engine_state", {})
         cfg['initial_state'] = {}
 
@@ -7042,7 +7041,7 @@ class MixedScenarioService:
             state = engine.get(node, {})
             self._log_initialisation_debug(
                 cfg,
-                game,
+                scenario,
                 node_label=node,
                 calculation_details=calc_debug,
                 state=state,
@@ -7102,100 +7101,100 @@ class MixedScenarioService:
                 )
             append_debug_round_log(
                 cfg,
-                game,
+                scenario,
                 round_number=0,
                 timestamp=datetime.utcnow(),
                 entries=initial_entries,
             )
         except Exception:
-            logger.debug("Unable to write initial debug snapshot for game %s", game.id)
-        game.config = cfg
+            logger.debug("Unable to write initial debug snapshot for scenario %s", scenario.id)
+        scenario.config = cfg
         
         progression_mode = str(cfg.get("progression_mode") or "supervised").lower()
 
         # If every scenario_user is an AI but the progression mode was not set to
-        # unsupervised, automatically enable auto-play so seeded showcase games
+        # unsupervised, automatically enable auto-play so seeded showcase scenarios
         # don't stall after the first round.
         if progression_mode != "unsupervised":
             scenario_users = (
                 self.db.query(ScenarioUser)
-                .filter(ScenarioUser.scenario_id == game.id)
+                .filter(ScenarioUser.scenario_id == scenario.id)
                 .all()
             )
             if scenario_users and all(p.is_ai for p in scenario_users):
                 progression_mode = "unsupervised"
                 cfg["progression_mode"] = progression_mode
-                flag_modified(game, "config")
+                flag_modified(scenario, "config")
 
         # Persist the initialized engine state before optionally auto-playing
         self.db.commit()
-        self.db.refresh(game)
+        self.db.refresh(scenario)
 
         if progression_mode == "unsupervised":
             try:
-                self._auto_play_unsupervised(game)
-                self.db.refresh(game)
+                self._auto_play_unsupervised(scenario)
+                self.db.refresh(scenario)
             except Exception:  # noqa: BLE001
-                logger.exception("Auto-play failed for game %s", scenario_id)
+                logger.exception("Auto-play failed for scenario %s", scenario_id)
 
-        return game
+        return scenario
     
-    def stop_game(self, scenario_id: int) -> Game:
-        """Stop a game that is in progress."""
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError("Game not found")
+    def stop_game(self, scenario_id: int) -> Scenario:
+        """Stop a scenario that is in progress."""
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError("Scenario not found")
             
-        if MixedScenarioService._map_status_to_schema(game.status) != GameStatus.IN_PROGRESS:
-            raise ValueError("Game is not in progress")
+        if MixedScenarioService._map_status_to_schema(scenario.status) != ScenarioStatus.IN_PROGRESS:
+            raise ValueError("Scenario is not in progress")
             
-        game.status = GameStatusDB.FINISHED
-        game.completed_at = datetime.utcnow()
+        scenario.status = GameStatusDB.FINISHED
+        scenario.completed_at = datetime.utcnow()
         
         self.db.commit()
-        self.db.refresh(game)
-        return game
+        self.db.refresh(scenario)
+        return scenario
 
-    def delete_game(self, scenario_id: int, current_user: User) -> Dict[str, Any]:
-        """Delete a game if the requester is allowed to manage it."""
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError("Game not found")
+    def delete_scenario(self, scenario_id: int, current_user: User) -> Dict[str, Any]:
+        """Delete a scenario if the requester is allowed to manage it."""
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError("Scenario not found")
 
         user_type = self._resolve_user_type(current_user)
         if not current_user.is_superuser and user_type != UserTypeEnum.SYSTEM_ADMIN:
             tenant_id = getattr(current_user, "tenant_id", None)
-            owns_tenant = tenant_id and tenant_id == getattr(game, "tenant_id", tenant_id)
+            owns_tenant = tenant_id and tenant_id == getattr(scenario, "tenant_id", tenant_id)
             config_tenant = None
             cfg, _ = self._upgrade_json_value(
-                getattr(game, "config", {}) or {},
+                getattr(scenario, "config", {}) or {},
                 dict,
                 default_factory=dict,
-                context="MixedScenarioService.delete_game config",
+                context="MixedScenarioService.delete_scenario config",
                 field_name="config",
-                game=game,
+                scenario=scenario,
             )
             if cfg:
                 config_tenant = cfg.get("tenant_id")
             if not owns_tenant and config_tenant not in (tenant_id, None):
-                raise PermissionError("Not enough permissions to delete this game")
+                raise PermissionError("Not enough permissions to delete this scenario")
 
-        self.db.delete(game)
+        self.db.delete(scenario)
         self.db.commit()
         return {"status": "deleted", "scenario_id": scenario_id}
 
     def _auto_play_unsupervised(
         self,
-        game: Game,
+        scenario: Scenario,
         *,
         sleep_seconds: float = 0.05,
         iteration_limit: int = 2048,
     ) -> None:
-        """Advance an AI-only unsupervised game until completion."""
+        """Advance an AI-only unsupervised scenario until completion."""
 
         scenario_users = (
             self.db.query(ScenarioUser)
-            .filter(ScenarioUser.scenario_id == game.id)
+            .filter(ScenarioUser.scenario_id == scenario.id)
             .all()
         )
         if any(not scenario_user.is_ai for scenario_user in scenario_users):
@@ -7206,13 +7205,13 @@ class MixedScenarioService:
             iterations += 1
             if iteration_limit and iterations > iteration_limit:
                 logger.warning(
-                    "Auto-play stopped for game %s after reaching the iteration limit",
-                    game.id,
+                    "Auto-play stopped for scenario %s after reaching the iteration limit",
+                    scenario.id,
                 )
                 break
 
             self.db.expire_all()
-            current = self.db.query(Game).filter(Game.id == game.id).first()
+            current = self.db.query(Scenario).filter(Scenario.id == scenario.id).first()
             if not current:
                 break
             if current.status == GameStatusDB.FINISHED:
@@ -7229,9 +7228,9 @@ class MixedScenarioService:
             if sleep_seconds:
                 time.sleep(sleep_seconds)
     
-    def start_new_round(self, game: Union[int, Game]) -> Optional[ScenarioPeriod]:
+    def start_new_round(self, scenario: Union[int, Scenario]) -> Optional[ScenarioPeriod]:
         """
-        Advance the game to the next round.
+        Advance the scenario to the next round.
 
         This method orchestrates the simulation logic for a single round using:
         - SC Planning Mode (if use_sc_planning=True) - Full AWS SC integration
@@ -7246,10 +7245,10 @@ class MixedScenarioService:
         5. Transition to COMPLETED, advance round
 
         SC Mode:
-        1. Sync game state to SC tables (inventory, forecast)
+        1. Sync scenario state to SC tables (inventory, forecast)
         2. Run SC 3-step planning process
         3. Convert supply plans to scenario_user orders
-        4. Update game state
+        4. Update scenario state
 
         Legacy Mode:
         1. Initialize round context and load state
@@ -7258,54 +7257,54 @@ class MixedScenarioService:
         4. Trigger AI scenario_users
         5. Finalize round (persist state)
         """
-        # 1. Resolve Game Object
-        if isinstance(game, int):
-            game_obj = self.db.query(Game).filter(Game.id == game).first()
+        # 1. Resolve Scenario Object
+        if isinstance(scenario, int):
+            scenario_obj = self.db.query(Scenario).filter(Scenario.id == scenario).first()
         else:
-            game_obj = game
+            scenario_obj = scenario
 
-        if not game_obj:
+        if not scenario_obj:
             return None
 
-        # 2. Check Game Status
-        if game_obj.status == GameStatusDB.FINISHED:
+        # 2. Check Scenario Status
+        if scenario_obj.status == GameStatusDB.FINISHED:
             return None
 
         # 3. Route to appropriate execution mode
         # Priority: SC Execution > SC Planning > DAG Sequential > Legacy
-        use_sc_execution = (game_obj.config or {}).get('use_sc_execution', False)
+        use_sc_execution = (scenario_obj.config or {}).get('use_sc_execution', False)
         if use_sc_execution:
-            return self._start_round_sc_execution(game_obj)
-        elif game_obj.use_sc_planning:
-            return self._start_round_sc_planning(game_obj)
-        elif game_obj.use_dag_sequential:
-            return self._start_round_dag_sequential(game_obj)
+            return self._start_round_sc_execution(scenario_obj)
+        elif scenario_obj.use_sc_planning:
+            return self._start_round_sc_planning(scenario_obj)
+        elif scenario_obj.use_dag_sequential:
+            return self._start_round_dag_sequential(scenario_obj)
         else:
-            return self._start_round_legacy(game_obj)
+            return self._start_round_legacy(scenario_obj)
 
-    def _start_round_sc_execution(self, game_obj: Game) -> Optional[ScenarioPeriod]:
+    def _start_round_sc_execution(self, scenario_obj: Scenario) -> Optional[ScenarioPeriod]:
         """
         SC Execution Mode round processing.
 
         Drives round execution entirely through standard AWS SC entities:
         InvLevel, InboundOrderLine, OutboundOrderLine, SourcingRules, PurchaseOrder.
 
-        This replaces engine.py logic — the Beer Game is just a special case of
+        This replaces engine.py logic — the Beer Scenario is just a special case of
         iterative SC execution over a 4-site linear DAG.
         """
         from app.services.sc_execution.simulation_executor import SimulationExecutor
 
-        if not game_obj.supply_chain_config_id:
+        if not scenario_obj.supply_chain_config_id:
             logger.error(
-                f"Game {game_obj.id} has no supply_chain_config_id - cannot use SC execution"
+                f"Scenario {scenario_obj.id} has no supply_chain_config_id - cannot use SC execution"
             )
             return None
 
-        total_rounds = game_obj.max_periods or 52
+        total_rounds = scenario_obj.max_periods or 52
 
         latest_round: Optional[ScenarioPeriod] = (
             self.db.query(ScenarioPeriod)
-            .filter(ScenarioPeriod.scenario_id == game_obj.id)
+            .filter(ScenarioPeriod.scenario_id == scenario_obj.id)
             .order_by(ScenarioPeriod.round_number.desc())
             .first()
         )
@@ -7315,39 +7314,39 @@ class MixedScenarioService:
             else:
                 target_round = latest_round.round_number
         else:
-            current_period_value = game_obj.current_period or 0
+            current_period_value = scenario_obj.current_period or 0
             target_round = current_period_value if current_period_value > 0 else 1
 
         if target_round > total_rounds:
-            game_obj.status = GameStatusDB.FINISHED
+            scenario_obj.status = GameStatusDB.FINISHED
             self.db.commit()
             return None
 
-        game_obj.current_period = target_round
-        self.db.add(game_obj)
+        scenario_obj.current_period = target_round
+        self.db.add(scenario_obj)
         self.db.commit()
 
-        logger.info(f"🚀 SC Execution Mode - Game {game_obj.id}, Round {target_round}")
+        logger.info(f"🚀 SC Execution Mode - Scenario {scenario_obj.id}, Round {target_round}")
 
         # Initialize SC state on round 1 (create InvLevel records)
         if target_round == 1:
             from app.services.sc_execution.simulation_executor import SimulationExecutor as _SE
-            _init_executor = _SE(db=self.db, scenario=game_obj)
+            _init_executor = _SE(db=self.db, scenario=scenario_obj)
             _init_executor._load_config()
             _init_executor.initialize_game(
-                scenario_id=game_obj.id,
-                config_id=game_obj.supply_chain_config_id,
+                scenario_id=scenario_obj.id,
+                config_id=scenario_obj.supply_chain_config_id,
             )
-            logger.info(f"  Initialized SC state for game {game_obj.id}")
+            logger.info(f"  Initialized SC state for scenario {scenario_obj.id}")
 
         # Market demand for this round
-        market_demand = self._get_current_demand(game_obj, target_round)
+        market_demand = self._get_current_demand(scenario_obj, target_round)
 
         # Agent order decisions (one qty per role/site)
-        agent_decisions = self._get_sc_execution_agent_decisions(game_obj, target_round)
+        agent_decisions = self._get_sc_execution_agent_decisions(scenario_obj, target_round)
 
         # Execute round via SC execution layer
-        executor = SimulationExecutor(db=self.db, scenario=game_obj)
+        executor = SimulationExecutor(db=self.db, scenario=scenario_obj)
         executor._load_config()
         round_result = executor.execute_round(
             round_number=target_round,
@@ -7357,7 +7356,7 @@ class MixedScenarioService:
 
         # Create ScenarioPeriod record
         round_record = ScenarioPeriod(
-            scenario_id=game_obj.id,
+            scenario_id=scenario_obj.id,
             round_number=target_round,
             customer_demand=int(market_demand),
             is_completed=True,
@@ -7369,14 +7368,14 @@ class MixedScenarioService:
         self.db.flush()
 
         # Persist per-user period records from round result
-        self._persist_sc_execution_period(game_obj, round_record, round_result)
+        self._persist_sc_execution_period(scenario_obj, round_record, round_result)
 
         self.db.commit()
         logger.info(f"✅ SC Execution Round {target_round} Complete")
         return round_record
 
     def _get_sc_execution_agent_decisions(
-        self, game_obj: Game, round_number: int
+        self, scenario_obj: Scenario, round_number: int
     ) -> Dict[str, float]:
         """
         Compute agent order quantities for an SC execution round.
@@ -7386,7 +7385,7 @@ class MixedScenarioService:
         and reads current InvLevel to compute the order quantity.
 
         Args:
-            game_obj: Game/Scenario instance
+            scenario_obj: Scenario/Scenario instance
             round_number: Current round number
 
         Returns:
@@ -7395,17 +7394,17 @@ class MixedScenarioService:
         from app.models.sc_entities import InvLevel
         from app.models.supply_chain_config import Site
 
-        demand = self._get_current_demand(game_obj, round_number)
+        demand = self._get_current_demand(scenario_obj, round_number)
 
         scenario_users = (
             self.db.query(ScenarioUser)
-            .filter(ScenarioUser.scenario_id == game_obj.id)
+            .filter(ScenarioUser.scenario_id == scenario_obj.id)
             .all()
         )
 
         sites = (
             self.db.query(Site)
-            .filter(Site.config_id == game_obj.supply_chain_config_id)
+            .filter(Site.config_id == scenario_obj.supply_chain_config_id)
             .all()
         )
         site_by_name_upper = {s.name.upper(): s for s in sites}
@@ -7437,7 +7436,7 @@ class MixedScenarioService:
 
     def _persist_sc_execution_period(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_record: ScenarioPeriod,
         round_result: Dict,
     ) -> None:
@@ -7449,7 +7448,7 @@ class MixedScenarioService:
         without changes.
 
         Args:
-            game_obj: Game/Scenario instance
+            scenario_obj: Scenario/Scenario instance
             round_record: The ScenarioPeriod just created for this round
             round_result: Dict returned by SimulationExecutor.execute_round()
         """
@@ -7457,13 +7456,13 @@ class MixedScenarioService:
 
         scenario_users = (
             self.db.query(ScenarioUser)
-            .filter(ScenarioUser.scenario_id == game_obj.id)
+            .filter(ScenarioUser.scenario_id == scenario_obj.id)
             .all()
         )
 
         sites = (
             self.db.query(Site)
-            .filter(Site.config_id == game_obj.supply_chain_config_id)
+            .filter(Site.config_id == scenario_obj.supply_chain_config_id)
             .all()
         )
         site_by_id = {s.id: s for s in sites}
@@ -7510,18 +7509,18 @@ class MixedScenarioService:
             )
             self.db.add(period)
 
-    def _start_round_legacy(self, game_obj: Game) -> Optional[ScenarioPeriod]:
+    def _start_round_legacy(self, scenario_obj: Scenario) -> Optional[ScenarioPeriod]:
         """
         Legacy Simulation Engine round processing.
 
         Uses the original engine.py logic with SupplyChainLine and Node classes.
         """
-        total_rounds = game_obj.max_periods or 50  # Default
+        total_rounds = scenario_obj.max_periods or 50  # Default
 
         # Determine target round based on existing round records
         latest_round: Optional[ScenarioPeriod] = (
             self.db.query(ScenarioPeriod)
-            .filter(ScenarioPeriod.scenario_id == game_obj.id)
+            .filter(ScenarioPeriod.scenario_id == scenario_obj.id)
             .order_by(ScenarioPeriod.round_number.desc())
             .first()
         )
@@ -7532,34 +7531,34 @@ class MixedScenarioService:
                 target_round = latest_round.round_number
         else:
             # If a caller already primed current_period, respect it; otherwise start at 1
-            current_period_value = game_obj.current_period or 0
+            current_period_value = scenario_obj.current_period or 0
             target_round = current_period_value if current_period_value > 0 else 1
 
         if target_round > total_rounds:
-            game_obj.status = GameStatusDB.FINISHED
+            scenario_obj.status = GameStatusDB.FINISHED
             self.db.commit()
             return None
 
-        game_obj.current_period = target_round
-        self.db.add(game_obj)
+        scenario_obj.current_period = target_round
+        self.db.add(scenario_obj)
 
         # When starting from round 1 (or reset), reseed a clean engine state
         if target_round == 1:
-            cfg = game_obj.config or {}
+            cfg = scenario_obj.config or {}
             node_policies = cfg.get("node_policies", {})
             lane_views = self._build_lane_views(node_policies, cfg)
             stats = cfg.get("demand_statistics") or {}
             mean_demand = stats.get("mean")
             variance = stats.get("variance", 0.0)
             if mean_demand is None:
-                pattern = cfg.get("demand_pattern") or game_obj.demand_pattern or DEFAULT_DEMAND_PATTERN
+                pattern = cfg.get("demand_pattern") or scenario_obj.demand_pattern or DEFAULT_DEMAND_PATTERN
                 mean_demand, variance = estimate_demand_stats(pattern)
-            cfg = self._reseed_engine_state(cfg, lane_views, mean_demand, variance, game_obj)
-            game_obj.config = cfg
-            flag_modified(game_obj, "config")
+            cfg = self._reseed_engine_state(cfg, lane_views, mean_demand, variance, scenario_obj)
+            scenario_obj.config = cfg
+            flag_modified(scenario_obj, "config")
 
         # Initialize Round
-        context = self._initialize_round(game_obj, round_number=target_round)
+        context = self._initialize_round(scenario_obj, round_number=target_round)
         if not context:
             return None
 
@@ -7571,22 +7570,22 @@ class MixedScenarioService:
 
         # AI ScenarioUsers
         if context.round_record:
-            self.process_ai_scenario_users(game_obj, context.round_record, context)
+            self.process_ai_scenario_users(scenario_obj, context.round_record, context)
 
         # Finalize Round
-        self._finalize_round(game_obj, context)
+        self._finalize_round(scenario_obj, context)
 
         return context.round_record
 
-    def _start_round_sc_planning(self, game_obj: Game) -> Optional[ScenarioPeriod]:
+    def _start_round_sc_planning(self, scenario_obj: Scenario) -> Optional[ScenarioPeriod]:
         """
         Supply Chain Planning Mode round processing.
 
         Uses SC 3-step planning process instead of legacy engine:
-        1. Sync game state to SC tables (inventory, forecast)
+        1. Sync scenario state to SC tables (inventory, forecast)
         2. Run SupplyChainPlanner (demand → targets → net requirements)
         3. Convert supply plans to scenario_user orders
-        4. Update game state and persist
+        4. Update scenario state and persist
 
         This method bridges simulation concepts to SC Data Model using
         the SimulationToSCAdapter.
@@ -7597,19 +7596,19 @@ class MixedScenarioService:
         from app.db.session import SessionLocal
 
         # Validate required fields
-        if not game_obj.tenant_id:
-            logger.error(f"Game {game_obj.id} has no tenant_id - cannot use SC planning")
+        if not scenario_obj.tenant_id:
+            logger.error(f"Scenario {scenario_obj.id} has no tenant_id - cannot use SC planning")
             return None
 
-        if not game_obj.supply_chain_config_id:
-            logger.error(f"Game {game_obj.id} has no supply_chain_config_id - cannot use SC planning")
+        if not scenario_obj.supply_chain_config_id:
+            logger.error(f"Scenario {scenario_obj.id} has no supply_chain_config_id - cannot use SC planning")
             return None
 
         # Determine target round
-        total_rounds = game_obj.max_periods or 50
+        total_rounds = scenario_obj.max_periods or 50
         latest_round: Optional[ScenarioPeriod] = (
             self.db.query(ScenarioPeriod)
-            .filter(ScenarioPeriod.scenario_id == game_obj.id)
+            .filter(ScenarioPeriod.scenario_id == scenario_obj.id)
             .order_by(ScenarioPeriod.round_number.desc())
             .first()
         )
@@ -7620,35 +7619,35 @@ class MixedScenarioService:
             else:
                 target_round = latest_round.round_number
         else:
-            current_period_value = game_obj.current_period or 0
+            current_period_value = scenario_obj.current_period or 0
             target_round = current_period_value if current_period_value > 0 else 1
 
         if target_round > total_rounds:
-            game_obj.status = GameStatusDB.FINISHED
+            scenario_obj.status = GameStatusDB.FINISHED
             self.db.commit()
             return None
 
-        game_obj.current_period = target_round
-        self.db.add(game_obj)
+        scenario_obj.current_period = target_round
+        self.db.add(scenario_obj)
         self.db.commit()
 
-        logger.info(f"🚀 SC Planning Mode - Game {game_obj.id}, Round {target_round}")
+        logger.info(f"🚀 SC Planning Mode - Scenario {scenario_obj.id}, Round {target_round}")
 
         # Run async planning logic
-        round_record = asyncio.run(self._run_sc_planning_async(game_obj, target_round))
+        round_record = asyncio.run(self._run_sc_planning_async(scenario_obj, target_round))
 
         return round_record
 
-    async def _run_sc_planning_async(self, game_obj: Game, target_round: int) -> Optional[ScenarioPeriod]:
+    async def _run_sc_planning_async(self, scenario_obj: Scenario, target_round: int) -> Optional[ScenarioPeriod]:
         """
         Async helper for SC EXECUTION workflow (REFACTORED for execution, not planning).
 
         Simulation is an EXECUTION scenario, not a planning scenario.
-        Planning (forecasts, inv policies) happens BEFORE the game starts.
-        Execution (work orders, fulfillment) happens DURING game rounds.
+        Planning (forecasts, inv policies) happens BEFORE the scenario starts.
+        Execution (work orders, fulfillment) happens DURING scenario rounds.
 
         This method runs the full SC execution cycle:
-        1. Sync current game state (inventory, backlog) → inv_level
+        1. Sync current scenario state (inventory, backlog) → inv_level
         2. Record customer demand → outbound_order_line
         3. Process deliveries from previous orders → update inventory
         4. Get scenario_user orders from agents/humans → inbound_order_line (work orders)
@@ -7659,24 +7658,24 @@ class MixedScenarioService:
         from app.db.session import async_session_factory
 
         async with async_session_factory() as db:
-            # Refresh game object in async session
+            # Refresh scenario object in async session
             from sqlalchemy import select
-            result = await db.execute(select(Game).filter(Game.id == game_obj.id))
-            game = result.scalar_one()
+            result = await db.execute(select(Scenario).filter(Scenario.id == scenario_obj.id))
+            scenario = result.scalar_one()
 
-            logger.info(f"🚀 SC Execution Mode - Game {game.id}, Round {target_round}")
+            logger.info(f"🚀 SC Execution Mode - Scenario {scenario.id}, Round {target_round}")
 
             # Step 1: Initialize Execution Adapter (Phase 3: with cache enabled)
             logger.info(f"  Step 1: Initializing SimulationExecutionAdapter (with cache)...")
-            adapter = SimulationExecutionAdapter(game, db, use_cache=True)
+            adapter = SimulationExecutionAdapter(scenario, db, use_cache=True)
 
-            # Load cache once at game start (Phase 3 optimization)
+            # Load cache once at scenario start (Phase 3 optimization)
             cache_counts = await adapter.cache.load()
             logger.info(f"  ✓ Cache loaded: {cache_counts}")
 
             # Phase 3 Sprint 2: Reset capacity at start of new period
-            use_capacity = game.config.get('use_capacity_constraints', False)
-            if use_capacity and target_round % game.config.get('capacity_reset_period', 1) == 0:
+            use_capacity = scenario.config.get('use_capacity_constraints', False)
+            if use_capacity and target_round % scenario.config.get('capacity_reset_period', 1) == 0:
                 reset_count = await adapter.reset_period_capacity()
                 logger.info(f"  ✓ Reset {reset_count} capacity counters for new period")
 
@@ -7687,8 +7686,8 @@ class MixedScenarioService:
 
             # Step 3: Record Customer Demand (outbound orders)
             logger.info(f"  Step 3: Recording customer demand...")
-            # Get demand from demand pattern or game state
-            demand_qty = self._get_current_demand(game, target_round)
+            # Get demand from demand pattern or scenario state
+            demand_qty = self._get_current_demand(scenario, target_round)
             if demand_qty > 0:
                 await adapter.record_customer_demand('Retailer', demand_qty, target_round)
                 logger.info(f"  ✓ Recorded customer demand: {demand_qty}")
@@ -7701,18 +7700,18 @@ class MixedScenarioService:
             # Step 5: Run Legacy Simulation Engine (for now)
             # This calculates new orders based on current state
             # In future, this could be replaced with SC logic
-            logger.info(f"  Step 5: Running game simulation...")
+            logger.info(f"  Step 5: Running scenario simulation...")
 
             # Get scenario_user orders (from agents/humans)
             # For now, use naive strategy as placeholder
             # TODO: Replace with actual agent/human decision logic
-            scenario_user_orders = await self._get_scenario_user_orders_for_round(game, target_round, db)
+            scenario_user_orders = await self._get_scenario_user_orders_for_round(scenario, target_round, db)
             logger.info(f"  ✓ Got {len(scenario_user_orders)} scenario_user orders")
 
             # Step 6: Create Work Orders (Phase 3: Sprint 1 batch + Sprint 2 capacity + Sprint 3 aggregation)
-            # Check game configuration flags
-            use_capacity = game.config.get('use_capacity_constraints', False)
-            use_aggregation = game.config.get('use_order_aggregation', False)
+            # Check scenario configuration flags
+            use_capacity = scenario.config.get('use_capacity_constraints', False)
+            use_aggregation = scenario.config.get('use_order_aggregation', False)
 
             if use_aggregation:
                 # Sprint 3: Order aggregation (with optional capacity enforcement)
@@ -7759,33 +7758,33 @@ class MixedScenarioService:
             logger.info(f"  Step 7: Creating ScenarioPeriod record...")
             from app.models.supply_chain import ScenarioPeriod as ScenarioPeriodModel
 
-            game_round = ScenarioPeriodModel(
-                scenario_id=game.id,
+            scenario_period = ScenarioPeriodModel(
+                scenario_id=scenario.id,
                 round_number=target_round,
                 started_at=datetime.utcnow(),
                 is_completed=False,
                 notes=f"SC Execution Mode - {work_orders_created} work orders created"
             )
-            db.add(game_round)
+            db.add(scenario_period)
             await db.flush()
 
-            # Step 8: Apply Orders to Game State
-            logger.info(f"  Step 8: Applying orders to game state...")
-            await self._apply_sc_planning_orders_to_game(game, scenario_user_orders, target_round, db)
+            # Step 8: Apply Orders to Scenario State
+            logger.info(f"  Step 8: Applying orders to scenario state...")
+            await self._apply_sc_planning_orders_to_game(scenario, scenario_user_orders, target_round, db)
 
             # Step 9: Mark round complete
-            game_round.completed_at = datetime.utcnow()
-            game_round.ended_at = datetime.utcnow()
-            game_round.is_completed = True
+            scenario_period.completed_at = datetime.utcnow()
+            scenario_period.ended_at = datetime.utcnow()
+            scenario_period.is_completed = True
 
             await db.commit()
 
             logger.info(f"✅ SC Execution Round {target_round} Complete")
 
-            # Return the game round (sync session will need to re-query it)
-            return game_round
+            # Return the scenario round (sync session will need to re-query it)
+            return scenario_period
 
-    def _start_round_dag_sequential(self, game_obj: Game) -> Optional[ScenarioPeriod]:
+    def _start_round_dag_sequential(self, scenario_obj: Scenario) -> Optional[ScenarioPeriod]:
         """
         DAG-ordered sequential round execution (Phase 1 implementation).
 
@@ -7798,19 +7797,19 @@ class MixedScenarioService:
         upstream suppliers wait for purchase orders before acting.
 
         Args:
-            game_obj: Game instance with use_dag_sequential=True
+            scenario_obj: Scenario instance with use_dag_sequential=True
 
         Returns:
-            ScenarioPeriod record or None if game finished
+            ScenarioPeriod record or None if scenario finished
         """
         from app.models.supply_chain import PeriodPhase
 
-        total_rounds = game_obj.max_periods or 50
+        total_rounds = scenario_obj.max_periods or 50
 
         # Determine target round
         latest_round: Optional[ScenarioPeriod] = (
             self.db.query(ScenarioPeriod)
-            .filter(ScenarioPeriod.scenario_id == game_obj.id)
+            .filter(ScenarioPeriod.scenario_id == scenario_obj.id)
             .order_by(ScenarioPeriod.round_number.desc())
             .first()
         )
@@ -7826,15 +7825,15 @@ class MixedScenarioService:
             target_round = 1
 
         if target_round > total_rounds:
-            game_obj.status = GameStatusDB.FINISHED
+            scenario_obj.status = GameStatusDB.FINISHED
             self.db.commit()
             return None
 
-        game_obj.current_period = target_round
+        scenario_obj.current_period = target_round
 
         # Create new round with FULFILLMENT phase
         round_record = ScenarioPeriod(
-            scenario_id=game_obj.id,
+            scenario_id=scenario_obj.id,
             round_number=target_round,
             customer_demand=0,  # Will be set later
             is_completed=False,
@@ -7846,10 +7845,10 @@ class MixedScenarioService:
         self.db.flush()  # Get round_record.id
 
         # Process transfer order arrivals for this round
-        self._process_transfer_order_arrivals(game_obj.id, target_round)
+        self._process_transfer_order_arrivals(scenario_obj.id, target_round)
 
         # Initialize scenario_user rounds (create skeleton records)
-        scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game_obj.id).all()
+        scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario_obj.id).all()
         for scenario_user in scenario_users:
             scenario_user_period = ScenarioUserPeriod(
                 scenario_user_id=scenario_user.id,
@@ -7868,7 +7867,7 @@ class MixedScenarioService:
         logger.info(f"✅ DAG Sequential Round {target_round} initialized - Phase: FULFILLMENT")
 
         # Auto-process autonomous agents' fulfillment decisions
-        self._process_autonomous_agent_fulfillment(game_obj, round_record, scenario_users)
+        self._process_autonomous_agent_fulfillment(scenario_obj, round_record, scenario_users)
 
         # Broadcast phase change via WebSocket (best-effort, non-blocking)
         try:
@@ -7876,9 +7875,9 @@ class MixedScenarioService:
             import asyncio
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                loop.create_task(manager.broadcast_to_scenario(game_obj.id, {
+                loop.create_task(manager.broadcast_to_scenario(scenario_obj.id, {
                     "type": "round_phase_change",
-                    "scenario_id": game_obj.id,
+                    "scenario_id": scenario_obj.id,
                     "round_number": target_round,
                     "phase": "FULFILLMENT",
                 }))
@@ -7889,7 +7888,7 @@ class MixedScenarioService:
 
     def _process_autonomous_agent_fulfillment(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod,
         scenario_users: List[ScenarioUser]
     ) -> None:
@@ -7897,13 +7896,13 @@ class MixedScenarioService:
         Auto-process fulfillment decisions for autonomous AI agents.
 
         Called during round initialization to immediately submit fulfillment
-        decisions for agents in AUTONOMOUS mode, allowing the game to progress
+        decisions for agents in AUTONOMOUS mode, allowing the scenario to progress
         without waiting for manual input.
 
         Args:
-            game_obj: Game instance
+            scenario_obj: Scenario instance
             round_obj: Current round
-            scenario_users: List of scenario_users in the game
+            scenario_users: List of scenario_users in the scenario
         """
         from app.models.scenario_user import AgentMode
         from app.services.agents import SimulationAgent, AgentType, AgentStrategy
@@ -7917,7 +7916,7 @@ class MixedScenarioService:
                 continue
 
             # Get agent strategy from config
-            strategy = self._get_agent_strategy(game_obj, scenario_user)
+            strategy = self._get_agent_strategy(scenario_obj, scenario_user)
             if not strategy:
                 strategy = AgentStrategy.NAIVE  # Default fallback
 
@@ -7925,8 +7924,8 @@ class MixedScenarioService:
             agent_type = self._get_agent_type_from_role(scenario_user.role)
             # Get the trained model path from the supply chain config
             config_model_path = getattr(
-                game_obj.supply_chain_config, "trained_model_path", None
-            ) if game_obj.supply_chain_config else None
+                scenario_obj.supply_chain_config, "trained_model_path", None
+            ) if scenario_obj.supply_chain_config else None
             agent = SimulationAgent(
                 agent_id=scenario_user.id,
                 agent_type=agent_type,
@@ -7944,7 +7943,7 @@ class MixedScenarioService:
             # If no backlog, still process the decision with zero fulfillment
             # This marks the scenario_user as having submitted their fulfillment
             self._process_node_fulfillment_decision(
-                game_obj, round_obj, scenario_user, fulfill_qty
+                scenario_obj, round_obj, scenario_user, fulfill_qty
             )
 
             logger.info(
@@ -7952,11 +7951,11 @@ class MixedScenarioService:
             )
 
         # Check if all scenario_users have submitted and transition phase
-        self._check_and_transition_fulfillment_phase(game_obj, round_obj)
+        self._check_and_transition_fulfillment_phase(scenario_obj, round_obj)
 
     def _process_autonomous_agent_replenishment(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod,
         scenario_users: List[ScenarioUser]
     ) -> None:
@@ -7967,9 +7966,9 @@ class MixedScenarioService:
         replenishment orders for agents in AUTONOMOUS mode.
 
         Args:
-            game_obj: Game instance
+            scenario_obj: Scenario instance
             round_obj: Current round
-            scenario_users: List of scenario_users in the game
+            scenario_users: List of scenario_users in the scenario
         """
         from app.models.scenario_user import AgentMode
         from app.services.agents import SimulationAgent, AgentType, AgentStrategy
@@ -7983,7 +7982,7 @@ class MixedScenarioService:
                 continue
 
             # Get agent strategy from config
-            strategy = self._get_agent_strategy(game_obj, scenario_user)
+            strategy = self._get_agent_strategy(scenario_obj, scenario_user)
             if not strategy:
                 strategy = AgentStrategy.NAIVE
 
@@ -7991,8 +7990,8 @@ class MixedScenarioService:
             agent_type = self._get_agent_type_from_role(scenario_user.role)
             # Get the trained model path from the supply chain config
             config_model_path = getattr(
-                game_obj.supply_chain_config, "trained_model_path", None
-            ) if game_obj.supply_chain_config else None
+                scenario_obj.supply_chain_config, "trained_model_path", None
+            ) if scenario_obj.supply_chain_config else None
             agent = SimulationAgent(
                 agent_id=scenario_user.id,
                 agent_type=agent_type,
@@ -8020,7 +8019,7 @@ class MixedScenarioService:
 
             # Process replenishment order
             self._process_node_replenishment_decision(
-                game_obj, round_obj, scenario_user, decision.quantity
+                scenario_obj, round_obj, scenario_user, decision.quantity
             )
 
             logger.info(
@@ -8029,10 +8028,10 @@ class MixedScenarioService:
             )
 
         # Check if all scenario_users have submitted and transition to COMPLETED
-        self._check_and_transition_replenishment_phase(game_obj, round_obj)
+        self._check_and_transition_replenishment_phase(scenario_obj, round_obj)
 
-    def _get_agent_strategy(self, game_obj: Game, scenario_user: ScenarioUser):
-        """Get the agent strategy for a scenario_user from game config."""
+    def _get_agent_strategy(self, scenario_obj: Scenario, scenario_user: ScenarioUser):
+        """Get the agent strategy for a scenario_user from scenario config."""
         from app.services.agents import AgentStrategy
 
         # Check scenario_user's ai_strategy field
@@ -8042,8 +8041,8 @@ class MixedScenarioService:
             except ValueError:
                 pass
 
-        # Check game config role assignments
-        config = game_obj.config or {}
+        # Check scenario config role assignments
+        config = scenario_obj.config or {}
         assignments = config.get("player_assignments", [])
         for assignment in assignments:
             if assignment.get("role") == scenario_user.role:
@@ -8072,39 +8071,39 @@ class MixedScenarioService:
 
     def _check_and_transition_fulfillment_phase(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod
     ) -> None:
         """Check if all scenario_users completed fulfillment and transition to replenishment."""
         from app.models.supply_chain import PeriodPhase
 
         if self._check_phase_transition(
-            game_obj, round_obj,
+            scenario_obj, round_obj,
             PeriodPhase.FULFILLMENT, PeriodPhase.REPLENISHMENT
         ):
-            self._transition_phase(game_obj, round_obj, PeriodPhase.REPLENISHMENT)
+            self._transition_phase(scenario_obj, round_obj, PeriodPhase.REPLENISHMENT)
 
             # Process autonomous agents' replenishment decisions
-            scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game_obj.id).all()
-            self._process_autonomous_agent_replenishment(game_obj, round_obj, scenario_users)
+            scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario_obj.id).all()
+            self._process_autonomous_agent_replenishment(scenario_obj, round_obj, scenario_users)
 
     def _check_and_transition_replenishment_phase(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod
     ) -> None:
         """Check if all scenario_users completed replenishment and transition to completed."""
         from app.models.supply_chain import PeriodPhase
 
         if self._check_phase_transition(
-            game_obj, round_obj,
+            scenario_obj, round_obj,
             PeriodPhase.REPLENISHMENT, PeriodPhase.COMPLETED
         ):
-            self._transition_phase(game_obj, round_obj, PeriodPhase.COMPLETED)
+            self._transition_phase(scenario_obj, round_obj, PeriodPhase.COMPLETED)
 
     def _process_node_fulfillment_decision(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod,
         scenario_user: ScenarioUser,
         fulfill_qty: int
@@ -8116,7 +8115,7 @@ class MixedScenarioService:
         Creates TransferOrder and updates scenario_user state.
 
         Args:
-            game_obj: Game instance
+            scenario_obj: Scenario instance
             round_obj: Current round
             scenario_user: ScenarioUser making decision
             fulfill_qty: Quantity to ship downstream
@@ -8136,7 +8135,7 @@ class MixedScenarioService:
             # Allow but log warning (business decision to allow over-commitment)
 
         # Get downstream site ID from topology
-        config = game_obj.supply_chain_config
+        config = scenario_obj.supply_chain_config
         node_key = scenario_user.assignment_key  # e.g., "retailer", "wholesaler"
 
         # Find downstream transportation lane
@@ -8162,7 +8161,7 @@ class MixedScenarioService:
 
         # Create transfer order
         transfer_order = self._create_transfer_order(
-            scenario_id=game_obj.id,
+            scenario_id=scenario_obj.id,
             scenario_user_id=scenario_user.id,
             source_site_id=scenario_user.site_id,
             destination_site_id=downstream_lane.to_site_id,
@@ -8204,7 +8203,7 @@ class MixedScenarioService:
 
     def _process_node_replenishment_decision(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod,
         scenario_user: ScenarioUser,
         order_qty: int
@@ -8216,7 +8215,7 @@ class MixedScenarioService:
         Creates TransferOrder/PurchaseOrder and updates scenario_user state.
 
         Args:
-            game_obj: Game instance
+            scenario_obj: Scenario instance
             round_obj: Current round
             scenario_user: ScenarioUser making decision
             order_qty: Quantity to order from upstream
@@ -8228,7 +8227,7 @@ class MixedScenarioService:
         from app.models.supply_chain_config import TransportationLane
         from app.models.supply_chain import UpstreamOrderType
 
-        config = game_obj.supply_chain_config
+        config = scenario_obj.supply_chain_config
 
         # Find upstream transportation lane
         upstream_lane = (
@@ -8253,7 +8252,7 @@ class MixedScenarioService:
 
         # Create transfer order (represents PO/MO)
         transfer_order = self._create_transfer_order(
-            scenario_id=game_obj.id,
+            scenario_id=scenario_obj.id,
             scenario_user_id=scenario_user.id,
             source_site_id=upstream_lane.from_site_id,
             destination_site_id=scenario_user.site_id,
@@ -8313,7 +8312,7 @@ class MixedScenarioService:
 
     def _check_phase_transition(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod,
         from_phase: str,
         to_phase: str
@@ -8324,7 +8323,7 @@ class MixedScenarioService:
         Uses explicit submission timestamps for reliable phase transition detection.
 
         Args:
-            game_obj: Game instance
+            scenario_obj: Scenario instance
             round_obj: Current round
             from_phase: Current phase
             to_phase: Target phase
@@ -8334,8 +8333,8 @@ class MixedScenarioService:
         """
         from app.models.supply_chain import PeriodPhase
 
-        # Get all scenario_users in game
-        scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game_obj.id).all()
+        # Get all scenario_users in scenario
+        scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario_obj.id).all()
         scenario_user_count = len(scenario_users)
 
         if from_phase == PeriodPhase.FULFILLMENT and to_phase == PeriodPhase.REPLENISHMENT:
@@ -8368,7 +8367,7 @@ class MixedScenarioService:
 
     def _transition_phase(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod,
         new_phase: str
     ) -> None:
@@ -8378,7 +8377,7 @@ class MixedScenarioService:
         Updates round record and broadcasts WebSocket message.
 
         Args:
-            game_obj: Game instance
+            scenario_obj: Scenario instance
             round_obj: Current round
             new_phase: Target phase (FULFILLMENT, REPLENISHMENT, COMPLETED)
         """
@@ -8397,7 +8396,7 @@ class MixedScenarioService:
             round_obj.is_completed = True
 
             # Phase 2: Update RLHF preference labels now that outcomes are known
-            self._update_rlhf_preference_labels(game_obj, round_obj)
+            self._update_rlhf_preference_labels(scenario_obj, round_obj)
 
         self.db.commit()
 
@@ -8411,9 +8410,9 @@ class MixedScenarioService:
             import asyncio
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                loop.create_task(manager.broadcast_to_scenario(game_obj.id, {
+                loop.create_task(manager.broadcast_to_scenario(scenario_obj.id, {
                     "type": "round_phase_change",
-                    "scenario_id": game_obj.id,
+                    "scenario_id": scenario_obj.id,
                     "round_number": round_obj.round_number,
                     "phase": new_phase,
                     "phase_started_at": round_obj.phase_started_at.isoformat() if round_obj.phase_started_at else None,
@@ -8423,7 +8422,7 @@ class MixedScenarioService:
 
     def _update_rlhf_preference_labels(
         self,
-        game_obj: Game,
+        scenario_obj: Scenario,
         round_obj: ScenarioPeriod
     ) -> None:
         """
@@ -8433,7 +8432,7 @@ class MixedScenarioService:
         (cost, service level) and updates the preference labels in RLHF feedback.
 
         Args:
-            game_obj: Game instance
+            scenario_obj: Scenario instance
             round_obj: Completed round
         """
         try:
@@ -8443,7 +8442,7 @@ class MixedScenarioService:
             feedbacks = (
                 self.db.query(RLHFFeedback)
                 .filter(
-                    RLHFFeedback.scenario_id == game_obj.id,
+                    RLHFFeedback.scenario_id == scenario_obj.id,
                     RLHFFeedback.round_number == round_obj.round_number,
                     RLHFFeedback.preference_label == "unknown"
                 )
@@ -8494,12 +8493,12 @@ class MixedScenarioService:
                 order_diff = human_decision - ai_suggestion
 
                 # Load cost rates from InvPolicy for the scenario's config
-                _feedback_config_id = getattr(game, "supply_chain_config_id", None)
+                _feedback_config_id = getattr(scenario, "supply_chain_config_id", None)
                 if _feedback_config_id:
                     holding_cost_rate, backlog_cost_rate = self._get_cost_rates_sync(_feedback_config_id)
                 else:
                     raise ValueError(
-                        f"Cannot compute RLHF counterfactual costs for scenario {game.id}: "
+                        f"Cannot compute RLHF counterfactual costs for scenario {scenario.id}: "
                         f"no supply_chain_config_id found. Ensure the scenario is linked to a supply chain config."
                     )
 
@@ -8531,18 +8530,18 @@ class MixedScenarioService:
         fulfilled = scenario_user_period.quantity_shipped or 0
         return min(1.0, fulfilled / demand) if demand > 0 else 1.0
 
-    def _get_current_demand(self, game: Game, round_number: int) -> float:
+    def _get_current_demand(self, scenario: Scenario, round_number: int) -> float:
         """
         Get current customer demand for this round
 
         Args:
-            game: Game instance
+            scenario: Scenario instance
             round_number: Current round
 
         Returns:
             Demand quantity
         """
-        demand_pattern = game.demand_pattern or game.config.get('demand_pattern', {})
+        demand_pattern = scenario.demand_pattern or scenario.config.get('demand_pattern', {})
 
         if not demand_pattern:
             return 4.0  # Default simulation demand
@@ -8567,7 +8566,7 @@ class MixedScenarioService:
 
     async def _get_scenario_user_orders_for_round(
         self,
-        game: Game,
+        scenario: Scenario,
         round_number: int,
         db
     ) -> Dict[str, float]:
@@ -8578,7 +8577,7 @@ class MixedScenarioService:
         TODO: Integrate with actual agent/human decision logic
 
         Args:
-            game: Game instance
+            scenario: Scenario instance
             round_number: Current round
             db: Database session
 
@@ -8589,12 +8588,12 @@ class MixedScenarioService:
         from app.models.scenario_user import ScenarioUser as ScenarioUser
 
         result = await db.execute(
-            select(ScenarioUser).filter(ScenarioUser.scenario_id == game.id)
+            select(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id)
         )
         scenario_users = result.scalars().all()
 
         scenario_user_orders = {}
-        demand = self._get_current_demand(game, round_number)
+        demand = self._get_current_demand(scenario, round_number)
 
         # Naive strategy: order = demand
         for scenario_user in scenario_users:
@@ -8604,32 +8603,32 @@ class MixedScenarioService:
 
     async def _apply_sc_planning_orders_to_game(
         self,
-        game: Game,
+        scenario: Scenario,
         scenario_user_orders: Dict[str, float],
         round_number: int,
         db
     ) -> None:
         """
-        Apply SC supply plan orders to game state.
+        Apply SC supply plan orders to scenario state.
 
-        Updates game.config JSON with the orders determined by SC planner.
+        Updates scenario.config JSON with the orders determined by SC planner.
 
         Args:
-            game: Game instance
+            scenario: Scenario instance
             scenario_user_orders: Dict mapping role → order quantity
             round_number: Current round number
             db: Async database session
         """
-        logger.info(f"    Applying {len(scenario_user_orders)} orders to game state...")
+        logger.info(f"    Applying {len(scenario_user_orders)} orders to scenario state...")
 
         # Get current config
-        cfg = game.config or {}
+        cfg = scenario.config or {}
         nodes_state = cfg.get("nodes", {})
 
         # Apply orders to each node
         for role, order_qty in scenario_user_orders.items():
             if role not in nodes_state:
-                logger.warning(f"    ⚠️  Role {role} not found in game config")
+                logger.warning(f"    ⚠️  Role {role} not found in scenario config")
                 continue
 
             node_state = nodes_state[role]
@@ -8648,27 +8647,27 @@ class MixedScenarioService:
 
             logger.info(f"    ✓ {role}: order={int(order_qty)}")
 
-        # Update game config
+        # Update scenario config
         cfg["nodes"] = nodes_state
-        game.config = cfg
+        scenario.config = cfg
 
         # Mark as modified for SQLAlchemy
         from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(game, "config")
+        flag_modified(scenario, "config")
 
         await db.flush()
 
-        logger.info(f"    ✓ Applied all orders to game config")
+        logger.info(f"    ✓ Applied all orders to scenario config")
 
 
 
 
 
 
-    def process_ai_scenario_users(self, game: Game, game_round: ScenarioPeriod, context: RoundContext) -> None:
+    def process_ai_scenario_users(self, scenario: Scenario, scenario_period: ScenarioPeriod, context: RoundContext) -> None:
         """Process AI scenario_users' moves for the current round."""
         scenario_users = self.db.query(ScenarioUser).filter(
-            ScenarioUser.scenario_id == game.id,
+            ScenarioUser.scenario_id == scenario.id,
             ScenarioUser.is_ai == True
         ).all()
 
@@ -8676,7 +8675,7 @@ class MixedScenarioService:
             return
 
         # 1. Resolve ScenarioUser Mappings
-        node_to_scenario_users = self._resolve_scenario_user_mappings(game, scenario_users, context)
+        node_to_scenario_users = self._resolve_scenario_user_mappings(scenario, scenario_users, context)
         
         # 2. Determine Processing Order (Downstream to Upstream)
         # This ensures downstream demand is available for upstream agents
@@ -8702,8 +8701,8 @@ class MixedScenarioService:
                 self._process_single_agent(
                     node_key, 
                     scenario_user, 
-                    game, 
-                    game_round, 
+                    scenario, 
+                    scenario_period, 
                     context
                 )
 
@@ -8711,8 +8710,8 @@ class MixedScenarioService:
         self, 
         node_key: str, 
         scenario_user: ScenarioUser, 
-        game: Game, 
-        game_round: ScenarioPeriod, 
+        scenario: Scenario, 
+        scenario_period: ScenarioPeriod, 
         context: RoundContext
     ) -> None:
         """Process decision for a single AI agent."""
@@ -8755,7 +8754,7 @@ class MixedScenarioService:
         upstream_data["downstream_orders"] = node_state.current_round_demand
         
         # 2. Historical context from previous rounds and demand smoothing
-        history = (game.config or {}).get("history", [])
+        history = (scenario.config or {}).get("history", [])
         policy = context.node_policies.get(node_key, {}) if hasattr(context, "node_policies") else {}
         order_lead = int(policy.get("order_leadtime", 0) or 0)
         supply_lead = policy.get("supply_leadtime")
@@ -8991,7 +8990,7 @@ class MixedScenarioService:
                 node_state=node_state,
                 upstream_node=upstream_node,
                 quantity=decision.quantity,
-                game_round=game_round,
+                scenario_period=scenario_period,
                 current_period_number=current_period_number
             )
 
@@ -9002,7 +9001,7 @@ class MixedScenarioService:
         node_state: NodeState,
         upstream_node: str,
         quantity: int,
-        game_round: ScenarioPeriod,
+        scenario_period: ScenarioPeriod,
         current_period_number: int,
     ) -> None:
         """Place a single order to a specific upstream supplier.
@@ -9039,7 +9038,7 @@ class MixedScenarioService:
             product_id=primary_item_id,
             source=node_key,
             quantity=quantity,
-            due_round=game_round.round_number + lead_time,
+            due_round=scenario_period.round_number + lead_time,
             downstream=node_key,  # The one placing the order
             step_number=current_period_number,
         )
@@ -9070,9 +9069,9 @@ class MixedScenarioService:
             }
         )
 
-    def _resolve_scenario_user_mappings(self, game: Game, scenario_users: List[ScenarioUser], context: RoundContext) -> Dict[str, List[ScenarioUser]]:
+    def _resolve_scenario_user_mappings(self, scenario: Scenario, scenario_users: List[ScenarioUser], context: RoundContext) -> Dict[str, List[ScenarioUser]]:
         """Map scenario_users to nodes based on configuration and assignments."""
-        cfg = game.config or {}
+        cfg = scenario.config or {}
         
         # 1. Build Assignment Lookup (Role -> [Node])
         # This logic mimics the original _resolve_scenario_user_mappings but uses context/cfg
@@ -9094,7 +9093,7 @@ class MixedScenarioService:
         # 2. Build ScenarioUser Lookup (Role -> [ScenarioUser])
         scenario_user_index: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in scenario_users}
         assignment_scenario_users: Dict[str, List[ScenarioUser]] = defaultdict(list)
-        for raw_key, payload in (getattr(game, "role_assignments", {}) or {}).items():
+        for raw_key, payload in (getattr(scenario, "role_assignments", {}) or {}).items():
             assignment_key = MixedScenarioService._canonical_role(raw_key)
             if not assignment_key:
                 continue
@@ -9146,11 +9145,11 @@ class MixedScenarioService:
             node_to_scenario_users[node_key] = unique
         return node_to_scenario_users
     
-    def complete_round(self, game_round: ScenarioPeriod) -> None:
+    def complete_round(self, scenario_period: ScenarioPeriod) -> None:
         """Complete the current round, updating scenario_user inventories and costs."""
-        # Get all scenario_user rounds for this game round
+        # Get all scenario_user rounds for this scenario round
         scenario_user_periods = self.db.query(ScenarioUserPeriod).filter(
-            ScenarioUserPeriod.scenario_period_id == game_round.id
+            ScenarioUserPeriod.scenario_period_id == scenario_period.id
         ).all()
         
         for pr in scenario_user_periods:
@@ -9194,12 +9193,12 @@ class MixedScenarioService:
             inventory.backorders = pr.backorders_after
         
         timestamp = datetime.utcnow()
-        game_round.ended_at = timestamp
-        game_round.completed_at = timestamp
+        scenario_period.ended_at = timestamp
+        scenario_period.completed_at = timestamp
         self.db.commit()
     
     def get_current_period(self, scenario_id: int) -> Optional[ScenarioPeriod]:
-        """Get the current round for a game."""
+        """Get the current round for a scenario."""
         return self.db.query(ScenarioPeriod).filter(
             ScenarioPeriod.scenario_id == scenario_id,
             ScenarioPeriod.ended_at.is_(None)
@@ -9222,23 +9221,23 @@ class MixedScenarioService:
 
         return comment
 
-    def finish_game(self, scenario_id: int) -> Game:
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError("Game not found")
-        game.status = GameStatusDB.FINISHED
-        self.db.commit(); self.db.refresh(game)
-        return game
+    def finish_game(self, scenario_id: int) -> Scenario:
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError("Scenario not found")
+        scenario.status = GameStatusDB.FINISHED
+        self.db.commit(); self.db.refresh(scenario)
+        return scenario
 
     def get_report(self, scenario_id: int) -> Dict[str, Any]:
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError("Game not found")
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError("Scenario not found")
 
-        cfg = dict(game.config or {})
+        cfg = dict(scenario.config or {})
         supply_chain_config_id = (
             cfg.get("supply_chain_config_id")
-            or getattr(game, "supply_chain_config_id", None)
+            or getattr(scenario, "supply_chain_config_id", None)
         )
 
         snapshot_cache: Optional[Dict[str, Any]] = None
@@ -9291,7 +9290,7 @@ class MixedScenarioService:
                     cfg["time_bucket"] = snapshot_bucket
 
         if not cfg.get("start_date"):
-            start_date_value = getattr(game, "start_date", None)
+            start_date_value = getattr(scenario, "start_date", None)
             if isinstance(start_date_value, str):
                 cfg["start_date"] = start_date_value
             elif start_date_value is not None:
@@ -9408,8 +9407,8 @@ class MixedScenarioService:
             history_map[round_number] = entry
             return entry
         demand_series: List[Dict[str, Any]] = []
-        bucket = normalize_time_bucket(getattr(game, "time_bucket", TimeBucket.WEEK))
-        start_date = getattr(game, "start_date", DEFAULT_START_DATE) or DEFAULT_START_DATE
+        bucket = normalize_time_bucket(getattr(scenario, "time_bucket", TimeBucket.WEEK))
+        start_date = getattr(scenario, "start_date", DEFAULT_START_DATE) or DEFAULT_START_DATE
         order_series: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         role_totals: Dict[str, Dict[str, Any]] = {}
         observed_node_types: Set[str] = set()
@@ -9873,7 +9872,7 @@ class MixedScenarioService:
         config_payload = MixedScenarioService._json_clone(cfg)
         supply_chain_name = config_payload.get("supply_chain_name")
         if not supply_chain_name:
-            supply_chain_obj = getattr(game, "supply_chain_config", None)
+            supply_chain_obj = getattr(scenario, "supply_chain_config", None)
             if supply_chain_obj is not None:
                 supply_chain_name = getattr(supply_chain_obj, "name", None)
                 if supply_chain_name:
@@ -9944,8 +9943,8 @@ class MixedScenarioService:
 
         return {
             "scenario_id": scenario_id,
-            "name": game.name,
-            "status": str(game.status),
+            "name": scenario.name,
+            "status": str(scenario.status),
             "progression_mode": cfg.get("progression_mode", "supervised"),
             "supply_chain_config_id": supply_chain_config_id,
             "supply_chain_name": supply_chain_name,
@@ -9971,10 +9970,10 @@ class MixedScenarioService:
             "config": config_payload,
         }
     
-    def calculate_demand(self, game: Game, round_number: int) -> int:
-        """Calculate demand for a given round based on the game's demand pattern."""
+    def calculate_demand(self, scenario: Scenario, round_number: int) -> int:
+        """Calculate demand for a given round based on the scenario's demand pattern."""
 
-        cfg = dict(getattr(game, "config", {}) or {})
+        cfg = dict(getattr(scenario, "config", {}) or {})
 
         sc_snapshot: Optional[Dict[str, Any]] = None
 
@@ -10001,28 +10000,28 @@ class MixedScenarioService:
         lane_views = self._build_lane_views(node_policies, cfg)
 
         demand_map, total = MixedScenarioService._compute_market_round_demand(
-            game,
+            scenario,
             cfg,
             round_number,
             lane_views,
         )
 
-        game.config = cfg
+        scenario.config = cfg
         try:
             if cfg.get('demand_pattern'):
-                game.demand_pattern = cfg.get('demand_pattern')
+                scenario.demand_pattern = cfg.get('demand_pattern')
         except AttributeError:
             pass
         return int(total)
     
-    def list_games(
+    def list_scenarios(
         self,
         current_user: User,
-        status: Optional[GameStatus] = None,
-    ) -> List[GameInDBBase]:
-        """Return games visible to the requesting user, handling legacy schemas."""
+        status: Optional[ScenarioStatus] = None,
+    ) -> List[ScenarioInDBBase]:
+        """Return scenarios visible to the requesting user, handling legacy schemas."""
 
-        columns = set(self._get_game_columns())
+        columns = set(self._get_scenario_columns())
         base_projection = [
             ("id", "id"),
             ("name", "name"),
@@ -10053,7 +10052,7 @@ class MixedScenarioService:
                 select_parts.append(f"NULL AS {alias}")
 
         select_clause = ", ".join(select_parts)
-        query = f"SELECT {select_clause} FROM {Game.__tablename__} g"
+        query = f"SELECT {select_clause} FROM {Scenario.__tablename__} g"
 
         filters: List[str] = []
         params: Dict[str, Any] = {}
@@ -10092,21 +10091,21 @@ class MixedScenarioService:
 
         result = self.db.execute(text(query), params)
 
-        games: List[GameInDBBase] = []
+        scenarios: List[ScenarioInDBBase] = []
         for row in result:
             record = dict(row._mapping)
             if record.get("completed_at") is None and record.get("finished_at") is not None:
                 record["completed_at"] = record.get("finished_at")
-            games.append(self._serialize_game(SimpleNamespace(**record)))
+            scenarios.append(self._serialize_game(SimpleNamespace(**record)))
 
-        return games
+        return scenarios
     
-    def get_game_state(self, scenario_id: int) -> GameState:
-        """Get the current state of a game."""
+    def get_scenario_state(self, scenario_id: int) -> ScenarioState:
+        """Get the current state of a scenario."""
         from sqlalchemy import text
         
-        # Get the game
-        game_query = """
+        # Get the scenario
+        scenario_query = """
             SELECT g.id,
                    g.name,
                    g.status,
@@ -10127,18 +10126,18 @@ class MixedScenarioService:
                 ON g.supply_chain_config_id = sc.id
             WHERE g.id = :scenario_id
         """
-        game_result = self.db.execute(text(game_query), {"scenario_id": scenario_id}).first()
+        scenario_result = self.db.execute(text(scenario_query), {"scenario_id": scenario_id}).first()
 
-        if not game_result:
-            raise ValueError("Game not found")
+        if not scenario_result:
+            raise ValueError("Scenario not found")
 
-        game_record = dict(game_result._mapping)
-        game_obj = self.db.query(Game).filter(Game.id == scenario_id).first()
-        bucket = normalize_time_bucket(game_record.get("time_bucket", TimeBucket.WEEK))
-        start_date = game_record.get("start_date") or DEFAULT_START_DATE
-        current_period_start = game_record.get("current_period_start")
+        scenario_record = dict(scenario_result._mapping)
+        scenario_obj = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        bucket = normalize_time_bucket(scenario_record.get("time_bucket", TimeBucket.WEEK))
+        start_date = scenario_record.get("start_date") or DEFAULT_START_DATE
+        current_period_start = scenario_record.get("current_period_start")
         
-        # Get all scenario_users for the game, including node mappings and strategies
+        # Get all scenario_users for the scenario, including node mappings and strategies
         scenario_users_query = """
             SELECT p.id,
                    p.name,
@@ -10204,8 +10203,8 @@ class MixedScenarioService:
         # Create a default demand pattern if none exists
         try:
             raw_pattern = (
-                json.loads(game_record.get("demand_pattern"))
-                if game_record.get("demand_pattern")
+                json.loads(scenario_record.get("demand_pattern"))
+                if scenario_record.get("demand_pattern")
                 else DEFAULT_DEMAND_PATTERN.copy()
             )
         except (json.JSONDecodeError, TypeError):
@@ -10221,22 +10220,22 @@ class MixedScenarioService:
         supply_chain_config_id: Optional[int] = None
         supply_chain_name: Optional[str] = None
         cfg, cfg_upgraded = self._upgrade_json_value(
-            game_record.get("config") or {},
+            scenario_record.get("config") or {},
             dict,
             default_factory=dict,
-            context="MixedScenarioService.get_game_state config",
+            context="MixedScenarioService.get_scenario_state config",
             field_name="config",
-            game=game_obj,
+            scenario=scenario_obj,
             auto_commit=True,
         )
         config_payload = MixedScenarioService._json_clone(cfg)
         role_assignments_raw, roles_upgraded = self._upgrade_json_value(
-            game_record.get("role_assignments") or {},
+            scenario_record.get("role_assignments") or {},
             dict,
             default_factory=dict,
-            context="MixedScenarioService.get_game_state role_assignments",
+            context="MixedScenarioService.get_scenario_state role_assignments",
             field_name="role_assignments",
-            game=game_obj,
+            scenario=scenario_obj,
             auto_commit=True,
         )
         if role_assignments_raw:
@@ -10259,9 +10258,9 @@ class MixedScenarioService:
             pass
 
         if supply_chain_config_id is None:
-            supply_chain_config_id = game_record.get("supply_chain_config_id")
+            supply_chain_config_id = scenario_record.get("supply_chain_config_id")
         if not supply_chain_name:
-            supply_chain_name = game_record.get("supply_chain_name")
+            supply_chain_name = scenario_record.get("supply_chain_name")
 
         supply_chain_snapshot = self._supply_chain_snapshot(supply_chain_config_id)
 
@@ -10293,7 +10292,7 @@ class MixedScenarioService:
 
         history_payload: List[Dict[str, Any]] = []
         current_period_number = (
-            current_period.round_number if current_period is not None else game_record.get("current_period", 0)
+            current_period.round_number if current_period is not None else scenario_record.get("current_period", 0)
         )
 
         if isinstance(engine_state, dict) and engine_state:
@@ -10359,19 +10358,19 @@ class MixedScenarioService:
                 }
             )
 
-        return GameState(
-            id=game_record["id"],
-            name=game_record["name"],
-            status=game_record["status"],
-            current_period=game_record["current_period"],
-            max_periods=game_record["max_periods"],
+        return ScenarioState(
+            id=scenario_record["id"],
+            name=scenario_record["name"],
+            status=scenario_record["status"],
+            current_period=scenario_record["current_period"],
+            max_periods=scenario_record["max_periods"],
             progression_mode=progression_mode,
             scenario_users=scenario_user_states,
             current_demand=None,  # Will be set by the round
             round_started_at=None,  # Will be set by the round
             round_ends_at=None,  # Will be set by the round
-            created_at=game_record["created_at"],
-            updated_at=game_record["updated_at"],
+            created_at=scenario_record["created_at"],
+            updated_at=scenario_record["updated_at"],
             started_at=None,
             completed_at=None,
             created_by=None,
@@ -10392,8 +10391,8 @@ class MixedScenarioService:
             history=history_payload,
         )
         # Validate optional global policy if provided
-        if getattr(game_data, 'global_policy', None):
-            gp = game_data.global_policy
+        if getattr(scenario_data, 'global_policy', None):
+            gp = scenario_data.global_policy
             for k in ['order_leadtime','supply_leadtime','init_inventory','holding_cost','backlog_cost','max_inbound_per_link','max_order']:
                 if k in gp and gp[k] is not None:
                     _check_range(k, float(gp[k]))

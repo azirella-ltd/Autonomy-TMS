@@ -268,7 +268,7 @@ class SiteAgentStrategy:
         Args:
             site_key: Site/role identifier
             observation: Current node state
-            context: Additional context (e.g., game state, history)
+            context: Additional context (e.g., scenario state, history)
 
         Returns:
             AgentDecision with order quantity and reasoning

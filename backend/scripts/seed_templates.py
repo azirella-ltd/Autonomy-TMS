@@ -394,7 +394,7 @@ DISTRIBUTION_TEMPLATES = [
 # Scenario Templates (10+)
 SCENARIO_TEMPLATES = [
     {
-        "name": "Classic Beer Game",
+        "name": "Classic Beer Scenario",
         "category": TemplateCategory.SCENARIO,
         "industry": TemplateIndustry.GENERAL,
         "difficulty": TemplateDifficulty.BEGINNER,

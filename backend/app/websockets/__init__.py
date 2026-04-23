@@ -13,7 +13,7 @@ class ConnectionManager:
 
     def __init__(self):
         self.active_connections = {}
-        self.game_rooms = {}
+        self.scenario_rooms = {}
 
     async def connect(self, *args, **kwargs):
         pass
@@ -27,10 +27,10 @@ class ConnectionManager:
     async def broadcast(self, *args, **kwargs):
         pass
 
-    async def send_game_state(self, *args, **kwargs):
+    async def send_scenario_state(self, *args, **kwargs):
         pass
 
-    async def broadcast_game_state(self, *args, **kwargs):
+    async def broadcast_scenario_state(self, *args, **kwargs):
         pass
 
     async def broadcast_to_scenario(self, *args, **kwargs):

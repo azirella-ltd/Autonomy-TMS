@@ -42,14 +42,14 @@ async def get_aggregation_metrics(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get order aggregation metrics for a game
+    Get order aggregation metrics for a scenario
 
     Returns:
         - Aggregation summary (total orders, groups, cost savings)
         - Metrics by round
         - Metrics by site pair
     """
-    # Verify game exists
+    # Verify scenario exists
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
@@ -66,14 +66,14 @@ async def get_capacity_metrics(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get capacity constraint metrics for a game
+    Get capacity constraint metrics for a scenario
 
     Returns:
         - Capacity summary (sites, utilization, queued orders)
         - Metrics by site
         - Metrics by round
     """
-    # Verify game exists
+    # Verify scenario exists
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
@@ -122,7 +122,7 @@ async def get_comparative_analytics(
         - Cost savings and efficiency gains
         - Capacity impact
     """
-    # Verify game exists
+    # Verify scenario exists
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
@@ -139,11 +139,11 @@ async def get_analytics_summary(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get combined analytics summary for a game
+    Get combined analytics summary for a scenario
 
     Returns all analytics in a single response for dashboard display.
     """
-    # Verify game exists
+    # Verify scenario exists
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
@@ -175,7 +175,7 @@ async def export_aggregation_csv(
 
     Returns a CSV file with aggregation metrics by site pair
     """
-    # Verify game exists
+    # Verify scenario exists
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
@@ -206,7 +206,7 @@ async def export_aggregation_csv(
 
     # Prepare response
     output.seek(0)
-    filename = f"aggregation_metrics_game_{scenario_id}.csv"
+    filename = f"aggregation_metrics_scenario_{scenario_id}.csv"
 
     return StreamingResponse(
         iter([output.getvalue()]),
@@ -225,7 +225,7 @@ async def export_capacity_csv(
 
     Returns a CSV file with capacity utilization by site
     """
-    # Verify game exists
+    # Verify scenario exists
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
@@ -257,7 +257,7 @@ async def export_capacity_csv(
 
     # Prepare response
     output.seek(0)
-    filename = f"capacity_metrics_game_{scenario_id}.csv"
+    filename = f"capacity_metrics_scenario_{scenario_id}.csv"
 
     return StreamingResponse(
         iter([output.getvalue()]),
@@ -330,7 +330,7 @@ async def export_comparison_csv(
 
     Returns a CSV file with feature comparison data
     """
-    # Verify game exists
+    # Verify scenario exists
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
@@ -380,7 +380,7 @@ async def export_comparison_csv(
 
     # Prepare response
     output.seek(0)
-    filename = f"comparative_analytics_game_{scenario_id}.csv"
+    filename = f"comparative_analytics_scenario_{scenario_id}.csv"
 
     return StreamingResponse(
         iter([output.getvalue()]),
@@ -397,9 +397,9 @@ async def export_all_json(
     """
     Export all analytics data to JSON format
 
-    Returns a JSON file with complete analytics data for the game
+    Returns a JSON file with complete analytics data for the scenario
     """
-    # Verify game exists
+    # Verify scenario exists
     scenario = await db.get(Scenario, scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
@@ -425,7 +425,7 @@ async def export_all_json(
     json_str = json.dumps(export_data, indent=2)
 
     # Prepare response
-    filename = f"analytics_export_game_{scenario_id}.json"
+    filename = f"analytics_export_scenario_{scenario_id}.json"
 
     return StreamingResponse(
         iter([json_str]),

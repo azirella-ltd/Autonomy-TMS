@@ -5,8 +5,8 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
-def generate_synthetic_game(num_rounds: int = 100) -> Dict[str, Any]:
-    """Generate a synthetic game with realistic supply chain dynamics."""
+def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
+    """Generate a synthetic scenario with realistic supply chain dynamics."""
     roles = ["retailer", "wholesaler", "distributor", "manufacturer"]
     
     # Base demand pattern (weekly seasonality with some noise)
@@ -18,9 +18,9 @@ def generate_synthetic_game(num_rounds: int = 100) -> Dict[str, Any]:
         if random.random() < 0.1:  # 10% chance of demand spike/drop
             base_demand[i] *= random.choice([0.5, 1.5, 2.0])
     
-    # Generate game data
-    game_data = {
-        "name": f"Synthetic Game {datetime.now().strftime('%Y%m%d_%H%M%S')}",
+    # Generate scenario data
+    scenario_data = {
+        "name": f"Synthetic Scenario {datetime.now().strftime('%Y%m%d_%H%M%S')}",
         "description": "Synthetic training data",
         "num_rounds": num_rounds,
         "roles": roles,
@@ -102,33 +102,33 @@ def generate_synthetic_game(num_rounds: int = 100) -> Dict[str, Any]:
             inventories[role] = new_inventory
             backlogs[role] = new_backlog
         
-        game_data["rounds"].append(round_data)
+        scenario_data["rounds"].append(round_data)
     
-    return game_data
+    return scenario_data
 
-def save_to_json(games: List[Dict[str, Any]], filename: str = "synthetic_games.json"):
-    """Save games to a JSON file."""
+def save_to_json(scenarios: List[Dict[str, Any]], filename: str = "synthetic_games.json"):
+    """Save scenarios to a JSON file."""
     os.makedirs(os.path.dirname(filename), exist_ok=True)
     with open(filename, 'w') as f:
-        json.dump(games, f, indent=2)
-    print(f"Saved {len(games)} games to {filename}")
+        json.dump(scenarios, f, indent=2)
+    print(f"Saved {len(scenarios)} scenarios to {filename}")
 
-def generate_multiple_games(num_games: int = 20, rounds_per_game: int = 100):
-    """Generate multiple synthetic games."""
-    games = []
-    for i in range(num_games):
-        print(f"Generating game {i+1}/{num_games}...")
-        game = generate_synthetic_game(num_rounds=rounds_per_game)
-        games.append(game)
+def generate_multiple_scenarios(num_scenarios: int = 20, rounds_per_scenario: int = 100):
+    """Generate multiple synthetic scenarios."""
+    scenarios = []
+    for i in range(num_scenarios):
+        print(f"Generating scenario {i+1}/{num_scenarios}...")
+        scenario = generate_synthetic_scenario(num_rounds=rounds_per_scenario)
+        scenarios.append(scenario)
     
     # Save to file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"data/synthetic_games_{timestamp}.json"
-    save_to_json(games, filename)
+    save_to_json(scenarios, filename)
     
-    return games
+    return scenarios
 
 if __name__ == "__main__":
-    # Generate 20 games with 100 rounds each
-    games = generate_multiple_games(num_games=20, rounds_per_game=100)
+    # Generate 20 scenarios with 100 rounds each
+    scenarios = generate_multiple_scenarios(num_scenarios=20, rounds_per_scenario=100)
     print("Synthetic data generation complete!")

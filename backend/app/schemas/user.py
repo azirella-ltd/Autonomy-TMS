@@ -140,8 +140,8 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 class UserWithGames(User):
-    """Schema for user data including their games."""
-    games: List[dict] = []
+    """Schema for user data including their scenarios."""
+    scenarios: List[dict] = []
 
 class UserPasswordChange(BaseModel):
     """Schema for changing a user's password."""

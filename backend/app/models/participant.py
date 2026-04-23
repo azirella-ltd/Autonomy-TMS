@@ -3,7 +3,7 @@
 Terminology (Feb 2026):
 - Player -> ScenarioUser (in DB/code)
 - Player -> User (in UI)
-- Game -> Scenario
+- Scenario -> Scenario
 - Gamification -> Simulation
 
 The 'scenario_users' table stores simulation participants, distinct from 'users'

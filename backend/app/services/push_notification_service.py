@@ -297,7 +297,7 @@ class PushNotificationService:
             user_id: User ID
             title: Notification title
             body: Notification body
-            notification_type: Type of notification (e.g., "your_turn", "game_started")
+            notification_type: Type of notification (e.g., "your_turn", "scenario_started")
             data: Optional additional data payload
             force: Bypass preference checks if True
 

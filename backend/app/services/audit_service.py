@@ -48,7 +48,7 @@ class AuditService:
         Args:
             action: Type of action performed
             user: User who performed the action
-            resource_type: Type of resource (e.g., "game", "user")
+            resource_type: Type of resource (e.g., "scenario", "user")
             resource_id: ID of the resource
             resource_name: Name of the resource (for readability)
             description: Human-readable description

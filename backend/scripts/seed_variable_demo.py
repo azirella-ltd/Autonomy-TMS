@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from scripts.seed_default_tenant import (
-    VARIABLE_BEER_GAME_CUSTOMER_NAME,
+    VARIABLE_BEER_SCENARIO_CUSTOMER_NAME,
     build_seed_options_from_args,
     get_config_specs,
     parse_args,
@@ -12,13 +12,13 @@ from scripts.seed_default_tenant import (
     session_factory_from_settings,
 )
 
-VARIABLE_BEER_GAME_CONFIG_NAMES = [VARIABLE_BEER_GAME_CUSTOMER_NAME]
+VARIABLE_BEER_SCENARIO_CONFIG_NAMES = [VARIABLE_BEER_SCENARIO_CUSTOMER_NAME]
 
 
 def main() -> None:
     args = parse_args()
     options = build_seed_options_from_args(args)
-    config_specs = get_config_specs(VARIABLE_BEER_GAME_CONFIG_NAMES)
+    config_specs = get_config_specs(VARIABLE_BEER_SCENARIO_CONFIG_NAMES)
     session_factory = session_factory_from_settings()
     run_seed_with_session(
         session_factory,

@@ -17,7 +17,6 @@ from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-Game = Scenario
 ScenarioUser = ScenarioUser
 
 logger = logging.getLogger(__name__)
@@ -116,7 +115,7 @@ class PatternAnalysisService:
         self, scenario_user_id: int, scenario_id: int
     ) -> Dict[str, Any]:
         """
-        Get detected patterns for a scenario_user in a game.
+        Get detected patterns for a scenario_user in a scenario.
 
         Analyzes:
         - Acceptance rate
@@ -126,7 +125,7 @@ class PatternAnalysisService:
 
         Args:
             scenario_user_id: ScenarioUser ID
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             Pattern analysis dictionary
@@ -156,13 +155,13 @@ class PatternAnalysisService:
 
     async def get_ai_effectiveness(self, scenario_id: int) -> Dict[str, Any]:
         """
-        Measure AI suggestion effectiveness for a game.
+        Measure AI suggestion effectiveness for a scenario.
 
         Compares AI-suggested orders vs scenario_user-chosen orders
         to determine which performs better.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             Effectiveness metrics
@@ -227,7 +226,7 @@ class PatternAnalysisService:
         Get suggestion history with outcomes.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: Optional scenario_user filter
             limit: Maximum number of records
 
@@ -318,7 +317,7 @@ class PatternAnalysisService:
         Get acceptance rate trends over time.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser ID
             window: Rolling window size for trend calculation
 
@@ -359,7 +358,7 @@ class PatternAnalysisService:
         Generate actionable insights from pattern analysis.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: Optional scenario_user filter
 
         Returns:
@@ -394,7 +393,7 @@ class PatternAnalysisService:
                     "Your aggressive modifications show independent thinking but increase cost volatility"
                 )
 
-        # Game-wide insights
+        # Scenario-wide insights
         if effectiveness["performance_comparison"]["improvement"]["cost_savings"] > 5:
             insights.append(
                 f"Following AI recommendations saves "

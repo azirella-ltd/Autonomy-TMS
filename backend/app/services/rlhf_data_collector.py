@@ -7,7 +7,7 @@ Collects training data from human overrides of AI decisions for continuous learn
 Data Collection:
 - AI recommendations (context + suggestion)
 - Human decisions (accept, modify, reject)
-- Game outcomes (reward signal)
+- Scenario outcomes (reward signal)
 - Preference labels (human decision better/worse than AI)
 
 Use Cases:
@@ -51,7 +51,7 @@ class RLHFTrainingExample:
     """Single training example for RLHF fine-tuning."""
     # Required fields (no defaults) - must come first
     # Context (input features)
-    game_state: Dict[str, Any]  # Inventory, backlog, pipeline, demand history
+    scenario_state: Dict[str, Any]  # Inventory, backlog, pipeline, demand history
     scenario_user_role: str  # Retailer, wholesaler, distributor, manufacturer
     round_number: int
 
@@ -113,7 +113,7 @@ class RLHFDataCollector:
         scenario_id: int,
         round_number: int,
         agent_type: str,
-        game_state: Dict[str, Any],
+        scenario_state: Dict[str, Any],
         ai_suggestion: int,
         human_decision: int,
         ai_reasoning: Optional[str] = None,
@@ -124,10 +124,10 @@ class RLHFDataCollector:
 
         Args:
             scenario_user_id: ScenarioUser who made decision
-            scenario_id: Game context
+            scenario_id: Scenario context
             round_number: Round number
             agent_type: Type of AI agent (llm, gnn, trm)
-            game_state: Current game state (inventory, backlog, etc.)
+            scenario_state: Current scenario state (inventory, backlog, etc.)
             ai_suggestion: AI's recommended order quantity
             human_decision: Human's actual order quantity
             ai_reasoning: AI's explanation (optional)
@@ -145,7 +145,7 @@ class RLHFDataCollector:
             scenario_id=scenario_id,
             round_number=round_number,
             agent_type=agent_type,
-            game_state=game_state,
+            scenario_state=scenario_state,
             ai_suggestion=ai_suggestion,
             ai_reasoning=ai_reasoning,
             ai_confidence=ai_confidence,
@@ -239,8 +239,8 @@ class RLHFDataCollector:
 
         return [
             RLHFTrainingExample(
-                game_state=feedback.game_state,
-                scenario_user_role=feedback.game_state.get("role", "unknown"),
+                scenario_state=feedback.scenario_state,
+                scenario_user_role=feedback.scenario_state.get("role", "unknown"),
                 round_number=feedback.round_number,
                 ai_suggestion=feedback.ai_suggestion,
                 ai_reasoning=feedback.ai_reasoning,
@@ -264,11 +264,11 @@ class RLHFDataCollector:
         scenario_id: int
     ) -> FeedbackSession:
         """
-        Get aggregate feedback summary for a scenario_user's game session.
+        Get aggregate feedback summary for a scenario_user's scenario session.
 
         Args:
             scenario_user_id: ScenarioUser ID
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             FeedbackSession with aggregate metrics
@@ -371,13 +371,13 @@ class RLHFDataCollector:
             preference_label=PreferenceLabel.HUMAN_BETTER.value
         ).all()
 
-        # Group by game state patterns (simplified - real implementation would cluster)
+        # Group by scenario state patterns (simplified - real implementation would cluster)
         failure_patterns = {}
 
         for feedback in feedbacks:
-            # Create pattern key based on game state
-            inventory = feedback.game_state.get("inventory", 0)
-            backlog = feedback.game_state.get("backlog", 0)
+            # Create pattern key based on scenario state
+            inventory = feedback.scenario_state.get("inventory", 0)
+            backlog = feedback.scenario_state.get("backlog", 0)
 
             # Discretize into buckets
             inv_bucket = "low" if inventory < 50 else "medium" if inventory < 150 else "high"
@@ -476,7 +476,7 @@ class RLHFFeedback(Base):
     Stores human feedback on AI recommendations for RLHF training.
 
     Each record captures:
-    - Context: Game state when decision was made
+    - Context: Scenario state when decision was made
     - AI recommendation: What AI suggested
     - Human decision: What human actually chose
     - Outcomes: Performance comparison
@@ -491,8 +491,8 @@ class RLHFFeedback(Base):
 
     agent_type = Column(String(20), nullable=False, index=True)  # llm, gnn, trm
 
-    # Context (game state)
-    game_state = Column(JSON, nullable=False)  # Inventory, backlog, pipeline, demand history
+    # Context (scenario state)
+    scenario_state = Column(JSON, nullable=False)  # Inventory, backlog, pipeline, demand history
 
     # AI recommendation
     ai_suggestion = Column(Integer, nullable=False)

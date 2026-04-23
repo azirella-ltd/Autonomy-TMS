@@ -77,7 +77,7 @@ class LLMSuggestionService:
 
         Args:
             agent_name: Agent role (retailer, wholesaler, distributor, factory)
-            context: Game state context (inventory, backlog, demand, etc.)
+            context: Scenario state context (inventory, backlog, demand, etc.)
             request_data: Optional additional request parameters (priority, etc.)
 
         Returns:
@@ -147,7 +147,7 @@ Your role: {objectives['description']}
 Primary objectives:
 {chr(10).join(f"- {obj}" for obj in objectives['goals'])}
 
-Current Game State:
+Current Scenario State:
 - Round: {context.get('current_period', 0)}
 - Current Inventory: {context.get('current_inventory', 0)} units
 - Current Backlog: {context.get('current_backlog', 0)} units
@@ -378,7 +378,7 @@ IMPORTANT:
 
             rationale = parsed.get('rationale', '')
             if not isinstance(rationale, str) or not rationale:
-                rationale = f"Order {order_qty} units based on current game state"
+                rationale = f"Order {order_qty} units based on current scenario state"
 
             # Build validated response
             validated = {
@@ -479,7 +479,7 @@ IMPORTANT:
 
         Args:
             prompt: Full conversation prompt with history
-            context: Game context snapshot
+            context: Scenario context snapshot
 
         Returns:
             Dict with content, confidence, reasoning, suggested_action
@@ -627,7 +627,7 @@ def get_llm_service(
 # =============================================================================
 
 async def generate_global_optimization(
-    game_state: Dict[str, Any],
+    scenario_state: Dict[str, Any],
     focus_nodes: Optional[List[str]] = None,
     tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -640,7 +640,7 @@ async def generate_global_optimization(
     and provides coordinated recommendations for multiple nodes simultaneously.
 
     Args:
-        game_state: Complete game state with all nodes
+        scenario_state: Complete scenario state with all nodes
         focus_nodes: Optional list of specific roles to focus on
 
     Returns:
@@ -666,7 +666,7 @@ async def generate_global_optimization(
 
         if not llm_service.client:
             # Fallback to heuristic
-            return _fallback_global_optimization(game_state, focus_nodes)
+            return _fallback_global_optimization(scenario_state, focus_nodes)
 
         # Retrieve RAG context for multi-echelon optimization (tenant-scoped)
         kb_context = ""
@@ -678,7 +678,7 @@ async def generate_global_optimization(
             )
 
         # Build multi-node context
-        context = _build_multi_node_context(game_state, focus_nodes)
+        context = _build_multi_node_context(scenario_state, focus_nodes)
 
         # Build knowledge section
         kb_section = ""
@@ -724,7 +724,7 @@ IMPORTANT: Respond with valid JSON only (no markdown, no explanation outside JSO
         elif llm_service.provider == "anthropic":
             response = await llm_service._call_anthropic_conversation(prompt)
         else:
-            return _fallback_global_optimization(game_state, focus_nodes)
+            return _fallback_global_optimization(scenario_state, focus_nodes)
 
         # Parse response
         parsed = _parse_global_optimization_response(response)
@@ -732,21 +732,21 @@ IMPORTANT: Respond with valid JSON only (no markdown, no explanation outside JSO
 
     except Exception as e:
         logger.error(f"Global optimization failed: {e}", exc_info=True)
-        return _fallback_global_optimization(game_state, focus_nodes)
+        return _fallback_global_optimization(scenario_state, focus_nodes)
 
 
 def _build_multi_node_context(
-    game_state: Dict[str, Any],
+    scenario_state: Dict[str, Any],
     focus_nodes: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Build context containing all relevant nodes."""
     context = {
-        "current_period": game_state.get("current_period", 0),
+        "current_period": scenario_state.get("current_period", 0),
         "nodes": {}
     }
 
     # Extract node data
-    scenario_users = game_state.get("scenario_users", [])
+    scenario_users = scenario_state.get("scenario_users", [])
 
     for scenario_user in scenario_users:
         role = scenario_user.get("role", "UNKNOWN")
@@ -796,11 +796,11 @@ def _parse_global_optimization_response(response_text: str) -> Dict[str, Any]:
 
 
 def _fallback_global_optimization(
-    game_state: Dict[str, Any],
+    scenario_state: Dict[str, Any],
     focus_nodes: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Heuristic-based global optimization fallback."""
-    scenario_users = game_state.get("scenario_users", [])
+    scenario_users = scenario_state.get("scenario_users", [])
 
     # Simple heuristic: stabilize orders across supply chain
     recommendations = {}

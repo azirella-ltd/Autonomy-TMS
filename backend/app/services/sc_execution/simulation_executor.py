@@ -30,7 +30,6 @@ from app.models.purchase_order import PurchaseOrder
 from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
-Game = Scenario
 
 
 class SimulationExecutor:
@@ -57,7 +56,7 @@ class SimulationExecutor:
 
         Args:
             db: Database session
-            scenario: Scenario (Game) instance. Required for config-aware execution.
+            scenario: Scenario (Scenario) instance. Required for config-aware execution.
         """
         self.db = db
         self.scenario = scenario
@@ -156,7 +155,7 @@ class SimulationExecutor:
 
         print(f"\n{'='*80}")
         print(f"SIMULATION ROUND {round_number} - SC EXECUTION")
-        print(f"Game ID: {_scenario_id}")
+        print(f"Scenario ID: {_scenario_id}")
         print(f"{'='*80}\n")
 
         # Get current round date
@@ -219,7 +218,7 @@ class SimulationExecutor:
                 ordered_quantity=market_demand,
                 requested_delivery_date=round_date,
                 order_date=round_date,
-                config_id=self.config_id or self._get_game_config_id(_scenario_id),
+                config_id=self.config_id or self._get_scenario_config_id(_scenario_id),
                 scenario_id=_scenario_id
             )
             self.db.add(outbound_order)
@@ -288,7 +287,7 @@ class SimulationExecutor:
         print("-" * 80)
 
         # Get config ID for ID mapping
-        config_id = self.config_id or self._get_game_config_id(_scenario_id)
+        config_id = self.config_id or self._get_scenario_config_id(_scenario_id)
 
         created_pos = self.po_creator.create_simulation_orders(
             _scenario_id, round_number, agent_decisions, config_id
@@ -319,11 +318,11 @@ class SimulationExecutor:
         print("-" * 80)
 
         # Get all sites
-        sites = self._sites if self._sites else self._get_game_sites(_scenario_id)
+        sites = self._sites if self._sites else self._get_scenario_sites(_scenario_id)
         site_ids = [site.id for site in sites]
 
         # Calculate costs
-        cost_summary = self.cost_calculator.calculate_game_cost(
+        cost_summary = self.cost_calculator.calculate_scenario_cost(
             _scenario_id, site_ids, self._get_product_id()
         )
 
@@ -377,7 +376,7 @@ class SimulationExecutor:
         Creates inv_level records for all sites.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             config_id: Supply chain config ID
             initial_inventory: Initial inventory for all sites
         """
@@ -385,36 +384,36 @@ class SimulationExecutor:
         print(f"INITIALIZING SIMULATION {scenario_id}")
         print(f"{'='*80}\n")
 
-        self.state_manager.initialize_game_state(
+        self.state_manager.initialize_scenario_state(
             scenario_id, config_id, initial_inventory
         )
 
-        print(f"✓ Game initialized with SC state")
+        print(f"✓ Scenario initialized with SC state")
         print(f"  Initial inventory: {initial_inventory} units per site")
 
-    def get_game_status(self, scenario_id: int) -> Dict:
+    def get_scenario_status(self, scenario_id: int) -> Dict:
         """
-        Get current game status from SC entities.
+        Get current scenario status from SC entities.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
-            Game status dictionary
+            Scenario status dictionary
         """
         # Get current round
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
 
         # Load current state
-        current_state = self.state_manager.load_game_state(scenario_id)
+        current_state = self.state_manager.load_scenario_state(scenario_id)
 
         # Get sites
-        sites = self._get_game_sites(scenario_id)
+        sites = self._get_scenario_sites(scenario_id)
 
         # Calculate current costs
-        cost_summary = self.cost_calculator.calculate_game_cost(
+        cost_summary = self.cost_calculator.calculate_scenario_cost(
             scenario_id,
             [site.id for site in sites],
             self._get_product_id(),
@@ -422,9 +421,9 @@ class SimulationExecutor:
 
         return {
             "scenario_id": scenario_id,
-            "current_period": game.current_period or 0,
-            "max_periods": game.max_periods or 52,
-            "status": game.status,
+            "current_period": scenario.current_period or 0,
+            "max_periods": scenario.max_periods or 52,
+            "status": scenario.status,
             "state": current_state,
             "costs": cost_summary
         }
@@ -435,46 +434,46 @@ class SimulationExecutor:
 
     def _get_round_date(self, scenario_id: int, round_number: int) -> date:
         """Get date for round (1 round = 1 week)."""
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
 
         # Start date (default: today)
         from app.core.clock import config_today_sync
         _fallback_today = config_today_sync(self.config_id, self.db) if self.config_id else date.today()
-        start_date = game.created_at.date() if game.created_at else _fallback_today
+        start_date = scenario.created_at.date() if scenario.created_at else _fallback_today
 
         # Calculate round date (1 round = 7 days)
         round_date = start_date + timedelta(days=(round_number - 1) * 7)
 
         return round_date
 
-    def _get_game_config_id(self, scenario_id: int) -> int:
-        """Get config ID for game."""
+    def _get_scenario_config_id(self, scenario_id: int) -> int:
+        """Get config ID for scenario."""
         if self.config_id:
             return self.config_id
-        game = self.db.query(Game).filter(Game.id == scenario_id).first()
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
-        return game.supply_chain_config_id
+        scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
+        return scenario.supply_chain_config_id
 
     def _get_id_mapper(self, scenario_id: int) -> SimulationIdMapper:
         """
         Get ID mapper for translating between node names and node IDs.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             SimulationIdMapper instance
         """
-        config_id = self._get_game_config_id(scenario_id)
+        config_id = self._get_scenario_config_id(scenario_id)
         return SimulationIdMapper(self.db, config_id)
 
-    def _get_game_sites(self, scenario_id: int) -> List[Site]:
-        """Get all sites for game. Uses cached self._sites if available."""
+    def _get_scenario_sites(self, scenario_id: int) -> List[Site]:
+        """Get all sites for scenario. Uses cached self._sites if available."""
         if self._sites:
             return self._sites
-        config_id = self._get_game_config_id(scenario_id)
+        config_id = self._get_scenario_config_id(scenario_id)
         sites = self.db.query(Site).filter(Site.config_id == config_id).all()
         return sites

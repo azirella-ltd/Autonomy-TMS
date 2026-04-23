@@ -26,7 +26,7 @@ class SupplyChainDataset(InMemoryDataset):
             root: Root directory where the dataset should be saved.
             seq_len: Length of input sequences
             pred_len: Length of prediction sequences
-            num_nodes: Number of supply chain nodes (sites). Default 4 for Beer Game compat.
+            num_nodes: Number of supply chain nodes (sites). Default 4 for Beer Scenario compat.
             transform: A function/transform that takes in a Data object and returns a transformed version.
             pre_transform: A function/transform that takes in a Data object and returns a transformed version.
             pre_filter: A function that takes in a Data object and returns a boolean value.

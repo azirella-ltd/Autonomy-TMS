@@ -41,8 +41,8 @@ class JSONFormatter(logging.Formatter):
         "timestamp": "2026-01-13T10:30:45.123Z",
         "level": "INFO",
         "correlation_id": "req-abc123",
-        "logger": "app.api.endpoints.game",
-        "message": "Game created",
+        "logger": "app.api.endpoints.scenario",
+        "message": "Scenario created",
         "context": {...},
         "exception": {...}
     }
@@ -178,7 +178,7 @@ class LogContext:
 
     Usage:
         with LogContext(user_id=42, scenario_id=123):
-            logger.info("Game action")  # Will include user_id and scenario_id
+            logger.info("Scenario action")  # Will include user_id and scenario_id
     """
 
     def __init__(self, **context):
@@ -200,8 +200,8 @@ def timed(metric_name: Optional[str] = None):
     Decorator to time function execution and log performance
 
     Usage:
-        @timed("game_creation")
-        def create_game(...):
+        @timed("scenario_creation")
+        def create_scenario(...):
             ...
 
     Args:
@@ -438,7 +438,7 @@ if __name__ == '__main__':
 
     # Logging with explicit context
     logger.info(
-        "Game created",
+        "Scenario created",
         extra={
             'context': {
                 'scenario_id': 100,

@@ -30,23 +30,22 @@ from app.models.supply_chain_config import Site
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
-Game = Scenario
 from .atp_service import ATPService, get_atp_service
 
 logger = logging.getLogger(__name__)
 
 
-def _get_scenario_user_node(db: Session, scenario_user: ScenarioUser, game: Game) -> Optional[Site]:
+def _get_scenario_user_node(db: Session, scenario_user: ScenarioUser, scenario: Scenario) -> Optional[Site]:
     """
     Look up the Node for a scenario_user based on their site_key.
 
-    The scenario_user's site_key maps to a node in the game's supply chain config.
+    The scenario_user's site_key maps to a node in the scenario's supply chain config.
     """
-    if not scenario_user.site_key or not game.supply_chain_config_id:
+    if not scenario_user.site_key or not scenario.supply_chain_config_id:
         return None
 
     node = db.query(Site).filter(
-        Site.config_id == game.supply_chain_config_id,
+        Site.config_id == scenario.supply_chain_config_id,
         Site.dag_type == scenario_user.site_key
     ).first()
 
@@ -158,7 +157,7 @@ class CTPService:
     def calculate_current_ctp(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: Optional[ScenarioPeriod],
         product_id: str,
     ) -> CTPResult:
@@ -176,15 +175,15 @@ class CTPService:
 
         Args:
             scenario_user: ScenarioUser instance (manufacturer node)
-            game: Game instance
-            current_period: Current game round (can be None)
+            scenario: Scenario instance
+            current_period: Current scenario round (can be None)
             product_id: AWS SC Product ID (string)
 
         Returns:
             CTPResult with capacity breakdown and component constraints
         """
         # Step 1: Get production capacity from node configuration
-        node = _get_scenario_user_node(self.db, scenario_user, game)
+        node = _get_scenario_user_node(self.db, scenario_user, scenario)
         if not node:
             logger.warning(f"No node found for scenario_user {scenario_user.id} (site_key={scenario_user.site_key})")
             # Return zero CTP if no node configured
@@ -212,7 +211,7 @@ class CTPService:
 
         # Step 4: BOM explosion - check component ATP
         component_constraints = self._check_component_atp(
-            scenario_user, game, current_period, product_id, available_after_yield
+            scenario_user, scenario, current_period, product_id, available_after_yield
         )
 
         # Step 5: Calculate final CTP (minimum of capacity and component constraints)
@@ -254,7 +253,7 @@ class CTPService:
     def calculate_probabilistic_ctp(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: Optional[ScenarioPeriod],
         product_id: str,
         n_simulations: int = 100,
@@ -273,8 +272,8 @@ class CTPService:
 
         Args:
             scenario_user: ScenarioUser instance (manufacturer node)
-            game: Game instance
-            current_period: Current game round
+            scenario: Scenario instance
+            current_period: Current scenario round
             product_id: AWS SC Product ID (string, e.g., "FG-001")
             n_simulations: Number of Monte Carlo runs (default 100)
 
@@ -285,7 +284,7 @@ class CTPService:
         from app.services.sc_planning.stochastic_sampler import StochasticSampler
 
         # Get node for capacity lookup
-        node = _get_scenario_user_node(self.db, scenario_user, game)
+        node = _get_scenario_user_node(self.db, scenario_user, scenario)
         if not node:
             logger.warning(f"No node found for scenario_user {scenario_user.id}")
             return ProbabilisticCTPResult(
@@ -314,7 +313,7 @@ class CTPService:
         base_lead_time = self._get_production_lead_time(node)
 
         # Initialize stochastic sampler
-        sampler = StochasticSampler(scenario_id=game.id)
+        sampler = StochasticSampler(scenario_id=scenario.id)
 
         # Run Monte Carlo simulation
         ctp_samples = []
@@ -341,7 +340,7 @@ class CTPService:
 
             # Check component constraints (use base calculation)
             component_constraints = self._check_component_atp(
-                scenario_user, game, current_period, product_id, available_after_yield
+                scenario_user, scenario, current_period, product_id, available_after_yield
             )
 
             # Calculate CTP for this simulation
@@ -367,7 +366,7 @@ class CTPService:
         cap_p90 = int(np.percentile(cap_array, 90))
 
         # Determine primary constraint
-        base_result = self.calculate_current_ctp(scenario_user, game, current_period, product_id)
+        base_result = self.calculate_current_ctp(scenario_user, scenario, current_period, product_id)
         constrained_by = base_result.constrained_by
 
         logger.info(
@@ -398,7 +397,7 @@ class CTPService:
     def project_ctp_multi_period(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: ScenarioPeriod,
         item_id: int,
         periods: int = 8,
@@ -413,8 +412,8 @@ class CTPService:
 
         Args:
             scenario_user: ScenarioUser instance (manufacturer)
-            game: Game instance
-            current_period: Current game round
+            scenario: Scenario instance
+            current_period: Current scenario round
             item_id: Item ID to produce
             periods: Number of future periods to project (default 8)
 
@@ -423,7 +422,7 @@ class CTPService:
         """
         projections = []
 
-        node = _get_scenario_user_node(self.db, scenario_user, game)
+        node = _get_scenario_user_node(self.db, scenario_user, scenario)
         if not node:
             logger.warning(f"No node found for scenario_user {scenario_user.id} (site_key={scenario_user.site_key})")
             return []  # Return empty projections if no node
@@ -538,7 +537,7 @@ class CTPService:
     def calculate_promise_date(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: ScenarioPeriod,
         item_id: int,
         quantity: int,
@@ -553,8 +552,8 @@ class CTPService:
 
         Args:
             scenario_user: ScenarioUser instance (manufacturer)
-            game: Game instance
-            current_period: Current game round
+            scenario: Scenario instance
+            current_period: Current scenario round
             item_id: Item ID to produce
             quantity: Quantity requested
 
@@ -563,11 +562,11 @@ class CTPService:
         """
         # Get current CTP
         ctp_result = self.calculate_current_ctp(
-            scenario_user, game, current_period, item_id
+            scenario_user, scenario, current_period, item_id
         )
 
         # Get lead times
-        node = _get_scenario_user_node(self.db, scenario_user, game)
+        node = _get_scenario_user_node(self.db, scenario_user, scenario)
         production_lead_time = self._get_production_lead_time(node)
         shipping_lead_time = self._get_shipping_lead_time(node)
         total_lead_time = production_lead_time + shipping_lead_time
@@ -593,7 +592,7 @@ class CTPService:
             # Need to find future period with sufficient CTP
             # Project CTP forward
             projection = self.project_ctp_multi_period(
-                scenario_user, game, current_period, item_id, periods=8
+                scenario_user, scenario, current_period, item_id, periods=8
             )
 
             # Find first period where CTP >= quantity
@@ -714,7 +713,7 @@ class CTPService:
         try:
             from app.models.production_order import ProductionOrder
 
-            node = _get_scenario_user_node(self.db, scenario_user, current_period.game)
+            node = _get_scenario_user_node(self.db, scenario_user, current_period.scenario)
             if not node:
                 return 0
 
@@ -756,7 +755,7 @@ class CTPService:
     def _get_component_atp(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         component_product_id: str,
         current_period: ScenarioPeriod,
     ) -> int:
@@ -769,9 +768,9 @@ class CTPService:
 
         Args:
             scenario_user: The manufacturer scenario_user requesting the component
-            game: Current game
+            scenario: Current scenario
             component_product_id: Product ID of the component
-            current_period: Current game round
+            current_period: Current scenario round
 
         Returns:
             Total available ATP for the component from all suppliers
@@ -779,7 +778,7 @@ class CTPService:
         total_component_atp = 0
 
         # Get manufacturer's node for site lookup
-        manufacturer_node = _get_scenario_user_node(self.db, scenario_user, game)
+        manufacturer_node = _get_scenario_user_node(self.db, scenario_user, scenario)
         if not manufacturer_node:
             logger.warning(f"No node found for manufacturer scenario_user {scenario_user.id}")
             return 10000  # Fallback to unlimited if no node config
@@ -832,12 +831,12 @@ class CTPService:
 
         # Fallback to simulation path: Check upstream scenario_users in the same scenario
         try:
-            # Find upstream scenario_users (component suppliers) in the same game
+            # Find upstream scenario_users (component suppliers) in the same scenario
             # For simulation, component suppliers are typically "component_supplier" or similar node types
             upstream_scenario_users = (
                 self.db.query(ScenarioUser)
                 .filter(
-                    ScenarioUser.scenario_id == game.id,
+                    ScenarioUser.scenario_id == scenario.id,
                     ScenarioUser.id != scenario_user.id,  # Exclude the manufacturer
                 )
                 .all()
@@ -870,7 +869,7 @@ class CTPService:
     def _check_component_atp(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: ScenarioPeriod,
         item_id: str,  # Now uses string product_id (SC compliant)
         max_producible_from_capacity: int,
@@ -926,7 +925,7 @@ class CTPService:
             # Find component supplier and calculate their ATP
             component_atp = self._get_component_atp(
                 scenario_user=scenario_user,
-                game=game,
+                scenario=scenario,
                 component_product_id=component_product_id,
                 current_period=current_period
             )
@@ -958,7 +957,7 @@ class CTPService:
 
     def save_probabilistic_ctp(
         self,
-        game: Game,
+        scenario: Scenario,
         scenario_user: ScenarioUser,
         result: ProbabilisticCTPResult,
         current_period: int,
@@ -968,7 +967,7 @@ class CTPService:
         Save probabilistic CTP result to database for historical tracking.
 
         Args:
-            game: Game instance
+            scenario: Scenario instance
             scenario_user: ScenarioUser instance
             result: ProbabilisticCTPResult from calculate_probabilistic_ctp
             current_period: Current round number
@@ -982,17 +981,17 @@ class CTPService:
             from app.models.inventory_projection import CtpProjection
 
             # Get node for scenario_user
-            node = _get_scenario_user_node(self.db, scenario_user, game)
+            node = _get_scenario_user_node(self.db, scenario_user, scenario)
             if not node:
                 logger.warning(f"Cannot save CTP - no node for scenario_user {scenario_user.id}")
                 return None
 
             # Create CTP projection record
             ctp_record = CtpProjection(
-                company_id=game.tenant_id or 1,
+                company_id=scenario.tenant_id or 1,
                 product_id=product_id,
                 site_id=node.id,
-                ctp_date=tenant_today_sync(getattr(game, "tenant_id", None), self.db),
+                ctp_date=tenant_today_sync(getattr(scenario, "tenant_id", None), self.db),
                 ctp_qty=float(result.ctp_p50),
                 atp_qty=0.0,  # CTP for manufacturers doesn't use ATP component
                 production_capacity_qty=float(result.production_capacity),
@@ -1008,10 +1007,10 @@ class CTPService:
                 component_constrained=(result.constrained_by == "component"),
                 resource_constrained=(result.constrained_by == "capacity"),
                 constraining_resource=result.constrained_by,
-                # Game integration
-                scenario_id=game.id,
+                # Scenario integration
+                scenario_id=scenario.id,
                 source="probabilistic_ctp",
-                source_event_id=f"game_{game.id}_round_{current_period}",
+                source_event_id=f"scenario_{scenario.id}_round_{current_period}",
             )
 
             self.db.add(ctp_record)

@@ -33,17 +33,17 @@ class TransferOrderAnalytics:
         """
         self.db = db
 
-    def get_game_to_metrics(
+    def get_scenario_to_metrics(
         self,
         scenario_id: int,
         include_routes: bool = True,
         include_timeline: bool = True
     ) -> Dict:
         """
-        Get comprehensive TO metrics for a game.
+        Get comprehensive TO metrics for a scenario.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             include_routes: Include route-level breakdowns
             include_timeline: Include round-by-round timeline
 
@@ -378,12 +378,12 @@ class TransferOrderAnalytics:
         Export TO metrics as formatted text summary.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             Formatted text summary
         """
-        metrics = self.get_game_to_metrics(scenario_id)
+        metrics = self.get_scenario_to_metrics(scenario_id)
 
         lines = []
         lines.append("=" * 80)

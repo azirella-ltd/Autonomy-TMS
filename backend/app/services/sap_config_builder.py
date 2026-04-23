@@ -7304,7 +7304,7 @@ class SAPConfigBuilder:
         Deactivates any existing active configs for this tenant first,
         ensuring only one active SAP-imported config exists at a time.
         """
-        # Deactivate only previous SAP-imported configs (preserve learning/Beer Game configs)
+        # Deactivate only previous SAP-imported configs (preserve learning/Beer Scenario configs)
         await self.db.execute(
             sql_text(
                 "UPDATE supply_chain_configs SET is_active = false "

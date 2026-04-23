@@ -10,7 +10,7 @@ Learning Methods:
 - Gradient Descent: Optimize weights to minimize cost
 
 Persistence:
-- Stores learned weights per game/scenario_user/config
+- Stores learned weights per scenario/scenario_user/config
 - Allows rollback to previous weight configurations
 """
 
@@ -110,7 +110,7 @@ class AdaptiveWeightLearner:
             agent_type: Agent that was evaluated
             performance_score: Performance metric (0-1, higher = better)
             current_weights: Current weight distribution
-            context_id: Game/scenario_user/config ID for persistence
+            context_id: Scenario/scenario_user/config ID for persistence
 
         Returns:
             Updated weights (normalized to sum to 1.0)
@@ -334,7 +334,7 @@ class AdaptiveWeightLearner:
         Retrieve learned weights for a context.
 
         Args:
-            context_id: Game/scenario_user/config ID
+            context_id: Scenario/scenario_user/config ID
 
         Returns:
             AdaptiveWeights or None if not found
@@ -440,7 +440,7 @@ class AdaptiveWeightLearner:
 # Database model for learned weights
 class LearnedWeightConfig(Base):
     """
-    Stores learned agent weights per context (game/scenario_user/config).
+    Stores learned agent weights per context (scenario/scenario_user/config).
 
     Supports:
     - Weight persistence across sessions
@@ -450,8 +450,8 @@ class LearnedWeightConfig(Base):
     __tablename__ = "learned_weight_configs"
 
     id = Column(Integer, primary_key=True, index=True)
-    context_id = Column(Integer, nullable=False, index=True)  # Game ID, scenario_user ID, or config ID
-    context_type = Column(String(20), nullable=False, default="game")  # game, scenario_user, config
+    context_id = Column(Integer, nullable=False, index=True)  # Scenario ID, scenario_user ID, or config ID
+    context_type = Column(String(20), nullable=False, default="scenario")  # scenario, scenario_user, config
 
     weights = Column(JSON, nullable=False)  # {"llm": 0.5, "gnn": 0.3, "trm": 0.2}
     learning_method = Column(String(20), nullable=False, index=True)  # ema, ucb, thompson, etc.

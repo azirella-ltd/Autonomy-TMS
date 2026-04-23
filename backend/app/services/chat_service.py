@@ -14,7 +14,6 @@ from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-Game = Scenario
 ScenarioUser = ScenarioUser
 from app.schemas.chat import (
     ChatMessageCreate,
@@ -42,10 +41,10 @@ class ChatService:
         offset: int = 0,
     ) -> tuple[List[ChatMessage], int, bool]:
         """
-        Get chat messages for a game.
+        Get chat messages for a scenario.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             since: Only return messages after this timestamp
             limit: Maximum number of messages to return
             offset: Offset for pagination
@@ -83,7 +82,7 @@ class ChatService:
         Create a new chat message.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             message_data: Message data
 
         Returns:
@@ -106,7 +105,7 @@ class ChatService:
         await self.db.refresh(message)
 
         logger.info(
-            f"Created chat message {message.id} in game {scenario_id} from {message.sender_name}"
+            f"Created chat message {message.id} in scenario {scenario_id} from {message.sender_name}"
         )
 
         return message
@@ -120,7 +119,7 @@ class ChatService:
         Mark messages as read.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             message_ids: List of message IDs to mark as read
 
         Returns:
@@ -141,7 +140,7 @@ class ChatService:
 
         count = result.rowcount
 
-        logger.info(f"Marked {count} messages as read in game {scenario_id}")
+        logger.info(f"Marked {count} messages as read in scenario {scenario_id}")
 
         return count
 
@@ -154,10 +153,10 @@ class ChatService:
         pending_only: bool = False,
     ) -> List[AgentSuggestion]:
         """
-        Get agent suggestions for a game.
+        Get agent suggestions for a scenario.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             agent_name: Filter by agent name
             pending_only: Only return pending (not accepted/declined) suggestions
 
@@ -193,27 +192,27 @@ class ChatService:
         This triggers the LLM agent to generate an intelligent order recommendation.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             agent_name: Agent name (retailer, wholesaler, etc.)
             request_data: Optional additional context
 
         Returns:
             Created suggestion with LLM reasoning
         """
-        # Get game
-        game_result = await self.db.execute(select(Game).filter(Game.id == scenario_id))
-        game = game_result.scalars().first()
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
+        # Get scenario
+        scenario_result = await self.db.execute(select(Scenario).filter(Scenario.id == scenario_id))
+        scenario = scenario_result.scalars().first()
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
 
         # Build comprehensive context
         try:
             context = await self._build_suggestion_context(scenario_id, agent_name)
         except Exception as e:
-            logger.error(f"Failed to build context for {agent_name} in game {scenario_id}: {e}")
+            logger.error(f"Failed to build context for {agent_name} in scenario {scenario_id}: {e}")
             # Fallback to minimal context
             context = {
-                "current_period": game.current_period,
+                "current_period": scenario.current_period,
                 "current_inventory": 0,
                 "current_backlog": 0,
             }
@@ -243,7 +242,7 @@ class ChatService:
             }
 
             logger.info(
-                f"LLM suggestion for {agent_name} in game {scenario_id}: "
+                f"LLM suggestion for {agent_name} in scenario {scenario_id}: "
                 f"{order_quantity} units ({confidence:.0%} confidence)"
             )
 
@@ -262,7 +261,7 @@ class ChatService:
         # Create suggestion
         suggestion = AgentSuggestion(
             scenario_id=scenario_id,
-            round=game.current_period,
+            round=scenario.current_period,
             agent_name=agent_name,
             order_quantity=order_quantity,
             confidence=confidence,
@@ -275,7 +274,7 @@ class ChatService:
         await self.db.refresh(suggestion)
 
         logger.info(
-            f"Created suggestion {suggestion.id} from {agent_name} in game {scenario_id}: "
+            f"Created suggestion {suggestion.id} from {agent_name} in scenario {scenario_id}: "
             f"{order_quantity} units ({confidence:.0%} confidence)"
         )
 
@@ -291,7 +290,7 @@ class ChatService:
         Accept an agent suggestion.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             suggestion_id: Suggestion ID
             scenario_user_id: ScenarioUser accepting the suggestion
 
@@ -307,7 +306,7 @@ class ChatService:
         suggestion = suggestion_result.scalars().first()
 
         if not suggestion:
-            raise ValueError(f"Suggestion {suggestion_id} not found in game {scenario_id}")
+            raise ValueError(f"Suggestion {suggestion_id} not found in scenario {scenario_id}")
 
         suggestion.accepted = True
         suggestion.scenario_user_id = scenario_user_id
@@ -317,7 +316,7 @@ class ChatService:
         await self.db.refresh(suggestion)
 
         logger.info(
-            f"ScenarioUser {scenario_user_id} accepted suggestion {suggestion_id} in game {scenario_id}"
+            f"ScenarioUser {scenario_user_id} accepted suggestion {suggestion_id} in scenario {scenario_id}"
         )
 
         return suggestion
@@ -332,7 +331,7 @@ class ChatService:
         Decline an agent suggestion.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             suggestion_id: Suggestion ID
             scenario_user_id: ScenarioUser declining the suggestion
 
@@ -348,7 +347,7 @@ class ChatService:
         suggestion = suggestion_result.scalars().first()
 
         if not suggestion:
-            raise ValueError(f"Suggestion {suggestion_id} not found in game {scenario_id}")
+            raise ValueError(f"Suggestion {suggestion_id} not found in scenario {scenario_id}")
 
         suggestion.accepted = False
         suggestion.scenario_user_id = scenario_user_id
@@ -358,7 +357,7 @@ class ChatService:
         await self.db.refresh(suggestion)
 
         logger.info(
-            f"ScenarioUser {scenario_user_id} declined suggestion {suggestion_id} in game {scenario_id}"
+            f"ScenarioUser {scenario_user_id} declined suggestion {suggestion_id} in scenario {scenario_id}"
         )
 
         return suggestion
@@ -374,20 +373,20 @@ class ChatService:
         Create a what-if analysis request.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             analysis_data: Analysis request data
 
         Returns:
             Created analysis
         """
-        game_result = await self.db.execute(select(Game).filter(Game.id == scenario_id))
-        game = game_result.scalars().first()
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
+        scenario_result = await self.db.execute(select(Scenario).filter(Scenario.id == scenario_id))
+        scenario = scenario_result.scalars().first()
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
 
         analysis = WhatIfAnalysis(
             scenario_id=scenario_id,
-            round=game.current_period,
+            round=scenario.current_period,
             scenario_user_id=analysis_data.scenario_user_id,
             question=analysis_data.question,
             scenario=analysis_data.scenario,
@@ -398,7 +397,7 @@ class ChatService:
         await self.db.refresh(analysis)
 
         logger.info(
-            f"Created what-if analysis {analysis.id} for scenario_user {analysis_data.scenario_user_id} in game {scenario_id}"
+            f"Created what-if analysis {analysis.id} for scenario_user {analysis_data.scenario_user_id} in scenario {scenario_id}"
         )
 
         # TODO: Trigger async analysis processing
@@ -415,7 +414,7 @@ class ChatService:
         Get a what-if analysis.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             analysis_id: Analysis ID
 
         Returns:
@@ -450,18 +449,18 @@ class ChatService:
         - Demand volatility
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             agent_name: Agent role name
 
         Returns:
-            Dictionary with comprehensive game context
+            Dictionary with comprehensive scenario context
         """
         from app.models.supply_chain import ScenarioUserPeriod
         from sqlalchemy import func
 
-        # Get game
-        game_result = await self.db.execute(select(Game).filter(Game.id == scenario_id))
-        game = game_result.scalars().first()
+        # Get scenario
+        scenario_result = await self.db.execute(select(Scenario).filter(Scenario.id == scenario_id))
+        scenario = scenario_result.scalars().first()
 
         # Get scenario_user for this agent role
         scenario_user_result = await self.db.execute(
@@ -473,7 +472,7 @@ class ChatService:
         scenario_user = scenario_user_result.scalars().first()
 
         if not scenario_user:
-            raise ValueError(f"No scenario_user found for agent {agent_name} in game {scenario_id}")
+            raise ValueError(f"No scenario_user found for agent {agent_name} in scenario {scenario_id}")
 
         # Get recent scenario_user rounds (last 10)
         rounds_result = await self.db.execute(
@@ -559,7 +558,7 @@ class ChatService:
             # Look back through recent rounds within lead time
             for r in recent_rounds[:lead_time]:
                 if hasattr(r, 'order_placed') and r.order_placed:
-                    eta_rounds = lead_time - (game.current_period - r.round)
+                    eta_rounds = lead_time - (scenario.current_period - r.round)
                     if eta_rounds > 0:
                         pipeline_orders.append({
                             "round": r.round,
@@ -575,7 +574,7 @@ class ChatService:
         # Build comprehensive context
         context = {
             # Current state
-            "current_period": game.current_period,
+            "current_period": scenario.current_period,
             "current_inventory": current_period.current_inventory if current_period else 0,
             "current_backlog": current_period.current_backlog if current_period else 0,
             "incoming_shipment": incoming_shipment,
@@ -611,7 +610,7 @@ class ChatService:
         This is a placeholder until LLM integration is complete.
 
         Args:
-            context: Game state context
+            context: Scenario state context
 
         Returns:
             Suggested order quantity
@@ -631,10 +630,10 @@ class ChatService:
         user_id: str,
     ) -> int:
         """
-        Get unread message count for a user in a game.
+        Get unread message count for a user in a scenario.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             user_id: User ID (scenario_user:1)
 
         Returns:

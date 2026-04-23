@@ -47,28 +47,28 @@ def normalize_debug_config(config: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
-def ensure_debug_log_file(config: Dict[str, Any], game: Any) -> Optional[Path]:
+def ensure_debug_log_file(config: Dict[str, Any], scenario: Any) -> Optional[Path]:
     cfg = normalize_debug_config(config)
     if not cfg.get("enabled"):
         config["debug_logging"] = {"enabled": False}
         return None
 
     path_value = cfg.get("file_path")
-    start_time = getattr(game, "started_at", None) or getattr(game, "created_at", None)
+    start_time = getattr(scenario, "started_at", None) or getattr(scenario, "created_at", None)
     if isinstance(start_time, datetime):
         if start_time.tzinfo is None:
             start_time = start_time.replace(tzinfo=timezone.utc)
         timestamp = start_time.astimezone(timezone.utc).strftime("%Y%m%d_%H%M%S")
     else:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    name_token = (getattr(game, "name", None) or f"game_{getattr(game, 'id', 'unknown')}")
+    name_token = (getattr(scenario, "name", None) or f"scenario_{getattr(scenario, 'id', 'unknown')}")
     safe_token = "".join(
         char if char.isalnum() or char in {"-", "_"} else "_" for char in name_token
     )[:48]
     filename = (
-        f"{timestamp}_game_{getattr(game, 'id', 'unknown')}_{safe_token}.txt"
+        f"{timestamp}_scenario_{getattr(scenario, 'id', 'unknown')}_{safe_token}.txt"
         if safe_token
-        else f"{timestamp}_game_{getattr(game, 'id', 'unknown')}.txt"
+        else f"{timestamp}_scenario_{getattr(scenario, 'id', 'unknown')}.txt"
     )
 
     preferred_path = Path(path_value) if path_value else DEBUG_LOG_DIR / filename
@@ -83,14 +83,14 @@ def ensure_debug_log_file(config: Dict[str, Any], game: Any) -> Optional[Path]:
                 pass
             if not target.exists():
                 with target.open("w", encoding="utf-8") as handle:
-                    handle.write(f"Game {getattr(game, 'id', 'unknown')} Debug Log\n")
-                    name_value = getattr(game, "name", None)
+                    handle.write(f"Scenario {getattr(scenario, 'id', 'unknown')} Debug Log\n")
+                    name_value = getattr(scenario, "name", None)
                     if name_value:
                         handle.write(f"Name: {name_value}\n")
                     created_ts = None
-                    if isinstance(start_time := getattr(game, "started_at", None), datetime):
+                    if isinstance(start_time := getattr(scenario, "started_at", None), datetime):
                         created_ts = start_time
-                    elif isinstance(start_time := getattr(game, "created_at", None), datetime):
+                    elif isinstance(start_time := getattr(scenario, "created_at", None), datetime):
                         created_ts = start_time
                     if created_ts:
                         if created_ts.tzinfo is None:
@@ -106,9 +106,9 @@ def ensure_debug_log_file(config: Dict[str, Any], game: Any) -> Optional[Path]:
             return target
         except Exception as exc:  # noqa: BLE001
             logger.exception(
-                "Failed to prepare debug log at %s for game %s: %s",
+                "Failed to prepare debug log at %s for scenario %s: %s",
                 target,
-                getattr(game, "id", "?"),
+                getattr(scenario, "id", "?"),
                 exc,
             )
             return None
@@ -142,7 +142,7 @@ def _format_debug_block(data: Any, *, indent: str = "      ") -> str:
 
 def append_debug_round_log(
     config: Dict[str, Any],
-    game: Any,
+    scenario: Any,
     *,
     round_number: int,
     timestamp: datetime,
@@ -151,7 +151,7 @@ def append_debug_round_log(
     if not entries:
         return
 
-    path = ensure_debug_log_file(config, game)
+    path = ensure_debug_log_file(config, scenario)
     if not path:
         return
 
@@ -195,12 +195,12 @@ def append_debug_round_log(
         with path.open("a", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Failed to append debug log for game %s: %s", getattr(game, "id", "?"), exc)
+        logger.exception("Failed to append debug log for scenario %s: %s", getattr(scenario, "id", "?"), exc)
 
 
 def _append_debug_round_csv(
     config: Dict[str, Any],
-    game: Any,
+    scenario: Any,
     *,
     round_number: int,
     entries: List[Dict[str, Any]],
@@ -208,7 +208,7 @@ def _append_debug_round_csv(
     # CSV writing disabled
     return
 
-    log_path = ensure_debug_log_file(config, game)
+    log_path = ensure_debug_log_file(config, scenario)
     if not log_path:
         return
     csv_path = log_path.with_suffix(".csv")
@@ -368,7 +368,7 @@ def _append_debug_round_csv(
                     writer.writerow([round_number, node, "Create Order", display_item, 0, 0, end_inv_item])
                     writer.writerow([round_number, node, "End", display_item, post_orders, post_supply, end_inv_item])
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Failed to append CSV debug for game %s: %s", getattr(game, "id", "?"), exc)
+        logger.exception("Failed to append CSV debug for scenario %s: %s", getattr(scenario, "id", "?"), exc)
 
 
 def split_debug_log_file(log_path: Path, *, cfg: Dict[str, Any]) -> None:
@@ -435,7 +435,7 @@ def split_debug_log_file(log_path: Path, *, cfg: Dict[str, Any]) -> None:
 
 def append_debug_error(
     config: Dict[str, Any],
-    game: Any,
+    scenario: Any,
     message: str,
     *,
     details: Optional[Dict[str, Any]] = None,
@@ -446,19 +446,19 @@ def append_debug_error(
     cfg = normalize_debug_config(config)
     if exc:
         logger.exception(
-            "Debug log error for game %s: %s",
-            getattr(game, "id", "?"),
+            "Debug log error for scenario %s: %s",
+            getattr(scenario, "id", "?"),
             message,
             exc_info=(type(exc), exc, getattr(exc, "__traceback__", None)),
         )
     else:
-        logger.error("Debug log note for game %s: %s", getattr(game, "id", "?"), message)
+        logger.error("Debug log note for scenario %s: %s", getattr(scenario, "id", "?"), message)
 
     if not cfg.get("enabled"):
         config["debug_logging"] = cfg
         return
 
-    path = ensure_debug_log_file(config, game)
+    path = ensure_debug_log_file(config, scenario)
     if not path:
         return
 
@@ -486,4 +486,4 @@ def append_debug_error(
         with path.open("a", encoding="utf-8") as handle:
             handle.write("\n".join(lines))
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Failed to append debug error for game %s: %s", getattr(game, "id", "?"), exc)
+        logger.exception("Failed to append debug error for scenario %s: %s", getattr(scenario, "id", "?"), exc)

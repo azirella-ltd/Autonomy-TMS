@@ -98,9 +98,9 @@ class PIDHeuristicPolicy:
     def produce(self, *, O_t: int, role: Union[str, Dict[str, Any]], week: int) -> int:
         return int(max(0, O_t))
 
-def generate_synthetic_game(num_rounds: int = 100) -> Dict[str, Any]:
-    """Generate a synthetic game with realistic supply chain dynamics."""
-    # Game parameters
+def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
+    """Generate a synthetic scenario with realistic supply chain dynamics."""
+    # Scenario parameters
     num_scenario_users = 4
     roles = ["retailer", "wholesaler", "distributor", "manufacturer"]
     
@@ -113,9 +113,9 @@ def generate_synthetic_game(num_rounds: int = 100) -> Dict[str, Any]:
         if random.random() < 0.1:  # 10% chance of demand spike/drop
             base_demand[i] *= random.choice([0.5, 1.5, 2.0])
     
-    # Generate game data
-    game_data = {
-        "name": f"Synthetic Game {datetime.now().strftime('%Y%m%d_%H%M%S')}",
+    # Generate scenario data
+    scenario_data = {
+        "name": f"Synthetic Scenario {datetime.now().strftime('%Y%m%d_%H%M%S')}",
         "description": "Synthetic training data",
         "num_rounds": num_rounds,
         "rounds": []
@@ -215,29 +215,29 @@ def generate_synthetic_game(num_rounds: int = 100) -> Dict[str, Any]:
             backlogs[role] = new_backlog
             downstream_orders[role] = order_quantity
         
-        game_data["rounds"].append(round_data)
+        scenario_data["rounds"].append(round_data)
     
-    return game_data
+    return scenario_data
 
-def save_synthetic_game(db: Session, game_data: Dict[str, Any]) -> models.Game:
-    """Save synthetic game to the database."""
-    # Create game
-    game_in = schemas.GameCreate(
-        name=game_data["name"],
-        description=game_data["description"],
+def save_synthetic_game(db: Session, scenario_data: Dict[str, Any]) -> models.Scenario:
+    """Save synthetic scenario to the database."""
+    # Create scenario
+    scenario_in = schemas.ScenarioCreate(
+        name=scenario_data["name"],
+        description=scenario_data["description"],
         max_players=4,
-        num_rounds=game_data["num_rounds"],
+        num_rounds=scenario_data["num_rounds"],
         is_public=False,
         is_completed=True
     )
-    game = crud.game.create(db, obj_in=game_in)
+    scenario = crud.scenario.create(db, obj_in=scenario_in)
     
     # Create scenario_users (AI scenario_users)
     roles = ["retailer", "wholesaler", "distributor", "manufacturer"]
     for i, role in enumerate(roles):
         player_in = schemas.ScenarioUserCreate(
             user_id=None,  # AI scenario_user
-            scenario_id=game.id,
+            scenario_id=scenario.id,
             role=role,
             is_ai=True,
             ai_strategy="synthetic_data"
@@ -245,17 +245,17 @@ def save_synthetic_game(db: Session, game_data: Dict[str, Any]) -> models.Game:
         crud.scenario_user.create(db, obj_in=player_in)
     
     # Create rounds and decisions
-    for round_num, round_data in enumerate(game_data["rounds"], 1):
+    for round_num, round_data in enumerate(scenario_data["rounds"], 1):
         round_in = schemas.RoundCreate(
-            scenario_id=game.id,
+            scenario_id=scenario.id,
             round_number=round_num,
             is_completed=True
         )
         db_round = crud.round.create(db, obj_in=round_in)
         
         for decision in round_data["decisions"]:
-            scenario_user = crud.scenario_user.get_by_game_and_role(
-                db, scenario_id=game.id, role=decision["role"]
+            scenario_user = crud.scenario_user.get_by_scenario_and_role(
+                db, scenario_id=scenario.id, role=decision["role"]
             )
             decision_in = schemas.DecisionCreate(
                 period_id=db_round.id,
@@ -267,30 +267,30 @@ def save_synthetic_game(db: Session, game_data: Dict[str, Any]) -> models.Game:
                 backlog=decision["backlog"],
                 incoming_shipment=decision["incoming_shipment"],
                 cost=0.0,  # Not used in training
-                timestamp=datetime.utcnow() - timedelta(days=len(game_data["rounds"]) - round_num)
+                timestamp=datetime.utcnow() - timedelta(days=len(scenario_data["rounds"]) - round_num)
             )
             crud.decision.create(db, obj_in=decision_in)
     
-    return game
+    return scenario
 
-def generate_and_save_games(num_games: int = 10, rounds_per_game: int = 100):
-    """Generate and save multiple synthetic games."""
+def generate_and_save_games(num_scenarios: int = 10, rounds_per_scenario: int = 100):
+    """Generate and save multiple synthetic scenarios."""
     db = SessionLocal()
     try:
-        for i in range(num_games):
-            print(f"Generating game {i+1}/{num_games}...")
-            game_data = generate_synthetic_game(num_rounds=rounds_per_game)
-            game = save_synthetic_game(db, game_data)
-            print(f"Saved game {game.name} with ID {game.id}")
+        for i in range(num_scenarios):
+            print(f"Generating scenario {i+1}/{num_scenarios}...")
+            scenario_data = generate_synthetic_scenario(num_rounds=rounds_per_scenario)
+            scenario = save_synthetic_game(db, scenario_data)
+            print(f"Saved scenario {scenario.name} with ID {scenario.id}")
         db.commit()
     except Exception as e:
         db.rollback()
-        print(f"Error generating games: {e}")
+        print(f"Error generating scenarios: {e}")
         raise
     finally:
         db.close()
 
 if __name__ == "__main__":
-    # Generate 20 games with 100 rounds each
-    generate_and_save_games(num_games=20, rounds_per_game=100)
+    # Generate 20 scenarios with 100 rounds each
+    generate_and_save_games(num_scenarios=20, rounds_per_scenario=100)
     print("Synthetic data generation complete!")

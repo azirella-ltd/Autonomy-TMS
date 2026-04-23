@@ -120,9 +120,9 @@ def main():
     print("-" * 80)
 
     frontend_components = [
-        ("../frontend/src/components/game/AIAnalytics.jsx", "AIAnalytics component"),
-        ("../frontend/src/components/game/NegotiationPanel.jsx", "NegotiationPanel component"),
-        ("../frontend/src/components/game/AISuggestion.jsx", "AISuggestion component (enhanced)"),
+        ("../frontend/src/components/scenario/AIAnalytics.jsx", "AIAnalytics component"),
+        ("../frontend/src/components/scenario/NegotiationPanel.jsx", "NegotiationPanel component"),
+        ("../frontend/src/components/scenario/AISuggestion.jsx", "AISuggestion component (enhanced)"),
         ("../frontend/src/pages/GameRoom.jsx", "GameRoom page (enhanced)"),
     ]
 

@@ -12,7 +12,7 @@ if str(backend_root) not in sys.path:
     sys.path.append(str(backend_root))
 
 from app.services.engine import DEFAULT_STEADY_STATE_DEMAND
-from app.services.mixed_game_service import MixedGameService
+from app.services.mixed_scenario_service import MixedScenarioService
 from app.simulation.debug_logging import append_debug_round_log
 from app.simulation.helpers import compute_shipping_outcome, process_ship_queue
 
@@ -61,19 +61,19 @@ def test_market_supply_ships_full_demand():
 
 def test_debug_rounds_append_in_chronological_order(tmp_path):
     config = {"debug_logging": {"enabled": True, "file_path": str(tmp_path / "log.txt")}}
-    game = DummyGame()
+    scenario = DummyGame()
     timestamp = datetime(2025, 1, 1, 12, 0, 0)
 
     append_debug_round_log(
         config,
-        game,
+        scenario,
         round_number=1,
         timestamp=timestamp,
         entries=[{"node": "retailer", "info_sent": {}, "reply": {}, "ending_state": {}}],
     )
     append_debug_round_log(
         config,
-        game,
+        scenario,
         round_number=2,
         timestamp=timestamp,
         entries=[{"node": "wholesaler", "info_sent": {}, "reply": {}, "ending_state": {}}],
@@ -95,7 +95,7 @@ def test_initialise_shipment_pipeline_uses_default_when_zero():
         "inbound_supply_future": [{"step_number": 1, "quantity": 1}],
     }
 
-    MixedGameService._initialise_shipment_pipeline(
+    MixedScenarioService._initialise_shipment_pipeline(
         state,
         supply_leadtime=2,
         default_quantity=0,
@@ -110,7 +110,7 @@ def test_initialise_shipment_pipeline_uses_default_when_zero():
 def test_initialise_shipment_pipeline_backfills_missing_entries():
     state: Dict[str, Any] = {"current_step": 0, "ship_queue": [0, 6], "incoming_shipments": [0, 6]}
 
-    MixedGameService._initialise_shipment_pipeline(
+    MixedScenarioService._initialise_shipment_pipeline(
         state,
         supply_leadtime=2,
         default_quantity=4,
@@ -125,7 +125,7 @@ def test_initialise_shipment_pipeline_backfills_missing_entries():
 def test_initialise_order_pipeline_uses_default_when_zero():
     state: Dict[str, Any] = {"info_queue": [1], "info_detail_queue": [{"x": 1}]}
 
-    MixedGameService._initialise_order_pipeline(
+    MixedScenarioService._initialise_order_pipeline(
         state,
         order_leadtime=3,
         default_quantity=0,
@@ -143,7 +143,7 @@ def test_initialise_order_pipeline_replaces_non_positive_entries():
         "info_detail_queue": [{}, {}],
     }
 
-    MixedGameService._initialise_order_pipeline(
+    MixedScenarioService._initialise_order_pipeline(
         state,
         order_leadtime=2,
         default_quantity=7,
@@ -158,7 +158,7 @@ def test_initialise_order_pipeline_replaces_non_positive_entries():
 def test_seed_order_queue_ensures_positive_baseline():
     state: Dict[str, Any] = {}
 
-    MixedGameService._seed_order_queue(
+    MixedScenarioService._seed_order_queue(
         state,
         current_step=0,
         order_leadtime=2,

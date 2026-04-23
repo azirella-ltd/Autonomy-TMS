@@ -1,7 +1,7 @@
 """Schemas package with all Pydantic models.
 
 Terminology (Feb 2026):
-- Game -> Scenario
+- Scenario -> Scenario
 - Player -> ScenarioUser (in DB/code)
 - Player -> User (in UI)
 - Round -> Period

@@ -65,7 +65,7 @@ class SupplyChainPlanner:
 
         Args:
             start_date: Planning start date
-            scenario_id: Optional game ID for scenario integration
+            scenario_id: Optional scenario ID for scenario integration
 
         Returns:
             List of SupplyPlan recommendations (PO/TO/MO requests)
@@ -74,7 +74,7 @@ class SupplyChainPlanner:
         print(f"   Config ID: {self.config_id}")
         print(f"   Start Date: {start_date}")
         print(f"   Planning Horizon: {self.planning_horizon} days")
-        print(f"   Game ID: {scenario_id or 'N/A'}")
+        print(f"   Scenario ID: {scenario_id or 'N/A'}")
         print()
 
         # ========================================================================

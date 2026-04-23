@@ -1,10 +1,6 @@
 """Models package with all SQLAlchemy models.
 
-Terminology (Feb 2026):
-- Game -> Scenario
-- Alternative -> Scenario (intermediate step now complete)
-- Player -> ScenarioUser (in DB/code), User (in UI)
-- Gamification -> Simulation
+
 """
 import logging
 from typing import List, Type, Any
@@ -23,7 +19,7 @@ from . import capabilities  # noqa: F401
 # Import all models here to ensure they are registered with SQLAlchemy
 from sqlalchemy import inspect
 
-# relationships.py removed (dead code referencing non-existent game.py)
+# relationships.py removed (dead code referencing non-existent scenario.py)
 
 # Import models in dependency order to avoid circular imports
 # 1. RBAC models first (User depends on these)

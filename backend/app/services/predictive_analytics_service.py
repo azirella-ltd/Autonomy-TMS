@@ -31,7 +31,6 @@ from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-Game = Scenario
 ScenarioUser = ScenarioUser
 
 logger = logging.getLogger(__name__)
@@ -107,7 +106,7 @@ class PredictiveAnalyticsService:
         Forecast demand for a node over specified horizon.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             node_id: Node/ScenarioUser ID
             horizon: Number of rounds to forecast
             confidence_level: Confidence level for bounds (default 0.95)
@@ -167,15 +166,15 @@ class PredictiveAnalyticsService:
         scenario_id: int
     ) -> List[BullwhipPrediction]:
         """
-        Predict bullwhip effect for all nodes in a game.
+        Predict bullwhip effect for all nodes in a scenario.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             predictions: Bullwhip predictions per node
         """
-        # Get all scenario_users in game
+        # Get all scenario_users in scenario
         stmt = select(ScenarioUser).where(ScenarioUser.scenario_id == scenario_id)
         result = await self.db.execute(stmt)
         scenario_users = result.scalars().all()
@@ -246,7 +245,7 @@ class PredictiveAnalyticsService:
         Forecast cost trajectory for a node.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             node_id: Node/ScenarioUser ID
             horizon: Forecast horizon
 
@@ -316,7 +315,7 @@ class PredictiveAnalyticsService:
         Explain a prediction using SHAP values.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             node_id: Node/ScenarioUser ID
             round_number: Round number to explain
 
@@ -421,7 +420,7 @@ class PredictiveAnalyticsService:
         Analyze what-if scenarios.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             node_id: Node/ScenarioUser ID
             scenarios: List of scenarios to test
                 Each scenario: {"name": "...", "changes": {"inventory": 20, ...}}
@@ -557,7 +556,7 @@ class PredictiveAnalyticsService:
         features[7] = backlog_cost (actual per-period cost from ScenarioUserPeriod.backlog_cost)
 
         Cost rates are derived from actual historical costs divided by their corresponding
-        quantities to ensure rates reflect real InvPolicy data, not hardcoded Beer Game values.
+        quantities to ensure rates reflect real InvPolicy data, not hardcoded Beer Scenario values.
         """
         inventory = float(features[0])
         backlog = float(features[1])
@@ -565,7 +564,7 @@ class PredictiveAnalyticsService:
         last_backlog_cost = float(features[7])   # actual historical backlog cost
 
         # Derive effective rates from historical actuals
-        # (avoids hardcoding Beer Game-specific $0.50/$1.00 defaults)
+        # (avoids hardcoding Beer Scenario-specific $0.50/$1.00 defaults)
         holding_cost_rate = last_holding_cost / inventory if inventory > 0 else last_holding_cost
         backlog_cost_rate = last_backlog_cost / backlog if backlog > 0 else last_backlog_cost
 
@@ -576,10 +575,10 @@ class PredictiveAnalyticsService:
         scenario_id: int
     ) -> Dict[str, Any]:
         """
-        Generate comprehensive insights report for a game.
+        Generate comprehensive insights report for a scenario.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             report: Comprehensive analytics report

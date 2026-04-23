@@ -90,7 +90,7 @@ def test_metrics():
             Histogram,
             Gauge,
             http_requests_total,
-            game_creations_total,
+            scenario_creations_total,
             active_games,
             track_request_metrics,
             counter_metric,

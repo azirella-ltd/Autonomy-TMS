@@ -51,7 +51,7 @@ DEFAULT_ADMIN_USERNAME = "tenantadmin"
 DEFAULT_ADMIN_EMAIL = "tenantadmin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Tenant Administrator"
 DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")
-DEFAULT_GAME_NAME = "Default Simulation"
+DEFAULT_SCENARIO_NAME = "Default Simulation"
 DEFAULT_AGENT_TYPE = "pid_heuristic"
 
 def ensure_tenant(session: Session) -> Tuple[Tenant, bool]:
@@ -142,20 +142,20 @@ def ensure_default_scenario(session: Session, tenant: Tenant) -> Scenario:
     """Ensure the default scenario exists for the supplied tenant."""
     sc_config = ensure_supply_chain_config(session, tenant)
     existing = session.query(Scenario).filter(
-        Scenario.name == DEFAULT_GAME_NAME,
+        Scenario.name == DEFAULT_SCENARIO_NAME,
         Scenario.tenant_id == tenant.id
     ).first()
 
     if existing:
-        print(f"Scenario '{DEFAULT_GAME_NAME}' already exists with ID: {existing.id}")
+        print(f"Scenario '{DEFAULT_SCENARIO_NAME}' already exists with ID: {existing.id}")
         existing.supply_chain_config_id = sc_config.id
         session.add(existing)
         return existing
 
-    print(f"Creating new scenario: {DEFAULT_GAME_NAME}")
+    print(f"Creating new scenario: {DEFAULT_SCENARIO_NAME}")
 
     scenario = Scenario(
-        name=DEFAULT_GAME_NAME,
+        name=DEFAULT_SCENARIO_NAME,
         status=ScenarioStatus.CREATED,
         tenant_id=tenant.id,
         created_by=tenant.admin_id,

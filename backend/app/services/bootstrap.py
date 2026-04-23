@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
-Game = Scenario
 from app.schemas.tenant import TenantCreate
 from app.schemas.user import UserCreate
 
@@ -51,9 +50,9 @@ def build_default_tenant_payload() -> TenantCreate:
 build_default_customer_payload = build_default_tenant_payload
 
 
-def ensure_default_tenant_and_scenario(db: Session) -> Optional[Game]:
+def ensure_default_tenant_and_scenario(db: Session) -> Optional[Scenario]:
     """Ensure at least one scenario exists for developer bootstrap."""
-    existing_game = db.query(Game).first()
+    existing_game = db.query(Scenario).first()
     if existing_game:
         return existing_game
 
@@ -63,7 +62,7 @@ def ensure_default_tenant_and_scenario(db: Session) -> Optional[Game]:
     service = TenantService(db)
     tenant = service.create_tenant(build_default_tenant_payload())
     db.refresh(tenant)
-    return db.query(Game).first()
+    return db.query(Scenario).first()
 
 
 # Backward compatibility alias

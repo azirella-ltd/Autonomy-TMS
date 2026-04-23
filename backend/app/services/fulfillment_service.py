@@ -149,7 +149,7 @@ class FulfillmentService:
             site_id: Site ID
             product_id: Product ID
             config_id: Configuration ID
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             On-hand inventory quantity
@@ -187,7 +187,7 @@ class FulfillmentService:
             product_id: Product ID
             quantity_change: Positive for receipt, negative for shipment
             config_id: Configuration ID
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             Updated InvLevel

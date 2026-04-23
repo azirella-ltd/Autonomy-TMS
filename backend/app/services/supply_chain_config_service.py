@@ -1,5 +1,5 @@
 """
-Service for managing supply chain configurations and their integration with game initialization.
+Service for managing supply chain configurations and their integration with scenario initialization.
 """
 from typing import Dict, Any, List, Optional, Tuple, Set
 from sqlalchemy.orm import Session
@@ -31,7 +31,7 @@ from app.services.mixed_scenario_service import MixedScenarioService
 from app.schemas.scenario import ScenarioCreate, NodePolicy, DemandPattern
 
 # Aliases for backwards compatibility
-GameCreate = ScenarioCreate
+ScenarioCreate = ScenarioCreate
 from app.schemas.supply_chain_config import (
     SupplyChainConfigCreate,
     # ItemCreate, ProductSiteConfigCreate - REMOVED: use Product schemas
@@ -301,21 +301,21 @@ def _normalize_site_type_definitions(payload: Any) -> Tuple[List[Dict[str, Any]]
 
 
 class SupplyChainConfigService:
-    """Service for managing supply chain configurations and game integration."""
+    """Service for managing supply chain configurations and scenario integration."""
     
     def __init__(self, db: Session):
         self.db = db
     
-    def create_game_from_config(self, config_id: int, game_data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_scenario_from_config(self, config_id: int, scenario_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Create a game configuration based on a supply chain configuration.
+        Create a scenario configuration based on a supply chain configuration.
         
         Args:
             config_id: ID of the supply chain configuration
-            game_data: Base game data (name, description, etc.)
+            scenario_data: Base scenario data (name, description, etc.)
             
         Returns:
-            Dict containing the game configuration
+            Dict containing the scenario configuration
         """
         # Get the supply chain configuration
         config = self.db.query(SupplyChainConfig).filter(
@@ -1060,11 +1060,11 @@ class SupplyChainConfigService:
             if MixedScenarioService._normalise_node_type(defn.get("type"))
         ]
 
-        game_config = {
-            "name": game_data.get('name', f"Game - {config.name}"),
-            "description": game_data.get('description', config.description or ""),
-            "max_periods": game_data.get('max_periods', 40),
-            "is_public": game_data.get('is_public', True),
+        scenario_config = {
+            "name": scenario_data.get('name', f"Scenario - {config.name}"),
+            "description": scenario_data.get('description', config.description or ""),
+            "max_periods": scenario_data.get('max_periods', 40),
+            "is_public": scenario_data.get('is_public', True),
             "node_policies": node_policies,
             "demand_pattern": demand_pattern,
             "supply_chain_config_id": config_id,
@@ -1099,9 +1099,9 @@ class SupplyChainConfigService:
             "downstream_visibility": {
                 "enabled": True,
             },
-            "progression_mode": game_data.get(
+            "progression_mode": scenario_data.get(
                 'progression_mode',
-                'unsupervised' if game_data.get('name', '').lower().startswith('autonomy') else 'supervised',
+                'unsupervised' if scenario_data.get('name', '').lower().startswith('autonomy') else 'supervised',
             ),
             "enable_information_sharing": True,
             "enable_demand_volatility_signals": True,
@@ -1122,21 +1122,21 @@ class SupplyChainConfigService:
             "sites": node_payload,
         }
 
-        return game_config
+        return scenario_config
     
     def create_config_from_game(self, scenario_id: int, config_name: str) -> SupplyChainConfig:
         """
-        Create a supply chain configuration from an existing game.
+        Create a supply chain configuration from an existing scenario.
         
         Args:
-            scenario_id: ID of the game to create a configuration from
+            scenario_id: ID of the scenario to create a configuration from
             config_name: Name for the new configuration
             
         Returns:
             The created SupplyChainConfig object
         """
-        # This would query the game and create a configuration from its settings
-        # Implementation would be similar to the reverse of create_game_from_config
+        # This would query the scenario and create a configuration from its settings
+        # Implementation would be similar to the reverse of create_scenario_from_config
         raise NotImplementedError("This feature is not yet implemented")
         item_payload: List[Dict[str, Any]] = [
             {

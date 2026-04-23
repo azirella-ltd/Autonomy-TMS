@@ -138,10 +138,10 @@ class ManualRoundDebugger:
         if demand_pattern is not None:
             payload["demand_pattern"] = demand_pattern
 
-        created = _post_json("/agent-games/", token=self.token, payload=payload)
+        created = _post_json("/agent-scenarios/", token=self.token, payload=payload)
         self.scenario_id = int(created["scenario_id"])
 
-        _post_json(f"/agent-games/{self.scenario_id}/start", token=self.token)
+        _post_json(f"/agent-scenarios/{self.scenario_id}/start", token=self.token)
 
         # Default AI policies are acceptable for inspection, but you can tweak
         # them here if desired. The API call resets policy state, which keeps the
@@ -154,7 +154,7 @@ class ManualRoundDebugger:
         }
         for role, (strategy, params) in policies.items():
             _put(
-                f"/agent-games/{self.scenario_id}/agent-strategy",
+                f"/agent-scenarios/{self.scenario_id}/agent-strategy",
                 token=self.token,
                 params={"role": role, "strategy": strategy},
                 json_data=params or {},
@@ -166,12 +166,12 @@ class ManualRoundDebugger:
     def play_next_round(self) -> Dict[str, Any]:
         if self.scenario_id is None:
             raise RuntimeError("Scenario is not initialised; call setup_game() first")
-        return _post_json(f"/agent-games/{self.scenario_id}/play-round", token=self.token)
+        return _post_json(f"/agent-scenarios/{self.scenario_id}/play-round", token=self.token)
 
     def fetch_state(self) -> Dict[str, Any]:
         if self.scenario_id is None:
             raise RuntimeError("Scenario is not initialised; call setup_game() first")
-        return _get(f"/agent-games/{self.scenario_id}/state", token=self.token)
+        return _get(f"/agent-scenarios/{self.scenario_id}/state", token=self.token)
 
 
 def _print_state(state: Dict[str, Any]) -> None:

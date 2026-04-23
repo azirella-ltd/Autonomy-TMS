@@ -25,7 +25,7 @@ class SCStateManager:
 
     Manages state absorption and persistence for SC execution:
     - Load current state from inv_level, purchase_order, etc.
-    - Initialize new games with SC state
+    - Initialize new scenarios with SC state
     - Export state snapshots for analysis
 
     The simulation engine uses this to absorb state each round (not custom initialization).
@@ -38,13 +38,13 @@ class SCStateManager:
     # Public Methods
     # =========================================================================
 
-    def load_game_state(
+    def load_scenario_state(
         self,
         scenario_id: int,
         round_number: Optional[int] = None,
     ) -> Dict[int, Dict]:
         """
-        Load current game state from SC entities for all sites.
+        Load current scenario state from SC entities for all sites.
 
         Args:
             scenario_id: Scenario ID
@@ -53,7 +53,7 @@ class SCStateManager:
         Returns:
             Dict mapping site.id (int) → state dict
         """
-        config = self._get_game_config(scenario_id)
+        config = self._get_scenario_config(scenario_id)
         product_id = self._get_product_id(config.id)
 
         sites = (
@@ -185,14 +185,14 @@ class SCStateManager:
             "site_name": site.name if site else str(site_id),
         }
 
-    def initialize_game_state(
+    def initialize_scenario_state(
         self,
         scenario_id: int,
         config_id: int,
         initial_inventory: float = 12.0,
     ) -> None:
         """
-        Initialize game state in SC entities.
+        Initialize scenario state in SC entities.
 
         Creates or resets inv_level records for all sites using the config's product.
 
@@ -273,7 +273,7 @@ class SCStateManager:
         return {
             "scenario_id": scenario_id,
             "round_number": round_number,
-            "sites": self.load_game_state(scenario_id, round_number),
+            "sites": self.load_scenario_state(scenario_id, round_number),
             "timestamp": datetime.now().isoformat(),
         }
 
@@ -281,7 +281,7 @@ class SCStateManager:
     # Private Helpers
     # =========================================================================
 
-    def _get_game_config(self, scenario_id: int) -> SupplyChainConfig:
+    def _get_scenario_config(self, scenario_id: int) -> SupplyChainConfig:
         from app.models.scenario import Scenario
 
         scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()

@@ -51,7 +51,7 @@ class UserBehavior(SequentialTaskSet):
     @task
     def search_templates(self):
         """Search templates with filters"""
-        categories = ["distribution", "scenario", "game"]
+        categories = ["distribution", "scenario", "scenario"]
         industries = ["retail", "manufacturing", "logistics"]
         difficulties = ["beginner", "intermediate", "advanced"]
 
@@ -162,7 +162,7 @@ class APIStressUser(HttpUser):
 
 
 class ConcurrentGameUser(HttpUser):
-    """Simulate concurrent game operations"""
+    """Simulate concurrent scenario operations"""
     wait_time = between(2, 5)
     host = "http://localhost:8000"
 
@@ -176,9 +176,9 @@ class ConcurrentGameUser(HttpUser):
             self.token = response.json().get("access_token")
 
     @task(5)
-    def list_games(self):
-        """List games"""
-        self.client.get("/api/v1/games")
+    def list_scenarios(self):
+        """List scenarios"""
+        self.client.get("/api/v1/scenarios")
 
     @task(3)
     def list_supply_chains(self):

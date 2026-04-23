@@ -1,7 +1,7 @@
 """Scenario schemas - Pydantic models for supply chain simulation scenarios.
 
 Terminology (Feb 2026):
-- Game -> Scenario
+- Scenario -> Scenario
 - Player -> ScenarioUser (in API/code)
 - Player -> User (in UI)
 - Gamification -> Simulation

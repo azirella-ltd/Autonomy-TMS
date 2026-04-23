@@ -243,7 +243,7 @@ async def stop_job(job_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to stop job: {e}")
 
 @router.get("/scenarios/{scenario_id}/metrics", response_model=Dict[str, Any])
-async def get_game_metrics(
+async def get_scenario_metrics(
     scenario_id: int,
     db: AsyncSession = Depends(get_db)
 ):

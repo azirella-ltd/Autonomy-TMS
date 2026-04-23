@@ -1,6 +1,6 @@
 """Test script to run Naive Agent Showcase for Six-Pack simulation scenario.
 
-This will find and start the Naive Agent Showcase (Six-Pack Beer Game) scenario
+This will find and start the Naive Agent Showcase (Six-Pack Beer Scenario) scenario
 to test the manufacturer site fix.
 """
 from __future__ import annotations
@@ -15,17 +15,17 @@ sys.path.insert(0, str(backend_path))
 
 from app.models.scenario import Scenario, ScenarioStatus as DbScenarioStatus
 from app.models.scenario_user import ScenarioUser
-from app.services.mixed_game_service import MixedGameService
+from app.services.mixed_scenario_service import MixedScenarioService
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-TARGET_GAME_NAME = "Naive Agent Showcase (Six-Pack Beer Game)"
+TARGET_SCENARIO_NAME = "Naive Agent Showcase (Six-Pack Beer Scenario)"
 
 
 async def find_target_scenario(session: AsyncSession) -> Scenario | None:
     """Find the Naive Agent Showcase scenario for Six-Pack simulation."""
     result = await session.execute(
-        select(Scenario).where(Scenario.name == TARGET_GAME_NAME).order_by(Scenario.id)
+        select(Scenario).where(Scenario.name == TARGET_SCENARIO_NAME).order_by(Scenario.id)
     )
     return result.scalar_one_or_none()
 
@@ -62,7 +62,7 @@ async def main():
             # Find the scenario
             scenario = await find_target_scenario(session)
             if not scenario:
-                print(f"ERROR: Scenario '{TARGET_GAME_NAME}' not found")
+                print(f"ERROR: Scenario '{TARGET_SCENARIO_NAME}' not found")
                 return 1
 
             print(f"Found scenario {scenario.id}: {scenario.name}")
@@ -83,8 +83,8 @@ async def main():
             session.add(scenario)
             await session.commit()
 
-            print(f"Starting scenario via MixedGameService...")
-            service = MixedGameService(session)
+            print(f"Starting scenario via MixedScenarioService...")
+            service = MixedScenarioService(session)
 
             # Start the scenario
             await service.start_game(scenario.id)

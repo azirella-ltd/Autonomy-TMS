@@ -43,7 +43,7 @@ def site_type_onehot(master_type: str) -> List[float]:
       site_type_market_supply, site_type_market_demand,
       site_type_inventory, site_type_manufacturer
 
-    Works for any supply chain topology — not tied to Beer Game roles.
+    Works for any supply chain topology — not tied to Beer Scenario roles.
     """
     mt = (master_type or "inventory").lower()
     return [1.0 if mt == t else 0.0 for t in _MASTER_TYPES]
@@ -84,7 +84,7 @@ def assemble_node_features(
 
 @dataclass
 class DbLookupConfig:
-    """Configuration for database lookup of game state sequences."""
+    """Configuration for database lookup of scenario state sequences."""
     database_url: str
     steps_table: str = "simulation_steps"
     column_map: Dict[str, str] = None
@@ -137,7 +137,7 @@ def load_sequences_from_db(
     config_id: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Load sequences of game states from the database.
+    Load sequences of scenario states from the database.
 
     Returns (X, A, P, Y):
       X: [num_windows, T=window, N, F] node features  (N = site count from config)

@@ -96,7 +96,7 @@ class AgentABTesting:
     A/B testing framework for agent configurations.
 
     Supports:
-    - Parallel test execution across multiple games
+    - Parallel test execution across multiple scenarios
     - Statistical significance calculation
     - Winner selection with confidence intervals
     - Performance comparison across variants
@@ -145,13 +145,13 @@ class AgentABTesting:
         scenario_user_id: Optional[int] = None
     ) -> str:
         """
-        Assign game/scenario_user to a test variant.
+        Assign scenario/scenario_user to a test variant.
 
         Uses round-robin assignment for balanced distribution.
 
         Args:
             test_id: Test ID
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser ID (optional, for scenario_user-level tests)
 
         Returns:
@@ -189,7 +189,7 @@ class AgentABTesting:
         self.db.add(assignment)
         self.db.commit()
 
-        logger.info(f"Assigned game {scenario_id} to variant {variant} in test {test_id}")
+        logger.info(f"Assigned scenario {scenario_id} to variant {variant} in test {test_id}")
 
         return variant
 
@@ -200,11 +200,11 @@ class AgentABTesting:
         metrics: Dict[str, float]
     ):
         """
-        Record performance metrics for a game in the test.
+        Record performance metrics for a scenario in the test.
 
         Args:
             test_id: Test ID
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             metrics: Performance metrics (cost, service_level, etc.)
         """
         # Get assignment
@@ -214,7 +214,7 @@ class AgentABTesting:
         ).first()
 
         if not assignment:
-            raise ValueError(f"No assignment found for game {scenario_id} in test {test_id}")
+            raise ValueError(f"No assignment found for scenario {scenario_id} in test {test_id}")
 
         # Create observation
         observation = ABTestObservation(
@@ -229,7 +229,7 @@ class AgentABTesting:
         self.db.add(observation)
         self.db.commit()
 
-        logger.info(f"Recorded observation for game {scenario_id} in test {test_id}")
+        logger.info(f"Recorded observation for scenario {scenario_id} in test {test_id}")
 
     def analyze_test(
         self,
@@ -380,12 +380,12 @@ class ABTest(Base):
 
 
 class ABTestAssignment(Base):
-    """Assignment of game/scenario_user to test variant."""
+    """Assignment of scenario/scenario_user to test variant."""
     __tablename__ = "ab_test_assignments"
 
     id = Column(Integer, primary_key=True, index=True)
     test_id = Column(Integer, ForeignKey("ab_tests.id"), nullable=False, index=True)
-    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False, index=True)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=True, index=True)
 
     variant = Column(String(20), nullable=False, index=True)
@@ -401,7 +401,7 @@ class ABTestObservation(Base):
     id = Column(Integer, primary_key=True, index=True)
     test_id = Column(Integer, ForeignKey("ab_tests.id"), nullable=False, index=True)
     assignment_id = Column(Integer, ForeignKey("ab_test_assignments.id"), nullable=False)
-    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False, index=True)
 
     variant = Column(String(20), nullable=False, index=True)
     metrics = Column(JSON, nullable=False)

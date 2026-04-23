@@ -562,7 +562,7 @@ def ensure_multi_region_config(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create a multi-region SC config")
-    parser.add_argument("--tenant-name", default="Beer Game", help="Tenant to attach the configuration to")
+    parser.add_argument("--tenant-name", default="Beer Scenario", help="Tenant to attach the configuration to")
     parser.add_argument("--config-name", default="Complex_SC", help="Name of the configuration")
     parser.add_argument(
         "--description",

@@ -59,7 +59,7 @@ class NegotiationService:
         - `price_adjustment`: Request for cost modification
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             initiator_id: ScenarioUser initiating negotiation
             target_id: ScenarioUser receiving proposal
             negotiation_type: Type of negotiation
@@ -81,7 +81,7 @@ class NegotiationService:
             if negotiation_type not in valid_types:
                 raise ValueError(f"Invalid negotiation type: {negotiation_type}")
 
-            # Validate scenario_users exist and are in same game
+            # Validate scenario_users exist and are in same scenario
             query = text("""
                 SELECT COUNT(*) as count
                 FROM scenario_users
@@ -95,7 +95,7 @@ class NegotiationService:
             })
             row = result.fetchone()
             if row.count != 2:
-                raise ValueError("Both scenario_users must be in the same game")
+                raise ValueError("Both scenario_users must be in the same scenario")
 
             # Calculate expiry time
             expires_at = datetime.utcnow() + timedelta(hours=self.default_expiry_hours)
@@ -441,7 +441,7 @@ class NegotiationService:
 
     async def _execute_negotiation(self, negotiation_id: int, negotiation: Any) -> None:
         """
-        Execute an accepted negotiation by modifying game state.
+        Execute an accepted negotiation by modifying scenario state.
 
         Supported negotiation types:
         - order_adjustment: Modify next-period order quantity for the target
@@ -553,7 +553,7 @@ class NegotiationService:
         Get negotiations for a scenario_user (as initiator or target).
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser ID
             status_filter: Filter by status (pending, accepted, rejected, countered, expired)
             limit: Maximum negotiations to return
@@ -696,10 +696,10 @@ class NegotiationService:
         """
         Generate AI-mediated negotiation suggestion.
 
-        Analyzes current game state and suggests mutually beneficial proposals.
+        Analyzes current scenario state and suggests mutually beneficial proposals.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             scenario_user_id: ScenarioUser requesting suggestion
             target_scenario_user_id: Potential negotiation partner
 

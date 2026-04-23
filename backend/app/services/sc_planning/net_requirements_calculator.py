@@ -71,7 +71,7 @@ class NetRequirementsCalculator:
             net_demand: Net demand by (product_id, site_id, date)
             target_inventory: Target inventory by (product_id, site_id)
             start_date: Planning start date
-            scenario_id: Optional game ID for scenario integration
+            scenario_id: Optional scenario ID for scenario integration
 
         Returns:
             List of SupplyPlan recommendations (PO/TO/MO requests)
@@ -243,7 +243,7 @@ class NetRequirementsCalculator:
             scheduled_receipts: Scheduled receipts by date
             net_demand: Net demand data
             target_inventory: Target inventory level (buffer + cycle stock)
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
 
         Returns:
             List of SupplyPlan recommendations
@@ -328,7 +328,7 @@ class NetRequirementsCalculator:
             net_requirement: Net requirement quantity
             projected_inventory: Projected inventory before order
             target_inventory: Target inventory level
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
 
         Returns:
             SupplyPlan or None
@@ -394,7 +394,7 @@ class NetRequirementsCalculator:
             order_quantity: Order quantity
             projected_inventory: Projected inventory
             target_inventory: Target inventory
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
 
         Returns:
             SupplyPlan
@@ -441,7 +441,7 @@ class NetRequirementsCalculator:
             order_quantity: Order quantity
             projected_inventory: Projected inventory
             target_inventory: Target inventory
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
 
         Returns:
             SupplyPlan for manufacturing order
@@ -509,7 +509,7 @@ class NetRequirementsCalculator:
             planned_start_date: Start date for production
             production_process_id: Production process ID
             site_id: Manufacturing site
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
         """
         # Cycle detection
         if self._bom_traversal_depth >= self._max_bom_depth:
@@ -610,7 +610,7 @@ class NetRequirementsCalculator:
             component_site_id: Component site ID
             required_date: Date component is needed
             required_quantity: Quantity required
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
         """
         async with SessionLocal() as db:
             reservation = Reservation(

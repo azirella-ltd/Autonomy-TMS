@@ -122,10 +122,10 @@ def _normalize_tenant_admin_context(user: User) -> None:
 
 
 def _ensure_default_setup_sync(db: Session, user: User) -> None:
-    """Ensure a default configuration and game exist for admin users.
+    """Ensure a default configuration and scenario exist for admin users.
 
     If the admin has no supply chain configuration, one is created along with
-    a default game. If a configuration exists but no game, only the game is
+    a default scenario. If a configuration exists but no scenario, only the scenario is
     created. This allows admins who have logged in before (and thus have a
     ``last_login`` value) to still get the default setup.
     """
@@ -282,12 +282,12 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
         )
         db.commit()
 
-    # If a game already exists for the admin, nothing more to do
+    # If a scenario already exists for the admin, nothing more to do
     existing_scenario = db.query(Scenario).filter(Scenario.created_by == user.id).first()
     if existing_scenario:
         return
 
-    # Create default game from configuration
+    # Create default scenario from configuration
     service = SupplyChainConfigService(db)
     scenario_cfg = service.create_scenario_from_config(
         config.id, {"name": "Default Scenario", "max_periods": 50}
@@ -423,7 +423,7 @@ async def login(
         user_agent=request.headers.get("User-Agent"),
     )
 
-    # Ensure default configuration and game exist for new admins
+    # Ensure default configuration and scenario exist for new admins
     try:
         await ensure_default_setup(db, user)
     except Exception:

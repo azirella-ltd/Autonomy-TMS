@@ -160,12 +160,12 @@ http_requests_total = Counter('http_requests_total', 'Total HTTP requests receiv
 http_request_duration_seconds = Histogram('http_request_duration_seconds', 'HTTP request duration in seconds')
 http_requests_in_progress = Gauge('http_requests_in_progress', 'HTTP requests currently in progress')
 
-game_creations_total = Counter('game_creations_total', 'Total games created')
-game_completions_total = Counter('game_completions_total', 'Total games completed')
+scenario_creations_total = Counter('scenario_creations_total', 'Total scenarios created')
+scenario_completions_total = Counter('scenario_completions_total', 'Total scenarios completed')
 simulations_run_total = Counter('simulations_run_total', 'Total simulations run')
 monte_carlo_runs_total = Counter('monte_carlo_runs_total', 'Total Monte Carlo simulation runs')
 
-active_games = Gauge('active_games', 'Number of active games')
+active_games = Gauge('active_games', 'Number of active scenarios')
 active_users = Gauge('active_users', 'Number of active users')
 
 
@@ -201,8 +201,8 @@ def counter_metric(metric_name: str, description: str = ''):
     Decorator to count function calls
 
     Usage:
-        @counter_metric('games_created', 'Number of games created')
-        def create_game(...):
+        @counter_metric('games_created', 'Number of scenarios created')
+        def create_scenario(...):
             ...
     """
     counter = Counter(metric_name, description)
@@ -233,8 +233,8 @@ def histogram_metric(metric_name: str, description: str = ''):
     Decorator to track function duration
 
     Usage:
-        @histogram_metric('game_creation_duration', 'Game creation duration')
-        def create_game(...):
+        @histogram_metric('scenario_creation_duration', 'Scenario creation duration')
+        def create_scenario(...):
             ...
     """
     histogram = Histogram(metric_name, description)
@@ -361,7 +361,7 @@ if __name__ == '__main__':
     # Counter example
     print("\n1. Counter Metrics")
     print("-" * 80)
-    requests = Counter('http_requests', 'HTTP requests', labels={'method': 'GET', 'path': '/api/games'})
+    requests = Counter('http_requests', 'HTTP requests', labels={'method': 'GET', 'path': '/api/scenarios'})
     for i in range(10):
         requests.inc()
     print(f"Total requests: {requests.get()}")

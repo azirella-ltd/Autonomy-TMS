@@ -11,7 +11,7 @@ class CRUDAgentConfig(CRUDBase[models.AgentConfig, schemas.AgentConfigCreate, sc
     def get_multi_by_game(
         self, db: Session, *, scenario_id: int, skip: int = 0, limit: int = 100
     ) -> List[models.AgentConfig]:
-        """Get all agent configurations for a specific game"""
+        """Get all agent configurations for a specific scenario"""
         return (
             db.query(self.model)
             .filter(self.model.scenario_id == scenario_id)
@@ -23,7 +23,7 @@ class CRUDAgentConfig(CRUDBase[models.AgentConfig, schemas.AgentConfigCreate, sc
     def get_by_role(
         self, db: Session, *, scenario_id: int, role: str
     ) -> Optional[models.AgentConfig]:
-        """Get agent configuration by game ID and role"""
+        """Get agent configuration by scenario ID and role"""
         return (
             db.query(self.model)
             .filter(self.model.scenario_id == scenario_id, self.model.role == role)

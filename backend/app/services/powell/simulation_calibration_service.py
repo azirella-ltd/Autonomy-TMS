@@ -10,7 +10,7 @@ The Problem
 TRM agents are trained in two phases:
 
   Phase 1 – Behavioral Cloning (BC): Expert heuristics make decisions.
-    TRMs learn by watching ("AlphaZero learning from grandmaster games").
+    TRMs learn by watching ("AlphaZero learning from grandmaster scenarios").
     Outcomes belong to the HEURISTIC, not the TRM.
 
   Phase 2 – RL fine-tuning: TRMs make decisions, receive rewards.
@@ -24,7 +24,7 @@ The Solution
 ------------
 Run the tenant's ACTUAL supply chain DAG as a digital twin simulation for N
 episodes using deterministic heuristics per TRM type as expert demonstrators,
-analogous to AlphaZero watching grandmaster games.
+analogous to AlphaZero watching grandmaster scenarios.
 
 All simulation parameters come directly from the SC config:
   - Sites and DAG topology from `site` + `transportation_lane`

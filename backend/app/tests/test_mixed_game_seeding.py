@@ -1,10 +1,10 @@
-from app.services.mixed_game_service import MixedGameService
+from app.services.mixed_scenario_service import MixedScenarioService
 
 
 def test_seed_order_queue_populates_future_steps():
     state = {}
 
-    MixedGameService._seed_order_queue(
+    MixedScenarioService._seed_order_queue(
         state,
         current_step=0,
         order_leadtime=3,
@@ -24,7 +24,7 @@ def test_seed_order_queue_populates_future_steps():
 def test_initialise_shipment_pipeline_creates_inbound_supply():
     state = {}
 
-    MixedGameService._initialise_shipment_pipeline(
+    MixedScenarioService._initialise_shipment_pipeline(
         state,
         supply_leadtime=2,
         default_quantity=5,

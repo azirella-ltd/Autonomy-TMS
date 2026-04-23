@@ -121,7 +121,7 @@ def _load_vendor_names(db: Session, config_id: int) -> Dict[int, str]:
 
     First tries TradingPartner records referenced by inbound lanes (AWS SC
     compliant). Falls back to external vendor Sites for legacy configs (Food
-    Dist, Beer Game) that still use the proxy-site pattern.
+    Dist, Beer Scenario) that still use the proxy-site pattern.
     """
     from app.models.supply_chain_config import Site, TransportationLane
     from app.models.sc_entities import TradingPartner

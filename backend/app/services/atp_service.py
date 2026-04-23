@@ -26,7 +26,6 @@ from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
-Game = Scenario
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.supply_chain_config import TransportationLane
 
@@ -186,7 +185,7 @@ class ATPService:
     def calculate_current_atp(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: ScenarioPeriod,
         include_safety_stock: bool = True,
         use_sap_bridge: bool = False,
@@ -199,8 +198,8 @@ class ATPService:
 
         Args:
             scenario_user: ScenarioUser instance (inventory node)
-            game: Game instance
-            current_period: Current game round
+            scenario: Scenario instance
+            current_period: Current scenario round
             include_safety_stock: Whether to reserve safety stock (default True)
             use_sap_bridge: Whether to use SAP ATP Bridge for real-time data (default False)
             sap_bridge: Optional SAPATPBridge instance for SAP integration
@@ -212,15 +211,15 @@ class ATPService:
         if use_sap_bridge and sap_bridge:
             try:
                 # Get SAP plant and material mapping from scenario_user/node
-                sap_plant = self._get_sap_plant(scenario_user, game)
-                sap_material = self._get_sap_material(scenario_user, game)
+                sap_plant = self._get_sap_plant(scenario_user, scenario)
+                sap_material = self._get_sap_material(scenario_user, scenario)
 
                 if sap_plant and sap_material:
                     from app.core.clock import tenant_today_sync
                     sap_result = sap_bridge.check_atp_realtime(
                         plant=sap_plant,
                         material=sap_material,
-                        check_date=tenant_today_sync(getattr(game, "tenant_id", None), self.db)
+                        check_date=tenant_today_sync(getattr(scenario, "tenant_id", None), self.db)
                     )
                     logger.info(f"SAP ATP result for {sap_material}@{sap_plant}: ATP={sap_result.atp.atp}")
                     return sap_result.atp
@@ -231,21 +230,21 @@ class ATPService:
         # On-hand inventory
         on_hand = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
 
-        # Handle case where game hasn't started (no current round)
+        # Handle case where scenario hasn't started (no current round)
         round_number = current_period.round_number if current_period else 0
 
         # Scheduled receipts = in-transit shipments arriving this round
         scheduled_receipts = self._get_scheduled_receipts(
-            scenario_user, round_number, game
+            scenario_user, round_number, scenario
         )
 
         # Allocated orders = downstream commitments already promised
         allocated_orders = self._get_allocated_orders(
-            scenario_user, round_number, game
+            scenario_user, round_number, scenario
         )
 
         # Safety stock from inventory policy
-        safety_stock = self._get_safety_stock(scenario_user, game) if include_safety_stock else 0
+        safety_stock = self._get_safety_stock(scenario_user, scenario) if include_safety_stock else 0
 
         # Calculate ATP (cannot be negative)
         atp = max(0, on_hand + scheduled_receipts - allocated_orders - safety_stock)
@@ -268,7 +267,7 @@ class ATPService:
     def calculate_probabilistic_atp(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: ScenarioPeriod,
         n_simulations: int = 100,
         include_safety_stock: bool = True,
@@ -285,8 +284,8 @@ class ATPService:
 
         Args:
             scenario_user: ScenarioUser instance (inventory node)
-            game: Game instance
-            current_period: Current game round
+            scenario: Scenario instance
+            current_period: Current scenario round
             n_simulations: Number of Monte Carlo runs (default 100)
             include_safety_stock: Whether to reserve safety stock (default True)
 
@@ -299,20 +298,20 @@ class ATPService:
         # On-hand inventory (deterministic)
         on_hand = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
 
-        # Handle case where game hasn't started
+        # Handle case where scenario hasn't started
         round_number = current_period.round_number if current_period else 0
 
         # Allocated orders (deterministic - already committed)
-        allocated_orders = self._get_allocated_orders(scenario_user, round_number, game)
+        allocated_orders = self._get_allocated_orders(scenario_user, round_number, scenario)
 
         # Safety stock (deterministic policy)
-        safety_stock = self._get_safety_stock(scenario_user, game) if include_safety_stock else 0
+        safety_stock = self._get_safety_stock(scenario_user, scenario) if include_safety_stock else 0
 
-        # Initialize stochastic sampler with game seed
-        sampler = StochasticSampler(scenario_id=game.id)
+        # Initialize stochastic sampler with scenario seed
+        sampler = StochasticSampler(scenario_id=scenario.id)
 
         # Get lanes feeding into this scenario_user's node for lead time distributions
-        lanes = self._get_upstream_lanes(scenario_user, game)
+        lanes = self._get_upstream_lanes(scenario_user, scenario)
 
         # Run Monte Carlo simulation
         receipt_samples = []
@@ -332,11 +331,11 @@ class ATPService:
                 # If lead time is longer, they may not arrive yet
                 # This is a simplified model - in reality you'd track individual shipments
                 if sampled_lt <= 1:  # Arriving this round
-                    receipts = self._get_scheduled_receipts(scenario_user, round_number, game)
+                    receipts = self._get_scheduled_receipts(scenario_user, round_number, scenario)
                     total_receipts += receipts
                 else:
                     # Partial receipt based on lead time distribution
-                    base_receipts = self._get_scheduled_receipts(scenario_user, round_number, game)
+                    base_receipts = self._get_scheduled_receipts(scenario_user, round_number, scenario)
                     # Scale receipts by probability of arrival
                     arrival_prob = max(0.0, 1.0 - (sampled_lt - 1) * 0.2)
                     total_receipts += int(base_receipts * arrival_prob)
@@ -381,17 +380,17 @@ class ATPService:
             timestamp=datetime.utcnow().isoformat(),
         )
 
-    def _get_upstream_lanes(self, scenario_user: ScenarioUser, game: Game) -> List[TransportationLane]:
+    def _get_upstream_lanes(self, scenario_user: ScenarioUser, scenario: Scenario) -> List[TransportationLane]:
         """Get transportation lanes feeding into this scenario_user's site"""
         try:
             from app.models.supply_chain_config import Site
 
             # Get scenario_user's site
-            if not scenario_user.site_key or not game.supply_chain_config_id:
+            if not scenario_user.site_key or not scenario.supply_chain_config_id:
                 return []
 
             node = self.db.query(Site).filter(
-                Site.config_id == game.supply_chain_config_id,
+                Site.config_id == scenario.supply_chain_config_id,
                 Site.dag_type == scenario_user.site_key
             ).first()
 
@@ -401,7 +400,7 @@ class ATPService:
             # Get upstream transportation lanes (where this site is the destination)
             lanes = self.db.query(TransportationLane).filter(
                 TransportationLane.to_site_id == node.id,
-                TransportationLane.config_id == game.supply_chain_config_id
+                TransportationLane.config_id == scenario.supply_chain_config_id
             ).all()
 
             return lanes
@@ -429,7 +428,7 @@ class ATPService:
     def project_atp_multi_period(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: ScenarioPeriod,
         periods: int = 8,
     ) -> List[ATPPeriod]:
@@ -443,8 +442,8 @@ class ATPService:
 
         Args:
             scenario_user: ScenarioUser instance
-            game: Game instance
-            current_period: Current game round
+            scenario: Scenario instance
+            current_period: Current scenario round
             periods: Number of future periods to project (default 8)
 
         Returns:
@@ -467,7 +466,7 @@ class ATPService:
 
             # Forecast demand for this period
             forecasted_demand = self._forecast_demand_for_period(
-                scenario_user, game, current_period, period_offset
+                scenario_user, scenario, current_period, period_offset
             )
 
             # Get planned allocations (future confirmed orders)
@@ -569,18 +568,18 @@ class ATPService:
 
     # --- Helper Methods ---
 
-    def _get_scenario_user_node_id(self, scenario_user: ScenarioUser, game: Game) -> Optional[int]:
+    def _get_scenario_user_node_id(self, scenario_user: ScenarioUser, scenario: Scenario) -> Optional[int]:
         """Look up the Node ID for a scenario_user based on their site_key."""
         from app.models.supply_chain_config import Site
-        if not scenario_user.site_key or not game.supply_chain_config_id:
+        if not scenario_user.site_key or not scenario.supply_chain_config_id:
             return None
         node = self.db.query(Site).filter(
-            Site.config_id == game.supply_chain_config_id,
+            Site.config_id == scenario.supply_chain_config_id,
             Site.dag_type == scenario_user.site_key
         ).first()
         return node.id if node else None
 
-    def _get_scheduled_receipts(self, scenario_user: ScenarioUser, round_number: int, game: Game = None, product_id: str = None) -> int:
+    def _get_scheduled_receipts(self, scenario_user: ScenarioUser, round_number: int, scenario: Scenario = None, product_id: str = None) -> int:
         """
         Get total scheduled receipts arriving in specified round.
 
@@ -590,7 +589,7 @@ class ATPService:
         Args:
             scenario_user: ScenarioUser instance
             round_number: Round number to check
-            game: Game instance (optional, used for node lookup)
+            scenario: Scenario instance (optional, used for node lookup)
             product_id: Optional product ID to filter by (for multi-product ATP)
 
         Returns:
@@ -598,7 +597,7 @@ class ATPService:
         """
         try:
             # Get node ID for this scenario_user
-            node_id = self._get_scenario_user_node_id(scenario_user, game) if game else None
+            node_id = self._get_scenario_user_node_id(scenario_user, scenario) if scenario else None
             if not node_id:
                 return 0  # No node configured, return 0 receipts
 
@@ -626,7 +625,7 @@ class ATPService:
             logger.warning(f"Error getting scheduled receipts: {e}")
             return 0  # Return 0 on error (e.g., schema mismatch)
 
-    def _get_allocated_orders(self, scenario_user: ScenarioUser, round_number: int, game: Game = None, product_id: str = None) -> int:
+    def _get_allocated_orders(self, scenario_user: ScenarioUser, round_number: int, scenario: Scenario = None, product_id: str = None) -> int:
         """
         Get total allocated orders (downstream commitments) for specified round.
 
@@ -636,7 +635,7 @@ class ATPService:
         Args:
             scenario_user: ScenarioUser instance
             round_number: Round number to check
-            game: Game instance (optional, used for node lookup)
+            scenario: Scenario instance (optional, used for node lookup)
             product_id: Optional product ID to filter by (for multi-product ATP)
 
         Returns:
@@ -644,7 +643,7 @@ class ATPService:
         """
         try:
             # Get node ID for this scenario_user
-            node_id = self._get_scenario_user_node_id(scenario_user, game) if game else None
+            node_id = self._get_scenario_user_node_id(scenario_user, scenario) if scenario else None
             if not node_id:
                 return 0  # No node configured, return 0 allocated
 
@@ -672,7 +671,7 @@ class ATPService:
             logger.warning(f"Error getting allocated orders: {e}")
             return 0  # Return 0 on error (e.g., schema mismatch)
 
-    def _get_safety_stock(self, scenario_user: ScenarioUser, game: Game = None) -> int:
+    def _get_safety_stock(self, scenario_user: ScenarioUser, scenario: Scenario = None) -> int:
         """
         Get safety stock reserve for scenario_user node.
 
@@ -693,7 +692,7 @@ class ATPService:
             from app.models.sc_entities import InvPolicy
 
             # Query by site_id (node_id maps to site in AWS SC model)
-            node_id = self._get_scenario_user_node_id(scenario_user, game) if game else None
+            node_id = self._get_scenario_user_node_id(scenario_user, scenario) if scenario else None
             policy = None
             if node_id:
                 policy = (
@@ -752,7 +751,7 @@ class ATPService:
     def _forecast_demand_for_period(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_period: ScenarioPeriod,
         period_offset: int,
     ) -> int:
@@ -766,8 +765,8 @@ class ATPService:
 
         Args:
             scenario_user: ScenarioUser instance
-            game: Game instance
-            current_period: Current game round
+            scenario: Scenario instance
+            current_period: Current scenario round
             period_offset: How many periods ahead to forecast
 
         Returns:
@@ -784,7 +783,7 @@ class ATPService:
         # Fallback: try to get baseline demand from MarketDemand config
         try:
             from app.models.supply_chain_config import MarketDemand
-            config_id = getattr(game, "config_id", None)
+            config_id = getattr(scenario, "config_id", None)
             if config_id:
                 md = (
                     self.db.query(MarketDemand)
@@ -996,7 +995,7 @@ class ATPService:
 
     def save_probabilistic_atp(
         self,
-        game: Game,
+        scenario: Scenario,
         scenario_user: ScenarioUser,
         result: ProbabilisticATPResult,
         current_period: int,
@@ -1005,7 +1004,7 @@ class ATPService:
         Save probabilistic ATP result to database for historical tracking.
 
         Args:
-            game: Game instance
+            scenario: Scenario instance
             scenario_user: ScenarioUser instance
             result: ProbabilisticATPResult from calculate_probabilistic_atp
             current_period: Current round number
@@ -1018,7 +1017,7 @@ class ATPService:
             from app.models.inventory_projection import AtpProjection
 
             # Get node ID for scenario_user
-            node_id = self._get_scenario_user_node_id(scenario_user, game)
+            node_id = self._get_scenario_user_node_id(scenario_user, scenario)
             if not node_id:
                 logger.warning(f"Cannot save ATP - no node ID for scenario_user {scenario_user.id}")
                 return None
@@ -1028,10 +1027,10 @@ class ATPService:
 
             # Create ATP projection record
             atp_record = AtpProjection(
-                company_id=game.tenant_id or 1,
+                company_id=scenario.tenant_id or 1,
                 product_id=product_id,
                 site_id=node_id,
-                atp_date=tenant_today_sync(getattr(game, "tenant_id", None), self.db),
+                atp_date=tenant_today_sync(getattr(scenario, "tenant_id", None), self.db),
                 atp_qty=float(result.atp_p50),
                 cumulative_atp_qty=float(result.atp_p50),
                 opening_balance=float(result.on_hand),
@@ -1043,10 +1042,10 @@ class ATPService:
                 atp_p90=result.atp_p90,
                 lead_time_mean=result.lead_time_mean,
                 lead_time_stddev=result.lead_time_stddev,
-                # Game integration
-                scenario_id=game.id,
+                # Scenario integration
+                scenario_id=scenario.id,
                 source="probabilistic_atp",
-                source_event_id=f"game_{game.id}_round_{current_period}",
+                source_event_id=f"scenario_{scenario.id}_round_{current_period}",
             )
 
             self.db.add(atp_record)
@@ -1069,7 +1068,7 @@ class ATPService:
     # SAP Integration Helper Methods
     # =========================================================================
 
-    def _get_sap_plant(self, scenario_user: ScenarioUser, game: Game) -> Optional[str]:
+    def _get_sap_plant(self, scenario_user: ScenarioUser, scenario: Scenario) -> Optional[str]:
         """
         Get SAP plant code for scenario_user node.
 
@@ -1078,7 +1077,7 @@ class ATPService:
 
         Args:
             scenario_user: ScenarioUser instance
-            game: Game instance
+            scenario: Scenario instance
 
         Returns:
             SAP plant code or None
@@ -1086,14 +1085,14 @@ class ATPService:
         try:
             from app.models.supply_chain_config import Site
 
-            # Get node from scenario_user's site_key and game config
-            if not game or not game.supply_chain_config_id:
+            # Get node from scenario_user's site_key and scenario config
+            if not scenario or not scenario.supply_chain_config_id:
                 return None
 
             node = (
                 self.db.query(Site)
                 .filter(
-                    Site.supply_chain_config_id == game.supply_chain_config_id,
+                    Site.supply_chain_config_id == scenario.supply_chain_config_id,
                     Site.node_key == scenario_user.site_key
                 )
                 .first()
@@ -1109,7 +1108,7 @@ class ATPService:
             logger.debug(f"Could not get SAP plant for scenario_user {scenario_user.id}: {e}")
             return None
 
-    def _get_sap_material(self, scenario_user: ScenarioUser, game: Game) -> Optional[str]:
+    def _get_sap_material(self, scenario_user: ScenarioUser, scenario: Scenario) -> Optional[str]:
         """
         Get SAP material number for scenario_user's primary item.
 
@@ -1117,7 +1116,7 @@ class ATPService:
 
         Args:
             scenario_user: ScenarioUser instance
-            game: Game instance
+            scenario: Scenario instance
 
         Returns:
             SAP material number or None
@@ -1125,14 +1124,14 @@ class ATPService:
         try:
             from app.models.supply_chain_config import Item
 
-            # Get primary item from game config
-            if not game or not game.supply_chain_config_id:
+            # Get primary item from scenario config
+            if not scenario or not scenario.supply_chain_config_id:
                 return "CASE"  # Default simulation item
 
             # Get the first/primary item for this config
             item = (
                 self.db.query(Item)
-                .filter(Item.supply_chain_config_id == game.supply_chain_config_id)
+                .filter(Item.supply_chain_config_id == scenario.supply_chain_config_id)
                 .first()
             )
 
@@ -1143,7 +1142,7 @@ class ATPService:
             return "CASE"  # Default
 
         except Exception as e:
-            logger.debug(f"Could not get SAP material for game {game.id if game else 'N/A'}: {e}")
+            logger.debug(f"Could not get SAP material for scenario {scenario.id if scenario else 'N/A'}: {e}")
             return "CASE"
 
 

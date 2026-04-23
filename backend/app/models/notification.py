@@ -56,7 +56,7 @@ class NotificationPreference(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
-    # Game notifications
+    # Scenario notifications
     scenario_started = Column(Boolean, default=True, nullable=False)
     period_started = Column(Boolean, default=True, nullable=False)
     your_turn = Column(Boolean, default=True, nullable=False)

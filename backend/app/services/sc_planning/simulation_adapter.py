@@ -11,7 +11,7 @@ Concept Mapping:
 - Round              → SC Planning Period
 - Demand Pattern     → SC Forecast
 
-Phase 2 Architecture: This adapter enables dual-mode operation where games can
+Phase 2 Architecture: This adapter enables dual-mode operation where scenarios can
 optionally use SC 3-step planning instead of legacy engine.py logic.
 """
 
@@ -24,7 +24,6 @@ from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-Game = Scenario
 ScenarioUser = ScenarioUser
 from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.sc_entities import Product
@@ -44,48 +43,48 @@ class SimulationToSCAdapter:
     and SC's database-driven planning system.
     """
 
-    def __init__(self, game: Game, db: AsyncSession):
+    def __init__(self, scenario: Scenario, db: AsyncSession):
         """
         Initialize adapter
 
         Args:
-            game: The simulation instance
+            scenario: The simulation instance
             db: Database session
         """
-        self.game = game
+        self.scenario = scenario
         self.db = db
-        self.config = game.supply_chain_config
-        self.tenant_id = game.tenant_id
-        self.config_id = game.supply_chain_config_id
+        self.config = scenario.supply_chain_config
+        self.tenant_id = scenario.tenant_id
+        self.config_id = scenario.supply_chain_config_id
 
         if not self.tenant_id:
-            raise ValueError(f"Game {game.id} has no tenant_id - cannot use SC planning")
+            raise ValueError(f"Scenario {scenario.id} has no tenant_id - cannot use SC planning")
 
     async def sync_inventory_levels(self, round_number: int) -> int:
         """
-        Sync current game inventory to inv_level table
+        Sync current scenario inventory to inv_level table
 
-        Reads scenario_user inventory from game state and writes to inv_level
+        Reads scenario_user inventory from scenario state and writes to inv_level
         so SC planner can see current on-hand quantities.
 
         Args:
-            round_number: Current game round
+            round_number: Current scenario round
 
         Returns:
             Number of inv_level records created/updated
         """
         print(f"  Syncing inventory levels for round {round_number}...")
 
-        # Get all scenario_users in this game
+        # Get all scenario_users in this scenario
         result = await self.db.execute(
-            select(ScenarioUser).filter(ScenarioUser.scenario_id == self.game.id)
+            select(ScenarioUser).filter(ScenarioUser.scenario_id == self.scenario.id)
         )
         scenario_users = result.scalars().all()
 
         # Get config data
         await self.db.refresh(self.config, ['nodes', 'items'])
 
-        # Delete old snapshots for this game (if any)
+        # Delete old snapshots for this scenario (if any)
         await self.db.execute(
             delete(InvLevel).filter(
                 InvLevel.customer_id == self.tenant_id,
@@ -94,7 +93,7 @@ class SimulationToSCAdapter:
         )
 
         records_created = 0
-        snapshot_date = self.game.start_date + timedelta(days=round_number * 7)
+        snapshot_date = self.scenario.start_date + timedelta(days=round_number * 7)
 
         # For each scenario_user, create inv_level record
         for scenario_user in scenario_users:
@@ -111,8 +110,8 @@ class SimulationToSCAdapter:
 
             item = self.config.items[0]  # Use first item
 
-            # Get scenario_user's current inventory from game state
-            # This depends on how game state is stored - check game.config
+            # Get scenario_user's current inventory from scenario state
+            # This depends on how scenario state is stored - check scenario.config
             inventory_qty = self._get_scenario_user_inventory(scenario_user, round_number)
 
             # Create InvLevel record
@@ -143,7 +142,7 @@ class SimulationToSCAdapter:
 
     def _get_scenario_user_inventory(self, scenario_user: ScenarioUser, round_number: int) -> float:
         """
-        Extract scenario_user's current inventory from game state
+        Extract scenario_user's current inventory from scenario state
 
         Args:
             scenario_user: ScenarioUser instance
@@ -152,10 +151,10 @@ class SimulationToSCAdapter:
         Returns:
             Current inventory quantity (can be negative for backlog)
         """
-        # Game state is stored in game.config JSON
-        # Structure: game.config['nodes'][role]['inventory']
-        game_config = self.game.config or {}
-        nodes_state = game_config.get('nodes', {})
+        # Scenario state is stored in scenario.config JSON
+        # Structure: scenario.config['nodes'][role]['inventory']
+        scenario_config = self.scenario.config or {}
+        nodes_state = scenario_config.get('nodes', {})
         scenario_user_state = nodes_state.get(scenario_user.role, {})
 
         # Get inventory (default to 12 for simulation initial state)
@@ -174,7 +173,7 @@ class SimulationToSCAdapter:
         Creates forecast records for future rounds based on demand_pattern.
 
         Args:
-            round_number: Current game round
+            round_number: Current scenario round
             horizon: Number of periods ahead to forecast
 
         Returns:
@@ -182,8 +181,8 @@ class SimulationToSCAdapter:
         """
         print(f"  Syncing demand forecast for {horizon} periods ahead...")
 
-        # Get demand pattern from game
-        demand_pattern = self.game.demand_pattern or self.game.config.get('demand_pattern', {})
+        # Get demand pattern from scenario
+        demand_pattern = self.scenario.demand_pattern or self.scenario.config.get('demand_pattern', {})
 
         if not demand_pattern:
             print(f"    Warning: No demand pattern defined")
@@ -205,12 +204,12 @@ class SimulationToSCAdapter:
             print(f"    Warning: No item found")
             return 0
 
-        # Delete old forecasts for this game
+        # Delete old forecasts for this scenario
         await self.db.execute(
             delete(Forecast).filter(
                 Forecast.customer_id == self.tenant_id,
                 Forecast.config_id == self.config_id,
-                Forecast.scenario_id == self.game.id,
+                Forecast.scenario_id == self.scenario.id,
             )
         )
 
@@ -219,7 +218,7 @@ class SimulationToSCAdapter:
         # Create forecast records for each period
         for period_offset in range(horizon):
             forecast_round = round_number + period_offset
-            forecast_date = self.game.start_date + timedelta(days=forecast_round * 7)
+            forecast_date = self.scenario.start_date + timedelta(days=forecast_round * 7)
 
             # Get demand for this period from pattern
             demand_qty = self._get_demand_for_period(demand_pattern, forecast_round)
@@ -236,7 +235,7 @@ class SimulationToSCAdapter:
                 is_active='true',
                 tenant_id=self.tenant_id,
                 config_id=self.config_id,
-                scenario_id=self.game.id,
+                scenario_id=self.scenario.id,
             )
 
             self.db.add(forecast)
@@ -354,7 +353,7 @@ class SimulationToSCAdapter:
         """
         result = await self.db.execute(
             select(ScenarioUser).filter(
-                ScenarioUser.scenario_id == self.game.id,
+                ScenarioUser.scenario_id == self.scenario.id,
                 ScenarioUser.role == role,
             )
         )
@@ -363,7 +362,7 @@ class SimulationToSCAdapter:
         if not scenario_user:
             return 0.0
 
-        return self._get_scenario_user_inventory(scenario_user, self.game.current_period)
+        return self._get_scenario_user_inventory(scenario_user, self.scenario.current_period)
 
     async def record_actual_demand(
         self,
@@ -392,7 +391,7 @@ class SimulationToSCAdapter:
 
         # Create outbound order line
         order_line = OutboundOrderLine(
-            order_id=f"GAME_{self.game.id}_R{self.game.current_period}",
+            order_id=f"SCENARIO_{self.scenario.id}_R{self.scenario.current_period}",
             line_number=1,
             product_id=item.id,
             site_id=node.id,
@@ -400,7 +399,7 @@ class SimulationToSCAdapter:
             requested_delivery_date=period_date,
             order_date=period_date,
             config_id=self.config_id,
-            scenario_id=self.game.id,
+            scenario_id=self.scenario.id,
         )
 
         self.db.add(order_line)

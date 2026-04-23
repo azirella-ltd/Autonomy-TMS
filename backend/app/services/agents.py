@@ -403,7 +403,7 @@ class SimulationAgent:
         Make an order decision based on the agent's strategy and available information.
         
         Args:
-            current_period: Current game round
+            current_period: Current scenario round
             current_demand: Current customer demand (only visible to retailer if configured)
             upstream_data: Data from upstream (e.g., orders from downstream)
             

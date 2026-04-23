@@ -422,7 +422,7 @@ def seed_capability_permissions(db: Session) -> int:
         "shipment": "Execution",
         "inventory": "Execution",
         "recommendation": "Recommendations",
-        "game": "Simulation",
+        "scenario": "Simulation",
         "sc_config": "Supply Chain Design",
         "inventory_model": "Supply Chain Design",
         "group_config": "Supply Chain Design",

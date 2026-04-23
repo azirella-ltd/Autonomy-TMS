@@ -74,7 +74,7 @@ class CostCalculator:
         # Derive cost rates from Product.unit_cost when InvPolicy lacks explicit rates.
         # Holding: 25% annual cost / 52 weeks = unit_cost * 0.25 / 52 per unit per week.
         # Backlog: 4× holding rate (industry standard penalty for unfulfilled demand).
-        # This replaces the former Beer Game hardcoded defaults (0.5 / 1.0).
+        # This replaces the former Beer Scenario hardcoded defaults (0.5 / 1.0).
         product = self.db.query(Product).filter(Product.id == product_id).first()
         unit_cost = (product.unit_cost or 0.0) if product else 0.0
         default_holding = unit_cost * 0.25 / 52
@@ -108,7 +108,7 @@ class CostCalculator:
             "total_cost": total_cost,
         }
 
-    def calculate_game_cost(
+    def calculate_scenario_cost(
         self,
         scenario_id: int,
         site_ids: List[int],
@@ -159,7 +159,7 @@ class CostCalculator:
         Args:
             scenario_id: Scenario ID
             round_number: Round number
-            site_costs: Cost dictionary from calculate_game_cost()
+            site_costs: Cost dictionary from calculate_scenario_cost()
         """
         from app.models.scenario import ScenarioPeriod
         from app.models.participant import ScenarioUserPeriod

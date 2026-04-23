@@ -16,7 +16,7 @@ class SupervisorAgent(BaseAgent):
         self.bullwhip_threshold = 1.5  # Threshold for bullwhip effect detection
         self.decision_history: List[dict] = []
         self.override_count = 0
-        self.max_overrides = 5  # Maximum overrides per game period
+        self.max_overrides = 5  # Maximum overrides per scenario period
         
     async def analyze_bullwhip_effect(self, current_orders: Dict[str, int]) -> float:
         """

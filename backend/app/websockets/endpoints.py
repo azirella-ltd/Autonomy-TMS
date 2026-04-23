@@ -16,7 +16,7 @@ from . import manager
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.websocket("/ws/games/{scenario_id}/scenario_users/{scenario_user_id}")
+@router.websocket("/ws/scenarios/{scenario_id}/scenario_users/{scenario_user_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
     scenario_id: int,
@@ -24,23 +24,23 @@ async def websocket_endpoint(
     token: str = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """WebSocket endpoint for real-time game updates"""
+    """WebSocket endpoint for real-time scenario updates"""
     client_id = str(uuid.uuid4())
     user = None
     
     # Log connection attempt
-    logger.info(f"WebSocket connection attempt - Game: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
+    logger.info(f"WebSocket connection attempt - Scenario: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
     
     try:
         # Accept the WebSocket connection first
         await websocket.accept()
-        logger.info(f"WebSocket connection accepted - Game: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
+        logger.info(f"WebSocket connection accepted - Scenario: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
         
         # Authenticate the user using the token if provided
         if token:
             try:
                 user = await get_current_user(token)
-                logger.info(f"Authenticated WebSocket connection - User: {user.id}, Game: {scenario_id}, ScenarioUser: {scenario_user_id}")
+                logger.info(f"Authenticated WebSocket connection - User: {user.id}, Scenario: {scenario_id}, ScenarioUser: {scenario_user_id}")
                 
                 # Verify the scenario_user ID matches the authenticated user if needed
                 # This is a good place to add additional authorization checks
@@ -54,11 +54,11 @@ async def websocket_endpoint(
                 )
                 return
         else:
-            logger.warning(f"Unauthenticated WebSocket connection - Game: {scenario_id}, ScenarioUser: {scenario_user_id}")
+            logger.warning(f"Unauthenticated WebSocket connection - Scenario: {scenario_id}, ScenarioUser: {scenario_user_id}")
         
         # Register the connection with the manager
         await manager.connect(websocket, scenario_id, client_id, scenario_user_id=scenario_user_id, db=db)
-        logger.info(f"WebSocket connection registered with manager - Game: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
+        logger.info(f"WebSocket connection registered with manager - Scenario: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
         
         # Main message loop
         while True:
@@ -82,8 +82,8 @@ async def websocket_endpoint(
                     }, scenario_id)
                     
                 elif message["type"] == "get_state":
-                    # Send current game state to the requesting client
-                    await manager.send_game_state(scenario_id, client_id)
+                    # Send current scenario state to the requesting client
+                    await manager.send_scenario_state(scenario_id, client_id)
                     
             except json.JSONDecodeError:
                 await websocket.send_json({
@@ -121,17 +121,17 @@ async def handle_order_message(scenario_id: int, client_id: str, user: Optional[
     """Handle order messages from clients"""
     from ..services.mixed_scenario_service import MixedScenarioService
     from sqlalchemy import select
-    from ..models.scenario import Scenario as Game
+    from ..models.scenario import Scenario as Scenario
     from ..models.scenario_user import ScenarioUser as ScenarioUser
     
     try:
-        game_service = MixedScenarioService(db)
+        scenario_service = MixedScenarioService(db)
         
-        # Get game
-        result = await db.execute(select(Game).filter(Game.id == scenario_id))
-        game = result.scalars().first()
-        if not game:
-            logger.error(f"Game {scenario_id} not found")
+        # Get scenario
+        result = await db.execute(select(Scenario).filter(Scenario.id == scenario_id))
+        scenario = result.scalars().first()
+        if not scenario:
+            logger.error(f"Scenario {scenario_id} not found")
             return
             
         # Get scenario_user
@@ -144,7 +144,7 @@ async def handle_order_message(scenario_id: int, client_id: str, user: Optional[
         scenario_user = result.scalars().first()
         
         if not scenario_user:
-            logger.error(f"ScenarioUser not found in game {scenario_id}")
+            logger.error(f"ScenarioUser not found in scenario {scenario_id}")
             return
             
         order_quantity = message.get("quantity")

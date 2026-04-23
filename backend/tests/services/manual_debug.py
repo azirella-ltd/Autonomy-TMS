@@ -1,4 +1,4 @@
-"""Utility helpers for manually starting a Beer Game scenario during debugging.
+"""Utility helpers for manually starting a Beer Scenario scenario during debugging.
 
 This module mirrors the minimal snippet shared with QA for reproducing the
 frontend "Start" button behaviour, but adds a convenience function to resolve a
@@ -19,7 +19,7 @@ DEFAULT_SCENARIO_NAME = "Naive Agent Showcase"
 
 
 class BackendError(RuntimeError):
-    """Raised when the Beer Game backend responds with an error."""
+    """Raised when the Beer Scenario backend responds with an error."""
 
 
 def _raise_for_status(response: requests.Response) -> None:

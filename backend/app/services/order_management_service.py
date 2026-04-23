@@ -6,7 +6,7 @@ Provides CRUD operations and business logic for order management entities:
 - PurchaseOrder (replenishment from vendors/upstream sites)
 - TransferOrder (inter-site movements)
 
-Used by SimulationExecutionEngine for execution-based game flow.
+Used by SimulationExecutionEngine for execution-based scenario flow.
 """
 
 import logging
@@ -118,7 +118,7 @@ class OrderManagementService:
 
         Args:
             site_id: Site fulfilling the orders
-            scenario_id: Filter by game ID
+            scenario_id: Filter by scenario ID
             priority_order: If True, sort by order_date ASC, priority DESC (FIFO with priority)
 
         Returns:
@@ -225,7 +225,7 @@ class OrderManagementService:
         Args:
             site_id: Site ID
             product_id: Optional product filter
-            scenario_id: Optional game filter
+            scenario_id: Optional scenario filter
 
         Returns:
             Total backlog quantity
@@ -330,7 +330,7 @@ class OrderManagementService:
 
         Args:
             supplier_site_id: Supplier site ID
-            scenario_id: Optional game filter
+            scenario_id: Optional scenario filter
 
         Returns:
             List of unfulfilled PurchaseOrders

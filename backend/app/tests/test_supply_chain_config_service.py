@@ -136,7 +136,7 @@ def test_supply_chain_snapshot_preserves_zero_demand_lead_time():
     session = DummySession(mapping)
     service = SupplyChainConfigService(session)
 
-    snapshot = service.create_game_from_config(1, {"name": "Test"})
+    snapshot = service.create_scenario_from_config(1, {"name": "Test"})
 
     node_policies = snapshot["node_policies"]
     assert node_policies["retailer"]["order_leadtime"] == 0
@@ -152,7 +152,7 @@ def test_supply_chain_snapshot_preserves_zero_demand_lead_time():
     assert snapshot["bill_of_materials"] == {}
 
 
-def test_create_game_from_config_parses_string_pattern():
+def test_create_scenario_from_config_parses_string_pattern():
     retailer = _make_node(5, "Retailer", NodeType.RETAILER)
     wholesaler = _make_node(4, "Wholesaler", NodeType.WHOLESALER)
     distributor = _make_node(3, "Distributor", NodeType.DISTRIBUTOR)
@@ -209,7 +209,7 @@ def test_create_game_from_config_parses_string_pattern():
     session = DummySession(mapping)
     service = SupplyChainConfigService(session)
 
-    snapshot = service.create_game_from_config(42, {"name": "LogNormal", "max_periods": 30})
+    snapshot = service.create_scenario_from_config(42, {"name": "LogNormal", "max_periods": 30})
 
     demand_pattern = snapshot["demand_pattern"]
     assert demand_pattern["type"] == "lognormal"
@@ -229,7 +229,7 @@ def test_create_game_from_config_parses_string_pattern():
     assert "bill_of_materials" in snapshot
 
 
-def test_create_game_from_config_includes_bill_of_materials():
+def test_create_scenario_from_config_includes_bill_of_materials():
     supplier = _make_node(10, "Supplier Alpha", NodeType.SUPPLIER)
     manufacturer = _make_node(
         11,
@@ -271,7 +271,7 @@ def test_create_game_from_config_includes_bill_of_materials():
     session = DummySession(mapping)
     service = SupplyChainConfigService(session)
 
-    snapshot = service.create_game_from_config(1, {"name": "BOM"})
+    snapshot = service.create_scenario_from_config(1, {"name": "BOM"})
     bom = snapshot["bill_of_materials"]
     assert bom["manufacturer"]["42"]["supplier alpha"] == 2
     md_payload = snapshot["market_demands"]

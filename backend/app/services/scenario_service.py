@@ -4,7 +4,7 @@ Implements the TMS-specific bindings:
   - _solve: delegates to MixedScenarioService.start_new_round (simulation engine)
   - _report: delegates to MixedScenarioService.get_report
   - _list_query / _state_query / _scenario_config_id: TMS scenarios table
-  - create_scenario: MixedScenarioService.create_game + scenario branching
+  - create_scenario: MixedScenarioService.create_scenario + scenario branching
 """
 from __future__ import annotations
 
@@ -120,9 +120,9 @@ class ScenarioService(BaseScenarioService):
         return self.engine.get_report(scenario_id)
 
     def _state_query(self, scenario_id: int) -> Dict[str, Any]:
-        """Return TMS game state as a dict."""
-        state = self.engine.get_game_state(scenario_id)
-        # GameState is a Pydantic model — serialise to dict
+        """Return TMS scenario state as a dict."""
+        state = self.engine.get_scenario_state(scenario_id)
+        # ScenarioState is a Pydantic model — serialise to dict
         if hasattr(state, "dict"):
             return state.dict()
         if hasattr(state, "model_dump"):
@@ -196,24 +196,24 @@ class ScenarioService(BaseScenarioService):
         except ImportError:
             logger.warning(
                 "ScenarioBranchingService not available; "
-                "falling back to MixedScenarioService.create_game"
+                "falling back to MixedScenarioService.create_scenario"
             )
             from app.schemas.scenario import ScenarioCreate
-            game_data = ScenarioCreate(
+            scenario_data = ScenarioCreate(
                 name=name,
                 max_periods=max_periods,
                 supply_chain_config_id=config_id,
                 description=description,
                 **extra,
             )
-            game = self.engine.create_game(game_data, created_by=created_by)
+            scenario = self.engine.create_scenario(scenario_data, created_by=created_by)
             return {
-                "id": game.id,
-                "name": game.name,
+                "id": scenario.id,
+                "name": scenario.name,
                 "status": "CREATED",
                 "current_period": 0,
                 "max_periods": max_periods,
-                "config_id": getattr(game, "supply_chain_config_id", config_id),
+                "config_id": getattr(scenario, "supply_chain_config_id", config_id),
                 "tenant_id": tenant_id,
                 "created_at": datetime.utcnow().isoformat(),
             }

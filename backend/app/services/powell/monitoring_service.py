@@ -134,7 +134,7 @@ class PowellMonitoringService:
 
         Args:
             config_id: Supply chain configuration ID
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
 
         Returns:
             MonitoringResult with detected exceptions
@@ -207,7 +207,7 @@ class PowellMonitoringService:
 
         Args:
             config_id: Supply chain configuration ID
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
 
         Returns:
             MonitoringResult with PO recommendations
@@ -283,7 +283,7 @@ class PowellMonitoringService:
 
         Args:
             config_id: Supply chain configuration ID
-            scenario_id: Optional game ID
+            scenario_id: Optional scenario ID
 
         Returns:
             MonitoringResult with rebalancing recommendations
@@ -427,7 +427,7 @@ class PowellMonitoringService:
         Returns:
             Dictionary of monitoring results
         """
-        logger.info(f"Running round-end monitoring for game {scenario_id}, round {round_number}")
+        logger.info(f"Running round-end monitoring for scenario {scenario_id}, round {round_number}")
 
         results = {}
 

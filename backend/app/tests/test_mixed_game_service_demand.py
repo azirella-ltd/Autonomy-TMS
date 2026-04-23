@@ -5,22 +5,22 @@ import pytest
 
 pytest.importorskip("pydantic")
 
-from app.services import mixed_game_service
-from app.services.mixed_game_service import MixedGameService
+from app.services import mixed_scenario_service
+from app.services.mixed_scenario_service import MixedScenarioService
 from app.schemas.simulation import RoundContext, NodeState, TopologyConfig, LaneConfig
 
 
-def _make_service() -> MixedGameService:
-    service = MixedGameService.__new__(MixedGameService)
+def _make_service() -> MixedScenarioService:
+    service = MixedScenarioService.__new__(MixedScenarioService)
     service.db = None
     service.agent_manager = None
-    service._game_columns_cache = None
+    service._scenario_columns_cache = None
     return service
 
 
 def test_calculate_demand_lognormal_uses_generator(monkeypatch):
     service = _make_service()
-    game = SimpleNamespace(demand_pattern={"type": "lognormal", "params": {"mean": 8.0, "cov": 0.25}})
+    scenario = SimpleNamespace(demand_pattern={"type": "lognormal", "params": {"mean": 8.0, "cov": 0.25}})
 
     captured = {}
 
@@ -30,12 +30,12 @@ def test_calculate_demand_lognormal_uses_generator(monkeypatch):
         return [5]
 
     monkeypatch.setattr(
-        mixed_game_service.DemandGenerator,
+        mixed_scenario_service.DemandGenerator,
         "generate_lognormal",
         staticmethod(fake_generate),
     )
 
-    value = MixedGameService.calculate_demand(service, game, 1)
+    value = MixedScenarioService.calculate_demand(service, scenario, 1)
 
     assert value == 5
     assert captured["num_rounds"] == 1
@@ -45,7 +45,7 @@ def test_calculate_demand_lognormal_uses_generator(monkeypatch):
 def test_calculate_demand_backfills_from_config(monkeypatch):
     service = _make_service()
     pattern = {"type": "lognormal", "params": {"mean": 6.0, "cov": 0.4}}
-    game = SimpleNamespace(demand_pattern=None, config={"demand_pattern": pattern})
+    scenario = SimpleNamespace(demand_pattern=None, config={"demand_pattern": pattern})
 
     def fake_generate(num_rounds: int, **kwargs):
         assert num_rounds == 1
@@ -53,37 +53,37 @@ def test_calculate_demand_backfills_from_config(monkeypatch):
         return [13]
 
     monkeypatch.setattr(
-        mixed_game_service.DemandGenerator,
+        mixed_scenario_service.DemandGenerator,
         "generate_lognormal",
         staticmethod(fake_generate),
     )
 
-    value = MixedGameService.calculate_demand(service, game, 1)
+    value = MixedScenarioService.calculate_demand(service, scenario, 1)
 
     assert value == 13
-    assert getattr(game, "demand_pattern")["type"] == "lognormal"
+    assert getattr(scenario, "demand_pattern")["type"] == "lognormal"
 
 
 def test_calculate_demand_uses_market_demand_fallback(monkeypatch):
     service = _make_service()
     pattern = {"type": "lognormal", "params": {"mean": 10.0, "cov": 0.3}}
-    game = SimpleNamespace(demand_pattern=None, config={"market_demands": [{"demand_pattern": pattern}]})
+    scenario = SimpleNamespace(demand_pattern=None, config={"market_demands": [{"demand_pattern": pattern}]})
 
     def fake_generate(num_rounds: int, **kwargs):
         assert kwargs["mean"] == pytest.approx(10.0)
         return [7]
 
     monkeypatch.setattr(
-        mixed_game_service.DemandGenerator,
+        mixed_scenario_service.DemandGenerator,
         "generate_lognormal",
         staticmethod(fake_generate),
     )
 
-    assert MixedGameService.calculate_demand(service, game, 1) == 7
+    assert MixedScenarioService.calculate_demand(service, scenario, 1) == 7
 
 
 def test_compute_initial_conditions_reflects_lead_times():
-    result = MixedGameService._compute_initial_conditions(
+    result = MixedScenarioService._compute_initial_conditions(
         mean_demand=8.0,
         variance=4.0,
         order_leadtime=2,

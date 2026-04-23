@@ -2,7 +2,7 @@
 Template Models
 Phase 6 Sprint 4: User Experience Enhancements
 
-Database models for game templates, distribution templates, and scenario templates.
+Database models for scenario templates, distribution templates, and scenario templates.
 """
 
 from datetime import datetime
@@ -18,7 +18,7 @@ class TemplateCategory(str, enum.Enum):
     """Template category enumeration"""
     DISTRIBUTION = "distribution"
     SCENARIO = "scenario"
-    GAME = "game"
+    GAME = "scenario"
     SUPPLY_CHAIN = "supply_chain"
 
 
@@ -48,7 +48,7 @@ class Template(Base):
 
     Supports:
     - Distribution templates (demand patterns, stochastic configs)
-    - Scenario templates (complete game setups)
+    - Scenario templates (complete scenario setups)
     - Supply chain templates (network topologies)
     """
     __tablename__ = "templates"

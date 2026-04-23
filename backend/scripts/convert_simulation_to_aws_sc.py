@@ -11,7 +11,7 @@ Usage:
     docker compose exec backend python scripts/convert_simulation_to_aws_sc.py
 
 Options:
-    --config-name "Default Beer Game"  (default: "Default Beer Game")
+    --config-name "Default Beer Scenario"  (default: "Default Beer Scenario")
     --tenant-name "Default Tenant" (default: "Default Tenant")
     --horizon 52                 (default: 52 weeks)
 """
@@ -35,7 +35,7 @@ from app.models.aws_sc_planning import (
 
 
 async def convert_config_to_aws_sc(
-    config_name: str = "Default Beer Game",
+    config_name: str = "Default Beer Scenario",
     tenant_name: str = "Default Tenant",
     horizon: int = 52
 ):
@@ -475,7 +475,7 @@ async def main():
     )
     parser.add_argument(
         '--config-name',
-        default='Default Beer Game',
+        default='Default Beer Scenario',
         help='Name of the SupplyChainConfig to convert'
     )
     parser.add_argument(

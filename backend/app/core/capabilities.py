@@ -435,7 +435,7 @@ TENANT_ADMIN_CAPABILITIES = CapabilitySet(
 
 USER_CAPABILITIES = CapabilitySet(
     capabilities={
-        # Overview - Users only see their game dashboard
+        # Overview - Users only see their scenario dashboard
         Capability.VIEW_DASHBOARD,
 
         # Simulation - Play scenarios only

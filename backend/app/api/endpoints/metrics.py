@@ -24,7 +24,7 @@ async def get_metrics() -> Response:
 
     Returns metrics including:
     - HTTP request counts and durations
-    - Game and simulation metrics
+    - Scenario and simulation metrics
     - System resource usage
 
     This endpoint is designed to be scraped by Prometheus.

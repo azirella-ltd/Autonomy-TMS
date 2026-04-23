@@ -1,7 +1,7 @@
 """
-Reporting Service - Game Analytics and Data Export
+Reporting Service - Scenario Analytics and Data Export
 
-Provides comprehensive reporting, analytics, and export capabilities for games.
+Provides comprehensive reporting, analytics, and export capabilities for scenarios.
 Generates insights, recommendations, and trend analysis.
 """
 
@@ -20,45 +20,44 @@ from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 from app.models.user import User
 
 # Aliases for backwards compatibility
-Game = Scenario
 ScenarioUser = ScenarioUser
 
 
 class ReportingService:
-    """Service for game reporting, analytics, and exports."""
+    """Service for scenario reporting, analytics, and exports."""
 
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def generate_game_report(self, scenario_id: int) -> Dict[str, Any]:
+    async def generate_scenario_report(self, scenario_id: int) -> Dict[str, Any]:
         """
-        Generate comprehensive game report with overview, performance, insights.
+        Generate comprehensive scenario report with overview, performance, insights.
 
         Args:
-            scenario_id: ID of the game to report on
+            scenario_id: ID of the scenario to report on
 
         Returns:
-            Complete game report with overview, scenario_user performance, insights, recommendations
+            Complete scenario report with overview, scenario_user performance, insights, recommendations
         """
-        # Fetch game data
-        game = await self._get_game_with_rounds(scenario_id)
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
+        # Fetch scenario data
+        scenario = await self._get_scenario_with_periods(scenario_id)
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
 
         # Fetch all scenario_user rounds
         scenario_user_periods = await self._get_scenario_user_periods(scenario_id)
 
         # Calculate overview metrics
-        overview = await self._calculate_overview(game, scenario_user_periods)
+        overview = await self._calculate_overview(scenario, scenario_user_periods)
 
         # Calculate per-scenario_user performance
         scenario_user_performance = await self._calculate_scenario_user_performance(scenario_id, scenario_user_periods)
 
         # Generate insights
-        insights = await self._generate_insights(game, scenario_user_periods, scenario_user_performance)
+        insights = await self._generate_insights(scenario, scenario_user_periods, scenario_user_performance)
 
         # Generate recommendations
-        recommendations = await self._generate_recommendations(game, scenario_user_periods, insights)
+        recommendations = await self._generate_recommendations(scenario, scenario_user_periods, insights)
 
         return {
             "scenario_id": scenario_id,
@@ -70,17 +69,17 @@ class ReportingService:
             "charts_data": await self._prepare_charts_data(scenario_id, scenario_user_periods)
         }
 
-    async def export_game_data(
+    async def export_scenario_data(
         self,
         scenario_id: int,
         format: str = 'csv',
         include_rounds: bool = True
     ) -> bytes:
         """
-        Export game data in specified format.
+        Export scenario data in specified format.
 
         Args:
-            scenario_id: Game to export
+            scenario_id: Scenario to export
             format: Export format (csv, json, excel)
             include_rounds: Whether to include round-by-round data
 
@@ -103,24 +102,24 @@ class ReportingService:
         lookback: int = 10
     ) -> Dict[str, Any]:
         """
-        Analyze scenario_user performance trends across recent games.
+        Analyze scenario_user performance trends across recent scenarios.
 
         Args:
             scenario_user_id: ScenarioUser to analyze
             metric: Metric to analyze (cost, service_level, inventory, bullwhip)
-            lookback: Number of recent games to include
+            lookback: Number of recent scenarios to include
 
         Returns:
             Trend analysis with data points, statistics, and insights
         """
         # Get recent scenario_user rounds
         stmt = (
-            select(ScenarioUserPeriod, Game)
-            .join(Game, ScenarioUserPeriod.scenario_id == Game.id)
+            select(ScenarioUserPeriod, Scenario)
+            .join(Scenario, ScenarioUserPeriod.scenario_id == Scenario.id)
             .where(ScenarioUserPeriod.scenario_user_id == scenario_user_id)
-            .where(Game.status == 'completed')
-            .order_by(desc(Game.created_at))
-            .limit(lookback * 20)  # Approximate: lookback games * avg rounds per game
+            .where(Scenario.status == 'completed')
+            .order_by(desc(Scenario.created_at))
+            .limit(lookback * 20)  # Approximate: lookback scenarios * avg rounds per scenario
         )
         result = await self.db.execute(stmt)
         scenario_user_periods = result.all()
@@ -129,31 +128,31 @@ class ReportingService:
             return {
                 "scenario_user_id": scenario_user_id,
                 "metric": metric,
-                "message": "No completed games found",
+                "message": "No completed scenarios found",
                 "data_points": []
             }
 
-        # Group by game and calculate per-game metrics
+        # Group by scenario and calculate per-scenario metrics
         games_data = {}
-        for pr, game in scenario_user_periods:
-            if game.id not in games_data:
-                games_data[game.id] = {
-                    "scenario_id": game.id,
-                    "created_at": game.created_at,
+        for pr, scenario in scenario_user_periods:
+            if scenario.id not in games_data:
+                games_data[scenario.id] = {
+                    "scenario_id": scenario.id,
+                    "created_at": scenario.created_at,
                     "rounds": []
                 }
-            games_data[game.id]["rounds"].append(pr)
+            games_data[scenario.id]["rounds"].append(pr)
 
-        # Calculate metric for each game
+        # Calculate metric for each scenario
         data_points = []
-        for scenario_id, game_data in sorted(
+        for scenario_id, scenario_data in sorted(
             games_data.items(),
             key=lambda x: x[1]["created_at"]
         )[-lookback:]:
-            value = self._calculate_metric_for_game(game_data["rounds"], metric)
+            value = self._calculate_metric_for_game(scenario_data["rounds"], metric)
             data_points.append({
                 "scenario_id": scenario_id,
-                "date": game_data["created_at"].isoformat(),
+                "date": scenario_data["created_at"].isoformat(),
                 "value": value
             })
 
@@ -183,10 +182,10 @@ class ReportingService:
         metrics: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Compare performance across multiple games.
+        Compare performance across multiple scenarios.
 
         Args:
-            scenario_ids: List of game IDs to compare
+            scenario_ids: List of scenario IDs to compare
             metrics: Metrics to compare (default: all)
 
         Returns:
@@ -197,25 +196,25 @@ class ReportingService:
 
         comparisons = []
         for scenario_id in scenario_ids:
-            game = await self._get_game_with_rounds(scenario_id)
-            if not game:
+            scenario = await self._get_scenario_with_periods(scenario_id)
+            if not scenario:
                 continue
 
             scenario_user_periods = await self._get_scenario_user_periods(scenario_id)
-            overview = await self._calculate_overview(game, scenario_user_periods)
+            overview = await self._calculate_overview(scenario, scenario_user_periods)
 
-            game_data = {
+            scenario_data = {
                 "scenario_id": scenario_id,
-                "config_name": game.config.name if game.config else "Unknown",
-                "rounds": game.num_rounds,
+                "config_name": scenario.config.name if scenario.config else "Unknown",
+                "rounds": scenario.num_rounds,
                 "scenario_users": len(set(pr.scenario_user_id for pr in scenario_user_periods)),
-                "status": game.status
+                "status": scenario.status
             }
 
             for metric in metrics:
-                game_data[metric] = overview.get(metric)
+                scenario_data[metric] = overview.get(metric)
 
-            comparisons.append(game_data)
+            comparisons.append(scenario_data)
 
         return {
             "games_compared": len(comparisons),
@@ -226,14 +225,14 @@ class ReportingService:
 
     # Private helper methods
 
-    async def _get_game_with_rounds(self, scenario_id: int):
-        """Fetch game with rounds."""
-        stmt = select(Game).where(Game.id == scenario_id)
+    async def _get_scenario_with_periods(self, scenario_id: int):
+        """Fetch scenario with rounds."""
+        stmt = select(Scenario).where(Scenario.id == scenario_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def _get_scenario_user_periods(self, scenario_id: int) -> List[ScenarioUserPeriod]:
-        """Fetch all scenario_user rounds for a game."""
+        """Fetch all scenario_user rounds for a scenario."""
         stmt = (
             select(ScenarioUserPeriod)
             .where(ScenarioUserPeriod.scenario_id == scenario_id)
@@ -244,14 +243,14 @@ class ReportingService:
 
     async def _calculate_overview(
         self,
-        game: Game,
+        scenario: Scenario,
         scenario_user_periods: List[ScenarioUserPeriod]
     ) -> Dict[str, Any]:
-        """Calculate game overview metrics."""
+        """Calculate scenario overview metrics."""
         if not scenario_user_periods:
             return {
-                "scenario_id": game.id,
-                "status": game.status,
+                "scenario_id": scenario.id,
+                "status": scenario.status,
                 "rounds": 0,
                 "message": "No scenario_user data available"
             }
@@ -274,16 +273,16 @@ class ReportingService:
         avg_inventory = mean(inventories) if inventories else None
 
         # Calculate bullwhip effect (variance amplification)
-        bullwhip = await self._calculate_bullwhip_effect(game.id, scenario_user_periods)
+        bullwhip = await self._calculate_bullwhip_effect(scenario.id, scenario_user_periods)
 
         max_round = max((pr.round_number for pr in scenario_user_periods), default=0)
 
         return {
-            "scenario_id": game.id,
-            "config_name": game.config.name if game.config else "Unknown",
-            "status": game.status,
+            "scenario_id": scenario.id,
+            "config_name": scenario.config.name if scenario.config else "Unknown",
+            "status": scenario.status,
             "rounds_played": max_round,
-            "total_rounds": game.num_rounds,
+            "total_rounds": scenario.num_rounds,
             "duration": f"{max_round} rounds",
             "total_cost": round(total_cost, 2),
             "service_level": round(avg_service_level, 3) if avg_service_level else None,
@@ -367,11 +366,11 @@ class ReportingService:
 
     async def _generate_insights(
         self,
-        game: Game,
+        scenario: Scenario,
         scenario_user_periods: List[ScenarioUserPeriod],
         scenario_user_performance: List[Dict]
     ) -> List[str]:
-        """Generate key insights about game performance."""
+        """Generate key insights about scenario performance."""
         insights = []
 
         # Service level insights
@@ -416,7 +415,7 @@ class ReportingService:
 
     async def _generate_recommendations(
         self,
-        game: Game,
+        scenario: Scenario,
         scenario_user_periods: List[ScenarioUserPeriod],
         insights: List[str]
     ) -> List[str]:
@@ -498,7 +497,7 @@ class ReportingService:
         rounds: List[ScenarioUserPeriod],
         metric: str
     ) -> Optional[float]:
-        """Calculate a specific metric for a game's rounds."""
+        """Calculate a specific metric for a scenario's rounds."""
         if metric == 'cost':
             costs = [
                 (r.holding_cost or 0) + (r.backlog_cost or 0)
@@ -567,7 +566,7 @@ class ReportingService:
             if cv > 0.3:
                 insights.append("High variability in performance - consider more consistent strategies")
             elif cv < 0.1:
-                insights.append("Very consistent performance across games")
+                insights.append("Very consistent performance across scenarios")
 
         return insights
 
@@ -576,7 +575,7 @@ class ReportingService:
         comparisons: List[Dict],
         metrics: List[str]
     ) -> Dict[str, Any]:
-        """Identify best performing games for each metric."""
+        """Identify best performing scenarios for each metric."""
         best = {}
 
         for metric in metrics:
@@ -604,7 +603,7 @@ class ReportingService:
         return best
 
     async def _export_csv(self, scenario_id: int, include_rounds: bool) -> bytes:
-        """Export game data as CSV."""
+        """Export scenario data as CSV."""
         scenario_user_periods = await self._get_scenario_user_periods(scenario_id)
 
         output = io.StringIO()
@@ -612,7 +611,7 @@ class ReportingService:
 
         # Write header
         writer.writerow([
-            'Game ID', 'Round', 'ScenarioUser ID', 'Role', 'Inventory',
+            'Scenario ID', 'Round', 'ScenarioUser ID', 'Role', 'Inventory',
             'Backlog', 'Order Quantity', 'Holding Cost', 'Backlog Cost',
             'Service Level'
         ])
@@ -636,12 +635,12 @@ class ReportingService:
         return output.getvalue().encode('utf-8')
 
     async def _export_json(self, scenario_id: int, include_rounds: bool) -> bytes:
-        """Export game data as JSON."""
-        report = await self.generate_game_report(scenario_id)
+        """Export scenario data as JSON."""
+        report = await self.generate_scenario_report(scenario_id)
         return json.dumps(report, indent=2).encode('utf-8')
 
     async def _export_excel(self, scenario_id: int, include_rounds: bool) -> bytes:
-        """Export game data as Excel (requires openpyxl)."""
+        """Export scenario data as Excel (requires openpyxl)."""
         try:
             from openpyxl import Workbook
             from openpyxl.utils import get_column_letter
@@ -651,14 +650,14 @@ class ReportingService:
 
         wb = Workbook()
         ws = wb.active
-        ws.title = "Game Report"
+        ws.title = "Scenario Report"
 
         # Get data
         scenario_user_periods = await self._get_scenario_user_periods(scenario_id)
 
         # Write headers
         headers = [
-            'Game ID', 'Round', 'ScenarioUser ID', 'Role', 'Inventory',
+            'Scenario ID', 'Round', 'ScenarioUser ID', 'Role', 'Inventory',
             'Backlog', 'Order Quantity', 'Holding Cost', 'Backlog Cost',
             'Service Level'
         ]

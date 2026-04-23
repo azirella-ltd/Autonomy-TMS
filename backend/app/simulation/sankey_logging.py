@@ -41,9 +41,9 @@ def _link_value(value: float) -> float:
     return max(_MIN_LINK_VALUE, max(0.0, value))
 
 
-def _ensure_log_path(game: Any) -> Path:
-    identifier = getattr(game, "id", None)
-    suffix = f"game_{identifier}" if identifier is not None else "game_unknown"
+def _ensure_log_path(scenario: Any) -> Path:
+    identifier = getattr(scenario, "id", None)
+    suffix = f"scenario_{identifier}" if identifier is not None else "scenario_unknown"
     filename = f"{suffix}_sankey.json"
     path = _SANKEY_LOG_DIR / filename
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,14 +194,14 @@ def _build_snapshot_from_shipments(history: Sequence[Mapping[str, Any]]) -> Dict
 
 
 
-def write_sankey_log(game: Any, history: Sequence[Mapping[str, Any]]) -> Path:
+def write_sankey_log(scenario: Any, history: Sequence[Mapping[str, Any]]) -> Path:
     """Persist a debug snapshot for Sankey diagram generation."""
 
-    path = _ensure_log_path(game)
+    path = _ensure_log_path(scenario)
     snapshot = build_sankey_snapshot(history or [])
     payload = {
-        "scenario_id": getattr(game, "id", None),
-        "game_name": getattr(game, "name", None),
+        "scenario_id": getattr(scenario, "id", None),
+        "scenario_name": getattr(scenario, "name", None),
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "snapshot": snapshot,
     }

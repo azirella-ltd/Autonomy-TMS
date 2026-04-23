@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
-Game = Scenario
 from app.models.sc_planning import (
     AggregatedOrder,
     ProductionCapacity,
@@ -48,10 +47,10 @@ class AnalyticsService:
 
     async def get_aggregation_metrics(self, scenario_id: int) -> Dict:
         """
-        Get order aggregation metrics for a game
+        Get order aggregation metrics for a scenario
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             Dictionary with aggregation metrics:
@@ -177,24 +176,24 @@ class AnalyticsService:
 
     async def get_capacity_metrics(self, scenario_id: int) -> Dict:
         """
-        Get capacity constraint metrics for a game
+        Get capacity constraint metrics for a scenario
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             Dictionary with capacity metrics
         """
-        # Get game and config
-        game = await self.db.get(Game, scenario_id)
-        if not game:
-            return {'error': 'Game not found'}
+        # Get scenario and config
+        scenario = await self.db.get(Scenario, scenario_id)
+        if not scenario:
+            return {'error': 'Scenario not found'}
 
-        # Get all capacity constraints for this game's config
+        # Get all capacity constraints for this scenario's config
         result = await self.db.execute(
             select(ProductionCapacity).filter(
-                ProductionCapacity.config_id == game.supply_chain_config_id,
-                ProductionCapacity.tenant_id == game.tenant_id
+                ProductionCapacity.config_id == scenario.supply_chain_config_id,
+                ProductionCapacity.tenant_id == scenario.tenant_id
             )
         )
         capacities = result.scalars().all()
@@ -213,7 +212,7 @@ class AnalyticsService:
                 'by_round': []
             }
 
-        # Get all work orders for this game
+        # Get all work orders for this scenario
         result = await self.db.execute(
             select(InboundOrderLine).filter(
                 InboundOrderLine.scenario_id == scenario_id
@@ -365,7 +364,7 @@ class AnalyticsService:
             site_name = await self._get_site_name(capacity.site_id)
 
             # Calculate average utilization
-            # TODO: Compute from actual game data
+            # TODO: Compute from actual scenario data
             avg_utilization = 0.0
 
             policies.append({
@@ -392,19 +391,19 @@ class AnalyticsService:
         Get comparative analytics (with vs. without features)
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             Dictionary with comparative metrics
         """
-        # Get game config
-        game = await self.db.get(Game, scenario_id)
-        if not game:
-            return {'error': 'Game not found'}
+        # Get scenario config
+        scenario = await self.db.get(Scenario, scenario_id)
+        if not scenario:
+            return {'error': 'Scenario not found'}
 
         features_enabled = {
-            'capacity_constraints': game.config.get('use_capacity_constraints', False),
-            'order_aggregation': game.config.get('use_order_aggregation', False)
+            'capacity_constraints': scenario.config.get('use_capacity_constraints', False),
+            'order_aggregation': scenario.config.get('use_order_aggregation', False)
         }
 
         # Get aggregation data

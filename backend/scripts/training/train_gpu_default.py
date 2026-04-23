@@ -33,7 +33,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Default config for CLI invocation; provisioning uses GenericTrainingOrchestrator
 # which derives everything from the config_id — no default name needed.
-DEFAULT_CONFIG_NAME = "Case Beer Game"
+DEFAULT_CONFIG_NAME = "Case Beer Scenario"
 
 
 @dataclass

@@ -332,7 +332,7 @@ Generation is complete! Summarize what was created:
 Provide next steps:
 1. Log in with the admin credentials
 2. Review the supply chain configuration
-3. Run a test game or planning cycle
+3. Run a test scenario or planning cycle
 4. Explore the AI agent recommendations
 """,
 

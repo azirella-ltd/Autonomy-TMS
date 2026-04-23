@@ -2,13 +2,13 @@
 Agent Orchestration Integration Service
 
 Phase 4: Multi-Agent Orchestration - Integration Layer
-Ties together all Phase 4 services into game round processing:
+Ties together all Phase 4 services into scenario round processing:
 - Multi-agent consensus decision-making
 - Performance tracking per round
 - Adaptive weight learning
 - RLHF data collection
 
-This service is called during game round processing to:
+This service is called during scenario round processing to:
 1. Gather agent decisions using current weights
 2. Make ensemble consensus decision
 3. Track performance metrics
@@ -44,7 +44,6 @@ from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
-Game = Scenario
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +74,10 @@ class AgentOrchestrationIntegration:
         learning_rate: float = 0.1
     ):
         """
-        Initialize orchestration services for a game.
+        Initialize orchestration services for a scenario.
 
         Args:
-            scenario_id: Game ID to initialize for
+            scenario_id: Scenario ID to initialize for
             consensus_method: Ensemble consensus method
             learning_method: Weight learning algorithm
             learning_rate: Learning rate for adaptive learning
@@ -94,10 +93,10 @@ class AgentOrchestrationIntegration:
         adaptive_weights = self.learner.get_learned_weights(context_id=scenario_id)
         if adaptive_weights:
             agent_weights = adaptive_weights.weights
-            logger.info(f"Loaded learned weights for game {scenario_id}: {agent_weights}")
+            logger.info(f"Loaded learned weights for scenario {scenario_id}: {agent_weights}")
         else:
             agent_weights = {"llm": 1.0/3, "gnn": 1.0/3, "trm": 1.0/3}
-            logger.info(f"Using default equal weights for game {scenario_id}")
+            logger.info(f"Using default equal weights for scenario {scenario_id}")
 
         # Initialize ensemble with learned weights
         self.ensemble = MultiAgentEnsemble(
@@ -112,18 +111,18 @@ class AgentOrchestrationIntegration:
     def make_ensemble_decision(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         agent_decisions: List[Dict[str, Any]],
-        game_state: Dict[str, Any]
+        scenario_state: Dict[str, Any]
     ) -> Tuple[int, Dict[str, Any]]:
         """
         Make ensemble consensus decision and record metadata.
 
         Args:
             scenario_user: ScenarioUser making decision
-            game: Game context
+            scenario: Scenario context
             agent_decisions: List of agent decision dicts
-            game_state: Current game state context
+            scenario_state: Current scenario state context
 
         Returns:
             (final_decision, ensemble_metadata)
@@ -159,7 +158,7 @@ class AgentOrchestrationIntegration:
         }
 
         logger.info(
-            f"Ensemble decision for scenario_user {scenario_user.id} in game {game.id}: "
+            f"Ensemble decision for scenario_user {scenario_user.id} in scenario {scenario.id}: "
             f"decision={ensemble_result.final_decision}, "
             f"confidence={ensemble_result.confidence:.2f}, "
             f"agreement={ensemble_result.agreement_score:.2f}"
@@ -170,7 +169,7 @@ class AgentOrchestrationIntegration:
     def record_performance_and_learn(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         round_number: int,
         agent_type: str,
         decision: int,
@@ -181,7 +180,7 @@ class AgentOrchestrationIntegration:
 
         Args:
             scenario_user: ScenarioUser who made decision
-            game: Game context
+            scenario: Scenario context
             round_number: Round number
             agent_type: Agent type that made decision (llm, gnn, trm, ensemble)
             decision: Order quantity decided
@@ -200,7 +199,7 @@ class AgentOrchestrationIntegration:
         # Record performance
         performance_metrics = PerformanceMetrics(
             scenario_user_id=scenario_user.id,
-            scenario_id=game.id,
+            scenario_id=scenario.id,
             round_number=round_number,
             agent_type=agent_type,
             agent_mode=scenario_user.agent_mode or "manual",
@@ -230,7 +229,7 @@ class AgentOrchestrationIntegration:
                 agent_type=agent_type,
                 performance_score=performance_score,
                 current_weights=current_weights,
-                context_id=game.id
+                context_id=scenario.id
             )
 
             # Update ensemble weights
@@ -244,10 +243,10 @@ class AgentOrchestrationIntegration:
     def record_copilot_feedback(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         round_number: int,
         agent_type: str,
-        game_state: Dict[str, Any],
+        scenario_state: Dict[str, Any],
         ai_suggestion: int,
         human_decision: int,
         ai_reasoning: Optional[str] = None,
@@ -258,10 +257,10 @@ class AgentOrchestrationIntegration:
 
         Args:
             scenario_user: ScenarioUser who made decision
-            game: Game context
+            scenario: Scenario context
             round_number: Round number
             agent_type: AI agent type (llm, gnn, trm)
-            game_state: Current game state
+            scenario_state: Current scenario state
             ai_suggestion: What AI recommended
             human_decision: What human actually chose
             ai_reasoning: AI's explanation
@@ -272,10 +271,10 @@ class AgentOrchestrationIntegration:
         """
         feedback_id = self.rlhf_collector.record_feedback(
             scenario_user_id=scenario_user.id,
-            scenario_id=game.id,
+            scenario_id=scenario.id,
             round_number=round_number,
             agent_type=agent_type,
-            game_state=game_state,
+            scenario_state=scenario_state,
             ai_suggestion=ai_suggestion,
             human_decision=human_decision,
             ai_reasoning=ai_reasoning,
@@ -318,10 +317,10 @@ class AgentOrchestrationIntegration:
 
     def get_ensemble_summary(self, scenario_id: int) -> Dict[str, Any]:
         """
-        Get summary of ensemble performance for a game.
+        Get summary of ensemble performance for a scenario.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
 
         Returns:
             Dict with ensemble statistics
@@ -361,7 +360,7 @@ class AgentOrchestrationIntegration:
         Get history of weight changes over time.
 
         Args:
-            scenario_id: Game ID
+            scenario_id: Scenario ID
             limit: Max records to return
 
         Returns:

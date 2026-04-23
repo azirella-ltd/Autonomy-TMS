@@ -127,14 +127,14 @@ def create_mixed_game(
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
     """
-    Create a new game with mixed human and AI scenario_users.
+    Create a new scenario with mixed human and AI scenario_users.
     
     - **scenario_user_assignments**: List of scenario_user assignments specifying which roles are human/AI
     - **demand_pattern**: Configuration for customer demand pattern
-    - **max_periods**: Total number of rounds in the game
+    - **max_periods**: Total number of rounds in the scenario
     """
     try:
-        return scenario_service.create_game(scenario_data, current_user.id)
+        return scenario_service.create_scenario(scenario_data, current_user.id)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -150,7 +150,7 @@ def start_game(
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
-    """Start a game that's in the 'created' state."""
+    """Start a scenario that's in the 'created' state."""
     try:
         return scenario_service.start_game(scenario_id, debug_logging=debug_logging)
     except AutonomyLLMError as exc:
@@ -170,7 +170,7 @@ def stop_game(
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
-    """Stop a game that's in progress."""
+    """Stop a scenario that's in progress."""
     try:
         return scenario_service.stop_game(scenario_id)
     except AutonomyLLMError as exc:
@@ -190,7 +190,7 @@ def next_round(
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
-    """Advance to the next round of the game."""
+    """Advance to the next round of the scenario."""
     try:
         scenario_service.start_new_round(scenario_id)
         return scenario_service.get_scenario_state(scenario_id)
@@ -211,7 +211,7 @@ def finish_game(
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
-    """Finish a game and compute a summary."""
+    """Finish a scenario and compute a summary."""
     try:
         return scenario_service.finish_game(scenario_id)
     except AutonomyLLMError as exc:
@@ -226,7 +226,7 @@ def finish_game(
         )
 
 @router.get("/scenarios/{scenario_id}/report", response_model=dict)
-def get_game_report(
+def get_scenario_report(
     scenario_id: int,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
@@ -248,7 +248,7 @@ def get_scenario_state(
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
-    """Get the current state of a game."""
+    """Get the current state of a scenario."""
     try:
         return scenario_service.get_scenario_state(scenario_id)
     except AutonomyLLMError as exc:
@@ -269,7 +269,7 @@ def update_game(
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
-    """Update a game's core configuration, demand pattern, and scenario_user assignments."""
+    """Update a scenario's core configuration, demand pattern, and scenario_user assignments."""
     try:
         scenario_service.update_game(scenario_id, payload)
         return scenario_service.get_scenario_state(scenario_id)
@@ -282,15 +282,15 @@ def update_game(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.delete("/scenarios/{scenario_id}", response_model=dict)
-def delete_game(
+def delete_scenario(
     scenario_id: int,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
     try:
-        return scenario_service.delete_game(scenario_id, current_user)
+        return scenario_service.delete_scenario(scenario_id, current_user)
     except PermissionError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions to delete this game")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions to delete this scenario")
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -300,13 +300,13 @@ def delete_game(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 @router.get("/scenarios/", response_model=List[ScenarioInDBBase])
-def list_games(
+def list_scenarios(
     status: Optional[ScenarioStatus] = None,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
-    """List all games the current user is allowed to view."""
-    return scenario_service.list_games(current_user=current_user, status=status)
+    """List all scenarios the current user is allowed to view."""
+    return scenario_service.list_scenarios(current_user=current_user, status=status)
 
 
 # =============================================================================
@@ -375,12 +375,12 @@ async def submit_fulfillment_decision(
     )
 
     try:
-        # Get game
+        # Get scenario
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Verify game uses DAG sequential (check column, fallback to config for backward compat)
+        # Verify scenario uses DAG sequential (check column, fallback to config for backward compat)
         use_dag = getattr(scenario, 'use_dag_sequential', None)
         if use_dag is None:
             use_dag = scenario.config.get("use_dag_sequential", False)
@@ -423,7 +423,7 @@ async def submit_fulfillment_decision(
             # Collect RLHF feedback
             rlhf_collector = get_rlhf_data_collector(scenario_service.db)
 
-            # Build game state for RLHF context
+            # Build scenario state for RLHF context
             scenario_state = {
                 "inventory": scenario_user.current_stock,
                 "backlog": scenario_user.backlog_units or 0,
@@ -623,12 +623,12 @@ async def submit_replenishment_decision(
     )
 
     try:
-        # Get game
+        # Get scenario
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Verify game uses DAG sequential (check column, fallback to config for backward compat)
+        # Verify scenario uses DAG sequential (check column, fallback to config for backward compat)
         use_dag = getattr(scenario, 'use_dag_sequential', None)
         if use_dag is None:
             use_dag = scenario.config.get("use_dag_sequential", False)
@@ -671,7 +671,7 @@ async def submit_replenishment_decision(
             # Collect RLHF feedback
             rlhf_collector = get_rlhf_data_collector(scenario_service.db)
 
-            # Build game state for RLHF context
+            # Build scenario state for RLHF context
             scenario_state = {
                 "inventory": scenario_user.current_stock,
                 "backlog": scenario_user.backlog_units or 0,
@@ -847,9 +847,9 @@ def get_pipeline(
         if not scenario_user or scenario_user.scenario_id != scenario_id:
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
-        # Get game for current round
+        # Get scenario for current round
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
-        current_period = scenario.current_period if game else 0
+        current_period = scenario.current_period if scenario else 0
 
         # Get in-transit shipments with line items
         from app.models.transfer_order import TransferOrderLineItem
@@ -969,7 +969,7 @@ def get_fulfillment_recommendation(
         if not scenario_user or scenario_user.scenario_id != scenario_id:
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
-        # Get game
+        # Get scenario
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -995,7 +995,7 @@ def get_fulfillment_recommendation(
 
         # Get recommendation from service
         recommendation = recommendation_service.get_fulfillment_recommendation(
-            game=scenario,
+            scenario=scenario,
             scenario_user=scenario_user,
             current_period=current_period,
             atp=atp,
@@ -1077,7 +1077,7 @@ def get_replenishment_recommendation(
         if not scenario_user or scenario_user.scenario_id != scenario_id:
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
-        # Get game
+        # Get scenario
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -1121,7 +1121,7 @@ def get_replenishment_recommendation(
 
         # Get recommendation from service
         recommendation = recommendation_service.get_replenishment_recommendation(
-            game=scenario,
+            scenario=scenario,
             scenario_user=scenario_user,
             current_period=current_period,
             current_inventory=scenario_user.current_stock,
@@ -1174,7 +1174,7 @@ async def get_current_atp(
         }
     """
     try:
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -1186,7 +1186,7 @@ async def get_current_atp(
         if not scenario_user:
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
-        # Get current round (may be None if game hasn't started)
+        # Get current round (may be None if scenario hasn't started)
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
             current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
@@ -1196,7 +1196,7 @@ async def get_current_atp(
         # Calculate ATP
         atp_result = atp_service.calculate_current_atp(
             scenario_user=scenario_user,
-            game=scenario,
+            scenario=scenario,
             current_period=current_period,
             include_safety_stock=include_safety_stock
         )
@@ -1256,7 +1256,7 @@ async def get_atp_projection(
                 detail="Periods must be between 1 and 12"
             )
 
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -1282,7 +1282,7 @@ async def get_atp_projection(
         # Project ATP
         projection = atp_service.project_atp_multi_period(
             scenario_user=scenario_user,
-            game=scenario,
+            scenario=scenario,
             current_period=current_period,
             periods=periods
         )
@@ -1344,7 +1344,7 @@ async def get_probabilistic_atp(
                 detail="n_simulations must be between 10 and 1000"
             )
 
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -1356,7 +1356,7 @@ async def get_probabilistic_atp(
         if not scenario_user:
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
-        # Get current round (may be None if game hasn't started)
+        # Get current round (may be None if scenario hasn't started)
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
             current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
@@ -1366,7 +1366,7 @@ async def get_probabilistic_atp(
         # Calculate probabilistic ATP
         prob_atp_result = atp_service.calculate_probabilistic_atp(
             scenario_user=scenario_user,
-            game=scenario,
+            scenario=scenario,
             current_period=current_period,
             n_simulations=n_simulations,
             include_safety_stock=include_safety_stock
@@ -1438,7 +1438,7 @@ async def get_atp_history(
     from app.models.inventory_projection import AtpProjection, CtpProjection
 
     try:
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -1451,9 +1451,9 @@ async def get_atp_history(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Look up node from supply chain config
-        node = _get_participant_node(scenario_service.db, scenario_user, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, scenario)
 
-        # Query historical ATP projections for this game/scenario_user
+        # Query historical ATP projections for this scenario/scenario_user
         atp_records = []
         if node:
             atp_query = (
@@ -1482,7 +1482,7 @@ async def get_atp_history(
                     "timestamp": record.created_at.isoformat() if record.created_at else None
                 })
 
-        # Query historical CTP projections for this game/scenario_user (if manufacturer)
+        # Query historical CTP projections for this scenario/scenario_user (if manufacturer)
         ctp_records = []
         if node:
             ctp_query = (
@@ -1570,7 +1570,7 @@ async def get_current_ctp(
         }
     """
     try:
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -1583,7 +1583,7 @@ async def get_current_ctp(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Look up node from supply chain config
-        node = _get_participant_node(scenario_service.db, scenario_user, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, scenario)
         if not node:
             raise HTTPException(
                 status_code=400,
@@ -1617,7 +1617,7 @@ async def get_current_ctp(
         # Calculate CTP
         ctp_result = ctp_service.calculate_current_ctp(
             scenario_user=scenario_user,
-            game=scenario,
+            scenario=scenario,
             current_period=current_period,
             item_id=item_id
         )
@@ -1677,7 +1677,7 @@ async def get_probabilistic_ctp(
         }
     """
     try:
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -1690,7 +1690,7 @@ async def get_probabilistic_ctp(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Look up node from supply chain config
-        node = _get_participant_node(scenario_service.db, scenario_user, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, scenario)
         if not node:
             raise HTTPException(
                 status_code=400,
@@ -1711,7 +1711,7 @@ async def get_probabilistic_ctp(
                 detail=f"CTP calculation only available for manufacturer/factory nodes (node has master_type={node.master_type}, dag_type={node.dag_type})"
             )
 
-        # Get current round (may be None if game tracks state in config JSON)
+        # Get current round (may be None if scenario tracks state in config JSON)
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
             current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
@@ -1721,7 +1721,7 @@ async def get_probabilistic_ctp(
         # Calculate probabilistic CTP
         ctp_result = ctp_service.calculate_probabilistic_ctp(
             scenario_user=scenario_user,
-            game=scenario,
+            scenario=scenario,
             current_period=current_period,
             product_id=product_id,
             n_simulations=n_simulations
@@ -1806,7 +1806,7 @@ async def get_pipeline_visualization(
     import numpy as np
 
     try:
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -1819,14 +1819,14 @@ async def get_pipeline_visualization(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Look up node from supply chain config
-        node = _get_participant_node(scenario_service.db, scenario_user, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, scenario)
         if not node:
             raise HTTPException(
                 status_code=400,
                 detail=f"No node configured for scenario_user {scenario_user.name} (site_key={scenario_user.site_key})"
             )
 
-        # Check if game has started
+        # Check if scenario has started
         if scenario.current_period is None or scenario.current_period < 1:
             return {
                 "scenario_user_id": scenario_user.id,
@@ -1840,7 +1840,7 @@ async def get_pipeline_visualization(
                 "timestamp": datetime.utcnow().isoformat()
             }
 
-        # Get the scenario_user's pipeline state from game config engine_state
+        # Get the scenario_user's pipeline state from scenario config engine_state
         # The engine_state stores pipeline_shipments per node by dag_type or site_key
         pipeline_shipments = []
         if scenario.config and isinstance(scenario.config, dict):
@@ -1857,7 +1857,7 @@ async def get_pipeline_visualization(
 
         # Get upstream lanes for lead time distribution
         from app.models.supply_chain_config import Lane
-        config_id = game.supply_chain_config_id or (
+        config_id = scenario.supply_chain_config_id or (
             scenario.config.get("supply_chain_config_id") if scenario.config else None
         )
         upstream_lanes = []
@@ -2070,7 +2070,7 @@ async def get_conformal_atp(
                 detail=f"Method must be one of: {valid_methods}"
             )
 
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -2082,7 +2082,7 @@ async def get_conformal_atp(
         if not scenario_user:
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
-        # Get current round (may be None if game hasn't started)
+        # Get current round (may be None if scenario hasn't started)
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
             current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
@@ -2092,7 +2092,7 @@ async def get_conformal_atp(
         # First, calculate the current point estimate using probabilistic ATP
         prob_atp_result = atp_service.calculate_probabilistic_atp(
             scenario_user=scenario_user,
-            game=scenario,
+            scenario=scenario,
             current_period=current_period,
             n_simulations=100,
             include_safety_stock=True
@@ -2109,7 +2109,7 @@ async def get_conformal_atp(
         # Load historical prediction-actual pairs for calibration
         # Query from inventory projections or round history
         from app.models.inventory_projection import AtpProjection
-        node = _get_participant_node(scenario_service.db, scenario_user, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, scenario)
 
         historical_predictions = []
         historical_actuals = []
@@ -2247,7 +2247,7 @@ async def calibrate_conformal_atp(
                 detail="At least 10 calibration points required"
             )
 
-        # Validate game exists
+        # Validate scenario exists
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -2337,7 +2337,7 @@ async def get_conformal_demand_forecast(
                 detail="Coverage must be between 0.5 and 0.99"
             )
 
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -2482,7 +2482,7 @@ async def get_conformal_lead_time(
                 detail="Coverage must be between 0.5 and 0.99"
             )
 
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -2495,7 +2495,7 @@ async def get_conformal_lead_time(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get node for this scenario_user
-        node = _get_participant_node(scenario_service.db, scenario_user, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, scenario)
         if not node:
             raise HTTPException(
                 status_code=400,
@@ -2503,7 +2503,7 @@ async def get_conformal_lead_time(
             )
 
         # Get upstream lane for lead time info
-        config_id = game.supply_chain_config_id or (
+        config_id = scenario.supply_chain_config_id or (
             scenario.config.get("supply_chain_config_id") if scenario.config else None
         )
 
@@ -2646,7 +2646,7 @@ async def allocate_atp_to_customers(
                 detail=f"Invalid allocation method. Must be one of: {valid_methods}"
             )
 
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -2666,7 +2666,7 @@ async def allocate_atp_to_customers(
         # Calculate current ATP
         atp_result = atp_service.calculate_current_atp(
             scenario_user=scenario_user,
-            game=scenario,
+            scenario=scenario,
             current_period=current_period,
             include_safety_stock=True
         )
@@ -2749,7 +2749,7 @@ async def calculate_promise_date(
                 detail="Quantity must be greater than 0"
             )
 
-        # Get game and validate
+        # Get scenario and validate
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -2762,7 +2762,7 @@ async def calculate_promise_date(
             raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Verify scenario_user is manufacturer
-        node = _get_participant_node(scenario_service.db, scenario_user, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, scenario)
         if not node:
             raise HTTPException(
                 status_code=400,
@@ -2794,7 +2794,7 @@ async def calculate_promise_date(
         # Calculate promise date
         promise_result = ctp_service.calculate_promise_date(
             scenario_user=scenario_user,
-            game=scenario,
+            scenario=scenario,
             current_period=current_period,
             item_id=item_id,
             quantity=quantity
@@ -2884,7 +2884,7 @@ def switch_agent_mode(
     - Recorded in agent_mode_history for RLHF training
     """
     try:
-        # Validate game exists and scenario_user has access
+        # Validate scenario exists and scenario_user has access
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -3014,7 +3014,7 @@ def get_mode_distribution(
     mode_service: AgentModeService = Depends(get_agent_mode_service)
 ):
     """
-    Get current mode distribution across all scenario_users in a game.
+    Get current mode distribution across all scenario_users in a scenario.
 
     **Phase 4: Multi-Agent Orchestration**
 
@@ -3047,7 +3047,7 @@ def get_mode_distribution(
     - Training effectiveness analysis
     """
     try:
-        # Validate game exists
+        # Validate scenario exists
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -3083,7 +3083,7 @@ def get_mode_distribution(
 class SetAgentWeightsRequest(BaseModel):
     """Request model for manually setting agent weights."""
     weights: Dict[str, float]  # {"llm": 0.5, "gnn": 0.3, "trm": 0.2}
-    context_type: str = "game"  # "game", "scenario_user", or "config"
+    context_type: str = "scenario"  # "scenario", "scenario_user", or "config"
 
     class Config:
         json_schema_extra = {
@@ -3093,7 +3093,7 @@ class SetAgentWeightsRequest(BaseModel):
                     "gnn": 0.3,
                     "trm": 0.2
                 },
-                "context_type": "game"
+                "context_type": "scenario"
             }
         }
 
@@ -3137,7 +3137,7 @@ def set_agent_weights(
     - Example: {llm: 5, gnn: 3, trm: 2} → {llm: 0.5, gnn: 0.3, trm: 0.2}
 
     **Context Types**:
-    - **game**: Weights apply to entire game
+    - **scenario**: Weights apply to entire scenario
     - **scenario_user**: Weights per scenario_user (personalized)
     - **config**: Weights per supply chain configuration
 
@@ -3145,7 +3145,7 @@ def set_agent_weights(
     ```json
     {
       "weights": {"llm": 0.5, "gnn": 0.3, "trm": 0.2},
-      "context_type": "game"
+      "context_type": "scenario"
     }
     ```
 
@@ -3154,7 +3154,7 @@ def set_agent_weights(
     - Confirmation message
     """
     try:
-        # Validate game exists
+        # Validate scenario exists
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -3206,7 +3206,7 @@ def get_agent_weights(
     learner: AdaptiveWeightLearner = Depends(get_adaptive_weight_learner)
 ):
     """
-    Get current agent weights for a game.
+    Get current agent weights for a scenario.
 
     **Phase 4: Multi-Agent Orchestration - Weight Management**
 
@@ -3239,7 +3239,7 @@ def get_agent_weights(
     - Compare manual vs learned weights
     """
     try:
-        # Validate game exists
+        # Validate scenario exists
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -3330,7 +3330,7 @@ def enable_adaptive_learning(
     **Note**: Weights will automatically update as agents make decisions
     """
     try:
-        # Validate game exists
+        # Validate scenario exists
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -3427,7 +3427,7 @@ def get_weight_history(
     - limit: Max records to return (default: 50)
     """
     try:
-        # Validate game exists
+        # Validate scenario exists
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -3460,7 +3460,7 @@ def get_ensemble_summary(
     integration: AgentOrchestrationIntegration = Depends(get_agent_orchestration_integration)
 ):
     """
-    Get comprehensive ensemble performance summary for a game.
+    Get comprehensive ensemble performance summary for a scenario.
 
     **Phase 4: Multi-Agent Orchestration - Ensemble Summary**
 
@@ -3503,7 +3503,7 @@ def get_ensemble_summary(
     - Decision support (which agent to trust)
     """
     try:
-        # Validate game exists
+        # Validate scenario exists
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
@@ -3672,7 +3672,7 @@ def get_rlhf_feedback_summary(
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
     """
-    Get RLHF feedback summary for a game or scenario_user.
+    Get RLHF feedback summary for a scenario or scenario_user.
 
     Returns aggregate stats on AI vs human decision performance.
 

@@ -11,7 +11,7 @@ from scripts.seed_default_tenant import (
     session_factory_from_settings,
 )
 
-THREE_FG_CONFIG_NAMES = ["Three FG Beer Game"]
+THREE_FG_CONFIG_NAMES = ["Three FG Beer Scenario"]
 
 
 def main() -> None:

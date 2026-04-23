@@ -14,9 +14,9 @@ from scripts.seed_default_tenant import (
 
 DEFAULT_CONFIG_NAMES = [
     INVENTORY_CONFIG_NAME,
-    "Case Beer Game",
-    "Six-Pack Beer Game",
-    "Bottle Beer Game",
+    "Case Beer Scenario",
+    "Six-Pack Beer Scenario",
+    "Bottle Beer Scenario",
 ]
 
 

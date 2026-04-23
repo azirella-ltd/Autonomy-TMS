@@ -78,68 +78,68 @@ from app.core.time_buckets import TimeBucket, DEFAULT_START_DATE
 # Temporarily disabled - requires migration to Product model
 # from backend.scripts.create_regional_sc_config import ensure_multi_region_config
 
-DEFAULT_TENANT_NAME = "Beer Game"
+DEFAULT_TENANT_NAME = "Beer Scenario"
 DEFAULT_TENANT_DESCRIPTION = "Default supply chain simulation scenarios"
 DEFAULT_ADMIN_USERNAME = "simulation_admin"
 DEFAULT_ADMIN_EMAIL = "simulation_admin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Simulation Administrator"
 DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")
-DEFAULT_CONFIG_NAME = "Default Beer Game"
-INVENTORY_CONFIG_NAME = "Default Beer Game"
-DEFAULT_GAME_NAME = "Default Simulation"
+DEFAULT_CONFIG_NAME = "Default Beer Scenario"
+INVENTORY_CONFIG_NAME = "Default Beer Scenario"
+DEFAULT_SCENARIO_NAME = "Default Simulation"
 DEFAULT_AGENT_TYPE = "pid_heuristic"
 DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "qwen3-8b"
-NAIVE_AGENT_GAME_NAME = "Naive Agent Showcase"
+NAIVE_AGENT_SCENARIO_NAME = "Naive Agent Showcase"
 NAIVE_AGENT_DESCRIPTION = "Unsupervised benchmark scenario using naive agents for every role."
-PID_AGENT_GAME_NAME = "PID Agent Showcase"
+PID_AGENT_SCENARIO_NAME = "PID Agent Showcase"
 PID_AGENT_DESCRIPTION = "Benchmark scenario using the PID heuristic controller for every role."
 PID_AGENT_STRATEGY = "pid_heuristic"
-TRM_AGENT_GAME_NAME = "TRM Agent Showcase"
+TRM_AGENT_SCENARIO_NAME = "TRM Agent Showcase"
 TRM_AGENT_DESCRIPTION = "Showcase scenario using TRM (Tiny Recursive Model) agents with 7M parameter neural network and recursive refinement for fast, optimized supply chain decisions."
 TRM_AGENT_STRATEGY = "trm"
 
 # Dedicated tenant metadata for alternative DAG templates
-SIX_PACK_TENANT_NAME = "Six-Pack Beer Game"
+SIX_PACK_TENANT_NAME = "Six-Pack Beer Scenario"
 SIX_PACK_TENANT_DESCRIPTION = "Six-Pack supply chain simulation template"
 SIX_PACK_ADMIN_USERNAME = "sixpack_admin"
 SIX_PACK_ADMIN_EMAIL = "sixpack_admin@autonomy.ai"
 SIX_PACK_ADMIN_FULL_NAME = "Six-Pack Administrator"
 
-BOTTLE_TENANT_NAME = "Bottle Beer Game"
+BOTTLE_TENANT_NAME = "Bottle Beer Scenario"
 BOTTLE_TENANT_DESCRIPTION = "Bottle supply chain simulation template"
 BOTTLE_ADMIN_USERNAME = "bottle_admin"
 BOTTLE_ADMIN_EMAIL = "bottle_admin@autonomy.ai"
 BOTTLE_ADMIN_FULL_NAME = "Bottle Administrator"
 
-MULTI_ITEM_TENANT_NAME = "Multi-Product SixPack Beer Game"
+MULTI_ITEM_TENANT_NAME = "Multi-Product SixPack Beer Scenario"
 MULTI_ITEM_TENANT_DESCRIPTION = "Multi-item Six-Pack supply chain template"
 MULTI_ITEM_ADMIN_USERNAME = "multisix_admin"
 MULTI_ITEM_ADMIN_EMAIL = "multisix_admin@autonomy.ai"
 MULTI_ITEM_ADMIN_FULL_NAME = "Multi-Product SixPack Administrator"
 
-THREE_FG_TENANT_NAME = "Three FG Beer Game"
+THREE_FG_TENANT_NAME = "Three FG Beer Scenario"
 THREE_FG_TENANT_DESCRIPTION = "Three finished-goods simulation template"
 THREE_FG_ADMIN_USERNAME = "ThreeFG_admin"
 THREE_FG_ADMIN_EMAIL = "ThreeFG_admin@autonomy.ai"
 THREE_FG_ADMIN_FULL_NAME = "Three FG Simulation Administrator"
 
-VARIABLE_BEER_GAME_TENANT_NAME = "Variable Beer Game"
-VARIABLE_BEER_GAME_TENANT_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
-VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarSimulation_admin"
-VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
-VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Simulation Administrator"
+VARIABLE_BEER_SCENARIO_TENANT_NAME = "Variable Beer Scenario"
+VARIABLE_BEER_SCENARIO_TENANT_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
+VARIABLE_BEER_SCENARIO_ADMIN_USERNAME = "VarSimulation_admin"
+VARIABLE_BEER_SCENARIO_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
+VARIABLE_BEER_SCENARIO_ADMIN_FULL_NAME = "Variable Simulation Administrator"
 
-THREE_FG_TENANT_NAME = "Three FG Beer Game"
+THREE_FG_TENANT_NAME = "Three FG Beer Scenario"
 THREE_FG_TENANT_DESCRIPTION = "Three finished-goods simulation template"
 THREE_FG_ADMIN_USERNAME = "ThreeFG_admin"
 THREE_FG_ADMIN_EMAIL = "ThreeFG_admin@autonomy.ai"
 THREE_FG_ADMIN_FULL_NAME = "Three FG Simulation Administrator"
 
-VARIABLE_BEER_GAME_TENANT_NAME = "Variable Beer Game"
-VARIABLE_BEER_GAME_TENANT_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
-VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarSimulation_admin"
-VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
-VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Simulation Administrator"
+VARIABLE_BEER_SCENARIO_TENANT_NAME = "Variable Beer Scenario"
+VARIABLE_BEER_SCENARIO_TENANT_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
+VARIABLE_BEER_SCENARIO_ADMIN_USERNAME = "VarSimulation_admin"
+VARIABLE_BEER_SCENARIO_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
+VARIABLE_BEER_SCENARIO_ADMIN_FULL_NAME = "Variable Simulation Administrator"
 
 COMPLEX_TENANT_NAME = "Complex_SC"
 COMPLEX_TENANT_DESCRIPTION = (
@@ -148,8 +148,8 @@ COMPLEX_TENANT_DESCRIPTION = (
 COMPLEX_ADMIN_USERNAME = "complex_sc_admin"
 COMPLEX_ADMIN_EMAIL = "complex_sc_admin@autonomy.ai"
 COMPLEX_ADMIN_FULL_NAME = "Complex SC Administrator"
-COMPLEX_HUMAN_GAME_NAME = "Complex SC Human Game"
-COMPLEX_HUMAN_GAME_DESCRIPTION = (
+COMPLEX_HUMAN_SCENARIO_NAME = "Complex SC Human Scenario"
+COMPLEX_HUMAN_SCENARIO_DESCRIPTION = (
     "Multi-region Complex_SC scenario configured for human scenario_users."
 )
 
@@ -614,32 +614,32 @@ def _player_node_key(scenario_user: ScenarioUser) -> str:
 
 
 def _delete_node_type_games_for_config(session: Session, config: SupplyChainConfig) -> None:
-    """Remove existing Node Type game variants for the given supply chain configuration."""
+    """Remove existing Node Type scenario variants for the given supply chain configuration."""
     if not config or not getattr(config, "id", None):
         return
 
     node_type_games = (
-        session.query(Game)
-        .filter(Game.supply_chain_config_id == config.id)
-        .filter(Game.name.ilike("%node type%"))
+        session.query(Scenario)
+        .filter(Scenario.supply_chain_config_id == config.id)
+        .filter(Scenario.name.ilike("%node type%"))
         .all()
     )
-    for game in node_type_games:
-        print(f"[info] Removing Node Type game '{game.name}' (id={game.id}) for config '{config.name}'.")
-        session.query(ScenarioUserAction).filter(ScenarioUserAction.scenario_id == game.id).delete(synchronize_session=False)
-        session.query(SupervisorAction).filter(SupervisorAction.scenario_id == game.id).delete(
+    for scenario in node_type_games:
+        print(f"[info] Removing Node Type scenario '{scenario.name}' (id={scenario.id}) for config '{config.name}'.")
+        session.query(ScenarioUserAction).filter(ScenarioUserAction.scenario_id == scenario.id).delete(synchronize_session=False)
+        session.query(SupervisorAction).filter(SupervisorAction.scenario_id == scenario.id).delete(
             synchronize_session=False
         )
-        session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(synchronize_session=False)
-        session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).delete(synchronize_session=False)
-        session.query(Period).filter(Period.scenario_id == game.id).delete(synchronize_session=False)
-        session.delete(game)
+        session.query(AgentConfig).filter(AgentConfig.scenario_id == scenario.id).delete(synchronize_session=False)
+        session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).delete(synchronize_session=False)
+        session.query(Period).filter(Period.scenario_id == scenario.id).delete(synchronize_session=False)
+        session.delete(scenario)
     if node_type_games:
         session.flush()
 
 
-def _load_game_config_payload(game: Game) -> Dict[str, Any]:
-    payload = game.config or {}
+def _load_scenario_config_payload(scenario: Scenario) -> Dict[str, Any]:
+    payload = scenario.config or {}
     if isinstance(payload, str):
         try:
             payload = json.loads(payload)
@@ -752,7 +752,7 @@ def _ensure_node_user(session: Session, tenant: Tenant, slot: NodeSlot) -> User:
 
 
 def _apply_default_lead_times(config_payload: Dict[str, Any]) -> None:
-    """Force order leadtime = 1 and supply leadtime = 2 for seeded game payloads."""
+    """Force order leadtime = 1 and supply leadtime = 2 for seeded scenario payloads."""
     if not isinstance(config_payload, dict):
         return
     node_policies = config_payload.get("node_policies", {})
@@ -1351,7 +1351,7 @@ def ensure_three_fg_inventory_config(
     session: Session,
     tenant: Tenant,
     *,
-    name: str = "Three FG Beer Game",
+    name: str = "Three FG Beer Scenario",
     description: str = "Inventory-only simulation with three finished goods (Lager, IPA, Dark).",
     demand_pattern_override: Optional[Dict[str, Any]] = None,
 ) -> SupplyChainConfig:
@@ -1479,7 +1479,7 @@ def _create_inventory_only_config(
     """Create an inventory-only default simulation config (no BOM; factory acts as inventory).
 
     This is the ROOT config for the simulation lineage chain.
-    Lineage: Default Beer Game (ROOT)
+    Lineage: Default Beer Scenario (ROOT)
     """
     print("[info] Creating inventory-only supply chain configuration...")
     config = SupplyChainConfig(
@@ -2412,27 +2412,27 @@ def _get_parent_config(session: Session, tenant: Tenant, parent_name: str) -> Op
 
 
 def _get_root_config(session: Session, tenant: Tenant) -> Optional[SupplyChainConfig]:
-    """Get the root config (Default Beer Game) for the tenant by DB lookup name."""
-    return _get_parent_config(session, tenant, "Default Beer Game")
+    """Get the root config (Default Beer Scenario) for the tenant by DB lookup name."""
+    return _get_parent_config(session, tenant, "Default Beer Scenario")
 
 
 def ensure_case_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
     """Create or update the Case simulation configuration (Case built from Six-Packs).
 
-    Lineage: Default Beer Game -> Case Beer Game (DB config names)
+    Lineage: Default Beer Scenario -> Case Beer Scenario (DB config names)
     """
-    # Get parent config (Default Beer Game - DB lookup name)
+    # Get parent config (Default Beer Scenario - DB lookup name)
     parent_config = _get_root_config(session, tenant)
     root_config = parent_config
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == "Case Beer Game")
+        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == "Case Beer Scenario")
         .first()
     )
     if not config:
         config = SupplyChainConfig(
-            name="Case Beer Game",
+            name="Case Beer Scenario",
             description="Case manufacturer consumes Six-Packs (1:4 BOM) using manufacturer master node type.",
             tenant_id=tenant.id,
             time_bucket=TimeBucket.WEEK,
@@ -2627,21 +2627,21 @@ def ensure_case_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
 def ensure_six_pack_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
     """Create or update the Six-Pack simulation configuration (Case built from Six-Packs).
 
-    Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game (DB config names)
+    Lineage: Default Beer Scenario -> Case Beer Scenario -> Six-Pack Beer Scenario (DB config names)
     """
-    # Get parent config (Case Beer Game - DB lookup name)
-    parent_config = _get_parent_config(session, tenant, "Case Beer Game")
+    # Get parent config (Case Beer Scenario - DB lookup name)
+    parent_config = _get_parent_config(session, tenant, "Case Beer Scenario")
     root_config = _get_root_config(session, tenant)
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == "Six-Pack Beer Game")
+        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == "Six-Pack Beer Scenario")
         .first()
     )
     created = False
     if not config:
         config = SupplyChainConfig(
-            name="Six-Pack Beer Game",
+            name="Six-Pack Beer Scenario",
             description="Case manufacturer consumes Six-Packs built from bottles supplied by Market Supply.",
             tenant_id=tenant.id,
             time_bucket=TimeBucket.WEEK,
@@ -2857,20 +2857,20 @@ def ensure_six_pack_config(session: Session, tenant: Tenant) -> SupplyChainConfi
 def ensure_bottle_config(session: Session, tenant: Tenant) -> SupplyChainConfig:
     """Create or update the Bottle simulation configuration (Case <- Six-Pack <- Bottle <- Ingredients).
 
-    Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game -> Bottle Beer Game (DB config names)
+    Lineage: Default Beer Scenario -> Case Beer Scenario -> Six-Pack Beer Scenario -> Bottle Beer Scenario (DB config names)
     """
-    # Get parent config (Six-Pack Beer Game - DB lookup name)
-    parent_config = _get_parent_config(session, tenant, "Six-Pack Beer Game")
+    # Get parent config (Six-Pack Beer Scenario - DB lookup name)
+    parent_config = _get_parent_config(session, tenant, "Six-Pack Beer Scenario")
     root_config = _get_root_config(session, tenant)
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == "Bottle Beer Game")
+        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == "Bottle Beer Scenario")
         .first()
     )
     if not config:
         config = SupplyChainConfig(
-            name="Bottle Beer Game",
+            name="Bottle Beer Scenario",
             description="Case manufacturer consumes Six-Packs; Six-Packs consume Bottles; Bottles consume Ingredients from Market Supply.",
             tenant_id=tenant.id,
             time_bucket=TimeBucket.WEEK,
@@ -3100,12 +3100,12 @@ def ensure_multi_item_six_pack_config(session: Session, tenant: Tenant) -> Suppl
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == "Multi-Product SixPack Beer Game")
+        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == "Multi-Product SixPack Beer Scenario")
         .first()
     )
     if not config:
         config = SupplyChainConfig(
-            name="Multi-Product SixPack Beer Game",
+            name="Multi-Product SixPack Beer Scenario",
             description="Multi-item flow where some cases are sourced directly and others via BOM conversions.",
             tenant_id=tenant.id,
             time_bucket=TimeBucket.WEEK,
@@ -3298,15 +3298,15 @@ def ensure_default_game(
     config_name: Optional[str] = None,
     config_description: Optional[str] = None,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
-    game_name: Optional[str] = None,
+    scenario_name: Optional[str] = None,
     manufacturer_master_type: Optional[str] = None,
-) -> Game:
-    """Ensure the primary game exists for the supplied tenant."""
+) -> Scenario:
+    """Ensure the primary scenario exists for the supplied tenant."""
 
-    target_name = game_name or DEFAULT_GAME_NAME
-    game = (
-        session.query(Game)
-        .filter(Scenario.tenant_id == tenant.id, Game.name == target_name)
+    target_name = scenario_name or DEFAULT_SCENARIO_NAME
+    scenario = (
+        session.query(Scenario)
+        .filter(Scenario.tenant_id == tenant.id, Scenario.name == target_name)
         .first()
     )
 
@@ -3321,11 +3321,11 @@ def ensure_default_game(
 
     override_payload = json.loads(json.dumps(demand_pattern_override)) if demand_pattern_override else None
 
-    if game:
+    if scenario:
         print(
-            f"[info] Game '{target_name}' already exists (id={game.id})."
+            f"[info] Scenario '{target_name}' already exists (id={scenario.id})."
         )
-        existing_config = game.config or {}
+        existing_config = scenario.config or {}
         if isinstance(existing_config, str):
             try:
                 existing_config = json.loads(existing_config)
@@ -3335,43 +3335,43 @@ def ensure_default_game(
         if override_payload:
             existing_config["demand_pattern"] = override_payload
         existing_config["progression_mode"] = "unsupervised"
-        game.config = json.loads(json.dumps(existing_config))
-        game.demand_pattern = existing_config.get("demand_pattern", {})
-        game.supply_chain_config_id = sc_config.id
-        game.tenant_id = tenant.id
+        scenario.config = json.loads(json.dumps(existing_config))
+        scenario.demand_pattern = existing_config.get("demand_pattern", {})
+        scenario.supply_chain_config_id = sc_config.id
+        scenario.tenant_id = tenant.id
         creator_id = sc_config.created_by or tenant.admin_id
         if creator_id:
-            game.created_by = creator_id
-        session.add(game)
-        return game
+            scenario.created_by = creator_id
+        session.add(scenario)
+        return scenario
 
-    print(f"[info] Creating default game '{target_name}' from supply chain configuration...")
+    print(f"[info] Creating default scenario '{target_name}' from supply chain configuration...")
 
     config_service = SupplyChainConfigService(session)
-    game_config = config_service.create_game_from_config(
+    scenario_config = config_service.create_scenario_from_config(
         sc_config.id,
         {"name": target_name, "max_periods": 40},
     )
-    _apply_default_lead_times(game_config)
-    game_config["progression_mode"] = "unsupervised"
+    _apply_default_lead_times(scenario_config)
+    scenario_config["progression_mode"] = "unsupervised"
     if override_payload:
-        game_config["demand_pattern"] = override_payload
+        scenario_config["demand_pattern"] = override_payload
 
     creator_id = sc_config.created_by or tenant.admin_id
-    game = Game(
-        name=game_config.get("name", target_name),
+    scenario = Scenario(
+        name=scenario_config.get("name", target_name),
         created_by=creator_id,
         tenant_id=tenant.id,
         status=ScenarioStatus.CREATED,
-        max_periods=game_config.get("max_periods", 52),
-        config=game_config,
-        demand_pattern=game_config.get("demand_pattern", {}),
+        max_periods=scenario_config.get("max_periods", 52),
+        config=scenario_config,
+        demand_pattern=scenario_config.get("demand_pattern", {}),
         supply_chain_config_id=sc_config.id,
     )
-    session.add(game)
+    session.add(scenario)
     session.flush()
-    print(f"[success] Created game '{game.name}' (id={game.id}).")
-    return game
+    print(f"[success] Created scenario '{scenario.name}' (id={scenario.id}).")
+    return scenario
 
 
 def ensure_naive_unsupervised_game(
@@ -3380,24 +3380,24 @@ def ensure_naive_unsupervised_game(
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
-    game_name: str = NAIVE_AGENT_GAME_NAME,
-) -> Game:
-    """Ensure a dedicated unsupervised game powered by naive agents exists."""
+    scenario_name: str = NAIVE_AGENT_SCENARIO_NAME,
+) -> Scenario:
+    """Ensure a dedicated unsupervised scenario powered by naive agents exists."""
 
     config_service = SupplyChainConfigService(session)
 
-    game = (
-        session.query(Game)
-        .filter(Scenario.tenant_id == tenant.id, Game.name == game_name)
+    scenario = (
+        session.query(Scenario)
+        .filter(Scenario.tenant_id == tenant.id, Scenario.name == scenario_name)
         .first()
     )
 
-    if game is None:
-        print(f"[info] Creating naive benchmark game '{game_name}'...")
-        base_config = config_service.create_game_from_config(
+    if scenario is None:
+        print(f"[info] Creating naive benchmark scenario '{scenario_name}'...")
+        base_config = config_service.create_scenario_from_config(
             config.id,
             {
-                "name": game_name,
+                "name": scenario_name,
                 "max_periods": 40,
                 "is_public": False,
                 "description": NAIVE_AGENT_DESCRIPTION,
@@ -3409,8 +3409,8 @@ def ensure_naive_unsupervised_game(
             base_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
 
         creator_id = config.created_by or tenant.admin_id
-        game = Game(
-            name=game_name,
+        scenario = Scenario(
+            name=scenario_name,
             created_by=creator_id,
             tenant_id=tenant.id,
             status=ScenarioStatus.CREATED,
@@ -3420,33 +3420,33 @@ def ensure_naive_unsupervised_game(
             description=NAIVE_AGENT_DESCRIPTION,
             supply_chain_config_id=config.id,
         )
-        session.add(game)
+        session.add(scenario)
         session.flush()
-        print(f"[success] Created game '{game_name}' (id={game.id}).")
+        print(f"[success] Created scenario '{scenario_name}' (id={scenario.id}).")
     else:
-        print(f"[info] Updating naive benchmark game '{game_name}' (id={game.id}).")
-        game_config = game.config or {}
-        if isinstance(game_config, str):
+        print(f"[info] Updating naive benchmark scenario '{scenario_name}' (id={scenario.id}).")
+        scenario_config = scenario.config or {}
+        if isinstance(scenario_config, str):
             try:
-                game_config = json.loads(game_config)
+                scenario_config = json.loads(scenario_config)
             except json.JSONDecodeError:
-                game_config = {}
-        _apply_default_lead_times(game_config)
-        game_config["progression_mode"] = "unsupervised"
-        game_config["max_periods"] = game_config.get("max_periods", 40)
+                scenario_config = {}
+        _apply_default_lead_times(scenario_config)
+        scenario_config["progression_mode"] = "unsupervised"
+        scenario_config["max_periods"] = scenario_config.get("max_periods", 40)
         if demand_pattern_override:
-            game_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
-        game.config = json.loads(json.dumps(game_config))
-        game.description = NAIVE_AGENT_DESCRIPTION
-        game.status = ScenarioStatus.CREATED
-        game.supply_chain_config_id = config.id
-        game.tenant_id = tenant.id
+            scenario_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
+        scenario.config = json.loads(json.dumps(scenario_config))
+        scenario.description = NAIVE_AGENT_DESCRIPTION
+        scenario.status = ScenarioStatus.CREATED
+        scenario.supply_chain_config_id = config.id
+        scenario.tenant_id = tenant.id
         creator_id = config.created_by or tenant.admin_id
         if creator_id:
-            game.created_by = creator_id
-        session.add(game)
+            scenario.created_by = creator_id
+        session.add(scenario)
 
-    return game
+    return scenario
 
 
 def ensure_pid_game(
@@ -3455,23 +3455,23 @@ def ensure_pid_game(
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
-    game_name: str = PID_AGENT_GAME_NAME,
-) -> Game:
-    """Ensure a PID heuristic showcase game exists for the supply chain configuration."""
+    scenario_name: str = PID_AGENT_SCENARIO_NAME,
+) -> Scenario:
+    """Ensure a PID heuristic showcase scenario exists for the supply chain configuration."""
 
     config_service = SupplyChainConfigService(session)
-    game = (
-        session.query(Game)
-        .filter(Scenario.tenant_id == tenant.id, Game.name == game_name)
+    scenario = (
+        session.query(Scenario)
+        .filter(Scenario.tenant_id == tenant.id, Scenario.name == scenario_name)
         .first()
     )
 
-    if game is None:
-        print(f"[info] Creating PID showcase game '{game_name}'...")
-        base_config = config_service.create_game_from_config(
+    if scenario is None:
+        print(f"[info] Creating PID showcase scenario '{scenario_name}'...")
+        base_config = config_service.create_scenario_from_config(
             config.id,
             {
-                "name": game_name,
+                "name": scenario_name,
                 "max_periods": 40,
                 "is_public": False,
                 "description": PID_AGENT_DESCRIPTION,
@@ -3483,8 +3483,8 @@ def ensure_pid_game(
             base_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
 
         creator_id = config.created_by or tenant.admin_id
-        game = Game(
-            name=game_name,
+        scenario = Scenario(
+            name=scenario_name,
             created_by=creator_id,
             tenant_id=tenant.id,
             status=ScenarioStatus.CREATED,
@@ -3494,40 +3494,40 @@ def ensure_pid_game(
             description=PID_AGENT_DESCRIPTION,
             supply_chain_config_id=config.id,
         )
-        session.add(game)
+        session.add(scenario)
         session.flush()
-        print(f"[success] Created game '{game_name}' (id={game.id}).")
+        print(f"[success] Created scenario '{scenario_name}' (id={scenario.id}).")
     else:
-        print(f"[info] Updating PID showcase game '{game_name}' (id={game.id}).")
-        game_config = game.config or {}
-        if isinstance(game_config, str):
+        print(f"[info] Updating PID showcase scenario '{scenario_name}' (id={scenario.id}).")
+        scenario_config = scenario.config or {}
+        if isinstance(scenario_config, str):
             try:
-                game_config = json.loads(game_config)
+                scenario_config = json.loads(scenario_config)
             except json.JSONDecodeError:
-                game_config = {}
-        _apply_default_lead_times(game_config)
-        game_config["progression_mode"] = "unsupervised"
-        game_config["max_periods"] = game_config.get("max_periods", 40)
+                scenario_config = {}
+        _apply_default_lead_times(scenario_config)
+        scenario_config["progression_mode"] = "unsupervised"
+        scenario_config["max_periods"] = scenario_config.get("max_periods", 40)
         if demand_pattern_override:
-            game_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
-        game.config = json.loads(json.dumps(game_config))
-        game.description = PID_AGENT_DESCRIPTION
-        game.status = ScenarioStatus.CREATED
-        game.supply_chain_config_id = config.id
-        game.tenant_id = tenant.id
+            scenario_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
+        scenario.config = json.loads(json.dumps(scenario_config))
+        scenario.description = PID_AGENT_DESCRIPTION
+        scenario.status = ScenarioStatus.CREATED
+        scenario.supply_chain_config_id = config.id
+        scenario.tenant_id = tenant.id
         creator_id = config.created_by or tenant.admin_id
         if creator_id:
-            game.created_by = creator_id
-        session.add(game)
+            scenario.created_by = creator_id
+        session.add(scenario)
 
     ensure_ai_agents(
         session,
-        game,
+        scenario,
         PID_AGENT_STRATEGY,
         None,
         None,
     )
-    return game
+    return scenario
 
 
 def ensure_trm_game(
@@ -3536,23 +3536,23 @@ def ensure_trm_game(
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
-    game_name: str = TRM_AGENT_GAME_NAME,
-) -> Game:
-    """Ensure a TRM (Tiny Recursive Model) showcase game exists for the supply chain configuration."""
+    scenario_name: str = TRM_AGENT_SCENARIO_NAME,
+) -> Scenario:
+    """Ensure a TRM (Tiny Recursive Model) showcase scenario exists for the supply chain configuration."""
 
     config_service = SupplyChainConfigService(session)
-    game = (
-        session.query(Game)
-        .filter(Scenario.tenant_id == tenant.id, Game.name == game_name)
+    scenario = (
+        session.query(Scenario)
+        .filter(Scenario.tenant_id == tenant.id, Scenario.name == scenario_name)
         .first()
     )
 
-    if game is None:
-        print(f"[info] Creating TRM showcase game '{game_name}'...")
-        base_config = config_service.create_game_from_config(
+    if scenario is None:
+        print(f"[info] Creating TRM showcase scenario '{scenario_name}'...")
+        base_config = config_service.create_scenario_from_config(
             config.id,
             {
-                "name": game_name,
+                "name": scenario_name,
                 "max_periods": 40,
                 "is_public": False,
                 "description": TRM_AGENT_DESCRIPTION,
@@ -3564,8 +3564,8 @@ def ensure_trm_game(
             base_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
 
         creator_id = config.created_by or tenant.admin_id
-        game = Game(
-            name=game_name,
+        scenario = Scenario(
+            name=scenario_name,
             created_by=creator_id,
             tenant_id=tenant.id,
             status=ScenarioStatus.CREATED,
@@ -3575,57 +3575,57 @@ def ensure_trm_game(
             description=TRM_AGENT_DESCRIPTION,
             supply_chain_config_id=config.id,
         )
-        session.add(game)
+        session.add(scenario)
         session.flush()
-        print(f"[success] Created game '{game_name}' (id={game.id}).")
+        print(f"[success] Created scenario '{scenario_name}' (id={scenario.id}).")
     else:
-        print(f"[info] Updating TRM showcase game '{game_name}' (id={game.id}).")
-        game_config = game.config or {}
-        if isinstance(game_config, str):
+        print(f"[info] Updating TRM showcase scenario '{scenario_name}' (id={scenario.id}).")
+        scenario_config = scenario.config or {}
+        if isinstance(scenario_config, str):
             try:
-                game_config = json.loads(game_config)
+                scenario_config = json.loads(scenario_config)
             except json.JSONDecodeError:
-                game_config = {}
-        _apply_default_lead_times(game_config)
-        game_config["progression_mode"] = "unsupervised"
-        game_config["max_periods"] = game_config.get("max_periods", 40)
+                scenario_config = {}
+        _apply_default_lead_times(scenario_config)
+        scenario_config["progression_mode"] = "unsupervised"
+        scenario_config["max_periods"] = scenario_config.get("max_periods", 40)
         if demand_pattern_override:
-            game_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
-        game.config = json.loads(json.dumps(game_config))
-        game.description = TRM_AGENT_DESCRIPTION
-        game.status = ScenarioStatus.CREATED
-        game.supply_chain_config_id = config.id
-        game.tenant_id = tenant.id
+            scenario_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
+        scenario.config = json.loads(json.dumps(scenario_config))
+        scenario.description = TRM_AGENT_DESCRIPTION
+        scenario.status = ScenarioStatus.CREATED
+        scenario.supply_chain_config_id = config.id
+        scenario.tenant_id = tenant.id
         creator_id = config.created_by or tenant.admin_id
         if creator_id:
-            game.created_by = creator_id
-        session.add(game)
+            scenario.created_by = creator_id
+        session.add(scenario)
 
     ensure_ai_agents(
         session,
-        game,
+        scenario,
         TRM_AGENT_STRATEGY,
         None,
         None,
     )
-    return game
+    return scenario
 
 
 def configure_human_players_for_game(
     session: Session,
     tenant: Tenant,
-    game: Game,
+    scenario: Scenario,
 ) -> None:
-    """Ensure the default game uses human scenario_users mapped to role-specific accounts."""
+    """Ensure the default scenario uses human scenario_users mapped to role-specific accounts."""
 
-    config_payload = _load_game_config_payload(game)
+    config_payload = _load_scenario_config_payload(scenario)
     slots = _iter_node_slots(config_payload)
     if not slots:
-        raise ValueError("Game configuration does not define any playable nodes.")
+        raise ValueError("Scenario configuration does not define any playable nodes.")
 
     existing_scenario_users: Dict[str, ScenarioUser] = {
         _player_node_key(scenario_user): scenario_user
-        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
     }
     required_keys: Set[str] = {slot.key for slot in slots}
     role_assignments: Dict[str, Dict[str, int | bool | None]] = {}
@@ -3635,7 +3635,7 @@ def configure_human_players_for_game(
         scenario_user = existing_scenario_users.get(slot.key)
         if scenario_user is None:
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=slot.label,
                 type=ScenarioUserType.HUMAN,
@@ -3673,23 +3673,23 @@ def configure_human_players_for_game(
         session.delete(scenario_user)
 
     # Remove any lingering agent configs from previous runs
-    session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
+    session.query(AgentConfig).filter(AgentConfig.scenario_id == scenario.id).delete(
         synchronize_session=False
     )
     session.flush()
     session.expire_all()
 
     try:
-        config_payload = game.config or {}
+        config_payload = scenario.config or {}
         if isinstance(config_payload, str):
             config_payload = json.loads(config_payload)
     except json.JSONDecodeError:
         config_payload = {}
 
     config_payload["progression_mode"] = "unsupervised"
-    game.config = json.loads(json.dumps(config_payload))
-    game.role_assignments = role_assignments
-    session.add(game)
+    scenario.config = json.loads(json.dumps(config_payload))
+    scenario.role_assignments = role_assignments
+    session.add(scenario)
     session.flush()
 
     print(
@@ -3698,43 +3698,43 @@ def configure_human_players_for_game(
     )
 
 
-def ensure_human_game_for_config(
+def ensure_human_scenario_for_config(
     session: Session,
     tenant: Tenant,
     config: SupplyChainConfig,
     *,
-    game_name: str,
+    scenario_name: str,
     description: str,
     recreate: bool = False,
-) -> Game:
-    """Create or update a human-playable game for the supplied configuration."""
+) -> Scenario:
+    """Create or update a human-playable scenario for the supplied configuration."""
 
     config_service = SupplyChainConfigService(session)
-    game = (
-        session.query(Game)
-        .filter(Scenario.tenant_id == tenant.id, Game.name == game_name)
+    scenario = (
+        session.query(Scenario)
+        .filter(Scenario.tenant_id == tenant.id, Scenario.name == scenario_name)
         .first()
     )
 
-    if game and recreate:
-        print(f"[info] Recreating human game '{game_name}' (id={game.id}).")
-        session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
+    if scenario and recreate:
+        print(f"[info] Recreating human scenario '{scenario_name}' (id={scenario.id}).")
+        session.query(AgentConfig).filter(AgentConfig.scenario_id == scenario.id).delete(
             synchronize_session=False
         )
-        session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).delete(
+        session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).delete(
             synchronize_session=False
         )
-        session.delete(game)
+        session.delete(scenario)
         session.flush()
         session.expire_all()
-        game = None
+        scenario = None
 
-    if game is None:
-        print(f"[info] Creating human game '{game_name}' for configuration '{config.name}'...")
-        base_config = config_service.create_game_from_config(
+    if scenario is None:
+        print(f"[info] Creating human scenario '{scenario_name}' for configuration '{config.name}'...")
+        base_config = config_service.create_scenario_from_config(
             config.id,
             {
-                "name": game_name,
+                "name": scenario_name,
                 "max_periods": 40,
                 "is_public": False,
                 "description": description,
@@ -3744,8 +3744,8 @@ def ensure_human_game_for_config(
         base_config["progression_mode"] = "unsupervised"
 
         creator_id = config.created_by or tenant.admin_id
-        game = Game(
-            name=base_config.get("name", game_name),
+        scenario = Scenario(
+            name=base_config.get("name", scenario_name),
             created_by=creator_id,
             tenant_id=tenant.id,
             status=ScenarioStatus.CREATED,
@@ -3755,30 +3755,30 @@ def ensure_human_game_for_config(
             description=description,
             supply_chain_config_id=config.id,
         )
-        session.add(game)
+        session.add(scenario)
         session.flush()
     else:
-        print(f"[info] Updating human game '{game_name}' (id={game.id}).")
-        game_config = game.config or {}
-        if isinstance(game_config, str):
+        print(f"[info] Updating human scenario '{scenario_name}' (id={scenario.id}).")
+        scenario_config = scenario.config or {}
+        if isinstance(scenario_config, str):
             try:
-                game_config = json.loads(game_config)
+                scenario_config = json.loads(scenario_config)
             except json.JSONDecodeError:
-                game_config = {}
-        _apply_default_lead_times(game_config)
-        game_config["progression_mode"] = "unsupervised"
-        game.config = json.loads(json.dumps(game_config))
-        game.description = description
-        game.status = ScenarioStatus.CREATED
-        game.supply_chain_config_id = config.id
-        game.tenant_id = tenant.id
+                scenario_config = {}
+        _apply_default_lead_times(scenario_config)
+        scenario_config["progression_mode"] = "unsupervised"
+        scenario.config = json.loads(json.dumps(scenario_config))
+        scenario.description = description
+        scenario.status = ScenarioStatus.CREATED
+        scenario.supply_chain_config_id = config.id
+        scenario.tenant_id = tenant.id
         creator_id = config.created_by or tenant.admin_id
         if creator_id:
-            game.created_by = creator_id
-        session.add(game)
+            scenario.created_by = creator_id
+        session.add(scenario)
 
-    configure_human_players_for_game(session, tenant, game)
-    return game
+    configure_human_players_for_game(session, tenant, scenario)
+    return scenario
 
 
 def ensure_hybrid_human_naive_game(
@@ -3786,66 +3786,66 @@ def ensure_hybrid_human_naive_game(
     tenant: Tenant,
     config: SupplyChainConfig,
     *,
-    game_name: str,
+    scenario_name: str,
     description: str,
     human_site_key: str,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
     recreate: bool = False,
-) -> Game:
+) -> Scenario:
     """
     Create a hybrid scenario with one human scenario_user at specified site and Naive AI agents at all other sites.
 
     Args:
         session: Database session
-        tenant: Tenant for the game
+        tenant: Tenant for the scenario
         config: Supply chain configuration
-        game_name: Name of the game
-        description: Game description
+        scenario_name: Name of the scenario
+        description: Scenario description
         human_site_key: Node key where human scenario_user will be assigned (e.g., "retailer", "wholesaler")
         demand_pattern_override: Optional demand pattern override
-        recreate: If True, delete and recreate the game
+        recreate: If True, delete and recreate the scenario
 
     Returns:
-        Created Game instance
+        Created Scenario instance
     """
-    # Check if game exists
-    existing = session.query(Game).filter(
+    # Check if scenario exists
+    existing = session.query(Scenario).filter(
         Scenario.tenant_id == tenant.id,
-        Game.name == game_name,
+        Scenario.name == scenario_name,
     ).first()
 
     if existing:
         if not recreate:
-            print(f"[info] Game '{game_name}' already exists; skipping creation.")
+            print(f"[info] Scenario '{scenario_name}' already exists; skipping creation.")
             return existing
-        print(f"[warn] Deleting existing game '{game_name}' to recreate it.")
+        print(f"[warn] Deleting existing scenario '{scenario_name}' to recreate it.")
         session.delete(existing)
         session.flush()
 
-    # Create game
-    config_payload = _load_game_config_payload_from_config(
+    # Create scenario
+    config_payload = _load_scenario_config_payload_from_config(
         config, demand_pattern_override=demand_pattern_override
     )
     config_payload["progression_mode"] = "supervised"
 
-    game = Game(
-        name=game_name,
+    scenario = Scenario(
+        name=scenario_name,
         tenant_id=tenant.id,
         supply_chain_config_id=config.id,
         config=config_payload,
-        description=description or game_name,
+        description=description or scenario_name,
         status=ScenarioStatus.NOT_STARTED,
     )
-    session.add(game)
+    session.add(scenario)
     session.flush()
 
     # Get all node slots
     slots = _iter_node_slots(config_payload)
     if not slots:
-        raise ValueError(f"Game configuration for '{game_name}' does not define any playable nodes.")
+        raise ValueError(f"Scenario configuration for '{scenario_name}' does not define any playable nodes.")
 
     # Create scenario_users
-    print(f"[info] Creating hybrid scenario_users for game '{game_name}'...")
+    print(f"[info] Creating hybrid scenario_users for scenario '{scenario_name}'...")
     for slot in slots:
         # Skip Market Demand and Market Supply sites
         if slot.node_type in [NodeType.CUSTOMER, NodeType.VENDOR]:
@@ -3855,7 +3855,7 @@ def ensure_hybrid_human_naive_game(
             # Create human scenario_user
             user = _ensure_node_user(session, tenant, slot)
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=slot.label,
                 type=ScenarioUserType.HUMAN,
@@ -3869,7 +3869,7 @@ def ensure_hybrid_human_naive_game(
         else:
             # Create Naive AI scenario_user
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} (Naive AI)",
                 type=ScenarioUserType.AI,
@@ -3885,26 +3885,26 @@ def ensure_hybrid_human_naive_game(
         session.add(scenario_user)
 
     session.flush()
-    print(f"[success] Created hybrid scenario '{game_name}' with human at {human_site_key}")
-    return game
+    print(f"[success] Created hybrid scenario '{scenario_name}' with human at {human_site_key}")
+    return scenario
 
 
 def _ensure_default_players(
     session: Session,
-    game: Game,
+    scenario: Scenario,
     agent_type: str,
     llm_model: Optional[str],
     llm_strategy: Optional[str] = None,
 ) -> None:
-    """Create placeholder AI scenario_users if none exist for the game."""
-    config_payload = _load_game_config_payload(game)
+    """Create placeholder AI scenario_users if none exist for the scenario."""
+    config_payload = _load_scenario_config_payload(scenario)
     slots = _iter_node_slots(config_payload)
     if not slots:
-        raise ValueError("Game configuration does not define any playable nodes.")
+        raise ValueError("Scenario configuration does not define any playable nodes.")
 
     existing_scenario_users = {
         _player_node_key(scenario_user): scenario_user
-        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
     }
 
     print("[info] Ensuring AI scenario_users exist for all nodes...")
@@ -3912,7 +3912,7 @@ def _ensure_default_players(
         scenario_user = existing_scenario_users.get(slot.key)
         if scenario_user is None:
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} (AI)",
                 site_key=slot.key,
@@ -3930,19 +3930,19 @@ def _ensure_default_players(
 
 def ensure_ai_agents(
     session: Session,
-    game: Game,
+    scenario: Scenario,
     agent_type: str,
     llm_model: Optional[str],
     llm_strategy: Optional[str] = None,
 ) -> None:
-    """Assign AI agents to each role in the game and switch to auto progression."""
-    _ensure_default_players(session, game, agent_type, llm_model, llm_strategy)
+    """Assign AI agents to each role in the scenario and switch to auto progression."""
+    _ensure_default_players(session, scenario, agent_type, llm_model, llm_strategy)
 
-    config_payload = _load_game_config_payload(game)
+    config_payload = _load_scenario_config_payload(scenario)
     slots = _iter_node_slots(config_payload)
     existing_scenario_users = {
         _player_node_key(scenario_user): scenario_user
-        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
     }
     role_assignments: Dict[str, Dict[str, Any]] = {}
 
@@ -3950,7 +3950,7 @@ def ensure_ai_agents(
         scenario_user = existing_scenario_users.get(slot.key)
         if scenario_user is None:
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} ({agent_type})",
                 site_key=slot.key,
@@ -3969,12 +3969,12 @@ def ensure_ai_agents(
         normalized_slot_key = _normalise_node_key(slot.key)
         agent_config = (
             session.query(AgentConfig)
-            .filter(AgentConfig.scenario_id == game.id, AgentConfig.role == normalized_slot_key)
+            .filter(AgentConfig.scenario_id == scenario.id, AgentConfig.role == normalized_slot_key)
             .first()
         )
         if agent_config is None:
             agent_config = AgentConfig(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=normalized_slot_key,
                 agent_type=agent_type,
                 config={},
@@ -4014,9 +4014,9 @@ def ensure_ai_agents(
         config_payload.get("autonomy", {}).pop("llm_model", None)
         config_payload.get("autonomy", {}).pop("llm_strategy", None)
 
-    game.config = json.loads(json.dumps(config_payload))
-    game.role_assignments = role_assignments
-    session.add(game)
+    scenario.config = json.loads(json.dumps(config_payload))
+    scenario.role_assignments = role_assignments
+    session.add(scenario)
     session.flush()
 
     agent_label = agent_type
@@ -4032,9 +4032,9 @@ def ensure_ai_agents(
 
 
 def ensure_role_users(session: Session, tenant: Tenant) -> None:
-    """Legacy helper retained for compatibility; node-scoped accounts are created per game."""
+    """Legacy helper retained for compatibility; node-scoped accounts are created per scenario."""
     print(
-        "[info] Skipping legacy role user bootstrap; node-specific users are created when configuring games."
+        "[info] Skipping legacy role user bootstrap; node-specific users are created when configuring scenarios."
     )
 
 
@@ -4059,14 +4059,14 @@ def _apply_pid_params_to_games(
     config_id: int,
     pid_params: Optional[Dict[str, float]],
 ) -> None:
-    """Update all PID agent configs for games using the supplied supply-chain config."""
+    """Update all PID agent configs for scenarios using the supplied supply-chain config."""
 
     if not pid_params:
         return
 
     scenario_ids = [
         row.id
-        for row in session.query(Game.id).filter(Game.supply_chain_config_id == config_id)
+        for row in session.query(Scenario.id).filter(Scenario.supply_chain_config_id == config_id)
     ]
     if not scenario_ids:
         return
@@ -4300,22 +4300,22 @@ def _run_post_seed_tasks(
 
 
 def _purge_existing_games(session: Session) -> None:
-    """Remove all game records and related AI configurations."""
+    """Remove all scenario records and related AI configurations."""
 
-    print("[info] Removing existing games, scenario_users, and agent configurations...")
+    print("[info] Removing existing scenarios, scenario_users, and agent configurations...")
     session.query(ScenarioUserAction).delete(synchronize_session=False)
     session.query(Period).delete(synchronize_session=False)
     session.query(SupervisorAction).delete(synchronize_session=False)
     session.query(AgentConfig).delete(synchronize_session=False)
     session.query(ScenarioUser).delete(synchronize_session=False)
-    session.query(Game).delete(synchronize_session=False)
+    session.query(Scenario).delete(synchronize_session=False)
     session.flush()
     session.expire_all()
 
 
-def _configure_game_agents(
+def _configure_scenario_agents(
     session: Session,
-    game: Game,
+    scenario: Scenario,
     agent_type: str,
     *,
     override_pct: Optional[float] = None,
@@ -4324,12 +4324,12 @@ def _configure_game_agents(
     can_see_demand_all: bool = False,
     assignment_scope: str = "node",
 ) -> None:
-    """Ensure scenario_users and agent configs exist for a game using the specified agent type."""
+    """Ensure scenario_users and agent configs exist for a scenario using the specified agent type."""
 
-    config_payload = _load_game_config_payload(game)
+    config_payload = _load_scenario_config_payload(scenario)
     slots = _iter_node_slots(config_payload)
-    existing_assignment_payload = dict(game.role_assignments or {})
-    player_rows = list(session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id))
+    existing_assignment_payload = dict(scenario.role_assignments or {})
+    player_rows = list(session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id))
     player_lookup: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in player_rows}
     existing_scenario_users: Dict[str, ScenarioUser] = {}
     for assignment_key, payload in existing_assignment_payload.items():
@@ -4393,7 +4393,7 @@ def _configure_game_agents(
         scenario_user = existing_scenario_users.get(normalised_key)
         if scenario_user is None:
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 name=plan["label"],
                 role=plan["role"],
                 site_key=normalised_key,
@@ -4412,12 +4412,12 @@ def _configure_game_agents(
 
         agent_config = (
             session.query(AgentConfig)
-            .filter(AgentConfig.scenario_id == game.id, AgentConfig.role == normalised_key)
+            .filter(AgentConfig.scenario_id == scenario.id, AgentConfig.role == normalised_key)
             .first()
         )
         if agent_config is None:
             agent_config = AgentConfig(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=normalised_key,
                 agent_type=agent_type,
                 config={},
@@ -4477,13 +4477,13 @@ def _configure_game_agents(
         else:
             autonomy_cfg.pop("llm_strategy", None)
 
-    # Agent-led games should always auto-progress.
+    # Agent-led scenarios should always auto-progress.
     config_payload["progression_mode"] = "unsupervised"
     config_payload["player_assignments"] = player_assignments_payload
     config_payload["player_assignment_scope"] = scope
-    game.config = json.loads(json.dumps(config_payload))
-    game.role_assignments = assignments
-    session.add(game)
+    scenario.config = json.loads(json.dumps(config_payload))
+    scenario.role_assignments = assignments
+    session.add(scenario)
 
 
 def ensure_autonomy_games(
@@ -4495,7 +4495,7 @@ def ensure_autonomy_games(
     recreate: bool,
     name_suffix: Optional[str] = None,
 ) -> None:
-    """Create or update showcase games for the Autonomy agent variants."""
+    """Create or update showcase scenarios for the Autonomy agent variants."""
 
     config_service = SupplyChainConfigService(session)
     dataset_info = artifacts.get("dataset") or {}
@@ -4507,33 +4507,33 @@ def ensure_autonomy_games(
     model_info = artifacts.get("model") or {}
 
     for spec in AUTONOMY_AGENT_SPECS:
-        game_name = spec["name"] if not name_suffix else f"{spec['name']} ({name_suffix})"
-        game = (
-            session.query(Game)
-            .filter(Scenario.tenant_id == tenant.id, Game.name == game_name)
+        scenario_name = spec["name"] if not name_suffix else f"{spec['name']} ({name_suffix})"
+        scenario = (
+            session.query(Scenario)
+            .filter(Scenario.tenant_id == tenant.id, Scenario.name == scenario_name)
             .first()
         )
 
-        if game and recreate:
-            print(f"[info] Recreating showcase game '{game_name}' (id={game.id}).")
-            # Remove dependent rows before deleting the game so the FK constraints stay happy
-            session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
+        if scenario and recreate:
+            print(f"[info] Recreating showcase scenario '{scenario_name}' (id={scenario.id}).")
+            # Remove dependent rows before deleting the scenario so the FK constraints stay happy
+            session.query(AgentConfig).filter(AgentConfig.scenario_id == scenario.id).delete(
                 synchronize_session=False
             )
-            session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).delete(
+            session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).delete(
                 synchronize_session=False
             )
-            session.delete(game)
+            session.delete(scenario)
             session.flush()
             session.expire_all()
-            game = None
+            scenario = None
 
-        if game is None:
-            print(f"[info] Creating showcase game '{game_name}'...")
-            base_config = config_service.create_game_from_config(
+        if scenario is None:
+            print(f"[info] Creating showcase scenario '{scenario_name}'...")
+            base_config = config_service.create_scenario_from_config(
                 config.id,
                 {
-                    "name": game_name,
+                    "name": scenario_name,
                     "max_periods": 40,
                     "is_public": True,
                     "description": spec["description"],
@@ -4561,8 +4561,8 @@ def ensure_autonomy_games(
                 base_config.setdefault("autonomy_overrides", {}).update(override_nodes)
 
             creator_id = config.created_by or tenant.admin_id
-            game = Game(
-                name=game_name,
+            scenario = Scenario(
+                name=scenario_name,
                 created_by=creator_id,
                 tenant_id=tenant.id,
                 status=ScenarioStatus.CREATED,
@@ -4572,26 +4572,26 @@ def ensure_autonomy_games(
                 description=spec["description"],
                 supply_chain_config_id=config.id,
             )
-            session.add(game)
+            session.add(scenario)
             session.flush()
         else:
             print(
-                f"[info] Updating showcase game '{game_name}' (id={game.id}) with latest training artifacts."
+                f"[info] Updating showcase scenario '{scenario_name}' (id={scenario.id}) with latest training artifacts."
             )
-            game_config = game.config or {}
-            if isinstance(game_config, str):
+            scenario_config = scenario.config or {}
+            if isinstance(scenario_config, str):
                 try:
-                    game_config = json.loads(game_config)
+                    scenario_config = json.loads(scenario_config)
                 except json.JSONDecodeError:
-                    game_config = {}
-            _apply_default_lead_times(game_config)
-            game.supply_chain_config_id = config.id
-            game.tenant_id = tenant.id
+                    scenario_config = {}
+            _apply_default_lead_times(scenario_config)
+            scenario.supply_chain_config_id = config.id
+            scenario.tenant_id = tenant.id
             creator_id = config.created_by or tenant.admin_id
             if creator_id:
-                game.created_by = creator_id
-            game_config.setdefault("autonomy", {})
-            game_config["autonomy"].update(
+                scenario.created_by = creator_id
+            scenario_config.setdefault("autonomy", {})
+            scenario_config["autonomy"].update(
                 {
                     "strategy": spec["agent_type"],
                     "dataset": dataset_path_for_agents,
@@ -4599,25 +4599,25 @@ def ensure_autonomy_games(
                 }
             )
             if spec.get("llm_model"):
-                game_config["autonomy"]["llm_model"] = spec["llm_model"]
-                game_config.setdefault("info_sharing", {}).update({"visibility": "full"})
+                scenario_config["autonomy"]["llm_model"] = spec["llm_model"]
+                scenario_config.setdefault("info_sharing", {}).update({"visibility": "full"})
             if spec.get("llm_strategy"):
-                game_config["autonomy"]["llm_strategy"] = spec["llm_strategy"]
+                scenario_config["autonomy"]["llm_strategy"] = spec["llm_strategy"]
             else:
-                game_config["autonomy"].pop("llm_strategy", None)
+                scenario_config["autonomy"].pop("llm_strategy", None)
             if spec["override_pct"] is not None:
                 override_nodes = {
-                    slot.key: spec["override_pct"] for slot in _iter_node_slots(game_config)
+                    slot.key: spec["override_pct"] for slot in _iter_node_slots(scenario_config)
                 }
-                game_config.setdefault("autonomy_overrides", {}).update(override_nodes)
-            game_config["progression_mode"] = "unsupervised"
-            game_config["max_periods"] = 40
-            game.config = json.loads(json.dumps(game_config))
-            session.add(game)
+                scenario_config.setdefault("autonomy_overrides", {}).update(override_nodes)
+            scenario_config["progression_mode"] = "unsupervised"
+            scenario_config["max_periods"] = 40
+            scenario.config = json.loads(json.dumps(scenario_config))
+            session.add(scenario)
 
-        _configure_game_agents(
+        _configure_scenario_agents(
             session,
-            game,
+            scenario,
             spec["agent_type"],
             override_pct=spec.get("override_pct"),
             llm_model=spec.get("llm_model"),
@@ -4633,10 +4633,10 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "config_name": INVENTORY_CONFIG_NAME,
             "config_description": "Inventory-only default simulation config (no BOM)",
             "demand_pattern": None,
-            "game_name": DEFAULT_GAME_NAME,
-            "naive_game_name": NAIVE_AGENT_GAME_NAME,
-            "pid_game_name": PID_AGENT_GAME_NAME,
-            "trm_game_name": TRM_AGENT_GAME_NAME,
+            "scenario_name": DEFAULT_SCENARIO_NAME,
+            "naive_scenario_name": NAIVE_AGENT_SCENARIO_NAME,
+            "pid_scenario_name": PID_AGENT_SCENARIO_NAME,
+            "trm_scenario_name": TRM_AGENT_SCENARIO_NAME,
             "autonomy_suffix": None,
             "tenant_name": DEFAULT_TENANT_NAME,
             "tenant_description": DEFAULT_TENANT_DESCRIPTION,
@@ -4646,14 +4646,14 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "manufacturer_master_type": NodeType.INVENTORY.value,
         },
         {
-            "config_name": "Three FG Beer Game",
+            "config_name": "Three FG Beer Scenario",
             "config_description": "Inventory-only simulation with three finished goods (Lager, IPA, Dark).",
             "demand_pattern": None,
-            "game_name": f"{DEFAULT_GAME_NAME} (Three FG)",
-            "naive_game_name": f"{NAIVE_AGENT_GAME_NAME} (Three FG)",
-            "pid_game_name": f"{PID_AGENT_GAME_NAME} (Three FG)",
-            "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Three FG)",
-            "autonomy_suffix": "Three FG Beer Game",
+            "scenario_name": f"{DEFAULT_SCENARIO_NAME} (Three FG)",
+            "naive_scenario_name": f"{NAIVE_AGENT_SCENARIO_NAME} (Three FG)",
+            "pid_scenario_name": f"{PID_AGENT_SCENARIO_NAME} (Three FG)",
+            "trm_scenario_name": f"{TRM_AGENT_SCENARIO_NAME} (Three FG)",
+            "autonomy_suffix": "Three FG Beer Scenario",
             "tenant_name": THREE_FG_TENANT_NAME,
             "tenant_description": THREE_FG_TENANT_DESCRIPTION,
             "admin_username": THREE_FG_ADMIN_USERNAME,
@@ -4661,41 +4661,41 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "admin_full_name": THREE_FG_ADMIN_FULL_NAME,
             "ensure_func": ensure_three_fg_inventory_config,
             "ensure_kwargs": {
-                "name": "Three FG Beer Game",
+                "name": "Three FG Beer Scenario",
                 "description": "Inventory-only simulation with three finished goods (Lager, IPA, Dark).",
                 "demand_pattern_override": None,
             },
         },
         {
-            "config_name": VARIABLE_BEER_GAME_TENANT_NAME,
+            "config_name": VARIABLE_BEER_SCENARIO_TENANT_NAME,
             "config_description": "Lognormal-demand simulation with three finished goods",
             "demand_pattern": _lognormal_pattern_from_median_variance(8.0, 8.0),
-            "game_name": f"{DEFAULT_GAME_NAME} (Variable Beer Game)",
-            "naive_game_name": f"{NAIVE_AGENT_GAME_NAME} (Variable Beer Game)",
-            "pid_game_name": f"{PID_AGENT_GAME_NAME} (Variable Beer Game)",
-            "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Variable Beer Game)",
-            "autonomy_suffix": "Variable Beer Game",
-            "tenant_name": VARIABLE_BEER_GAME_TENANT_NAME,
-            "tenant_description": VARIABLE_BEER_GAME_TENANT_DESCRIPTION,
-            "admin_username": VARIABLE_BEER_GAME_ADMIN_USERNAME,
-            "admin_email": VARIABLE_BEER_GAME_ADMIN_EMAIL,
-            "admin_full_name": VARIABLE_BEER_GAME_ADMIN_FULL_NAME,
+            "scenario_name": f"{DEFAULT_SCENARIO_NAME} (Variable Beer Scenario)",
+            "naive_scenario_name": f"{NAIVE_AGENT_SCENARIO_NAME} (Variable Beer Scenario)",
+            "pid_scenario_name": f"{PID_AGENT_SCENARIO_NAME} (Variable Beer Scenario)",
+            "trm_scenario_name": f"{TRM_AGENT_SCENARIO_NAME} (Variable Beer Scenario)",
+            "autonomy_suffix": "Variable Beer Scenario",
+            "tenant_name": VARIABLE_BEER_SCENARIO_TENANT_NAME,
+            "tenant_description": VARIABLE_BEER_SCENARIO_TENANT_DESCRIPTION,
+            "admin_username": VARIABLE_BEER_SCENARIO_ADMIN_USERNAME,
+            "admin_email": VARIABLE_BEER_SCENARIO_ADMIN_EMAIL,
+            "admin_full_name": VARIABLE_BEER_SCENARIO_ADMIN_FULL_NAME,
             "ensure_func": ensure_three_fg_inventory_config,
             "ensure_kwargs": {
-                "name": VARIABLE_BEER_GAME_TENANT_NAME,
+                "name": VARIABLE_BEER_SCENARIO_TENANT_NAME,
                 "description": "Lognormal-demand simulation with three finished goods",
                 "demand_pattern_override": _lognormal_pattern_from_median_variance(8.0, 8.0),
             },
         },
         {
-            "config_name": "Case Beer Game",
+            "config_name": "Case Beer Scenario",
             "config_description": "Case manufacturer consumes Six-Packs (1:4 BOM) using manufacturer master node type.",
             "demand_pattern": None,
-            "game_name": f"{DEFAULT_GAME_NAME} (Case Beer Game)",
-            "naive_game_name": f"{NAIVE_AGENT_GAME_NAME} (Case Beer Game)",
-            "pid_game_name": f"{PID_AGENT_GAME_NAME} (Case Beer Game)",
-            "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Case Beer Game)",
-            "autonomy_suffix": "Case Beer Game",
+            "scenario_name": f"{DEFAULT_SCENARIO_NAME} (Case Beer Scenario)",
+            "naive_scenario_name": f"{NAIVE_AGENT_SCENARIO_NAME} (Case Beer Scenario)",
+            "pid_scenario_name": f"{PID_AGENT_SCENARIO_NAME} (Case Beer Scenario)",
+            "trm_scenario_name": f"{TRM_AGENT_SCENARIO_NAME} (Case Beer Scenario)",
+            "autonomy_suffix": "Case Beer Scenario",
             "tenant_name": DEFAULT_TENANT_NAME,
             "tenant_description": DEFAULT_TENANT_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
@@ -4705,14 +4705,14 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "ensure_func": ensure_case_config,
         },
         {
-            "config_name": "Six-Pack Beer Game",
+            "config_name": "Six-Pack Beer Scenario",
             "config_description": "Case Mfg assembles Cases (1:4 BOM) fed by Six-Pack Mfg converting Bottles (1:6 BOM).",
             "demand_pattern": None,
-            "game_name": f"{DEFAULT_GAME_NAME} (Six-Pack Beer Game)",
-            "naive_game_name": f"{NAIVE_AGENT_GAME_NAME} (Six-Pack Beer Game)",
-            "pid_game_name": f"{PID_AGENT_GAME_NAME} (Six-Pack Beer Game)",
-            "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Six-Pack Beer Game)",
-            "autonomy_suffix": "Six-Pack Beer Game",
+            "scenario_name": f"{DEFAULT_SCENARIO_NAME} (Six-Pack Beer Scenario)",
+            "naive_scenario_name": f"{NAIVE_AGENT_SCENARIO_NAME} (Six-Pack Beer Scenario)",
+            "pid_scenario_name": f"{PID_AGENT_SCENARIO_NAME} (Six-Pack Beer Scenario)",
+            "trm_scenario_name": f"{TRM_AGENT_SCENARIO_NAME} (Six-Pack Beer Scenario)",
+            "autonomy_suffix": "Six-Pack Beer Scenario",
             "tenant_name": DEFAULT_TENANT_NAME,
             "tenant_description": DEFAULT_TENANT_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
@@ -4721,13 +4721,13 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "ensure_func": ensure_six_pack_config,
         },
         {
-            "config_name": "Bottle Beer Game",
+            "config_name": "Bottle Beer Scenario",
             "config_description": "Bottle Mfg converts Ingredients to Bottles (1:1), Six-Pack Mfg makes Six-Packs (1:6), and Case Mfg builds Cases (1:4).",
             "demand_pattern": None,
-            "game_name": f"{DEFAULT_GAME_NAME} (Bottle Beer Game)",
-            "naive_game_name": f"{NAIVE_AGENT_GAME_NAME} (Bottle Beer Game)",
-            "pid_game_name": f"{PID_AGENT_GAME_NAME} (Bottle Beer Game)",
-            "autonomy_suffix": "Bottle Beer Game",
+            "scenario_name": f"{DEFAULT_SCENARIO_NAME} (Bottle Beer Scenario)",
+            "naive_scenario_name": f"{NAIVE_AGENT_SCENARIO_NAME} (Bottle Beer Scenario)",
+            "pid_scenario_name": f"{PID_AGENT_SCENARIO_NAME} (Bottle Beer Scenario)",
+            "autonomy_suffix": "Bottle Beer Scenario",
             "tenant_name": DEFAULT_TENANT_NAME,
             "tenant_description": DEFAULT_TENANT_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
@@ -4802,27 +4802,27 @@ def seed_default_data(
             )
         )
 
-        game = ensure_default_game(
+        scenario = ensure_default_game(
             session,
             tenant,
             config=config if ensure_func else None,
             config_name=spec["config_name"],
             config_description=spec["config_description"],
             demand_pattern_override=spec["demand_pattern"],
-            game_name=spec["game_name"],
+            scenario_name=spec["scenario_name"],
             manufacturer_master_type=spec.get("manufacturer_master_type"),
         )
 
         if options.assign_ai_agents:
             ensure_ai_agents(
                 session,
-                game,
+                scenario,
                 strategy,
                 llm_model,
                 spec.get("llm_strategy"),
             )
         else:
-            configure_human_players_for_game(session, tenant, game)
+            configure_human_players_for_game(session, tenant, scenario)
 
         session.flush()
         session.commit()
@@ -4833,43 +4833,43 @@ def seed_default_data(
             "device": None,
         }
 
-        naive_game = ensure_naive_unsupervised_game(
+        naive_scenario = ensure_naive_unsupervised_game(
             session,
             tenant,
             config,
             demand_pattern_override=spec["demand_pattern"],
-            game_name=spec["naive_game_name"],
+            scenario_name=spec["naive_scenario_name"],
         )
-        _configure_game_agents(session, naive_game, "naive", assignment_scope="node")
+        _configure_scenario_agents(session, naive_scenario, "naive", assignment_scope="node")
         session.flush()
         session.commit()
 
         # Skip Node Types variant for single-node-per-role configs (e.g., default simulation)
 
-        pid_game = ensure_pid_game(
+        pid_scenario = ensure_pid_game(
             session,
             tenant,
             config,
             demand_pattern_override=spec["demand_pattern"],
-            game_name=spec["pid_game_name"],
+            scenario_name=spec["pid_scenario_name"],
         )
-        _configure_game_agents(session, pid_game, PID_AGENT_STRATEGY, assignment_scope="node")
+        _configure_scenario_agents(session, pid_scenario, PID_AGENT_STRATEGY, assignment_scope="node")
         session.flush()
         session.commit()
 
-        trm_game = ensure_trm_game(
+        trm_scenario = ensure_trm_game(
             session,
             tenant,
             config,
             demand_pattern_override=spec["demand_pattern"],
-            game_name=spec.get("trm_game_name", f"{TRM_AGENT_GAME_NAME} ({spec['config_name']})"),
+            scenario_name=spec.get("trm_scenario_name", f"{TRM_AGENT_SCENARIO_NAME} ({spec['config_name']})"),
         )
-        _configure_game_agents(session, trm_game, TRM_AGENT_STRATEGY, assignment_scope="node")
+        _configure_scenario_agents(session, trm_scenario, TRM_AGENT_STRATEGY, assignment_scope="node")
         session.flush()
         session.commit()
 
-        # Create hybrid human/naive scenarios for Default Beer Game config
-        if spec["config_name"] == INVENTORY_CONFIG_NAME:  # "Default Beer Game" (DB lookup name)
+        # Create hybrid human/naive scenarios for Default Beer Scenario config
+        if spec["config_name"] == INVENTORY_CONFIG_NAME:  # "Default Beer Scenario" (DB lookup name)
             print("[info] Creating hybrid human/Naive AI scenarios for default simulation...")
 
             # Define the 4 hybrid scenarios (one for each playable site)
@@ -4880,20 +4880,20 @@ def seed_default_data(
                 ("factory", "Manufacturer Simulation", "Play as Manufacturer with Naive AI teammates"),
             ]
 
-            for site_key, game_name, game_desc in hybrid_site_configs:
+            for site_key, scenario_name, scenario_desc in hybrid_site_configs:
                 hybrid_game = ensure_hybrid_human_naive_game(
                     session,
                     tenant,
                     config,
-                    game_name=game_name,
-                    description=game_desc,
+                    scenario_name=scenario_name,
+                    description=scenario_desc,
                     human_site_key=site_key,
                     demand_pattern_override=spec["demand_pattern"],
                     recreate=False,
                 )
                 session.flush()
                 session.commit()
-                print(f"[success] Created hybrid scenario: {game_name}")
+                print(f"[success] Created hybrid scenario: {scenario_name}")
 
         # Remove any legacy Node Types variants for single-node-per-role configs (e.g., default simulation)
         _delete_node_type_games_for_config(session, config)
@@ -4916,7 +4916,7 @@ def seed_default_data(
         config.trained_at = datetime.utcnow()
         session.add(config)
 
-        # Only recreate Autonomy showcase games when dataset/training are enabled to
+        # Only recreate Autonomy showcase scenarios when dataset/training are enabled to
         # avoid stale agent_configs updates in skip-training flows.
         if options.create_autonomy_games and options.run_dataset and options.run_training:
             ensure_autonomy_games(
@@ -4982,68 +4982,68 @@ def seed_default_data(
                     "device": None,
                 }
 
-                human_game = ensure_human_game_for_config(
+                human_scenario = ensure_human_scenario_for_config(
                     session,
                     complex_tenant,
                     config,
-                    game_name=COMPLEX_HUMAN_GAME_NAME,
-                    description=COMPLEX_HUMAN_GAME_DESCRIPTION,
+                    scenario_name=COMPLEX_HUMAN_SCENARIO_NAME,
+                    description=COMPLEX_HUMAN_SCENARIO_DESCRIPTION,
                     recreate=options.reset_games,
                 )
                 session.flush()
 
-                complex_naive_game = ensure_naive_unsupervised_game(
+                complex_naive_scenario = ensure_naive_unsupervised_game(
                     session,
                     complex_tenant,
                     config,
-                    game_name=f"{NAIVE_AGENT_GAME_NAME} ({config.name})",
+                    scenario_name=f"{NAIVE_AGENT_SCENARIO_NAME} ({config.name})",
                 )
-                _configure_game_agents(session, complex_naive_game, "naive", assignment_scope="node")
+                _configure_scenario_agents(session, complex_naive_scenario, "naive", assignment_scope="node")
                 session.flush()
 
-                complex_naive_type_game = ensure_naive_unsupervised_game(
+                complex_naive_type_scenario = ensure_naive_unsupervised_game(
                     session,
                     complex_tenant,
                     config,
-                    game_name=f"{NAIVE_AGENT_GAME_NAME} ({config.name}) - Node Types",
+                    scenario_name=f"{NAIVE_AGENT_SCENARIO_NAME} ({config.name}) - Node Types",
                 )
-                _configure_game_agents(session, complex_naive_type_game, "naive", assignment_scope="node_type")
+                _configure_scenario_agents(session, complex_naive_type_scenario, "naive", assignment_scope="node_type")
                 session.flush()
 
-                complex_pid_game = ensure_pid_game(
+                complex_pid_scenario = ensure_pid_game(
                     session,
                     complex_tenant,
                     config,
-                    game_name=f"{PID_AGENT_GAME_NAME} ({config.name})",
+                    scenario_name=f"{PID_AGENT_SCENARIO_NAME} ({config.name})",
                 )
-                _configure_game_agents(session, complex_pid_game, PID_AGENT_STRATEGY, assignment_scope="node")
+                _configure_scenario_agents(session, complex_pid_scenario, PID_AGENT_STRATEGY, assignment_scope="node")
                 session.flush()
 
-                complex_pid_type_game = ensure_pid_game(
+                complex_pid_type_scenario = ensure_pid_game(
                     session,
                     complex_tenant,
                     config,
-                    game_name=f"{PID_AGENT_GAME_NAME} ({config.name}) - Node Types",
+                    scenario_name=f"{PID_AGENT_SCENARIO_NAME} ({config.name}) - Node Types",
                 )
-                _configure_game_agents(session, complex_pid_type_game, PID_AGENT_STRATEGY, assignment_scope="node_type")
+                _configure_scenario_agents(session, complex_pid_type_scenario, PID_AGENT_STRATEGY, assignment_scope="node_type")
                 session.flush()
 
-                complex_trm_game = ensure_trm_game(
+                complex_trm_scenario = ensure_trm_game(
                     session,
                     complex_tenant,
                     config,
-                    game_name=f"{TRM_AGENT_GAME_NAME} ({config.name})",
+                    scenario_name=f"{TRM_AGENT_SCENARIO_NAME} ({config.name})",
                 )
-                _configure_game_agents(session, complex_trm_game, TRM_AGENT_STRATEGY, assignment_scope="node")
+                _configure_scenario_agents(session, complex_trm_scenario, TRM_AGENT_STRATEGY, assignment_scope="node")
                 session.flush()
 
-                complex_trm_type_game = ensure_trm_game(
+                complex_trm_type_scenario = ensure_trm_game(
                     session,
                     complex_tenant,
                     config,
-                    game_name=f"{TRM_AGENT_GAME_NAME} ({config.name}) - Node Types",
+                    scenario_name=f"{TRM_AGENT_SCENARIO_NAME} ({config.name}) - Node Types",
                 )
-                _configure_game_agents(session, complex_trm_type_game, TRM_AGENT_STRATEGY, assignment_scope="node_type")
+                _configure_scenario_agents(session, complex_trm_type_scenario, TRM_AGENT_STRATEGY, assignment_scope="node_type")
                 session.flush()
                 session.commit()
 
@@ -5061,7 +5061,7 @@ def seed_default_data(
         except Exception as exc:
             print(f"[warn] Unable to ensure multi-region supply chain config: {exc}")
 
-    # Skip creating legacy Six-Pack/Bottle/Multi-Product configs and games.
+    # Skip creating legacy Six-Pack/Bottle/Multi-Product configs and scenarios.
 
 
 def run_seed_with_session(
@@ -5092,15 +5092,15 @@ def run_seed_with_session(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Bootstrap Autonomy default data and agent games")
+    parser = argparse.ArgumentParser(description="Bootstrap Autonomy default data and agent scenarios")
     parser.add_argument(
         action="store_true",
-        help="Delete all existing games before recreating defaults and showcases.",
+        help="Delete all existing scenarios before recreating defaults and showcases.",
     )
     parser.add_argument(
-        "--skip-autonomy-games",
+        "--skip-autonomy-scenarios",
         action="store_true",
-        help="Skip creation/update of Autonomy showcase games.",
+        help="Skip creation/update of Autonomy showcase scenarios.",
     )
     parser.add_argument(
         "--skip-dataset",

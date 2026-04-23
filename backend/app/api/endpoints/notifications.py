@@ -37,11 +37,11 @@ class UnregisterTokenRequest(BaseModel):
 
 class NotificationPreferencesUpdate(BaseModel):
     """Request model for updating notification preferences."""
-    # Game notifications
-    game_started: Optional[bool] = None
+    # Scenario notifications
+    scenario_started: Optional[bool] = None
     round_started: Optional[bool] = None
     your_turn: Optional[bool] = None
-    game_completed: Optional[bool] = None
+    scenario_completed: Optional[bool] = None
 
     # Team notifications
     team_message: Optional[bool] = None
@@ -83,10 +83,10 @@ class TokenResponse(BaseModel):
 class PreferencesResponse(BaseModel):
     """Response model for notification preferences."""
     user_id: int
-    game_started: bool
+    scenario_started: bool
     round_started: bool
     your_turn: bool
-    game_completed: bool
+    scenario_completed: bool
     team_message: bool
     teammate_action: bool
     system_announcement: bool
@@ -234,10 +234,10 @@ async def get_notification_preferences(
             return {
                 "preferences": {
                     "user_id": current_user.id,
-                    "game_started": True,
+                    "scenario_started": True,
                     "round_started": True,
                     "your_turn": True,
-                    "game_completed": True,
+                    "scenario_completed": True,
                     "team_message": True,
                     "teammate_action": False,
                     "system_announcement": True,
@@ -253,10 +253,10 @@ async def get_notification_preferences(
         return {
             "preferences": {
                 "user_id": preferences.user_id,
-                "game_started": preferences.game_started,
+                "scenario_started": preferences.scenario_started,
                 "round_started": preferences.round_started,
                 "your_turn": preferences.your_turn,
-                "game_completed": preferences.game_completed,
+                "scenario_completed": preferences.scenario_completed,
                 "team_message": preferences.team_message,
                 "teammate_action": preferences.teammate_action,
                 "system_announcement": preferences.system_announcement,
@@ -302,10 +302,10 @@ async def update_notification_preferences(
             "message": "Preferences updated successfully",
             "preferences": {
                 "user_id": preferences.user_id,
-                "game_started": preferences.game_started,
+                "scenario_started": preferences.scenario_started,
                 "round_started": preferences.round_started,
                 "your_turn": preferences.your_turn,
-                "game_completed": preferences.game_completed,
+                "scenario_completed": preferences.scenario_completed,
                 "team_message": preferences.team_message,
                 "teammate_action": preferences.teammate_action,
                 "system_announcement": preferences.system_announcement,

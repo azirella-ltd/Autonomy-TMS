@@ -27,7 +27,7 @@ from azirella_data_model.master import (  # noqa: F401
     TimeBucket,
 )
 
-# NodeType — TMS-local extended version that includes legacy Beer Game site
+# NodeType — TMS-local extended version that includes legacy Beer Scenario site
 # types (RETAILER, WHOLESALER, DISTRIBUTOR) not in the canonical enum.
 # The canonical NodeType has 8 values; TMS adds 3 legacy values that existing
 # DB rows reference. Kept local to avoid polluting the canonical with

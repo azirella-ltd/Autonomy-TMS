@@ -38,7 +38,7 @@ class LeaderboardType(str, Enum):
     WEEKLY = "weekly"
     MONTHLY = "monthly"
     ROLE = "role"
-    GAME_MODE = "game_mode"
+    SCENARIO_MODE = "scenario_mode"
 
 
 class LeaderboardMetric(str, Enum):

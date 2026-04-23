@@ -52,23 +52,23 @@ class ChatAPITester:
             return False
 
     def get_first_game(self):
-        """Get first available game for testing."""
-        print("\n=== Getting first game ===")
-        # Try mixed-games endpoint
-        response = self.session.get(f"{API_BASE}/mixed-games/")
+        """Get first available scenario for testing."""
+        print("\n=== Getting first scenario ===")
+        # Try mixed-scenarios endpoint
+        response = self.session.get(f"{API_BASE}/mixed-scenarios/")
 
         if response.status_code == 200:
-            games = response.json()
-            if games and len(games) > 0:
-                self.scenario_id = games[0]["id"]
-                print(f"✓ Using game ID: {self.scenario_id}")
-                print(f"  Game: {games[0]['name']}")
+            scenarios = response.json()
+            if scenarios and len(scenarios) > 0:
+                self.scenario_id = scenarios[0]["id"]
+                print(f"✓ Using scenario ID: {self.scenario_id}")
+                print(f"  Scenario: {scenarios[0]['name']}")
                 return True
             else:
-                print("✗ No games found")
+                print("✗ No scenarios found")
                 return False
         else:
-            print(f"✗ Failed to get games: {response.status_code}")
+            print(f"✗ Failed to get scenarios: {response.status_code}")
             return False
 
     def test_send_message(self):
@@ -286,9 +286,9 @@ class ChatAPITester:
             print("\n✗ Tests aborted - login failed")
             return False
 
-        # Get game
+        # Get scenario
         if not self.get_first_game():
-            print("\n✗ Tests aborted - no game available")
+            print("\n✗ Tests aborted - no scenario available")
             return False
 
         # Test chat messages

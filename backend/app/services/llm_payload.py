@@ -13,7 +13,6 @@ from app.models.scenario_user import ScenarioUser
 from app.models.supply_chain import ScenarioUserInventory, ScenarioUserPeriod, ScenarioPeriod
 
 # Aliases for backwards compatibility
-Game = Scenario
 ScenarioUser = ScenarioUser
 # Mapping between backend role identifiers and the labels expected by the Autonomy LLM
 ROLE_NAME_MAP = {
@@ -274,7 +273,7 @@ def _compute_volatility_signal(history: List[int]) -> Dict[str, Any]:
 
 def build_llm_decision_payload(
     db: Session,
-    game: Game,
+    scenario: Scenario,
     *,
     round_number: int,
     action_role: str,
@@ -282,14 +281,14 @@ def build_llm_decision_payload(
 ) -> Dict[str, Any]:
     """Assemble the structured JSON payload expected by the Autonomy LLM agent."""
 
-    config_raw = _coerce_dict(getattr(game, "config", {}))
+    config_raw = _coerce_dict(getattr(scenario, "config", {}))
     sim_params = _coerce_dict(config_raw.get("simulation_parameters", {}))
 
-    demand_pattern_raw = game.demand_pattern or config_raw.get("demand_pattern", {})
+    demand_pattern_raw = scenario.demand_pattern or config_raw.get("demand_pattern", {})
     demand_pattern = _coerce_dict(demand_pattern_raw)
     demand_params = _coerce_dict(demand_pattern.get("params", {}))
 
-    total_weeks = _select_int(game.max_periods, sim_params.get("weeks"), default=40)
+    total_weeks = _select_int(scenario.max_periods, sim_params.get("weeks"), default=40)
     order_lead = max(
         1,
         _select_int(
@@ -371,7 +370,7 @@ def build_llm_decision_payload(
         db.query(ScenarioUserPeriod, ScenarioUser, ScenarioPeriod)
         .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
         .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
-        .filter(ScenarioUser.scenario_id == game.id)
+        .filter(ScenarioUser.scenario_id == scenario.id)
         .order_by(ScenarioPeriod.round_number.asc())
         .all()
     )
@@ -385,9 +384,9 @@ def build_llm_decision_payload(
     history_by_role: Dict[str, List[Dict[str, Any]]] = {}
     orders_by_role_round: Dict[str, Dict[int, int]] = {}
 
-    for round_rec, scenario_user_obj, game_round in scenario_user_period_rows:
+    for round_rec, scenario_user_obj, scenario_period in scenario_user_period_rows:
         role_name = str(scenario_user_obj.role.value if hasattr(scenario_user_obj.role, "value") else scenario_user_obj.role).lower()
-        round_number = _safe_int(getattr(game_round, "round_number", 0))
+        round_number = _safe_int(getattr(scenario_period, "round_number", 0))
 
         order_up = _safe_int(
             getattr(round_rec, "order_placed", getattr(round_rec, "order_quantity", 0))
@@ -410,7 +409,7 @@ def build_llm_decision_payload(
         }
 
         if role_name == "retailer":
-            demand_value = _safe_int(getattr(game_round, "customer_demand", 0))
+            demand_value = _safe_int(getattr(scenario_period, "customer_demand", 0))
             entry["customer_demand"] = demand_value
 
         history_by_role.setdefault(role_name, []).append(entry)
@@ -418,7 +417,7 @@ def build_llm_decision_payload(
     scenario_users_with_inventory = (
         db.query(ScenarioUser, ScenarioUserInventory)
         .outerjoin(ScenarioUserInventory, ScenarioUserInventory.scenario_user_id == ScenarioUser.id)
-        .filter(ScenarioUser.scenario_id == game.id)
+        .filter(ScenarioUser.scenario_id == scenario.id)
         .all()
     )
 

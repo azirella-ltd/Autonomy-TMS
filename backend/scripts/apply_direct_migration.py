@@ -6,23 +6,23 @@ def apply_migration():
     
     # SQL statements to execute
     migration_sql = """
-    -- Add round_time_limit column to games table
-    ALTER TABLE games 
+    -- Add round_time_limit column to scenarios table
+    ALTER TABLE scenarios 
     ADD COLUMN IF NOT EXISTS round_time_limit INT NOT NULL DEFAULT 60;
     
-    -- Add current_round_ends_at column to games table
-    ALTER TABLE games 
+    -- Add current_round_ends_at column to scenarios table
+    ALTER TABLE scenarios 
     ADD COLUMN IF NOT EXISTS current_round_ends_at DATETIME NULL;
     
-    -- Add is_processed column to game_rounds table
-    ALTER TABLE game_rounds 
+    -- Add is_processed column to scenario_periods table
+    ALTER TABLE scenario_periods 
     ADD COLUMN IF NOT EXISTS is_processed BOOLEAN NOT NULL DEFAULT FALSE;
     
     -- Add is_completed and completed_at columns if they don't exist
-    ALTER TABLE game_rounds 
+    ALTER TABLE scenario_periods 
     ADD COLUMN IF NOT EXISTS is_completed BOOLEAN NOT NULL DEFAULT FALSE;
     
-    ALTER TABLE game_rounds 
+    ALTER TABLE scenario_periods 
     ADD COLUMN IF NOT EXISTS completed_at DATETIME NULL;
     """
     

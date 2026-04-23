@@ -6,7 +6,7 @@ Provides ProposalStatus enum and re-exports DecisionProposal from supply_chain_c
 
 The DecisionProposal model supports two use cases:
 1. Strategic scenario-based proposals (network redesign, acquisitions)
-2. Operational game-based override proposals (copilot mode overrides)
+2. Operational scenario-based override proposals (copilot mode overrides)
 """
 
 from enum import Enum

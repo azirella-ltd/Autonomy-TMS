@@ -3,7 +3,7 @@
 Test AWS SC Adapter - Backward Compatibility Verification
 
 This script tests that the AWS SC compliance layer maintains
-backward compatibility with existing Beer Game agents and training data.
+backward compatibility with existing Beer Scenario agents and training data.
 """
 
 import sys
@@ -70,9 +70,9 @@ def test_params_conversion():
     print(f"\n✅ All aliases work correctly!")
 
     # Test dictionary conversion
-    beer_game_dict = aws_sc_params.to_beer_game_dict()
-    print(f"\n✅ Converted to Beer Game dict:")
-    print(f"   {beer_game_dict}")
+    beer_scenario_dict = aws_sc_params.to_beer_scenario_dict()
+    print(f"\n✅ Converted to Beer Scenario dict:")
+    print(f"   {beer_scenario_dict}")
 
     aws_sc_dict = aws_sc_params.to_aws_sc_dict()
     print(f"\n✅ Converted to AWS SC dict:")
@@ -136,7 +136,7 @@ def test_training_sample_wrapping():
 
     adapter = SCAdapter(use_sc_fields=True, backward_compatible=True)
 
-    # Create sample with Beer Game fields
+    # Create sample with Beer Scenario fields
     sample = adapter.wrap_training_sample(
         role="retailer",
         position=0,
@@ -157,7 +157,7 @@ def test_training_sample_wrapping():
     assert "site_id" in sample, "Missing site_id"
     assert "item_id" in sample, "Missing item_id"
 
-    # Verify Beer Game fields are present (backward compat)
+    # Verify Beer Scenario fields are present (backward compat)
     assert "inventory" in sample, "Missing inventory (backward compat)"
     assert "backlog" in sample, "Missing backlog (backward compat)"
     assert "role" in sample, "Missing role (backward compat)"
@@ -178,7 +178,7 @@ def test_training_batch_wrapping():
 
     adapter = SCAdapter(use_sc_fields=True, backward_compatible=True)
 
-    # Create batch with Beer Game fields
+    # Create batch with Beer Scenario fields
     batch = {
         "inventory": np.array([[12], [10], [15]]),
         "backlog": np.array([[3], [0], [5]]),
@@ -207,7 +207,7 @@ def test_training_batch_wrapping():
 
 
 def test_backward_compatibility():
-    """Test that existing code can still use Beer Game fields."""
+    """Test that existing code can still use Beer Scenario fields."""
     print("\n" + "=" * 80)
     print("TEST 6: Backward Compatibility")
     print("=" * 80)
@@ -218,14 +218,14 @@ def test_backward_compatibility():
         position=0,
     )
 
-    # Access via Beer Game aliases
+    # Access via Beer Scenario aliases
     inventory = params.inventory
     backlog = params.backlog
     pipeline = params.pipeline
     order_leadtime = params.order_leadtime
     holding_cost = params.holding_cost
 
-    print(f"\n✅ Accessed via Beer Game aliases:")
+    print(f"\n✅ Accessed via Beer Scenario aliases:")
     print(f"   params.inventory: {inventory}")
     print(f"   params.backlog: {backlog}")
     print(f"   params.pipeline: {pipeline}")
@@ -253,7 +253,7 @@ def test_backward_compatibility():
     assert order_leadtime == lead_time_days
     assert holding_cost == holding_cost_per_unit
 
-    print(f"\n✅ TEST 6 PASSED: Existing Beer Game code works unchanged")
+    print(f"\n✅ TEST 6 PASSED: Existing Beer Scenario code works unchanged")
 
 
 def main():
@@ -273,11 +273,11 @@ def main():
         print("✅ ALL TESTS PASSED")
         print("=" * 80)
         print("\n Summary:")
-        print("   ✅ Parameter conversion works (Beer Game ↔ AWS SC)")
+        print("   ✅ Parameter conversion works (Beer Scenario ↔ AWS SC)")
         print("   ✅ State dictionary conversion is bidirectional")
         print("   ✅ Training samples include both schemas")
         print("   ✅ Training batches preserve data integrity")
-        print("   ✅ Existing Beer Game code works unchanged")
+        print("   ✅ Existing Beer Scenario code works unchanged")
         print("\n Conclusion:")
         print("   AWS SC compliance layer maintains 100% backward compatibility")
         print("   Existing agents and training code will continue to work")

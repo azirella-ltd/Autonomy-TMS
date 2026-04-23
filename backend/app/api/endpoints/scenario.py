@@ -126,7 +126,7 @@ def create_scenario(
     Create a new scenario.
     """
     scenario_service = MixedScenarioService(db)
-    scenario = scenario_service.create_game(scenario_in)
+    scenario = scenario_service.create_scenario(scenario_in)
     return ScenarioResponse.from_orm(scenario)
 
 @router.get("/")
@@ -290,7 +290,7 @@ def get_scenario_state(
     """
     scenario_service = MixedScenarioService(db)
     try:
-        return scenario_service.get_game_state(scenario_id)
+        return scenario_service.get_scenario_state(scenario_id)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

@@ -29,7 +29,6 @@ from sqlalchemy.orm import selectinload
 from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
-Game = Scenario
 from app.models.sc_entities import OutboundOrderLine, InvLevel, InvPolicy, Product
 from app.models.purchase_order import PurchaseOrder
 from app.models.transfer_order import TransferOrder
@@ -75,14 +74,14 @@ class SimulationExecutionEngine:
         Returns:
             Round execution summary with metrics
         """
-        # Get game and config
-        game = await self.db.get(Game, scenario_id)
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
+        # Get scenario and config
+        scenario = await self.db.get(Scenario, scenario_id)
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
 
-        config = await self.db.get(SupplyChainConfig, game.config_id)
+        config = await self.db.get(SupplyChainConfig, scenario.config_id)
         if not config:
-            raise ValueError(f"Config {game.config_id} not found")
+            raise ValueError(f"Config {scenario.config_id} not found")
 
         # Get all sites in topology order (downstream to upstream)
         sites = await self._get_sites_in_topology_order(config.id)
@@ -194,7 +193,7 @@ class SimulationExecutionEngine:
         orders_created = []
 
         for market_site in market_demand_sites:
-            # Get demand quantity for this round (from game settings or default)
+            # Get demand quantity for this round (from scenario settings or default)
             demand_qty = await self._get_market_demand(
                 scenario_id=scenario_id,
                 market_site_id=market_site.id,

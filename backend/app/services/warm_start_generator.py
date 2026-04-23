@@ -289,7 +289,7 @@ class WarmStartGenerator:
         """INSERT demand history records via raw SQL to match actual DB schema.
 
         The outbound_order_line table has a legacy INTEGER FK product_id to
-        items.id (Beer Game table). AWS SC configs use string product IDs from
+        items.id (Beer Scenario table). AWS SC configs use string product IDs from
         the product table, which are incompatible. In that case we skip OOL
         creation — the forecast pipeline falls back to Forecast.forecast_p50
         as actuals, and conformal calibration uses PowellCalibrationLog.
@@ -299,7 +299,7 @@ class WarmStartGenerator:
         if not actuals:
             return 0
 
-        # Check if this config's products exist in the items table (Beer Game)
+        # Check if this config's products exist in the items table (Beer Scenario)
         # vs the product table (AWS SC). If products are strings, skip OOL.
         sample_product_id = actuals[0]["product_id"]
         is_string_product = not str(sample_product_id).isdigit()
@@ -312,7 +312,7 @@ class WarmStartGenerator:
             )
             return 0
 
-        # Beer Game configs with integer product IDs — use extended or minimal schema
+        # Beer Scenario configs with integer product IDs — use extended or minimal schema
         col_rows = self.db.execute(
             text(
                 "SELECT column_name FROM information_schema.columns "

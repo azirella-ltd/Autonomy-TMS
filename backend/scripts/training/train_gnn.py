@@ -117,7 +117,7 @@ def get_data(
         if not db_url:
             db_url = resolve_sync_database_url()
         cfg = DbLookupConfig(database_url=db_url, steps_table=steps_table)
-        return load_sequences_from_db(cfg, params=params, game_ids=None, window=window, horizon=horizon)
+        return load_sequences_from_db(cfg, params=params, scenario_ids=None, window=window, horizon=horizon)
     if source == "sim":
         raise ValueError(
             "Simulation-based data generation has been removed. "

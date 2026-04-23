@@ -3,7 +3,7 @@
 Terminology (Feb 2026):
 - Player -> ScenarioUser (in DB/code)
 - Player -> User (in UI display)
-- Game -> Scenario
+- Scenario -> Scenario
 """
 from typing import Optional, List
 from pydantic import BaseModel, Field, validator

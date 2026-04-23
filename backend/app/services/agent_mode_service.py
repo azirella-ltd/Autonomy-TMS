@@ -23,7 +23,6 @@ from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
-Game = Scenario
 from app.services.llm_agent import LLMAgent as LLMAgentWrapper
 
 
@@ -82,7 +81,7 @@ class AgentModeService:
     Service for managing dynamic agent mode switching.
 
     Responsibilities:
-    - Validate mode switches based on game state
+    - Validate mode switches based on scenario state
     - Record mode history for RLHF training
     - Broadcast mode change notifications
     - Apply transition rules and constraints
@@ -105,7 +104,7 @@ class AgentModeService:
 
         Args:
             scenario_user_id: ScenarioUser to switch mode for
-            scenario_id: Game context
+            scenario_id: Scenario context
             new_mode: Target agent mode
             reason: Reason for switch
             triggered_by: Who initiated switch (user, system, agent)
@@ -115,20 +114,20 @@ class AgentModeService:
             ModeSwitchResult with success status and details
 
         Raises:
-            ValueError: If scenario_user or game not found
+            ValueError: If scenario_user or scenario not found
             RuntimeError: If mode switch not allowed
         """
-        # Fetch scenario_user and game
+        # Fetch scenario_user and scenario
         scenario_user = self.db.query(ScenarioUser).filter_by(
             id=scenario_user_id, scenario_id=scenario_id
         ).first()
 
         if not scenario_user:
-            raise ValueError(f"ScenarioUser {scenario_user_id} not found in game {scenario_id}")
+            raise ValueError(f"ScenarioUser {scenario_user_id} not found in scenario {scenario_id}")
 
-        game = self.db.query(Game).filter_by(id=scenario_id).first()
-        if not game:
-            raise ValueError(f"Game {scenario_id} not found")
+        scenario = self.db.query(Scenario).filter_by(id=scenario_id).first()
+        if not scenario:
+            raise ValueError(f"Scenario {scenario_id} not found")
 
         # Get current mode
         current_mode = scenario_user.agent_mode or AgentMode.MANUAL.value
@@ -141,7 +140,7 @@ class AgentModeService:
                 new_mode=new_mode.value,
                 scenario_user_id=scenario_user_id,
                 scenario_id=scenario_id,
-                round_number=game.current_period,
+                round_number=scenario.current_period,
                 reason=reason.value,
                 message=f"Mode already set to {new_mode.value}",
                 timestamp=datetime.utcnow().isoformat(),
@@ -152,7 +151,7 @@ class AgentModeService:
         if not force:
             validation_result = self.validate_mode_switch(
                 scenario_user=scenario_user,
-                game=game,
+                scenario=scenario,
                 current_mode=AgentMode(current_mode),
                 new_mode=new_mode,
                 reason=reason
@@ -167,7 +166,7 @@ class AgentModeService:
         self._record_mode_history(
             scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
-            round_number=game.current_period,
+            round_number=scenario.current_period,
             previous_mode=current_mode,
             new_mode=new_mode.value,
             reason=reason.value,
@@ -182,7 +181,7 @@ class AgentModeService:
         warnings = self._generate_transition_warnings(
             current_mode=AgentMode(current_mode),
             new_mode=new_mode,
-            game=game
+            scenario=scenario
         )
 
         return ModeSwitchResult(
@@ -191,7 +190,7 @@ class AgentModeService:
             new_mode=new_mode.value,
             scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
-            round_number=game.current_period,
+            round_number=scenario.current_period,
             reason=reason.value,
             message=f"Successfully switched from {current_mode} to {new_mode.value}",
             timestamp=datetime.utcnow().isoformat(),
@@ -201,17 +200,17 @@ class AgentModeService:
     def validate_mode_switch(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         current_mode: AgentMode,
         new_mode: AgentMode,
         reason: ModeSwitchReason
     ) -> Dict[str, Any]:
         """
-        Validate if mode switch is allowed based on game state and rules.
+        Validate if mode switch is allowed based on scenario state and rules.
 
         Args:
             scenario_user: ScenarioUser to validate
-            game: Game context
+            scenario: Scenario context
             current_mode: Current agent mode
             new_mode: Target agent mode
             reason: Reason for switch
@@ -219,11 +218,11 @@ class AgentModeService:
         Returns:
             Dict with 'allowed' (bool) and 'reason' (str) keys
         """
-        # Rule 1: Game must be active
-        if game.status != "in_progress":
+        # Rule 1: Scenario must be active
+        if scenario.status != "in_progress":
             return {
                 "allowed": False,
-                "reason": f"Game not active (status: {game.status})"
+                "reason": f"Scenario not active (status: {scenario.status})"
             }
 
         # Rule 2: Cannot switch during round processing
@@ -275,7 +274,7 @@ class AgentModeService:
 
         Args:
             scenario_user_id: Filter by scenario_user (optional)
-            scenario_id: Filter by game (optional)
+            scenario_id: Filter by scenario (optional)
             limit: Max records to return
 
         Returns:
@@ -310,10 +309,10 @@ class AgentModeService:
 
     def get_current_mode_distribution(self, scenario_id: int) -> Dict[str, int]:
         """
-        Get count of scenario_users in each mode for a game.
+        Get count of scenario_users in each mode for a scenario.
 
         Args:
-            scenario_id: Game to analyze
+            scenario_id: Scenario to analyze
 
         Returns:
             Dict with mode counts: {"manual": 2, "copilot": 1, "autonomous": 1}
@@ -335,7 +334,7 @@ class AgentModeService:
     def suggest_mode_switch(
         self,
         scenario_user: ScenarioUser,
-        game: Game,
+        scenario: Scenario,
         performance_metrics: Dict[str, float]
     ) -> Optional[Dict[str, Any]]:
         """
@@ -343,7 +342,7 @@ class AgentModeService:
 
         Args:
             scenario_user: ScenarioUser to analyze
-            game: Game context
+            scenario: Scenario context
             performance_metrics: Dict with service_level, cost, inventory_turns, etc.
 
         Returns:
@@ -423,7 +422,7 @@ class AgentModeService:
         self,
         current_mode: AgentMode,
         new_mode: AgentMode,
-        game: Game
+        scenario: Scenario
     ) -> List[str]:
         """Generate warnings for mode transition."""
         warnings = []
@@ -446,9 +445,9 @@ class AgentModeService:
                 "You can observe and override if needed."
             )
 
-        if game.current_period < 5:
+        if scenario.current_period < 5:
             warnings.append(
-                f"Early in game (Round {game.current_period}/52). "
+                f"Early in scenario (Round {scenario.current_period}/52). "
                 "AI agents perform better with more historical data."
             )
 
@@ -473,7 +472,7 @@ class AgentModeHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False, index=True)
-    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False, index=True)
     round_number = Column(Integer, nullable=False)
     previous_mode = Column(String(20), nullable=False)  # manual, copilot, autonomous
     new_mode = Column(String(20), nullable=False)

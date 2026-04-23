@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 @router.get("/scenarios/{scenario_id}/transfer-orders")
-async def get_game_transfer_orders(
+async def get_scenario_transfer_orders(
     scenario_id: int,
     status: Optional[str] = Query(None, description="Filter by status"),
     round_number: Optional[int] = Query(None, description="Filter by round"),
