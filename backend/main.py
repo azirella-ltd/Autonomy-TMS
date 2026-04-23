@@ -7019,6 +7019,11 @@ api.include_router(capacity_buffer_trm_router, tags=["capacity-buffer-trm"])
 from app.api.endpoints.intermodal_transfer import router as intermodal_transfer_trm_router
 api.include_router(intermodal_transfer_trm_router, tags=["intermodal-transfer-trm"])
 
+# Equipment Reposition TRM — REFLECT-phase empty-vehicle redistribution
+# (Powell 1996 / Crainic et al. 1993 dynamic assignment + ROI gating)
+from app.api.endpoints.equipment_reposition import router as equipment_reposition_trm_router
+api.include_router(equipment_reposition_trm_router, tags=["equipment-reposition-trm"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
