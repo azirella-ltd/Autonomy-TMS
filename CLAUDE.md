@@ -9,6 +9,20 @@ Project rules for Claude Code. Detailed architecture in
 > carries the TMS-specific addenda. When a TMS rule conflicts with
 > Core, Core wins.
 
+## On session start — check Core for pending adoptions
+
+Before proposing "what's next" or picking work, read
+[`../Autonomy-Core/docs/CONSUMER_ADOPTION_LOG.md`](../Autonomy-Core/docs/CONSUMER_ADOPTION_LOG.md)
+for recent entries and look for rows where **Autonomy-TMS** is listed
+as `pending`. Those are TMS adoption gaps that Core has already shipped
+and every new session should surface them first. Session-fresh threads
+(whatever felt urgent in the last conversation) are secondary to
+`pending` gating items.
+
+Also scan [`../Autonomy-Core/docs/MIGRATION_REGISTER.md`](../Autonomy-Core/docs/MIGRATION_REGISTER.md)
+for items at status `SHIPPED_CORE` that haven't moved to `COMPLETE` —
+those need TMS-side adoption before they close.
+
 ## The rule — every TMS change
 
 **TMS is a policy repo**, not a platform repo. Only Transport-plane

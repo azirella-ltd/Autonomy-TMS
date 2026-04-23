@@ -24,13 +24,43 @@ services:
     networks:
       - autonomy-tms-network
 
-  # GPU-specific runtime configuration (only used when FORCE_GPU=1)
+  # Backend dev overlay: GPU runtime + editable Core install.
+  #
+  # Dev-mode Core consumption (AUTONOMY_CORE_DEV_PATH):
+  # When set to the host path of Autonomy-Core/packages/data-model,
+  # this compose file mounts it into the container at
+  # /opt/azirella-data-model and `pip install -e`s it at startup —
+  # replacing the baked-in wheel (pinned via backend/requirements.txt)
+  # with the live source tree. Core Python changes land on the next
+  # FastAPI autoreload: no rebuild, no pin bump, no git round-trip.
+  # CI / prod keep the git pin via the non-dev compose files. Unset
+  # the var to fall back to the pinned wheel.
+  #
+  # Typical usage (msi-stealth dev):
+  #   export AUTONOMY_CORE_DEV_PATH=/home/trevor/Documents/Autonomy-Core/packages/data-model
+  #   FORCE_GPU=1 docker compose -f docker-compose.yml \
+  #     -f docker-compose.gpu.yml -f docker-compose.dev.yml up -d
   backend:
     runtime: ${GPU_RUNTIME:-}
     environment:
       - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - FORCE_GPU=${FORCE_GPU:-0}
+      - AUTONOMY_CORE_DEV_PATH=${AUTONOMY_CORE_DEV_PATH:-}
+    volumes:
+      # Mount Core's data-model package read-only when the host env var
+      # points at it. When unset the path resolves to /dev/null and the
+      # in-container install is skipped.
+      - ${AUTONOMY_CORE_DEV_PATH:-/dev/null}:/opt/azirella-data-model:ro
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$${AUTONOMY_CORE_DEV_PATH}" ] && [ -d /opt/azirella-data-model/src ]; then
+          echo "[dev] editable-installing Core data-model from /opt/azirella-data-model"
+          pip install --no-deps -e /opt/azirella-data-model
+        fi
+        exec uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 networks:
   autonomy-tms-network:
