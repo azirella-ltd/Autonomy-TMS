@@ -7009,6 +7009,11 @@ api.include_router(load_build_router, tags=["load-build"])
 from app.api.endpoints.demand_sensing import router as demand_sensing_trm_router
 api.include_router(demand_sensing_trm_router, tags=["demand-sensing-trm"])
 
+# Capacity Buffer TRM — ASSESS-phase lane-level capacity buffer sizing
+# (conformal P90-P50 + tender reject rate + newsvendor-inspired multiplier)
+from app.api.endpoints.capacity_buffer import router as capacity_buffer_trm_router
+api.include_router(capacity_buffer_trm_router, tags=["capacity-buffer-trm"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
