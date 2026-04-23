@@ -1218,32 +1218,12 @@ def create_orchestrator_with_handlers(db: AsyncSession) -> AgentOrchestratorServ
     except Exception as e:
         logger.warning(f"Failed to register TRM_ATP handler: {e}")
 
-    try:
-        from app.services.powell.inventory_rebalancing_trm import InventoryRebalancingTRM
-        orchestrator.register_agent_handler(
-            AgentType.TRM_REBALANCE,
-            _build_trm_handler(InventoryRebalancingTRM, "evaluate_rebalancing"),
-        )
-    except Exception as e:
-        logger.warning(f"Failed to register TRM_REBALANCE handler: {e}")
-
-    try:
-        from app.services.powell.po_creation_trm import POCreationTRM
-        orchestrator.register_agent_handler(
-            AgentType.TRM_PO_CREATION,
-            _build_trm_handler(POCreationTRM, "evaluate_po_need"),
-        )
-    except Exception as e:
-        logger.warning(f"Failed to register TRM_PO_CREATION handler: {e}")
-
-    try:
-        from app.services.powell.order_tracking_trm import OrderTrackingTRM
-        orchestrator.register_agent_handler(
-            AgentType.TRM_ORDER_TRACKING,
-            _build_trm_handler(OrderTrackingTRM, "evaluate_order"),
-        )
-    except Exception as e:
-        logger.warning(f"Failed to register TRM_ORDER_TRACKING handler: {e}")
+    # SCP-fork handlers removed 2026-04-23: InventoryRebalancingTRM,
+    # POCreationTRM, OrderTrackingTRM were inventory/purchase-order TRMs
+    # from the SCP-era fork. TMS has ShipmentTracking / BrokerRouting /
+    # FreightProcurement / EquipmentReposition as the transport-plane
+    # equivalents (registered via their own routes, not this
+    # AgentType registry).
 
     # --- GNN agents ---
     try:

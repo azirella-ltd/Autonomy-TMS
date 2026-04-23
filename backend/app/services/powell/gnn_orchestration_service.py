@@ -497,175 +497,24 @@ class GNNOrchestrationService:
 
     def _apply_planning_trm_adjustments(
         self,
-        gnn_outputs: Dict[str, Dict[str, Any]],
+        gnn_outputs,
         tactical_output,
-    ) -> Dict[str, Any]:
+    ):
+        """No-op in TMS after SCP-fork Planning-TRM retirement (2026-04-23).
+
+        The SCP-era DemandAdjustment / InventoryAdjustment / SupplyAdjustment
+        TRMs produced per-site corrections to SCP Demand / Inventory / Supply
+        Planning GNN outputs. None of those concepts are in the TMS
+        transport plane. Wiring transport-plane GNN-correction TRMs (when /
+        if they exist) is item 1.13 scope.
+
+        Returns the original stats shape with zero counts so callers keep
+        working during the transition.
         """
-        Apply Planning TRM in-cycle corrections to GNN baseline outputs.
-
-        For each site, instantiates the three domain Planning TRMs
-        (Demand, Inventory, Supply) and applies their adjustment factors
-        to the corresponding GNN signals in gnn_outputs (in-place).
-
-        Uses GNN output signals as state proxies so that no additional DB
-        queries are required in the daily cycle. Full per-product TRM
-        evaluation is performed by the domain planning services when they
-        generate detailed plans.
-
-        Returns a stats dict summarising how many sites were adjusted per domain.
-        """
-        from app.services.powell.demand_adjustment_trm import (
-            DemandAdjustmentTRM, DemandAdjustmentState,
-        )
-        from app.services.powell.inventory_adjustment_trm import (
-            InventoryAdjustmentTRM, InventoryAdjustmentState,
-        )
-        from app.services.powell.supply_adjustment_trm import (
-            SupplyAdjustmentTRM, SupplyAdjustmentState,
-        )
-        import datetime as _dt
-
-        demand_adjusted = 0
-        inventory_adjusted = 0
-        supply_adjusted = 0
-
-        week_of_year = _dt.date.today().isocalendar()[1]
-        week_normalised = (week_of_year - 1) / 51.0
-
-        for site_key, signals in gnn_outputs.items():
-            # ----------------------------------------------------------------
-            # Demand Adjustment TRM
-            # State built from GNN demand signals + heuristic proxies
-            # ----------------------------------------------------------------
-            try:
-                d_conf = signals.get("domain_confidence", {}).get("demand", 0.8)
-                d_forecast = signals.get("demand_forecast", [1.0])
-                d_volatility = float(signals.get("demand_volatility", 0.0))
-                bullwhip = float(signals.get("bullwhip_coefficient", 1.0))
-
-                demand_trm = DemandAdjustmentTRM(site_key=site_key)
-                demand_state = DemandAdjustmentState(
-                    product_id="aggregate",
-                    site_id=site_key,
-                    gnn_p50_forecast=float(d_forecast[0]) if d_forecast else 1.0,
-                    gnn_confidence=float(d_conf),
-                    # Use demand volatility as mape proxy (normalised)
-                    recent_bias=float(bullwhip - 1.0) * 0.1,
-                    recent_mape=float(d_volatility),
-                    inventory_weeks_cover=float(
-                        signals.get("pipeline_coverage_days", 14.0)
-                    ) / 7.0,
-                    backlog_flag=1.0 if signals.get("stockout_probability", 0.0) > 0.3 else 0.0,
-                    email_signal_adj_factor=1.0,
-                    email_signal_age_days=7.0,
-                    lifecycle_stage=0.67,  # assume mature — no product-level data here
-                    promotion_active=0.0,
-                    week_of_year_normalised=week_normalised,
-                    demand_trend_4w=float(bullwhip - 1.0) * 0.05,
-                )
-                demand_rec = demand_trm.evaluate(demand_state)
-
-                if demand_rec.adjustment_factor != 1.0:
-                    # Apply to demand_forecast list in place
-                    adjusted = [
-                        v * demand_rec.adjustment_factor
-                        for v in signals.get("demand_forecast", [])
-                    ]
-                    gnn_outputs[site_key]["demand_forecast"] = adjusted
-                    gnn_outputs[site_key]["demand_trm_factor"] = demand_rec.adjustment_factor
-                    gnn_outputs[site_key]["demand_trm_confidence"] = demand_rec.confidence
-                    if demand_rec.adjustment_factor != 1.0:
-                        demand_adjusted += 1
-            except Exception as exc:
-                logger.debug(f"DemandAdjustmentTRM skipped for {site_key}: {exc}")
-
-            # ----------------------------------------------------------------
-            # Inventory Adjustment TRM
-            # State built from GNN inventory signals + heuristic proxies
-            # ----------------------------------------------------------------
-            try:
-                i_conf = signals.get("domain_confidence", {}).get("inventory", 0.8)
-                ss_multiplier = float(signals.get("safety_stock_multiplier", 1.0))
-                stockout_prob = float(signals.get("stockout_probability", 0.0))
-                buffer_adj = float(signals.get("buffer_adjustment_signal", 0.0))
-                lead_time_risk = float(signals.get("lead_time_risk", 0.0))
-
-                inv_trm = InventoryAdjustmentTRM(site_key=site_key)
-                inv_state = InventoryAdjustmentState(
-                    product_id="aggregate",
-                    site_id=site_key,
-                    gnn_ss_quantity=ss_multiplier * 100.0,  # relative units
-                    gnn_confidence=float(i_conf),
-                    actual_stockout_rate_4w=stockout_prob * 0.5,
-                    supplier_reliability_trend=0.0,
-                    oee_trend=0.0,
-                    on_hand_weeks_cover=float(
-                        signals.get("pipeline_coverage_days", 14.0)
-                    ) / 7.0,
-                    lead_time_trend=lead_time_risk,
-                    demand_cv_trend=float(signals.get("demand_volatility", 0.0)),
-                    holding_cost_pressure=0.0,
-                    ss_multiplier=ss_multiplier,
-                )
-                inv_rec = inv_trm.evaluate(inv_state)
-
-                if inv_rec.ss_adjustment_delta != 0.0:
-                    gnn_outputs[site_key]["safety_stock_multiplier"] = max(
-                        0.5,
-                        ss_multiplier + inv_rec.ss_adjustment_delta,
-                    )
-                    gnn_outputs[site_key]["inventory_trm_delta"] = inv_rec.ss_adjustment_delta
-                    gnn_outputs[site_key]["inventory_trm_confidence"] = inv_rec.confidence
-                    inventory_adjusted += 1
-            except Exception as exc:
-                logger.debug(f"InventoryAdjustmentTRM skipped for {site_key}: {exc}")
-
-            # ----------------------------------------------------------------
-            # Supply Adjustment TRM
-            # State built from GNN supply signals + heuristic proxies
-            # ----------------------------------------------------------------
-            try:
-                s_conf = signals.get("domain_confidence", {}).get("supply", 0.8)
-                order_rec = float(signals.get("order_recommendation", 0.0))
-                exc_prob = float(signals.get("exception_probability", 0.0))
-                pipeline_cov = float(signals.get("pipeline_coverage_days", 14.0))
-                alloc_prio = float(signals.get("allocation_priority", 0.5))
-
-                supply_trm = SupplyAdjustmentTRM(site_key=site_key)
-                supply_state = SupplyAdjustmentState(
-                    product_id="aggregate",
-                    site_id=site_key,
-                    gnn_supply_plan_qty=order_rec,
-                    gnn_confidence=float(s_conf),
-                    rccp_feasibility_flag=1.0 if exc_prob < 0.2 else 0.0,
-                    supplier_confirmation_rate=max(0.5, 1.0 - exc_prob),
-                    open_po_coverage=min(1.0, pipeline_cov / 14.0),
-                    lead_time_deviation=float(signals.get("lead_time_risk", 0.0)),
-                    available_to_promise=alloc_prio,
-                    exception_probability=exc_prob,
-                    demand_plan_change=float(
-                        gnn_outputs[site_key].get("demand_trm_factor", 1.0) - 1.0
-                    ),
-                    inventory_target_change=float(
-                        gnn_outputs[site_key].get("inventory_trm_delta", 0.0)
-                    ),
-                    frozen_horizon_flag=0.0,
-                )
-                supply_rec = supply_trm.evaluate(supply_state)
-
-                if supply_rec.adjustment_factor != 1.0:
-                    gnn_outputs[site_key]["order_recommendation"] = (
-                        order_rec * supply_rec.adjustment_factor
-                    )
-                    gnn_outputs[site_key]["supply_trm_factor"] = supply_rec.adjustment_factor
-                    gnn_outputs[site_key]["supply_trm_confidence"] = supply_rec.confidence
-                    supply_adjusted += 1
-            except Exception as exc:
-                logger.debug(f"SupplyAdjustmentTRM skipped for {site_key}: {exc}")
-
         return {
-            "demand_adjusted": demand_adjusted,
-            "inventory_adjusted": inventory_adjusted,
-            "supply_adjusted": supply_adjusted,
-            "sites_processed": len(gnn_outputs),
+            "demand_adjusted": 0,
+            "inventory_adjusted": 0,
+            "supply_adjusted": 0,
+            "sites_processed": len(gnn_outputs or {}),
         }
+

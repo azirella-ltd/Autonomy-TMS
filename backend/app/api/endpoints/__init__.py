@@ -49,9 +49,7 @@ from .tms_erp_integration import router as tms_erp_integration_router
 from .autonomy_customers import router as autonomy_customers_router
 
 # Powell Framework (SDAM)
-from .powell import router as powell_router
 from .site_agent import router as site_agent_router
-from .powell_training import router as powell_training_router
 
 # AIIO Framework - Insights & Actions Landing Page
 from .insights import router as insights_router
@@ -119,9 +117,7 @@ __all__ = [
     # Autonomy Customer Registry
     'autonomy_customers_router',
     # Powell Framework (SDAM)
-    'powell_router',
     'site_agent_router',
-    'powell_training_router',
     # AIIO Framework - Insights & Actions
     'insights_router',
     # Planning Cascade

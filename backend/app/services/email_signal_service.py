@@ -363,43 +363,16 @@ class EmailSignalService:
         products = signal.resolved_product_ids or []
         sites = signal.resolved_site_ids or []
 
-        # For forecast-affecting signals, create ForecastAdjustmentState
-        if "forecast_adjustment" in trm_types and products and sites:
-            try:
-                from app.services.powell.forecast_adjustment_trm import (
-                    ForecastAdjustmentTRM, ForecastAdjustmentState,
-                )
-
-                for site_id in sites[:3]:  # Limit to first 3 sites
-                    for product_id in products[:5]:  # Limit to first 5 products
-                        state = ForecastAdjustmentState(
-                            signal_id=f"email_{signal.id}",
-                            product_id=product_id,
-                            site_id=site_id,
-                            source="email",
-                            signal_type=signal.signal_type,
-                            signal_text=signal.signal_summary,
-                            signal_confidence=signal.signal_confidence,
-                            direction=signal.signal_direction or "no_change",
-                            magnitude_hint=signal.signal_magnitude_pct,
-                            time_horizon_periods=signal.time_horizon_weeks or 4,
-                        )
-
-                        trm = ForecastAdjustmentTRM(site_id)
-                        rec = trm.evaluate_signal(state)
-
-                        if rec and rec.should_adjust:
-                            logger.info(
-                                "Email signal %d → forecast adjustment: %s %s %.1f%% for %s@%s",
-                                signal.id, rec.direction, signal.signal_type,
-                                rec.adjustment_pct * 100, product_id, site_id,
-                            )
-                            # Decision is persisted by the TRM's own persistence logic
-                            # We just track that routing happened
-                            decision_ids.append(f"forecast_adj:{site_id}:{product_id}")
-
-            except Exception as e:
-                logger.warning("TRM routing failed for email signal %d: %s", signal.id, e)
+        # SCP-fork ForecastAdjustmentTRM routing removed 2026-04-23.
+        # TMS DemandSensingTRM is the transport-plane analog
+        # (adjusts ShippingForecast.forecast_loads, not SKU-level demand).
+        # Email-signal → DemandSensingTRM routing is item 1.13 scope.
+        if "forecast_adjustment" in trm_types:
+            logger.debug(
+                "Email signal %d targets forecast_adjustment — SCP-fork TRM retired; "
+                "TMS DemandSensingTRM routing pending (item 1.13).",
+                signal.id,
+            )
 
         signal.routed_decision_ids = decision_ids if decision_ids else None
         logger.info(

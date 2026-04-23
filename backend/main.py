@@ -6899,9 +6899,7 @@ from app.api.endpoints import (
     tms_erp_integration_router,
     autonomy_customers_router,
     sap_change_simulator_router,
-    powell_router,
     site_agent_router,
-    powell_training_router,
     insights_router,
     planning_cascade_router,
     deployment_router,
@@ -6939,9 +6937,10 @@ api.include_router(erp_integration_router, prefix="/erp", tags=["erp-integration
 api.include_router(tms_erp_integration_router, prefix="/tms-integration", tags=["tms-integration"])
 api.include_router(autonomy_customers_router, prefix="/customers", tags=["customers"])
 api.include_router(sap_change_simulator_router, tags=["sap-change-simulator"])
-api.include_router(powell_router, prefix="/powell", tags=["powell"])
+# powell_router + powell_training_router unwired 2026-04-23 — SCP-fork
+# endpoint surface (InventoryRebalancing / OrderTracking / allocation on
+# SKUs). Rescope / deletion tracked under MIGRATION_REGISTER 1.13.
 api.include_router(site_agent_router, tags=["site-agent"])
-api.include_router(powell_training_router, prefix="/powell-training", tags=["powell-training"])
 api.include_router(insights_router, tags=["insights"])
 api.include_router(planning_cascade_router, prefix="/planning-cascade", tags=["planning-cascade"])
 api.include_router(deployment_router, prefix="/deployment", tags=["deployment"])

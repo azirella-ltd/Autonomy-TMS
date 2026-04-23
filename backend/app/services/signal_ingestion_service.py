@@ -668,81 +668,21 @@ class SignalIngestionService:
     async def _route_to_forecast_trm(
         self, signal: EdgeIngestedSignal, data: Dict[str, Any],
     ) -> Optional[Dict]:
-        """Route an auto-applied or approved signal to ForecastAdjustmentTRM.
+        """No-op in TMS after SCP-fork ForecastAdjustmentTRM retirement.
 
-        Creates a ForecastAdjustmentState and calls evaluate_signal().
-        Returns the TRM recommendation summary or None on error.
+        The SCP-era ForecastAdjustmentTRM routed SKU-level demand-forecast
+        overrides from external signals. TMS's DemandSensingTRM is the
+        transport-plane analog (ShippingForecast.forecast_loads, not
+        per-SKU). Wiring the signal stream into DemandSensingTRM is
+        item 1.13 scope. Until then this method returns None so the
+        caller treats the signal as "no TRM-driven adjustment".
         """
-        try:
-            from app.services.powell.forecast_adjustment_trm import (
-                ForecastAdjustmentTRM,
-                ForecastAdjustmentState,
-            )
-
-            # Map signal types to forecast directions
-            direction_map = {
-                "DEMAND_INCREASE": "up",
-                "DEMAND_DECREASE": "down",
-                "NEW_OPPORTUNITY": "up",
-                "DISRUPTION": "down",
-                "PRICE_CHANGE": "no_change",
-                "LEAD_TIME_CHANGE": "no_change",
-                "QUALITY_ALERT": "down",
-                "COMPETITOR_ACTION": "no_change",
-            }
-            direction = data.get("direction", direction_map.get(signal.signal_type, "no_change"))
-
-            # Map signal types to engine signal types
-            signal_type_map = {
-                "DEMAND_INCREASE": "demand_increase",
-                "DEMAND_DECREASE": "demand_decrease",
-                "DISRUPTION": "disruption",
-                "PRICE_CHANGE": "price_change",
-                "LEAD_TIME_CHANGE": "lead_time_change",
-                "QUALITY_ALERT": "quality_alert",
-                "NEW_OPPORTUNITY": "new_product",
-                "COMPETITOR_ACTION": "market_intelligence",
-            }
-
-            state = ForecastAdjustmentState(
-                signal_id=signal.signal_id,
-                product_id=signal.product_id or "UNKNOWN",
-                site_id=signal.site_id or "UNKNOWN",
-                source=signal.source,
-                signal_type=signal_type_map.get(signal.signal_type, "demand_increase"),
-                signal_text=signal.raw_text or "",
-                signal_confidence=signal.final_confidence or 0.5,
-                direction=direction,
-                magnitude_hint=signal.magnitude_hint,
-                signal_timestamp=signal.created_at,
-                source_historical_accuracy=signal.source_reliability or 0.5,
-            )
-
-            # Initialize TRM for the target site (no trained model = heuristic fallback)
-            trm = ForecastAdjustmentTRM(
-                site_key=signal.site_id or "default",
-                config=None,  # Uses defaults
-                model=None,   # Heuristic fallback
-                db_session=None,  # Don't double-persist; signal table tracks this
-            )
-
-            recommendation = trm.evaluate_signal(state)
-
-            return {
-                "should_adjust": recommendation.should_adjust,
-                "direction": recommendation.direction,
-                "adjustment_pct": recommendation.adjustment_pct,
-                "adjustment_magnitude": recommendation.adjustment_magnitude,
-                "adjusted_forecast_value": recommendation.adjusted_forecast_value,
-                "confidence": recommendation.confidence,
-                "auto_applicable": recommendation.auto_applicable,
-                "reason": recommendation.reason,
-                "decision_id": None,  # Not persisted via TRM (signal table tracks)
-            }
-
-        except Exception as e:
-            logger.warning(f"ForecastAdjustmentTRM routing failed for signal {signal.signal_id}: {e}")
-            return None
+        logger.debug(
+            "Signal %s targets forecast_adjustment — SCP-fork TRM retired; "
+            "TMS DemandSensingTRM routing pending (item 1.13).",
+            getattr(signal, "signal_id", "<unknown>"),
+        )
+        return None
 
     async def _log_activity(
         self, component: str, action: str,

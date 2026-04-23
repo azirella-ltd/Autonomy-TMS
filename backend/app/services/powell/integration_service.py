@@ -51,19 +51,21 @@ from typing import Any as _PORecommendation  # placeholder return type
 PORecommendation = _PORecommendation
 InventoryPosition = Any  # type: ignore
 SupplierInfo = Any  # type: ignore
-from app.services.powell.order_tracking_trm import (
-    OrderTrackingTRM,
-    OrderState,
-    ExceptionDetection,
-    OrderType,
-    OrderStatus,
-)
-from app.services.powell.inventory_rebalancing_trm import (
-    InventoryRebalancingTRM,
-    SiteInventoryState,
-    TransferLane,
-    RebalanceRecommendation,
-)
+# order_tracking_trm and inventory_rebalancing_trm retired 2026-04-23
+# (SCP-fork TRMs, not transport-plane concerns). TMS has
+# ShipmentTrackingTRM + EquipmentRepositionTRM as the analogs,
+# invoked via their own routes. The detect_order_exceptions /
+# balance_inventory methods below raise NotImplementedError at call
+# time and are scheduled for rescoping under MIGRATION_REGISTER 1.13.
+OrderTrackingTRM = None  # type: ignore[assignment]
+OrderState = Any  # type: ignore
+ExceptionDetection = Any  # type: ignore
+OrderType = Any  # type: ignore
+OrderStatus = Any  # type: ignore
+InventoryRebalancingTRM = None  # type: ignore[assignment]
+SiteInventoryState = Any  # type: ignore
+TransferLane = Any  # type: ignore
+RebalanceRecommendation = Any  # type: ignore
 
 logger = logging.getLogger(__name__)
 

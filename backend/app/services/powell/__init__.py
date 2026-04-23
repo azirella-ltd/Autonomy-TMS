@@ -120,26 +120,13 @@ from .time_phased_atp import (
     TimePhasedATPConfig,
     TimePhasedATPService,
 )
-from .inventory_rebalancing_trm import (
-    RebalanceReason,
-    SiteInventoryState,
-    TransferLane,
-    RebalanceRecommendation,
-    RebalancingState,
-    InventoryRebalancingTRM,
-)
-# po_creation_trm retired — TMS uses FreightProcurementTRM for the ACQUIRE
-# phase (see .claude/rules/trm-mapping.md; commit 3dc1d72e).
-from .order_tracking_trm import (
-    OrderType,
-    OrderStatus,
-    ExceptionType as OrderExceptionType,
-    RecommendedAction,
-    ExceptionSeverity,
-    OrderState,
-    ExceptionDetection,
-    OrderTrackingTRM,
-)
+# inventory_rebalancing_trm, order_tracking_trm, po_creation_trm retired
+# 2026-04-23 — SCP-fork TRMs, not transport-plane concerns.
+# TMS has EquipmentRepositionTRM (repositions empty trailers/containers,
+# not SKU inventory) + ShipmentTrackingTRM (in-transit load exceptions,
+# not customer-PO exception detection) + FreightProcurementTRM
+# (carrier selection, not vendor PO creation) as the transport-plane
+# analogs. See MIGRATION_REGISTER 1.13 for the full substrate cleanup.
 from .trm_trainer import (
     TrainingMethod,
     TrainingConfig,
@@ -171,17 +158,9 @@ from .cdc_monitor import (
     CDCMonitor,
 )
 
-# Inventory Buffer TRM (Phase 5 - Narrow TRM)
-from .inventory_buffer_trm import (
-    BufferAdjustmentReason,
-    BufferState,
-    BufferAdjustment,
-    InventoryBufferTRM,
-)
-SSAdjustmentReason = BufferAdjustmentReason
-SSState = BufferState
-SSAdjustment = BufferAdjustment
-SafetyStockTRM = InventoryBufferTRM
+# InventoryBufferTRM / SafetyStockTRM retired 2026-04-23 — SCP-fork
+# TRMs (SKU-level safety-stock sizing). TMS has CapacityBufferTRM
+# (lane-level carrier-capacity buffer) as the transport-plane analog.
 
 # Deterministic Engines (Section 5.13)
 from .engines import (
@@ -338,23 +317,9 @@ __all__ = [
     "TimePhasedATPResponse",
     "TimePhasedATPConfig",
     "TimePhasedATPService",
-    # Inventory Rebalancing TRM (Phase 5 - Narrow TRM)
-    "RebalanceReason",
-    "SiteInventoryState",
-    "TransferLane",
-    "RebalanceRecommendation",
-    "RebalancingState",
-    "InventoryRebalancingTRM",
-    # PO Creation TRM retired — see import block above.
-    # Order Tracking TRM (Phase 5 - Narrow TRM)
-    "OrderType",
-    "OrderStatus",
-    "OrderExceptionType",
-    "RecommendedAction",
-    "ExceptionSeverity",
-    "OrderState",
-    "ExceptionDetection",
-    "OrderTrackingTRM",
+    # InventoryRebalancingTRM / OrderTrackingTRM retired 2026-04-23 —
+    # SCP-fork TRMs. TMS EquipmentRepositionTRM + ShipmentTrackingTRM
+    # are the transport-plane analogs.
     # TRM Trainer (Phase 5 - VFA/RL Training)
     "TrainingMethod",
     "TrainingConfig",
@@ -379,11 +344,8 @@ __all__ = [
     "TriggerEvent",
     "CDCConfig",
     "CDCMonitor",
-    # Inventory Buffer TRM (Phase 5 - Narrow TRM)
-    "BufferAdjustmentReason",
-    "BufferState",
-    "BufferAdjustment",
-    "InventoryBufferTRM",
+    # InventoryBufferTRM retired 2026-04-23 — SCP-fork TRM.
+    # TMS CapacityBufferTRM is the transport-plane analog.
     # Deterministic Engines (Section 5.13)
     "MRPEngine",
     "MRPConfig",
