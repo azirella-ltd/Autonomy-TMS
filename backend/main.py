@@ -7014,6 +7014,11 @@ api.include_router(demand_sensing_trm_router, tags=["demand-sensing-trm"])
 from app.api.endpoints.capacity_buffer import router as capacity_buffer_trm_router
 api.include_router(capacity_buffer_trm_router, tags=["capacity-buffer-trm"])
 
+# Intermodal Transfer TRM — BUILD-phase mode-shift eligibility & viability
+# (Oracle OTM gates + drayage-decomposed all-in cost + carrying cost)
+from app.api.endpoints.intermodal_transfer import router as intermodal_transfer_trm_router
+api.include_router(intermodal_transfer_trm_router, tags=["intermodal-transfer-trm"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
