@@ -6581,38 +6581,18 @@ from app.api.endpoints.notifications import router as notifications_router
 api.include_router(notifications_router, prefix="/notifications", tags=["notifications", "mobile"])
 
 # Phase 2: AWS SC Compliance - Production Orders, Capacity Planning, Suppliers, Inventory Projection & Lot Sizing
-from app.api.endpoints.production_orders import router as production_orders_router
 from app.api.endpoints.capacity_plans import router as capacity_plans_router
-from app.api.endpoints.suppliers import router as suppliers_router
-from app.api.endpoints.inventory_projection import router as inventory_projection_router
-from app.api.endpoints.lot_sizing import router as lot_sizing_router
-from app.api.endpoints.trm import router as trm_router
 from app.api.endpoints.rl import router as rl_router
 from app.api.endpoints.model import router as model_router
-api.include_router(production_orders_router, prefix="/production-orders", tags=["production-orders"])
 api.include_router(capacity_plans_router, prefix="/capacity-plans", tags=["capacity-plans"])
-from app.api.endpoints.rccp import router as rccp_router
-api.include_router(rccp_router, prefix="/rccp", tags=["rccp"])
 from app.api.endpoints.resource_heatmap import router as resource_heatmap_router
 api.include_router(resource_heatmap_router, prefix="/resource-heatmap", tags=["resource-heatmap", "capacity-plans"])
-api.include_router(suppliers_router, prefix="/suppliers", tags=["suppliers"])
-api.include_router(inventory_projection_router, prefix="/inventory-projection", tags=["inventory-projection"])
-api.include_router(lot_sizing_router, prefix="/lot-sizing", tags=["lot-sizing"])
-api.include_router(trm_router)
 api.include_router(rl_router)
 api.include_router(model_router)
 
 # Phase 3: MRP, Purchase Orders, Transfer Orders
-from app.api.endpoints.mrp import router as mrp_router
-from app.api.endpoints.purchase_orders import router as purchase_orders_router
-from app.api.endpoints.transfer_orders import router as transfer_orders_router
-api.include_router(mrp_router)  # MRP router has prefix="/mrp" in endpoint file
-api.include_router(purchase_orders_router)  # PO router has prefix="/purchase-orders" in endpoint file
 
 # Invoice and 3-Way Matching API
-from app.api.endpoints.invoices import router as invoices_router
-api.include_router(invoices_router)  # Invoice router has prefix="/invoices" in endpoint file
-api.include_router(transfer_orders_router)  # TO router has prefix="/transfer-orders" in endpoint file
 
 # Mixed Scenario ATP/CTP endpoints (Phase 3)
 from app.api.endpoints.mixed_scenario import router as mixed_scenario_router
@@ -6624,28 +6604,19 @@ api.include_router(mixed_scenario_router)  # Mixed scenario router has /mixed-sc
 # mixed_alternative.py removed - consolidated into mixed_scenario.py
 
 # Phase 4: Supply Planning, Sourcing & Analytics
-from app.api.endpoints.sourcing_rules import router as sourcing_rules_router
 from app.api.endpoints.analytics import router as analytics_router
 from app.api.endpoints.risk_analysis import router as risk_analysis_router
 from app.api.endpoints.shipment_tracking import router as shipment_tracking_router
-from app.api.endpoints.inventory_visibility import router as inventory_visibility_router
 from app.api.endpoints.recommendations import router as recommendations_router
-from app.api.endpoints.demand_plan import router as demand_plan_router
 from app.api.endpoints.collaboration import router as collaboration_router
 from app.api.endpoints.project_orders import router as project_orders_router
-from app.api.endpoints.maintenance_orders import router as maintenance_orders_router
 from app.api.endpoints.turnaround_orders import router as turnaround_orders_router
 from app.api.endpoints.user_capabilities import router as user_capabilities_router
 from app.api.endpoints.capabilities import router as capabilities_router
-api.include_router(sourcing_rules_router, prefix="/sourcing-rules", tags=["sourcing-rules", "planning"])
 api.include_router(analytics_router, prefix="/analytics", tags=["analytics", "kpi"])
 api.include_router(risk_analysis_router, prefix="/risk-analysis", tags=["risk-analysis", "insights"])
 api.include_router(shipment_tracking_router, prefix="/shipment-tracking", tags=["shipment-tracking", "material-visibility"])
-api.include_router(inventory_visibility_router, prefix="/inventory-visibility", tags=["inventory-visibility", "material-visibility"])
 api.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations", "planning"])
-api.include_router(demand_plan_router, prefix="/demand-plan", tags=["demand-plan", "planning"])
-from app.api.endpoints.forecast_analytics import router as forecast_analytics_router
-api.include_router(forecast_analytics_router, prefix="/forecast-analytics", tags=["forecast-analytics", "planning"])
 from app.api.endpoints.scenario_planning import router as scenario_planning_router
 api.include_router(scenario_planning_router, prefix="/scenario-planning", tags=["scenario-planning"])
 api.include_router(collaboration_router, prefix="/collaboration", tags=["collaboration", "sprint5"])
@@ -6683,8 +6654,6 @@ from app.api.endpoints.forecast_adjustments import router as forecast_adjustment
 api.include_router(forecast_adjustments_router, prefix="/forecast-adjustments", tags=["forecast-adjustments", "demand-planning"])
 
 # Forecast Pipeline API
-from app.api.endpoints.forecast_pipeline import router as forecast_pipeline_router
-api.include_router(forecast_pipeline_router, prefix="/forecast-pipeline", tags=["forecast-pipeline", "demand-planning"])
 
 # Warm Start API
 from app.api.endpoints.warm_start import router as warm_start_router
@@ -6788,16 +6757,12 @@ from app.api.endpoints.slack_signals import router as slack_signals_router
 api.include_router(slack_signals_router, tags=["slack-signals"])
 
 # Promotional Planning — Extension to AWS SC supplementary_time_series (PROMOTION)
-from app.api.endpoints.promotional_planning import router as promotional_planning_router
-api.include_router(promotional_planning_router, tags=["promotional-planning"])
 
 # Product Lifecycle — NPI, EOL, Markdown/Clearance management
 from app.api.endpoints.product_lifecycle import router as product_lifecycle_router
 api.include_router(product_lifecycle_router, tags=["product-lifecycle"])
 
 # Consensus Planning API
-from app.api.endpoints.consensus_planning import router as consensus_planning_router
-api.include_router(consensus_planning_router, prefix="/consensus-planning", tags=["consensus-planning", "demand-planning"])
 
 # Exception Workflows API (Phase 3)
 from app.api.endpoints.exception_workflows import router as exception_workflows_router
@@ -6836,7 +6801,6 @@ from app.api.endpoints.collaborative_editing import router as collaborative_edit
 api.include_router(collaborative_editing_router, prefix="/collaborative-editing", tags=["collaborative-editing", "real-time"])
 
 api.include_router(project_orders_router, prefix="/project-orders", tags=["project-orders", "sprint6"])
-api.include_router(maintenance_orders_router, prefix="/maintenance-orders", tags=["maintenance-orders", "sprint6"])
 api.include_router(turnaround_orders_router, prefix="/turnaround-orders", tags=["turnaround-orders", "sprint6"])
 api.include_router(user_capabilities_router)  # prefix="/users" defined in router
 api.include_router(capabilities_router)  # prefix="/capabilities" defined in router - for /capabilities/me
@@ -6877,7 +6841,6 @@ api.include_router(pegging_router, prefix="/pegging", tags=["pegging", "ctp", "p
 from app.api.endpoints import (
     dashboard_router,
     advanced_analytics_router,
-    mps_router,
     monte_carlo_router,
     supply_plan_crud_router,
     atp_ctp_router,
@@ -6890,9 +6853,6 @@ from app.api.endpoints import (
     simulation_execution_router,
     sync_jobs_router,
     workflows_router,
-    planning_cycles_router,
-    planning_decisions_router,
-    planning_hierarchy_router,
     synthetic_data_router,
     sap_data_management_router,
     erp_integration_router,
@@ -6910,13 +6870,10 @@ from app.api.endpoints.knowledge_base import router as knowledge_base_router
 from app.api.endpoints.authorization_protocol import router as authorization_protocol_router
 api.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 api.include_router(advanced_analytics_router, prefix="/advanced-analytics", tags=["advanced-analytics"])
-api.include_router(mps_router, tags=["mps"])
 api.include_router(monte_carlo_router, tags=["monte-carlo"])
 api.include_router(supply_plan_crud_router, prefix="/supply-plan-crud", tags=["supply-plan-crud"])
 
 # Planning Board (Netting Timeline & Filter Options)
-from app.api.endpoints.planning_board import router as planning_board_router
-api.include_router(planning_board_router, prefix="/planning-board", tags=["planning-board"])
 api.include_router(atp_ctp_router, prefix="/atp-ctp", tags=["atp-ctp"])
 api.include_router(vendor_lead_time_router, prefix="/vendor-lead-time", tags=["vendor-lead-time"])
 api.include_router(production_process_router, prefix="/production-process", tags=["production-process"])
@@ -6928,9 +6885,6 @@ api.include_router(simulation_execution_router, prefix="/simulation-execution", 
 api.include_router(sap_atp_router, prefix="/sap-atp", tags=["sap-atp"])
 api.include_router(sync_jobs_router, prefix="/sync-jobs", tags=["sync-jobs"])
 api.include_router(workflows_router, prefix="/workflows", tags=["workflows"])
-api.include_router(planning_cycles_router, prefix="/planning-cycles", tags=["planning-cycles"])
-api.include_router(planning_decisions_router, prefix="/planning-decisions", tags=["planning-decisions"])
-api.include_router(planning_hierarchy_router, prefix="/planning-hierarchy", tags=["planning-hierarchy"])
 api.include_router(synthetic_data_router, prefix="/synthetic-data", tags=["synthetic-data"])
 api.include_router(sap_data_management_router, prefix="/sap-data", tags=["sap-data-management"])
 api.include_router(erp_integration_router, prefix="/erp", tags=["erp-integration"])
