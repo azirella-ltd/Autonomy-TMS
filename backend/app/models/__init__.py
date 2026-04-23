@@ -416,6 +416,12 @@ from .transportation_config import (
 # 37. TMS Shipment Route Cache — OSRM-derived polyline cache
 from .shipment_route_cache import ShipmentRouteCache  # noqa: F401
 
+# Core Plane Registry — register the canonical PlaneRegistration ORM
+# against TMS's shared Base metadata at module-load time. A lazy import
+# in tenant_service.py is too late for Base.metadata.create_all() /
+# test bootstrap paths. (MIGRATION_REGISTER 1.9 — Plane Registry.)
+from azirella_data_model.planes import PlaneRegistration, Plane, PlaneRegistry  # noqa: F401
+
 # 38. Analytics — InventoryOptimization, CapacityOptimization,
 #     NetworkOptimization, KPIConfiguration. Imported here so
 #     Base.metadata.create_all() picks them up at startup.
