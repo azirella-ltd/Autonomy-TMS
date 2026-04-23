@@ -1,12 +1,4 @@
-"""
-Achievement models for gamification/simulation system.
-
-Terminology (Feb 2026):
-- player_id -> scenario_user_id
-- PlayerStats -> ScenarioUserStats
-- PlayerAchievement -> ScenarioUserAchievement
-- PlayerBadge -> ScenarioUserBadge
-"""
+"""Achievement models for gamification/simulation system."""
 from sqlalchemy import (
     Column, Integer, String, Text, Enum, Boolean, DECIMAL,
     TIMESTAMP, ForeignKey, BigInteger, JSON, Index
@@ -232,6 +224,3 @@ class AchievementNotification(Base):
 ParticipantStats = ScenarioUserStats
 ParticipantAchievement = ScenarioUserAchievement
 ParticipantBadge = ScenarioUserBadge
-PlayerStats = ScenarioUserStats
-PlayerAchievement = ScenarioUserAchievement
-PlayerBadge = ScenarioUserBadge

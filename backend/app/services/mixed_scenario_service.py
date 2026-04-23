@@ -26,11 +26,6 @@ Game = Scenario
 GameStatus = ScenarioStatusDB
 GameStatusDB = ScenarioStatusDB
 ScenarioUser = ScenarioUser
-ScenarioUserRole = ScenarioUserRole
-ScenarioUserTypeDB = ScenarioUserTypeDB
-ScenarioUserStrategyDB = ScenarioUserStrategyDB
-ScenarioUserInventory = ScenarioUserInventory
-ScenarioUserPeriod = ScenarioUserPeriod
 from app.models.supply_chain_config import SupplyChainConfig, TransportationLane, Site
 from app.models.sc_entities import InvPolicy, Product, InvLevel
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
@@ -56,14 +51,9 @@ from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserType, 
 
 # Aliases for backwards compatibility
 GameCreate = ScenarioCreate
-ScenarioUserCreate = ScenarioUserCreate
 GameState = ScenarioState
-ScenarioUserState = ScenarioUserState
 GameStatus = ScenarioStatus
 GameInDBBase = ScenarioInDBBase
-ScenarioUserAssignment = ScenarioUserAssignment
-ScenarioUserType = ScenarioUserType
-ScenarioUserStrategy = ScenarioUserStrategy
 from app.schemas.simulation import (
     OrderRequest,
     Shipment,
@@ -9551,9 +9541,9 @@ class MixedScenarioService:
                 "display_name": display_name,
                 "scenario_user_id": scenario_user.id,
                 "scenario_user_name": getattr(scenario_user, "name", None),
-                "player_role": getattr(scenario_user.role, "value", getattr(scenario_user.role, "name", None)),
+                "scenario_user_role": getattr(scenario_user.role, "value", getattr(scenario_user.role, "name", None)),
                 "is_ai": bool(getattr(scenario_user, "is_ai", False)),
-                "player_strategy": getattr(scenario_user, "ai_strategy", None) or getattr(scenario_user, "strategy", None),
+                "scenario_user_strategy": getattr(scenario_user, "ai_strategy", None) or getattr(scenario_user, "strategy", None),
                 "player_label": f"{getattr(scenario_user, 'name', display_name)}",
             }
 
@@ -10188,8 +10178,8 @@ class MixedScenarioService:
             meta_payload = {
                 "scenario_user_id": row.get("id"),
                 "scenario_user_name": row.get("name"),
-                "player_role": role_token,
-                "player_strategy": row.get("ai_strategy"),
+                "scenario_user_role": role_token,
+                "scenario_user_strategy": row.get("ai_strategy"),
                 "is_ai": bool(row.get("is_ai")),
             }
             if meta_payload["scenario_user_id"] is not None:

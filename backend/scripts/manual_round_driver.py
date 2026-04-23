@@ -96,7 +96,7 @@ def _login() -> str:
 
 
 @dataclass
-class PlayerSnapshot:
+class ScenarioUserSnapshot:
     role: str
     inventory: int
     backlog: int
@@ -104,7 +104,7 @@ class PlayerSnapshot:
     cost: float
 
 
-def _format_player_snapshot(snapshot: PlayerSnapshot) -> str:
+def _format_scenario_user_snapshot(snapshot: ScenarioUserSnapshot) -> str:
     shipments = ", ".join(str(val) for val in snapshot.incoming_shipments)
     return (
         f"{snapshot.role:>12}: inv={snapshot.inventory:>3}  backlog={snapshot.backlog:>3}"
@@ -178,14 +178,14 @@ def _print_state(state: Dict[str, Any]) -> None:
     print(f"\nRound {state['current_period']}/{state['max_periods']}  status={state['status']}")
     print("ScenarioUsers:")
     for scenario_user in state.get("scenario_users", []):
-        snapshot = PlayerSnapshot(
+        snapshot = ScenarioUserSnapshot(
             role=scenario_user["role"],
             inventory=int(scenario_user.get("inventory", 0)),
             backlog=int(scenario_user.get("backlog", 0)),
             incoming_shipments=scenario_user.get("incoming_shipments", []),
             cost=float(scenario_user.get("cost", 0.0)),
         )
-        print("  " + _format_player_snapshot(snapshot))
+        print("  " + _format_scenario_user_snapshot(snapshot))
 
     print("\nDemand pattern:")
     print(json.dumps(state.get("demand_pattern", {}), indent=2))

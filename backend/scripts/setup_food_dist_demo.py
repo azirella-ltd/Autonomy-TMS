@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from sqlalchemy.orm import sessionmaker
 from app.db.session import sync_engine
 from app.models.scenario import Scenario, ScenarioStatus
-from app.models.participant import ScenarioUser, ScenarioUserRole as PlayerRole, ScenarioUserType
+from app.models.participant import ScenarioUser, ScenarioUserRole as ScenarioUserRole, ScenarioUserType
 from app.models.agent_config import AgentConfig
 from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product
@@ -204,22 +204,22 @@ def create_scenario_with_agents(session, base_config, spec, admin_user_id):
     node_types = scenario_config.get("node_types", {})
 
     role_mapping = {
-        "retailer": PlayerRole.RETAILER,
-        "customer": PlayerRole.RETAILER,
-        "wholesaler": PlayerRole.WHOLESALER,
-        "distributor": PlayerRole.DISTRIBUTOR,
-        "inventory": PlayerRole.DISTRIBUTOR,
-        "distribution center": PlayerRole.DISTRIBUTOR,
-        "manufacturer": PlayerRole.MANUFACTURER,
-        "vendor": PlayerRole.SUPPLIER,
-        "supplier": PlayerRole.SUPPLIER,
+        "retailer": ScenarioUserRole.RETAILER,
+        "customer": ScenarioUserRole.RETAILER,
+        "wholesaler": ScenarioUserRole.WHOLESALER,
+        "distributor": ScenarioUserRole.DISTRIBUTOR,
+        "inventory": ScenarioUserRole.DISTRIBUTOR,
+        "distribution center": ScenarioUserRole.DISTRIBUTOR,
+        "manufacturer": ScenarioUserRole.MANUFACTURER,
+        "vendor": ScenarioUserRole.SUPPLIER,
+        "supplier": ScenarioUserRole.SUPPLIER,
     }
 
     from sqlalchemy import text as sa_text
 
     for node_name in node_policies:
         node_type = node_types.get(node_name, "").lower()
-        role = role_mapping.get(node_type, PlayerRole.DISTRIBUTOR)
+        role = role_mapping.get(node_type, ScenarioUserRole.DISTRIBUTOR)
         role_val = role.value if hasattr(role, "value") else str(role)
 
         # Use raw SQL to insert into actual participants table

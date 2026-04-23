@@ -23,8 +23,14 @@ class SupervisorAgent(BaseAgent):
         Calculate the bullwhip effect metric based on order variance.
         Returns a value where > 1 indicates bullwhip effect.
         """
-        # Get recent orders from all players
-        recent_rounds = self.db.query(models.GameRound)\n            .filter(models.GameRound.scenario_id == self.scenario_id)\n            .order_by(models.GameRound.round_number.desc())\n            .limit(4)\n            .all()
+        # Get recent orders from all scenario users
+        recent_rounds = (
+            self.db.query(models.ScenarioPeriod)
+            .filter(models.ScenarioPeriod.scenario_id == self.scenario_id)
+            .order_by(models.ScenarioPeriod.period_number.desc())
+            .limit(4)
+            .all()
+        )
             
         if len(recent_rounds) < 2:
             return 0.0

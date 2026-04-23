@@ -72,6 +72,4 @@ class ScenarioMetricsResponse(BaseModel):
 # Backward Compatibility Aliases (DEPRECATED - will be removed in future)
 # =============================================================================
 
-PlayerRoundMetrics = ScenarioUserPeriodMetrics
-PlayerPerformance = ScenarioUserPerformance
 GameMetricsResponse = ScenarioMetricsResponse

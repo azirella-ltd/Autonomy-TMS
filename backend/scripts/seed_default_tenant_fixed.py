@@ -29,9 +29,9 @@ try:
         Scenario,
         ScenarioStatus,
         ScenarioUser,
-        PlayerRole,
-        PlayerStrategy,
-        PlayerType,
+        ScenarioUserRole,
+        ScenarioUserStrategy,
+        ScenarioUserType,
         User,
     )
     from app.models.agent_config import AgentConfig
@@ -185,10 +185,10 @@ def _ensure_default_scenario_users(session: Session, scenario: Scenario) -> None
     print("Creating default scenario_users for the scenario")
 
     roles = [
-        (PlayerRole.RETAILER, PlayerType.AI, "Retailer AI"),
-        (PlayerRole.WHOLESALER, PlayerType.AI, "Wholesaler AI"),
-        (PlayerRole.DISTRIBUTOR, PlayerType.AI, "Distributor AI"),
-        (PlayerRole.MANUFACTURER, PlayerType.AI, "Manufacturer AI"),
+        (ScenarioUserRole.RETAILER, ScenarioUserType.AI, "Retailer AI"),
+        (ScenarioUserRole.WHOLESALER, ScenarioUserType.AI, "Wholesaler AI"),
+        (ScenarioUserRole.DISTRIBUTOR, ScenarioUserType.AI, "Distributor AI"),
+        (ScenarioUserRole.MANUFACTURER, ScenarioUserType.AI, "Manufacturer AI"),
     ]
 
     for role, scenario_user_type, name in roles:
@@ -208,7 +208,7 @@ def ensure_naive_agents(session: Session, scenario: Scenario) -> None:
     """Assign AI agents to each role in the scenario."""
     scenario_users = session.query(ScenarioUser).filter(
         ScenarioUser.scenario_id == scenario.id,
-        ScenarioUser.scenario_user_type == PlayerType.AI
+        ScenarioUser.scenario_user_type == ScenarioUserType.AI
     ).all()
 
     if not scenario_users:

@@ -1,12 +1,4 @@
-"""Supplemental supply-chain tables that hang off the primary Scenario / ScenarioUser models.
-
-Terminology (Feb 2026):
-- Game -> Scenario
-- Player -> ScenarioUser
-- ScenarioPeriod -> ScenarioPeriod
-- PlayerPeriod -> ScenarioUserPeriod
-- PlayerInventory -> ScenarioUserInventory
-"""
+"""Supplemental supply-chain tables that hang off the primary Scenario / ScenarioUser models."""
 
 from __future__ import annotations
 
@@ -142,5 +134,3 @@ class ScenarioUserPeriod(Base):
 # Backward compatibility aliases (temporary - remove in Workstream X with SCP-fork code)
 ParticipantInventory = ScenarioUserInventory
 ParticipantPeriod = ScenarioUserPeriod
-PlayerInventory = ScenarioUserInventory
-PlayerPeriod = ScenarioUserPeriod

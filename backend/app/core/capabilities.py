@@ -207,7 +207,7 @@ class Capability(str, Enum):
     VIEW_TENANTS = "view_tenants"
     CREATE_TENANT = "create_tenant"
     MANAGE_TENANTS = "manage_tenants"
-    VIEW_PLAYERS = "view_players"
+    VIEW_SCENARIO_USERS = "view_scenario_users"
     MANAGE_PLAYERS = "manage_players"
     VIEW_USERS = "view_users"
     CREATE_USER = "create_user"
@@ -409,7 +409,7 @@ TENANT_ADMIN_CAPABILITIES = CapabilitySet(
         # Collaboration - Full access within tenant
         Capability.VIEW_TENANTS,
         Capability.MANAGE_TENANTS,
-        Capability.VIEW_PLAYERS,
+        Capability.VIEW_SCENARIO_USERS,
         Capability.MANAGE_PLAYERS,
         Capability.VIEW_USERS,
         Capability.CREATE_USER,
@@ -721,7 +721,7 @@ SOP_DIRECTOR_CAPABILITIES = CapabilitySet(
 
         # Team visibility
         Capability.VIEW_USERS,
-        Capability.VIEW_PLAYERS,
+        Capability.VIEW_SCENARIO_USERS,
     }
 )
 
@@ -1292,7 +1292,7 @@ def get_navigation_capabilities() -> dict:
             "category_capability": Capability.VIEW_TENANTS,
             "items": {
                 "/admin/tenants": [Capability.VIEW_TENANTS],
-                "/players": [Capability.VIEW_PLAYERS],
+                "/scenario-users": [Capability.VIEW_SCENARIO_USERS],
                 "/admin/users": [Capability.VIEW_USERS],
             }
         },

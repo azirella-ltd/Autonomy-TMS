@@ -1,12 +1,4 @@
-"""
-Chat and A2A Collaboration Database Models
-Phase 7 Sprint 2
-
-Terminology (Feb 2026):
-- player_id -> scenario_user_id
-- Game -> Scenario
-- Player -> ScenarioUser (in code), User (in UI)
-"""
+"""Chat and A2A Collaboration Database Models — Phase 7 Sprint 2."""
 
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum, JSON, Float
 from sqlalchemy.orm import relationship

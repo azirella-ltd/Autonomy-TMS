@@ -15,8 +15,6 @@ from app.models.supply_chain import ScenarioUserInventory, ScenarioUserPeriod, S
 # Aliases for backwards compatibility
 Game = Scenario
 ScenarioUser = ScenarioUser
-ScenarioUserInventory = ScenarioUserInventory
-ScenarioUserPeriod = ScenarioUserPeriod
 # Mapping between backend role identifiers and the labels expected by the Autonomy LLM
 ROLE_NAME_MAP = {
     "manufacturer": "factory",

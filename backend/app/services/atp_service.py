@@ -27,7 +27,6 @@ from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
 Game = Scenario
-ScenarioUserPeriod = ScenarioUserPeriod
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.supply_chain_config import TransportationLane
 

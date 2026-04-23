@@ -31,7 +31,6 @@ from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-ScenarioUserPeriod = ScenarioUserPeriod
 Game = Scenario
 ScenarioUser = ScenarioUser
 

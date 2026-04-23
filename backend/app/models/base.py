@@ -6,9 +6,8 @@ same metadata. Cross-model relationships resolve because everything
 is on one shared metadata object.
 
 Previously TMS had its own Base via declarative_base(cls=CustomBase)
-with a table_names dict for Beer Game legacy naming (Game→games,
-Player→players, Round→rounds). That dict is removed; any model that
-relied on it must have an explicit __tablename__ attribute.
+with a table_names dict for TBG legacy naming. That dict is removed; any
+model that relied on it must have an explicit __tablename__ attribute.
 """
 
 # THE canonical Base — all TMS models must inherit from this.

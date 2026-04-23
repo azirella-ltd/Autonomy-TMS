@@ -351,16 +351,3 @@ class LeaderboardResponse(BaseModel):
 # Backward Compatibility Aliases (DEPRECATED - will be removed in future)
 # =============================================================================
 
-PlayerStatsBase = ScenarioUserStatsBase
-PlayerStatsCreate = ScenarioUserStatsCreate
-PlayerStatsUpdate = ScenarioUserStatsUpdate
-PlayerStats = ScenarioUserStats
-PlayerAchievementBase = ScenarioUserAchievementBase
-PlayerAchievementCreate = ScenarioUserAchievementCreate
-PlayerAchievement = ScenarioUserAchievement
-PlayerAchievementWithDetails = ScenarioUserAchievementWithDetails
-PlayerBadgeBase = ScenarioUserBadgeBase
-PlayerBadgeCreate = ScenarioUserBadgeCreate
-PlayerBadge = ScenarioUserBadge
-LeaderboardEntryWithPlayer = LeaderboardEntryWithScenarioUser
-PlayerProgressResponse = ScenarioUserProgressResponse

@@ -48,7 +48,7 @@ class DashboardResponse(BaseModel):
     scenario_name: str = Field(..., alias="game_name", description="Name of the current scenario")
     current_period: int = Field(..., alias="current_period", description="Current period number in the scenario")
     max_periods: int = Field(..., alias="max_periods", description="Total number of periods configured for the scenario")
-    participant_role: str = Field(..., alias="player_role", description="ScenarioUser's role in the scenario")
+    participant_role: str = Field(..., alias="scenario_user_role", description="ScenarioUser's role in the scenario")
     metrics: ScenarioUserMetrics = Field(..., description="ScenarioUser performance metrics")
     time_series: List[TimeSeriesPoint] = Field(..., description="Time series data for the scenario_user")
     last_updated: str = Field(..., description="ISO timestamp of when the data was last updated")

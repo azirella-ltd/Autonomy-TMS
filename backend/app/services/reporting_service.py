@@ -22,7 +22,6 @@ from app.models.user import User
 # Aliases for backwards compatibility
 Game = Scenario
 ScenarioUser = ScenarioUser
-ScenarioUserPeriod = ScenarioUserPeriod
 
 
 class ReportingService:

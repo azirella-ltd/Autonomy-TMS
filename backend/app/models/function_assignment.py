@@ -1,12 +1,8 @@
-"""Function Assignment model for mapping participants to supply chain functions.
+"""Function Assignment model for mapping scenario users to supply chain functions.
 
-This enables multiple participants per site with different planning and execution
+This enables multiple scenario users per site with different planning and execution
 functions. Each function can be assigned with a different agent mode (MANUAL,
 COPILOT, AUTONOMOUS).
-
-Terminology (Feb 2026):
-- Game -> Scenario
-- player -> scenario_user
 """
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING

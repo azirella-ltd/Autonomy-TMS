@@ -81,8 +81,8 @@ def create_customer_with_admin(session, name, username, email):
     return customer, admin_user
 
 
-def create_player(session, customer, username, email):
-    player = create_user(
+def create_scenario_user(session, customer, username, email):
+    scenario_user = create_user(
         session,
         username=username,
         email=email,
@@ -90,44 +90,44 @@ def create_player(session, customer, username, email):
         customer_id=customer.id,
     )
     session.commit()
-    session.refresh(player)
-    return player
+    session.refresh(scenario_user)
+    return scenario_user
 
 
-def test_tenant_admin_lists_only_players_in_their_customer(db_session):
+def test_tenant_admin_lists_only_scenario_users_in_their_customer(db_session):
     customer_a, admin_a = create_customer_with_admin(db_session, "Customer A", "admin_a", "admin_a@example.com")
     customer_b, _ = create_customer_with_admin(db_session, "Customer B", "admin_b", "admin_b@example.com")
 
-    player_a1 = create_player(db_session, customer_a, "player_a1", "player_a1@example.com")
-    player_a2 = create_player(db_session, customer_a, "player_a2", "player_a2@example.com")
-    create_player(db_session, customer_b, "player_b1", "player_b1@example.com")
+    scenario_user_a1 = create_scenario_user(db_session, customer_a, "scenario_user_a1", "scenario_user_a1@example.com")
+    scenario_user_a2 = create_scenario_user(db_session, customer_a, "scenario_user_a2", "scenario_user_a2@example.com")
+    create_scenario_user(db_session, customer_b, "scenario_user_b1", "scenario_user_b1@example.com")
 
     service = UserService(db_session)
-    players = service.list_accessible_users(current_user=admin_a, limit=10)
+    scenario_users = service.list_accessible_users(current_user=admin_a, limit=10)
 
-    assert {player.id for player in players} == {player_a1.id, player_a2.id}
-    assert all(player.customer_id == customer_a.id for player in players)
+    assert {scenario_user.id for scenario_user in scenario_users} == {scenario_user_a1.id, scenario_user_a2.id}
+    assert all(scenario_user.customer_id == customer_a.id for scenario_user in scenario_users)
 
 
-def test_tenant_admin_create_player_defaults_to_customer_and_type(db_session):
+def test_tenant_admin_create_scenario_user_defaults_to_customer_and_type(db_session):
     customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     service = UserService(db_session)
 
-    new_player = service.create_user(
+    new_scenario_user = service.create_user(
         user_schemas.UserCreate(
-            username="new_player",
-            email="new_player@example.com",
+            username="new_scenario_user",
+            email="new_scenario_user@example.com",
             password="SecurePass1!",
         ),
         admin,
     )
 
-    assert new_player.customer_id == customer.id
-    assert service.get_user_type(new_player) == UserTypeEnum.USER
-    assert new_player.is_superuser is False
+    assert new_scenario_user.customer_id == customer.id
+    assert service.get_user_type(new_scenario_user) == UserTypeEnum.USER
+    assert new_scenario_user.is_superuser is False
 
 
-def test_tenant_admin_cannot_create_non_player(db_session):
+def test_tenant_admin_cannot_create_non_scenario_user(db_session):
     _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     service = UserService(db_session)
 
@@ -145,13 +145,13 @@ def test_tenant_admin_cannot_create_non_player(db_session):
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_tenant_admin_updates_player_in_customer(db_session):
+def test_tenant_admin_updates_scenario_user_in_customer(db_session):
     customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
-    player = create_player(db_session, customer, "player", "player@example.com")
+    scenario_user = create_scenario_user(db_session, customer, "scenario_user", "scenario_user@example.com")
     service = UserService(db_session)
 
     updated = service.update_user(
-        player.id,
+        scenario_user.id,
         user_schemas.UserUpdate(email="updated@example.com"),
         admin,
     )
@@ -159,15 +159,15 @@ def test_tenant_admin_updates_player_in_customer(db_session):
     assert updated.email == "updated@example.com"
 
 
-def test_tenant_admin_cannot_update_player_in_other_customer(db_session):
+def test_tenant_admin_cannot_update_scenario_user_in_other_customer(db_session):
     _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     other_customer, _ = create_customer_with_admin(db_session, "Customer B", "other_admin", "other_admin@example.com")
-    other_player = create_player(db_session, other_customer, "player_b", "player_b@example.com")
+    other_scenario_user = create_scenario_user(db_session, other_customer, "scenario_user_b", "scenario_user_b@example.com")
     service = UserService(db_session)
 
     with pytest.raises(HTTPException) as exc:
         service.update_user(
-            other_player.id,
+            other_scenario_user.id,
             user_schemas.UserUpdate(email="updated@example.com"),
             admin,
         )
@@ -175,24 +175,24 @@ def test_tenant_admin_cannot_update_player_in_other_customer(db_session):
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_tenant_admin_deletes_player_in_customer(db_session):
+def test_tenant_admin_deletes_scenario_user_in_customer(db_session):
     customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
-    player = create_player(db_session, customer, "player", "player@example.com")
+    scenario_user = create_scenario_user(db_session, customer, "scenario_user", "scenario_user@example.com")
     service = UserService(db_session)
 
-    response = service.delete_user(player.id, admin)
+    response = service.delete_user(scenario_user.id, admin)
 
     assert response["message"] == "User deleted successfully"
-    assert db_session.get(models.User, player.id) is None
+    assert db_session.get(models.User, scenario_user.id) is None
 
 
-def test_tenant_admin_cannot_delete_player_in_other_customer(db_session):
+def test_tenant_admin_cannot_delete_scenario_user_in_other_customer(db_session):
     _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     other_customer, _ = create_customer_with_admin(db_session, "Customer B", "other_admin", "other_admin@example.com")
-    other_player = create_player(db_session, other_customer, "player_b", "player_b@example.com")
+    other_scenario_user = create_scenario_user(db_session, other_customer, "scenario_user_b", "scenario_user_b@example.com")
     service = UserService(db_session)
 
     with pytest.raises(HTTPException) as exc:
-        service.delete_user(other_player.id, admin)
+        service.delete_user(other_scenario_user.id, admin)
 
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN

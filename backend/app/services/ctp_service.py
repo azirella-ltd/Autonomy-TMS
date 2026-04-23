@@ -31,7 +31,6 @@ from app.models.supply_chain_config import Site
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
 Game = Scenario
-ScenarioUserInventory = ScenarioUserInventory
 from .atp_service import ATPService, get_atp_service
 
 logger = logging.getLogger(__name__)

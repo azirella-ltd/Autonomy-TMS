@@ -64,7 +64,6 @@ class UserCreate(UserBase):
             'tenantadmin': UserTypeEnum.TENANT_ADMIN,
             'tenantadministrator': UserTypeEnum.TENANT_ADMIN,
             'admin': UserTypeEnum.TENANT_ADMIN,
-            'player': UserTypeEnum.USER,
             'user': UserTypeEnum.USER,
         }
         if token in mapping:
@@ -97,7 +96,6 @@ class UserUpdate(BaseModel):
             'tenantadmin': UserTypeEnum.TENANT_ADMIN,
             'tenantadministrator': UserTypeEnum.TENANT_ADMIN,
             'admin': UserTypeEnum.TENANT_ADMIN,
-            'player': UserTypeEnum.USER,
             'user': UserTypeEnum.USER,
         }
         if token in mapping:

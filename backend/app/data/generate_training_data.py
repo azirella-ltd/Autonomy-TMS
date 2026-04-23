@@ -235,7 +235,7 @@ def save_synthetic_game(db: Session, game_data: Dict[str, Any]) -> models.Game:
     # Create scenario_users (AI scenario_users)
     roles = ["retailer", "wholesaler", "distributor", "manufacturer"]
     for i, role in enumerate(roles):
-        player_in = schemas.PlayerCreate(
+        player_in = schemas.ScenarioUserCreate(
             user_id=None,  # AI scenario_user
             scenario_id=game.id,
             role=role,

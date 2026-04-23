@@ -51,4 +51,3 @@ class NotificationMessage(WebSocketMessage):
 # Backward Compatibility Aliases (DEPRECATED - will be removed in future)
 # =============================================================================
 
-PlayerActionMessage = ScenarioUserActionMessage

@@ -48,10 +48,7 @@ from app.models.scenario_user import ScenarioUser, ScenarioUserRole, ScenarioUse
 DbGame = DbScenario
 DbScenarioStatus = DbScenarioStatus
 GameCreate = ScenarioCreate
-PlayerAssignment = ScenarioUserAssignment
-PlayerTypeSchema = ScenarioUserTypeSchema
 ScenarioUser = ScenarioUser
-PlayerModelType = ScenarioUserModelType
 from app.models.supply_chain_config import (
     SupplyChainConfig,
     Site,
@@ -77,7 +74,6 @@ from app.models.supply_chain import (
     ScenarioUserPeriod as SupplyScenarioUserPeriod,
 )
 # Local aliases for backward compatibility within this file
-ScenarioUserInventory = ScenarioUserInventory
 SupplyScenarioPeriod = SupplyScenarioPeriod
 SupplyScenarioUserPeriod = SupplyScenarioUserPeriod
 from app.models.user import User, UserTypeEnum
@@ -335,7 +331,7 @@ class GameUpdatePayload(BaseModel):
     node_policies: Optional[Dict[str, NodePolicy]] = None
     system_config: Optional[Dict[str, Any]] = None
     global_policy: Optional[Dict[str, Any]] = None
-    player_assignments: Optional[List[PlayerAssignment]] = None
+    player_assignments: Optional[List[ScenarioUserAssignment]] = None
 
 # ------------------------------------------------------------------------------
 # JWT utils
@@ -3047,12 +3043,12 @@ def _all_players_submitted(db: Session, game: DbGame, round_record: Period) -> b
         return False
 
     actions = (
-        db.query(PlayerAction, ScenarioUser)
-        .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
+        db.query(ScenarioUserAction, ScenarioUser)
+        .join(ScenarioUser, ScenarioUser.id == ScenarioUserAction.scenario_user_id)
         .filter(
-            PlayerAction.scenario_id == game.id,
-            PlayerAction.period_id == round_record.id,
-            PlayerAction.action_type == "order",
+            ScenarioUserAction.scenario_id == game.id,
+            ScenarioUserAction.period_id == round_record.id,
+            ScenarioUserAction.action_type == "order",
         )
         .all()
     )
@@ -3568,12 +3564,12 @@ def _finalize_round_if_ready(
     full_visibility = str(info_sharing_cfg.get("visibility", "")).lower() == "full"
 
     actions = (
-        db.query(PlayerAction, ScenarioUser)
-        .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
+        db.query(ScenarioUserAction, ScenarioUser)
+        .join(ScenarioUser, ScenarioUser.id == ScenarioUserAction.scenario_user_id)
         .filter(
-            PlayerAction.scenario_id == game.id,
-            PlayerAction.period_id == round_record.id,
-            PlayerAction.action_type == "order",
+            ScenarioUserAction.scenario_id == game.id,
+            ScenarioUserAction.period_id == round_record.id,
+            ScenarioUserAction.action_type == "order",
         )
         .all()
     )
@@ -4092,7 +4088,7 @@ def _finalize_round_if_ready(
 
         action_obj = actions_by_role.get(node_key)
         if action_obj is None:
-            action_obj = PlayerAction(
+            action_obj = ScenarioUserAction(
                 scenario_id=game.id,
                 period_id=round_record.id,
                 scenario_user_id=scenario_user.id,
@@ -5676,7 +5672,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
         }
 
         for assignment in payload.player_assignments:
-            is_agent = assignment.scenario_user_type == PlayerTypeSchema.AGENT
+            is_agent = assignment.scenario_user_type == ScenarioUserTypeSchema.AGENT
             role_value_raw = assignment.role.value if hasattr(assignment.role, "value") else str(assignment.role)
             role_key = role_value_raw.lower()
             role_enum_name = role_enum_map.get(role_key)
@@ -5693,12 +5689,12 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
                 scenario_id=game.id,
                 user_id=None if is_agent else assignment.user_id,
                 name=f"{role_enum_name.title().replace('_', ' ')} ({'AI' if is_agent else 'Human'})",
-                role=PlayerRole[role_enum_name],
+                role=ScenarioUserRole[role_enum_name],
                 is_ai=is_agent,
                 ai_strategy=strategy_value,
                 can_see_demand=assignment.can_see_demand,
                 llm_model=assignment.llm_model if is_agent else None,
-                strategy=PlayerStrategy.MANUAL,
+                strategy=ScenarioUserStrategy.MANUAL,
             )
             db.add(scenario_user)
 
@@ -5718,10 +5714,10 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
 def _apply_player_assignments_for_update(
     db: Session,
     game: DbGame,
-    assignments: List[PlayerAssignment],
+    assignments: List[ScenarioUserAssignment],
     config: Dict[str, Any],
 ) -> None:
-    existing_players = {
+    existing_scenario_users = {
         (scenario_user.role.name if hasattr(scenario_user.role, "name") else str(scenario_user.role).upper()): scenario_user
         for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
     }
@@ -5733,11 +5729,11 @@ def _apply_player_assignments_for_update(
         role_value = assignment.role.value if hasattr(assignment.role, "value") else str(assignment.role)
         role_key = role_value.lower()
         role_enum_name = role_value.upper()
-        if role_enum_name not in PlayerRole.__members__:
+        if role_enum_name not in ScenarioUserRole.__members__:
             raise HTTPException(status_code=400, detail=f"Unsupported role: {role_value}")
 
-        role_enum = PlayerRole[role_enum_name]
-        scenario_user = existing_players.pop(role_enum.name, None)
+        role_enum = ScenarioUserRole[role_enum_name]
+        scenario_user = existing_scenario_users.pop(role_enum.name, None)
         if scenario_user is None:
             scenario_user = ScenarioUser(
                 scenario_id=game.id,
@@ -5745,7 +5741,7 @@ def _apply_player_assignments_for_update(
                 name=role_enum.name.title(),
             )
 
-        is_agent = assignment.scenario_user_type == PlayerTypeSchema.AGENT
+        is_agent = assignment.scenario_user_type == ScenarioUserTypeSchema.AGENT
         strategy_value = None
         if assignment.strategy is not None:
             strategy_value = (
@@ -5755,13 +5751,13 @@ def _apply_player_assignments_for_update(
             )
 
         scenario_user.is_ai = is_agent
-        scenario_user.type = PlayerModelType.AI if is_agent else PlayerModelType.HUMAN
+        scenario_user.type = ScenarioUserModelType.AI if is_agent else ScenarioUserModelType.HUMAN
         scenario_user.ai_strategy = strategy_value if is_agent else None
         scenario_user.can_see_demand = assignment.can_see_demand
         scenario_user.user_id = None if is_agent else assignment.user_id
         scenario_user.llm_model = assignment.llm_model if is_agent and assignment.llm_model else None
         scenario_user.name = f"{role_enum.name.title()} ({'AI' if is_agent else 'Human'})"
-        scenario_user.strategy = PlayerStrategy.MANUAL
+        scenario_user.strategy = ScenarioUserStrategy.MANUAL
         db.add(scenario_user)
 
         role_assignments[role_key] = {
@@ -5773,7 +5769,7 @@ def _apply_player_assignments_for_update(
         if assignment.autonomy_override_pct is not None:
             overrides[role_key] = float(assignment.autonomy_override_pct)
 
-    for leftover in existing_players.values():
+    for leftover in existing_scenario_users.values():
         db.delete(leftover)
 
     if overrides:
@@ -5889,12 +5885,12 @@ async def submit_order(
 
         # Record scenario_user action for auditing
         action = (
-            db.query(PlayerAction)
+            db.query(ScenarioUserAction)
             .filter(
-                PlayerAction.scenario_id == game.id,
-                PlayerAction.scenario_user_id == scenario_user.id,
-                PlayerAction.period_id == round_record.id,
-                PlayerAction.action_type == "order",
+                ScenarioUserAction.scenario_id == game.id,
+                ScenarioUserAction.scenario_user_id == scenario_user.id,
+                ScenarioUserAction.period_id == round_record.id,
+                ScenarioUserAction.action_type == "order",
             )
             .first()
         )
@@ -5905,7 +5901,7 @@ async def submit_order(
             action.quantity = submission.quantity
             action.created_at = timestamp
         else:
-            action = PlayerAction(
+            action = ScenarioUserAction(
                 scenario_id=game.id,
                 period_id=round_record.id,
                 scenario_user_id=scenario_user.id,
@@ -5943,12 +5939,12 @@ async def submit_order(
                     "scenario_user_id": p.id,
                     "quantity": act.quantity,
                 }
-                for act, p in db.query(PlayerAction, ScenarioUser)
-                .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
+                for act, p in db.query(ScenarioUserAction, ScenarioUser)
+                .join(ScenarioUser, ScenarioUser.id == ScenarioUserAction.scenario_user_id)
                 .filter(
-                    PlayerAction.scenario_id == game.id,
-                    PlayerAction.period_id == round_record.id,
-                    PlayerAction.action_type == "order",
+                    ScenarioUserAction.scenario_id == game.id,
+                    ScenarioUserAction.period_id == round_record.id,
+                    ScenarioUserAction.action_type == "order",
                 )
             },
             "progression_mode": progression_mode,
@@ -6308,7 +6304,7 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
         # Remove historical round data
         round_ids = [rid for (rid,) in db.query(Period.id).filter(Period.scenario_id == game.id).all()]
         if round_ids:
-            db.query(PlayerAction).filter(PlayerAction.scenario_id == game.id).delete(synchronize_session=False)
+            db.query(ScenarioUserAction).filter(ScenarioUserAction.scenario_id == game.id).delete(synchronize_session=False)
         db.query(Period).filter(Period.scenario_id == game.id).delete(synchronize_session=False)
 
         sc_round_ids = [rid for (rid,) in db.query(SupplyScenarioPeriod.id).filter(SupplyScenarioPeriod.scenario_id == game.id).all()]

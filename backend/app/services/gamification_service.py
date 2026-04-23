@@ -18,10 +18,9 @@ from app.models.supply_chain import ScenarioPeriod, ScenarioUserPeriod
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
 Game = Scenario
-ScenarioUserPeriod = ScenarioUserPeriod
 from app.schemas.gamification import (
     AchievementCheckResponse, ScenarioUserProgressResponse,
-    LeaderboardResponse, LeaderboardEntryWithPlayer
+    LeaderboardResponse, LeaderboardEntryWithScenarioUser
 )
 
 
@@ -388,10 +387,10 @@ class GamificationService:
 
         entries = []
         for entry, scenario_user_name, scenario_user_role in entries_result.all():
-            entries.append(LeaderboardEntryWithPlayer(
+            entries.append(LeaderboardEntryWithScenarioUser(
                 **entry.__dict__,
                 scenario_user_name=scenario_user_name,
-                player_role=scenario_user_role
+                scenario_user_role=scenario_user_role
             ))
 
         # Get total count
@@ -415,7 +414,7 @@ class GamificationService:
             scenario_user_entry_obj = rank_result.scalar_one_or_none()
             if scenario_user_entry_obj:
                 scenario_user_rank = scenario_user_entry_obj.rank
-                scenario_user_entry = LeaderboardEntryWithPlayer(**scenario_user_entry_obj.__dict__)
+                scenario_user_entry = LeaderboardEntryWithScenarioUser(**scenario_user_entry_obj.__dict__)
 
         return LeaderboardResponse(
             leaderboard=leaderboard,
