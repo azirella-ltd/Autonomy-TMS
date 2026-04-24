@@ -108,10 +108,17 @@ def _is_numeric(val: Any) -> bool:
     return False
 
 
-def load_corpus(trm_type: str, corpus_dir: Path) -> Tuple[np.ndarray, np.ndarray, Set[int]]:
+def load_corpus(
+    trm_type: str, corpus_dir: Path
+) -> Tuple[np.ndarray, np.ndarray, Set[int], List[str], np.ndarray, np.ndarray]:
     """
     Load corpus from jsonl, extract numeric state features + action labels.
-    Returns (features, labels, active_action_set).
+    Returns (features, labels, active_action_set, state_keys, means, stds).
+
+    state_keys / means / stds are persisted in the checkpoint so the
+    inference-time state→tensor path can (a) assemble the vector in the
+    same column order and (b) apply the same zero-mean / unit-std
+    normalization used at training time.
     """
     # Find the corpus file
     candidates = list(corpus_dir.glob(f"{trm_type}_*.jsonl")) + list(corpus_dir.glob(f"{trm_type}_*.parquet"))
@@ -168,7 +175,7 @@ def load_corpus(trm_type: str, corpus_dir: Path) -> Tuple[np.ndarray, np.ndarray
     features = (features - means) / stds
 
     logger.info(f"  Active actions: {sorted(active_actions)} ({len(active_actions)} classes)")
-    return features, labels, active_actions
+    return features, labels, active_actions, state_keys, means, stds
 
 
 # ============================================================================
@@ -190,7 +197,9 @@ def train_trm(
         device = "cuda" if torch.cuda.is_available() else "cpu"
     logger.info(f"Training {trm_type} on {device}")
 
-    features, labels, active_actions = load_corpus(trm_type, corpus_dir)
+    features, labels, active_actions, state_keys, feat_means, feat_stds = load_corpus(
+        trm_type, corpus_dir
+    )
     n_samples, input_dim = features.shape
 
     # Train/val split
@@ -283,6 +292,11 @@ def train_trm(
         "epochs_trained": epochs,
         "per_class_accuracy": per_class,
         "active_actions": sorted(active_actions),
+        # Inference-time stats — must match load_corpus() column ordering.
+        # bc_checkpoint_loader.load_bc_checkpoint() verifies these are present.
+        "feature_keys": state_keys,
+        "feature_means": feat_means.tolist(),
+        "feature_stds": feat_stds.tolist(),
         "training_config": {
             "lr": lr, "batch_size": batch_size, "val_split": val_split,
             "class_weighted": True, "optimizer": "Adam",

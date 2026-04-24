@@ -66,11 +66,6 @@ from app.models.tms_planning import CapacityTarget
 from app.services.powell.agent_decision_writer import record_trm_decision
 logger = logging.getLogger(__name__)
 
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
 
 
 # Period-type → window days.
@@ -111,15 +106,12 @@ class CapacityBufferTRM:
         self._StateClass = CapacityBufferState
 
     def load_checkpoint(self, checkpoint_path: str) -> bool:
-        """Load PyTorch TRM checkpoint (v1 stub — heuristic fallback)."""
-        if not TORCH_AVAILABLE:
-            logger.warning("PyTorch not available — using heuristic fallback")
+        """Load a trained BC checkpoint. Returns True on success."""
+        ckpt = load_bc_checkpoint(checkpoint_path, "capacity_buffer")
+        if ckpt is None:
             return False
-        import os
-        if not os.path.exists(checkpoint_path):
-            return False
-        logger.info("CapacityBuffer checkpoint path present but loader is a stub")
-        return False
+        self._model = ckpt
+        return True
 
     def find_pending_targets(
         self,

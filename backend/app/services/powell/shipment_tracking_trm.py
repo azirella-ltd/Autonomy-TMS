@@ -48,11 +48,6 @@ from app.models.tms_entities import (
 from app.services.powell.agent_decision_writer import record_trm_decision
 logger = logging.getLogger(__name__)
 
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
 
 
 # Transport-mode string used by Core's silence-threshold table. TMS's
@@ -102,14 +97,12 @@ class ShipmentTrackingTRM:
         self._StateClass = ShipmentTrackingState
 
     def load_checkpoint(self, checkpoint_path: str) -> bool:
-        if not TORCH_AVAILABLE:
-            logger.warning("PyTorch not available — using heuristic fallback")
+        """Load a trained BC checkpoint. Returns True on success."""
+        ckpt = load_bc_checkpoint(checkpoint_path, "shipment_tracking")
+        if ckpt is None:
             return False
-        import os
-        if not os.path.exists(checkpoint_path):
-            return False
-        logger.info("ShipmentTracking checkpoint path present but loader is a stub")
-        return False
+        self._model = ckpt
+        return True
 
     def find_in_transit_loads(self) -> List[Load]:
         """Loads actively in transit — candidates for tracking evaluation."""

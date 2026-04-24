@@ -65,11 +65,6 @@ from app.services.powell.agent_decision_writer import record_trm_decision
 
 logger = logging.getLogger(__name__)
 
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
 
 
 class LoadBuildTRM:
@@ -111,14 +106,12 @@ class LoadBuildTRM:
         self._StateClass = LoadBuildState
 
     def load_checkpoint(self, checkpoint_path: str) -> bool:
-        if not TORCH_AVAILABLE:
-            logger.warning("PyTorch not available — using heuristic fallback")
+        """Load a trained BC checkpoint. Returns True on success."""
+        ckpt = load_bc_checkpoint(checkpoint_path, "load_build")
+        if ckpt is None:
             return False
-        import os
-        if not os.path.exists(checkpoint_path):
-            return False
-        logger.info("LoadBuild checkpoint path present but loader is a stub")
-        return False
+        self._model = ckpt
+        return True
 
     def find_draft_groups(self) -> List[Dict[str, Any]]:
         """Group DRAFT shipments by (origin, destination, mode, pickup-day).

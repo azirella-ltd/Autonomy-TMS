@@ -35,14 +35,9 @@ from app.models.tms_entities import (
     Load, LoadStatus, TenderStatus, TransportMode,
 )
 from app.services.powell.agent_decision_writer import record_trm_decision
+from app.services.powell.bc_checkpoint_loader import load_bc_checkpoint
 
 logger = logging.getLogger(__name__)
-
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
 
 
 class CapacityPromiseTRM:
@@ -81,25 +76,12 @@ class CapacityPromiseTRM:
         self._StateClass = CapacityPromiseState
 
     def load_checkpoint(self, checkpoint_path: str) -> bool:
-        """Load a trained BC checkpoint. Returns True on success.
-
-        No capacity-promise BC model exists today; this is scaffolded
-        identically to FreightProcurementTRM so a future BC corpus can
-        plug in without endpoint changes.
-        """
-        if not TORCH_AVAILABLE:
-            logger.warning("PyTorch not available — using heuristic fallback")
+        """Load a trained BC checkpoint. Returns True on success."""
+        ckpt = load_bc_checkpoint(checkpoint_path, "capacity_promise")
+        if ckpt is None:
             return False
-        try:
-            import os
-            if not os.path.exists(checkpoint_path):
-                return False
-            # Intentionally not loading — model class doesn't exist yet.
-            logger.info("CapacityPromise checkpoint path present but loader is a stub")
-            return False
-        except Exception as e:
-            logger.warning("Checkpoint load failed, using heuristic: %s", e)
-            return False
+        self._model = ckpt
+        return True
 
     def find_pending_loads(self) -> List[Load]:
         """Find loads in PLANNING status (candidates for capacity promise)."""

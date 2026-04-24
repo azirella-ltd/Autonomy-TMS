@@ -34,13 +34,9 @@ from app.models.tms_entities import (
 
 
 from app.services.powell.agent_decision_writer import record_trm_decision
-logger = logging.getLogger(__name__)
+from app.services.powell.bc_checkpoint_loader import load_bc_checkpoint
 
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
+logger = logging.getLogger(__name__)
 
 
 class FreightProcurementTRM:
@@ -72,27 +68,11 @@ class FreightProcurementTRM:
 
     def load_checkpoint(self, checkpoint_path: str) -> bool:
         """Load a trained BC checkpoint. Returns True on success."""
-        if not TORCH_AVAILABLE:
-            logger.warning("PyTorch not available — using heuristic fallback")
+        ckpt = load_bc_checkpoint(checkpoint_path, "freight_procurement")
+        if ckpt is None:
             return False
-        try:
-            ckpt = torch.load(checkpoint_path, map_location="cpu")
-            from scripts.pretraining.train_tms_trms import TRMClassifier
-            model = TRMClassifier(
-                input_dim=ckpt["input_dim"],
-                hidden_dims=ckpt.get("hidden_dims", (128, 64)),
-            )
-            model.load_state_dict(ckpt["model_state_dict"])
-            model.eval()
-            self._model = model
-            logger.info(
-                "Loaded FreightProcurement checkpoint: val_acc=%.4f epoch=%d",
-                ckpt.get("best_val_acc", 0), ckpt.get("best_epoch", 0),
-            )
-            return True
-        except Exception as e:
-            logger.warning("Checkpoint load failed, using heuristic: %s", e)
-            return False
+        self._model = ckpt
+        return True
 
     def find_pending_loads(self) -> List[Load]:
         """Find loads in PLANNING or READY status without accepted tenders."""
