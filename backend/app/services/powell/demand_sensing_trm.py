@@ -51,6 +51,8 @@ from sqlalchemy.orm import Session
 from app.models.tms_entities import Load
 from app.models.tms_planning import ShippingForecast
 
+
+from app.services.powell.agent_decision_writer import record_trm_decision
 logger = logging.getLogger(__name__)
 
 try:
@@ -203,6 +205,18 @@ class DemandSensingTRM:
                 result["forecast_loads"],
                 result["urgency"],
             )
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="demand_sensing",
+            result=result,
+            item_code=f"forecast-{forecast.id}",
+            item_name=f"lane {forecast.lane_id} ({forecast.mode or 'ANY'})",
+            category="forecast_adjustment",
+        )
+
         return result
 
     def evaluate_pending_forecasts(

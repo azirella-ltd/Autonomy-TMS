@@ -61,6 +61,7 @@ from app.models.tms_entities import (
     TMSShipment,
     TransportMode,
 )
+from app.services.powell.agent_decision_writer import record_trm_decision
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +257,22 @@ class LoadBuildTRM:
                 result["weight_util_pct"],
                 result["reasoning"],
             )
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="load_build",
+            result=result,
+            item_code=f"group-{origin_site_id}-{destination_site_id}-{mode}",
+            item_name=(
+                f"{result['shipment_count']} shipments "
+                f"{origin_site_id}→{destination_site_id} ({mode})"
+            ),
+            category="load_build",
+            impact_description=result.get("reasoning") or None,
+        )
+
         return result
 
     def evaluate_all_groups(self) -> List[Dict[str, Any]]:

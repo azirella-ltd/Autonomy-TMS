@@ -34,6 +34,7 @@ from app.models.tms_entities import (
     Carrier, CarrierLane, FreightRate, FreightTender,
     Load, LoadStatus, TenderStatus, TransportMode,
 )
+from app.services.powell.agent_decision_writer import record_trm_decision
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,18 @@ class CapacityPromiseTRM:
                 result["reasoning"],
             )
         # DEFER (2) and any ESCALATE (3) path: leave status untouched.
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="capacity_promise",
+            result=result,
+            item_code=f"load-{load.id}",
+            item_name=f"load {load.load_number}",
+            category="capacity_promise",
+            impact_description=result.get("reasoning") or None,
+        )
 
         return result
 

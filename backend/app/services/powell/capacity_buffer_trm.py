@@ -62,6 +62,8 @@ from sqlalchemy.orm import Session
 from app.models.tms_entities import FreightTender, Load, TenderStatus
 from app.models.tms_planning import CapacityTarget
 
+
+from app.services.powell.agent_decision_writer import record_trm_decision
 logger = logging.getLogger(__name__)
 
 try:
@@ -204,6 +206,18 @@ class CapacityBufferTRM:
                 result["baseline_buffer_loads"],
                 result["urgency"],
             )
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="capacity_buffer",
+            result=result,
+            item_code=f"capacity-target-{target.id}",
+            item_name=f"lane {target.lane_id} ({target.mode or 'ANY'})",
+            category="capacity_buffer",
+        )
+
         return result
 
     def evaluate_pending_targets(

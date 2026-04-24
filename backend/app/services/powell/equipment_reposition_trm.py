@@ -65,6 +65,7 @@ from sqlalchemy.orm import Session
 
 from app.models.tms_entities import Equipment, EquipmentType, TMSShipment
 from app.models.transportation_config import LaneProfile
+from app.services.powell.agent_decision_writer import record_trm_decision
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,22 @@ class EquipmentRepositionTRM:
                 result["target_deficit"],
                 result["reasoning"],
             )
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="equipment_reposition",
+            result=result,
+            item_code=f"{equipment_type}-{source_site_id}-{target_site_id}",
+            item_name=(
+                f"{equipment_type} reposition "
+                f"{source_site_id}→{target_site_id}"
+            ),
+            category="equipment_reposition",
+            impact_description=result.get("reasoning") or None,
+        )
+
         return result
 
     # ── Network-level sweep ─────────────────────────────────────────────

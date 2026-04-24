@@ -56,6 +56,8 @@ from app.models.tms_entities import (
     TMSShipment,
 )
 
+
+from app.services.powell.agent_decision_writer import record_trm_decision
 logger = logging.getLogger(__name__)
 
 try:
@@ -183,6 +185,18 @@ class ExceptionManagementTRM:
                 result["exception_type"],
                 result["urgency"],
             )
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="exception_management",
+            result=result,
+            item_code=f"exception-{exc.id}",
+            item_name=f"{exc.exception_type} on shipment {exc.shipment_id}",
+            category="exception_management",
+        )
+
         return result
 
     def evaluate_pending_exceptions(self) -> List[Dict[str, Any]]:

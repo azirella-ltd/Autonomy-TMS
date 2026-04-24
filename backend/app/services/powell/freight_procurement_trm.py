@@ -32,6 +32,8 @@ from app.models.tms_entities import (
     RateType,
 )
 
+
+from app.services.powell.agent_decision_writer import record_trm_decision
 logger = logging.getLogger(__name__)
 
 try:
@@ -207,6 +209,18 @@ class FreightProcurementTRM:
                 load.load_number, result["carrier_name"],
                 result["offered_rate"], result["decision_method"],
             )
+
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="freight_procurement",
+            result=result,
+            item_code=f"load-{load.id}",
+            item_name=f"load {load.load_number}",
+            category="freight_procurement",
+        )
 
         return result
 

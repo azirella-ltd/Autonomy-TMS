@@ -63,6 +63,8 @@ from app.models.tms_entities import (
     TMSShipment,
 )
 
+
+from app.services.powell.agent_decision_writer import record_trm_decision
 logger = logging.getLogger(__name__)
 
 try:
@@ -201,6 +203,18 @@ class DockSchedulingTRM:
                 appt.site_id,
                 result["utilization_pct"],
             )
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="dock_scheduling",
+            result=result,
+            item_code=f"appt-{appt.id}",
+            item_name=f"{appt.appointment_type} at dock {appt.dock_door_id}",
+            category="dock_scheduling",
+        )
+
         return result
 
     def evaluate_pending_appointments(self) -> List[Dict[str, Any]]:

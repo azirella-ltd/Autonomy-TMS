@@ -52,6 +52,7 @@ from sqlalchemy.orm import Session
 
 from app.models.tms_entities import TMSShipment, TransportMode
 from app.models.transportation_config import LaneProfile
+from app.services.powell.agent_decision_writer import record_trm_decision
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,19 @@ class IntermodalTransferTRM:
             (result["cost_savings_pct"] or 0.0) * 100,
             result["urgency"],
         )
+
+        # PREPARE.3 dual-write to core.agent_decisions
+        record_trm_decision(
+            self.db,
+            tenant_id=self.tenant_id,
+            trm_type="intermodal_transfer",
+            result=result,
+            item_code=f"shipment-{shipment.id}",
+            item_name=f"shipment {shipment.shipment_number}",
+            category="intermodal_transfer",
+            impact_description=result.get("reasoning") or None,
+        )
+
         return result
 
     # ── State-builder helpers ────────────────────────────────────────────
