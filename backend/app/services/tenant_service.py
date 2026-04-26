@@ -31,6 +31,7 @@ from ..models.bsc_config import TenantBscConfig
 from ..schemas.tenant import TenantCreate, TenantUpdate
 from ..core.security import get_password_hash
 from app.core.time_buckets import TimeBucket
+from .policy_service import ensure_default_policy
 from .supply_chain_config_service import SupplyChainConfigService
 from .industry_defaults_service import (
     apply_industry_defaults_to_config,
@@ -261,6 +262,21 @@ class TenantService:
                 )
                 self.db.add(bsc_cfg)
             self.db.flush()
+
+            # ── L4 Strategic policy θ ───────────────────────────────
+            # Tenant-wide default PolicyParameters per tenant. The L1
+            # TRMs (escalation thresholds), L2 Terminal Coordinator
+            # (cost-delta cap, terminal_health threshold), and L3
+            # Integrated Balancer (BSC weights, mode-mix, fleet
+            # envelope) all read this on every decision cycle.
+            # Source = MIGRATION because this is system-bootstrapped,
+            # not authored by the L4 Strategic agent.
+            for tnt, admin in [(prod_tenant, prod_admin), (learn_tenant, learn_admin)]:
+                ensure_default_policy(
+                    self.db,
+                    tenant_id=tnt.id,
+                    created_by=admin.id,
+                )
 
             # Register in autonomy_customers registry
             customer = AutonomyCustomer(

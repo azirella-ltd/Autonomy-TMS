@@ -436,6 +436,8 @@ from .intermodal_network import (
     RampType, IntermodalRateSource, SpotRateSource,
 )
 
+from .policy_parameters import PolicyParameters, PolicySource
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -757,6 +759,8 @@ __all__ = [
     'IntermodalRamp', 'IntermodalRate',
     'RampCongestionSnapshot', 'SpotRateSnapshot',
     'RampType', 'IntermodalRateSource', 'SpotRateSource',
+    # L4 Strategic policy
+    'PolicyParameters', 'PolicySource',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.
