@@ -430,6 +430,12 @@ from .tms_planning import (
     TransportationPlan, TransportationPlanItem,
 )
 
+from .intermodal_network import (
+    IntermodalRamp, IntermodalRate,
+    RampCongestionSnapshot, SpotRateSnapshot,
+    RampType, IntermodalRateSource, SpotRateSource,
+)
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -747,6 +753,10 @@ __all__ = [
     'ForecastMethod', 'PlanStatus', 'PlanItemStatus',
     'ShippingForecast', 'CapacityTarget',
     'TransportationPlan', 'TransportationPlanItem',
+    # Intermodal network + spot-rate substrate
+    'IntermodalRamp', 'IntermodalRate',
+    'RampCongestionSnapshot', 'SpotRateSnapshot',
+    'RampType', 'IntermodalRateSource', 'SpotRateSource',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.
