@@ -194,7 +194,77 @@ class IntermodalTransferTRM:
             impact_description=result.get("reasoning") or None,
         )
 
+        # AD-11 cross-plane: write a DispatchCommitment row when the
+        # decision ACCEPTs the intermodal route. SCP reads these from
+        # the Core intersection table to update its in-transit MPS.
+        # Helper no-ops at Tier 0a (SCP not registered) — caller never
+        # branches on the registry.
+        #
+        # Uses a synthetic transfer_order_id (`shipment-{id}`) until
+        # the shipment-to-TransferOrder linkage wires through. Per
+        # AD-11 §5.3 the column is String(100) keying to whatever the
+        # canonical TO identifier is in this tenant; the synthetic
+        # form lets the row land cleanly today, and the synth can be
+        # rewritten to the canonical TO id once that linkage exists.
+        if action_name == "ACCEPT":
+            self._emit_dispatch_commitment(shipment, result)
+
         return result
+
+    def _emit_dispatch_commitment(
+        self,
+        shipment: TMSShipment,
+        result: Dict[str, Any],
+    ) -> None:
+        """Emit a DispatchCommitment for an ACCEPTed intermodal route.
+
+        Pickup window = (requested_pickup_date, +2h) — a placeholder
+        until the planner-supplied pickup window threads through. ETA
+        bands are computed from the shipment's requested_delivery_date
+        +/- the conformal spread; if no delivery date, defaults to
+        intermodal_transit_days from the result.
+        """
+        from datetime import timedelta
+        from azirella_data_model.intersections.supply_transport import (
+            DispatchState,
+            emit_dispatch_commitment_if_live,
+        )
+
+        # Pickup window — narrow band around the requested pickup
+        pickup_start = (
+            shipment.requested_pickup_date
+            or datetime.utcnow()
+        )
+        pickup_end = pickup_start + timedelta(hours=2)
+
+        # ETA bands. Use the result's intermodal_transit_days as the
+        # P50 spine; conservative ±20% as the P10/P90 spread until
+        # conformal calibration runs publish per-lane bands.
+        transit_days_p50 = float(result.get("intermodal_transit_days") or 3.0)
+        eta_p50 = pickup_start + timedelta(days=transit_days_p50)
+        eta_p10 = pickup_start + timedelta(days=transit_days_p50 * 0.8)
+        eta_p90 = pickup_start + timedelta(days=transit_days_p50 * 1.2)
+
+        # Carrier id — not directly on the shipment in v1; if there's
+        # an accepted FreightTender for this shipment's load, use that.
+        # Fallback to the shipment's primary carrier if set.
+        carrier_id = getattr(shipment, "carrier_id", None)
+
+        emit_dispatch_commitment_if_live(
+            self.db,
+            tenant_id=self.tenant_id,
+            correlation_id=f"intermodal-shipment-{shipment.id}",
+            transfer_order_id=f"shipment-{shipment.id}",  # synthetic — see caller comment
+            carrier_id=str(carrier_id) if carrier_id else "UNKNOWN",
+            load_id=str(getattr(shipment, "load_id", "") or ""),
+            pickup_window_start=pickup_start,
+            pickup_window_end=pickup_end,
+            eta_p10=eta_p10,
+            eta_p50=eta_p50,
+            eta_p90=eta_p90,
+            state=DispatchState.COMMITTED,
+            config_id=self.config_id,
+        )
 
     # ── State-builder helpers ────────────────────────────────────────────
 

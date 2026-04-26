@@ -258,6 +258,21 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered L2 terminal coordinator job (hourly at :05)")
 
+    # AD-11 closed-loop: LanePerformanceActuals on Load.DELIVERED
+    # transitions (hourly at :10). Walks (tenant, config) pairs, finds
+    # loads delivered in the trailing 24h window, idempotently records
+    # one row per delivery. Closed-loop reward signal for TMS's lane-
+    # performance conformal predictors and SCP's transit-time priors.
+    scheduler.add_job(
+        func=_run_lane_performance_recording,
+        trigger=CronTrigger(minute=10),
+        id="lane_performance_recording",
+        name="AD-11: LanePerformanceActuals (hourly)",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+    logger.info("Registered AD-11 lane-performance recording job (hourly at :10)")
+
     # Conformal auto-calibration (every 12h at 04:15 and 16:15)
     # Refreshes P10/P50/P90 intervals for TMS TRMs (capacity_buffer,
     # demand_sensing, equipment_reposition, shipment_tracking) from
@@ -1089,6 +1104,10 @@ def _run_terminal_coordinator() -> None:
                 total_overrides += sum(
                     len(s.get("overrides_emitted", [])) for s in summaries
                 )
+                # AD-11 closed-loop: write CarrierCapacityState snapshots
+                # for the trailing hour. Idempotent on
+                # (tenant, carrier, observed_at).
+                svc.record_carrier_capacity_snapshots(period_hours=1)
                 # Periodic cleanup of long-expired override rows
                 svc.purge_expired(older_than_days=7)
 
@@ -1099,5 +1118,71 @@ def _run_terminal_coordinator() -> None:
         )
     except Exception as e:
         logger.error("L2 terminal coordinator job failed: %s", e, exc_info=True)
+    finally:
+        db.close()
+
+
+def _run_lane_performance_recording() -> None:
+    """Walk (tenant, config) pairs and write LanePerformanceActuals
+    rows for loads delivered in the last 24h.
+
+    Idempotent on (tenant_id, correlation_id, observation_index) via
+    the uq_lane_perf_correlation constraint — re-running within the
+    24h window is safe (already-recorded loads are no-ops).
+    """
+    from app.db.session import sync_session_factory
+    from sqlalchemy import select
+
+    logger.info("Starting AD-11 lane-performance recording cycle")
+
+    db = sync_session_factory()
+    total_inserted = 0
+    pairs = 0
+    try:
+        from app.models.policy_parameters import PolicyParameters
+        from app.models.supply_chain_config import SupplyChainConfig
+        from app.services.powell.shipment_tracking_trm import (
+            ShipmentTrackingTRM,
+        )
+
+        active_pairs = db.execute(
+            select(
+                PolicyParameters.tenant_id,
+                PolicyParameters.config_id,
+            ).where(PolicyParameters.effective_to.is_(None))
+        ).all()
+
+        for tenant_id, config_id in active_pairs:
+            if config_id is None:
+                cfgs = db.execute(
+                    select(SupplyChainConfig.id).where(
+                        SupplyChainConfig.tenant_id == tenant_id,
+                        SupplyChainConfig.is_active.is_(True),
+                    )
+                ).scalars().all()
+                cfg_ids = [int(c) for c in cfgs]
+            else:
+                cfg_ids = [int(config_id)]
+
+            for cfg_id in cfg_ids:
+                pairs += 1
+                trm = ShipmentTrackingTRM(
+                    db, tenant_id=int(tenant_id), config_id=cfg_id
+                )
+                inserted = trm.record_lane_performance_for_recently_delivered(
+                    lookback_hours=24,
+                )
+                total_inserted += inserted
+
+        logger.info(
+            "AD-11 lane-performance: %d (tenant,config) pairs walked, "
+            "%d new rows recorded",
+            pairs, total_inserted,
+        )
+    except Exception as e:
+        logger.error(
+            "AD-11 lane-performance recording job failed: %s",
+            e, exc_info=True,
+        )
     finally:
         db.close()

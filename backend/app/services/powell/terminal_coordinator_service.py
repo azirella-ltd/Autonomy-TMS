@@ -171,6 +171,128 @@ class TerminalCoordinatorService:
         self.db.commit()
         return int(u_deleted + l_deleted)
 
+    # ── AD-11 closed-loop: CarrierCapacityState snapshots ──────────
+
+    def record_carrier_capacity_snapshots(
+        self, *, period_hours: int = 1,
+    ) -> int:
+        """Write one CarrierCapacityState row per active carrier for
+        the trailing `period_hours` window.
+
+        Idempotent on (tenant_id, carrier_id, observed_at) — re-firing
+        within the same second would collide; the hourly scheduler
+        cadence ensures one row per carrier per hour.
+
+        Returns the count of rows newly inserted in this call.
+
+        Should be called from the same hourly cycle as run_cycle() —
+        every L2 cycle aggregates carrier utilisation alongside the
+        terminal-health computation.
+        """
+        from azirella_data_model.intersections.supply_transport import (
+            CapacityStateClass,
+            CarrierCapacityState,
+        )
+        from app.models.tms_entities import Carrier
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        period_end = datetime.utcnow()
+        period_start = period_end - timedelta(hours=period_hours)
+
+        # All active carriers for this tenant
+        carriers = self.db.execute(
+            select(Carrier.id).where(
+                Carrier.tenant_id == self.tenant_id,
+                Carrier.is_active.is_(True),
+            )
+        ).scalars().all()
+
+        inserted = 0
+        for carrier_id in carriers:
+            # Tender stats over the period — accept rate + reject rate
+            total = self.db.execute(
+                select(func.count(FreightTender.id)).where(
+                    FreightTender.tenant_id == self.tenant_id,
+                    FreightTender.carrier_id == carrier_id,
+                    FreightTender.tendered_at >= period_start,
+                    FreightTender.tendered_at <= period_end,
+                )
+            ).scalar() or 0
+            accepted = self.db.execute(
+                select(func.count(FreightTender.id)).where(
+                    FreightTender.tenant_id == self.tenant_id,
+                    FreightTender.carrier_id == carrier_id,
+                    FreightTender.tendered_at >= period_start,
+                    FreightTender.tendered_at <= period_end,
+                    FreightTender.status == TenderStatus.ACCEPTED,
+                )
+            ).scalar() or 0
+            rejected = self.db.execute(
+                select(func.count(FreightTender.id)).where(
+                    FreightTender.tenant_id == self.tenant_id,
+                    FreightTender.carrier_id == carrier_id,
+                    FreightTender.tendered_at >= period_start,
+                    FreightTender.tendered_at <= period_end,
+                    FreightTender.status.in_([
+                        TenderStatus.DECLINED, TenderStatus.EXPIRED,
+                    ]),
+                )
+            ).scalar() or 0
+
+            committed = int(total)
+            actual = int(accepted)
+            util = (
+                float(actual) / float(committed)
+                if committed > 0 else 0.0
+            )
+            accept_rate = (
+                float(accepted) / float(total) if total > 0 else None
+            )
+            reject_rate = (
+                float(rejected) / float(total) if total > 0 else None
+            )
+
+            # Bucket into CapacityStateClass
+            if util >= 0.95:
+                state_class = CapacityStateClass.EXHAUSTED
+            elif util >= 0.80:
+                state_class = CapacityStateClass.TIGHT
+            elif util >= 0.60:
+                state_class = CapacityStateClass.NORMAL
+            else:
+                state_class = CapacityStateClass.ABUNDANT
+
+            stmt = (
+                pg_insert(CarrierCapacityState)
+                .values(
+                    tenant_id=self.tenant_id,
+                    carrier_id=str(carrier_id),
+                    lane_id=None,  # carrier-wide; per-lane variants are a follow-up
+                    committed_loads_period=committed,
+                    actual_loads_period=actual,
+                    utilisation_pct=util,
+                    state_class=state_class.value,
+                    period_start=period_start,
+                    period_end=period_end,
+                    observed_at=period_end,
+                    tender_accept_rate=accept_rate,
+                    tender_reject_rate=reject_rate,
+                )
+                .on_conflict_do_nothing(constraint="uq_carrier_capacity_obs")
+            )
+            res = self.db.execute(stmt)
+            if res.rowcount and res.rowcount > 0:
+                inserted += 1
+
+        if inserted:
+            self.db.commit()
+            logger.info(
+                "TerminalCoordinator: wrote %d CarrierCapacityState "
+                "snapshots for tenant=%s",
+                inserted, self.tenant_id,
+            )
+        return inserted
+
     # ── Internals ──────────────────────────────────────────────────
 
     def _find_terminals(self) -> List[Site]:

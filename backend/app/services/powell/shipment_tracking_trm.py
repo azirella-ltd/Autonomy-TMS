@@ -198,6 +198,117 @@ class ShipmentTrackingTRM:
                 results.append(result)
         return results
 
+    # ── AD-11 closed-loop: LanePerformanceActuals on DELIVERED ──────────
+
+    def record_lane_performance_for_recently_delivered(
+        self, *, lookback_hours: int = 24,
+    ) -> int:
+        """Write LanePerformanceActuals rows for loads delivered in the
+        last `lookback_hours` window.
+
+        Idempotent on (tenant_id, correlation_id, observation_index)
+        via the uq_lane_perf_correlation constraint. Re-running
+        within the lookback window is safe — the unique index returns
+        the original row and the helper returns it.
+
+        Returns the count of rows newly inserted in this call (0 when
+        all matching loads were already recorded; useful for
+        scheduler-job logging).
+
+        Should be called from the same hourly cycle as
+        evaluate_pending_shipments — they share the IN_TRANSIT →
+        DELIVERED state transition signal but operate independently
+        (this one only fires post-delivery).
+        """
+        from datetime import timedelta
+        from azirella_data_model.intersections.supply_transport import (
+            LanePerformanceActuals,
+        )
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
+
+        delivered = self.db.execute(
+            select(Load).where(
+                and_(
+                    Load.tenant_id == self.tenant_id,
+                    Load.status == LoadStatus.DELIVERED,
+                    Load.actual_arrival.isnot(None),
+                    Load.actual_arrival >= cutoff,
+                )
+            )
+        ).scalars().all()
+
+        inserted = 0
+        for load in delivered:
+            # Resolve transit minutes from departure → arrival actuals
+            transit_actual_min = None
+            if load.actual_departure and load.actual_arrival:
+                transit_actual_min = (
+                    load.actual_arrival - load.actual_departure
+                ).total_seconds() / 60.0
+
+            transit_promised_min = None
+            if load.planned_departure and load.planned_arrival:
+                transit_promised_min = (
+                    load.planned_arrival - load.planned_departure
+                ).total_seconds() / 60.0
+
+            # On-time: 1 if delivered ≤ planned_arrival, else 0
+            on_time = None
+            if load.planned_arrival is not None:
+                on_time = (
+                    1 if load.actual_arrival <= load.planned_arrival else 0
+                )
+
+            # Lane id is not directly on Load; resolve via carrier_lane
+            # if the linkage exists. v1 falls back to a synthetic
+            # (origin→dest) string when no canonical lane id is wired.
+            lane_id_str = (
+                str(load.lane_id) if getattr(load, "lane_id", None)
+                else f"{load.origin_site_id}->{load.destination_site_id}"
+            )
+            mode_str = (
+                load.mode.value if getattr(load.mode, "value", None)
+                else str(load.mode or "FTL")
+            )
+
+            stmt = (
+                pg_insert(LanePerformanceActuals)
+                .values(
+                    tenant_id=self.tenant_id,
+                    lane_id=lane_id_str,
+                    carrier_id=str(load.carrier_id) if load.carrier_id else "UNKNOWN",
+                    mode=mode_str,
+                    transfer_order_id=None,  # not yet linked on Load
+                    load_id=str(load.id),
+                    promised_pickup=load.planned_departure or load.actual_departure or load.actual_arrival,
+                    promised_eta_p10=load.planned_arrival or load.actual_arrival,
+                    promised_eta_p50=load.planned_arrival or load.actual_arrival,
+                    promised_eta_p90=load.planned_arrival or load.actual_arrival,
+                    actual_pickup=load.actual_departure,
+                    actual_delivery=load.actual_arrival,
+                    transit_minutes_actual=transit_actual_min,
+                    transit_minutes_promised_p50=transit_promised_min,
+                    on_time=on_time,
+                    correlation_id=f"load-{load.id}",
+                    observation_index=0,
+                )
+                .on_conflict_do_nothing(constraint="uq_lane_perf_correlation")
+            )
+            res = self.db.execute(stmt)
+            if res.rowcount and res.rowcount > 0:
+                inserted += 1
+
+        if inserted:
+            self.db.commit()
+            logger.info(
+                "ShipmentTracking: recorded %d LanePerformanceActuals "
+                "row(s) for loads delivered in last %dh",
+                inserted, lookback_hours,
+            )
+        return inserted
+
     # ── Helpers ──────────────────────────────────────────────────────────
 
     def _build_state(self, load: Load):
