@@ -57,7 +57,10 @@ def create_server() -> "FastMCP":
     )
 
     # Register all tool modules
-    from .tools import decision_stream, atp, reasoning, network, kpi, forecast, governance, override
+    from .tools import (
+        ad11, atp, decision_stream, forecast, governance, kpi, network,
+        override, reasoning,
+    )
 
     decision_stream.register(mcp)
     atp.register(mcp)
@@ -67,6 +70,10 @@ def create_server() -> "FastMCP":
     forecast.register(mcp)
     governance.register(mcp)
     override.register(mcp)
+    # AD-11 Supply×Transport intersection — read-only canonical-ID
+    # tools that SCP agents call to inform their planning. See
+    # Autonomy-Core SCP_TMS_COLLABORATION_ARCHITECTURE.md §5 + §7.
+    ad11.register(mcp)
 
     logger.info("Autonomy MCP server configured with %d tools", len(mcp._tool_manager._tools) if hasattr(mcp, '_tool_manager') else 0)
 
