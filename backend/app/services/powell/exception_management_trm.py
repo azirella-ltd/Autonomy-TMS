@@ -58,6 +58,8 @@ from app.models.tms_entities import (
 
 
 from app.services.powell.agent_decision_writer import record_trm_decision
+from app.services.powell.policy_reader import PolicyCache, lowest_tier_priority
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +78,10 @@ class ExceptionManagementTRM:
         self.tenant_id = tenant_id
         self.config_id = config_id
         self._model = None
+        # Lazy active-policy reader. Falls back to class-level
+        # DEFAULT_* constants when no policy is provisioned (with a
+        # one-time WARNING from PolicyCache).
+        self._policy = PolicyCache(tenant_id=tenant_id, config_id=config_id)
 
         from azirella_data_model.powell.tms.heuristic_library.dispatch import (
             compute_tms_decision,
@@ -194,19 +200,64 @@ class ExceptionManagementTRM:
         return result
 
     def evaluate_pending_exceptions(self) -> List[Dict[str, Any]]:
-        """Evaluate every DETECTED/INVESTIGATING exception for the tenant."""
+        """Evaluate every DETECTED/INVESTIGATING exception for the tenant.
+
+        Also checks the open-exception backlog against
+        `policy.escalation_thresholds.exception_backlog_count`. When the
+        backlog exceeds the threshold, every result in the batch is
+        flagged with `policy_escalation=True` and a structured WARNING
+        is logged once. The L4 Strategic agent reads the warning logs
+        when re-considering staffing / network policy.
+        """
         exceptions = self.find_open_exceptions()
         results = []
+        backlog_breach = self._policy_backlog_breach(len(exceptions))
         for exc in exceptions:
             result = self.evaluate_and_log(exc)
             if result:
+                if backlog_breach is not None:
+                    result["policy_escalation"] = True
+                    result["policy_backlog_threshold"] = backlog_breach
                 results.append(result)
+        if backlog_breach is not None:
+            logger.warning(
+                "ExceptionManagement backlog escalation: tenant=%s open=%d "
+                "threshold=%d (escalation_thresholds.exception_backlog_count) "
+                "— L4 review recommended",
+                self.tenant_id, len(exceptions), backlog_breach,
+            )
         return results
+
+    def _policy_backlog_breach(self, open_count: int) -> Optional[int]:
+        """Return the threshold value when breached, else None.
+
+        Reads `policy.escalation_thresholds.exception_backlog_count`.
+        Falls back to `None` (no escalation) when policy is absent —
+        consistent with the no-fallbacks invariant.
+        """
+        policy = self._policy.get(self.db)
+        if policy is None:
+            return None
+        thresholds = policy.escalation_thresholds or {}
+        try:
+            threshold = int(thresholds.get("exception_backlog_count"))
+        except (TypeError, ValueError):
+            return None
+        if open_count > threshold:
+            return threshold
+        return None
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
     def _build_state(self, exc: ShipmentException):
-        """Construct ExceptionManagementState from ShipmentException + joins."""
+        """Construct ExceptionManagementState from ShipmentException + joins.
+
+        `customer_tier` is sourced from `policy.service_level_tiers` —
+        until a per-shipment customer→tier mapping wires through, every
+        shipment gets the lowest-tier priority (most permissive) as a
+        conservative default. When that mapping lands, swap the
+        `lowest_tier_priority(policy)` call for a per-shipment lookup.
+        """
         now = datetime.utcnow()
         hours_since_detected = 0.0
         if exc.detected_at:
@@ -293,5 +344,22 @@ class ExceptionManagementTRM:
             expedite_cost_estimate=0.0,
             appointment_buffer_hrs=self.DEFAULT_APPOINTMENT_BUFFER_HRS,
             downstream_shipments_affected=0,
-            customer_tier=self.DEFAULT_CUSTOMER_TIER,
+            customer_tier=self._resolve_customer_tier(),
         )
+
+    def _resolve_customer_tier(self) -> int:
+        """Customer-tier priority for this shipment.
+
+        v1: pulls the lowest tier (highest priority integer) from
+        policy.service_level_tiers. Falls back to DEFAULT_CUSTOMER_TIER
+        when no policy is provisioned. When a per-shipment customer
+        → tier mapping wires through, swap this for a tier-specific
+        lookup.
+        """
+        policy = self._policy.get(self.db)
+        if policy is None:
+            return self.DEFAULT_CUSTOMER_TIER
+        prio = lowest_tier_priority(policy)
+        if prio is None:
+            return self.DEFAULT_CUSTOMER_TIER
+        return int(prio)
