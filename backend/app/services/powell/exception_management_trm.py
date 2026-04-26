@@ -59,6 +59,9 @@ from app.models.tms_entities import (
 
 from app.services.powell.agent_decision_writer import record_trm_decision
 from app.services.powell.policy_reader import PolicyCache, lowest_tier_priority
+from app.services.powell.terminal_coordinator_service import (
+    get_active_urgency_multiplier,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +136,15 @@ class ExceptionManagementTRM:
             6: "REROUTE",
         }.get(decision.action, "UNKNOWN")
 
+        # L2 Terminal Coordinator urgency modulation. Falls back to
+        # 1.0 (neutral) when no override exists at this exception's
+        # hub. We key off the shipment's origin_site_id — that's the
+        # canonical "where the work is happening" hub for an
+        # in-flight exception.
+        baseline_urgency = float(decision.urgency)
+        l2_multiplier = self._l2_urgency_multiplier(exc)
+        modulated_urgency = max(0.0, min(1.0, baseline_urgency * l2_multiplier))
+
         return {
             "exception_id": exc.id,
             "shipment_id": exc.shipment_id,
@@ -148,11 +160,34 @@ class ExceptionManagementTRM:
                 if decision.params_used else None
             ),
             "confidence": decision.confidence,
-            "urgency": decision.urgency,
+            "urgency": modulated_urgency,
+            "baseline_urgency": baseline_urgency,
+            "l2_urgency_multiplier": l2_multiplier,
             "reasoning": decision.reasoning,
             "decision_method": "trm_model" if self._model else "heuristic",
             "scoring_detail": decision.params_used,
         }
+
+    def _l2_urgency_multiplier(self, exc: ShipmentException) -> float:
+        """Resolve the L2 Terminal Coordinator's urgency override for
+        this exception's hub. Returns 1.0 (no modulation) when no
+        active override exists. Hub is the shipment's origin_site_id.
+        """
+        if exc.shipment_id is None:
+            return 1.0
+        shipment = self.db.execute(
+            select(TMSShipment.origin_site_id).where(
+                TMSShipment.id == exc.shipment_id
+            )
+        ).scalar()
+        if shipment is None:
+            return 1.0
+        return get_active_urgency_multiplier(
+            self.db,
+            tenant_id=self.tenant_id,
+            hub_site_id=int(shipment),
+            trm_type="exception_management",
+        )
 
     def evaluate_and_log(self, exc: ShipmentException) -> Optional[Dict[str, Any]]:
         """Evaluate + log at severity matching the action.

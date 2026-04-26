@@ -242,6 +242,22 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered demo date shift job (daily at 04:00)")
 
+    # L2 Terminal Coordinator (hourly at :05)
+    # Walks every terminal hub for every (tenant, config), computes
+    # composite_health KPI snapshot, persists to terminal_health_signal,
+    # and emits short-TTL urgency overrides when policy thresholds
+    # breach. L1 TRMs read terminal_urgency_override from their state-
+    # builders; absent override = multiplier 1.0 (neutral).
+    scheduler.add_job(
+        func=_run_terminal_coordinator,
+        trigger=CronTrigger(minute=5),
+        id="terminal_coordinator_cycle",
+        name="L2: Terminal Coordinator Cycle (hourly)",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+    logger.info("Registered L2 terminal coordinator job (hourly at :05)")
+
     # Conformal auto-calibration (every 12h at 04:15 and 16:15)
     # Refreshes P10/P50/P90 intervals for TMS TRMs (capacity_buffer,
     # demand_sensing, equipment_reposition, shipment_tracking) from
@@ -1009,5 +1025,79 @@ def _run_conformal_autocalibration() -> None:
         )
     except Exception as e:
         logger.error("Conformal auto-calibration job failed: %s", e, exc_info=True)
+    finally:
+        db.close()
+
+
+def _run_terminal_coordinator() -> None:
+    """Walk every (tenant, config) pair with at least one terminal-style
+    Site and run one TerminalCoordinatorService cycle per pair.
+
+    The pair list is derived from policy_parameters rows (every tenant
+    with an active policy gets walked; tenants without policy are
+    skipped — matches the no-fallbacks invariant).
+    """
+    from app.db.session import sync_session_factory
+    from sqlalchemy import select
+
+    logger.info("Starting scheduled L2 terminal coordinator cycle")
+
+    db = sync_session_factory()
+    total_hubs = 0
+    total_overrides = 0
+    pairs = 0
+    try:
+        from app.models.policy_parameters import PolicyParameters
+        from app.services.powell.terminal_coordinator_service import (
+            TerminalCoordinatorService,
+        )
+
+        # Pull every (tenant, config) pair with an active policy.
+        # config_id IS NULL means tenant-wide; we still need a concrete
+        # config_id to scope the Site lookup, so we expand each
+        # tenant-wide policy across the tenant's active configs.
+        active_pairs = db.execute(
+            select(
+                PolicyParameters.tenant_id,
+                PolicyParameters.config_id,
+            ).where(PolicyParameters.effective_to.is_(None))
+        ).all()
+        # Drop tenant-wide rows with no config — they need real configs
+        # to do anything. The per-config row will be picked up
+        # separately when one exists.
+        for tenant_id, config_id in active_pairs:
+            if config_id is None:
+                # Find tenant configs to fan out to
+                from app.models.supply_chain_config import SupplyChainConfig
+                cfgs = db.execute(
+                    select(SupplyChainConfig.id).where(
+                        SupplyChainConfig.tenant_id == tenant_id,
+                        SupplyChainConfig.is_active.is_(True),
+                    )
+                ).scalars().all()
+                cfg_ids = [int(c) for c in cfgs]
+            else:
+                cfg_ids = [int(config_id)]
+
+            for cfg_id in cfg_ids:
+                pairs += 1
+                svc = TerminalCoordinatorService(
+                    db, tenant_id=int(tenant_id), config_id=cfg_id
+                )
+                summaries = svc.run_cycle()
+                total_hubs += len(summaries)
+                total_overrides += sum(
+                    len(s.get("overrides_emitted", [])) for s in summaries
+                )
+                # Periodic cleanup of long-expired override rows
+                svc.purge_expired(older_than_days=7)
+
+        logger.info(
+            "L2 terminal coordinator: %d (tenant,config) pairs walked, "
+            "%d hubs evaluated, %d overrides emitted",
+            pairs, total_hubs, total_overrides,
+        )
+    except Exception as e:
+        logger.error("L2 terminal coordinator job failed: %s", e, exc_info=True)
     finally:
         db.close()

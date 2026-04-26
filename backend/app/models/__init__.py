@@ -438,6 +438,11 @@ from .intermodal_network import (
 
 from .policy_parameters import PolicyParameters, PolicySource
 
+from .terminal_coordinator import (
+    TerminalUrgencyOverride, LaneWaterfallOverride, TerminalHealthSignal,
+    L2TrendDirection,
+)
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -761,6 +766,9 @@ __all__ = [
     'RampType', 'IntermodalRateSource', 'SpotRateSource',
     # L4 Strategic policy
     'PolicyParameters', 'PolicySource',
+    # L2 Terminal Coordinator data plane
+    'TerminalUrgencyOverride', 'LaneWaterfallOverride', 'TerminalHealthSignal',
+    'L2TrendDirection',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.
