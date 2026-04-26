@@ -242,6 +242,22 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered demo date shift job (daily at 04:00)")
 
+    # Conformal auto-calibration (every 12h at 04:15 and 16:15)
+    # Refreshes P10/P50/P90 intervals for TMS TRMs (capacity_buffer,
+    # demand_sensing, equipment_reposition, shipment_tracking) from
+    # outcome-measured agent_decisions. Only variables with ≥20 samples
+    # get recalibrated — smaller buckets log-and-skip rather than
+    # substitute a default (no-fallbacks invariant).
+    scheduler.add_job(
+        func=_run_conformal_autocalibration,
+        trigger=CronTrigger(hour="4,16", minute=15),
+        id="conformal_autocalibration",
+        name="Conformal: Auto-Calibration (every 12h)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info("Registered conformal auto-calibration job (every 12h at :15)")
+
 
 # ---------------------------------------------------------------------------
 # Job execution functions
@@ -959,5 +975,39 @@ def _run_demo_date_shift() -> None:
         )
     except Exception as e:
         logger.error("Demo date shift job failed: %s", e, exc_info=True)
+    finally:
+        db.close()
+
+
+def _run_conformal_autocalibration() -> None:
+    """Refresh conformal predictors from outcome-measured agent_decisions.
+
+    Iterates every (tenant, config) pair with calibratable TRM decisions
+    in the trailing 30-day window and updates conformal.active_predictors
+    / calibration_snapshots / observation_log.
+    """
+    from app.db.session import sync_session_factory
+
+    logger.info("Starting scheduled conformal auto-calibration")
+
+    db = sync_session_factory()
+    try:
+        from app.services.powell.conformal_autocalibrate_service import (
+            ConformalAutoCalibrateService,
+        )
+
+        service = ConformalAutoCalibrateService(db)
+        summaries = service.calibrate_all_tenants()
+        total_vars = sum(len(s.get("variables", [])) for s in summaries)
+        total_calibrated = sum(
+            1 for s in summaries for v in s.get("variables", []) if v.get("calibrated")
+        )
+        logger.info(
+            "Conformal auto-calibration completed: %d (tenant,config) pairs, "
+            "%d variables evaluated, %d calibrated",
+            len(summaries), total_vars, total_calibrated,
+        )
+    except Exception as e:
+        logger.error("Conformal auto-calibration job failed: %s", e, exc_info=True)
     finally:
         db.close()

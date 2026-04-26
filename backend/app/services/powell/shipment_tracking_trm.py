@@ -178,6 +178,7 @@ class ShipmentTrackingTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="shipment_tracking",
             result=result,
             item_code=f"load-{load.id}",

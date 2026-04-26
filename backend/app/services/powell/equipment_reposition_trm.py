@@ -224,6 +224,7 @@ class EquipmentRepositionTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="equipment_reposition",
             result=result,
             item_code=f"{equipment_type}-{source_site_id}-{target_site_id}",

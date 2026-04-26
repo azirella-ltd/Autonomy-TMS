@@ -203,6 +203,7 @@ class CapacityBufferTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="capacity_buffer",
             result=result,
             item_code=f"capacity-target-{target.id}",

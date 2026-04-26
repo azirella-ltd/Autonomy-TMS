@@ -170,6 +170,7 @@ class CapacityPromiseTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="capacity_promise",
             result=result,
             item_code=f"load-{load.id}",

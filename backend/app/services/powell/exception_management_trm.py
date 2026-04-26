@@ -183,6 +183,7 @@ class ExceptionManagementTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="exception_management",
             result=result,
             item_code=f"exception-{exc.id}",

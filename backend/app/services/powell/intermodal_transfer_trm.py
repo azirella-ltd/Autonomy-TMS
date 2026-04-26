@@ -181,6 +181,7 @@ class IntermodalTransferTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="intermodal_transfer",
             result=result,
             item_code=f"shipment-{shipment.id}",

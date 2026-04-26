@@ -202,6 +202,7 @@ class DemandSensingTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="demand_sensing",
             result=result,
             item_code=f"forecast-{forecast.id}",

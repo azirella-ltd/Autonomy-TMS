@@ -80,6 +80,7 @@ def record_trm_decision(
     category: Optional[str] = None,
     impact_value: Optional[float] = None,
     impact_description: Optional[str] = None,
+    config_id: Optional[int] = None,
 ) -> Optional[int]:
     """Write one AgentDecision row per TRM evaluation.
 
@@ -157,6 +158,10 @@ def record_trm_decision(
         "action_name": action_name,
         "scoring_detail": scoring_detail,
     }
+    if config_id is not None:
+        # Stamped here so the conformal auto-calibration job can group
+        # observations by (tenant_id, config_id, variable_type).
+        context_payload["config_id"] = int(config_id)
     for k, v in result.items():
         if k in {"reasoning", "confidence", "urgency", "scoring_detail"}:
             continue

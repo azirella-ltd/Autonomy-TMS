@@ -255,6 +255,7 @@ class LoadBuildTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="load_build",
             result=result,
             item_code=f"group-{origin_site_id}-{destination_site_id}-{mode}",

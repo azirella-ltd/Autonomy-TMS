@@ -201,6 +201,7 @@ class DockSchedulingTRM:
         record_trm_decision(
             self.db,
             tenant_id=self.tenant_id,
+            config_id=self.config_id,
             trm_type="dock_scheduling",
             result=result,
             item_code=f"appt-{appt.id}",
