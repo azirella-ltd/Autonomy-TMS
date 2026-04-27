@@ -504,12 +504,12 @@ class EquipmentRepositionTRM:
         """Best-effort miles lookup: check LaneProfile for a lane joining
         these sites. Returns None when no lane profile exists.
         """
-        from app.models.sc_entities import TransportationLane  # via core shim
+        from app.models.supply_chain_config import TransportationLane
 
         lane = self.db.execute(
             select(TransportationLane).where(
-                TransportationLane.origin_site_id == source_site_id,
-                TransportationLane.destination_site_id == target_site_id,
+                TransportationLane.from_site_id == source_site_id,
+                TransportationLane.to_site_id == target_site_id,
             )
         ).scalar_one_or_none()
         if not lane:
