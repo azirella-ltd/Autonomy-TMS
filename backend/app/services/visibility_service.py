@@ -41,7 +41,7 @@ class VisibilityService:
     async def calculate_supply_chain_health(
         self,
         scenario_id: int,
-        round_number: Optional[int] = None
+        period_number: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Calculate overall supply chain health score (0-100).
@@ -55,7 +55,7 @@ class VisibilityService:
 
         Args:
             scenario_id: Scenario ID
-            round_number: Specific round to analyze (None = latest)
+            period_number: Specific round to analyze (None = latest)
 
         Returns:
             {
@@ -72,37 +72,45 @@ class VisibilityService:
             }
         """
         try:
-            # Get scenario metrics
-            if round_number is None:
-                # Get latest round
+            # Get scenario metrics. Round → Period rename (MR 1.12):
+            # the canonical table is `scenario_periods` keyed by
+            # `period_number`; the old `rounds` table no longer exists.
+            # `period_number` is preserved as the public arg name on
+            # this method for backward compatibility — internally it
+            # binds to scenario_periods.period_number.
+            if period_number is None:
                 query = text("""
-                    SELECT MAX(round_number) as latest_round
-                    FROM rounds
+                    SELECT MAX(period_number) as latest_period
+                    FROM scenario_periods
                     WHERE scenario_id = :scenario_id
                 """)
                 result = await self.db.execute(query, {"scenario_id": scenario_id})
                 row = result.fetchone()
-                round_number = row.latest_round if row and row.latest_round else 1
+                period_number = row.latest_period if row and row.latest_period else 1
 
-            # Get scenario_user round metrics
+            # Get scenario_user period metrics. Joins through
+            # scenario_periods so the period filter binds to the
+            # canonical period_number. service_level does not exist
+            # on scenario_user_periods — the consumer score helper
+            # treats None as 0.
             query = text("""
                 SELECT
                     pr.inventory_after,
-                    pr.backlog_after,
+                    pr.backorders_after,
                     pr.order_placed,
-                    pr.inventory_cost,
-                    pr.backlog_cost,
+                    pr.holding_cost,
+                    pr.backorder_cost,
                     pr.total_cost,
-                    pr.service_level,
                     p.role
                 FROM scenario_user_periods pr
                 JOIN scenario_users p ON pr.scenario_user_id = p.id
+                JOIN scenario_periods sp ON sp.id = pr.scenario_period_id
                 WHERE p.scenario_id = :scenario_id
-                AND pr.round_number = :round_number
+                AND sp.period_number = :period_number
             """)
             result = await self.db.execute(query, {
                 "scenario_id": scenario_id,
-                "round_number": round_number
+                "period_number": period_number
             })
             rows = result.fetchall()
 
@@ -118,7 +126,7 @@ class VisibilityService:
             inventory_balance_score = await self._calculate_inventory_balance_score(rows)
             service_level_score = await self._calculate_service_level_score(rows)
             cost_efficiency_score = await self._calculate_cost_efficiency_score(rows)
-            order_stability_score = await self._calculate_order_stability_score(scenario_id, round_number)
+            order_stability_score = await self._calculate_order_stability_score(scenario_id, period_number)
             backlog_pressure_score = await self._calculate_backlog_pressure_score(rows)
 
             # Weighted health score
@@ -163,7 +171,7 @@ class VisibilityService:
                 },
                 "status": status,
                 "insights": insights,
-                "round_number": round_number
+                "period_number": period_number
             }
 
         except Exception as e:
@@ -195,11 +203,20 @@ class VisibilityService:
         return sum(scores) / len(scores)
 
     async def _calculate_service_level_score(self, rows: List) -> float:
-        """Score based on service levels (higher is better)."""
+        """Score based on service levels (higher is better).
+
+        scenario_user_periods does not carry a service_level column —
+        the live score path uses period_metric instead. Until that
+        join lands, this helper observes None for every row and
+        returns 0; tracked in the visibility-service backlog as a
+        score-helper rewrite.
+        """
         if not rows:
             return 0.0
 
-        service_levels = [row.service_level or 0.0 for row in rows]
+        service_levels = [
+            getattr(row, "service_level", None) or 0.0 for row in rows
+        ]
         avg_service_level = sum(service_levels) / len(service_levels)
 
         return avg_service_level * 100
@@ -212,7 +229,7 @@ class VisibilityService:
         costs = [row.total_cost or 0.0 for row in rows]
         avg_cost = sum(costs) / len(costs)
 
-        # Expected max cost per node per round: 100
+        # Expected max cost per node per period: 100
         max_expected_cost = 100.0
 
         if avg_cost <= max_expected_cost * 0.5:
@@ -225,7 +242,7 @@ class VisibilityService:
 
         return score
 
-    async def _calculate_order_stability_score(self, scenario_id: int, round_number: int) -> float:
+    async def _calculate_order_stability_score(self, scenario_id: int, period_number: int) -> float:
         """Score based on order volatility (bullwhip effect)."""
         try:
             # Get last 5 rounds of orders
@@ -234,14 +251,14 @@ class VisibilityService:
                 FROM scenario_user_periods pr
                 JOIN scenario_users p ON pr.scenario_user_id = p.id
                 WHERE p.scenario_id = :scenario_id
-                AND pr.round_number BETWEEN :start_round AND :end_round
-                ORDER BY pr.round_number DESC
+                AND pr.period_number BETWEEN :start_round AND :end_round
+                ORDER BY pr.period_number DESC
                 LIMIT 5
             """)
             result = await self.db.execute(query, {
                 "scenario_id": scenario_id,
-                "start_round": max(1, round_number - 4),
-                "end_round": round_number
+                "start_round": max(1, period_number - 4),
+                "end_round": period_number
             })
             rows = result.fetchall()
 
@@ -280,7 +297,7 @@ class VisibilityService:
         if not rows:
             return 100.0
 
-        backlogs = [row.backlog_after or 0 for row in rows]
+        backlogs = [row.backorders_after or 0 for row in rows]
         avg_backlog = sum(backlogs) / len(backlogs)
 
         # 0 backlog = 100 score
@@ -346,7 +363,7 @@ class VisibilityService:
     async def detect_bottlenecks(
         self,
         scenario_id: int,
-        round_number: Optional[int] = None
+        period_number: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Detect bottlenecks in the supply chain.
@@ -358,7 +375,7 @@ class VisibilityService:
 
         Args:
             scenario_id: Scenario ID
-            round_number: Specific round (None = latest)
+            period_number: Specific round (None = latest)
 
         Returns:
             {
@@ -380,43 +397,49 @@ class VisibilityService:
             }
         """
         try:
-            # Get latest round if not specified
-            if round_number is None:
+            # Get latest period if not specified. Same Round → Period
+            # rename + aliasing pattern as calculate_supply_chain_health
+            # above.
+            if period_number is None:
                 query = text("""
-                    SELECT MAX(round_number) as latest_round
-                    FROM rounds
+                    SELECT MAX(period_number) as latest_period
+                    FROM scenario_periods
                     WHERE scenario_id = :scenario_id
                 """)
                 result = await self.db.execute(query, {"scenario_id": scenario_id})
                 row = result.fetchone()
-                round_number = row.latest_round if row and row.latest_round else 1
+                period_number = row.latest_period if row and row.latest_period else 1
 
-            # Get scenario_user metrics
+            # Get scenario_user metrics. service_level isn't on
+            # scenario_user_periods — dropped from the select; the
+            # consumer below treats None as 0.
             query = text("""
                 SELECT
                     p.role,
                     pr.inventory_after,
-                    pr.backlog_after,
-                    pr.service_level,
+                    pr.backorders_after,
                     pr.order_placed,
                     pr.total_cost
                 FROM scenario_user_periods pr
                 JOIN scenario_users p ON pr.scenario_user_id = p.id
+                JOIN scenario_periods sp ON sp.id = pr.scenario_period_id
                 WHERE p.scenario_id = :scenario_id
-                AND pr.round_number = :round_number
+                AND sp.period_number = :period_number
             """)
             result = await self.db.execute(query, {
                 "scenario_id": scenario_id,
-                "round_number": round_number
+                "period_number": period_number
             })
             rows = result.fetchall()
 
             bottlenecks = []
 
             for row in rows:
-                backlog = row.backlog_after or 0
+                backlog = row.backorders_after or 0
                 inventory = row.inventory_after or 0
-                service_level = row.service_level or 0.0
+                # service_level isn't on scenario_user_periods; defaults
+                # to 0 until the period_metric join lands here.
+                service_level = getattr(row, "service_level", None) or 0.0
 
                 # Bottleneck criteria
                 is_bottleneck = False
@@ -467,7 +490,7 @@ class VisibilityService:
                 "bottlenecks": bottlenecks,
                 "total_bottlenecks": len(bottlenecks),
                 "supply_chain_flow": flow_status,
-                "round_number": round_number
+                "period_number": period_number
             }
 
         except Exception as e:
@@ -509,12 +532,12 @@ class VisibilityService:
             query = text("""
                 SELECT
                     p.role,
-                    pr.round_number,
+                    pr.period_number,
                     pr.order_placed
                 FROM scenario_user_periods pr
                 JOIN scenario_users p ON pr.scenario_user_id = p.id
                 WHERE p.scenario_id = :scenario_id
-                ORDER BY p.role, pr.round_number DESC
+                ORDER BY p.role, pr.period_number DESC
                 LIMIT :limit
             """)
             result = await self.db.execute(query, {
@@ -728,7 +751,7 @@ class VisibilityService:
     async def create_visibility_snapshot(
         self,
         scenario_id: int,
-        round_number: int
+        period_number: int
     ) -> Dict[str, Any]:
         """
         Create a visibility snapshot for the current round.
@@ -741,17 +764,17 @@ class VisibilityService:
 
         Args:
             scenario_id: Scenario ID
-            round_number: Round number
+            period_number: Round number
 
         Returns:
             {"snapshot_id": 456, "created_at": "..."}
         """
         try:
             # Calculate health score
-            health = await self.calculate_supply_chain_health(scenario_id, round_number)
+            health = await self.calculate_supply_chain_health(scenario_id, period_number)
 
             # Detect bottlenecks
-            bottlenecks = await self.detect_bottlenecks(scenario_id, round_number)
+            bottlenecks = await self.detect_bottlenecks(scenario_id, period_number)
 
             # Measure bullwhip
             bullwhip = await self.measure_bullwhip_severity(scenario_id, window_size=10)
@@ -762,16 +785,19 @@ class VisibilityService:
             shared_metrics = {}
             for scenario_user in permissions["scenario_users"]:
                 if any(scenario_user["permissions"].values()):
-                    # Get scenario_user metrics
+                    # Get scenario_user metrics.
                     query = text("""
-                        SELECT inventory_after, backlog_after, order_placed
+                        SELECT pr.inventory_after,
+                               pr.backorders_after,
+                               pr.order_placed
                         FROM scenario_user_periods pr
+                        JOIN scenario_periods sp ON sp.id = pr.scenario_period_id
                         WHERE pr.scenario_user_id = :scenario_user_id
-                        AND pr.round_number = :round_number
+                        AND sp.period_number = :period_number
                     """)
                     result = await self.db.execute(query, {
                         "scenario_user_id": scenario_user["scenario_user_id"],
-                        "round_number": round_number
+                        "period_number": period_number
                     })
                     row = result.fetchone()
 
@@ -780,7 +806,7 @@ class VisibilityService:
                         if scenario_user["permissions"]["share_inventory"]:
                             metrics["inventory"] = row.inventory_after
                         if scenario_user["permissions"]["share_backlog"]:
-                            metrics["backlog"] = row.backlog_after
+                            metrics["backlog"] = row.backorders_after
                         if scenario_user["permissions"]["share_orders"]:
                             metrics["order"] = row.order_placed
 
@@ -797,12 +823,12 @@ class VisibilityService:
 
             query = text("""
                 INSERT INTO visibility_snapshots
-                (scenario_id, round_number, health_score, snapshot_data, created_at)
-                VALUES (:scenario_id, :round_number, :health_score, :snapshot_data, NOW())
+                (scenario_id, period_number, health_score, snapshot_data, created_at)
+                VALUES (:scenario_id, :period_number, :health_score, :snapshot_data, NOW())
             """)
             result = await self.db.execute(query, {
                 "scenario_id": scenario_id,
-                "round_number": round_number,
+                "period_number": period_number,
                 "health_score": health["health_score"],
                 "snapshot_data": str(snapshot_data)  # JSON as string
             })
@@ -839,13 +865,13 @@ class VisibilityService:
             query = text("""
                 SELECT
                     id,
-                    round_number,
+                    period_number,
                     health_score,
                     snapshot_data,
                     created_at
                 FROM visibility_snapshots
                 WHERE scenario_id = :scenario_id
-                ORDER BY round_number DESC
+                ORDER BY period_number DESC
                 LIMIT :limit
             """)
             result = await self.db.execute(query, {
@@ -858,7 +884,7 @@ class VisibilityService:
             for row in rows:
                 snapshots.append({
                     "id": row.id,
-                    "round_number": row.round_number,
+                    "period_number": row.period_number,
                     "health_score": float(row.health_score),
                     "snapshot_data": row.snapshot_data,
                     "created_at": row.created_at.isoformat() if row.created_at else None

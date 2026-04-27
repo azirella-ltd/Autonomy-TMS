@@ -162,19 +162,36 @@ class NegotiationService:
         """
         try:
             # Get current state for both scenario_users
+            # Round → Period rename (MR 1.12): table `rounds` is now
+            # `scenario_periods`, column `round_number` is now
+            # `period_number`. scenario_user_periods carries the FK
+            # `scenario_period_id`, not the old `round_number`. Joining
+            # through scenario_periods to filter on the latest period
+            # for this scenario.
+            #
+            # Two unrelated drift fixes folded in here so the query
+            # actually executes:
+            #   * `pr.backlog_after` → `pr.backorders_after` (the
+            #     column was renamed in the same period sweep).
+            #   * `pr.service_level` removed — there is no service_level
+            #     column on scenario_user_periods. The downstream
+            #     simulators only consume inventory_after, so it was
+            #     unused dead select-list anyway.
             query = text("""
                 SELECT
                     p.id,
                     p.role,
                     pr.inventory_after,
-                    pr.backlog_after,
-                    pr.total_cost,
-                    pr.service_level
+                    pr.backorders_after,
+                    pr.total_cost
                 FROM scenario_users p
                 JOIN scenario_user_periods pr ON p.id = pr.scenario_user_id
+                JOIN scenario_periods sp ON sp.id = pr.scenario_period_id
                 WHERE p.id IN (:initiator_id, :target_id)
-                AND pr.round_number = (
-                    SELECT MAX(round_number) FROM rounds WHERE scenario_id = :scenario_id
+                AND sp.scenario_id = :scenario_id
+                AND sp.period_number = (
+                    SELECT MAX(period_number) FROM scenario_periods
+                    WHERE scenario_id = :scenario_id
                 )
             """)
             result = await self.db.execute(query, {
@@ -466,11 +483,12 @@ class NegotiationService:
                 if transfer_qty > 0:
                     # Deduct from initiator inventory
                     await self.db.execute(text("""
-                        UPDATE scenario_user_periods SET inventory = GREATEST(0, inventory - :qty)
+                        UPDATE scenario_user_periods
+                        SET inventory_after = GREATEST(0, inventory_after - :qty)
                         WHERE scenario_user_id = :pid
-                        AND round_id = (
-                            SELECT id FROM scenario_rounds WHERE scenario_id = :gid
-                            ORDER BY round_number DESC LIMIT 1
+                        AND scenario_period_id = (
+                            SELECT id FROM scenario_periods WHERE scenario_id = :gid
+                            ORDER BY period_number DESC LIMIT 1
                         )
                     """), {
                         "qty": transfer_qty,
@@ -479,11 +497,12 @@ class NegotiationService:
                     })
                     # Add to target inventory
                     await self.db.execute(text("""
-                        UPDATE scenario_user_periods SET inventory = inventory + :qty
+                        UPDATE scenario_user_periods
+                        SET inventory_after = inventory_after + :qty
                         WHERE scenario_user_id = :pid
-                        AND round_id = (
-                            SELECT id FROM scenario_rounds WHERE scenario_id = :gid
-                            ORDER BY round_number DESC LIMIT 1
+                        AND scenario_period_id = (
+                            SELECT id FROM scenario_periods WHERE scenario_id = :gid
+                            ORDER BY period_number DESC LIMIT 1
                         )
                     """), {
                         "qty": transfer_qty,
@@ -500,11 +519,11 @@ class NegotiationService:
                 new_qty = proposal.get("new_order_quantity", proposal.get("quantity"))
                 if new_qty is not None:
                     await self.db.execute(text("""
-                        UPDATE scenario_user_periods SET order_upstream = :qty
+                        UPDATE scenario_user_periods SET order_placed = :qty
                         WHERE scenario_user_id = :pid
-                        AND round_id = (
-                            SELECT id FROM scenario_rounds WHERE scenario_id = :gid
-                            ORDER BY round_number DESC LIMIT 1
+                        AND scenario_period_id = (
+                            SELECT id FROM scenario_periods WHERE scenario_id = :gid
+                            ORDER BY period_number DESC LIMIT 1
                         )
                     """), {
                         "qty": int(new_qty),
@@ -719,15 +738,17 @@ class NegotiationService:
                     p.id,
                     p.role,
                     pr.inventory_after,
-                    pr.backlog_after,
+                    pr.backorders_after,
                     pr.order_placed,
-                    pr.total_cost,
-                    pr.service_level
+                    pr.total_cost
                 FROM scenario_users p
                 JOIN scenario_user_periods pr ON p.id = pr.scenario_user_id
+                JOIN scenario_periods sp ON sp.id = pr.scenario_period_id
                 WHERE p.id IN (:scenario_user_id, :target_scenario_user_id)
-                AND pr.round_number = (
-                    SELECT MAX(round_number) FROM rounds WHERE scenario_id = :scenario_id
+                AND sp.scenario_id = :scenario_id
+                AND sp.period_number = (
+                    SELECT MAX(period_number) FROM scenario_periods
+                    WHERE scenario_id = :scenario_id
                 )
             """)
             result = await self.db.execute(query, {
@@ -760,15 +781,17 @@ class NegotiationService:
         """Analyze states and generate negotiation suggestion."""
         # Simple heuristic-based suggestions
 
-        # Scenario 1: ScenarioUser has excess inventory, target has backlog
-        if scenario_user_state.inventory_after > 50 and target_state.backlog_after > 20:
+        # Scenario 1: ScenarioUser has excess inventory, target has backlog.
+        # Field was renamed `backlog_after → backorders_after` alongside
+        # the Round → Period sweep; staying consistent with the SELECT.
+        if scenario_user_state.inventory_after > 50 and target_state.backorders_after > 20:
             return {
                 "suggested_type": "inventory_share",
                 "proposal": {
                     "units": min(30, scenario_user_state.inventory_after - 40),
                     "direction": "give"
                 },
-                "rationale": f"You have excess inventory ({scenario_user_state.inventory_after} units) while {target_state.role} has high backlog ({target_state.backlog_after} units). Sharing inventory can reduce overall costs.",
+                "rationale": f"You have excess inventory ({scenario_user_state.inventory_after} units) while {target_state.role} has high backlog ({target_state.backorders_after} units). Sharing inventory can reduce overall costs.",
                 "confidence": 0.80,
                 "expected_benefit": {
                     "cost_reduction": 15,
@@ -778,7 +801,7 @@ class NegotiationService:
             }
 
         # Scenario 2: Target has excess, scenario_user has backlog
-        if target_state.inventory_after > 50 and scenario_user_state.backlog_after > 20:
+        if target_state.inventory_after > 50 and scenario_user_state.backorders_after > 20:
             return {
                 "suggested_type": "inventory_share",
                 "proposal": {
@@ -788,7 +811,7 @@ class NegotiationService:
                 "rationale": f"{target_state.role} has excess inventory while you have backlog. Request inventory sharing to improve service level.",
                 "confidence": 0.75,
                 "expected_benefit": {
-                    "backlog_reduction": min(30, scenario_user_state.backlog_after),
+                    "backlog_reduction": min(30, scenario_user_state.backorders_after),
                     "service_improvement": 0.15,
                     "cost_savings": 12
                 }

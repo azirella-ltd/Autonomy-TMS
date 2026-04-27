@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TenderRound:
-    round_number: int
+    period_number: int
     rfq_loads: int
     bids_received: int
     awards: List[Dict[str, Any]]
@@ -156,7 +156,7 @@ async def _run_freight_tender(
             wavg = 0.0
 
         round_results.append(TenderRound(
-            round_number=r,
+            period_number=r,
             rfq_loads=loads_per_round,
             bids_received=len(bids),
             awards=awards,
@@ -170,7 +170,7 @@ async def _run_freight_tender(
     total_loads = sum(r.rfq_loads for r in round_results)
     total_awarded = sum(len(r.awards) for r in round_results)
     summary = {
-        "rounds": len(round_results),
+        "periods": len(round_results),
         "carriers_in_pool": len(carriers),
         "total_loads": total_loads,
         "total_awarded": total_awarded,
@@ -363,7 +363,7 @@ async def run_tms_scenario(
     if scenario_type == "freight_tender":
         return await _run_freight_tender(
             db, tenant_id,
-            rounds=int(p.get("rounds", 3)),
+            rounds=int(p.get("periods", 3)),
             loads_per_round=int(p.get("loads_per_round", 12)),
             carrier_pool=p.get("carrier_pool"),
             seed=int(p.get("seed", 42)),

@@ -111,25 +111,25 @@ def prepare_training_data(
     training_data = []
     
     for scenario in scenarios:
-        rounds = scenario.get('rounds', [])
+        periods = scenario.get('periods', [])
         
         # Skip scenarios with too few rounds
-        if len(rounds) < seq_len + 1:
+        if len(periods) < seq_len + 1:
             continue
             
         # Convert to sequential samples
-        for i in range(len(rounds) - seq_len):
+        for i in range(len(periods) - seq_len):
             # Get sequence of rounds
-            sequence = rounds[i:i + seq_len + 1]
+            sequence = periods[i:i + seq_len + 1]
             
-            # Extract node features for each role in each round
+            # Extract node features for each role in each period
             node_features = []
             actions = []
             rewards = []
             
-            for round_data in sequence:
-                round_number = round_data['round_number']
-                decisions = round_data.get('decisions', [])
+            for period_data in sequence:
+                period_number = period_data['period_number']
+                decisions = period_data.get('decisions', [])
                 
                 # Create node features for each role
                 role_features = {}

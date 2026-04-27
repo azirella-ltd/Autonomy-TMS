@@ -139,9 +139,9 @@ class ReportingService:
                 games_data[scenario.id] = {
                     "scenario_id": scenario.id,
                     "created_at": scenario.created_at,
-                    "rounds": []
+                    "periods": []
                 }
-            games_data[scenario.id]["rounds"].append(pr)
+            games_data[scenario.id]["periods"].append(pr)
 
         # Calculate metric for each scenario
         data_points = []
@@ -149,7 +149,7 @@ class ReportingService:
             games_data.items(),
             key=lambda x: x[1]["created_at"]
         )[-lookback:]:
-            value = self._calculate_metric_for_game(scenario_data["rounds"], metric)
+            value = self._calculate_metric_for_game(scenario_data["periods"], metric)
             data_points.append({
                 "scenario_id": scenario_id,
                 "date": scenario_data["created_at"].isoformat(),
@@ -206,7 +206,7 @@ class ReportingService:
             scenario_data = {
                 "scenario_id": scenario_id,
                 "config_name": scenario.config.name if scenario.config else "Unknown",
-                "rounds": scenario.num_rounds,
+                "periods": scenario.num_periods,
                 "scenario_users": len(set(pr.scenario_user_id for pr in scenario_user_periods)),
                 "status": scenario.status
             }
@@ -236,7 +236,7 @@ class ReportingService:
         stmt = (
             select(ScenarioUserPeriod)
             .where(ScenarioUserPeriod.scenario_id == scenario_id)
-            .order_by(ScenarioUserPeriod.round_number, ScenarioUserPeriod.scenario_user_id)
+            .order_by(ScenarioUserPeriod.period_number, ScenarioUserPeriod.scenario_user_id)
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()
@@ -251,7 +251,7 @@ class ReportingService:
             return {
                 "scenario_id": scenario.id,
                 "status": scenario.status,
-                "rounds": 0,
+                "periods": 0,
                 "message": "No scenario_user data available"
             }
 
@@ -275,14 +275,14 @@ class ReportingService:
         # Calculate bullwhip effect (variance amplification)
         bullwhip = await self._calculate_bullwhip_effect(scenario.id, scenario_user_periods)
 
-        max_round = max((pr.round_number for pr in scenario_user_periods), default=0)
+        max_round = max((pr.period_number for pr in scenario_user_periods), default=0)
 
         return {
             "scenario_id": scenario.id,
             "config_name": scenario.config.name if scenario.config else "Unknown",
             "status": scenario.status,
             "rounds_played": max_round,
-            "total_rounds": scenario.num_rounds,
+            "total_rounds": scenario.num_periods,
             "duration": f"{max_round} rounds",
             "total_cost": round(total_cost, 2),
             "service_level": round(avg_service_level, 3) if avg_service_level else None,
@@ -312,16 +312,16 @@ class ReportingService:
 
             total_cost = sum(
                 (r.holding_cost or 0) + (r.backlog_cost or 0)
-                for r in rounds
+                for r in periods
             )
 
-            service_levels = [r.service_level for r in rounds if r.service_level is not None]
+            service_levels = [r.service_level for r in periods if r.service_level is not None]
             avg_service = mean(service_levels) if service_levels else None
 
-            inventories = [r.inventory for r in rounds if r.inventory is not None]
+            inventories = [r.inventory for r in periods if r.inventory is not None]
             avg_inventory = mean(inventories) if inventories else None
 
-            orders = [r.order_quantity for r in rounds if r.order_quantity is not None]
+            orders = [r.order_quantity for r in periods if r.order_quantity is not None]
 
             performance.append({
                 "scenario_user_id": scenario_user_id,
@@ -458,29 +458,29 @@ class ReportingService:
         # Group by round
         rounds_data = {}
         for pr in scenario_user_periods:
-            round_num = pr.round_number
-            if round_num not in rounds_data:
-                rounds_data[round_num] = {
-                    "round": round_num,
+            period_num = pr.period_number
+            if period_num not in rounds_data:
+                rounds_data[period_num] = {
+                    "round": period_num,
                     "inventory": [],
                     "orders": [],
                     "costs": []
                 }
 
             if pr.inventory is not None:
-                rounds_data[round_num]["inventory"].append(pr.inventory)
+                rounds_data[period_num]["inventory"].append(pr.inventory)
             if pr.order_quantity is not None:
-                rounds_data[round_num]["orders"].append(pr.order_quantity)
+                rounds_data[period_num]["orders"].append(pr.order_quantity)
             if pr.holding_cost is not None or pr.backlog_cost is not None:
                 total = (pr.holding_cost or 0) + (pr.backlog_cost or 0)
-                rounds_data[round_num]["costs"].append(total)
+                rounds_data[period_num]["costs"].append(total)
 
-        # Calculate averages per round
+        # Calculate averages per period
         charts_data = []
-        for round_num in sorted(rounds_data.keys()):
-            rd = rounds_data[round_num]
+        for period_num in sorted(rounds_data.keys()):
+            rd = rounds_data[period_num]
             charts_data.append({
-                "round": round_num,
+                "round": period_num,
                 "avg_inventory": mean(rd["inventory"]) if rd["inventory"] else None,
                 "avg_orders": mean(rd["orders"]) if rd["orders"] else None,
                 "total_cost": sum(rd["costs"]) if rd["costs"] else None
@@ -501,17 +501,17 @@ class ReportingService:
         if metric == 'cost':
             costs = [
                 (r.holding_cost or 0) + (r.backlog_cost or 0)
-                for r in rounds
+                for r in periods
             ]
             return sum(costs)
         elif metric == 'service_level':
-            service_levels = [r.service_level for r in rounds if r.service_level is not None]
+            service_levels = [r.service_level for r in periods if r.service_level is not None]
             return mean(service_levels) if service_levels else None
         elif metric == 'inventory':
-            inventories = [r.inventory for r in rounds if r.inventory is not None]
+            inventories = [r.inventory for r in periods if r.inventory is not None]
             return mean(inventories) if inventories else None
         elif metric == 'bullwhip':
-            orders = [r.order_quantity for r in rounds if r.order_quantity is not None]
+            orders = [r.order_quantity for r in periods if r.order_quantity is not None]
             if len(orders) > 1:
                 return stdev(orders)
             return None
@@ -621,7 +621,7 @@ class ReportingService:
             scenario_user = await self.db.get(ScenarioUser, pr.scenario_user_id)
             writer.writerow([
                 scenario_id,
-                pr.round_number,
+                pr.period_number,
                 pr.scenario_user_id,
                 scenario_user.role if scenario_user else 'Unknown',
                 pr.inventory,
@@ -668,7 +668,7 @@ class ReportingService:
             scenario_user = await self.db.get(ScenarioUser, pr.scenario_user_id)
             ws.append([
                 scenario_id,
-                pr.round_number,
+                pr.period_number,
                 pr.scenario_user_id,
                 scenario_user.role if scenario_user else 'Unknown',
                 pr.inventory,

@@ -98,18 +98,18 @@ class PIDHeuristicPolicy:
     def produce(self, *, O_t: int, role: Union[str, Dict[str, Any]], week: int) -> int:
         return int(max(0, O_t))
 
-def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
+def generate_synthetic_scenario(num_periods: int = 100) -> Dict[str, Any]:
     """Generate a synthetic scenario with realistic supply chain dynamics."""
     # Scenario parameters
     num_scenario_users = 4
     roles = ["retailer", "wholesaler", "distributor", "manufacturer"]
     
     # Base demand pattern (weekly seasonality with some noise)
-    base_demand = [8, 7, 9, 10, 12, 15, 20, 18, 16, 14] * (num_rounds // 10 + 1)
-    base_demand = base_demand[:num_rounds]
+    base_demand = [8, 7, 9, 10, 12, 15, 20, 18, 16, 14] * (num_periods // 10 + 1)
+    base_demand = base_demand[:num_periods]
     
     # Add some random spikes and drops
-    for i in range(num_rounds):
+    for i in range(num_periods):
         if random.random() < 0.1:  # 10% chance of demand spike/drop
             base_demand[i] *= random.choice([0.5, 1.5, 2.0])
     
@@ -117,8 +117,8 @@ def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
     scenario_data = {
         "name": f"Synthetic Scenario {datetime.now().strftime('%Y%m%d_%H%M%S')}",
         "description": "Synthetic training data",
-        "num_rounds": num_rounds,
-        "rounds": []
+        "num_periods": num_periods,
+        "periods": []
     }
     
     # Initialize inventories and backlogs
@@ -142,19 +142,19 @@ def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
         for role in roles
     }
 
-    # Generate rounds
-    for round_num in range(1, num_rounds + 1):
-        round_data = {
-            "round_number": round_num,
+    # Generate periods
+    for period_num in range(1, num_periods + 1):
+        period_data = {
+            "period_number": period_num,
             "decisions": [],
-            "demand": base_demand[round_num - 1] * random.uniform(0.8, 1.2)  # Add some noise
+            "demand": base_demand[period_num - 1] * random.uniform(0.8, 1.2)  # Add some noise
         }
         
         downstream_orders: Dict[str, int] = {}
 
         # Process each role in the supply chain
         for i, role in enumerate(roles):
-            # Calculate incoming shipments (arriving this round)
+            # Calculate incoming shipments (arriving this period)
             incoming = in_transit[role].get(1, 0)
             
             # Update in-transit shipments
@@ -167,7 +167,7 @@ def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
             
             # Determine demand (retailer sees customer demand, upstream roles see orders)
             if role == "retailer":
-                demand = int(round(round_data["demand"]))
+                demand = int(round(period_data["demand"]))
             else:
                 downstream_role = roles[i - 1]
                 demand = downstream_orders.get(downstream_role, 0)
@@ -180,7 +180,7 @@ def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
             new_inventory = max(0, available - fulfilled)
 
             # PID heuristic order decision
-            target_inventory = int(2 * base_demand[min(round_num - 1, len(base_demand) - 1)])
+            target_inventory = int(2 * base_demand[min(period_num - 1, len(base_demand) - 1)])
             policy = policies[role]
             policy.target_inv = target_inventory
             inbound_sum = int(sum(in_transit[role].values()))
@@ -190,7 +190,7 @@ def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
                 inbound_pipeline_sum=inbound_sum,
                 observed_demand=int(demand),
                 role=role,
-                week=round_num,
+                week=period_num,
             )
 
             # Add order to in-transit for upstream
@@ -208,14 +208,14 @@ def generate_synthetic_scenario(num_rounds: int = 100) -> Dict[str, Any]:
                 "incoming_shipment": int(incoming),
                 "fulfilled_demand": int(fulfilled)
             }
-            round_data["decisions"].append(decision)
+            period_data["decisions"].append(decision)
             
-            # Update state for next round
+            # Update state for next period
             inventories[role] = new_inventory
             backlogs[role] = new_backlog
             downstream_orders[role] = order_quantity
         
-        scenario_data["rounds"].append(round_data)
+        scenario_data["periods"].append(period_data)
     
     return scenario_data
 
@@ -226,7 +226,7 @@ def save_synthetic_game(db: Session, scenario_data: Dict[str, Any]) -> models.Sc
         name=scenario_data["name"],
         description=scenario_data["description"],
         max_players=4,
-        num_rounds=scenario_data["num_rounds"],
+        num_periods=scenario_data["num_periods"],
         is_public=False,
         is_completed=True
     )
@@ -245,15 +245,15 @@ def save_synthetic_game(db: Session, scenario_data: Dict[str, Any]) -> models.Sc
         crud.scenario_user.create(db, obj_in=player_in)
     
     # Create rounds and decisions
-    for round_num, round_data in enumerate(scenario_data["rounds"], 1):
+    for period_num, period_data in enumerate(scenario_data["periods"], 1):
         round_in = schemas.RoundCreate(
             scenario_id=scenario.id,
-            round_number=round_num,
+            period_number=period_num,
             is_completed=True
         )
         db_round = crud.round.create(db, obj_in=round_in)
         
-        for decision in round_data["decisions"]:
+        for decision in period_data["decisions"]:
             scenario_user = crud.scenario_user.get_by_scenario_and_role(
                 db, scenario_id=scenario.id, role=decision["role"]
             )
@@ -267,19 +267,19 @@ def save_synthetic_game(db: Session, scenario_data: Dict[str, Any]) -> models.Sc
                 backlog=decision["backlog"],
                 incoming_shipment=decision["incoming_shipment"],
                 cost=0.0,  # Not used in training
-                timestamp=datetime.utcnow() - timedelta(days=len(scenario_data["rounds"]) - round_num)
+                timestamp=datetime.utcnow() - timedelta(days=len(scenario_data["periods"]) - period_num)
             )
             crud.decision.create(db, obj_in=decision_in)
     
     return scenario
 
-def generate_and_save_games(num_scenarios: int = 10, rounds_per_scenario: int = 100):
+def generate_and_save_games(num_scenarios: int = 10, periods_per_scenario: int = 100):
     """Generate and save multiple synthetic scenarios."""
     db = SessionLocal()
     try:
         for i in range(num_scenarios):
             print(f"Generating scenario {i+1}/{num_scenarios}...")
-            scenario_data = generate_synthetic_scenario(num_rounds=rounds_per_scenario)
+            scenario_data = generate_synthetic_scenario(num_periods=periods_per_scenario)
             scenario = save_synthetic_game(db, scenario_data)
             print(f"Saved scenario {scenario.name} with ID {scenario.id}")
         db.commit()
@@ -291,6 +291,6 @@ def generate_and_save_games(num_scenarios: int = 10, rounds_per_scenario: int = 
         db.close()
 
 if __name__ == "__main__":
-    # Generate 20 scenarios with 100 rounds each
-    generate_and_save_games(num_scenarios=20, rounds_per_scenario=100)
+    # Generate 20 scenarios with 100 periods each
+    generate_and_save_games(num_scenarios=20, periods_per_scenario=100)
     print("Synthetic data generation complete!")

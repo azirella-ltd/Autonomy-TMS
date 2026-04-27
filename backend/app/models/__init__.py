@@ -445,11 +445,14 @@ from .terminal_coordinator import (
 
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
-# Updated terminology: scenarios, scenario_users, scenario_user_actions
+# Updated terminology: scenarios, scenario_users, scenario_user_actions.
+# Round → Period rename completed; the canonical table is `periods`,
+# not `rounds`. This self-check string drift was responsible for the
+# "Missing tables in metadata: {'rounds'}" warning at TMS startup.
 expected_tables = {
     'users', 'refresh_tokens', 'scenario_users', 'password_history',
     'password_reset_tokens', 'token_blacklist', 'user_sessions',
-    'scenarios', 'rounds', 'scenario_user_actions', 'user_scenarios', 'tenants'
+    'scenarios', 'periods', 'scenario_user_actions', 'user_scenarios', 'tenants'
 }
 
 missing_tables = expected_tables - registered_tables
