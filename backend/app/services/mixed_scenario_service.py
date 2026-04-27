@@ -118,12 +118,161 @@ def read_system_cfg():
 
 class MixedScenarioService:
     """Service for managing scenarios with mixed human and AI scenario_users."""
-    
+
     def __init__(self, db: Session):
         self.db = db
         self.agent_manager = AgentManager()
         self._scenario_columns_cache: Optional[Sequence[str]] = None
         self._autonomy_probe_cache: Dict[str, Tuple[bool, str]] = {}
+
+    # ──────────────────────────────────────────────────────────────────
+    # BSC scenario scoring
+    # ──────────────────────────────────────────────────────────────────
+
+    def score_scenario_with_bsc(
+        self,
+        *,
+        tenant_id: Optional[int],
+        history: Sequence[Mapping[str, Any]],
+    ) -> Mapping[str, Any]:
+        """Score a completed scenario through the BSC framework.
+
+        Layered on top of the existing per-period cost accrual rather
+        than replacing it — the scenario simulator still emits
+        `holding_cost` / `backlog_cost` / `total_cost` per node-period
+        for the audit / reporting axis (Tier 2 legitimate accounting
+        per the cost-calculation audit). This method aggregates the
+        terminal state across all node-periods and asks the BSC
+        framework what the multi-dimensional score is, so scenario
+        ranking / recommendation logic can prefer service-cost
+        balance over pure cost minimisation.
+
+        Args:
+            tenant_id: Tenant scope for BSC weights/goals lookup.
+                When ``None`` the method short-circuits to
+                ``status="not_configured"`` — callers fall through to
+                the legacy `total_cost` ordering.
+            history: The scenario's per-period history list — each
+                entry shaped like ``{"node_states": {<node>:
+                {"holding_cost": ..., "backlog_cost": ...,
+                "total_cost": ..., "lost_sales": ...,
+                "inventory": ..., "backlog": ..., "otif": {...}}}}``.
+
+        Returns:
+            ``{
+                "status": "ok" | "not_configured" | "error",
+                "total_utility": float | None,
+                "per_perspective": {FINANCIAL, CUSTOMER, INTERNAL,
+                                    LEARNING},
+                "per_metric": [...],
+                "missing_metrics": [...],
+                "actuals": <the aggregated actuals dict that was
+                            fed to compute_total_utility>,
+            }``
+
+        Never raises — falls through to ``status="error"`` on
+        unexpected exceptions so the caller's reporting path keeps
+        working.
+        """
+        if tenant_id is None or not history:
+            return {"status": "not_configured", "total_utility": None}
+
+        # Aggregate the terminal-period actuals across nodes. The
+        # most-recent history entry is the "as of end of scenario"
+        # state — that's what we score. (Aggregating all periods would
+        # double-count holding cost across time.)
+        try:
+            terminal = history[-1]
+        except Exception:
+            return {"status": "error", "total_utility": None}
+
+        node_states = terminal.get("node_states") or {}
+        if not node_states:
+            return {"status": "not_configured", "total_utility": None}
+
+        total_cost_sum = 0.0
+        inventory_sum = 0.0
+        backlog_sum = 0.0
+        otif_pct_sum = 0.0
+        otif_count = 0
+        for node_key, snap in node_states.items():
+            if not isinstance(snap, Mapping):
+                continue
+            # Skip vendor / customer rollups — they zero out cost
+            # accrual upstream and would skew the aggregate.
+            if snap.get("type") in {"vendor", "customer"}:
+                continue
+            total_cost_sum += float(snap.get("total_cost") or 0.0)
+            inventory_sum += float(snap.get("inventory") or 0.0)
+            backlog_sum += float(snap.get("backlog") or 0.0)
+            otif = snap.get("otif") or {}
+            otif_units = otif.get("otif_total_units") or otif.get("total_units") or 0
+            otif_met = otif.get("otif_met_units") or otif.get("met_units") or 0
+            try:
+                otif_units = float(otif_units)
+                otif_met = float(otif_met)
+            except (TypeError, ValueError):
+                continue
+            if otif_units > 0:
+                otif_pct_sum += otif_met / otif_units
+                otif_count += 1
+
+        # Service level: average OTIF across nodes that reported it.
+        service_level = (
+            otif_pct_sum / otif_count if otif_count > 0 else None
+        )
+
+        actuals: Dict[str, float] = {
+            "total_cost": total_cost_sum,
+            "inventory_qty": inventory_sum,
+            "backlog_qty": backlog_sum,
+        }
+        if service_level is not None:
+            actuals["service_level"] = service_level
+
+        try:
+            from azirella_data_model.governance import compute_total_utility
+        except Exception as imp_err:
+            logger.debug("BSC compute_total_utility unavailable: %s", imp_err)
+            return {
+                "status": "error", "total_utility": None,
+                "actuals": actuals,
+            }
+
+        try:
+            result = compute_total_utility(
+                self.db, tenant_id, actuals,
+            )
+        except Exception as call_err:
+            msg = str(call_err).lower()
+            if (
+                "tenant_bsc_weights" in msg
+                or "tenant_bsc_metric_goals" in msg
+            ):
+                return {
+                    "status": "not_configured", "total_utility": None,
+                    "actuals": actuals,
+                }
+            logger.warning("BSC scenario score failed: %s", call_err)
+            return {
+                "status": "error", "total_utility": None,
+                "actuals": actuals,
+            }
+
+        if result.get("error") in {"no_bsc_weights", "no_metric_goals"}:
+            return {
+                "status": "not_configured", "total_utility": None,
+                "actuals": actuals,
+            }
+
+        return {
+            "status": "ok",
+            "total_utility": result.get("total_utility"),
+            "per_perspective": result.get("per_perspective_attainment"),
+            "per_metric": result.get("per_metric"),
+            "missing_metrics": result.get("missing_metric_actuals") or [],
+            "actuals": actuals,
+        }
 
     def _get_cost_rates_sync(self, config_id: int) -> tuple:
         """Load holding and backlog cost rates from InvPolicy for a supply chain config.
