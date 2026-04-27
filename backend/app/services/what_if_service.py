@@ -211,7 +211,9 @@ class WhatIfAnalysisService:
         new_inventory = max(0, available - fulfilled)
         new_backlog = max(0, (backlog + demand_next) - fulfilled)
 
-        # Calculate costs
+        # Calculate costs (legacy linear accrual; kept as a reporting
+        # axis on the result. The recommendation gate downstream uses
+        # the BSC delta below, not raw cost.)
         inventory_cost = new_inventory * holding_cost_rate
         backlog_cost = new_backlog * backlog_cost_rate
         total_cost = inventory_cost + backlog_cost
@@ -224,11 +226,35 @@ class WhatIfAnalysisService:
         baseline_backlog = max(0, (backlog + demand_next) - baseline_fulfilled)
         baseline_cost = (baseline_inventory * holding_cost_rate) + (baseline_backlog * backlog_cost_rate)
 
-        # Cost difference
+        # Cost difference (kept for backward-compat / reporting; no
+        # longer the decision gate)
         cost_difference = total_cost - baseline_cost
 
         # Service level
         service_level = fulfilled / (backlog + demand_next) if (backlog + demand_next) > 0 else 1.0
+        baseline_service_level = (
+            baseline_fulfilled / (backlog + demand_next)
+            if (backlog + demand_next) > 0 else 1.0
+        )
+
+        # BSC: compute multi-dimensional utility for both proposed and
+        # baseline. Returns None for both when the tenant hasn't
+        # configured BSC weights/goals; callers fall back to the
+        # cost-only path in that case.
+        bsc = await self._bsc_score_pair(
+            proposed={
+                "total_cost": total_cost,
+                "service_level": service_level,
+                "inventory_qty": new_inventory,
+                "backlog_qty": new_backlog,
+            },
+            baseline={
+                "total_cost": baseline_cost,
+                "service_level": baseline_service_level,
+                "inventory_qty": baseline_inventory,
+                "backlog_qty": baseline_backlog,
+            },
+        )
 
         # Build result
         result = {
@@ -237,6 +263,7 @@ class WhatIfAnalysisService:
             "projected_cost": total_cost,
             "cost_difference": cost_difference,
             "service_level": service_level,
+            "baseline_service_level": baseline_service_level,
             "order_quantity": order_quantity,
             "current_order": current_order,
             "demand_assumption": projected_demand,
@@ -245,6 +272,14 @@ class WhatIfAnalysisService:
             "baseline_cost": baseline_cost,
             "inventory_cost": inventory_cost,
             "backlog_cost": backlog_cost,
+            # BSC fields — None when tenant hasn't seeded BSC config
+            "bsc_proposed_utility": bsc.get("proposed_utility"),
+            "bsc_baseline_utility": bsc.get("baseline_utility"),
+            "bsc_delta": bsc.get("delta"),
+            "bsc_per_perspective_proposed": bsc.get("proposed_per_perspective"),
+            "bsc_per_perspective_baseline": bsc.get("baseline_per_perspective"),
+            "bsc_missing_metrics": bsc.get("missing_metrics") or [],
+            "bsc_status": bsc.get("status"),  # "ok" | "not_configured" | "error"
         }
 
         logger.debug(f"Simulation result: {result}")
@@ -319,6 +354,108 @@ class WhatIfAnalysisService:
 
         return holding_cost_rate, backlog_cost_rate
 
+    async def _bsc_score_pair(
+        self,
+        *,
+        proposed: Dict[str, float],
+        baseline: Dict[str, float],
+    ) -> Dict[str, Any]:
+        """Compute BSC total-utility for both the proposed and baseline
+        scenarios and return the delta + per-perspective breakdown.
+
+        The mapping ``actuals[metric_code] → value`` follows the BSC
+        framework's per-tenant goal definitions; only metrics the
+        tenant has seeded will contribute. Missing metrics are
+        reported back so the LLM analysis can surface "BSC coverage
+        is partial" rather than producing a misleadingly precise
+        score.
+
+        Returns a flat dict; "status" indicates whether BSC scoring
+        actually fired:
+          * "ok"             — both scenarios scored
+          * "not_configured" — tenant has no BSC weights/goals seeded
+          * "error"          — call failed; falls back to cost-only
+        """
+        if self.tenant_id is None:
+            return {"status": "not_configured"}
+
+        try:
+            from azirella_data_model.governance.bsc_attainment import (
+                compute_total_utility,
+            )
+            from app.db.session import sync_session_factory
+        except Exception as imp_err:
+            logger.warning(
+                "BSC compute_total_utility unavailable (likely older "
+                "Core pin): %s", imp_err,
+            )
+            return {"status": "error"}
+
+        def _score(actuals: Dict[str, float]) -> Dict[str, Any]:
+            sync_db = sync_session_factory()
+            try:
+                return compute_total_utility(
+                    sync_db, self.tenant_id, actuals,
+                )
+            finally:
+                sync_db.close()
+
+        try:
+            # Wrap the sync calls in to_thread so the event loop isn't
+            # blocked by the per-call DB I/O.
+            proposed_result, baseline_result = await asyncio.gather(
+                asyncio.to_thread(_score, proposed),
+                asyncio.to_thread(_score, baseline),
+            )
+        except Exception as call_err:
+            # The BSC helper reads from `tenant_bsc_weights` /
+            # `tenant_bsc_metric_goals`. On TMS DBs that haven't
+            # adopted the BSC schema yet, the SQL throws
+            # UndefinedTable; treat that as "not configured" rather
+            # than a hard error so the caller falls through cleanly.
+            msg = str(call_err).lower()
+            if "tenant_bsc_weights" in msg or "tenant_bsc_metric_goals" in msg:
+                logger.debug(
+                    "BSC tables not present on this DB — treating as not_configured: %s",
+                    call_err,
+                )
+                return {"status": "not_configured"}
+            logger.warning("BSC score pair failed: %s", call_err)
+            return {"status": "error"}
+
+        # If either side is missing the perspective weights or goals,
+        # treat as not-configured rather than a hard error — the
+        # tenant just hasn't seeded BSC yet.
+        for r in (proposed_result, baseline_result):
+            if r.get("error") in {"no_bsc_weights", "no_metric_goals"}:
+                return {"status": "not_configured"}
+
+        proposed_util = proposed_result.get("total_utility")
+        baseline_util = baseline_result.get("total_utility")
+        if proposed_util is None or baseline_util is None:
+            return {"status": "not_configured"}
+
+        # Aggregate the missing-metric set across both calls so the
+        # LLM analysis can flag partial coverage.
+        missing = sorted(set(
+            list(proposed_result.get("missing_metric_actuals") or [])
+            + list(baseline_result.get("missing_metric_actuals") or [])
+        ))
+
+        return {
+            "status": "ok",
+            "proposed_utility": proposed_util,
+            "baseline_utility": baseline_util,
+            "delta": proposed_util - baseline_util,
+            "proposed_per_perspective": proposed_result.get(
+                "per_perspective_attainment"
+            ),
+            "baseline_per_perspective": baseline_result.get(
+                "per_perspective_attainment"
+            ),
+            "missing_metrics": missing,
+        }
+
     async def _analyze_with_llm(
         self,
         question: str,
@@ -350,7 +487,39 @@ class WhatIfAnalysisService:
             if kb_context:
                 kb_section = f"\nRelevant Supply Chain Knowledge:\n{kb_context}\nUse the above knowledge to inform your analysis.\n"
 
-            # Build analysis prompt
+            # Build analysis prompt. BSC block included only when the
+            # tenant has seeded BSC weights/goals — otherwise the
+            # prompt falls back to the cost-only framing.
+            bsc_block = ""
+            if result.get("bsc_status") == "ok":
+                delta = result["bsc_delta"]
+                p_persp = result.get("bsc_per_perspective_proposed") or {}
+                b_persp = result.get("bsc_per_perspective_baseline") or {}
+                missing = result.get("bsc_missing_metrics") or []
+                missing_note = (
+                    f" (BSC coverage partial: missing actuals for "
+                    f"{', '.join(missing)})"
+                    if missing else ""
+                )
+                persp_lines = []
+                for k in ("FINANCIAL", "CUSTOMER", "INTERNAL", "LEARNING"):
+                    p_val = p_persp.get(k, 0.0)
+                    b_val = b_persp.get(k, 0.0)
+                    persp_lines.append(
+                        f"  - {k}: {b_val:+.3f} → {p_val:+.3f} "
+                        f"(Δ {p_val - b_val:+.3f})"
+                    )
+                bsc_block = (
+                    f"\nBSC Multi-Dimensional Score{missing_note}:\n"
+                    f"- Total utility (baseline → proposed): "
+                    f"{result['bsc_baseline_utility']:+.3f} → "
+                    f"{result['bsc_proposed_utility']:+.3f} "
+                    f"(Δ {delta:+.3f}; positive is better)\n"
+                    f"- Per-perspective attainment:\n"
+                    + "\n".join(persp_lines)
+                    + "\n"
+                )
+
             prompt = f"""You are a supply chain advisor analyzing a "what-if" scenario for a scenario_user in a supply chain simulation.
 
 User Question: {question}
@@ -360,7 +529,7 @@ Scenario Parameters:
 - Baseline Order: {scenario.get('current_order', 'N/A')} units
 - Difference: {scenario.get('order_quantity', 0) - scenario.get('current_order', 0):+d} units
 
-Projected Results (1 round ahead):
+Projected Results (1 period ahead):
 - Projected Inventory: {result['projected_inventory']} units
 - Projected Backlog: {result['projected_backlog']} units
 - Projected Cost: ${result['projected_cost']:.2f}
@@ -371,11 +540,14 @@ Baseline Comparison (with current order):
 - Baseline Inventory: {result['baseline_inventory']} units
 - Baseline Backlog: {result['baseline_backlog']} units
 - Baseline Cost: ${result['baseline_cost']:.2f}
-
+{bsc_block}
 Analysis Requirements:
 Provide a concise 2-3 sentence analysis that:
 1. Explains what the projected results mean
-2. States whether this strategy is recommended (yes/no/depends)
+2. States whether this strategy is recommended (yes/no/depends).
+   When a BSC delta is present above, weight your recommendation on
+   the BSC delta (positive = recommended). When BSC is absent, fall
+   back to weighing cost vs. service level explicitly.
 3. Highlights key risks or benefits
 
 Be direct, actionable, and clear. Use specific numbers from the results.
@@ -396,14 +568,30 @@ Be direct, actionable, and clear. Use specific numbers from the results.
         except Exception as e:
             logger.error(f"LLM analysis failed: {e}")
 
-            # Fallback to template analysis
+            # Fallback to template analysis. Prefer the BSC delta as
+            # the gate when the tenant has it configured; otherwise
+            # fall back to the cost-only rule (preserves prior
+            # behaviour for un-seeded tenants).
             cost_impact = "increase" if result['cost_difference'] > 0 else "decrease"
-            recommendation = "not recommended" if result['cost_difference'] > 5 else "recommended"
+            if result.get("bsc_status") == "ok" and result.get("bsc_delta") is not None:
+                bsc_delta = result["bsc_delta"]
+                recommendation = "recommended" if bsc_delta > 0 else "not recommended"
+                rationale = (
+                    f"BSC utility delta {bsc_delta:+.3f} "
+                    f"(baseline {result['bsc_baseline_utility']:+.3f} → "
+                    f"proposed {result['bsc_proposed_utility']:+.3f})"
+                )
+            else:
+                recommendation = (
+                    "not recommended" if result['cost_difference'] > 5
+                    else "recommended"
+                )
+                rationale = "based on cost optimization"
 
             fallback = (
                 f"Ordering {result['order_quantity']} units instead of {result['current_order']} "
                 f"will result in a projected cost {cost_impact} of ${abs(result['cost_difference']):.2f}. "
-                f"This strategy is {recommendation} based on cost optimization. "
+                f"This strategy is {recommendation} ({rationale}). "
                 f"Service level is projected at {result['service_level']:.0%}."
             )
 
