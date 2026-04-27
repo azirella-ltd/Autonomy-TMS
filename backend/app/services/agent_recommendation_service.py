@@ -58,11 +58,23 @@ class AlternativeScenario:
 
 @dataclass
 class ImpactPreview:
-    """Predicted impact of a decision"""
+    """Predicted impact of a decision.
+
+    `cost_impact` is preserved for backward compatibility as a linear
+    cost-only number; BSC-aware callers should read `bsc_utility` (the
+    multi-dimensional score in [-1, +1]) and `bsc_per_perspective`
+    (per-axis attainment) instead. `bsc_status` reports whether BSC
+    actually scored this candidate or fell back ("ok" /
+    "not_configured" / "error").
+    """
     inventory_after: int
     fill_rate: float
     backlog_after: int
-    cost_impact: float  # Estimated cost delta
+    cost_impact: float  # Linear cost (legacy axis kept for back-compat)
+    # BSC fields populated when the tenant has BSC weights/goals seeded.
+    bsc_utility: Optional[float] = None
+    bsc_per_perspective: Optional[Dict[str, float]] = None
+    bsc_status: str = "not_configured"
 
 
 @dataclass
@@ -202,6 +214,15 @@ class AgentRecommendationService:
             backlog=backlog,
         )
 
+        # Re-rank the pair through BSC. Mutates both ImpactPreviews
+        # to populate bsc_utility / bsc_per_perspective when the
+        # tenant has BSC seeded; falls through cleanly when not.
+        impact_if_accept, impact_if_override = self._score_fulfillment_pair(
+            accept=impact_if_accept,
+            override=impact_if_override,
+            tenant_id=getattr(scenario, "tenant_id", None),
+        )
+
         # Get historical performance
         historical_perf = self._get_historical_performance(scenario_user)
 
@@ -325,6 +346,13 @@ class AgentRecommendationService:
             pipeline_total=pipeline_total,
             backlog=backlog,
             avg_demand=avg_demand,
+        )
+
+        # Re-rank the pair through BSC; mutates both ImpactPreviews.
+        impact_if_accept, impact_if_override = self._score_replenishment_pair(
+            accept=impact_if_accept,
+            override=impact_if_override,
+            tenant_id=getattr(scenario, "tenant_id", None),
         )
 
         # Historical performance
@@ -493,15 +521,26 @@ class AgentRecommendationService:
         demand: int,
         backlog: int,
     ) -> ImpactPreview:
-        """Calculate predicted impact of fulfillment decision"""
+        """Calculate predicted impact of a fulfillment decision.
+
+        Returns an ImpactPreview with the legacy linear cost_impact
+        axis populated. BSC-aware scoring of accept-vs-override
+        alternatives lives on `_score_fulfillment_pair` so the
+        candidates can be re-ranked together (one BSC call, both
+        candidates audited).
+        """
         inventory_after = inventory - fulfill_qty
         fulfilled = min(fulfill_qty, demand)
         backlog_after = max(0, demand - fulfilled + backlog)
         fill_rate = fulfilled / demand if demand > 0 else 1.0
 
-        # Simplified cost calculation (holding + backlog costs)
-        holding_cost = max(0, inventory_after) * 1.0  # $1 per unit per round
-        backlog_cost = backlog_after * 2.0  # $2 per unit per round (higher penalty)
+        # Linear cost axis kept for back-compat with any caller that
+        # still reads `cost_impact`. The hardcoded $1 / $2 rates are
+        # the historical TBG penalties; if the BSC scorer fires below
+        # those weights are subordinate to the multi-dimensional
+        # utility.
+        holding_cost = max(0, inventory_after) * 1.0
+        backlog_cost = backlog_after * 2.0
         cost_impact = holding_cost + backlog_cost
 
         return ImpactPreview(
@@ -511,6 +550,75 @@ class AgentRecommendationService:
             cost_impact=cost_impact,
         )
 
+    def _score_fulfillment_pair(
+        self,
+        *,
+        accept: ImpactPreview,
+        override: ImpactPreview,
+        tenant_id: Optional[int],
+    ) -> Tuple[ImpactPreview, ImpactPreview]:
+        """Re-rank the (accept, override) candidate pair through BSC.
+
+        Mutates each ImpactPreview in place to populate `bsc_utility`,
+        `bsc_per_perspective`, and `bsc_status`. When BSC isn't
+        configured for the tenant, both rows fall back to
+        ``bsc_status="not_configured"`` and the legacy `cost_impact`
+        axis remains the only cross-comparable score — caller picks
+        with `min(cost_impact)`.
+        """
+        if tenant_id is None:
+            return accept, override
+
+        try:
+            from azirella_data_model.governance import rerank_with_bsc
+        except Exception as imp_err:
+            logger.debug("BSC re-ranker unavailable: %s", imp_err)
+            return accept, override
+
+        # Build the per-candidate `actuals` dict the BSC scorer
+        # consumes. Keys are tenant-defined metric_codes; the four
+        # below are the common-denominator set we expect tenants to
+        # seed for fulfillment decisions. Tenants without the goals
+        # seeded will fall back via the helper's not_configured path.
+        candidates = [
+            ("accept", {
+                "total_cost": accept.cost_impact,
+                "service_level": accept.fill_rate,
+                "inventory_qty": float(accept.inventory_after),
+                "backlog_qty": float(accept.backlog_after),
+            }),
+            ("override", {
+                "total_cost": override.cost_impact,
+                "service_level": override.fill_rate,
+                "inventory_qty": float(override.inventory_after),
+                "backlog_qty": float(override.backlog_after),
+            }),
+        ]
+        try:
+            result = rerank_with_bsc(
+                self.db, tenant_id=tenant_id, candidates=candidates,
+                # Linear-cost fallback so the not_configured path
+                # still produces a defensible pick.
+                fallback_score_fn=lambda a, ax: -ax.get("total_cost", 0.0),
+            )
+        except Exception as call_err:
+            logger.warning(
+                "BSC re-rank failed for fulfillment pair: %s", call_err,
+            )
+            return accept, override
+
+        # Stamp BSC fields onto each preview.
+        for scored in result.candidates:
+            target = accept if scored.action == "accept" else override
+            target.bsc_status = scored.bsc_status
+            if scored.bsc_status == "ok":
+                target.bsc_utility = scored.total_utility
+                target.bsc_per_perspective = (
+                    dict(scored.per_perspective) if scored.per_perspective
+                    else None
+                )
+        return accept, override
+
     def _calculate_replenishment_impact(
         self,
         inventory: int,
@@ -519,7 +627,12 @@ class AgentRecommendationService:
         backlog: int,
         avg_demand: float,
     ) -> ImpactPreview:
-        """Calculate predicted impact of replenishment decision"""
+        """Calculate predicted impact of replenishment decision.
+
+        Linear cost axis preserved; multi-dimensional BSC scoring of
+        the accept-vs-override pair is layered on by
+        `_score_replenishment_pair`.
+        """
         # Inventory position = on-hand + on-order - backlog
         inventory_position = inventory + pipeline_total + order_qty - backlog
 
@@ -539,6 +652,60 @@ class AgentRecommendationService:
             backlog_after=backlog,  # Assume backlog unchanged
             cost_impact=cost_impact,
         )
+
+    def _score_replenishment_pair(
+        self,
+        *,
+        accept: ImpactPreview,
+        override: ImpactPreview,
+        tenant_id: Optional[int],
+    ) -> Tuple[ImpactPreview, ImpactPreview]:
+        """Re-rank the (accept, override) replenishment pair through
+        BSC. Same shape as `_score_fulfillment_pair`; see that
+        method for the actuals contract and fallback semantics."""
+        if tenant_id is None:
+            return accept, override
+        try:
+            from azirella_data_model.governance import rerank_with_bsc
+        except Exception as imp_err:
+            logger.debug("BSC re-ranker unavailable: %s", imp_err)
+            return accept, override
+
+        candidates = [
+            ("accept", {
+                "total_cost": accept.cost_impact,
+                "service_level": accept.fill_rate,
+                "inventory_qty": float(accept.inventory_after),
+                "backlog_qty": float(accept.backlog_after),
+            }),
+            ("override", {
+                "total_cost": override.cost_impact,
+                "service_level": override.fill_rate,
+                "inventory_qty": float(override.inventory_after),
+                "backlog_qty": float(override.backlog_after),
+            }),
+        ]
+        try:
+            result = rerank_with_bsc(
+                self.db, tenant_id=tenant_id, candidates=candidates,
+                fallback_score_fn=lambda a, ax: -ax.get("total_cost", 0.0),
+            )
+        except Exception as call_err:
+            logger.warning(
+                "BSC re-rank failed for replenishment pair: %s", call_err,
+            )
+            return accept, override
+
+        for scored in result.candidates:
+            target = accept if scored.action == "accept" else override
+            target.bsc_status = scored.bsc_status
+            if scored.bsc_status == "ok":
+                target.bsc_utility = scored.total_utility
+                target.bsc_per_perspective = (
+                    dict(scored.per_perspective) if scored.per_perspective
+                    else None
+                )
+        return accept, override
 
     def _get_historical_performance(self, scenario_user: ScenarioUser) -> HistoricalPerformance:
         """Get agent's historical performance metrics from real decision data."""
