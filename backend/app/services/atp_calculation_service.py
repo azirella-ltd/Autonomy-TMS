@@ -37,7 +37,7 @@ class ATPCalculationService:
         config_id: Optional[int] = None,
         scenario_id: Optional[int] = None,
         current_period: Optional[int] = None,
-        horizon_rounds: int = 4,
+        horizon_periods: int = 4,
     ) -> Dict[str, Any]:
         """
         Calculate real-time ATP for simulation order promising.
@@ -50,7 +50,7 @@ class ATPCalculationService:
             config_id: Supply chain configuration ID
             scenario_id: Scenario ID
             current_period: Current round number
-            horizon_rounds: Number of future rounds to project (default: 4)
+            horizon_periods: Number of future periods to project (default: 4)
 
         Returns:
             Dictionary with ATP details:
@@ -78,7 +78,7 @@ class ATPCalculationService:
             product_id=product_id,
             scenario_id=scenario_id,
             arrival_round=current_period,
-            horizon_rounds=2,  # Current + next round
+            horizon_periods=2,  # Current + next round
         )
 
         # Get committed quantity (promised but not shipped)
@@ -104,7 +104,7 @@ class ATPCalculationService:
             product_id=product_id,
             scenario_id=scenario_id,
             current_period=current_period,
-            horizon_rounds=horizon_rounds,
+            horizon_periods=horizon_periods,
         )
 
         # Project future ATP (simple rolling projection)
@@ -166,7 +166,7 @@ class ATPCalculationService:
             config_id=config_id,
             scenario_id=scenario_id,
             current_period=current_period,
-            horizon_rounds=6,
+            horizon_periods=6,
         )
 
         current_atp = atp_data['current_atp']
@@ -183,7 +183,7 @@ class ATPCalculationService:
                 'confidence': 1.0,
             }
 
-        # Check future rounds for sufficient ATP
+        # Check future periods for sufficient ATP
         cumulative_atp = current_atp
 
         for round_projection in projected_atp:
@@ -249,7 +249,7 @@ class ATPCalculationService:
             product_id=product_id,
             config_id=config_id,
             scenario_id=scenario_id,
-            horizon_rounds=1,
+            horizon_periods=1,
         )
 
         return atp_data['current_atp'] >= required_quantity
@@ -289,17 +289,17 @@ class ATPCalculationService:
         product_id: str,
         scenario_id: Optional[int] = None,
         arrival_round: Optional[int] = None,
-        horizon_rounds: int = 2,
+        horizon_periods: int = 2,
     ) -> float:
         """
-        Get in-transit quantity arriving in current or next rounds.
+        Get in-transit quantity arriving in current or next periods.
 
         Args:
             site_id: Destination site ID
             product_id: Product ID
             scenario_id: Scenario ID
             arrival_round: Current round number
-            horizon_rounds: Look ahead N rounds
+            horizon_periods: Look ahead N periods
 
         Returns:
             Total in-transit quantity
@@ -316,13 +316,13 @@ class ATPCalculationService:
                 query = query.where(TransferOrder.scenario_id == scenario_id)
 
         else:
-            # Get TOs arriving in current + next N rounds
+            # Get TOs arriving in current + next N periods
             query = select(TransferOrder).where(
                 and_(
                     TransferOrder.destination_site_id == site_id,
                     TransferOrder.scenario_id == scenario_id,
                     TransferOrder.arrival_round >= arrival_round,
-                    TransferOrder.arrival_round <= arrival_round + horizon_rounds,
+                    TransferOrder.arrival_round <= arrival_round + horizon_periods,
                     TransferOrder.status == "IN_TRANSIT",
                 )
             )
@@ -405,7 +405,7 @@ class ATPCalculationService:
         product_id: str,
         scenario_id: Optional[int] = None,
         current_period: Optional[int] = None,
-        horizon_rounds: int = 4,
+        horizon_periods: int = 4,
     ) -> List[Dict[str, Any]]:
         """
         Project future receipts by round.
@@ -422,7 +422,7 @@ class ATPCalculationService:
 
         receipts = []
 
-        for round_offset in range(horizon_rounds):
+        for round_offset in range(horizon_periods):
             future_round = current_period + round_offset + 1
 
             # Get TOs arriving in this round
@@ -504,7 +504,7 @@ class ATPCalculationService:
         config_id: int,
     ) -> int:
         """
-        Get lead time (in rounds) for a lane.
+        Get lead time (in periods) for a lane.
 
         Args:
             source_site_id: Source site ID
@@ -512,7 +512,7 @@ class ATPCalculationService:
             config_id: Supply chain configuration ID
 
         Returns:
-            Lead time in rounds (default: 1)
+            Lead time in periods (default: 1)
         """
         query = select(TransportationLane).where(
             and_(
@@ -526,7 +526,7 @@ class ATPCalculationService:
         lane = result.scalar_one_or_none()
 
         if lane and hasattr(lane, 'lead_time_days'):
-            # Convert days to rounds (1 round = 7 days in simulation)
+            # Convert days to periods (1 period = 7 days in simulation)
             return max(1, lane.lead_time_days // 7)
 
         # Default: 1 round lead time

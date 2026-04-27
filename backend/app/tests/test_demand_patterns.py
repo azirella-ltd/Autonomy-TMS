@@ -13,7 +13,7 @@ def test_generate_lognormal_non_negative_and_integer(monkeypatch):
     monkeypatch.setattr(demand_patterns.random, "lognormvariate", fake_lognormvariate)
 
     samples = DemandGenerator.generate_lognormal(
-        num_rounds=4,
+        num_periods=4,
         mean=8.0,
         cov=1.0,
         min_demand=None,
@@ -31,7 +31,7 @@ def test_generate_lognormal_with_invalid_draws(monkeypatch):
 
     monkeypatch.setattr(demand_patterns.random, "lognormvariate", fake_lognormvariate)
 
-    samples = DemandGenerator.generate_lognormal(num_rounds=3, mean=8.0, cov=1.0)
+    samples = DemandGenerator.generate_lognormal(num_periods=3, mean=8.0, cov=1.0)
 
     assert samples == [8, 8, 8]
 

@@ -150,7 +150,7 @@ class CostCalculator:
     def record_round_cost(
         self,
         scenario_id: int,
-        round_number: int,
+        period_number: int,
         site_costs: Dict
     ) -> None:
         """
@@ -158,7 +158,7 @@ class CostCalculator:
 
         Args:
             scenario_id: Scenario ID
-            round_number: Round number
+            period_number: Round number
             site_costs: Cost dictionary from calculate_scenario_cost()
         """
         from app.models.scenario import ScenarioPeriod
@@ -168,7 +168,7 @@ class CostCalculator:
             self.db.query(ScenarioPeriod)
             .filter(
                 ScenarioPeriod.scenario_id == scenario_id,
-                ScenarioPeriod.round_number == round_number,
+                ScenarioPeriod.period_number == period_number,
             )
             .first()
         )

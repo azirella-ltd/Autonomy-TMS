@@ -120,7 +120,7 @@ class SimulationExecutor:
             raise ValueError(
                 f"No product found for SC config {self.config_id}. "
                 "Run the AWS SC seed script to seed Product/InvPolicy/SourcingRules "
-                "before executing simulation rounds."
+                "before executing simulation periods."
             )
         return self._product.id
 
@@ -131,7 +131,7 @@ class SimulationExecutor:
 
     def execute_round(
         self,
-        round_number: int,
+        period_number: int,
         agent_decisions: Dict[str, float],
         market_demand: Optional[float] = None,
         scenario_id: Optional[int] = None,
@@ -142,7 +142,7 @@ class SimulationExecutor:
         This is the CORE method that replaces SupplyChainLine.tick().
 
         Args:
-            round_number: Current round number
+            period_number: Current round number
             agent_decisions: Dict mapping role/site_id to order_qty
                 Example: {"Retailer": 12.0, "Wholesaler": 15.0}
             market_demand: Market demand qty (if generated this round)
@@ -154,17 +154,17 @@ class SimulationExecutor:
         _scenario_id = self.scenario.id if self.scenario else (scenario_id or 0)
 
         print(f"\n{'='*80}")
-        print(f"SIMULATION ROUND {round_number} - SC EXECUTION")
+        print(f"SIMULATION ROUND {period_number} - SC EXECUTION")
         print(f"Scenario ID: {_scenario_id}")
         print(f"{'='*80}\n")
 
         # Get current round date
-        round_date = self._get_round_date(_scenario_id, round_number)
+        round_date = self._get_round_date(_scenario_id, period_number)
 
         # Track round execution
         round_summary = {
             "scenario_id": _scenario_id,
-            "round_number": round_number,
+            "period_number": period_number,
             "round_date": round_date,
             "steps": {}
         }
@@ -176,14 +176,14 @@ class SimulationExecutor:
         print("-" * 80)
 
         # 1a. Process arriving Purchase Orders
-        arriving_pos = self.po_creator.process_arriving_orders(_scenario_id, round_number)
+        arriving_pos = self.po_creator.process_arriving_orders(_scenario_id, period_number)
 
         print(f"✓ Received {len(arriving_pos)} purchase orders")
         for po in arriving_pos:
             print(f"  • PO {po.po_number} → site {po.destination_site_id}")
 
         # 1b. Process arriving Transfer Orders
-        arriving_tos = self.order_promising.process_arriving_transfers(_scenario_id, round_number)
+        arriving_tos = self.order_promising.process_arriving_transfers(_scenario_id, period_number)
 
         print(f"✓ Received {len(arriving_tos)} transfer orders")
         for to in arriving_tos:
@@ -211,7 +211,7 @@ class SimulationExecutor:
             # Create outbound order line (SC entity)
             retailer_site_id = self._get_retailer_site_id()
             outbound_order = OutboundOrderLine(
-                order_id=f"MARKET-G{_scenario_id}-R{round_number}",
+                order_id=f"MARKET-G{_scenario_id}-R{period_number}",
                 line_number=1,
                 product_id=self._get_product_id(),
                 site_id=retailer_site_id,
@@ -238,7 +238,7 @@ class SimulationExecutor:
         print("-" * 80)
 
         atp_results = self.order_promising.process_round_demand(
-            _scenario_id, round_number
+            _scenario_id, period_number
         )
 
         print(f"✓ Processed {len(atp_results)} order promising operations")
@@ -290,7 +290,7 @@ class SimulationExecutor:
         config_id = self.config_id or self._get_scenario_config_id(_scenario_id)
 
         created_pos = self.po_creator.create_simulation_orders(
-            _scenario_id, round_number, agent_decisions, config_id
+            _scenario_id, period_number, agent_decisions, config_id
         )
 
         print(f"✓ Created {len(created_pos)} purchase orders")
@@ -345,7 +345,7 @@ class SimulationExecutor:
         print(f"\n📸 STEP 7: State Snapshot")
         print("-" * 80)
 
-        state_snapshot = self.state_manager.snapshot_state(_scenario_id, round_number)
+        state_snapshot = self.state_manager.snapshot_state(_scenario_id, period_number)
 
         print(f"✓ State snapshot captured")
         print(f"  Sites: {len(state_snapshot['sites'])}")
@@ -356,7 +356,7 @@ class SimulationExecutor:
         # ROUND COMPLETE
         # ====================================================================
         print(f"\n{'='*80}")
-        print(f"✅ ROUND {round_number} COMPLETE")
+        print(f"✅ ROUND {period_number} COMPLETE")
         print(f"{'='*80}\n")
 
         round_summary["status"] = "completed"
@@ -432,7 +432,7 @@ class SimulationExecutor:
     # Private Helper Methods
     # ========================================================================
 
-    def _get_round_date(self, scenario_id: int, round_number: int) -> date:
+    def _get_round_date(self, scenario_id: int, period_number: int) -> date:
         """Get date for round (1 round = 1 week)."""
         scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
         if not scenario:
@@ -444,7 +444,7 @@ class SimulationExecutor:
         start_date = scenario.created_at.date() if scenario.created_at else _fallback_today
 
         # Calculate round date (1 round = 7 days)
-        round_date = start_date + timedelta(days=(round_number - 1) * 7)
+        round_date = start_date + timedelta(days=(period_number - 1) * 7)
 
         return round_date
 

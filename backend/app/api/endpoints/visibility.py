@@ -33,7 +33,7 @@ class HealthScoreResponse(BaseModel):
     components: dict = Field(..., description="Component scores")
     status: str = Field(..., description="Status: excellent, good, moderate, poor, critical")
     insights: List[str] = Field(..., description="Actionable insights")
-    round_number: int = Field(..., description="Round analyzed")
+    period_number: int = Field(..., description="Round analyzed")
 
     class Config:
         from_attributes = True
@@ -60,7 +60,7 @@ class BottlenecksResponse(BaseModel):
     bottlenecks: List[Bottleneck]
     total_bottlenecks: int
     supply_chain_flow: str = Field(..., description="smooth, restricted, or congested")
-    round_number: int
+    period_number: int
 
 
 class RoleMetrics(BaseModel):
@@ -113,7 +113,7 @@ class SnapshotResponse(BaseModel):
 class HistoricalSnapshot(BaseModel):
     """Historical visibility snapshot."""
     id: int
-    round_number: int
+    period_number: int
     health_score: float
     snapshot_data: str
     created_at: Optional[str]
@@ -132,7 +132,7 @@ class SnapshotsListResponse(BaseModel):
 @router.get("/scenarios/{scenario_id}/health", response_model=HealthScoreResponse)
 async def get_supply_chain_health(
     scenario_id: int,
-    round_number: Optional[int] = None,
+    period_number: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -154,7 +154,7 @@ async def get_supply_chain_health(
     - `critical`: 0-34 (red)
 
     **Query Parameters**:
-    - `round_number`: Specific round to analyze (default: latest round)
+    - `period_number`: Specific round to analyze (default: latest round)
 
     **Example Response**:
     ```json
@@ -172,7 +172,7 @@ async def get_supply_chain_health(
         "✅ Supply chain is operating well",
         "📊 High order volatility detected"
       ],
-      "round_number": 15
+      "period_number": 15
     }
     ```
     """
@@ -181,7 +181,7 @@ async def get_supply_chain_health(
 
         health = await visibility_service.calculate_supply_chain_health(
             scenario_id=scenario_id,
-            round_number=round_number
+            period_number=period_number
         )
 
         return HealthScoreResponse(**health)
@@ -196,7 +196,7 @@ async def get_supply_chain_health(
 @router.get("/scenarios/{scenario_id}/bottlenecks", response_model=BottlenecksResponse)
 async def detect_bottlenecks(
     scenario_id: int,
-    round_number: Optional[int] = None,
+    period_number: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -236,7 +236,7 @@ async def detect_bottlenecks(
       ],
       "total_bottlenecks": 1,
       "supply_chain_flow": "restricted",
-      "round_number": 15
+      "period_number": 15
     }
     ```
     """
@@ -245,7 +245,7 @@ async def detect_bottlenecks(
 
         bottlenecks = await visibility_service.detect_bottlenecks(
             scenario_id=scenario_id,
-            round_number=round_number
+            period_number=period_number
         )
 
         return BottlenecksResponse(**bottlenecks)
@@ -281,7 +281,7 @@ async def measure_bullwhip_effect(
     - `severe`: Amplification >2.5 (poor information sharing)
 
     **Query Parameters**:
-    - `window_size`: Number of recent rounds to analyze (default: 10)
+    - `window_size`: Number of recent periods to analyze (default: 10)
 
     **Example Response**:
     ```json
@@ -446,7 +446,7 @@ async def get_visibility_permissions(
 @router.post("/scenarios/{scenario_id}/snapshots", response_model=SnapshotResponse)
 async def create_visibility_snapshot(
     scenario_id: int,
-    round_number: int,
+    period_number: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -479,7 +479,7 @@ async def create_visibility_snapshot(
 
         result = await visibility_service.create_visibility_snapshot(
             scenario_id=scenario_id,
-            round_number=round_number
+            period_number=period_number
         )
 
         return SnapshotResponse(**result)
@@ -513,14 +513,14 @@ async def get_visibility_snapshots(
       "snapshots": [
         {
           "id": 456,
-          "round_number": 15,
+          "period_number": 15,
           "health_score": 72.5,
           "snapshot_data": "{...}",
           "created_at": "2026-01-14T12:00:00"
         },
         {
           "id": 455,
-          "round_number": 14,
+          "period_number": 14,
           "health_score": 68.3,
           "snapshot_data": "{...}",
           "created_at": "2026-01-14T11:55:00"

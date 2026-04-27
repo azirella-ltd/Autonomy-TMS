@@ -41,7 +41,7 @@ class PurchaseOrderCreator:
         order_qty: float,
         order_date: date,
         scenario_id: Optional[int] = None,
-        round_number: Optional[int] = None,
+        period_number: Optional[int] = None,
         company_id: str = "company_001",
         auto_approve: bool = True
     ) -> PurchaseOrder:
@@ -61,7 +61,7 @@ class PurchaseOrderCreator:
             order_qty: Quantity to order (from agent decision)
             order_date: Order date
             scenario_id: Scenario ID (optional)
-            round_number: Round number when order is placed (optional)
+            period_number: Round number when order is placed (optional)
             company_id: Company ID
             auto_approve: Auto-approve PO (default: True for simulation)
 
@@ -78,7 +78,7 @@ class PurchaseOrderCreator:
             )
 
         # Lead time from TransportationLane (via sourcing_rule FK)
-        # supply_lead_time.value is in weeks/rounds (1 round = 1 week)
+        # supply_lead_time.value is in weeks/periods (1 period = 1 week)
         lead_time_rounds = 2  # fallback when no TransportationLane configured — populate lane for accurate scheduling
         if sourcing_rule.transportation_lane_id:
             lane = self.db.query(TransportationLane).filter(
@@ -94,11 +94,11 @@ class PurchaseOrderCreator:
 
         # Calculate arrival round
         arrival_round = None
-        if round_number is not None:
-            arrival_round = round_number + lead_time_rounds
+        if period_number is not None:
+            arrival_round = period_number + lead_time_rounds
 
         # Generate PO number
-        po_number = self._generate_po_number(scenario_id, round_number, destination_site_id)
+        po_number = self._generate_po_number(scenario_id, period_number, destination_site_id)
 
         # Create PO
         po = PurchaseOrder(
@@ -111,7 +111,7 @@ class PurchaseOrderCreator:
             order_date=order_date,
             requested_delivery_date=requested_delivery_date,
             scenario_id=scenario_id,
-            order_round=round_number,
+            order_round=period_number,
             arrival_round=arrival_round,
             created_at=datetime.now(),
         )
@@ -144,7 +144,7 @@ class PurchaseOrderCreator:
     def create_simulation_orders(
         self,
         scenario_id: int,
-        round_number: int,
+        period_number: int,
         order_decisions: Dict[str, float],
         config_id: int
     ) -> List[PurchaseOrder]:
@@ -153,7 +153,7 @@ class PurchaseOrderCreator:
 
         Args:
             scenario_id: Scenario ID
-            round_number: Current round number
+            period_number: Current round number
             order_decisions: Dict mapping site_name (or str site_id) to order_qty
             config_id: Supply chain configuration ID
 
@@ -213,7 +213,7 @@ class PurchaseOrderCreator:
                     order_qty=order_qty,
                     order_date=order_date,
                     scenario_id=scenario_id,
-                    round_number=round_number,
+                    period_number=period_number,
                     auto_approve=True,
                 )
                 pos.append(po)
@@ -264,7 +264,7 @@ class PurchaseOrderCreator:
     def process_arriving_orders(
         self,
         scenario_id: int,
-        round_number: int
+        period_number: int
     ) -> List[PurchaseOrder]:
         """
         Process all POs arriving in current simulation round.
@@ -274,7 +274,7 @@ class PurchaseOrderCreator:
         arriving_pos = self.db.query(PurchaseOrder).filter(
             and_(
                 PurchaseOrder.scenario_id == scenario_id,
-                PurchaseOrder.arrival_round == round_number,
+                PurchaseOrder.arrival_round == period_number,
                 PurchaseOrder.status.in_(["APPROVED", "SENT", "SHIPPED"]),
             )
         ).all()
@@ -287,7 +287,7 @@ class PurchaseOrderCreator:
     def get_po_status(
         self,
         scenario_id: int,
-        round_number: Optional[int] = None,
+        period_number: Optional[int] = None,
         site_id: Optional[int] = None
     ) -> List[Dict]:
         """
@@ -297,8 +297,8 @@ class PurchaseOrderCreator:
             PurchaseOrder.scenario_id == scenario_id
         )
 
-        if round_number is not None:
-            query = query.filter(PurchaseOrder.order_round == round_number)
+        if period_number is not None:
+            query = query.filter(PurchaseOrder.order_round == period_number)
 
         if site_id is not None:
             query = query.filter(PurchaseOrder.destination_site_id == site_id)
@@ -347,13 +347,13 @@ class PurchaseOrderCreator:
     def _generate_po_number(
         self,
         scenario_id: Optional[int],
-        round_number: Optional[int],
+        period_number: Optional[int],
         site_id: int
     ) -> str:
         """Generate unique PO number."""
         timestamp = int(datetime.now().timestamp())
-        if scenario_id and round_number is not None:
-            return f"PO-G{scenario_id}-R{round_number}-N{site_id}-{timestamp}"
+        if scenario_id and period_number is not None:
+            return f"PO-G{scenario_id}-R{period_number}-N{site_id}-{timestamp}"
         return f"PO-N{site_id}-{timestamp}"
 
     def _update_in_transit(

@@ -443,7 +443,7 @@ class ScenarioBranchingService:
             "id": md.id,
             "market_id": md.market_id,
             "demand_distribution": md.demand_distribution,
-            "num_rounds": md.num_rounds,
+            "num_periods": md.num_periods,
         }
 
     def _load_products(self, config_id: int) -> List[Dict[str, Any]]:

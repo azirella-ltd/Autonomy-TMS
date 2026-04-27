@@ -111,7 +111,7 @@ class ScenarioService(BaseScenarioService):
         """Run one simulation period via the TMS simulation engine."""
         rnd = self.engine.start_new_round(scenario_id)
         return {
-            "round_number": getattr(rnd, "round_number", None) if rnd else None,
+            "period_number": getattr(rnd, "period_number", None) if rnd else None,
             "scenario_id": scenario_id,
         }
 
@@ -219,11 +219,11 @@ class ScenarioService(BaseScenarioService):
             }
 
     # ------------------------------------------------------------------
-    # Reset hook — TMS clears simulation rounds, not supply_plan
+    # Reset hook — TMS clears simulation periods, not supply_plan
     # ------------------------------------------------------------------
 
     def _on_reset(self, scenario_id: int, config_id: int):
-        """Clear TMS simulation rounds and engine state on reset."""
+        """Clear TMS simulation periods and engine state on reset."""
         self.db.execute(
             text("DELETE FROM periods WHERE scenario_id = :sid"),
             {"sid": scenario_id},

@@ -53,7 +53,7 @@ class RLHFTrainingExample:
     # Context (input features)
     scenario_state: Dict[str, Any]  # Inventory, backlog, pipeline, demand history
     scenario_user_role: str  # Retailer, wholesaler, distributor, manufacturer
-    round_number: int
+    period_number: int
 
     # AI recommendation
     ai_suggestion: int
@@ -111,7 +111,7 @@ class RLHFDataCollector:
         self,
         scenario_user_id: int,
         scenario_id: int,
-        round_number: int,
+        period_number: int,
         agent_type: str,
         scenario_state: Dict[str, Any],
         ai_suggestion: int,
@@ -125,7 +125,7 @@ class RLHFDataCollector:
         Args:
             scenario_user_id: ScenarioUser who made decision
             scenario_id: Scenario context
-            round_number: Round number
+            period_number: Round number
             agent_type: Type of AI agent (llm, gnn, trm)
             scenario_state: Current scenario state (inventory, backlog, etc.)
             ai_suggestion: AI's recommended order quantity
@@ -143,7 +143,7 @@ class RLHFDataCollector:
         feedback = RLHFFeedback(
             scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
-            round_number=round_number,
+            period_number=period_number,
             agent_type=agent_type,
             scenario_state=scenario_state,
             ai_suggestion=ai_suggestion,
@@ -161,7 +161,7 @@ class RLHFDataCollector:
         self.db.refresh(feedback)
 
         logger.info(
-            f"Recorded RLHF feedback: scenario_user={scenario_user_id}, round={round_number}, "
+            f"Recorded RLHF feedback: scenario_user={scenario_user_id}, round={period_number}, "
             f"ai_suggestion={ai_suggestion}, human_decision={human_decision}, "
             f"action={feedback_action.value}"
         )
@@ -241,7 +241,7 @@ class RLHFDataCollector:
             RLHFTrainingExample(
                 scenario_state=feedback.scenario_state,
                 scenario_user_role=feedback.scenario_state.get("role", "unknown"),
-                round_number=feedback.round_number,
+                period_number=feedback.period_number,
                 ai_suggestion=feedback.ai_suggestion,
                 ai_reasoning=feedback.ai_reasoning,
                 ai_confidence=feedback.ai_confidence,
@@ -487,7 +487,7 @@ class RLHFFeedback(Base):
     id = Column(Integer, primary_key=True, index=True)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False, index=True)
     scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False, index=True)
-    round_number = Column(Integer, nullable=False)
+    period_number = Column(Integer, nullable=False)
 
     agent_type = Column(String(20), nullable=False, index=True)  # llm, gnn, trm
 

@@ -42,7 +42,7 @@ async def run_scenario(
             "started_at": result.started_at,
             "finished_at": result.finished_at,
             "summary": result.summary,
-            "periods": result.rounds,
+            "periods": result.periods,
             "impacts": result.impacts,
             "mode_choices": result.mode_choices,
             "warnings": result.warnings,

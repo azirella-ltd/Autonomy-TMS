@@ -44,7 +44,7 @@ class ReportingService:
         if not scenario:
             raise ValueError(f"Scenario {scenario_id} not found")
 
-        # Fetch all scenario_user rounds
+        # Fetch all scenario_user periods
         scenario_user_periods = await self._get_scenario_user_periods(scenario_id)
 
         # Calculate overview metrics
@@ -112,14 +112,14 @@ class ReportingService:
         Returns:
             Trend analysis with data points, statistics, and insights
         """
-        # Get recent scenario_user rounds
+        # Get recent scenario_user periods
         stmt = (
             select(ScenarioUserPeriod, Scenario)
             .join(Scenario, ScenarioUserPeriod.scenario_id == Scenario.id)
             .where(ScenarioUserPeriod.scenario_user_id == scenario_user_id)
             .where(Scenario.status == 'completed')
             .order_by(desc(Scenario.created_at))
-            .limit(lookback * 20)  # Approximate: lookback scenarios * avg rounds per scenario
+            .limit(lookback * 20)  # Approximate: lookback scenarios * avg periods per scenario
         )
         result = await self.db.execute(stmt)
         scenario_user_periods = result.all()
@@ -226,13 +226,13 @@ class ReportingService:
     # Private helper methods
 
     async def _get_scenario_with_periods(self, scenario_id: int):
-        """Fetch scenario with rounds."""
+        """Fetch scenario with periods."""
         stmt = select(Scenario).where(Scenario.id == scenario_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def _get_scenario_user_periods(self, scenario_id: int) -> List[ScenarioUserPeriod]:
-        """Fetch all scenario_user rounds for a scenario."""
+        """Fetch all scenario_user periods for a scenario."""
         stmt = (
             select(ScenarioUserPeriod)
             .where(ScenarioUserPeriod.scenario_id == scenario_id)
@@ -283,7 +283,7 @@ class ReportingService:
             "status": scenario.status,
             "rounds_played": max_round,
             "total_rounds": scenario.num_periods,
-            "duration": f"{max_round} rounds",
+            "duration": f"{max_round} periods",
             "total_cost": round(total_cost, 2),
             "service_level": round(avg_service_level, 3) if avg_service_level else None,
             "avg_inventory": round(avg_inventory, 2) if avg_inventory else None,
@@ -304,7 +304,7 @@ class ReportingService:
             scenario_users_data[pr.scenario_user_id].append(pr)
 
         performance = []
-        for scenario_user_id, rounds in scenario_users_data.items():
+        for scenario_user_id, periods in scenario_users_data.items():
             # Get scenario_user info
             scenario_user = await self.db.get(ScenarioUser, scenario_user_id)
             if not scenario_user:
@@ -494,10 +494,10 @@ class ReportingService:
 
     def _calculate_metric_for_game(
         self,
-        rounds: List[ScenarioUserPeriod],
+        periods: List[ScenarioUserPeriod],
         metric: str
     ) -> Optional[float]:
-        """Calculate a specific metric for a scenario's rounds."""
+        """Calculate a specific metric for a scenario's periods."""
         if metric == 'cost':
             costs = [
                 (r.holding_cost or 0) + (r.backlog_cost or 0)

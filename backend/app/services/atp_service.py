@@ -231,16 +231,16 @@ class ATPService:
         on_hand = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
 
         # Handle case where scenario hasn't started (no current round)
-        round_number = current_period.round_number if current_period else 0
+        period_number = current_period.period_number if current_period else 0
 
         # Scheduled receipts = in-transit shipments arriving this round
         scheduled_receipts = self._get_scheduled_receipts(
-            scenario_user, round_number, scenario
+            scenario_user, period_number, scenario
         )
 
         # Allocated orders = downstream commitments already promised
         allocated_orders = self._get_allocated_orders(
-            scenario_user, round_number, scenario
+            scenario_user, period_number, scenario
         )
 
         # Safety stock from inventory policy
@@ -250,7 +250,7 @@ class ATPService:
         atp = max(0, on_hand + scheduled_receipts - allocated_orders - safety_stock)
 
         logger.debug(
-            f"ATP calculation for scenario_user {scenario_user.id} (round {round_number}): "
+            f"ATP calculation for scenario_user {scenario_user.id} (round {period_number}): "
             f"on_hand={on_hand}, receipts={scheduled_receipts}, allocated={allocated_orders}, "
             f"safety_stock={safety_stock}, ATP={atp}"
         )
@@ -299,10 +299,10 @@ class ATPService:
         on_hand = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
 
         # Handle case where scenario hasn't started
-        round_number = current_period.round_number if current_period else 0
+        period_number = current_period.period_number if current_period else 0
 
         # Allocated orders (deterministic - already committed)
-        allocated_orders = self._get_allocated_orders(scenario_user, round_number, scenario)
+        allocated_orders = self._get_allocated_orders(scenario_user, period_number, scenario)
 
         # Safety stock (deterministic policy)
         safety_stock = self._get_safety_stock(scenario_user, scenario) if include_safety_stock else 0
@@ -331,11 +331,11 @@ class ATPService:
                 # If lead time is longer, they may not arrive yet
                 # This is a simplified model - in reality you'd track individual shipments
                 if sampled_lt <= 1:  # Arriving this round
-                    receipts = self._get_scheduled_receipts(scenario_user, round_number, scenario)
+                    receipts = self._get_scheduled_receipts(scenario_user, period_number, scenario)
                     total_receipts += receipts
                 else:
                     # Partial receipt based on lead time distribution
-                    base_receipts = self._get_scheduled_receipts(scenario_user, round_number, scenario)
+                    base_receipts = self._get_scheduled_receipts(scenario_user, period_number, scenario)
                     # Scale receipts by probability of arrival
                     arrival_prob = max(0.0, 1.0 - (sampled_lt - 1) * 0.2)
                     total_receipts += int(base_receipts * arrival_prob)
@@ -459,7 +459,7 @@ class ATPService:
         safety_stock = self._get_safety_stock(scenario_user)
 
         for period_offset in range(1, periods + 1):
-            future_round = current_period.round_number + period_offset
+            future_round = current_period.period_number + period_offset
 
             # Get scheduled receipts for this period
             receipts = self._get_scheduled_receipts(scenario_user, future_round)
@@ -579,7 +579,7 @@ class ATPService:
         ).first()
         return node.id if node else None
 
-    def _get_scheduled_receipts(self, scenario_user: ScenarioUser, round_number: int, scenario: Scenario = None, product_id: str = None) -> int:
+    def _get_scheduled_receipts(self, scenario_user: ScenarioUser, period_number: int, scenario: Scenario = None, product_id: str = None) -> int:
         """
         Get total scheduled receipts arriving in specified round.
 
@@ -588,7 +588,7 @@ class ATPService:
 
         Args:
             scenario_user: ScenarioUser instance
-            round_number: Round number to check
+            period_number: Round number to check
             scenario: Scenario instance (optional, used for node lookup)
             product_id: Optional product ID to filter by (for multi-product ATP)
 
@@ -610,7 +610,7 @@ class ATPService:
                 .join(TransferOrder, TransferOrderLineItem.to_id == TransferOrder.id)
                 .filter(
                     TransferOrder.destination_site_id == node_id,
-                    TransferOrder.arrival_round == round_number,
+                    TransferOrder.arrival_round == period_number,
                     TransferOrder.status == "IN_TRANSIT",
                 )
             )
@@ -625,7 +625,7 @@ class ATPService:
             logger.warning(f"Error getting scheduled receipts: {e}")
             return 0  # Return 0 on error (e.g., schema mismatch)
 
-    def _get_allocated_orders(self, scenario_user: ScenarioUser, round_number: int, scenario: Scenario = None, product_id: str = None) -> int:
+    def _get_allocated_orders(self, scenario_user: ScenarioUser, period_number: int, scenario: Scenario = None, product_id: str = None) -> int:
         """
         Get total allocated orders (downstream commitments) for specified round.
 
@@ -634,7 +634,7 @@ class ATPService:
 
         Args:
             scenario_user: ScenarioUser instance
-            round_number: Round number to check
+            period_number: Round number to check
             scenario: Scenario instance (optional, used for node lookup)
             product_id: Optional product ID to filter by (for multi-product ATP)
 
@@ -656,7 +656,7 @@ class ATPService:
                 .join(TransferOrder, TransferOrderLineItem.to_id == TransferOrder.id)
                 .filter(
                     TransferOrder.source_site_id == node_id,
-                    TransferOrder.order_round <= round_number,
+                    TransferOrder.order_round <= period_number,
                     TransferOrder.status.in_(["CONFIRMED", "IN_TRANSIT", "SHIPPED"]),
                 )
             )
@@ -772,7 +772,7 @@ class ATPService:
         Returns:
             Forecasted demand (integer)
         """
-        # Get historical demand (last 4 rounds)
+        # Get historical demand (last 4 periods)
         historical_demand = self._get_historical_demand(scenario_user, periods=4)
 
         if historical_demand:
@@ -809,14 +809,14 @@ class ATPService:
         Get historical demand for scenario_user (last N periods).
 
         Queries scenario_user_periods table for order_received values (incoming demand
-        from downstream nodes) for the most recent N completed rounds.
+        from downstream nodes) for the most recent N completed periods.
 
         Args:
             scenario_user: ScenarioUser instance
             periods: Number of historical periods to retrieve
 
         Returns:
-            List of demand values (order_received) from recent rounds
+            List of demand values (order_received) from recent periods
         """
         try:
             # Query ScenarioUserPeriod joined with ScenarioPeriod to get historical demand
@@ -826,9 +826,9 @@ class ATPService:
                 .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
                 .filter(
                     ScenarioUserPeriod.scenario_user_id == scenario_user.id,
-                    ScenarioPeriod.is_completed == True,  # Only completed rounds
+                    ScenarioPeriod.is_completed == True,  # Only completed periods
                 )
-                .order_by(ScenarioPeriod.round_number.desc())
+                .order_by(ScenarioPeriod.period_number.desc())
                 .limit(periods)
                 .all()
             )

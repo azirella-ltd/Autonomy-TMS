@@ -78,7 +78,7 @@ class TopologyConfig(BaseModel):
 
 class RoundContext(BaseModel):
     """Holds the context for the current simulation round."""
-    round_number: int
+    period_number: int
     scenario_id: int
     topology: TopologyConfig
     config: Dict[str, Any] = Field(default_factory=dict)

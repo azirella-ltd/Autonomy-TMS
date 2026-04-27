@@ -167,7 +167,7 @@ class AuthorityCheckService:
             proposal_metadata={
                 "scenario_user_id": scenario_user.id,
                 "participant_role": scenario_user.role,
-                "round_number": scenario_user.scenario.current_period,
+                "period_number": scenario_user.scenario.current_period,
                 "agent_qty": agent_qty,
                 "human_qty": human_qty,
                 "override_pct": override_pct,

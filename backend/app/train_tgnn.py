@@ -48,13 +48,13 @@ def prepare_training_data(data_path: str, num_episodes: int = 100, seq_len: int 
     for scenario in scenarios:
         periods = scenario.get('periods', [])
         
-        # Skip scenarios with too few rounds
+        # Skip scenarios with too few periods
         if len(periods) < seq_len + 1:
             continue
             
         # Convert to sequential samples
         for i in range(len(periods) - seq_len):
-            # Get sequence of rounds
+            # Get sequence of periods
             sequence = periods[i:i + seq_len + 1]
             
             # Extract node features for each role in each period

@@ -151,10 +151,10 @@ Current Scenario State:
 - Round: {context.get('current_period', 0)}
 - Current Inventory: {context.get('current_inventory', 0)} units
 - Current Backlog: {context.get('current_backlog', 0)} units
-- Incoming Shipment: {context.get('incoming_shipment', 0)} units (arriving in {context.get('lead_time', 2)} rounds)
-- Lead Time: {context.get('lead_time', 2)} rounds
+- Incoming Shipment: {context.get('incoming_shipment', 0)} units (arriving in {context.get("lead_time", 2)} periods)
+- Lead Time: {context.get("lead_time", 2)} periods
 
-Recent Demand (last 5 rounds):
+Recent Demand (last 5 periods):
 {demand_history_str}
 
 Demand Forecast:
@@ -431,7 +431,7 @@ IMPORTANT:
         # Calculate target stock based on recent demand
         if recent_demand and len(recent_demand) >= 3:
             avg_demand = sum(recent_demand[-3:]) / 3
-            target_stock = int(avg_demand * 2)  # 2 rounds of safety stock
+            target_stock = int(avg_demand * 2)  # 2 periods of safety stock
         else:
             target_stock = 50  # Default
 

@@ -63,7 +63,7 @@ class ExplanationRequest(BaseModel):
     """Request for prediction explanation."""
     scenario_id: int
     node_id: int
-    round_number: int
+    period_number: int
 
 
 class ExplanationResponse(BaseModel):
@@ -287,7 +287,7 @@ async def explain_prediction(
         explanation = await service.explain_prediction(
             scenario_id=request.scenario_id,
             node_id=request.node_id,
-            round_number=request.round_number
+            period_number=request.period_number
         )
 
         if "error" in explanation:

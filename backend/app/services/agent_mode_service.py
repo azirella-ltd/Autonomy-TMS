@@ -50,7 +50,7 @@ class ModeSwitchResult:
     new_mode: str
     scenario_user_id: int
     scenario_id: int
-    round_number: int
+    period_number: int
     reason: str
     message: str
     timestamp: str
@@ -67,7 +67,7 @@ class ModeHistory:
     id: int
     scenario_user_id: int
     scenario_id: int
-    round_number: int
+    period_number: int
     previous_mode: str
     new_mode: str
     reason: str
@@ -140,7 +140,7 @@ class AgentModeService:
                 new_mode=new_mode.value,
                 scenario_user_id=scenario_user_id,
                 scenario_id=scenario_id,
-                round_number=scenario.current_period,
+                period_number=scenario.current_period,
                 reason=reason.value,
                 message=f"Mode already set to {new_mode.value}",
                 timestamp=datetime.utcnow().isoformat(),
@@ -166,7 +166,7 @@ class AgentModeService:
         self._record_mode_history(
             scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
-            round_number=scenario.current_period,
+            period_number=scenario.current_period,
             previous_mode=current_mode,
             new_mode=new_mode.value,
             reason=reason.value,
@@ -190,7 +190,7 @@ class AgentModeService:
             new_mode=new_mode.value,
             scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
-            round_number=scenario.current_period,
+            period_number=scenario.current_period,
             reason=reason.value,
             message=f"Successfully switched from {current_mode} to {new_mode.value}",
             timestamp=datetime.utcnow().isoformat(),
@@ -296,7 +296,7 @@ class AgentModeService:
                 id=record.id,
                 scenario_user_id=record.scenario_user_id,
                 scenario_id=record.scenario_id,
-                round_number=record.round_number,
+                period_number=record.period_number,
                 previous_mode=record.previous_mode,
                 new_mode=record.new_mode,
                 reason=record.reason,
@@ -398,7 +398,7 @@ class AgentModeService:
         self,
         scenario_user_id: int,
         scenario_id: int,
-        round_number: int,
+        period_number: int,
         previous_mode: str,
         new_mode: str,
         reason: str,
@@ -408,7 +408,7 @@ class AgentModeService:
         history_record = AgentModeHistory(
             scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
-            round_number=round_number,
+            period_number=period_number,
             previous_mode=previous_mode,
             new_mode=new_mode,
             reason=reason,
@@ -473,7 +473,7 @@ class AgentModeHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False, index=True)
     scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False, index=True)
-    round_number = Column(Integer, nullable=False)
+    period_number = Column(Integer, nullable=False)
     previous_mode = Column(String(20), nullable=False)  # manual, copilot, autonomous
     new_mode = Column(String(20), nullable=False)
     reason = Column(String(50), nullable=False)  # user_request, performance_threshold, etc.

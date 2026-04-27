@@ -50,19 +50,19 @@ def _ensure_log_path(scenario: Any) -> Path:
     return path
 
 
-def _build_round_numbers(history: Iterable[Mapping[str, Any]]) -> Sequence[int]:
-    rounds = []
+def _build_period_numbers(history: Iterable[Mapping[str, Any]]) -> Sequence[int]:
+    periods = []
     for entry in history:
         round_value = entry.get("round")
         if isinstance(round_value, int):
-            rounds.append(round_value)
+            periods.append(round_value)
         else:
             try:
                 coerced = int(round_value)  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 continue
-            rounds.append(coerced)
-    return rounds
+            periods.append(coerced)
+    return periods
 
 
 def build_sankey_snapshot(history: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
@@ -176,12 +176,12 @@ def _build_snapshot_from_shipments(history: Sequence[Mapping[str, Any]]) -> Dict
         site_id: inventory_totals.get(site_id, 0.0)
         for site_id in node_ids
     }
-    rounds = _build_round_numbers(history)
+    periods = _build_period_numbers(history)
     avg_demand = (total_demand / rounds_with_data) if rounds_with_data else 0.0
 
     return {
         "rounds_analyzed": rounds_with_data,
-        "round_numbers": rounds,
+        "period_numbers": periods,
         "lane_totals": lane_totals_payload,
         "inventory_totals": inventory_totals_payload,
         "average_inventory": {node["id"]: node["average_inventory"] for node in nodes_payload},

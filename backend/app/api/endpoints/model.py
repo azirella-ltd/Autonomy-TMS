@@ -190,7 +190,7 @@ class ExplainPredictionRequest(BaseModel):
     """Request for model prediction explanation"""
     scenario_id: int
     scenario_user_id: int
-    round_number: int
+    period_number: int
     method: str = "lime"  # 'lime', 'attention', 'counterfactual'
     num_features: Optional[int] = None
 
@@ -262,16 +262,16 @@ async def get_scenario_metrics(
     if not scenario:
         raise HTTPException(status_code=404, detail="Scenario not found")
 
-    # Get all rounds for this scenario
-    rounds_result = await db.execute(
+    # Get all periods for this scenario
+    periods_result = await db.execute(
         select(ScenarioPeriod)
         .where(ScenarioPeriod.scenario_id == scenario_id)
-        .order_by(ScenarioPeriod.round_number)
+        .order_by(ScenarioPeriod.period_number)
     )
-    rounds = rounds_result.scalars().all()
+    periods = periods_result.scalars().all()
     
-    if not rounds:
-        raise HTTPException(status_code=400, detail="No rounds found for this scenario")
+    if not periods:
+        raise HTTPException(status_code=400, detail="No periods found for this scenario")
 
     # Get all scenario_users in this scenario
     scenario_users_result = await db.execute(select(ScenarioUser).where(ScenarioUser.scenario_id == scenario_id))
@@ -279,7 +279,7 @@ async def get_scenario_metrics(
     if not scenario_users:
         raise HTTPException(status_code=400, detail="No scenario_users found for this scenario")
     
-    # Get all scenario_user rounds
+    # Get all scenario_user periods
     scenario_user_periods_result = await db.execute(
         select(ScenarioUserPeriod)
         .join(ScenarioPeriod)
@@ -287,8 +287,8 @@ async def get_scenario_metrics(
     )
     scenario_user_periods = scenario_user_periods_result.scalars().all()
     
-    if not rounds:
-        raise HTTPException(status_code=400, detail="No rounds completed for this scenario")
+    if not periods:
+        raise HTTPException(status_code=400, detail="No periods completed for this scenario")
     
     participant_performances = []
     total_supply_chain_cost = 0
@@ -324,7 +324,7 @@ async def get_scenario_metrics(
         operational_cost = holding_cost + backorder_cost
         
         # Calculate inventory metrics
-        avg_inventory = sum(pr.inventory_after for pr in scenario_user_periods_data) / len(rounds) if rounds else 0
+        avg_inventory = sum(pr.inventory_after for pr in scenario_user_periods_data) / len(periods) if periods else 0
         stockout_weeks = sum(1 for pr in scenario_user_periods_data if pr.backorder_after > 0)
         
         # Calculate order metrics
@@ -387,7 +387,7 @@ async def get_scenario_metrics(
             
             # Create round metrics with margin data
             round_metric = ScenarioUserPeriodMetrics(
-                round_number=pr.scenario_round.round_number,
+                period_number=pr.scenario_round.period_number,
                 inventory=pr.inventory_after,
                 backorders=pr.backorder_after,
                 order_placed=pr.order_placed,
@@ -449,7 +449,7 @@ async def get_scenario_metrics(
         participant_performances.append(participant_perf)
     
     # Calculate overall metrics
-    avg_weekly_demand = total_demand / (len(rounds) * len(scenario_users)) if scenario_users and rounds else 0
+    avg_weekly_demand = total_demand / (len(periods) * len(scenario_users)) if scenario_users and periods else 0
     
     # Calculate overall bullwhip effect (retailer variance vs manufacturer variance)
     retailer_orders = []
@@ -475,9 +475,9 @@ async def get_scenario_metrics(
     response = ScenarioMetricsResponse(
         scenario_id=scenario.id,
         scenario_name=scenario.name,
-        total_rounds=len(rounds),
-        start_date=rounds[0].created_at if rounds else None,
-        end_date=rounds[-1].completed_at if rounds and hasattr(rounds[-1], 'completed_at') else None,
+        total_rounds=len(periods),
+        start_date=periods[0].created_at if periods else None,
+        end_date=periods[-1].completed_at if periods and hasattr(periods[-1], 'completed_at') else None,
         scenario_users=participant_performances,
         total_supply_chain_cost=total_supply_chain_cost,
         average_weekly_demand=avg_weekly_demand,
@@ -876,7 +876,7 @@ async def explain_prediction(
         result = await db.execute(
             select(ScenarioUserPeriod).where(
                 ScenarioUserPeriod.scenario_user_id == req.scenario_user_id,
-                ScenarioUserPeriod.round_number == req.round_number
+                ScenarioUserPeriod.period_number == req.period_number
             )
         )
         scenario_user_period = result.scalar_one_or_none()
@@ -884,7 +884,7 @@ async def explain_prediction(
         if not scenario_user_period:
             raise HTTPException(
                 status_code=404,
-                detail=f"ScenarioUser round not found: scenario_user_id={req.scenario_user_id}, round={req.round_number}"
+                detail=f"ScenarioUser round not found: scenario_user_id={req.scenario_user_id}, round={req.period_number}"
             )
 
         # Extract features from scenario_user round
@@ -947,7 +947,7 @@ async def explain_prediction(
             # Save explanation
             output_dir = Path("explanations")
             output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"lime_scenario{req.scenario_id}_participant{req.scenario_user_id}_round{req.round_number}.json"
+            output_path = output_dir / f"lime_scenario{req.scenario_id}_participant{req.scenario_user_id}_round{req.period_number}.json"
             explainer.save_explanation(explanation, str(output_path))
 
             return {
@@ -975,7 +975,7 @@ async def explain_prediction(
             # Save explanation
             output_dir = Path("explanations")
             output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"counterfactual_scenario{req.scenario_id}_participant{req.scenario_user_id}_round{req.round_number}.json"
+            output_path = output_dir / f"counterfactual_scenario{req.scenario_id}_participant{req.scenario_user_id}_round{req.period_number}.json"
             explainer.save_explanation(counterfactual, str(output_path))
 
             return {

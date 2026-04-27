@@ -241,7 +241,7 @@ Respond in JSON format:
         )
         current_period = result.scalars().first()
 
-        # Get recent rounds for demand history
+        # Get recent periods for demand history
         history_result = await self.db.execute(
             select(ScenarioUserPeriod)
             .filter(ScenarioUserPeriod.scenario_user_id == scenario_user.id)

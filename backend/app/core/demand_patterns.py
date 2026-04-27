@@ -244,7 +244,7 @@ class DemandGenerator:
 
     @staticmethod
     def generate_classic(
-        num_rounds: int = 52,
+        num_periods: int = 52,
         initial_demand: Optional[int] = None,
         change_week: Optional[int] = None,
         final_demand: Optional[int] = None,
@@ -252,7 +252,7 @@ class DemandGenerator:
         step_increase: Optional[int] = None,
     ) -> List[int]:
         """Generate a classic demand pattern with a single step change."""
-        if num_rounds <= 0:
+        if num_periods <= 0:
             return []
 
         normalized = normalize_classic_params(
@@ -270,34 +270,34 @@ class DemandGenerator:
         change_at = normalized["change_week"]
 
         demand: List[int] = []
-        for week in range(1, num_rounds + 1):
+        for week in range(1, num_periods + 1):
             demand.append(final if week >= change_at else initial)
 
         return demand
 
     @staticmethod
-    def generate_random(num_rounds: int, min_demand: int = 1, max_demand: int = 10) -> List[int]:
+    def generate_random(num_periods: int, min_demand: int = 1, max_demand: int = 10) -> List[int]:
         """Generate random demand values within a specified range."""
-        return [random.randint(min_demand, max_demand) for _ in range(num_rounds)]
+        return [random.randint(min_demand, max_demand) for _ in range(num_periods)]
 
     @staticmethod
-    def generate_seasonal(num_rounds: int, base_demand: int = 4, amplitude: int = 2, period: int = 12) -> List[int]:
+    def generate_seasonal(num_periods: int, base_demand: int = 4, amplitude: int = 2, period: int = 12) -> List[int]:
         """Generate a seasonal demand pattern."""
         import math
 
         return [
             max(1, int(base_demand + amplitude * math.sin(2 * math.pi * (i % period) / period)))
-            for i in range(num_rounds)
+            for i in range(num_periods)
         ]
 
     @staticmethod
-    def generate_constant(num_rounds: int, demand: int = 4) -> List[int]:
+    def generate_constant(num_periods: int, demand: int = 4) -> List[int]:
         """Generate a constant demand pattern."""
-        return [demand] * num_rounds
+        return [demand] * num_periods
 
     @staticmethod
     def generate_lognormal(
-        num_rounds: int,
+        num_periods: int,
         mean: float,
         cov: float,
         *,
@@ -308,7 +308,7 @@ class DemandGenerator:
     ) -> List[int]:
         """Generate lognormal demand samples rounded to whole units."""
 
-        if num_rounds <= 0:
+        if num_periods <= 0:
             return []
 
         mean = max(mean, 1e-6)
@@ -321,7 +321,7 @@ class DemandGenerator:
         rng = random.Random(seed) if seed is not None else random
 
         samples: List[int] = []
-        for _ in range(num_rounds):
+        for _ in range(num_periods):
             draw = rng.lognormvariate(mu, sigma) if sigma > 0 else mean
             if not math.isfinite(draw):
                 draw = mean
@@ -339,20 +339,20 @@ class DemandGenerator:
     def generate(
         cls,
         pattern_type: DemandPatternType,
-        num_rounds: int,
+        num_periods: int,
         **kwargs,
     ) -> List[int]:
         """Generate demand pattern based on the specified type."""
         if pattern_type == DemandPatternType.CLASSIC:
-            return cls.generate_classic(num_rounds, **kwargs)
+            return cls.generate_classic(num_periods, **kwargs)
         if pattern_type == DemandPatternType.RANDOM:
-            return cls.generate_random(num_rounds, **kwargs)
+            return cls.generate_random(num_periods, **kwargs)
         if pattern_type == DemandPatternType.SEASONAL:
-            return cls.generate_seasonal(num_rounds, **kwargs)
+            return cls.generate_seasonal(num_periods, **kwargs)
         if pattern_type == DemandPatternType.CONSTANT:
-            return cls.generate_constant(num_rounds, **kwargs)
+            return cls.generate_constant(num_periods, **kwargs)
         if pattern_type == DemandPatternType.LOGNORMAL:
-            return cls.generate_lognormal(num_rounds, **kwargs)
+            return cls.generate_lognormal(num_periods, **kwargs)
         raise ValueError(f"Unknown demand pattern type: {pattern_type}")
 
 
@@ -364,7 +364,7 @@ DEFAULT_DEMAND_PATTERN = {
 
 def get_demand_pattern(
     pattern_config: Optional[Dict] = None,
-    num_rounds: int = 52,
+    num_periods: int = 52,
 ) -> List[int]:
     """Get a demand pattern based on the provided configuration."""
     normalized = normalize_demand_pattern(pattern_config or DEFAULT_DEMAND_PATTERN)
@@ -376,4 +376,4 @@ def get_demand_pattern(
 
     params = normalized.get("params", {})
 
-    return DemandGenerator.generate(pattern_type, num_rounds, **params)
+    return DemandGenerator.generate(pattern_type, num_periods, **params)

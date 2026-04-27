@@ -99,7 +99,7 @@ class SimulationRLEnv(gym.Env):
     - incoming_shipment_1: shipment arriving next round
     - incoming_order: order received from downstream
     - last_order: last order placed upstream
-    - round_number: current round (normalized)
+    - period_number: current round (normalized)
     - total_cost: cumulative cost (normalized)
 
     Action space:
@@ -366,7 +366,7 @@ class RLAgent(BasePolicy):
         last_order = node.last_order_placed if hasattr(node, 'last_order_placed') else 0
 
         # Get round number
-        round_number = context.get("round_number", 0)
+        period_number = context.get("period_number", 0)
         max_periods = context.get("max_periods", 52)
 
         # Get total cost
@@ -379,7 +379,7 @@ class RLAgent(BasePolicy):
             incoming_shipment_1,
             incoming_order,
             last_order,
-            round_number / max_periods,
+            period_number / max_periods,
             total_cost / (max_periods * 100)
         ], dtype=np.float32)
 

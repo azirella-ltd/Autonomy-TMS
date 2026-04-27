@@ -216,7 +216,7 @@ class GNNAgent:
                 avg_demand,
                 float(node_type),
                 float(len(demand_hist)),
-                float(context.get("round_number", 0)),
+                float(context.get("period_number", 0)),
                 float(max(demand_hist) if demand_hist else 0),
             ], dtype=torch.float32).unsqueeze(0).to(self.device)
 

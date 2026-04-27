@@ -17,14 +17,14 @@ def project_inventory_from_inv_level(
     site_id: int,
     product_id: str,
     scenario_id: int,
-    round_number: int,
+    period_number: int,
 ) -> int:
     """
     Project the inventory level visible to a site at the start of the next round.
 
     Uses AWS SC entities:
       - InvLevel.on_hand_qty   — current on-hand inventory
-      - PurchaseOrder/PurchaseOrderLineItem — POs with arrival_round == round_number + 1
+      - PurchaseOrder/PurchaseOrderLineItem — POs with arrival_round == period_number + 1
 
     This replaces the deprecated Node-based function for scenarios using
     SimulationExecutor (scenario.config['use_sc_execution'] = True).
@@ -51,7 +51,7 @@ def project_inventory_from_inv_level(
         .filter(
             PurchaseOrder.scenario_id == scenario_id,
             PurchaseOrder.destination_site_id == site_id,
-            PurchaseOrder.arrival_round == round_number + 1,
+            PurchaseOrder.arrival_round == period_number + 1,
             PurchaseOrder.status.in_(["APPROVED", "SENT", "SHIPPED"]),
         )
         .scalar()

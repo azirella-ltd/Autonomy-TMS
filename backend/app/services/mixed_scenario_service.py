@@ -2030,7 +2030,7 @@ class MixedScenarioService:
     @staticmethod
     def _draw_demand_value(
         pattern_source: Optional[Dict[str, Any]],
-        round_number: int,
+        period_number: int,
     ) -> Tuple[int, Dict[str, Any]]:
         pattern = normalize_demand_pattern(pattern_source or {})
         params = pattern.get("params", {}) if isinstance(pattern.get("params", {}), dict) else {}
@@ -2044,7 +2044,7 @@ class MixedScenarioService:
             initial = int(params.get("initial_demand", DEFAULT_CLASSIC_PARAMS["initial_demand"]))
             final = int(params.get("final_demand", DEFAULT_CLASSIC_PARAMS["final_demand"]))
             change_week = int(params.get("change_week", DEFAULT_CLASSIC_PARAMS["change_week"]))
-            demand_value = final if round_number >= change_week else initial
+            demand_value = final if period_number >= change_week else initial
             return max(0, int(demand_value)), pattern
 
         if pattern_type == DemandPatternType.RANDOM:
@@ -2087,7 +2087,7 @@ class MixedScenarioService:
             except (TypeError, ValueError):
                 period = 12
             period = max(1, period)
-            angle = 2.0 * math.pi * ((round_number - 1) % period) / period
+            angle = 2.0 * math.pi * ((period_number - 1) % period) / period
             demand_value = base + amplitude * math.sin(angle)
             return max(0, int(round(demand_value))), pattern
 
@@ -2104,9 +2104,9 @@ class MixedScenarioService:
                     seed = secrets.randbits(32)
                     log_params["seed"] = seed
 
-            draw_seed = seed + max(0, round_number - 1)
+            draw_seed = seed + max(0, period_number - 1)
             samples = DemandGenerator.generate_lognormal(
-                num_rounds=1,
+                num_periods=1,
                 mean=log_params.get("mean", DEFAULT_CLASSIC_PARAMS["initial_demand"]),
                 cov=log_params.get("cov", 1.0),
                 min_demand=log_params.get("min_demand"),
@@ -2123,7 +2123,7 @@ class MixedScenarioService:
     def _compute_market_round_demand(
         scenario: Scenario,
         cfg: Dict[str, Any],
-        round_number: int,
+        period_number: int,
         lane_views: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Dict[str, int]], int]:
         result: Dict[str, Dict[str, int]] = defaultdict(dict)
@@ -2143,7 +2143,7 @@ class MixedScenarioService:
                     raise ValueError(f"Market demand entry missing product_id: {entry.keys()}")
                 demand_value, normalised_pattern = MixedScenarioService._draw_demand_value(
                     entry.get("demand_pattern"),
-                    round_number,
+                    period_number,
                 )
                 updated_entry = dict(entry)
                 updated_entry["demand_pattern"] = normalised_pattern
@@ -2159,7 +2159,7 @@ class MixedScenarioService:
 
     def _preprocess_queues(self, context: RoundContext) -> None:
         """Process global queues to determine arrivals and matured orders for the round."""
-        current_period = context.round_number
+        current_period = context.period_number
         node_policies = context.node_policies
         
         # Use a stable node order for logging: downstream-to-upstream if possible.
@@ -2422,7 +2422,7 @@ class MixedScenarioService:
 
         shipments_map = context.topology.shipments_map or {}
         orders_map = context.topology.orders_map or {}
-        current_period = context.round_number
+        current_period = context.period_number
 
         for market_node, item_map in context.market_demand_map.items():
             market_key = MixedScenarioService._normalise_key(market_node)
@@ -2552,7 +2552,7 @@ class MixedScenarioService:
         if master_type == "manufacturer":
             cfg = context.config or {}
             bom_for_node = MixedScenarioService._bom_for_node(cfg, node_key)
-            current_period = context.round_number
+            current_period = context.period_number
 
             finished_inventory = dict(getattr(state, "finished_inventory_by_item", {}) or {})
             component_inventory = dict(getattr(state, "component_inventory_by_item", {}) or {})
@@ -2713,7 +2713,7 @@ class MixedScenarioService:
             lost_sale_rate = float(raw_cost) if raw_cost is not None else 100.0
         except (TypeError, ValueError):
             lost_sale_rate = 100.0
-        current_period = context.round_number
+        current_period = context.period_number
 
         pending_entries: List[Dict[str, Any]] = []
         for order in list(state.backlog_orders or []):
@@ -2830,7 +2830,7 @@ class MixedScenarioService:
         destination_site_id: int,
         quantity: int,
         lead_time: int,
-        round_number: int,
+        period_number: int,
         source_scenario_user_period_id: Optional[int] = None,
         product_id: str = "DEFAULT",
     ) -> TransferOrder:
@@ -2846,8 +2846,8 @@ class MixedScenarioService:
             source_site_id: Source site ID
             destination_site_id: Destination site ID
             quantity: Order quantity
-            lead_time: Lead time in rounds (from TransportationLane.supply_lead_time['value'])
-            round_number: Current round number
+            lead_time: Lead time in periods (from TransportationLane.supply_lead_time['value'])
+            period_number: Current round number
             source_scenario_user_period_id: ScenarioUserPeriod ID that created this TO (bidirectional link)
             product_id: Product ID (default: "DEFAULT")
 
@@ -2860,14 +2860,14 @@ class MixedScenarioService:
             - Uses TransportationLane.supply_lead_time for travel time (AWS SC compliant)
         """
         # Calculate arrival round
-        arrival_round = round_number + lead_time
+        arrival_round = period_number + lead_time
 
         # Get current date for timestamps
         current_date = date.today()
 
         # Generate unique TO number
         import uuid
-        to_number = f"TO-G{scenario_id}-R{round_number}-{uuid.uuid4().hex[:8].upper()}"
+        to_number = f"TO-G{scenario_id}-R{period_number}-{uuid.uuid4().hex[:8].upper()}"
 
         # Create TransferOrder
         transfer_order = TransferOrder(
@@ -2884,7 +2884,7 @@ class MixedScenarioService:
 
             # Simulation Extensions (clearly marked)
             scenario_id=scenario_id,
-            order_round=round_number,
+            order_round=period_number,
             arrival_round=arrival_round,
             source_scenario_user_period_id=source_scenario_user_period_id,
         )
@@ -2974,7 +2974,7 @@ class MixedScenarioService:
             destination_site_id: Destination site ID
 
         Returns:
-            Lead time in rounds (from TransportationLane.supply_lead_time['value'])
+            Lead time in periods (from TransportationLane.supply_lead_time['value'])
 
         Raises:
             ValueError: If transportation lane not found
@@ -3136,7 +3136,7 @@ class MixedScenarioService:
                 due_step = order.step_number if order.step_number is not None else order.due_round
                 seq = order.sequence if order.sequence is not None else 0
                 ord_priority = order.order_priority if order.order_priority is not None else 0
-                return (due_step or context.round_number, pri, ord_priority, seq)
+                return (due_step or context.period_number, pri, ord_priority, seq)
 
             shipments_created: List[Shipment] = []
             fulfillment_by_item: Dict[str, int] = defaultdict(int)
@@ -3160,7 +3160,7 @@ class MixedScenarioService:
                             quantity=ship_qty,
                             source=node_key,
                             destination=order.downstream,
-                            arrival_round=context.round_number + lead_time,
+                            arrival_round=context.period_number + lead_time,
                         )
                         shipments_created.append(shipment)
                         fulfillment_by_item[product_id] += ship_qty
@@ -3171,7 +3171,7 @@ class MixedScenarioService:
                     if remainder > 0:
                         pending = order.copy()
                         pending.quantity = remainder
-                        pending.step_number = (context.round_number + 1)
+                        pending.step_number = (context.period_number + 1)
                         pending.due_round = pending.step_number
                         carry_over.append(pending)
 
@@ -3183,7 +3183,7 @@ class MixedScenarioService:
             future_orders.extend(carry_over)
             future_orders.sort(
                 key=lambda o: (
-                    o.step_number if o.step_number is not None else (o.due_round or context.round_number),
+                    o.step_number if o.step_number is not None else (o.due_round or context.period_number),
                     o.order_priority if o.order_priority is not None else 0,
                     o.sequence if o.sequence is not None else 0,
                 )
@@ -3225,7 +3225,7 @@ class MixedScenarioService:
             return
 
         if master_type == "manufacturer":
-            current_period = context.round_number
+            current_period = context.period_number
             supply_lead = int(policy.get("supply_leadtime", 0) or 0)
             finished_inventory: Dict[str, int] = {}
             component_inventory: Dict[str, int] = {}
@@ -3371,7 +3371,7 @@ class MixedScenarioService:
         for queue in orders_by_item.values():
             queue.sort(
                 key=lambda x: (
-                    x.step_number if x.step_number is not None else (x.due_round or context.round_number),
+                    x.step_number if x.step_number is not None else (x.due_round or context.period_number),
                     x.order_priority,
                     x.sequence if x.sequence is not None else 0,
                 )
@@ -3441,7 +3441,7 @@ class MixedScenarioService:
                         else:
                             lead_time = int(policy.get('supply_leadtime', 0))
 
-                        arrival_round = context.round_number + lead_time
+                        arrival_round = context.period_number + lead_time
 
                         shipment = Shipment(
                             product_id=product_id,
@@ -3470,7 +3470,7 @@ class MixedScenarioService:
 
         order_aging = max(0, int(policy.get("order_aging", 0) or 0))
         filtered_backlog: List[OrderRequest] = []
-        current_period = context.round_number
+        current_period = context.period_number
         for order in next_backlog:
             product_id = MixedScenarioService._normalise_product_id(order.product_id)
             arrival_round = order.step_number if order.step_number is not None else order.due_round
@@ -3519,7 +3519,7 @@ class MixedScenarioService:
         """Append a concise history/debug snapshot for the completed round."""
         cfg = scenario.config or {}
         round_record = context.round_record
-        round_index = getattr(round_record, "round_number", None) or context.round_number
+        round_index = getattr(round_record, "period_number", None) or context.period_number
 
         # Build base entry
         history_entry: Dict[str, Any] = {
@@ -3926,7 +3926,7 @@ class MixedScenarioService:
             append_debug_round_log(
                 cfg,
                 scenario,
-                round_number=round_index,
+                period_number=round_index,
                 timestamp=datetime.utcnow(),
                 entries=debug_payload,
             )
@@ -4081,7 +4081,7 @@ class MixedScenarioService:
         
         # 6. Update scenario status when finished
         total_rounds = scenario.max_periods or 50
-        if (round_record and round_record.round_number >= total_rounds) or (scenario.current_period or 0) >= total_rounds:
+        if (round_record and round_record.period_number >= total_rounds) or (scenario.current_period or 0) >= total_rounds:
             scenario.status = GameStatusDB.FINISHED
             scenario.current_period = total_rounds
         else:
@@ -4094,17 +4094,17 @@ class MixedScenarioService:
         self.db.add(scenario)
         self.db.commit()
 
-    def _initialize_round(self, scenario: Scenario, *, round_number: Optional[int] = None) -> Optional[RoundContext]:
+    def _initialize_round(self, scenario: Scenario, *, period_number: Optional[int] = None) -> Optional[RoundContext]:
         """Initialize the round context, loading configuration and state."""
         if not scenario or not scenario.config:
             return None
 
         cfg = scenario.config
-        round_number = round_number if round_number is not None else (scenario.current_period or 0) + 1
+        period_number = period_number if period_number is not None else (scenario.current_period or 0) + 1
 
         # Rotate debug log per scenario run so each start creates a fresh file
         debug_cfg = normalize_debug_config(cfg)
-        if debug_cfg.get("enabled") and round_number == 1:
+        if debug_cfg.get("enabled") and period_number == 1:
             debug_cfg.pop("file_path", None)
             cfg["debug_logging"] = debug_cfg
             ensure_debug_log_file(cfg, scenario)
@@ -4117,7 +4117,7 @@ class MixedScenarioService:
         if not node_sequence:
             raise ValueError(
                 "Supply chain configuration is missing a node sequence (DAG). "
-                "Ensure nodes, node types, lanes, and node_sequence are persisted before starting rounds."
+                "Ensure nodes, node types, lanes, and node_sequence are persisted before starting periods."
             )
         cfg["node_sequence"] = node_sequence
         
@@ -4214,7 +4214,7 @@ class MixedScenarioService:
             combined_orders = list(inbound_orders_raw)
             normalised_orders = self._normalise_order_queue(
                 combined_orders,
-                current_step=round_number,
+                current_step=period_number,
                 default_lead_time=0,
                 default_item_id=primary_item_id,
             )
@@ -4223,9 +4223,9 @@ class MixedScenarioService:
             if (
                 not normalised_orders
                 and master_type not in {"vendor", "customer"}
-                and round_number == 1
+                and period_number == 1
             ):
-                raise ValueError(f"Engine state missing inbound_demand for node '{node}' at round {round_number}")
+                raise ValueError(f"Engine state missing inbound_demand for node '{node}' at round {period_number}")
             inbound_supply_raw = raw_state.get("inbound_supply")
             if inbound_supply_raw is None:
                 inbound_supply_raw = []
@@ -4238,17 +4238,17 @@ class MixedScenarioService:
             combined_shipments = list(inbound_supply_raw)
             normalised_shipments = self._normalise_shipment_queue(
                 combined_shipments,
-                current_period=round_number,
+                current_period=period_number,
                 destination=node,
             )
             if (
                 not normalised_shipments
                 and master_type not in {"vendor", "customer", "manufacturer"}
-                and round_number == 1
+                and period_number == 1
             ):
                 raise ValueError(
                     f"Engine state missing inbound_supply for node '{node}' "
-                    f"(master_type={master_type}) at round {round_number}. "
+                    f"(master_type={master_type}) at round {period_number}. "
                     f"Raw entries: {len(inbound_supply_raw)}, "
                     f"After normalization: {len(normalised_shipments)}"
                 )
@@ -4304,7 +4304,7 @@ class MixedScenarioService:
         demand_map, demand_value = self._compute_market_round_demand(
             scenario,
             cfg,
-            round_number,
+            period_number,
             lane_views
         )
         
@@ -4321,19 +4321,19 @@ class MixedScenarioService:
             start_date = DEFAULT_START_DATE
             scenario.start_date = start_date
             
-        period_start = compute_period_start(start_date, round_number - 1, bucket)
+        period_start = compute_period_start(start_date, period_number - 1, bucket)
         period_end = compute_period_end(period_start, bucket)
         scenario.current_period_start = period_start
         
         round_record = (
             self.db.query(ScenarioPeriod)
-            .filter(ScenarioPeriod.scenario_id == scenario.id, ScenarioPeriod.round_number == round_number)
+            .filter(ScenarioPeriod.scenario_id == scenario.id, ScenarioPeriod.period_number == period_number)
             .first()
         )
         if not round_record:
             round_record = ScenarioPeriod(
                 scenario_id=scenario.id,
-                round_number=round_number,
+                period_number=period_number,
                 customer_demand=demand_value,
                 started_at=datetime.utcnow(),
                 period_start=period_start,
@@ -4352,7 +4352,7 @@ class MixedScenarioService:
                 round_record.period_end = period_end
 
         context = RoundContext(
-            round_number=round_number,
+            period_number=period_number,
             scenario_id=scenario.id,
             topology=topology,
             config=cfg,
@@ -6508,7 +6508,7 @@ class MixedScenarioService:
             self.db.query(ScenarioPeriod)
             .filter(
                 ScenarioPeriod.scenario_id == scenario_id,
-                ScenarioPeriod.round_number == scenario.current_period,
+                ScenarioPeriod.period_number == scenario.current_period,
             )
             .first()
         )
@@ -6793,7 +6793,7 @@ class MixedScenarioService:
             except Exception:
                 logger.debug("Unable to prepare debug log file during start_game for scenario %s", scenario.id)
 
-        # If the scenario was restarted but has lingering rounds/history, clear them.
+        # If the scenario was restarted but has lingering periods/history, clear them.
         existing_rounds = (
             self.db.query(ScenarioPeriod).filter(ScenarioPeriod.scenario_id == scenario.id).all()
         )
@@ -7102,7 +7102,7 @@ class MixedScenarioService:
             append_debug_round_log(
                 cfg,
                 scenario,
-                round_number=0,
+                period_number=0,
                 timestamp=datetime.utcnow(),
                 entries=initial_entries,
             )
@@ -7302,17 +7302,17 @@ class MixedScenarioService:
 
         total_rounds = scenario_obj.max_periods or 52
 
-        latest_round: Optional[ScenarioPeriod] = (
+        latest_period: Optional[ScenarioPeriod] = (
             self.db.query(ScenarioPeriod)
             .filter(ScenarioPeriod.scenario_id == scenario_obj.id)
-            .order_by(ScenarioPeriod.round_number.desc())
+            .order_by(ScenarioPeriod.period_number.desc())
             .first()
         )
-        if latest_round:
-            if latest_round.completed_at or latest_round.ended_at or latest_round.is_completed:
-                target_round = latest_round.round_number + 1
+        if latest_period:
+            if latest_period.completed_at or latest_period.ended_at or latest_period.is_completed:
+                target_round = latest_period.period_number + 1
             else:
-                target_round = latest_round.round_number
+                target_round = latest_period.period_number
         else:
             current_period_value = scenario_obj.current_period or 0
             target_round = current_period_value if current_period_value > 0 else 1
@@ -7349,7 +7349,7 @@ class MixedScenarioService:
         executor = SimulationExecutor(db=self.db, scenario=scenario_obj)
         executor._load_config()
         round_result = executor.execute_round(
-            round_number=target_round,
+            period_number=target_round,
             agent_decisions=agent_decisions,
             market_demand=market_demand,
         )
@@ -7357,7 +7357,7 @@ class MixedScenarioService:
         # Create ScenarioPeriod record
         round_record = ScenarioPeriod(
             scenario_id=scenario_obj.id,
-            round_number=target_round,
+            period_number=target_round,
             customer_demand=int(market_demand),
             is_completed=True,
             started_at=datetime.datetime.utcnow(),
@@ -7375,7 +7375,7 @@ class MixedScenarioService:
         return round_record
 
     def _get_sc_execution_agent_decisions(
-        self, scenario_obj: Scenario, round_number: int
+        self, scenario_obj: Scenario, period_number: int
     ) -> Dict[str, float]:
         """
         Compute agent order quantities for an SC execution round.
@@ -7386,7 +7386,7 @@ class MixedScenarioService:
 
         Args:
             scenario_obj: Scenario/Scenario instance
-            round_number: Current round number
+            period_number: Current round number
 
         Returns:
             Dict mapping site name → order quantity
@@ -7394,7 +7394,7 @@ class MixedScenarioService:
         from app.models.sc_entities import InvLevel
         from app.models.supply_chain_config import Site
 
-        demand = self._get_current_demand(scenario_obj, round_number)
+        demand = self._get_current_demand(scenario_obj, period_number)
 
         scenario_users = (
             self.db.query(ScenarioUser)
@@ -7518,17 +7518,17 @@ class MixedScenarioService:
         total_rounds = scenario_obj.max_periods or 50  # Default
 
         # Determine target round based on existing round records
-        latest_round: Optional[ScenarioPeriod] = (
+        latest_period: Optional[ScenarioPeriod] = (
             self.db.query(ScenarioPeriod)
             .filter(ScenarioPeriod.scenario_id == scenario_obj.id)
-            .order_by(ScenarioPeriod.round_number.desc())
+            .order_by(ScenarioPeriod.period_number.desc())
             .first()
         )
-        if latest_round:
-            if latest_round.completed_at or latest_round.ended_at or latest_round.is_completed:
-                target_round = latest_round.round_number + 1
+        if latest_period:
+            if latest_period.completed_at or latest_period.ended_at or latest_period.is_completed:
+                target_round = latest_period.period_number + 1
             else:
-                target_round = latest_round.round_number
+                target_round = latest_period.period_number
         else:
             # If a caller already primed current_period, respect it; otherwise start at 1
             current_period_value = scenario_obj.current_period or 0
@@ -7558,7 +7558,7 @@ class MixedScenarioService:
             flag_modified(scenario_obj, "config")
 
         # Initialize Round
-        context = self._initialize_round(scenario_obj, round_number=target_round)
+        context = self._initialize_round(scenario_obj, period_number=target_round)
         if not context:
             return None
 
@@ -7606,18 +7606,18 @@ class MixedScenarioService:
 
         # Determine target round
         total_rounds = scenario_obj.max_periods or 50
-        latest_round: Optional[ScenarioPeriod] = (
+        latest_period: Optional[ScenarioPeriod] = (
             self.db.query(ScenarioPeriod)
             .filter(ScenarioPeriod.scenario_id == scenario_obj.id)
-            .order_by(ScenarioPeriod.round_number.desc())
+            .order_by(ScenarioPeriod.period_number.desc())
             .first()
         )
 
-        if latest_round:
-            if latest_round.completed_at or latest_round.ended_at or latest_round.is_completed:
-                target_round = latest_round.round_number + 1
+        if latest_period:
+            if latest_period.completed_at or latest_period.ended_at or latest_period.is_completed:
+                target_round = latest_period.period_number + 1
             else:
-                target_round = latest_round.round_number
+                target_round = latest_period.period_number
         else:
             current_period_value = scenario_obj.current_period or 0
             target_round = current_period_value if current_period_value > 0 else 1
@@ -7644,7 +7644,7 @@ class MixedScenarioService:
 
         Simulation is an EXECUTION scenario, not a planning scenario.
         Planning (forecasts, inv policies) happens BEFORE the scenario starts.
-        Execution (work orders, fulfillment) happens DURING scenario rounds.
+        Execution (work orders, fulfillment) happens DURING scenario periods.
 
         This method runs the full SC execution cycle:
         1. Sync current scenario state (inventory, backlog) → inv_level
@@ -7760,7 +7760,7 @@ class MixedScenarioService:
 
             scenario_period = ScenarioPeriodModel(
                 scenario_id=scenario.id,
-                round_number=target_round,
+                period_number=target_round,
                 started_at=datetime.utcnow(),
                 is_completed=False,
                 notes=f"SC Execution Mode - {work_orders_created} work orders created"
@@ -7807,20 +7807,20 @@ class MixedScenarioService:
         total_rounds = scenario_obj.max_periods or 50
 
         # Determine target round
-        latest_round: Optional[ScenarioPeriod] = (
+        latest_period: Optional[ScenarioPeriod] = (
             self.db.query(ScenarioPeriod)
             .filter(ScenarioPeriod.scenario_id == scenario_obj.id)
-            .order_by(ScenarioPeriod.round_number.desc())
+            .order_by(ScenarioPeriod.period_number.desc())
             .first()
         )
 
-        if latest_round:
-            if latest_round.is_completed and latest_round.current_phase == PeriodPhase.COMPLETED:
-                target_round = latest_round.round_number + 1
+        if latest_period:
+            if latest_period.is_completed and latest_period.current_phase == PeriodPhase.COMPLETED:
+                target_round = latest_period.period_number + 1
             else:
                 # Round in progress - return existing round
-                target_round = latest_round.round_number
-                return latest_round
+                target_round = latest_period.period_number
+                return latest_period
         else:
             target_round = 1
 
@@ -7834,7 +7834,7 @@ class MixedScenarioService:
         # Create new round with FULFILLMENT phase
         round_record = ScenarioPeriod(
             scenario_id=scenario_obj.id,
-            round_number=target_round,
+            period_number=target_round,
             customer_demand=0,  # Will be set later
             is_completed=False,
             started_at=datetime.datetime.utcnow(),
@@ -7847,7 +7847,7 @@ class MixedScenarioService:
         # Process transfer order arrivals for this round
         self._process_transfer_order_arrivals(scenario_obj.id, target_round)
 
-        # Initialize scenario_user rounds (create skeleton records)
+        # Initialize scenario_user periods (create skeleton records)
         scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario_obj.id).all()
         for scenario_user in scenario_users:
             scenario_user_period = ScenarioUserPeriod(
@@ -7878,7 +7878,7 @@ class MixedScenarioService:
                 loop.create_task(manager.broadcast_to_scenario(scenario_obj.id, {
                     "type": "round_phase_change",
                     "scenario_id": scenario_obj.id,
-                    "round_number": target_round,
+                    "period_number": target_round,
                     "phase": "FULFILLMENT",
                 }))
         except Exception:
@@ -8011,7 +8011,7 @@ class MixedScenarioService:
 
             # Make agent decision
             decision = agent.make_decision(
-                current_period=round_obj.round_number,
+                current_period=round_obj.period_number,
                 current_demand=None,  # Not visible to upstream nodes
                 upstream_data=None,
                 local_state=local_state,
@@ -8167,7 +8167,7 @@ class MixedScenarioService:
             destination_site_id=downstream_lane.to_site_id,
             quantity=fulfill_qty,
             lead_time=lead_time,
-            round_number=round_obj.round_number,
+            period_number=round_obj.period_number,
             source_scenario_user_period_id=None,  # Will link ScenarioUserPeriod after creation
         )
 
@@ -8258,7 +8258,7 @@ class MixedScenarioService:
             destination_site_id=scenario_user.site_id,
             quantity=order_qty,
             lead_time=lead_time,
-            round_number=round_obj.round_number,
+            period_number=round_obj.period_number,
             source_scenario_user_period_id=None,
         )
 
@@ -8401,7 +8401,7 @@ class MixedScenarioService:
         self.db.commit()
 
         logger.info(
-            f"✅ Round {round_obj.round_number} phase transition: {old_phase} → {new_phase}"
+            f"✅ Round {round_obj.period_number} phase transition: {old_phase} → {new_phase}"
         )
 
         # Broadcast WebSocket message (best-effort, non-blocking)
@@ -8413,7 +8413,7 @@ class MixedScenarioService:
                 loop.create_task(manager.broadcast_to_scenario(scenario_obj.id, {
                     "type": "round_phase_change",
                     "scenario_id": scenario_obj.id,
-                    "round_number": round_obj.round_number,
+                    "period_number": round_obj.period_number,
                     "phase": new_phase,
                     "phase_started_at": round_obj.phase_started_at.isoformat() if round_obj.phase_started_at else None,
                 }))
@@ -8443,7 +8443,7 @@ class MixedScenarioService:
                 self.db.query(RLHFFeedback)
                 .filter(
                     RLHFFeedback.scenario_id == scenario_obj.id,
-                    RLHFFeedback.round_number == round_obj.round_number,
+                    RLHFFeedback.period_number == round_obj.period_number,
                     RLHFFeedback.preference_label == "unknown"
                 )
                 .all()
@@ -8453,7 +8453,7 @@ class MixedScenarioService:
                 return
 
             logger.info(
-                f"📊 Updating RLHF preference labels for round {round_obj.round_number}: "
+                f"📊 Updating RLHF preference labels for round {round_obj.period_number}: "
                 f"{len(feedbacks)} feedback records"
             )
 
@@ -8516,7 +8516,7 @@ class MixedScenarioService:
                     human_outcome=human_outcome
                 )
 
-            logger.info(f"✅ Updated RLHF preference labels for round {round_obj.round_number}")
+            logger.info(f"✅ Updated RLHF preference labels for round {round_obj.period_number}")
 
         except Exception as e:
             logger.error(f"Failed to update RLHF preference labels: {e}", exc_info=True)
@@ -8530,13 +8530,13 @@ class MixedScenarioService:
         fulfilled = scenario_user_period.quantity_shipped or 0
         return min(1.0, fulfilled / demand) if demand > 0 else 1.0
 
-    def _get_current_demand(self, scenario: Scenario, round_number: int) -> float:
+    def _get_current_demand(self, scenario: Scenario, period_number: int) -> float:
         """
         Get current customer demand for this round
 
         Args:
             scenario: Scenario instance
-            round_number: Current round
+            period_number: Current round
 
         Returns:
             Demand quantity
@@ -8552,13 +8552,13 @@ class MixedScenarioService:
             initial = demand_pattern.get('initial', 4)
             step_week = demand_pattern.get('step_week', 5)
             step_value = demand_pattern.get('step_value', 8)
-            return float(step_value if round_number >= step_week else initial)
+            return float(step_value if period_number >= step_week else initial)
         elif pattern_type == 'constant':
             return float(demand_pattern.get('value', 4))
         elif 'weeks' in demand_pattern:
             weeks = demand_pattern['weeks']
-            if round_number < len(weeks):
-                return float(weeks[round_number])
+            if period_number < len(weeks):
+                return float(weeks[period_number])
             else:
                 return float(weeks[-1]) if weeks else 4.0
         else:
@@ -8567,7 +8567,7 @@ class MixedScenarioService:
     async def _get_scenario_user_orders_for_round(
         self,
         scenario: Scenario,
-        round_number: int,
+        period_number: int,
         db
     ) -> Dict[str, float]:
         """
@@ -8578,7 +8578,7 @@ class MixedScenarioService:
 
         Args:
             scenario: Scenario instance
-            round_number: Current round
+            period_number: Current round
             db: Database session
 
         Returns:
@@ -8593,7 +8593,7 @@ class MixedScenarioService:
         scenario_users = result.scalars().all()
 
         scenario_user_orders = {}
-        demand = self._get_current_demand(scenario, round_number)
+        demand = self._get_current_demand(scenario, period_number)
 
         # Naive strategy: order = demand
         for scenario_user in scenario_users:
@@ -8605,7 +8605,7 @@ class MixedScenarioService:
         self,
         scenario: Scenario,
         scenario_user_orders: Dict[str, float],
-        round_number: int,
+        period_number: int,
         db
     ) -> None:
         """
@@ -8616,7 +8616,7 @@ class MixedScenarioService:
         Args:
             scenario: Scenario instance
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current round number
+            period_number: Current round number
             db: Async database session
         """
         logger.info(f"    Applying {len(scenario_user_orders)} orders to scenario state...")
@@ -8636,7 +8636,7 @@ class MixedScenarioService:
             # Update order history
             order_history = node_state.get("order_history", [])
             order_history.append({
-                "round": round_number,
+                "round": period_number,
                 "quantity": int(order_qty),
                 "source": "sc_planner"
             })
@@ -8753,7 +8753,7 @@ class MixedScenarioService:
         # 1. Downstream orders (current demand)
         upstream_data["downstream_orders"] = node_state.current_round_demand
         
-        # 2. Historical context from previous rounds and demand smoothing
+        # 2. Historical context from previous periods and demand smoothing
         history = (scenario.config or {}).get("history", [])
         policy = context.node_policies.get(node_key, {}) if hasattr(context, "node_policies") else {}
         order_lead = int(policy.get("order_leadtime", 0) or 0)
@@ -8855,7 +8855,7 @@ class MixedScenarioService:
                 upstream_data["previous_orders"] = upstream_node_history
 
         # Make decision
-        current_period_number = getattr(context.round_record, "round_number", None) or context.round_number
+        current_period_number = getattr(context.round_record, "period_number", None) or context.period_number
         aggregate_demand = sum(node_state.current_round_demand.values())
         local_state = {
             "inventory": sum(node_state.inventory_by_item.values()),
@@ -9038,7 +9038,7 @@ class MixedScenarioService:
             product_id=primary_item_id,
             source=node_key,
             quantity=quantity,
-            due_round=scenario_period.round_number + lead_time,
+            due_round=scenario_period.period_number + lead_time,
             downstream=node_key,  # The one placing the order
             step_number=current_period_number,
         )
@@ -9147,7 +9147,7 @@ class MixedScenarioService:
     
     def complete_round(self, scenario_period: ScenarioPeriod) -> None:
         """Complete the current round, updating scenario_user inventories and costs."""
-        # Get all scenario_user rounds for this scenario round
+        # Get all scenario_user periods for this scenario round
         scenario_user_periods = self.db.query(ScenarioUserPeriod).filter(
             ScenarioUserPeriod.scenario_period_id == scenario_period.id
         ).all()
@@ -9380,19 +9380,19 @@ class MixedScenarioService:
 
         config_history_payload = MixedScenarioService._json_clone(cfg.get("history") or [])
         config_history_observed_types: Set[str] = set()
-        rounds = (
+        periods = (
             self.db.query(ScenarioPeriod)
             .filter(ScenarioPeriod.scenario_id == scenario_id)
-            .order_by(ScenarioPeriod.round_number.asc())
+            .order_by(ScenarioPeriod.period_number.asc())
             .all()
         )
 
         history_map: Dict[int, Dict[str, Any]] = {}
-        def ensure_history_entry(round_number: int) -> Dict[str, Any]:
-            if round_number in history_map:
-                return history_map[round_number]
+        def ensure_history_entry(period_number: int) -> Dict[str, Any]:
+            if period_number in history_map:
+                return history_map[period_number]
             entry = {
-                "round": round_number,
+                "round": period_number,
                 "demand": None,
                 "orders": {},
                 "node_orders": {},
@@ -9404,7 +9404,7 @@ class MixedScenarioService:
                 "period_start": None,
                 "period_end": None,
             }
-            history_map[round_number] = entry
+            history_map[period_number] = entry
             return entry
         demand_series: List[Dict[str, Any]] = []
         bucket = normalize_time_bucket(getattr(scenario, "time_bucket", TimeBucket.WEEK))
@@ -9415,29 +9415,29 @@ class MixedScenarioService:
 
         # Ensure reports always start at round 1 by inserting a placeholder if the
         # first stored round begins later (legacy runs).
-        if rounds and rounds[0].round_number > 1:
-            first = rounds[0]
+        if periods and periods[0].period_number > 1:
+            first = periods[0]
             placeholder_start = compute_period_start(start_date, 0, bucket)
             placeholder_end = compute_period_end(placeholder_start, bucket)
             placeholder = ScenarioPeriod(
                 scenario_id=first.scenario_id,
-                round_number=1,
+                period_number=1,
                 customer_demand=first.customer_demand,
                 period_start=placeholder_start,
                 period_end=placeholder_end,
             )
-            rounds = [placeholder] + rounds
+            periods = [placeholder] + periods
 
-        for round_obj in rounds:
+        for round_obj in periods:
             period_start = round_obj.period_start or compute_period_start(
                 start_date,
-                max(0, round_obj.round_number - 1),
+                max(0, round_obj.period_number - 1),
                 bucket,
             )
             period_end = round_obj.period_end or compute_period_end(period_start, bucket)
 
-            history_map[round_obj.round_number] = {
-                "round": round_obj.round_number,
+            history_map[round_obj.period_number] = {
+                "round": round_obj.period_number,
                 "demand": round_obj.customer_demand,
                 "orders": {},
                 "node_orders": {},
@@ -9451,7 +9451,7 @@ class MixedScenarioService:
             }
             demand_series.append(
                 {
-                    "round": round_obj.round_number,
+                    "round": round_obj.period_number,
                     "demand": round_obj.customer_demand,
                     "period_start": period_start.isoformat() if period_start else None,
                     "period_end": period_end.isoformat() if period_end else None,
@@ -9463,12 +9463,12 @@ class MixedScenarioService:
             .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
             .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
             .filter(ScenarioPeriod.scenario_id == scenario_id)
-            .order_by(ScenarioPeriod.round_number.asc())
+            .order_by(ScenarioPeriod.period_number.asc())
             .all()
         )
 
         for scenario_user_period, round_obj, scenario_user in scenario_user_period_records:
-            entry = ensure_history_entry(round_obj.round_number)
+            entry = ensure_history_entry(round_obj.period_number)
             entry.setdefault("orders", {})
             entry.setdefault("node_orders", {})
             entry.setdefault("node_states", {})
@@ -9547,7 +9547,7 @@ class MixedScenarioService:
             }
 
             order_series[node_type or node_key].append(
-                {"round": round_obj.round_number, "quantity": scenario_user_period.order_placed}
+                {"round": round_obj.period_number, "quantity": scenario_user_period.order_placed}
             )
 
             totals_entry = role_totals.setdefault(
@@ -9574,9 +9574,9 @@ class MixedScenarioService:
             for entry in config_history_payload:
                 if not isinstance(entry, dict):
                     continue
-                round_number = entry.get("round")
+                period_number = entry.get("round")
                 try:
-                    round_index = int(round_number)
+                    round_index = int(period_number)
                 except (TypeError, ValueError):
                     continue
                 history_entry = ensure_history_entry(round_index)
@@ -9712,9 +9712,9 @@ class MixedScenarioService:
 
         if sankey_history_lookup and history:
             for entry in history:
-                round_number = entry.get("round")
+                period_number = entry.get("round")
                 try:
-                    round_index = int(round_number)
+                    round_index = int(period_number)
                 except (TypeError, ValueError):
                     continue
                 sankey_entry = sankey_history_lookup.get(round_index)
@@ -9766,9 +9766,9 @@ class MixedScenarioService:
                 entry["shipments"] = {src: dict(targets) for src, targets in reconstructed.items()}
 
         for entry in history:
-            round_number = entry.get("round")
+            period_number = entry.get("round")
             try:
-                round_index = int(round_number)
+                round_index = int(period_number)
             except (TypeError, ValueError):
                 continue
             node_states = entry.get("node_states") or {}
@@ -9970,7 +9970,7 @@ class MixedScenarioService:
             "config": config_payload,
         }
     
-    def calculate_demand(self, scenario: Scenario, round_number: int) -> int:
+    def calculate_demand(self, scenario: Scenario, period_number: int) -> int:
         """Calculate demand for a given round based on the scenario's demand pattern."""
 
         cfg = dict(getattr(scenario, "config", {}) or {})
@@ -10002,7 +10002,7 @@ class MixedScenarioService:
         demand_map, total = MixedScenarioService._compute_market_round_demand(
             scenario,
             cfg,
-            round_number,
+            period_number,
             lane_views,
         )
 
@@ -10292,7 +10292,7 @@ class MixedScenarioService:
 
         history_payload: List[Dict[str, Any]] = []
         current_period_number = (
-            current_period.round_number if current_period is not None else scenario_record.get("current_period", 0)
+            current_period.period_number if current_period is not None else scenario_record.get("current_period", 0)
         )
 
         if isinstance(engine_state, dict) and engine_state:

@@ -430,7 +430,7 @@ class CTPService:
         yield_rate = self._get_yield_rate(node)
 
         for period_offset in range(1, periods + 1):
-            future_round = current_period.round_number + period_offset
+            future_round = current_period.period_number + period_offset
 
             # Get production commitments for future periods from ProductionOrder
             commitments = 0
@@ -576,17 +576,17 @@ class CTPService:
 
         if quantity <= ctp_result.ctp:
             # Can fulfill immediately
-            earliest_date = current_period.round_number + total_lead_time
+            earliest_date = current_period.period_number + total_lead_time
             confidence = 0.95  # High confidence
             breakdown.append(
                 f"Current CTP ({ctp_result.ctp} units) >= requested quantity ({quantity} units)"
             )
             breakdown.append(
-                f"Production lead time: {production_lead_time} rounds"
+                f"Production lead time: {production_lead_time} periods"
             )
-            breakdown.append(f"Shipping lead time: {shipping_lead_time} rounds")
+            breakdown.append(f"Shipping lead time: {shipping_lead_time} periods")
             breakdown.append(
-                f"Earliest delivery: Round {earliest_date} ({total_lead_time} rounds from now)"
+                f"Earliest delivery: Round {earliest_date} ({total_lead_time} periods from now)"
             )
         else:
             # Need to find future period with sufficient CTP
@@ -609,10 +609,10 @@ class CTPService:
                         f"Sufficient capacity available in Round {period.period} (CTP: {period.ctp})"
                     )
                     breakdown.append(
-                        f"Production lead time: {production_lead_time} rounds"
+                        f"Production lead time: {production_lead_time} periods"
                     )
                     breakdown.append(
-                        f"Shipping lead time: {shipping_lead_time} rounds"
+                        f"Shipping lead time: {shipping_lead_time} periods"
                     )
                     breakdown.append(
                         f"Earliest delivery: Round {earliest_date}"
@@ -622,10 +622,10 @@ class CTPService:
 
             if not found:
                 # Cannot fulfill within projection window
-                earliest_date = current_period.round_number + 8 + total_lead_time
+                earliest_date = current_period.period_number + 8 + total_lead_time
                 confidence = 0.3  # Low confidence
                 breakdown.append(
-                    f"Requested quantity ({quantity} units) exceeds CTP for next 8 rounds"
+                    f"Requested quantity ({quantity} units) exceeds CTP for next 8 periods"
                 )
                 breakdown.append(
                     f"Earliest possible delivery: Round {earliest_date} (estimated)"
@@ -750,7 +750,7 @@ class CTPService:
         ).first()
         if lane and lane.supply_lead_time:
             return max(1, lane.supply_lead_time)
-        return 2  # Default 2 rounds
+        return 2  # Default 2 periods
 
     def _get_component_atp(
         self,

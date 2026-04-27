@@ -442,7 +442,7 @@ class ChatService:
 
         Includes:
         - Current inventory, backlog, pipeline
-        - Recent demand history (last 10 rounds)
+        - Recent demand history (last 10 periods)
         - Forecast demand
         - Historical performance metrics
         - Bullwhip detection
@@ -474,7 +474,7 @@ class ChatService:
         if not scenario_user:
             raise ValueError(f"No scenario_user found for agent {agent_name} in scenario {scenario_id}")
 
-        # Get recent scenario_user rounds (last 10)
+        # Get recent scenario_user periods (last 10)
         rounds_result = await self.db.execute(
             select(ScenarioUserPeriod)
             .filter(ScenarioUserPeriod.scenario_user_id == scenario_user.id)
@@ -544,7 +544,7 @@ class ChatService:
         forecast_confidence = 0.5
 
         if len(recent_demand) >= 3:
-            # Use last 3 rounds for forecast
+            # Use last 3 periods for forecast
             forecast_demand = sum(recent_demand[-3:]) / 3
             forecast_confidence = 0.7
         elif recent_demand:
@@ -555,7 +555,7 @@ class ChatService:
         pipeline_orders = []
         if current_period and hasattr(scenario_user, 'lead_time') and scenario_user.lead_time:
             lead_time = scenario_user.lead_time
-            # Look back through recent rounds within lead time
+            # Look back through recent periods within lead time
             for r in recent_rounds[:lead_time]:
                 if hasattr(r, 'order_placed') and r.order_placed:
                     eta_rounds = lead_time - (scenario.current_period - r.round)

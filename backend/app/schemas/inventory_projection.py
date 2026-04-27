@@ -88,7 +88,7 @@ class InvProjectionBase(BaseModel):
     # Simulation integration
     config_id: Optional[int] = None
     scenario_id: Optional[int] = None
-    round_number: Optional[int] = None
+    period_number: Optional[int] = None
 
 
 class InvProjectionCreate(InvProjectionBase):

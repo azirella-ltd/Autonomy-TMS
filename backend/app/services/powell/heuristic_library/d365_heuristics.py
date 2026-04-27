@@ -751,7 +751,7 @@ class D365Heuristics(BaseHeuristics):
 
         D365 Asset Management uses:
           - Maintenance plans (time/counter-based)
-          - Maintenance rounds (grouped equipment inspections)
+          - Maintenance periods (grouped equipment inspections)
           - Work orders with lifecycle states
           - Integration with production scheduling (maintenance downtime)
 

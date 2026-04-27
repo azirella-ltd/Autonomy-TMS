@@ -401,7 +401,7 @@ class StochasticSampler:
             default_value: Fallback value if distribution is NULL
 
         Returns:
-            Sampled supply lead time in rounds (always >= 0)
+            Sampled supply lead time in periods (always >= 0)
         """
         if not lane:
             return default_value
@@ -443,7 +443,7 @@ class StochasticSampler:
             default_value: Fallback value if distribution is NULL
 
         Returns:
-            Sampled demand lead time in rounds (always >= 0)
+            Sampled demand lead time in periods (always >= 0)
         """
         if not lane:
             return default_value

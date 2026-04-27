@@ -43,7 +43,7 @@ class SupplyChainDataset(Dataset):
         samples = []
         
         for scenario in self.scenarios:
-            num_rounds = len(scenario['rounds'])
+            num_periods = len(scenario['periods'])
             roles = scenario['roles']
             num_roles = len(roles)
             
@@ -59,8 +59,8 @@ class SupplyChainDataset(Dataset):
             edge_attr = torch.ones((edge_index.size(1), len(self.edge_attr)))
             
             # Create node features and targets for each time step
-            for t in range(self.seq_len, num_rounds):
-                # Get sequence of rounds
+            for t in range(self.seq_len, num_periods):
+                # Get sequence of periods
                 seq_start = t - self.seq_len
                 seq_end = t
                 
@@ -71,10 +71,10 @@ class SupplyChainDataset(Dataset):
                 
                 # Fill node features
                 for i in range(self.seq_len):
-                    round_data = scenario['rounds'][seq_start + i]
+                    period_data = scenario['periods'][seq_start + i]
                     for j, role in enumerate(roles):
                         # Find decision for this role
-                        for decision in round_data['decisions']:
+                        for decision in period_data['decisions']:
                             if decision['role'] == role:
                                 x[i, j, 0] = decision['inventory']
                                 x[i, j, 1] = decision['order_quantity']
@@ -84,7 +84,7 @@ class SupplyChainDataset(Dataset):
                                 break
                 
                 # Set targets (next time step)
-                next_round = scenario['rounds'][seq_end]
+                next_round = scenario['periods'][seq_end]
                 for j, role in enumerate(roles):
                     for decision in next_round['decisions']:
                         if decision['role'] == role:
@@ -102,7 +102,7 @@ class SupplyChainDataset(Dataset):
                     'y_order': y_order,
                     'y_demand': y_demand,
                     'scenario_id': scenario['name'],
-                    'round_num': t
+                    'period_num': t
                 })
         
         return samples
@@ -131,7 +131,7 @@ class SupplyChainDataset(Dataset):
             y_order=sample['y_order'],
             y_demand=sample['y_demand'],
             scenario_id=sample['scenario_id'],
-            round_num=sample['round_num']
+            period_num=sample['period_num']
         )
 
 def create_data_loaders(

@@ -161,22 +161,12 @@ class NegotiationService:
         - Service levels
         """
         try:
-            # Get current state for both scenario_users
-            # Round → Period rename (MR 1.12): table `rounds` is now
-            # `scenario_periods`, column `round_number` is now
-            # `period_number`. scenario_user_periods carries the FK
-            # `scenario_period_id`, not the old `round_number`. Joining
-            # through scenario_periods to filter on the latest period
-            # for this scenario.
-            #
-            # Two unrelated drift fixes folded in here so the query
-            # actually executes:
-            #   * `pr.backlog_after` → `pr.backorders_after` (the
-            #     column was renamed in the same period sweep).
-            #   * `pr.service_level` removed — there is no service_level
-            #     column on scenario_user_periods. The downstream
-            #     simulators only consume inventory_after, so it was
-            #     unused dead select-list anyway.
+            # Get current state for both scenario_users.
+            # scenario_user_periods carries `scenario_period_id` as the
+            # FK to scenario_periods; the period filter joins through
+            # to get period_number. service_level is not on this table
+            # and was dropped from the SELECT — downstream simulators
+            # only consume inventory_after.
             query = text("""
                 SELECT
                     p.id,
@@ -304,7 +294,7 @@ class NegotiationService:
 
         return {
             "initiator": {
-                "lead_time_impact": f"{abs(lead_time_change)} rounds {'faster' if lead_time_change < 0 else 'slower'}",
+                "lead_time_impact": f"{abs(lead_time_change)} periods {'faster' if lead_time_change < 0 else 'slower'}",
                 "cost_impact": -compensation if compensation > 0 else 0,
                 "benefit": "faster delivery" if lead_time_change < 0 else "more planning time"
             },
@@ -313,7 +303,7 @@ class NegotiationService:
                 "cost_impact": compensation if compensation > 0 else 0,
                 "burden": "increased pressure" if lead_time_change < 0 else "more flexibility"
             },
-            "summary": f"Lead time {'reduced' if lead_time_change < 0 else 'increased'} by {abs(lead_time_change)} rounds"
+            "summary": f"Lead time {'reduced' if lead_time_change < 0 else 'increased'} by {abs(lead_time_change)} periods"
         }
 
     def _simulate_price_adjustment(

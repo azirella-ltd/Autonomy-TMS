@@ -170,7 +170,7 @@ class AgentOrchestrationIntegration:
         self,
         scenario_user: ScenarioUser,
         scenario: Scenario,
-        round_number: int,
+        period_number: int,
         agent_type: str,
         decision: int,
         outcome_metrics: Dict[str, float]
@@ -181,7 +181,7 @@ class AgentOrchestrationIntegration:
         Args:
             scenario_user: ScenarioUser who made decision
             scenario: Scenario context
-            round_number: Round number
+            period_number: Round number
             agent_type: Agent type that made decision (llm, gnn, trm, ensemble)
             decision: Order quantity decided
             outcome_metrics: Performance metrics (cost, service_level, inventory, etc.)
@@ -200,7 +200,7 @@ class AgentOrchestrationIntegration:
         performance_metrics = PerformanceMetrics(
             scenario_user_id=scenario_user.id,
             scenario_id=scenario.id,
-            round_number=round_number,
+            period_number=period_number,
             agent_type=agent_type,
             agent_mode=scenario_user.agent_mode or "manual",
             total_cost=total_cost,
@@ -236,7 +236,7 @@ class AgentOrchestrationIntegration:
             self.ensemble.agent_weights = new_weights
 
             logger.info(
-                f"Updated weights after round {round_number}: {new_weights}, "
+                f"Updated weights after round {period_number}: {new_weights}, "
                 f"performance_score={performance_score:.3f}"
             )
 
@@ -244,7 +244,7 @@ class AgentOrchestrationIntegration:
         self,
         scenario_user: ScenarioUser,
         scenario: Scenario,
-        round_number: int,
+        period_number: int,
         agent_type: str,
         scenario_state: Dict[str, Any],
         ai_suggestion: int,
@@ -258,7 +258,7 @@ class AgentOrchestrationIntegration:
         Args:
             scenario_user: ScenarioUser who made decision
             scenario: Scenario context
-            round_number: Round number
+            period_number: Round number
             agent_type: AI agent type (llm, gnn, trm)
             scenario_state: Current scenario state
             ai_suggestion: What AI recommended
@@ -272,7 +272,7 @@ class AgentOrchestrationIntegration:
         feedback_id = self.rlhf_collector.record_feedback(
             scenario_user_id=scenario_user.id,
             scenario_id=scenario.id,
-            round_number=round_number,
+            period_number=period_number,
             agent_type=agent_type,
             scenario_state=scenario_state,
             ai_suggestion=ai_suggestion,
@@ -282,7 +282,7 @@ class AgentOrchestrationIntegration:
         )
 
         logger.info(
-            f"Recorded RLHF feedback for scenario_user {scenario_user.id} round {round_number}: "
+            f"Recorded RLHF feedback for scenario_user {scenario_user.id} round {period_number}: "
             f"ai_suggested={ai_suggestion}, human_chose={human_decision}, "
             f"feedback_id={feedback_id}"
         )
@@ -346,7 +346,7 @@ class AgentOrchestrationIntegration:
                     perf_summary = self.tracker.get_agent_performance_summary(
                         scenario_id=scenario_id,
                         agent_type=agent_type,
-                        min_rounds=5
+                        min_periods=5
                     )
                     if not perf_summary.get("insufficient_data"):
                         summary[f"{agent_type}_performance"] = perf_summary

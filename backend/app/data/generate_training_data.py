@@ -244,7 +244,7 @@ def save_synthetic_game(db: Session, scenario_data: Dict[str, Any]) -> models.Sc
         )
         crud.scenario_user.create(db, obj_in=player_in)
     
-    # Create rounds and decisions
+    # Create periods and decisions
     for period_num, period_data in enumerate(scenario_data["periods"], 1):
         round_in = schemas.RoundCreate(
             scenario_id=scenario.id,

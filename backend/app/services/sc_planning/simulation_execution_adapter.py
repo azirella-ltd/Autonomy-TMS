@@ -22,7 +22,7 @@ Work Order Types:
 
 Planning vs Execution Separation:
 - Planning: Happens BEFORE the scenario starts (forecast, inv policies, sourcing rules)
-- Execution: Happens DURING the scenario rounds (work orders, fulfillment, inventory updates)
+- Execution: Happens DURING the scenario periods (work orders, fulfillment, inventory updates)
 
 References:
 - SC Work Orders: https://docs.[removed]
@@ -123,7 +123,7 @@ class SimulationExecutionAdapter:
     # STATE SYNCHRONIZATION (Scenario → SC)
     # ============================================================================
 
-    async def sync_inventory_levels(self, round_number: int) -> int:
+    async def sync_inventory_levels(self, period_number: int) -> int:
         """
         Sync current scenario inventory to inv_level table (execution snapshot)
 
@@ -131,12 +131,12 @@ class SimulationExecutionAdapter:
         so SC can track on-hand quantities during execution.
 
         Args:
-            round_number: Current scenario round
+            period_number: Current scenario round
 
         Returns:
             Number of inv_level records created/updated
         """
-        print(f"  Syncing inventory levels for round {round_number}...")
+        print(f"  Syncing inventory levels for round {period_number}...")
 
         # Get all scenario_users in this scenario
         result = await self.db.execute(
@@ -157,7 +157,7 @@ class SimulationExecutionAdapter:
         )
 
         records_created = 0
-        snapshot_date = self.scenario.start_date + timedelta(days=round_number * 7)
+        snapshot_date = self.scenario.start_date + timedelta(days=period_number * 7)
 
         # Get item (simulation typically has 1 product)
         if not item:
@@ -174,7 +174,7 @@ class SimulationExecutionAdapter:
 
             # Get scenario_user's current inventory and backlog from scenario state
             inventory_qty, backlog_qty = self._get_scenario_user_inventory_and_backlog(
-                scenario_user, round_number
+                scenario_user, period_number
             )
 
             # Calculate in-transit quantity from open inbound orders
@@ -239,14 +239,14 @@ class SimulationExecutionAdapter:
     def _get_scenario_user_inventory_and_backlog(
         self,
         scenario_user: ScenarioUser,
-        round_number: int
+        period_number: int
     ) -> Tuple[float, float]:
         """
         Extract scenario_user's current inventory and backlog from scenario state
 
         Args:
             scenario_user: ScenarioUser instance
-            round_number: Current round
+            period_number: Current round
 
         Returns:
             Tuple of (inventory, backlog)
@@ -268,7 +268,7 @@ class SimulationExecutionAdapter:
         self,
         role: str,
         demand_qty: float,
-        round_number: int
+        period_number: int
     ) -> None:
         """
         Record actual customer demand in outbound_order_line table
@@ -279,7 +279,7 @@ class SimulationExecutionAdapter:
         Args:
             role: ScenarioUser role (typically Retailer)
             demand_qty: Actual demand quantity
-            round_number: Current scenario round
+            period_number: Current scenario round
         """
         print(f"    Recording customer demand: {role} = {demand_qty}")
 
@@ -292,11 +292,11 @@ class SimulationExecutionAdapter:
             print(f"    ⚠️  Cannot record demand: node or item not found")
             return
 
-        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=period_number * 7)
 
         # Create outbound order line (execution record)
         order_line = OutboundOrderLine(
-            order_id=f"SCENARIO_{self.scenario.id}_R{round_number}",
+            order_id=f"SCENARIO_{self.scenario.id}_R{period_number}",
             line_number=1,
             product_id=item.id,
             site_id=node.id,
@@ -317,7 +317,7 @@ class SimulationExecutionAdapter:
             tenant_id=self.tenant_id,
             config_id=self.config_id,
             scenario_id=self.scenario.id,
-            round_number=round_number
+            period_number=period_number
         )
 
         self.db.add(order_line)
@@ -332,7 +332,7 @@ class SimulationExecutionAdapter:
     async def create_work_orders(
         self,
         scenario_user_orders: Dict[str, float],
-        round_number: int
+        period_number: int
     ) -> int:
         """
         Create inbound work orders (TO/MO/PO) from scenario_user order decisions
@@ -341,12 +341,12 @@ class SimulationExecutionAdapter:
 
         Args:
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current scenario round
+            period_number: Current scenario round
 
         Returns:
             Number of work orders created
         """
-        print(f"  Creating work orders for round {round_number}...")
+        print(f"  Creating work orders for round {period_number}...")
 
         await self._refresh_sites()
         await self._refresh_lanes()
@@ -356,7 +356,7 @@ class SimulationExecutionAdapter:
             print(f"    ⚠️  No item found")
             return 0
 
-        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=period_number * 7)
         orders_created = 0
 
         for role, order_qty in scenario_user_orders.items():
@@ -397,7 +397,7 @@ class SimulationExecutionAdapter:
 
             # Create inbound order line (work order)
             inbound_order = InboundOrderLine(
-                order_id=f"SCENARIO_{self.scenario.id}_R{round_number}_{role}",
+                order_id=f"SCENARIO_{self.scenario.id}_R{period_number}_{role}",
                 line_number=1,
                 product_id=item.id,
                 to_site_id=node.id,
@@ -426,7 +426,7 @@ class SimulationExecutionAdapter:
                 tenant_id=self.tenant_id,
                 config_id=self.config_id,
                 scenario_id=self.scenario.id,
-                round_number=round_number
+                period_number=period_number
             )
 
             self.db.add(inbound_order)
@@ -443,7 +443,7 @@ class SimulationExecutionAdapter:
     async def create_work_orders_batch(
         self,
         scenario_user_orders: Dict[str, float],
-        round_number: int
+        period_number: int
     ) -> int:
         """
         Create inbound work orders using batch insert (PHASE 3 - Performance optimization)
@@ -453,12 +453,12 @@ class SimulationExecutionAdapter:
 
         Args:
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current scenario round
+            period_number: Current scenario round
 
         Returns:
             Number of work orders created
         """
-        print(f"  Creating work orders (BATCH) for round {round_number}...")
+        print(f"  Creating work orders (BATCH) for round {period_number}...")
 
         # Ensure cache is loaded
         if self.cache and not self.cache.is_loaded():
@@ -473,7 +473,7 @@ class SimulationExecutionAdapter:
             print(f"    ⚠️  No item found")
             return 0
 
-        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=period_number * 7)
 
         # Build all work orders in memory first
         work_orders = []
@@ -532,7 +532,7 @@ class SimulationExecutionAdapter:
 
             # Create work order object (don't add to session yet)
             work_order = InboundOrderLine(
-                order_id=f"SCENARIO_{self.scenario.id}_R{round_number}_{role}",
+                order_id=f"SCENARIO_{self.scenario.id}_R{period_number}_{role}",
                 line_number=1,
                 product_id=item.id,
                 to_site_id=node.id,
@@ -555,7 +555,7 @@ class SimulationExecutionAdapter:
                 tenant_id=self.tenant_id,
                 config_id=self.config_id,
                 scenario_id=self.scenario.id,
-                round_number=round_number
+                period_number=period_number
             )
 
             work_orders.append(work_order)
@@ -626,7 +626,7 @@ class SimulationExecutionAdapter:
 
         return order_type, lead_time_days
 
-    async def process_deliveries(self, round_number: int) -> Dict[str, float]:
+    async def process_deliveries(self, period_number: int) -> Dict[str, float]:
         """
         Process work order deliveries that arrive this round
 
@@ -634,14 +634,14 @@ class SimulationExecutionAdapter:
         and marks them as received.
 
         Args:
-            round_number: Current scenario round
+            period_number: Current scenario round
 
         Returns:
             Dict mapping role → total received quantity
         """
-        print(f"  Processing deliveries for round {round_number}...")
+        print(f"  Processing deliveries for round {period_number}...")
 
-        current_date = self.scenario.start_date + timedelta(days=round_number * 7)
+        current_date = self.scenario.start_date + timedelta(days=period_number * 7)
 
         # Find all open orders due for delivery
         result = await self.db.execute(
@@ -719,7 +719,7 @@ class SimulationExecutionAdapter:
     async def create_work_orders_with_capacity(
         self,
         scenario_user_orders: Dict[str, float],
-        round_number: int
+        period_number: int
     ) -> Dict[str, any]:
         """
         Create work orders with capacity constraints (Phase 3 - Sprint 2)
@@ -729,7 +729,7 @@ class SimulationExecutionAdapter:
 
         Args:
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current scenario round
+            period_number: Current scenario round
 
         Returns:
             {
@@ -739,7 +739,7 @@ class SimulationExecutionAdapter:
                 'capacity_used': Dict[str, float]  # Capacity consumed per site
             }
         """
-        print(f"  Creating work orders with CAPACITY constraints for round {round_number}...")
+        print(f"  Creating work orders with CAPACITY constraints for round {period_number}...")
 
         # Ensure cache is loaded
         if self.cache and not self.cache.is_loaded():
@@ -754,7 +754,7 @@ class SimulationExecutionAdapter:
             print(f"    ⚠️  No item found")
             return {'created': [], 'queued': [], 'rejected': [], 'capacity_used': {}}
 
-        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=period_number * 7)
 
         created = []
         queued = []
@@ -809,7 +809,7 @@ class SimulationExecutionAdapter:
                 # No capacity constraint - create order normally
                 work_order = self._build_work_order(
                     role, order_qty, item, node, upstream_node,
-                    order_type, lead_time_days, order_date, round_number
+                    order_type, lead_time_days, order_date, period_number
                 )
                 created.append(work_order)
                 print(f"    ✓ {role}: {order_type} order {order_qty} (no capacity limit)")
@@ -822,7 +822,7 @@ class SimulationExecutionAdapter:
                 # Fits within capacity
                 work_order = self._build_work_order(
                     role, order_qty, item, node, upstream_node,
-                    order_type, lead_time_days, order_date, round_number
+                    order_type, lead_time_days, order_date, period_number
                 )
                 capacity.current_capacity_used += order_qty
                 capacity_used[upstream_node.name] = capacity.current_capacity_used
@@ -834,7 +834,7 @@ class SimulationExecutionAdapter:
                 # Overflow allowed - create order with cost multiplier
                 work_order = self._build_work_order(
                     role, order_qty, item, node, upstream_node,
-                    order_type, lead_time_days, order_date, round_number
+                    order_type, lead_time_days, order_date, period_number
                 )
                 # Apply overflow cost
                 work_order.cost = (work_order.cost or 0) * capacity.overflow_cost_multiplier
@@ -850,7 +850,7 @@ class SimulationExecutionAdapter:
                     # Partial fulfillment
                     work_order = self._build_work_order(
                         role, available, item, node, upstream_node,
-                        order_type, lead_time_days, order_date, round_number
+                        order_type, lead_time_days, order_date, period_number
                     )
                     capacity.current_capacity_used = capacity.max_capacity_per_period
                     capacity_used[upstream_node.name] = capacity.current_capacity_used
@@ -861,7 +861,7 @@ class SimulationExecutionAdapter:
                     queued.append({
                         'role': role,
                         'quantity': remainder,
-                        'round': round_number + 1,
+                        'round': period_number + 1,
                         'reason': 'capacity_exceeded'
                     })
                     print(f"    ⚠️  {role}: {order_type} order {available} (partial), "
@@ -871,7 +871,7 @@ class SimulationExecutionAdapter:
                     queued.append({
                         'role': role,
                         'quantity': order_qty,
-                        'round': round_number + 1,
+                        'round': period_number + 1,
                         'reason': 'no_capacity'
                     })
                     print(f"    ⚠️  {role}: {order_type} order {order_qty} QUEUED "
@@ -902,7 +902,7 @@ class SimulationExecutionAdapter:
         order_type: str,
         lead_time_days: int,
         order_date: date,
-        round_number: int
+        period_number: int
     ) -> 'InboundOrderLine':
         """
         Build a single work order object (helper method)
@@ -916,7 +916,7 @@ class SimulationExecutionAdapter:
             order_type: TO/MO/PO
             lead_time_days: Lead time in days
             order_date: Order date
-            round_number: Scenario round
+            period_number: Scenario round
 
         Returns:
             InboundOrderLine object (not yet added to session)
@@ -924,7 +924,7 @@ class SimulationExecutionAdapter:
         expected_delivery = order_date + timedelta(days=lead_time_days)
 
         return InboundOrderLine(
-            order_id=f"SCENARIO_{self.scenario.id}_R{round_number}_{role}",
+            order_id=f"SCENARIO_{self.scenario.id}_R{period_number}_{role}",
             line_number=1,
             product_id=item.id,
             to_site_id=node.id,
@@ -947,7 +947,7 @@ class SimulationExecutionAdapter:
             tenant_id=self.tenant_id,
             config_id=self.config_id,
             scenario_id=self.scenario.id,
-            round_number=round_number
+            period_number=period_number
         )
 
     async def reset_period_capacity(self) -> int:
@@ -980,7 +980,7 @@ class SimulationExecutionAdapter:
     async def create_work_orders_with_aggregation(
         self,
         scenario_user_orders: Dict[str, float],
-        round_number: int,
+        period_number: int,
         use_capacity: bool = False
     ) -> Dict[str, any]:
         """
@@ -991,7 +991,7 @@ class SimulationExecutionAdapter:
 
         Args:
             scenario_user_orders: Dict mapping role → order quantity
-            round_number: Current scenario round
+            period_number: Current scenario round
             use_capacity: Enforce capacity constraints (default: False)
 
         Returns:
@@ -1003,7 +1003,7 @@ class SimulationExecutionAdapter:
                 'cost_savings': float  # Total fixed cost savings from aggregation
             }
         """
-        print(f"  Creating work orders with AGGREGATION for round {round_number}...")
+        print(f"  Creating work orders with AGGREGATION for round {period_number}...")
 
         # Ensure cache is loaded
         if self.cache and not self.cache.is_loaded():
@@ -1021,7 +1021,7 @@ class SimulationExecutionAdapter:
                 'capacity_used': {}, 'cost_savings': 0.0
             }
 
-        order_date = self.scenario.start_date + timedelta(days=round_number * 7)
+        order_date = self.scenario.start_date + timedelta(days=period_number * 7)
 
         # Step 1: Group orders by upstream site
         upstream_groups = {}  # {(upstream_site_id, product_id): [(role, qty, node, upstream, lead_time, order_type), ...]}
@@ -1102,7 +1102,7 @@ class SimulationExecutionAdapter:
                             if order_qty <= available:
                                 work_order = self._build_work_order(
                                     role, order_qty, item, node, upstream_node,
-                                    order_type, lead_time_days, order_date, round_number
+                                    order_type, lead_time_days, order_date, period_number
                                 )
                                 capacity.current_capacity_used += order_qty
                                 capacity_used[upstream_node.name] = capacity.current_capacity_used
@@ -1114,7 +1114,7 @@ class SimulationExecutionAdapter:
                                 queued.append({
                                     'role': role,
                                     'quantity': order_qty,
-                                    'round': round_number + 1,
+                                    'round': period_number + 1,
                                     'reason': 'capacity_exceeded'
                                 })
                                 print(f"    ⚠️  {role}: {order_type} order {order_qty} QUEUED (capacity full)")
@@ -1123,7 +1123,7 @@ class SimulationExecutionAdapter:
                     # No capacity constraint - create normally
                     work_order = self._build_work_order(
                         role, order_qty, item, node, upstream_node,
-                        order_type, lead_time_days, order_date, round_number
+                        order_type, lead_time_days, order_date, period_number
                     )
                     created.append(work_order)
                     print(f"    ✓ {role}: {order_type} order {order_qty} (no aggregation)")
@@ -1164,7 +1164,7 @@ class SimulationExecutionAdapter:
                             queued.append({
                                 'role': role,
                                 'quantity': order_qty,
-                                'round': round_number + 1,
+                                'round': period_number + 1,
                                 'reason': 'capacity_exceeded'
                             })
                         print(f"      ⚠️  Aggregated order {adjusted_qty} QUEUED (capacity: {available}/{capacity.max_capacity_per_period})")
@@ -1188,9 +1188,9 @@ class SimulationExecutionAdapter:
 
             work_order = self._build_work_order(
                 first_role, adjusted_qty, item, first_node, upstream_node,
-                order_type, lead_time_days, order_date, round_number
+                order_type, lead_time_days, order_date, period_number
             )
-            work_order.order_id = f"SCENARIO_{self.scenario.id}_R{round_number}_AGG_{upstream_node.name}"
+            work_order.order_id = f"SCENARIO_{self.scenario.id}_R{period_number}_AGG_{upstream_node.name}"
             created.append(work_order)
 
             # Step 8: Create aggregation tracking record
@@ -1198,7 +1198,7 @@ class SimulationExecutionAdapter:
             agg_record = AggregatedOrder(
                 policy_id=policy.id,
                 scenario_id=self.scenario.id,
-                round_number=round_number,
+                period_number=period_number,
                 from_site_id=first_node.id,
                 to_site_id=upstream_node.id,
                 product_id=item.id,

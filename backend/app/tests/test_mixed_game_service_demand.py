@@ -24,8 +24,8 @@ def test_calculate_demand_lognormal_uses_generator(monkeypatch):
 
     captured = {}
 
-    def fake_generate(num_rounds: int, **kwargs):
-        captured["num_rounds"] = num_rounds
+    def fake_generate(num_periods: int, **kwargs):
+        captured["num_periods"] = num_periods
         captured["kwargs"] = kwargs
         return [5]
 
@@ -38,7 +38,7 @@ def test_calculate_demand_lognormal_uses_generator(monkeypatch):
     value = MixedScenarioService.calculate_demand(service, scenario, 1)
 
     assert value == 5
-    assert captured["num_rounds"] == 1
+    assert captured["num_periods"] == 1
     assert captured["kwargs"]["mean"] == pytest.approx(8.0)
 
 
@@ -47,8 +47,8 @@ def test_calculate_demand_backfills_from_config(monkeypatch):
     pattern = {"type": "lognormal", "params": {"mean": 6.0, "cov": 0.4}}
     scenario = SimpleNamespace(demand_pattern=None, config={"demand_pattern": pattern})
 
-    def fake_generate(num_rounds: int, **kwargs):
-        assert num_rounds == 1
+    def fake_generate(num_periods: int, **kwargs):
+        assert num_periods == 1
         assert kwargs["mean"] == pytest.approx(6.0)
         return [13]
 
@@ -69,7 +69,7 @@ def test_calculate_demand_uses_market_demand_fallback(monkeypatch):
     pattern = {"type": "lognormal", "params": {"mean": 10.0, "cov": 0.3}}
     scenario = SimpleNamespace(demand_pattern=None, config={"market_demands": [{"demand_pattern": pattern}]})
 
-    def fake_generate(num_rounds: int, **kwargs):
+    def fake_generate(num_periods: int, **kwargs):
         assert kwargs["mean"] == pytest.approx(10.0)
         return [7]
 
@@ -112,7 +112,7 @@ def test_apply_market_demand_respects_lane_lead_time():
         lane_lookup={("retailer", "customer"): lane},
     )
     context = RoundContext(
-        round_number=1,
+        period_number=1,
         scenario_id=42,
         topology=topology,
         node_states={

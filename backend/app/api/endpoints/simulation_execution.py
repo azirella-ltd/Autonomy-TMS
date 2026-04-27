@@ -153,7 +153,7 @@ class PeriodMetricResponse(BaseModel):
     """Round metric response"""
     id: int
     scenario_id: int
-    round_number: int
+    period_number: int
     site_id: int
     site_name: Optional[str]
     inventory: float
@@ -674,7 +674,7 @@ async def list_metrics(
     db: AsyncSession = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
     scenario_id: int,
-    round_number: Optional[int] = None,
+    period_number: Optional[int] = None,
     site_id: Optional[int] = None
 ):
     """
@@ -682,7 +682,7 @@ async def list_metrics(
 
     Args:
         scenario_id: Scenario ID
-        round_number: Filter by round number
+        period_number: Filter by round number
         site_id: Filter by site
 
     Returns:
@@ -690,8 +690,8 @@ async def list_metrics(
     """
     query = select(PeriodMetric).where(PeriodMetric.scenario_id == scenario_id)
 
-    if round_number is not None:
-        query = query.where(PeriodMetric.period_number == round_number)
+    if period_number is not None:
+        query = query.where(PeriodMetric.period_number == period_number)
 
     if site_id is not None:
         query = query.where(PeriodMetric.site_id == site_id)
@@ -835,7 +835,7 @@ async def calculate_atp(
         config_id=request.config_id,
         scenario_id=request.scenario_id,
         current_period=request.current_period,
-        horizon_rounds=6,
+        horizon_periods=6,
     )
 
     return ATPCalculationResponse(**atp_data)

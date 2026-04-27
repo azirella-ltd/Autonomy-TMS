@@ -197,7 +197,7 @@ class SimulationExecutionEngine:
             demand_qty = await self._get_market_demand(
                 scenario_id=scenario_id,
                 market_site_id=market_site.id,
-                round_number=current_period,
+                period_number=current_period,
             )
 
             if demand_qty <= 0:
@@ -466,7 +466,7 @@ class SimulationExecutionEngine:
             prev_cumulative = await self._get_previous_cumulative_cost(
                 scenario_id=scenario_id,
                 site_id=site.id,
-                round_number=current_period - 1,
+                period_number=current_period - 1,
             )
             cumulative_cost = prev_cumulative + total_cost
 
@@ -509,7 +509,7 @@ class SimulationExecutionEngine:
             # Create PeriodMetric
             metric = PeriodMetric(
                 scenario_id=scenario_id,
-                round_number=current_period,
+                period_number=current_period,
                 site_id=site.id,
                 scenario_user_id=scenario_user_id,
                 inventory=inventory,
@@ -606,13 +606,13 @@ class SimulationExecutionEngine:
         self,
         scenario_id: int,
         market_site_id: int,
-        round_number: int,
+        period_number: int,
     ) -> float:
         """
         Get market demand quantity for a round from config demand patterns.
 
         Queries MarketDemand for the scenario's config. Falls back to classic
-        classic pattern (4 units for rounds 1-4, then 8) if no config exists.
+        classic pattern (4 units for periods 1-4, then 8) if no config exists.
         """
         try:
             from app.models.supply_chain_config import MarketDemand
@@ -631,11 +631,11 @@ class SimulationExecutionEngine:
                     initial = params.get("initial_demand", 4)
                     change_week = params.get("change_week", 15)
                     final = params.get("final_demand", 8)
-                    return float(initial) if round_number <= change_week else float(final)
+                    return float(initial) if period_number <= change_week else float(final)
         except Exception:
             pass  # Fall back to classic pattern
 
-        return 4.0 if round_number <= 4 else 8.0
+        return 4.0 if period_number <= 4 else 8.0
 
     async def _get_participant_for_site(self, scenario_id: int, site_id: int) -> Optional[int]:
         """Look up the scenario_user assigned to a site in this scenario."""
@@ -694,10 +694,10 @@ class SimulationExecutionEngine:
         self,
         scenario_id: int,
         site_id: int,
-        round_number: int,
+        period_number: int,
     ) -> float:
         """Get cumulative cost from previous round."""
-        if round_number < 1:
+        if period_number < 1:
             return 0.0
 
         result = await self.db.execute(
@@ -705,7 +705,7 @@ class SimulationExecutionEngine:
             .where(and_(
                 PeriodMetric.scenario_id == scenario_id,
                 PeriodMetric.site_id == site_id,
-                PeriodMetric.period_number == round_number
+                PeriodMetric.period_number == period_number
             ))
         )
         prev_cost = result.scalar_one_or_none()

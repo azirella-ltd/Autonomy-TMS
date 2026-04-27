@@ -66,7 +66,7 @@ class AnalyticsService:
         result = await self.db.execute(
             select(AggregatedOrder)
             .filter(AggregatedOrder.scenario_id == scenario_id)
-            .order_by(AggregatedOrder.round_number)
+            .order_by(AggregatedOrder.period_number)
         )
         agg_orders = result.scalars().all()
 
@@ -89,25 +89,25 @@ class AnalyticsService:
         total_groups_created = len(agg_orders)
         total_cost_savings = sum(o.fixed_cost_saved or 0.0 for o in agg_orders)
 
-        max_round = max(o.round_number for o in agg_orders)
+        max_round = max(o.period_number for o in agg_orders)
         avg_cost_savings_per_round = total_cost_savings / max_round if max_round > 0 else 0.0
 
         # Group by round
         by_round = {}
         for order in agg_orders:
-            round_num = order.round_number
-            if round_num not in by_round:
-                by_round[round_num] = {
-                    'round': round_num,
+            period_num = order.period_number
+            if period_num not in by_round:
+                by_round[period_num] = {
+                    'round': period_num,
                     'orders_aggregated': 0,
                     'groups_created': 0,
                     'cost_savings': 0.0,
                     'quantity_adjustments': []
                 }
 
-            by_round[round_num]['orders_aggregated'] += order.num_orders_aggregated
-            by_round[round_num]['groups_created'] += 1
-            by_round[round_num]['cost_savings'] += order.fixed_cost_saved or 0.0
+            by_round[period_num]['orders_aggregated'] += order.num_orders_aggregated
+            by_round[period_num]['groups_created'] += 1
+            by_round[period_num]['cost_savings'] += order.fixed_cost_saved or 0.0
 
             # Get site names
             from_site = await self._get_site_name(order.from_site_id)
@@ -120,7 +120,7 @@ class AnalyticsService:
                 else:
                     adjustment_reason.append('decreased')
 
-            by_round[round_num]['quantity_adjustments'].append({
+            by_round[period_num]['quantity_adjustments'].append({
                 'from_site': from_site,
                 'to_site': to_site,
                 'total_quantity': float(order.total_quantity or 0),
@@ -216,14 +216,14 @@ class AnalyticsService:
         result = await self.db.execute(
             select(InboundOrderLine).filter(
                 InboundOrderLine.scenario_id == scenario_id
-            ).order_by(InboundOrderLine.round_number)
+            ).order_by(InboundOrderLine.period_number)
         )
         work_orders = result.scalars().all()
 
         # Calculate capacity usage by site and round
         usage_by_site_round = {}  # {(site_id, round): total_qty}
         for order in work_orders:
-            key = (order.from_site_id, order.round_number)
+            key = (order.from_site_id, order.period_number)
             if key not in usage_by_site_round:
                 usage_by_site_round[key] = 0.0
             usage_by_site_round[key] += order.quantity_submitted or 0.0
@@ -238,9 +238,9 @@ class AnalyticsService:
             max_capacity = capacity.max_capacity_per_period or 0.0
             total_capacity += max_capacity
 
-            # Get all rounds for this site
+            # Get all periods for this site
             site_usages = [
-                usage for (site_id, round_num), usage in usage_by_site_round.items()
+                usage for (site_id, period_num), usage in usage_by_site_round.items()
                 if site_id == capacity.site_id
             ]
 
@@ -266,21 +266,21 @@ class AnalyticsService:
 
         # Calculate by round
         rounds_data = {}
-        for (site_id, round_num), usage in usage_by_site_round.items():
-            if round_num not in rounds_data:
-                rounds_data[round_num] = {
-                    'round': round_num,
+        for (site_id, period_num), usage in usage_by_site_round.items():
+            if period_num not in rounds_data:
+                rounds_data[period_num] = {
+                    'round': period_num,
                     'total_used': 0.0,
                     'total_capacity': total_capacity,
                     'utilization_pct': 0.0,
                     'queued': 0
                 }
-            rounds_data[round_num]['total_used'] += usage
+            rounds_data[period_num]['total_used'] += usage
 
-        for round_data in rounds_data.values():
-            round_data['utilization_pct'] = (
-                round(round_data['total_used'] / round_data['total_capacity'] * 100, 1)
-                if round_data['total_capacity'] > 0 else 0.0
+        for period_data in rounds_data.values():
+            period_data['utilization_pct'] = (
+                round(period_data['total_used'] / period_data['total_capacity'] * 100, 1)
+                if period_data['total_capacity'] > 0 else 0.0
             )
 
         return {

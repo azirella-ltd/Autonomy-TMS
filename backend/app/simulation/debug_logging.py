@@ -144,7 +144,7 @@ def append_debug_round_log(
     config: Dict[str, Any],
     scenario: Any,
     *,
-    round_number: int,
+    period_number: int,
     timestamp: datetime,
     entries: List[Dict[str, Any]],
 ) -> None:
@@ -156,7 +156,7 @@ def append_debug_round_log(
         return
 
     iso_timestamp = timestamp.isoformat() + "Z"
-    lines: List[str] = [f"Round {round_number} @ {iso_timestamp}"]
+    lines: List[str] = [f"Round {period_number} @ {iso_timestamp}"]
     for entry in entries:
         node_name = entry.get("node") or "unknown"
         lines.append(f"  Node: {node_name}")
@@ -202,7 +202,7 @@ def _append_debug_round_csv(
     config: Dict[str, Any],
     scenario: Any,
     *,
-    round_number: int,
+    period_number: int,
     entries: List[Dict[str, Any]],
 ) -> None:
     # CSV writing disabled
@@ -351,22 +351,22 @@ def _append_debug_round_csv(
                     end_inv_item = inv_map.get(item_key, post_supply_inv_item) if isinstance(inv_map, dict) else post_supply_inv_item
 
                     display_item = item_name_map.get(str(item), item)
-                    writer.writerow([round_number, node, "Start", display_item, start_orders, start_supply, start_inv_item])
-                    writer.writerow([round_number, node, "Process Demand", display_item, post_orders, pending_supply, post_demand_inv_item])
+                    writer.writerow([period_number, node, "Start", display_item, start_orders, start_supply, start_inv_item])
+                    writer.writerow([period_number, node, "Process Demand", display_item, post_orders, pending_supply, post_demand_inv_item])
                     # Produce/Consume (optional)
                     if produce_finished or manufacture_finished:
                         man_inv = produce_finished.get(item_key)
                         if man_inv is None:
                             man_inv = manufacture_finished.get(item_key, post_demand_inv_item)
-                        writer.writerow([round_number, node, "Produce", display_item, post_orders, pending_supply, man_inv])
+                        writer.writerow([period_number, node, "Produce", display_item, post_orders, pending_supply, man_inv])
                     if consume_components or manufacture_components:
                         cons_inv = consume_components.get(item_key)
                         if cons_inv is None:
                             cons_inv = manufacture_components.get(item_key, post_demand_inv_item)
-                        writer.writerow([round_number, node, "Consume", display_item, post_orders, pending_supply, cons_inv])
-                    writer.writerow([round_number, node, "Process Supply", display_item, post_orders, post_supply, post_supply_inv_item])
-                    writer.writerow([round_number, node, "Create Order", display_item, 0, 0, end_inv_item])
-                    writer.writerow([round_number, node, "End", display_item, post_orders, post_supply, end_inv_item])
+                        writer.writerow([period_number, node, "Consume", display_item, post_orders, pending_supply, cons_inv])
+                    writer.writerow([period_number, node, "Process Supply", display_item, post_orders, post_supply, post_supply_inv_item])
+                    writer.writerow([period_number, node, "Create Order", display_item, 0, 0, end_inv_item])
+                    writer.writerow([period_number, node, "End", display_item, post_orders, post_supply, end_inv_item])
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to append CSV debug for scenario %s: %s", getattr(scenario, "id", "?"), exc)
 

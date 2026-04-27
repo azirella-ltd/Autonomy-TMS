@@ -245,7 +245,7 @@ class VisibilityService:
     async def _calculate_order_stability_score(self, scenario_id: int, period_number: int) -> float:
         """Score based on order volatility (bullwhip effect)."""
         try:
-            # Get last 5 rounds of orders
+            # Get last 5 periods of orders
             query = text("""
                 SELECT pr.order_placed
                 FROM scenario_user_periods pr
@@ -513,7 +513,7 @@ class VisibilityService:
 
         Args:
             scenario_id: Scenario ID
-            window_size: Number of rounds to analyze
+            window_size: Number of periods to analyze
 
         Returns:
             {

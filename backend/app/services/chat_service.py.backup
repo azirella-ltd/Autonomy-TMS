@@ -222,7 +222,7 @@ class ChatService:
         context = {
             "current_inventory": player_round.current_inventory if player_round else 0,
             "current_backlog": player_round.current_backlog if player_round else 0,
-            "recent_demand": [],  # TODO: Calculate from recent rounds
+            "recent_demand": [],  # TODO: Calculate from recent periods
             "forecast_demand": 0,  # TODO: Get from demand forecast
         }
 

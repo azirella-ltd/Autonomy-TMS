@@ -162,8 +162,8 @@ class TRMAgent:
         node_type_str = getattr(node, "node_type", "retailer").lower()
         node_type = self.NODE_TYPE_MAP.get(node_type_str, 0)
 
-        # Get node position (use round_number as proxy)
-        node_position = context.get("round_number", 0) % 10
+        # Get node position (use period_number as proxy)
+        node_position = context.get("period_number", 0) % 10
 
         # Model inference
         order_qty = self.model.get_action(

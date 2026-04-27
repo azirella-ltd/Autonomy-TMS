@@ -409,7 +409,7 @@ class PowellMonitoringService:
         self,
         config_id: int,
         scenario_id: int,
-        round_number: int,
+        period_number: int,
     ) -> Dict[str, MonitoringResult]:
         """
         Run monitoring checks at the end of a simulation round.
@@ -422,12 +422,12 @@ class PowellMonitoringService:
         Args:
             config_id: Supply chain configuration ID
             scenario_id: Scenario ID
-            round_number: Completed round number
+            period_number: Completed round number
 
         Returns:
             Dictionary of monitoring results
         """
-        logger.info(f"Running round-end monitoring for scenario {scenario_id}, round {round_number}")
+        logger.info(f"Running round-end monitoring for scenario {scenario_id}, round {period_number}")
 
         results = {}
 
@@ -438,7 +438,7 @@ class PowellMonitoringService:
         results["po_recommendations"] = await self.check_inventory_positions(config_id, scenario_id)
 
         # Check rebalancing (less frequent in simulation, but useful)
-        if round_number % 4 == 0:  # Every 4 rounds
+        if period_number % 4 == 0:  # Every 4 periods
             results["rebalancing"] = await self.check_rebalancing_opportunities(config_id, scenario_id)
 
         return results

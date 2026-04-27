@@ -541,7 +541,7 @@ async def get_kpis(
     """
     start_date, end_date = get_date_range(time_range)
 
-    # Query scenario_user rounds in date range
+    # Query scenario_user periods in date range
     from sqlalchemy import select
     result = await db.execute(
         select(ScenarioUserPeriod)
@@ -727,7 +727,7 @@ async def get_kpis(
     # Forecast accuracy: compare demand vs order placed (demand-matching proxy)
     forecast_accuracy = fill_rate  # best available proxy
 
-    # Network flexibility: ratio of rounds where inventory > safety threshold
+    # Network flexibility: ratio of periods where inventory > safety threshold
     safety_threshold = avg_demand * 2 if avg_demand > 0 else 0
     flex_rounds = sum(1 for pr in scenario_user_periods if (pr.inventory or 0) > safety_threshold)
     network_flexibility = (flex_rounds / total_rounds * 100) if total_rounds > 0 else 0

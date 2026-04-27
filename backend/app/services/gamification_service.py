@@ -283,7 +283,7 @@ class GamificationService:
             if total_cost >= criteria['win_with_cost_under']:
                 return False
 
-        # Perfect service rounds
+        # Perfect service periods
         if 'perfect_service_rounds' in criteria and scenario_id:
             rounds_result = await self.db.execute(
                 select(ScenarioUserPeriod.service_level)

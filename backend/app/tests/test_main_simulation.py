@@ -67,14 +67,14 @@ def test_debug_rounds_append_in_chronological_order(tmp_path):
     append_debug_round_log(
         config,
         scenario,
-        round_number=1,
+        period_number=1,
         timestamp=timestamp,
         entries=[{"node": "retailer", "info_sent": {}, "reply": {}, "ending_state": {}}],
     )
     append_debug_round_log(
         config,
         scenario,
-        round_number=2,
+        period_number=2,
         timestamp=timestamp,
         entries=[{"node": "wholesaler", "info_sent": {}, "reply": {}, "ending_state": {}}],
     )

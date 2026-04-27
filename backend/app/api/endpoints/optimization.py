@@ -200,11 +200,11 @@ async def get_global_optimization(
             FROM scenario_users p
             JOIN scenario_user_periods pr ON p.id = pr.scenario_user_id
             WHERE p.scenario_id = :scenario_id
-            AND pr.round_number = :round_number
+            AND pr.period_number = :period_number
         """)
         result = await db.execute(query, {
             "scenario_id": scenario_id,
-            "round_number": current_period
+            "period_number": current_period
         })
         rows = result.fetchall()
 

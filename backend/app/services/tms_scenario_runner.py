@@ -2,7 +2,7 @@
 TMS-Native Scenario Runner.
 
 Runs the three TMS scenario types end-to-end against a tenant's network:
-    - freight_tender — carrier-bidding simulation (multi-round Vickrey or
+    - freight_tender — carrier-bidding simulation (multi-period Vickrey or
       sealed-bid; scores cost vs. service-level vs. relationship equity)
     - network_disruption — port strike / weather / capacity crunch with
       cascading lane impact and recovery scheduling
@@ -11,14 +11,14 @@ Runs the three TMS scenario types end-to-end against a tenant's network:
 
 The audit flagged that the existing /mixed-scenarios runtime is the
 generic Beer Scenario stepper; the TMS templates point at it but the per-
-round logic is supply-chain-shaped, not transport-shaped. This module
+period logic is supply-chain-shaped, not transport-shaped. This module
 provides the transport-native logic, called via a lightweight REST
 endpoint that produces a `ScenarioRunResult` with measurable outcomes
 the UI can render.
 
 This is the v1 implementation: deterministic, no Monte Carlo, no
 external-randomness. v2 will plug into the Powell scenario_engine for
-stochastic rounds and connect to the Decision Stream.
+stochastic periods and connect to the Decision Stream.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # ── Result dataclasses ───────────────────────────────────────────────────────
 
 @dataclass
-class TenderRound:
+class TenderPeriod:
     period_number: int
     rfq_loads: int
     bids_received: int
@@ -80,7 +80,7 @@ class ScenarioRunResult:
     started_at: str
     finished_at: str
     summary: Dict[str, Any]
-    rounds: List[Dict[str, Any]] = field(default_factory=list)
+    periods: List[Dict[str, Any]] = field(default_factory=list)
     impacts: List[Dict[str, Any]] = field(default_factory=list)
     mode_choices: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
@@ -92,12 +92,12 @@ async def _run_freight_tender(
     db: AsyncSession,
     tenant_id: int,
     *,
-    rounds: int,
-    loads_per_round: int,
+    periods: int,
+    loads_per_period: int,
     carrier_pool: Optional[List[int]],
     seed: int,
 ) -> ScenarioRunResult:
-    """Simulate carrier bidding rounds. Each round:
+    """Simulate carrier bidding periods. Each period:
     - Selects N loads from the tenant's pool of recent shipments
     - Solicits bids from eligible carriers (rate per mile + service score)
     - Awards loads via lowest-bid-meets-service strategy
@@ -124,10 +124,10 @@ async def _run_freight_tender(
             warnings=["No carriers found"],
         )
 
-    round_results: List[TenderRound] = []
-    for r in range(1, rounds + 1):
+    period_results: List[TenderPeriod] = []
+    for r in range(1, periods + 1):
         bids: List[Dict[str, Any]] = []
-        for load_idx in range(loads_per_round):
+        for load_idx in range(loads_per_period):
             base_rate = 2.85 + rng.uniform(-0.15, 0.45)
             for c in carriers:
                 # Carrier rate dispersion driven by lane familiarity proxy
@@ -135,7 +135,7 @@ async def _run_freight_tender(
                 bid_rate = round(base_rate * spread, 2)
                 service_score = rng.uniform(0.78, 0.97)
                 bids.append({
-                    "round": r, "load_idx": load_idx,
+                    "period": r, "load_idx": load_idx,
                     "carrier_id": c.id, "carrier_code": c.code,
                     "rate_per_mile": bid_rate,
                     "service_score": round(service_score, 3),
@@ -143,7 +143,7 @@ async def _run_freight_tender(
 
         # Awards: cheapest bid above service threshold per load
         awards = []
-        for load_idx in range(loads_per_round):
+        for load_idx in range(loads_per_period):
             load_bids = [b for b in bids if b["load_idx"] == load_idx and b["service_score"] >= 0.85]
             if not load_bids:
                 continue
@@ -155,28 +155,28 @@ async def _run_freight_tender(
         else:
             wavg = 0.0
 
-        round_results.append(TenderRound(
+        period_results.append(TenderPeriod(
             period_number=r,
-            rfq_loads=loads_per_round,
+            rfq_loads=loads_per_period,
             bids_received=len(bids),
             awards=awards,
-            coverage_pct=round(100.0 * len(awards) / loads_per_round, 1),
+            coverage_pct=round(100.0 * len(awards) / loads_per_period, 1),
             weighted_avg_rate=wavg,
-            notes="Single-round sealed bid; service threshold 0.85",
+            notes="Single-period sealed bid; service threshold 0.85",
         ))
 
     finished = datetime.utcnow().isoformat()
 
-    total_loads = sum(r.rfq_loads for r in round_results)
-    total_awarded = sum(len(r.awards) for r in round_results)
+    total_loads = sum(r.rfq_loads for r in period_results)
+    total_awarded = sum(len(r.awards) for r in period_results)
     summary = {
-        "periods": len(round_results),
+        "periods": len(period_results),
         "carriers_in_pool": len(carriers),
         "total_loads": total_loads,
         "total_awarded": total_awarded,
         "overall_coverage_pct": round(100.0 * total_awarded / max(total_loads, 1), 1),
         "avg_awarded_rate": round(
-            sum(r.weighted_avg_rate for r in round_results) / max(len(round_results), 1), 3,
+            sum(r.weighted_avg_rate for r in period_results) / max(len(period_results), 1), 3,
         ),
     }
     return ScenarioRunResult(
@@ -185,7 +185,7 @@ async def _run_freight_tender(
         started_at=started,
         finished_at=finished,
         summary=summary,
-        rounds=[r.__dict__ for r in round_results],
+        periods=[r.__dict__ for r in period_results],
     )
 
 
@@ -340,8 +340,8 @@ async def run_tms_scenario(
     Param schemas (per scenario_type):
 
     - freight_tender:
-        rounds: int = 3
-        loads_per_round: int = 12
+        periods: int = 3
+        loads_per_period: int = 12
         carrier_pool: list[int] | None = None
         seed: int = 42
 
@@ -363,8 +363,8 @@ async def run_tms_scenario(
     if scenario_type == "freight_tender":
         return await _run_freight_tender(
             db, tenant_id,
-            rounds=int(p.get("periods", 3)),
-            loads_per_round=int(p.get("loads_per_round", 12)),
+            periods=int(p.get("periods", 3)),
+            loads_per_period=int(p.get("loads_per_period", 12)),
             carrier_pool=p.get("carrier_pool"),
             seed=int(p.get("seed", 42)),
         )

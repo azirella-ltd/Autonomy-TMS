@@ -108,7 +108,7 @@ class PredictiveAnalyticsService:
         Args:
             scenario_id: Scenario ID
             node_id: Node/ScenarioUser ID
-            horizon: Number of rounds to forecast
+            horizon: Number of periods to forecast
             confidence_level: Confidence level for bounds (default 0.95)
 
         Returns:
@@ -118,7 +118,7 @@ class PredictiveAnalyticsService:
         historical_data = await self._get_historical_data(scenario_id, node_id, lookback=20)
 
         if len(historical_data) < 5:
-            logger.warning(f"Insufficient data for forecasting (got {len(historical_data)} rounds)")
+            logger.warning(f"Insufficient data for forecasting (got {len(historical_data)} periods)")
             return []
 
         # Simple time series forecasting (can be replaced with GNN predictions)
@@ -309,7 +309,7 @@ class PredictiveAnalyticsService:
         self,
         scenario_id: int,
         node_id: int,
-        round_number: int
+        period_number: int
     ) -> Dict[str, Any]:
         """
         Explain a prediction using SHAP values.
@@ -317,7 +317,7 @@ class PredictiveAnalyticsService:
         Args:
             scenario_id: Scenario ID
             node_id: Node/ScenarioUser ID
-            round_number: Round number to explain
+            period_number: Round number to explain
 
         Returns:
             explanation: Dictionary with SHAP values and interpretation
@@ -360,7 +360,7 @@ class PredictiveAnalyticsService:
             # Feature names
             feature_names = [
                 "inventory", "backlog", "incoming_shipment", "incoming_order",
-                "last_order", "round_number", "holding_cost", "backlog_cost"
+                "last_order", "period_number", "holding_cost", "backlog_cost"
             ]
 
             # Create feature importance list
@@ -382,7 +382,7 @@ class PredictiveAnalyticsService:
 
             return {
                 "node_id": node_id,
-                "round_number": round_number,
+                "period_number": period_number,
                 "feature_importances": [asdict(fi) for fi in feature_importances],
                 "interpretation": self._interpret_shap_values(feature_importances)
             }
@@ -488,27 +488,27 @@ class PredictiveAnalyticsService:
                 ScenarioUserPeriod.scenario_id == scenario_id,
                 ScenarioUserPeriod.scenario_user_id == scenario_user_id
             ))
-            .order_by(ScenarioUserPeriod.round_number.desc())
+            .order_by(ScenarioUserPeriod.period_number.desc())
             .limit(lookback)
         )
 
         result = await self.db.execute(stmt)
-        rounds = result.scalars().all()
+        periods = result.scalars().all()
 
         # Convert to list of dicts (most recent first)
         data = []
-        for round_data in reversed(rounds):  # Reverse to chronological order
+        for period_data in reversed(periods):  # Reverse to chronological order
             data.append({
-                "round_number": round_data.round_number,
-                "inventory": round_data.inventory_end,
-                "backlog": round_data.backlog,
-                "incoming_order": round_data.incoming_order,
-                "incoming_shipment": round_data.incoming_shipment,
-                "last_order_placed": round_data.order_placed,
-                "holding_cost": round_data.holding_cost,
-                "backlog_cost": round_data.backlog_cost,
-                "total_cost": round_data.total_cost,
-                "role": round_data.scenario_user.role if hasattr(round_data, 'scenario_user') else "Unknown"
+                "period_number": period_data.period_number,
+                "inventory": period_data.inventory_end,
+                "backlog": period_data.backlog,
+                "incoming_order": period_data.incoming_order,
+                "incoming_shipment": period_data.incoming_shipment,
+                "last_order_placed": period_data.order_placed,
+                "holding_cost": period_data.holding_cost,
+                "backlog_cost": period_data.backlog_cost,
+                "total_cost": period_data.total_cost,
+                "role": period_data.scenario_user.role if hasattr(period_data, 'scenario_user') else "Unknown"
             })
 
         return data
@@ -517,16 +517,16 @@ class PredictiveAnalyticsService:
         """Prepare feature matrix from historical data."""
         features = []
 
-        for round_data in historical_data:
+        for period_data in historical_data:
             feature_vec = [
-                round_data.get("inventory", 0),
-                round_data.get("backlog", 0),
-                round_data.get("incoming_shipment", 0),
-                round_data.get("incoming_order", 0),
-                round_data.get("last_order_placed", 0),
-                round_data.get("round_number", 0) / 52.0,  # Normalized
-                round_data.get("holding_cost", 0),
-                round_data.get("backlog_cost", 0)
+                period_data.get("inventory", 0),
+                period_data.get("backlog", 0),
+                period_data.get("incoming_shipment", 0),
+                period_data.get("incoming_order", 0),
+                period_data.get("last_order_placed", 0),
+                period_data.get("period_number", 0) / 52.0,  # Normalized
+                period_data.get("holding_cost", 0),
+                period_data.get("backlog_cost", 0)
             ]
             features.append(feature_vec)
 

@@ -244,8 +244,8 @@ class TransferOrderAnalytics:
         ).group_by(TransferOrder.order_round).all()
 
         throughput_by_round = {
-            round_num: {"to_count": count, "quantity": qty}
-            for round_num, count, qty in tos_by_round if round_num is not None
+            period_num: {"to_count": count, "quantity": qty}
+            for period_num, count, qty in tos_by_round if period_num is not None
         }
 
         # Calculate average throughput
@@ -315,12 +315,12 @@ class TransferOrderAnalytics:
 
         timeline = []
 
-        for round_num in range(1, max_round + 1):
+        for period_num in range(1, max_round + 1):
             # TOs created this round
             tos_created = self.db.query(func.count(TransferOrder.id)).filter(
                 and_(
                     TransferOrder.scenario_id == scenario_id,
-                    TransferOrder.order_round == round_num
+                    TransferOrder.order_round == period_num
                 )
             ).scalar() or 0
 
@@ -328,7 +328,7 @@ class TransferOrderAnalytics:
             tos_received = self.db.query(func.count(TransferOrder.id)).filter(
                 and_(
                     TransferOrder.scenario_id == scenario_id,
-                    TransferOrder.arrival_round == round_num,
+                    TransferOrder.arrival_round == period_num,
                     TransferOrder.status == "RECEIVED"
                 )
             ).scalar() or 0
@@ -342,7 +342,7 @@ class TransferOrderAnalytics:
             ).filter(
                 and_(
                     TransferOrder.scenario_id == scenario_id,
-                    TransferOrder.order_round == round_num
+                    TransferOrder.order_round == period_num
                 )
             ).scalar() or 0.0
 
@@ -355,13 +355,13 @@ class TransferOrderAnalytics:
             ).filter(
                 and_(
                     TransferOrder.scenario_id == scenario_id,
-                    TransferOrder.arrival_round == round_num,
+                    TransferOrder.arrival_round == period_num,
                     TransferOrder.status == "RECEIVED"
                 )
             ).scalar() or 0.0
 
             timeline.append({
-                "round": round_num,
+                "round": period_num,
                 "tos_created": tos_created,
                 "tos_received": tos_received,
                 "quantity_created": qty_created,

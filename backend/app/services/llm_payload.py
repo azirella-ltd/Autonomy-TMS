@@ -31,7 +31,7 @@ def compose_autonomy_payload(
     *,
     action_role_key: str,
     raw_action_role: str,
-    round_number: int,
+    period_number: int,
     order_lead: int,
     ship_lead: int,
     prod_lead: int,
@@ -110,7 +110,7 @@ def compose_autonomy_payload(
 
     return {
         "role": action_role_key,
-        "week": int(round_number),
+        "week": int(period_number),
         "toggles": toggles,
         "parameters": {
             "holding_cost": holding_cost,
@@ -275,7 +275,7 @@ def build_llm_decision_payload(
     db: Session,
     scenario: Scenario,
     *,
-    round_number: int,
+    period_number: int,
     action_role: str,
     history_window: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -371,7 +371,7 @@ def build_llm_decision_payload(
         .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
         .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
         .filter(ScenarioUser.scenario_id == scenario.id)
-        .order_by(ScenarioPeriod.round_number.asc())
+        .order_by(ScenarioPeriod.period_number.asc())
         .all()
     )
 
@@ -386,7 +386,7 @@ def build_llm_decision_payload(
 
     for round_rec, scenario_user_obj, scenario_period in scenario_user_period_rows:
         role_name = str(scenario_user_obj.role.value if hasattr(scenario_user_obj.role, "value") else scenario_user_obj.role).lower()
-        round_number = _safe_int(getattr(scenario_period, "round_number", 0))
+        period_number = _safe_int(getattr(scenario_period, "period_number", 0))
 
         order_up = _safe_int(
             getattr(round_rec, "order_placed", getattr(round_rec, "order_quantity", 0))
@@ -398,10 +398,10 @@ def build_llm_decision_payload(
             getattr(round_rec, "backorders_before", getattr(round_rec, "backlog", 0))
         )
 
-        orders_by_role_round.setdefault(role_name, {})[round_number] = order_up
+        orders_by_role_round.setdefault(role_name, {})[period_number] = order_up
 
         entry = {
-            "round": round_number,
+            "round": period_number,
             "order_up": order_up,
             "inventory_before": inventory_before,
             "backlog_before": backlog_before,
@@ -465,7 +465,7 @@ def build_llm_decision_payload(
         downstream_orders_map = orders_by_role_round.get(downstream_role, {}) if downstream_role else None
 
         for record in role_records:
-            round_id = record["round"]
+            scenario_period_id = record["round"]
             order_up_value = record["order_up"]
             on_hand_value = record["inventory_before"]
             backlog_value = record.get("backlog_before", 0)
@@ -474,7 +474,7 @@ def build_llm_decision_payload(
                 order_qty = record["customer_demand"] or 0
                 demand_history.append(order_qty)
             elif downstream_orders_map is not None:
-                order_qty = downstream_orders_map.get(round_id, 0)
+                order_qty = downstream_orders_map.get(scenario_period_id, 0)
             else:
                 order_qty = 0
 
@@ -511,7 +511,7 @@ def build_llm_decision_payload(
     return compose_autonomy_payload(
         action_role_key=action_role_key,
         raw_action_role=raw_role,
-        round_number=round_number,
+        period_number=period_number,
         order_lead=order_lead,
         ship_lead=ship_lead,
         prod_lead=prod_lead,

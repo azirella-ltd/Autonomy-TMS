@@ -51,7 +51,7 @@ def get_participant_metrics(db: Session, scenario_user_id: int, scenario_id: int
         db.query(ScenarioUserPeriod)
         .join(ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id)
         .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioPeriod.scenario_id == scenario_id)
-        .order_by(ScenarioPeriod.round_number.asc())
+        .order_by(ScenarioPeriod.period_number.asc())
         .all()
     )
 
@@ -69,27 +69,27 @@ def get_participant_metrics(db: Session, scenario_user_id: int, scenario_id: int
             "service_level_change": 0,
         }
 
-    latest_round = scenario_user_periods[-1]
+    latest_period = scenario_user_periods[-1]
     previous_round = scenario_user_periods[-2] if len(scenario_user_periods) > 1 else None
 
     current_inventory = _fallback_numeric(
-        getattr(latest_round, "inventory_after", None)
-        if getattr(latest_round, "inventory_after", None) is not None
-        else getattr(latest_round, "inventory_before", None)
+        getattr(latest_period, "inventory_after", None)
+        if getattr(latest_period, "inventory_after", None) is not None
+        else getattr(latest_period, "inventory_before", None)
     )
     previous_inventory = _fallback_numeric(
         getattr(previous_round, "inventory_after", None)
         if previous_round and getattr(previous_round, "inventory_after", None) is not None
-        else getattr(latest_round, "inventory_before", None)
+        else getattr(latest_period, "inventory_before", None)
     )
     inventory_change = 0.0
     if previous_inventory:
         inventory_change = ((current_inventory - previous_inventory) / previous_inventory) * 100
 
     backlog = _fallback_numeric(
-        getattr(latest_round, "backorders_after", None)
-        if getattr(latest_round, "backorders_after", None) is not None
-        else getattr(latest_round, "backorders_before", None)
+        getattr(latest_period, "backorders_after", None)
+        if getattr(latest_period, "backorders_after", None) is not None
+        else getattr(latest_period, "backorders_before", None)
     )
 
     total_cost = sum(_fallback_numeric(pr.total_cost) for pr in scenario_user_periods)
@@ -121,10 +121,10 @@ get_player_metrics = get_participant_metrics
 def get_time_series_metrics(db: Session, scenario_user_id: int, scenario_id: int, role: str) -> List[Dict[str, Any]]:
     """Build a period-by-period time series for the requested scenario_user."""
 
-    rounds = (
+    periods = (
         db.query(ScenarioPeriod)
         .filter(ScenarioPeriod.scenario_id == scenario_id)
-        .order_by(ScenarioPeriod.round_number.asc())
+        .order_by(ScenarioPeriod.period_number.asc())
         .all()
     )
 
@@ -134,26 +134,26 @@ def get_time_series_metrics(db: Session, scenario_user_id: int, scenario_id: int
         .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioPeriod.scenario_id == scenario_id)
         .all()
     )
-    rounds_by_id = {pr.scenario_period_id: pr for pr in scenario_user_periods}
+    period_state_by_id = {pr.scenario_period_id: pr for pr in scenario_user_periods}
 
     series: List[Dict[str, Any]] = []
-    for round_ in rounds:
-        participant_round = rounds_by_id.get(round_.id)
+    for period_ in periods:
+        participant_state = period_state_by_id.get(period_.id)
 
-        order = _fallback_numeric(getattr(participant_round, "order_placed", None)) if participant_round else 0
-        inventory = _fallback_numeric(getattr(participant_round, "inventory_after", None)) if participant_round else 0
-        backlog = _fallback_numeric(getattr(participant_round, "backorders_after", None)) if participant_round else 0
-        cost = _fallback_numeric(getattr(participant_round, "total_cost", None)) if participant_round else 0
-        supply = _fallback_numeric(getattr(participant_round, "order_received", None)) if participant_round else 0
-        reason = getattr(participant_round, "comment", None) if participant_round else None
+        order = _fallback_numeric(getattr(participant_state, "order_placed", None)) if participant_state else 0
+        inventory = _fallback_numeric(getattr(participant_state, "inventory_after", None)) if participant_state else 0
+        backlog = _fallback_numeric(getattr(participant_state, "backorders_after", None)) if participant_state else 0
+        cost = _fallback_numeric(getattr(participant_state, "total_cost", None)) if participant_state else 0
+        supply = _fallback_numeric(getattr(participant_state, "order_received", None)) if participant_state else 0
+        reason = getattr(participant_state, "comment", None) if participant_state else None
 
         entry = {
-            "week": getattr(round_, "round_number", 0),
+            "week": getattr(period_, "period_number", 0),
             "inventory": inventory,
             "order": order,
             "cost": cost,
             "backlog": backlog,
-            "demand": getattr(round_, "customer_demand", None),
+            "demand": getattr(period_, "customer_demand", None),
             "supply": supply if supply else None,
             "reason": reason,
         }

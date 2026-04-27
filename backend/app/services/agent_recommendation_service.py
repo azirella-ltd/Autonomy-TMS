@@ -149,7 +149,7 @@ class AgentRecommendationService:
             "backlog": backlog,
             "demand": demand,
             "atp": atp,
-            "round": current_period.round_number,
+            "round": current_period.period_number,
         }
 
         # For Phase 2, use simple heuristic-based recommendation
@@ -676,7 +676,7 @@ class AgentRecommendationService:
                 f"for future orders or scheduled commitments. This reduces the risk of creating cascading shortages downstream.\n\n"
                 f"**Trade-offs:**\n"
                 f"While this approach may result in a backlog increase of {max(0, demand - recommended_qty)} units this round, "
-                f"it preserves your ability to respond to unexpected demand spikes in future rounds. In supply chain management, "
+                f"it preserves your ability to respond to unexpected demand spikes in future periods. In supply chain management, "
                 f"maintaining buffer capacity often prevents larger problems down the line.\n\n"
                 f"**Alternative Consideration:**\n"
                 f"If you choose to ship the full demand ({demand} units), you would exceed ATP by {max(0, demand - atp)} units, "
@@ -702,7 +702,7 @@ class AgentRecommendationService:
                 f"inventory oscillation.\n\n"
                 f"**Consequences:**\n"
                 f"{'This will strain your inventory position and may create future shortages' if demand > atp else 'This maintains high service level while staying within capacity'}. "
-                f"Expect increased costs and potential stockout risks in subsequent rounds if this pattern continues."
+                f"Expect increased costs and potential stockout risks in subsequent periods if this pattern continues."
             )
         else:  # Naive/Balanced
             return (
@@ -796,7 +796,7 @@ class AgentRecommendationService:
                 f"it's economically rational to carry 15-25% extra inventory as insurance. The conservative strategy implements this principle "
                 f"by maintaining higher safety stock levels.\n\n"
                 f"**Expected Outcome:**\n"
-                f"After this order arrives (typically 2 rounds), your inventory position will be {inventory_position + recommended_qty} units, "
+                f"After this order arrives (typically 2 periods), your inventory position will be {inventory_position + recommended_qty} units, "
                 f"providing approximately {(inventory_position + recommended_qty) / avg_demand:.1f} days of supply. This buffer reduces "
                 f"stockout probability to less than 5%, significantly improving your expected service level."
             )
@@ -835,7 +835,7 @@ class AgentRecommendationService:
                 f"Order Quantity = max(0, Target - Position) = {recommended_qty} units\n"
                 f"```\n\n"
                 f"**Policy Parameters:**\n"
-                f"- **Lead time**: 2 rounds (time for order to arrive from upstream)\n"
+                f"- **Lead time**: 2 periods (time for order to arrive from upstream)\n"
                 f"- **Review period**: 1 round (how often we check inventory)\n"
                 f"- **Safety factor**: 1.5 (50% buffer above expected demand during lead time)\n\n"
                 f"**Why Base Stock Policy?**\n"

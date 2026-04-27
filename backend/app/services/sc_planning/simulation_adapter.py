@@ -60,7 +60,7 @@ class SimulationToSCAdapter:
         if not self.tenant_id:
             raise ValueError(f"Scenario {scenario.id} has no tenant_id - cannot use SC planning")
 
-    async def sync_inventory_levels(self, round_number: int) -> int:
+    async def sync_inventory_levels(self, period_number: int) -> int:
         """
         Sync current scenario inventory to inv_level table
 
@@ -68,12 +68,12 @@ class SimulationToSCAdapter:
         so SC planner can see current on-hand quantities.
 
         Args:
-            round_number: Current scenario round
+            period_number: Current scenario round
 
         Returns:
             Number of inv_level records created/updated
         """
-        print(f"  Syncing inventory levels for round {round_number}...")
+        print(f"  Syncing inventory levels for round {period_number}...")
 
         # Get all scenario_users in this scenario
         result = await self.db.execute(
@@ -93,7 +93,7 @@ class SimulationToSCAdapter:
         )
 
         records_created = 0
-        snapshot_date = self.scenario.start_date + timedelta(days=round_number * 7)
+        snapshot_date = self.scenario.start_date + timedelta(days=period_number * 7)
 
         # For each scenario_user, create inv_level record
         for scenario_user in scenario_users:
@@ -112,7 +112,7 @@ class SimulationToSCAdapter:
 
             # Get scenario_user's current inventory from scenario state
             # This depends on how scenario state is stored - check scenario.config
-            inventory_qty = self._get_scenario_user_inventory(scenario_user, round_number)
+            inventory_qty = self._get_scenario_user_inventory(scenario_user, period_number)
 
             # Create InvLevel record
             inv_level = InvLevel(
@@ -140,13 +140,13 @@ class SimulationToSCAdapter:
 
         return records_created
 
-    def _get_scenario_user_inventory(self, scenario_user: ScenarioUser, round_number: int) -> float:
+    def _get_scenario_user_inventory(self, scenario_user: ScenarioUser, period_number: int) -> float:
         """
         Extract scenario_user's current inventory from scenario state
 
         Args:
             scenario_user: ScenarioUser instance
-            round_number: Current round
+            period_number: Current round
 
         Returns:
             Current inventory quantity (can be negative for backlog)
@@ -164,16 +164,16 @@ class SimulationToSCAdapter:
 
     async def sync_demand_forecast(
         self,
-        round_number: int,
+        period_number: int,
         horizon: int = 52,
     ) -> int:
         """
         Sync market demand pattern to forecast table
 
-        Creates forecast records for future rounds based on demand_pattern.
+        Creates forecast records for future periods based on demand_pattern.
 
         Args:
-            round_number: Current scenario round
+            period_number: Current scenario round
             horizon: Number of periods ahead to forecast
 
         Returns:
@@ -217,7 +217,7 @@ class SimulationToSCAdapter:
 
         # Create forecast records for each period
         for period_offset in range(horizon):
-            forecast_round = round_number + period_offset
+            forecast_round = period_number + period_offset
             forecast_date = self.scenario.start_date + timedelta(days=forecast_round * 7)
 
             # Get demand for this period from pattern

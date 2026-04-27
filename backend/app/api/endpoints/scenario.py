@@ -391,7 +391,7 @@ async def submit_order(
         raise HTTPException(status_code=400, detail=str(e))
 
 # Round endpoints
-@router.get("/{scenario_id}/rounds", response_model=List[ScenarioPeriodResponse])
+@router.get("/{scenario_id}/periods", response_model=List[ScenarioPeriodResponse])
 def list_rounds(
     scenario_id: int,
     skip: int = 0,
@@ -400,15 +400,15 @@ def list_rounds(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    List all rounds for a scenario.
+    List all periods for a scenario.
     """
-    rounds = db.query(ScenarioPeriod).filter(ScenarioPeriod.scenario_id == scenario_id).all()
-    return [ScenarioPeriodResponse.model_validate(round) for round in rounds]
+    periods = db.query(ScenarioPeriod).filter(ScenarioPeriod.scenario_id == scenario_id).all()
+    return [ScenarioPeriodResponse.model_validate(round) for period in periods]
 
-@router.get("/{scenario_id}/rounds/{round_number}", response_model=ScenarioPeriodResponse)
+@router.get("/{scenario_id}/periods/{period_number}", response_model=ScenarioPeriodResponse)
 def get_round(
     scenario_id: int,
-    round_number: int,
+    period_number: int,
     db: Session = Depends(get_sync_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -417,7 +417,7 @@ def get_round(
     """
     scenario_round = db.query(ScenarioPeriod).filter(
         ScenarioPeriod.scenario_id == scenario_id,
-        ScenarioPeriod.round_number == round_number
+        ScenarioPeriod.period_number == period_number
     ).first()
 
     if not scenario_round:
@@ -446,7 +446,7 @@ def get_current_period(
 
     scenario_round = db.query(ScenarioPeriod).filter(
         ScenarioPeriod.scenario_id == scenario_id,
-        ScenarioPeriod.round_number == scenario.current_period
+        ScenarioPeriod.period_number == scenario.current_period
     ).first()
 
     if not scenario_round:
@@ -457,7 +457,7 @@ def get_current_period(
 
     return ScenarioPeriodResponse.model_validate(scenario_round)
 
-@router.get("/scenarios/{scenario_id}/rounds/current/status", response_model=Dict[str, Any])
+@router.get("/scenarios/{scenario_id}/periods/current/status", response_model=Dict[str, Any])
 async def get_round_submission_status(
     scenario_id: int,
     db: Session = Depends(get_sync_db),
@@ -476,7 +476,7 @@ async def get_round_submission_status(
     # Get current round
     current_period = db.query(ScenarioPeriod).filter(
         ScenarioPeriod.scenario_id == scenario_id,
-        ScenarioPeriod.round_number == scenario.current_period
+        ScenarioPeriod.period_number == scenario.current_period
     ).first()
 
     if not current_period:
@@ -498,7 +498,7 @@ async def get_round_submission_status(
 
     return {
         "scenario_id": scenario_id,
-        "round_number": current_period.round_number,
+        "period_number": current_period.period_number,
         "is_completed": current_period.is_completed,
         "total_participants": total_participants,
         "submitted_count": submitted_count,
@@ -528,7 +528,7 @@ def get_participant_current_period(
 
     current_period = db.query(ScenarioPeriod).filter(
         ScenarioPeriod.scenario_id == scenario_id,
-        ScenarioPeriod.round_number == scenario.current_period
+        ScenarioPeriod.period_number == scenario.current_period
     ).first()
 
     if not current_period:

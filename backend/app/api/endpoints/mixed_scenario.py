@@ -131,7 +131,7 @@ def create_mixed_game(
     
     - **scenario_user_assignments**: List of scenario_user assignments specifying which roles are human/AI
     - **demand_pattern**: Configuration for customer demand pattern
-    - **max_periods**: Total number of rounds in the scenario
+    - **max_periods**: Total number of periods in the scenario
     """
     try:
         return scenario_service.create_scenario(scenario_data, current_user.id)
@@ -336,10 +336,10 @@ class ReplenishmentDecisionRequest(BaseModel):
     ai_reasoning: Optional[str] = None  # AI's reasoning (for RLHF)
 
 
-@router.post("/scenarios/{scenario_id}/rounds/{round_number}/fulfillment")
+@router.post("/scenarios/{scenario_id}/periods/{period_number}/fulfillment")
 async def submit_fulfillment_decision(
     scenario_id: int,
-    round_number: int,
+    period_number: int,
     request: FulfillmentDecisionRequest,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
@@ -352,7 +352,7 @@ async def submit_fulfillment_decision(
 
     Args:
         scenario_id: Scenario ID
-        round_number: Current round number
+        period_number: Current round number
         request: Fulfillment decision (scenario_user_id, fulfill_qty)
 
     Returns:
@@ -393,7 +393,7 @@ async def submit_fulfillment_decision(
         # Get round
         round_obj = (
             scenario_service.db.query(ScenarioPeriod)
-            .filter_by(scenario_id=scenario_id, round_number=round_number)
+            .filter_by(scenario_id=scenario_id, period_number=period_number)
             .first()
         )
         if not round_obj:
@@ -430,13 +430,13 @@ async def submit_fulfillment_decision(
                 "pipeline": scenario_user.pipeline_orders or 0,
                 "incoming_order": scenario_user.incoming_order or 0,
                 "role": scenario_user.role,
-                "round": round_number,
+                "round": period_number,
             }
 
             rlhf_feedback_id = rlhf_collector.record_feedback(
                 scenario_user_id=scenario_user.id,
                 scenario_id=scenario_id,
-                round_number=round_number,
+                period_number=period_number,
                 agent_type=request.ai_agent_type or "unknown",
                 scenario_state=scenario_state,
                 ai_suggestion=request.ai_recommendation,
@@ -517,7 +517,7 @@ async def submit_fulfillment_decision(
             # Broadcast all scenario_users ready before transition
             await broadcast_all_scenario_users_ready(
                 scenario_id=scenario_id,
-                round_number=round_number,
+                period_number=period_number,
                 phase="fulfillment",
             )
 
@@ -526,7 +526,7 @@ async def submit_fulfillment_decision(
             # Broadcast phase change
             await broadcast_phase_change(
                 scenario_id=scenario_id,
-                round_number=round_number,
+                period_number=period_number,
                 new_phase="replenishment",
                 phase_started_at=round_obj.phase_started_at.isoformat() if round_obj.phase_started_at else None,
                 scenario_users_completed=0,
@@ -584,10 +584,10 @@ async def submit_fulfillment_decision(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/scenarios/{scenario_id}/rounds/{round_number}/replenishment")
+@router.post("/scenarios/{scenario_id}/periods/{period_number}/replenishment")
 async def submit_replenishment_decision(
     scenario_id: int,
-    round_number: int,
+    period_number: int,
     request: ReplenishmentDecisionRequest,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
@@ -600,7 +600,7 @@ async def submit_replenishment_decision(
 
     Args:
         scenario_id: Scenario ID
-        round_number: Current round number
+        period_number: Current round number
         request: Replenishment decision (scenario_user_id, order_qty)
 
     Returns:
@@ -641,7 +641,7 @@ async def submit_replenishment_decision(
         # Get round
         round_obj = (
             scenario_service.db.query(ScenarioPeriod)
-            .filter_by(scenario_id=scenario_id, round_number=round_number)
+            .filter_by(scenario_id=scenario_id, period_number=period_number)
             .first()
         )
         if not round_obj:
@@ -678,13 +678,13 @@ async def submit_replenishment_decision(
                 "pipeline": scenario_user.pipeline_orders or 0,
                 "incoming_order": scenario_user.incoming_order or 0,
                 "role": scenario_user.role,
-                "round": round_number,
+                "round": period_number,
             }
 
             rlhf_feedback_id = rlhf_collector.record_feedback(
                 scenario_user_id=scenario_user.id,
                 scenario_id=scenario_id,
-                round_number=round_number,
+                period_number=period_number,
                 agent_type=request.ai_agent_type or "unknown",
                 scenario_state=scenario_state,
                 ai_suggestion=request.ai_recommendation,
@@ -746,7 +746,7 @@ async def submit_replenishment_decision(
             # Broadcast all scenario_users ready before transition
             await broadcast_all_scenario_users_ready(
                 scenario_id=scenario_id,
-                round_number=round_number,
+                period_number=period_number,
                 phase="replenishment",
             )
 
@@ -756,7 +756,7 @@ async def submit_replenishment_decision(
             # Broadcast phase change to completed
             await broadcast_phase_change(
                 scenario_id=scenario_id,
-                round_number=round_number,
+                period_number=period_number,
                 new_phase="completed",
                 phase_started_at=round_obj.phase_started_at.isoformat() if round_obj.phase_started_at else None,
                 scenario_users_completed=total_participants,
@@ -764,11 +764,11 @@ async def submit_replenishment_decision(
             )
 
             # Broadcast round completed
-            next_round = round_number + 1 if round_number < scenario.max_periods else None
-            scenario_finished = round_number >= scenario.max_periods
+            next_round = period_number + 1 if period_number < scenario.max_periods else None
+            scenario_finished = period_number >= scenario.max_periods
             await broadcast_round_completed(
                 scenario_id=scenario_id,
-                round_number=round_number,
+                period_number=period_number,
                 next_round=next_round,
                 scenario_finished=scenario_finished,
             )
@@ -979,7 +979,7 @@ def get_fulfillment_recommendation(
             scenario_service.db.query(ScenarioPeriod)
             .filter(
                 ScenarioPeriod.scenario_id == scenario_id,
-                ScenarioPeriod.round_number == scenario.current_period
+                ScenarioPeriod.period_number == scenario.current_period
             )
             .first()
         )
@@ -1087,7 +1087,7 @@ def get_replenishment_recommendation(
             scenario_service.db.query(ScenarioPeriod)
             .filter(
                 ScenarioPeriod.scenario_id == scenario_id,
-                ScenarioPeriod.round_number == scenario.current_period
+                ScenarioPeriod.period_number == scenario.current_period
             )
             .first()
         )
@@ -1114,7 +1114,7 @@ def get_replenishment_recommendation(
             for to in in_transit
         ]
 
-        # Get demand history (last N rounds)
+        # Get demand history (last N periods)
         # TODO: Implement proper demand history tracking
         # For now, use a simple heuristic based on incoming_order
         demand_history = [scenario_user.incoming_order or 100] * 5  # Mock data
@@ -1190,7 +1190,7 @@ async def get_current_atp(
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
             current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
-                scenario_id=scenario_id, round_number=scenario.current_period
+                scenario_id=scenario_id, period_number=scenario.current_period
             ).first()
 
         # Calculate ATP
@@ -1270,7 +1270,7 @@ async def get_atp_projection(
 
         # Get current round
         current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
-            scenario_id=scenario_id, round_number=scenario.current_period
+            scenario_id=scenario_id, period_number=scenario.current_period
         ).first()
 
         if not current_period:
@@ -1360,7 +1360,7 @@ async def get_probabilistic_atp(
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
             current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
-                scenario_id=scenario_id, round_number=scenario.current_period
+                scenario_id=scenario_id, period_number=scenario.current_period
             ).first()
 
         # Calculate probabilistic ATP
@@ -1393,7 +1393,7 @@ async def get_atp_history(
     """
     Get historical ATP/CTP data for trend visualization.
 
-    Returns saved probabilistic ATP projections from previous rounds,
+    Returns saved probabilistic ATP projections from previous periods,
     allowing visualization of ATP trends over time with confidence bands.
 
     Args:
@@ -1606,7 +1606,7 @@ async def get_current_ctp(
 
         # Get current round
         current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
-            scenario_id=scenario_id, round_number=scenario.current_period
+            scenario_id=scenario_id, period_number=scenario.current_period
         ).first()
         if not current_period:
             raise HTTPException(
@@ -1715,7 +1715,7 @@ async def get_probabilistic_ctp(
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
             current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
-                scenario_id=scenario_id, round_number=scenario.current_period
+                scenario_id=scenario_id, period_number=scenario.current_period
             ).first()
 
         # Calculate probabilistic CTP
@@ -1914,7 +1914,7 @@ async def get_pipeline_visualization(
 
         # Build shipment entries with probabilistic arrival windows
         shipments = []
-        arrival_by_round = {}
+        arrival_by_period = {}
 
         for slot_idx, quantity in enumerate(pipeline_shipments):
             if quantity <= 0:
@@ -1924,7 +1924,7 @@ async def get_pipeline_visualization(
             scheduled_arrival = scenario.current_period + slot_idx + 1
 
             # Monte Carlo simulation for arrival probability
-            arrival_rounds = []
+            arrival_periods = []
             for i in range(n_simulations):
                 # Sample lead time variance
                 if lead_time_dist:
@@ -1935,16 +1935,16 @@ async def get_pipeline_visualization(
                 # Calculate actual arrival round with variance
                 actual_arrival = scheduled_arrival + int(round(lt_variance))
                 actual_arrival = max(scenario.current_period + 1, actual_arrival)  # Can't arrive in past
-                arrival_rounds.append(actual_arrival)
+                arrival_periods.append(actual_arrival)
 
-            arrival_rounds = sorted(arrival_rounds)
-            arrival_p10 = int(np.percentile(arrival_rounds, 10))
-            arrival_p50 = int(np.percentile(arrival_rounds, 50))
-            arrival_p90 = int(np.percentile(arrival_rounds, 90))
+            arrival_periods = sorted(arrival_periods)
+            arrival_p10 = int(np.percentile(arrival_periods, 10))
+            arrival_p50 = int(np.percentile(arrival_periods, 50))
+            arrival_p90 = int(np.percentile(arrival_periods, 90))
 
             # Probability of arriving in current round + 1 (next round)
             next_round = scenario.current_period + 1
-            arrival_prob_next = sum(1 for r in arrival_rounds if r == next_round) / n_simulations
+            arrival_prob_next = sum(1 for r in arrival_periods if r == next_round) / n_simulations
 
             shipment_entry = {
                 "slot": slot_idx,
@@ -1958,18 +1958,18 @@ async def get_pipeline_visualization(
             }
             shipments.append(shipment_entry)
 
-            # Aggregate arrivals by round for distribution chart
-            for sim_arrival in arrival_rounds:
-                key = f"round_{sim_arrival}"
-                if key not in arrival_by_round:
-                    arrival_by_round[key] = []
-                arrival_by_round[key].append(quantity)
+            # Aggregate arrivals by period for distribution chart
+            for sim_arrival in arrival_periods:
+                key = f"period_{sim_arrival}"
+                if key not in arrival_by_period:
+                    arrival_by_period[key] = []
+                arrival_by_period[key].append(quantity)
 
-        # Calculate P10/P50/P90 quantities per round
+        # Calculate P10/P50/P90 quantities per period
         arrival_distribution = {}
-        for round_key, quantities in sorted(arrival_by_round.items()):
-            # Each simulation may contribute to this round
-            arrival_distribution[round_key] = {
+        for period_key, quantities in sorted(arrival_by_period.items()):
+            # Each simulation may contribute to this period
+            arrival_distribution[period_key] = {
                 "quantity_p10": int(np.percentile(quantities, 10)) if quantities else 0,
                 "quantity_p50": int(np.percentile(quantities, 50)) if quantities else 0,
                 "quantity_p90": int(np.percentile(quantities, 90)) if quantities else 0,
@@ -2086,7 +2086,7 @@ async def get_conformal_atp(
         current_period = None
         if scenario.current_period and scenario.current_period > 0:
             current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
-                scenario_id=scenario_id, round_number=scenario.current_period
+                scenario_id=scenario_id, period_number=scenario.current_period
             ).first()
 
         # First, calculate the current point estimate using probabilistic ATP
@@ -2304,7 +2304,7 @@ async def get_conformal_demand_forecast(
     Args:
         scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID
-        horizon: Forecast horizon in rounds (default 1)
+        horizon: Forecast horizon in periods (default 1)
         coverage: Target coverage probability (default 0.90)
 
     Returns:
@@ -2464,7 +2464,7 @@ async def get_conformal_lead_time(
             "arrival_window": {
                 "earliest_round": 3,
                 "expected_round": 4,
-                "latest_round": 5
+                "latest_period": 5
             },
             "timestamp": "2026-01-30T12:00:00"
         }
@@ -2546,11 +2546,11 @@ async def get_conformal_lead_time(
         # Predict arrival window
         earliest, latest = lt_conformal.predict_arrival_window(base_lead_time)
 
-        # Calculate arrival rounds
+        # Calculate arrival periods
         current_period = scenario.current_period or 1
         earliest_round = current_period + int(round(earliest))
         expected_round = current_period + int(round(base_lead_time))
-        latest_round = current_period + int(round(latest))
+        latest_period = current_period + int(round(latest))
 
         return {
             "expected_lead_time": round(base_lead_time, 2),
@@ -2564,7 +2564,7 @@ async def get_conformal_lead_time(
             "arrival_window": {
                 "earliest_round": earliest_round,
                 "expected_round": expected_round,
-                "latest_round": latest_round
+                "latest_period": latest_period
             },
             "timestamp": datetime.utcnow().isoformat()
         }
@@ -2660,7 +2660,7 @@ async def allocate_atp_to_customers(
 
         # Get current round
         current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
-            scenario_id=scenario_id, round_number=scenario.current_period
+            scenario_id=scenario_id, period_number=scenario.current_period
         ).first()
 
         # Calculate current ATP
@@ -2735,8 +2735,8 @@ async def calculate_promise_date(
             "breakdown": [
                 "Current CTP (380 units) < requested quantity (500 units)",
                 "Sufficient capacity available in Round 16 (CTP: 520)",
-                "Production lead time: 1 rounds",
-                "Shipping lead time: 2 rounds",
+                "Production lead time: 1 period",
+                "Shipping lead time: 2 periods",
                 "Earliest delivery: Round 18"
             ]
         }
@@ -2782,7 +2782,7 @@ async def calculate_promise_date(
 
         # Get current round
         current_period = scenario_service.db.query(ScenarioPeriod).filter_by(
-            scenario_id=scenario_id, round_number=scenario.current_period
+            scenario_id=scenario_id, period_number=scenario.current_period
         ).first()
 
         if not current_period:
@@ -2839,7 +2839,7 @@ class ModeSwitchResponse(BaseModel):
     new_mode: str
     scenario_user_id: int
     scenario_id: int
-    round_number: int
+    period_number: int
     reason: str
     message: str
     timestamp: str
@@ -2926,7 +2926,7 @@ def switch_agent_mode(
             new_mode=result.new_mode,
             scenario_user_id=result.scenario_user_id,
             scenario_id=result.scenario_id,
-            round_number=result.round_number,
+            period_number=result.period_number,
             reason=result.reason,
             message=result.message,
             timestamp=result.timestamp,
@@ -2987,7 +2987,7 @@ def get_mode_history(
             "history": [
                 {
                     "id": record.id,
-                    "round_number": record.round_number,
+                    "period_number": record.period_number,
                     "previous_mode": record.previous_mode,
                     "new_mode": record.new_mode,
                     "reason": record.reason,
@@ -3528,10 +3528,10 @@ def get_ensemble_summary(
 # Phase 2: RLHF and Decision Comparison Endpoints
 # ========================================
 
-@router.get("/scenarios/{scenario_id}/rounds/{round_number}/decision-comparison")
+@router.get("/scenarios/{scenario_id}/periods/{period_number}/decision-comparison")
 def get_decision_comparison(
     scenario_id: int,
-    round_number: int,
+    period_number: int,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
@@ -3543,11 +3543,11 @@ def get_decision_comparison(
 
     Args:
         scenario_id: Scenario ID
-        round_number: Round number (should be completed)
+        period_number: Round number (should be completed)
 
     Returns:
         {
-            "round_number": 15,
+            "period_number": 15,
             "comparisons": [
                 {
                     "scenario_user_id": 1,
@@ -3580,14 +3580,14 @@ def get_decision_comparison(
             scenario_service.db.query(RLHFFeedback)
             .filter(
                 RLHFFeedback.scenario_id == scenario_id,
-                RLHFFeedback.round_number == round_number
+                RLHFFeedback.period_number == period_number
             )
             .all()
         )
 
         if not feedbacks:
             return {
-                "round_number": round_number,
+                "period_number": period_number,
                 "comparisons": [],
                 "summary": {
                     "ai_wins": 0,
@@ -3647,7 +3647,7 @@ def get_decision_comparison(
                 total_cost_savings += (ai_cost - human_cost)
 
         return {
-            "round_number": round_number,
+            "period_number": period_number,
             "comparisons": comparisons,
             "summary": {
                 "ai_wins": ai_wins,

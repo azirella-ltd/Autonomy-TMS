@@ -223,9 +223,9 @@ class AutonomyGlobalController:
         self.last_orders: Dict[AgentType, deque] = {}
         self.network_targets: deque = deque(maxlen=self.history_length)
 
-    def _reset_round(self, round_number: int) -> None:
-        if self.round_marker != round_number:
-            self.round_marker = round_number
+    def _reset_round(self, period_number: int) -> None:
+        if self.round_marker != period_number:
+            self.round_marker = period_number
             self.base_orders.clear()
             self.context.clear()
             self.plan.clear()
@@ -248,12 +248,12 @@ class AutonomyGlobalController:
     def plan_order(
         self,
         agent_type: AgentType,
-        round_number: int,
+        period_number: int,
         base_order: float,
         context: Optional[Dict[str, Any]] = None,
         prev_order: Optional[int] = None,
     ) -> Tuple[int, Optional[str]]:
-        self._reset_round(round_number)
+        self._reset_round(period_number)
 
         safe_base = max(0.0, float(base_order))
         ctx = context or {}
@@ -329,7 +329,7 @@ class AutonomyGlobalController:
         )
         explanation = explain_supervisor_adjustment(
             role=f"{agent_type.name.replace('_', ' ').title()} (Global)",
-            week=round_number,
+            week=period_number,
             pre_qty=int(round(safe_base)),
             post_qty=final_qty,
             ctx=supervisor_ctx,
@@ -360,7 +360,7 @@ class SimulationAgent:
         self.can_see_demand = can_see_demand
         self.inventory = initial_inventory
         self.backlog = 0
-        self.pipeline = [initial_orders] * 2  # Orders in the pipeline (2 rounds of lead time)
+        self.pipeline = [initial_orders] * 2  # Orders in the pipeline (2 periods of lead time)
         self.order_history = []
         self.demand_history = []
         self.last_order = 0
@@ -902,7 +902,7 @@ class SimulationAgent:
         try:
             # Build context for TRM agent
             context = {
-                "round_number": current_period,
+                "period_number": current_period,
                 "upstream_data": upstream_data,
             }
 
@@ -1010,7 +1010,7 @@ class SimulationAgent:
         try:
             # Build context for GNN agent
             context = {
-                "round_number": current_period,
+                "period_number": current_period,
                 "upstream_data": upstream_data,
             }
 
@@ -1096,7 +1096,7 @@ class SimulationAgent:
 
             # Build context for RL agent
             context = {
-                "round_number": current_period,
+                "period_number": current_period,
                 "max_periods": upstream_data.get("max_periods", 52) if upstream_data else 52,
             }
 

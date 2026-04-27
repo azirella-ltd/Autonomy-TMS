@@ -42,7 +42,7 @@ class AIService:
             return 0
 
         # Get historical data
-        history = self._get_participant_history(scenario_user.id, current_period.round_number)
+        history = self._get_participant_history(scenario_user.id, current_period.period_number)
 
         # Make decision based on difficulty level
         if scenario_user.is_ai == "easy":
@@ -184,7 +184,7 @@ class AIService:
         return self.db.query(ScenarioPeriod).join(Scenario).filter(
             Scenario.id == scenario_id
         ).order_by(
-            ScenarioPeriod.round_number.desc()
+            ScenarioPeriod.period_number.desc()
         ).first()
     
     def _get_participant_history(self, scenario_user_id: int, current_period: int, limit: int = 10) -> List[Dict]:
@@ -193,14 +193,14 @@ class AIService:
             ScenarioPeriod, ScenarioUserPeriod.scenario_period_id == ScenarioPeriod.id
         ).filter(
             ScenarioUserPeriod.scenario_user_id == scenario_user_id,
-            ScenarioPeriod.round_number < current_period
+            ScenarioPeriod.period_number < current_period
         ).order_by(
-            ScenarioPeriod.round_number.desc()
+            ScenarioPeriod.period_number.desc()
         ).limit(limit).all()
         
         return [
             {
-                'round_number': gr.round_number,
+                'period_number': gr.period_number,
                 'order_placed': pr.order_placed,
                 'order_received': pr.order_received,
                 'inventory_before': pr.inventory_before,

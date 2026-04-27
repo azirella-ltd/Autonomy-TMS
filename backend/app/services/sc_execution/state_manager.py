@@ -41,14 +41,14 @@ class SCStateManager:
     def load_scenario_state(
         self,
         scenario_id: int,
-        round_number: Optional[int] = None,
+        period_number: Optional[int] = None,
     ) -> Dict[int, Dict]:
         """
         Load current scenario state from SC entities for all sites.
 
         Args:
             scenario_id: Scenario ID
-            round_number: Round number (optional, stored in snapshot for reference)
+            period_number: Round number (optional, stored in snapshot for reference)
 
         Returns:
             Dict mapping site.id (int) → state dict
@@ -63,7 +63,7 @@ class SCStateManager:
         )
 
         return {
-            site.id: self.load_site_state(site.id, product_id, scenario_id, round_number)
+            site.id: self.load_site_state(site.id, product_id, scenario_id, period_number)
             for site in sites
         }
 
@@ -72,7 +72,7 @@ class SCStateManager:
         site_id: int,
         product_id: str,
         scenario_id: Optional[int] = None,
-        round_number: Optional[int] = None,
+        period_number: Optional[int] = None,
     ) -> Dict:
         """
         Load state for a single site from SC entities.
@@ -81,7 +81,7 @@ class SCStateManager:
             site_id: Site integer PK
             product_id: Product string PK
             scenario_id: Scenario ID (stored in state dict for reference)
-            round_number: Round number (stored in state dict for reference)
+            period_number: Round number (stored in state dict for reference)
 
         Returns:
             State dictionary
@@ -124,7 +124,7 @@ class SCStateManager:
         site = self.db.query(Site).filter(Site.id == site_id).first()
 
         # Lead time: from TransportationLane via sourcing rule FK.
-        # supply_lead_time.value is in weeks/rounds (1 round = 1 week).
+        # supply_lead_time.value is in weeks/periods (1 period = 1 week).
         lead_time_days = 14  # 2-week fallback when no TransportationLane is configured
         if sourcing_rule and sourcing_rule.transportation_lane_id:
             lane = self.db.query(TransportationLane).filter(
@@ -159,7 +159,7 @@ class SCStateManager:
             "site_id": site_id,
             "product_id": product_id,
             "scenario_id": scenario_id,
-            "round_number": round_number,
+            "period_number": period_number,
 
             # inv_level fields
             "on_hand_qty": inv_level.on_hand_qty if inv_level else 0.0,
@@ -263,17 +263,17 @@ class SCStateManager:
 
         self.db.commit()
 
-    def snapshot_state(self, scenario_id: int, round_number: int) -> Dict:
+    def snapshot_state(self, scenario_id: int, period_number: int) -> Dict:
         """
         Create a snapshot of current state for analysis.
 
         Returns:
-            Dict with 'scenario_id', 'round_number', 'sites', 'timestamp'
+            Dict with 'scenario_id', 'period_number', 'sites', 'timestamp'
         """
         return {
             "scenario_id": scenario_id,
-            "round_number": round_number,
-            "sites": self.load_scenario_state(scenario_id, round_number),
+            "period_number": period_number,
+            "sites": self.load_scenario_state(scenario_id, period_number),
             "timestamp": datetime.now().isoformat(),
         }
 
@@ -324,7 +324,7 @@ class SCStateManager:
             return product.id
         raise ValueError(
             f"No product found for supply chain config {config_id}. "
-            f"Ensure at least one Product record with a matching InvPolicy exists for this config before executing rounds. "
+            f"Ensure at least one Product record with a matching InvPolicy exists for this config before executing periods. "
             f"Run the DB bootstrap or seed the Product and InvPolicy tables for config {config_id}."
         )
 

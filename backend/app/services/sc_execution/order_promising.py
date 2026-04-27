@@ -141,7 +141,7 @@ class OrderPromisingEngine:
         demand_qty: float,
         demand_date: date,
         scenario_id: Optional[int] = None,
-        round_number: Optional[int] = None,
+        period_number: Optional[int] = None,
     ) -> ATPResult:
         """
         Fulfill market demand (e.g., Retailer fulfilling customer orders).
@@ -155,7 +155,7 @@ class OrderPromisingEngine:
             demand_qty: Market demand quantity
             demand_date: Demand date
             scenario_id: Scenario ID (optional)
-            round_number: Round number (optional)
+            period_number: Round number (optional)
 
         Returns:
             ATPResult with fulfillment details
@@ -184,7 +184,7 @@ class OrderPromisingEngine:
         to_site_id: Optional[int] = None,
         lead_time_days: int = 0,
         scenario_id: Optional[int] = None,
-        round_number: Optional[int] = None,
+        period_number: Optional[int] = None,
     ) -> Tuple[ATPResult, Optional[TransferOrder]]:
         """
         Promise an order and create Transfer Order if fulfilled (inter-site).
@@ -205,7 +205,7 @@ class OrderPromisingEngine:
             to_site_id: Destination site integer PK (required for inter-site)
             lead_time_days: Shipment lead time (default: 0)
             scenario_id: Scenario ID (optional)
-            round_number: Round number (optional)
+            period_number: Round number (optional)
 
         Returns:
             Tuple of (ATPResult, TransferOrder or None)
@@ -229,8 +229,8 @@ class OrderPromisingEngine:
             shipment_date=datetime.now().date(),
             estimated_delivery_date=requested_date + timedelta(days=lead_time_days),
             scenario_id=scenario_id,
-            order_round=round_number,
-            arrival_round=(round_number + (lead_time_days // 7)) if round_number is not None else None,
+            order_round=period_number,
+            arrival_round=(period_number + (lead_time_days // 7)) if period_number is not None else None,
         )
 
         # Ship inventory (reduce on-hand and allocated)
@@ -297,13 +297,13 @@ class OrderPromisingEngine:
             to_site_id=po.destination_site_id,
             lead_time_days=lead_time_days,
             scenario_id=po.scenario_id,
-            round_number=po.order_round,
+            period_number=po.order_round,
         )
 
     def process_round_demand(
         self,
         scenario_id: int,
-        round_number: int,
+        period_number: int,
     ) -> List[Tuple[ATPResult, Optional[TransferOrder]]]:
         """
         Process all demand for a simulation round.
@@ -314,7 +314,7 @@ class OrderPromisingEngine:
 
         Args:
             scenario_id: Scenario ID
-            round_number: Current round number
+            period_number: Current round number
 
         Returns:
             List of (ATPResult, TransferOrder or None) tuples
@@ -322,9 +322,9 @@ class OrderPromisingEngine:
         results = []
 
         # 1. Process market demand (outbound orders for this round)
-        # OutboundOrderLine has no round_number field; filter by order_id pattern.
+        # OutboundOrderLine has no period_number field; filter by order_id pattern.
         # Idempotency guard: skip orders already FULFILLED or PARTIALLY_FULFILLED.
-        order_id_prefix = f"MARKET-G{scenario_id}-R{round_number}"
+        order_id_prefix = f"MARKET-G{scenario_id}-R{period_number}"
         outbound_orders = self.db.query(OutboundOrderLine).filter(
             and_(
                 OutboundOrderLine.scenario_id == scenario_id,
@@ -340,7 +340,7 @@ class OrderPromisingEngine:
                 demand_qty=order.ordered_quantity or 0.0,
                 demand_date=order.requested_delivery_date or datetime.now().date(),
                 scenario_id=scenario_id,
-                round_number=round_number,
+                period_number=period_number,
             )
             # Mark order as processed (idempotency guard)
             order.promised_quantity = atp_result.promised_qty
@@ -353,7 +353,7 @@ class OrderPromisingEngine:
         purchase_orders = self.db.query(PurchaseOrder).filter(
             and_(
                 PurchaseOrder.scenario_id == scenario_id,
-                PurchaseOrder.order_round == round_number,
+                PurchaseOrder.order_round == period_number,
                 PurchaseOrder.status == "APPROVED",
             )
         ).all()
@@ -375,7 +375,7 @@ class OrderPromisingEngine:
     def process_arriving_transfers(
         self,
         scenario_id: int,
-        round_number: int,
+        period_number: int,
     ) -> List[TransferOrder]:
         """
         Process all Transfer Orders arriving in current round.
@@ -383,7 +383,7 @@ class OrderPromisingEngine:
         arriving_tos = self.db.query(TransferOrder).filter(
             and_(
                 TransferOrder.scenario_id == scenario_id,
-                TransferOrder.arrival_round == round_number,
+                TransferOrder.arrival_round == period_number,
                 TransferOrder.status == "IN_TRANSIT",
             )
         ).all()

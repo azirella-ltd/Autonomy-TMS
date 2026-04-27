@@ -2,7 +2,7 @@
 Agent Performance Tracker Service
 
 Phase 4: Multi-Agent Orchestration (Week 13)
-Tracks and benchmarks agent performance across scenarios, rounds, and decision types.
+Tracks and benchmarks agent performance across scenarios, periods, and decision types.
 
 Metrics Tracked:
 - Accuracy: Deviation from optimal/baseline decisions
@@ -41,7 +41,7 @@ class PerformanceMetrics:
     """Snapshot of agent performance metrics."""
     scenario_user_id: int
     scenario_id: int
-    round_number: int
+    period_number: int
     agent_type: str
     agent_mode: str  # manual, copilot, autonomous
 
@@ -123,7 +123,7 @@ class AgentPerformanceTracker:
         performance_log = AgentPerformanceLog(
             scenario_user_id=performance_metrics.scenario_user_id,
             scenario_id=performance_metrics.scenario_id,
-            round_number=performance_metrics.round_number,
+            period_number=performance_metrics.period_number,
             agent_type=performance_metrics.agent_type,
             agent_mode=performance_metrics.agent_mode,
             total_cost=performance_metrics.total_cost,
@@ -153,7 +153,7 @@ class AgentPerformanceTracker:
         scenario_user_id: Optional[int] = None,
         scenario_id: Optional[int] = None,
         agent_type: Optional[str] = None,
-        min_rounds: int = 5
+        min_periods: int = 5
     ) -> Dict[str, Any]:
         """
         Get aggregate performance summary.
@@ -162,7 +162,7 @@ class AgentPerformanceTracker:
             scenario_user_id: Filter by scenario_user
             scenario_id: Filter by scenario
             agent_type: Filter by agent type (llm, gnn, trm)
-            min_rounds: Minimum rounds for statistical significance
+            min_periods: Minimum periods for statistical significance
 
         Returns:
             Dict with aggregate performance metrics
@@ -178,11 +178,11 @@ class AgentPerformanceTracker:
 
         logs = query.all()
 
-        if len(logs) < min_rounds:
+        if len(logs) < min_periods:
             return {
                 "num_samples": len(logs),
                 "insufficient_data": True,
-                "message": f"Need at least {min_rounds} rounds for statistical significance"
+                "message": f"Need at least {min_periods} periods for statistical significance"
             }
 
         # Calculate aggregate metrics
@@ -278,19 +278,19 @@ class AgentPerformanceTracker:
 
         Args:
             scenario_user_id: ScenarioUser to analyze
-            window_size: Rolling window size in rounds
+            window_size: Rolling window size in periods
 
         Returns:
             Dict with trend data (improving, stable, degrading)
         """
         logs = self.db.query(AgentPerformanceLog).filter_by(
             scenario_user_id=scenario_user_id
-        ).order_by(AgentPerformanceLog.round_number).all()
+        ).order_by(AgentPerformanceLog.period_number).all()
 
         if len(logs) < window_size * 2:
             return {
                 "insufficient_data": True,
-                "message": f"Need at least {window_size * 2} rounds for trend analysis"
+                "message": f"Need at least {window_size * 2} periods for trend analysis"
             }
 
         # Calculate rolling averages
@@ -340,7 +340,7 @@ class AgentPerformanceTracker:
             threshold_std: Standard deviations for anomaly detection
 
         Returns:
-            List of anomalous rounds with details
+            List of anomalous periods with details
         """
         logs = self.db.query(AgentPerformanceLog).filter_by(
             scenario_user_id=scenario_user_id
@@ -361,7 +361,7 @@ class AgentPerformanceTracker:
 
             if z_score > threshold_std:
                 anomalies.append({
-                    "round_number": log.round_number,
+                    "period_number": log.period_number,
                     "total_cost": log.total_cost,
                     "mean_cost": mean_cost,
                     "std_cost": std_cost,
@@ -435,7 +435,7 @@ class AgentPerformanceLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False, index=True)
     scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False, index=True)
-    round_number = Column(Integer, nullable=False, index=True)
+    period_number = Column(Integer, nullable=False, index=True)
 
     agent_type = Column(String(20), nullable=False, index=True)  # llm, gnn, trm, manual
     agent_mode = Column(String(20), nullable=False)  # manual, copilot, autonomous
