@@ -443,6 +443,8 @@ from .terminal_coordinator import (
     L2TrendDirection,
 )
 
+from .hub_hour_snapshot import HubHourSnapshot
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions.
@@ -772,6 +774,8 @@ __all__ = [
     # L2 Terminal Coordinator data plane
     'TerminalUrgencyOverride', 'LaneWaterfallOverride', 'TerminalHealthSignal',
     'L2TrendDirection',
+    # L2 Phase-2 hub-hour snapshot (GATv2 training substrate)
+    'HubHourSnapshot',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

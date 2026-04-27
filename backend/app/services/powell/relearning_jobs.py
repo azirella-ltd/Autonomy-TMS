@@ -1108,6 +1108,32 @@ def _run_terminal_coordinator() -> None:
                 # for the trailing hour. Idempotent on
                 # (tenant, carrier, observed_at).
                 svc.record_carrier_capacity_snapshots(period_hours=1)
+                # L2 Phase-2: write hub_hour_snapshot rows
+                # (GATv2-ready training substrate). Idempotent on
+                # (tenant, config, hub, observed_at).
+                try:
+                    from app.services.powell.hub_hour_snapshot_service import (
+                        HubHourSnapshotService,
+                    )
+                    snap_svc = HubHourSnapshotService(
+                        db, tenant_id=int(tenant_id), config_id=cfg_id,
+                        source="live",
+                    )
+                    snap_results = snap_svc.snapshot_all_hubs()
+                    new_snapshots = sum(
+                        1 for r in snap_results if r.get("wrote_new")
+                    )
+                    if new_snapshots:
+                        logger.info(
+                            "HubHourSnapshot: wrote %d new snapshots "
+                            "(tenant=%s config=%s)",
+                            new_snapshots, tenant_id, cfg_id,
+                        )
+                except Exception as snap_err:
+                    logger.warning(
+                        "HubHourSnapshot extraction failed (non-fatal): %s",
+                        snap_err,
+                    )
                 # Periodic cleanup of long-expired override rows
                 svc.purge_expired(older_than_days=7)
 
