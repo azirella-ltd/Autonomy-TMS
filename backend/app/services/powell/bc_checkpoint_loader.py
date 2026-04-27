@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -169,3 +169,89 @@ def load_bc_checkpoint(
         trm_type=str(ckpt.get("trm_type", trm_type)),
         raw=ckpt,
     )
+
+
+def predict_action(
+    checkpoint: BcCheckpoint,
+    state: Any,
+) -> Tuple[int, float, List[float]]:
+    """Run a BC-trained checkpoint against a state dataclass.
+
+    Reproduces the trainer's feature pipeline exactly:
+      1. Read each `feature_keys[i]` off the state via getattr/dict
+         lookup, with a `state_<name>` / `derived_<name>` prefix
+         convention falling through.
+      2. Coerce to float (bool → 0/1; None → 0.0; non-numeric → 0.0)
+         so the model never sees NaN.
+      3. Apply the trainer's per-column normalisation
+         (x - mean) / std.
+      4. Forward-pass through the MLP, softmax over logits.
+      5. Return (argmax_action, max_prob, full_prob_vector).
+
+    Args:
+        checkpoint: a BcCheckpoint loaded via load_bc_checkpoint().
+        state: the TRM's state dataclass instance (e.g.
+            CapacityPromiseState). Field names should follow the
+            trainer's `state_*` / `derived_*` convention; a `state_X`
+            feature_key resolves against `state.X` first, then
+            `state["X"]`, then `state.state_X`.
+
+    Returns:
+        (action_int, confidence_float, all_probs_list)
+        action_int — argmax over NUM_ACTIONS
+        confidence_float — max probability (0..1)
+        all_probs_list — softmax probabilities for every class
+    """
+    if not TORCH_AVAILABLE:
+        raise RuntimeError(
+            "predict_action requires PyTorch but TORCH_AVAILABLE is False"
+        )
+
+    state_dict: Dict[str, Any] = {}
+    if hasattr(state, "__dict__"):
+        state_dict.update(vars(state))
+    elif isinstance(state, dict):
+        state_dict.update(state)
+
+    # Build the feature vector in the exact order the trainer wrote it
+    feats: List[float] = []
+    for key in checkpoint.feature_keys:
+        # The corpus uses prefixed keys: `state_<field>` / `derived_<field>`.
+        # On a live state dataclass, the field name is the unprefixed form.
+        # Try the bare name first, then the prefixed form.
+        unprefixed = key
+        for prefix in ("state_", "derived_"):
+            if unprefixed.startswith(prefix):
+                unprefixed = unprefixed[len(prefix):]
+                break
+        val = state_dict.get(unprefixed, state_dict.get(key))
+        if val is None or val == "":
+            feats.append(0.0)
+        elif isinstance(val, bool):
+            feats.append(1.0 if val else 0.0)
+        elif isinstance(val, (int, float)):
+            feats.append(float(val))
+        else:
+            try:
+                feats.append(float(val))
+            except (TypeError, ValueError):
+                feats.append(0.0)
+
+    # Apply trainer-time normalisation
+    means = checkpoint.feature_means
+    stds = checkpoint.feature_stds
+    normed = [
+        (feats[i] - means[i]) / (stds[i] if stds[i] > 1e-8 else 1.0)
+        for i in range(len(feats))
+    ]
+
+    # Forward pass
+    x = torch.tensor([normed], dtype=torch.float32)
+    with torch.no_grad():
+        logits = checkpoint.model(x)
+        probs = torch.softmax(logits, dim=1)[0]
+    probs_list = [float(p) for p in probs.tolist()]
+    action = int(torch.argmax(probs).item())
+    confidence = float(probs[action].item())
+
+    return action, confidence, probs_list

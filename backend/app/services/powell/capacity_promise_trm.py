@@ -98,10 +98,66 @@ class CapacityPromiseTRM:
         """
         Evaluate capacity-promise decision for one load.
 
-        Returns a decision dict with the action, reasoning, and the
-        composite scoring detail. Does NOT mutate the load.
+        Routes through the BC-trained model when ``self._model`` is
+        loaded; falls back to the deterministic heuristic teacher
+        when not. Both paths return the same shape so downstream
+        callers don't branch on which produced the decision.
+
+        Does NOT mutate the load.
         """
         state = self._build_state(load)
+
+        if self._model is not None:
+            # BC-trained path. predict_action runs the trainer's
+            # feature pipeline + softmax → (action, confidence, probs).
+            from app.services.powell.bc_checkpoint_loader import predict_action
+            try:
+                action, confidence, probs = predict_action(
+                    self._model, state,
+                )
+                # Heuristic teacher emits an explicit `urgency`
+                # signal; the BC model doesn't. Compute a proxy from
+                # confidence: high confidence in non-ACCEPT (reject /
+                # defer / escalate) correlates with high urgency. For
+                # ACCEPT, urgency is the inverse — confident accept
+                # is low urgency.
+                urgency = (
+                    confidence if action != 0 else max(0.0, 1.0 - confidence)
+                )
+                action_name = {
+                    0: "ACCEPT", 1: "REJECT", 2: "DEFER", 3: "ESCALATE",
+                }.get(action, "UNKNOWN")
+                return {
+                    "load_id": load.id,
+                    "load_number": load.load_number,
+                    "load_status": load.status.value,
+                    "lane_id": getattr(state, "lane_id", 0),
+                    "priority": state.priority,
+                    "requested_loads": state.requested_loads,
+                    "available_capacity": state.available_capacity(),
+                    "action": action,
+                    "action_name": action_name,
+                    "composite_score": confidence,  # BC analog
+                    "confidence": confidence,
+                    "urgency": urgency,
+                    "reasoning": (
+                        f"BC model predicted {action_name} "
+                        f"(p={confidence:.3f})"
+                    ),
+                    "decision_method": "trm_model",
+                    "scoring_detail": {
+                        "model_probs": probs,
+                        "model_val_acc": self._model.best_val_acc,
+                    },
+                }
+            except Exception as e:
+                # On any model-side failure, fall through to heuristic
+                # so the TRM never breaks because the model failed.
+                logger.warning(
+                    "CapacityPromise BC inference failed (falling back "
+                    "to heuristic): %s", e,
+                )
+
         decision = self._compute_decision("capacity_promise", state)
 
         action_name = {
@@ -128,7 +184,7 @@ class CapacityPromiseTRM:
             "confidence": decision.confidence,
             "urgency": decision.urgency,
             "reasoning": decision.reasoning,
-            "decision_method": "trm_model" if self._model else "heuristic",
+            "decision_method": "heuristic",
             "scoring_detail": decision.params_used,
         }
 
