@@ -2,7 +2,7 @@
 MCP tools — AD-11 Supply×Transport intersection contract.
 
 Per `Autonomy-Core/docs/SCP_TMS_COLLABORATION_ARCHITECTURE.md` §5 + §7,
-TMS exposes three read-only tools that SCP agents call to inform their
+TMS exposes read-only tools that SCP agents call to inform their
 planning decisions:
 
   * get_carrier_capacity(lane_id, date_from, date_to)
@@ -13,6 +13,10 @@ planning decisions:
           per-day occupancy
   * get_active_exceptions(severity_min, status_filter, limit)
         → ActiveExceptionList — open exceptions with shipment context
+  * get_realized_shipments(filters, delivered_after, delivered_before)
+        → list of joined LanePerformanceActuals + ServiceCommitmentOutcomes
+          rows. Closes the SCP forecast / FVA / inventory-buffer
+          feedback loop. Per Autonomy-Core MIGRATION_REGISTER §3.8.1.
 
 ## Contract invariants (all enforced)
 
@@ -469,4 +473,221 @@ def register(mcp):
                 "exceptions": exceptions,
                 "severity_breakdown": severity_breakdown,
                 "as_of_utc": now.isoformat() + "Z",
+            }
+
+    @mcp.tool()
+    async def get_realized_shipments(
+        tenant_id: int,
+        config_id: int,
+        delivered_after: str,
+        delivered_before: str,
+        site_id: Optional[int] = None,
+        lane_id: Optional[int] = None,
+        product_id: Optional[str] = None,
+        carrier_id: Optional[str] = None,
+        limit: int = 1000,
+    ) -> Dict[str, Any]:
+        """Return realised shipment outcomes — joined LanePerformanceActuals
+        + ServiceCommitmentOutcomes rows.
+
+        Closes the SCP-side feedback loop (forecast retraining, FVA
+        metrics, demand-sensing TRM updates, inventory-buffer learning)
+        without a direct DB read against TMS. Per Autonomy-Core
+        MIGRATION_REGISTER §3.8.1.
+
+        Underlying canonical state lives in
+        `azirella_data_model.intersections.supply_transport.feedback`:
+            * LanePerformanceActuals — promised vs actual transit per
+              shipment (TMS writes on every DELIVERED transition).
+            * ServiceCommitmentOutcomes — terminal outcome per
+              ServiceWindowPromise (MET / MISSED / MISSED_RECOVERED /
+              CANCELLED + minutes_late + qty_short + root_cause).
+
+        This tool joins the two via `correlation_id` (outer join — LPA
+        rows without a matching SCO still return; outcome fields are
+        null in that case).
+
+        Args:
+            tenant_id: canonical tenant boundary (REQUIRED).
+            config_id: supply-chain config scope. Currently advisory —
+                feedback rows are tenant-scoped, not config-scoped, so
+                this argument is accepted for symmetry with other AD-11
+                tools but does not filter rows. If the schema gains
+                config_id later, this becomes enforced.
+            delivered_after / delivered_before: ISO date strings,
+                inclusive bounds on `actual_delivery`. Required because
+                callers should always specify a horizon.
+            site_id: optional — filter to shipments whose origin OR
+                destination matches this site (via SCO). Rows without
+                a matching SCO are excluded when this filter is set.
+            lane_id: optional — filter on LanePerformanceActuals.lane_id
+                (string match against the canonical lane identifier).
+            product_id: optional — filter on SCO.product_id (string).
+                Like site_id, requires a matching SCO row.
+            carrier_id: optional — filter on LPA.carrier_id (string).
+            limit: max rows to return (capped at 5000).
+
+        Returns dict with:
+            * `count` — number of rows returned (≤ limit)
+            * `shipments` — list of joined dicts (TMS-side wire format,
+              producer-owned). Each row carries:
+                - correlation_id, lane_id, carrier_id, mode
+                - transfer_order_id, load_id (nullable)
+                - promised_pickup, actual_pickup
+                - promised_eta_p10/p50/p90, actual_delivery
+                - transit_minutes_actual, transit_minutes_promised_p50
+                - on_time (true / false / null), minutes_late (from SCO),
+                  quantity, weight_lb
+                - outcome (MET / MISSED / MISSED_RECOVERED / CANCELLED;
+                  null if no SCO match)
+                - origin_site_id, dest_site_id, product_id, order_id,
+                  qty_short, root_cause (all from SCO if matched)
+                - observed_at
+            * `as_of_utc`
+
+        Edge inputs return typed-empty (count=0, shipments=[]) — never
+        500. Bad ISO date strings raise ValueError per the AD-11 contract
+        (callers should validate before calling).
+
+        Plane-absence behavior: this is the callee. SCP-side fallback
+        when TMS is absent is the caller's responsibility (see
+        `cross-plane-mcp-only.md`).
+        """
+        from .db import get_db
+        from azirella_data_model.intersections.supply_transport.feedback import (
+            LanePerformanceActuals,
+            ServiceCommitmentOutcomes,
+        )
+
+        d_after = date_type.fromisoformat(delivered_after)
+        d_before = date_type.fromisoformat(delivered_before)
+        after_dt = datetime.combine(d_after, datetime.min.time())
+        before_dt = datetime.combine(d_before, datetime.max.time())
+        limit = max(1, min(5000, int(limit)))
+
+        async with get_db() as db:
+            # Outer-join LPA → SCO on (tenant_id, correlation_id).
+            # LPA is the driving table; SCO fills in terminal-outcome
+            # context where it exists.
+            join_cond = and_(
+                LanePerformanceActuals.tenant_id == ServiceCommitmentOutcomes.tenant_id,
+                LanePerformanceActuals.correlation_id == ServiceCommitmentOutcomes.correlation_id,
+            )
+
+            stmt = (
+                select(
+                    LanePerformanceActuals.correlation_id,
+                    LanePerformanceActuals.lane_id,
+                    LanePerformanceActuals.carrier_id,
+                    LanePerformanceActuals.mode,
+                    LanePerformanceActuals.transfer_order_id,
+                    LanePerformanceActuals.load_id,
+                    LanePerformanceActuals.promised_pickup,
+                    LanePerformanceActuals.actual_pickup,
+                    LanePerformanceActuals.promised_eta_p10,
+                    LanePerformanceActuals.promised_eta_p50,
+                    LanePerformanceActuals.promised_eta_p90,
+                    LanePerformanceActuals.actual_delivery,
+                    LanePerformanceActuals.transit_minutes_actual,
+                    LanePerformanceActuals.transit_minutes_promised_p50,
+                    LanePerformanceActuals.on_time,
+                    LanePerformanceActuals.quantity,
+                    LanePerformanceActuals.weight_lb,
+                    LanePerformanceActuals.observed_at,
+                    ServiceCommitmentOutcomes.outcome,
+                    ServiceCommitmentOutcomes.minutes_late,
+                    ServiceCommitmentOutcomes.qty_short,
+                    ServiceCommitmentOutcomes.root_cause,
+                    ServiceCommitmentOutcomes.origin_site_id,
+                    ServiceCommitmentOutcomes.dest_site_id,
+                    ServiceCommitmentOutcomes.product_id,
+                    ServiceCommitmentOutcomes.order_id,
+                )
+                .select_from(LanePerformanceActuals)
+                .outerjoin(ServiceCommitmentOutcomes, join_cond)
+                .where(
+                    LanePerformanceActuals.tenant_id == tenant_id,
+                    LanePerformanceActuals.actual_delivery.isnot(None),
+                    LanePerformanceActuals.actual_delivery >= after_dt,
+                    LanePerformanceActuals.actual_delivery <= before_dt,
+                )
+            )
+
+            if lane_id is not None:
+                stmt = stmt.where(LanePerformanceActuals.lane_id == str(lane_id))
+            if carrier_id is not None:
+                stmt = stmt.where(LanePerformanceActuals.carrier_id == str(carrier_id))
+            if site_id is not None:
+                # site_id requires a matching SCO row
+                stmt = stmt.where(or_(
+                    ServiceCommitmentOutcomes.origin_site_id == str(site_id),
+                    ServiceCommitmentOutcomes.dest_site_id == str(site_id),
+                ))
+            if product_id is not None:
+                # product_id likewise requires a matching SCO row
+                stmt = stmt.where(ServiceCommitmentOutcomes.product_id == str(product_id))
+
+            stmt = stmt.order_by(desc(LanePerformanceActuals.actual_delivery)).limit(limit)
+
+            rows = (await db.execute(stmt)).all()
+
+            def _iso(dt):
+                return dt.isoformat() + "Z" if dt else None
+
+            shipments = []
+            for r in rows:
+                shipments.append({
+                    "correlation_id": r[0],
+                    "lane_id": r[1],
+                    "carrier_id": r[2],
+                    "mode": r[3],
+                    "transfer_order_id": r[4],
+                    "load_id": r[5],
+                    "promised_pickup": _iso(r[6]),
+                    "actual_pickup": _iso(r[7]),
+                    "promised_eta_p10": _iso(r[8]),
+                    "promised_eta_p50": _iso(r[9]),
+                    "promised_eta_p90": _iso(r[10]),
+                    "actual_delivery": _iso(r[11]),
+                    "transit_minutes_actual": float(r[12]) if r[12] is not None else None,
+                    "transit_minutes_promised_p50": float(r[13]) if r[13] is not None else None,
+                    "on_time": (
+                        bool(r[14]) if r[14] is not None and r[14] in (0, 1) else None
+                    ),
+                    "quantity": float(r[15]) if r[15] is not None else None,
+                    "weight_lb": float(r[16]) if r[16] is not None else None,
+                    "observed_at": _iso(r[17]),
+                    "outcome": (
+                        r[18].value if r[18] is not None and hasattr(r[18], "value")
+                        else (str(r[18]) if r[18] is not None else None)
+                    ),
+                    "minutes_late": float(r[19]) if r[19] is not None else None,
+                    "qty_short": float(r[20]) if r[20] is not None else None,
+                    "root_cause": r[21],
+                    "origin_site_id": r[22],
+                    "dest_site_id": r[23],
+                    "product_id": r[24],
+                    "order_id": r[25],
+                })
+
+            return {
+                "count": len(shipments),
+                "shipments": shipments,
+                "as_of_utc": datetime.utcnow().isoformat() + "Z",
+                # Echo the requested filters back so the caller can
+                # detect whether their config_id was applied (currently
+                # not — see docstring caveat) and whether their narrow
+                # filters returned no rows vs were silently dropped.
+                "filters_applied": {
+                    "tenant_id": int(tenant_id),
+                    "config_id": int(config_id),
+                    "config_id_enforced": False,
+                    "delivered_after": delivered_after,
+                    "delivered_before": delivered_before,
+                    "site_id": int(site_id) if site_id is not None else None,
+                    "lane_id": int(lane_id) if lane_id is not None else None,
+                    "product_id": product_id,
+                    "carrier_id": carrier_id,
+                    "limit": limit,
+                },
             }
