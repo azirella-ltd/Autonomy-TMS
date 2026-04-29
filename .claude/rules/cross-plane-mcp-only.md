@@ -53,17 +53,17 @@ Mirror surface lives in `Autonomy-SCP/backend/app/mcp_server/tools/`:
 
 When TMS needs SCP-resident data **not** already covered, the right move is to **request a new SCP MCP tool** — not to add a direct DB read.
 
-## Migration backlog
+## Existing direct-DB code (demo cleanup, NOT a rule violation to remediate as architecture)
 
-Existing TMS direct-DB-read sites that violate this rule (allowed transitionally, tracked):
+There is one pre-existing TMS code path that talks directly to SCP's Postgres via the `tms_reader` role. **It is synthetic demo-bootstrap tooling, not production cross-plane integration**, and it is **not** the canonical example of "TMS uses MCP to call SCP":
 
-- [`backend/app/services/tms/scp_etl.py`](../../backend/app/services/tms/scp_etl.py) — `FoodDistExtractor` class with 10 queries against SCP tables (`supply_chain_configs`, `site`, `trading_partners`, `transportation_lane`, `product`, `shipment`, `outbound_order_line`, `inbound_order_line`).
+- [`backend/app/services/tms/scp_etl.py`](../../backend/app/services/tms/scp_etl.py) — `FoodDistExtractor` (10 queries against SCP tables, used to seed the Food Dist demo when both stacks run on one host).
 - [`backend/scripts/extract_scp_food_dist.py`](../../backend/scripts/extract_scp_food_dist.py) — CLI driver for the above.
-- [`backend/app/core/config.py:222`](../../backend/app/core/config.py#L222) — `SCP_DB_URL: Optional[str]` setting (the entire credential is a transitional escape hatch).
+- [`backend/app/core/config.py:222`](../../backend/app/core/config.py#L222) — `SCP_DB_URL: Optional[str]` setting supporting the demo extractor.
 
-Migration target: SCP exposes `scp_export_config_snapshot(config_name) -> ConfigSnapshot` MCP tool; TMS replaces the direct queries with the call and keeps staging-table persistence. After migration, `tms_reader` Postgres role + `SCP_DB_URL` retire.
+**Disposition:** Tier 4 / demo cleanup, tracked in [MIGRATION_REGISTER §3.7](../../../Autonomy-Core/docs/MIGRATION_REGISTER.md). When the demo retires or the code gets touched, delete or replace with a small JSON-snapshot exporter — no Core schema, no production-grade MCP contract required. **Do not treat this as the model for production cross-plane reads.** Real cross-plane reads (SCP supply plan, demand forecast, ATP constraints, etc.) go through MCP from day one — those are the canonical examples of this rule.
 
-Tracked in [Autonomy-Core MIGRATION_REGISTER §3.7](../../../Autonomy-Core/docs/MIGRATION_REGISTER.md).
+The rule in full force: NEW code that needs cross-plane data uses MCP. The existing demo extractor is grandfathered cleanup, not a forward-looking architecture concern.
 
 ## Known gaps in current MCP coverage
 
