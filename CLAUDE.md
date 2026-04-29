@@ -54,6 +54,7 @@ Apply Rule 1 (cross-product) or Rule 2 (substrate) on every change.
 - [governance-pipeline.md](.claude/rules/governance-pipeline.md) — 4-step, 5-dimension scoring
 - [provisioning.md](.claude/rules/provisioning.md) — 17 steps adapted for transport
 - [external-integrations.md](.claude/rules/external-integrations.md) — project44, carrier APIs, weather, ports, rates
+- [cross-plane-mcp-only.md](.claude/rules/cross-plane-mcp-only.md) — any cross-plane DB read goes through MCP; existing direct-DB ETL is a migration target (MIGRATION_REGISTER §3.7)
 
 ## Specialised agents
 
