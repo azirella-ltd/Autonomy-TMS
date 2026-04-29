@@ -71,19 +71,21 @@ A 2026-04-29 audit of TMS's MCP surface against the queries SCP would realistica
 
 ### Gap 1 — `get_realized_shipments` (TMS-side, CRITICAL)
 
-**What's missing:** A tool that returns the actual shipment outcomes (delivered quantity, on-time variance, transit time, freight cost, exceptions) for SCP to use in forecast retraining, FVA metrics, demand-sensing TRM updates, and inventory-buffer learning.
+**What's missing:** An MCP tool exposing realised shipment outcomes (delivered quantity, on-time variance, transit time, exceptions) so SCP can drive forecast retraining, FVA metrics, demand-sensing TRM updates, and inventory-buffer learning without a direct DB read.
 
-**Add it as:**
+**Underlying canonical state already in Core:** `LanePerformanceActuals` and `ServiceCommitmentOutcomes` (`azirella_data_model.intersections.supply_transport.feedback`). TMS already writes both of these via `ShipmentTrackingTRM.record_lane_performance_for_recently_delivered()` and the dispatch outcome path. **The tables and the writers exist. The gap is the MCP transport.**
+
+**Add the tool as:**
 ```python
 get_realized_shipments(
     tenant_id, config_id,
     site_id?, lane_id?, product_id?,
     delivered_after, delivered_before,
     limit: int = 1000,
-) -> {"count": int, "shipments": [ShipmentOutcome, ...], "as_of_utc": datetime}
+) -> {"count": int, "shipments": [ <TMS-local response model>, ...], "as_of_utc": datetime}
 ```
 
-`ShipmentOutcome` is a Core type (lives in the intersection-contract package) — TMS imports + serialises, SCP imports + deserialises. Don't invent a TMS-local shape; use the Core schema.
+**Response shape is TMS-side, producer-owned.** It is *not* a Core type. Define the typed response model in TMS's `app/mcp_server/tools/` (or a sibling `schemas/` module) — that's where MCP tool wire formats belong. SCP either deserialises with its own Pydantic projection of the fields it cares about, consumes as `dict[str, Any]`, or imports the response model from TMS via standard MCP tool versioning. **Don't put the wire format in Core** — API contracts are owned by the producer; canonical state (the ORM tables) is what's correctly in Core.
 
 ### Gap 2 — SCP MCP server isn't running independently (HIGH)
 
