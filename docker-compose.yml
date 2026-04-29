@@ -91,6 +91,20 @@ services:
       - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE:-1024}
       - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP:-200}
       - RAG_TOP_K=${RAG_TOP_K:-5}
+
+      # Narration LLM caps — clamp Core defaults back to 8K Qwen3-8B sizing.
+      # Core 2026-04-28 (TMS_ADOPTION_GUIDE_20260428.md) lifted defaults to fit
+      # mss1-max 32K llama-3.3-70b. TMS still routes narration to Qwen3-8B at
+      # localhost:8001/v1, so clamp via Path A. Override per-deployment by
+      # setting the env vars on the host. Migrate to mss1-max (Path B) by
+      # setting LLM_API_BASE=http://mss1-max.local:8010/v1 + the model name and
+      # unsetting these clamps.
+      - LLM_SUMMARY_MAX_DECISIONS=${LLM_SUMMARY_MAX_DECISIONS:-10}
+      - LLM_SUMMARY_MAX_ALERTS=${LLM_SUMMARY_MAX_ALERTS:-5}
+      - LLM_CONTEXT_HISTORY_WINDOW=${LLM_CONTEXT_HISTORY_WINDOW:-10}
+      - DIGEST_SUMMARY_MAX_DECISIONS=${DIGEST_SUMMARY_MAX_DECISIONS:-5}
+      - LLM_MAX_PROMPT_CHARS=${LLM_MAX_PROMPT_CHARS:-6000}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-800}
     ports:
       - "${BACKEND_HOST_PORT:-8010}:8000"
     volumes:
