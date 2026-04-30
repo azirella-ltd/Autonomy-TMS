@@ -59,9 +59,16 @@ SOURCE_REGISTRY = {
         "name": "FMCSA SaferWeb (DOT Carrier Data)",
         "base_url": "https://mobile.fmcsa.dot.gov/qc/services",
         "categories": ["carrier_intelligence"],
+        "commercial": False,
+        "auth_type": "none",
         "requires_key": False,
         "free_tier": "Unlimited (US federal open data)",
         "refresh_cadence": "weekly",
+        "vendor_url": "https://mobile.fmcsa.dot.gov/qc",
+        "subscription_url": "",
+        "license_notes": "Public domain (gov_official source tier).",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T1_EXECUTION")],
         "description": (
             "Carrier safety ratings, inspection summary, OOS rates, "
             "insurance status, operating authority. Critical for "
@@ -78,10 +85,17 @@ SOURCE_REGISTRY = {
         "name": "DOE Weekly Retail Diesel Fuel Index",
         "base_url": "https://api.eia.gov/v2",
         "categories": ["energy"],
+        "commercial": False,
+        "auth_type": "api_key",
         "requires_key": True,
         "key_env_var": "EIA_API_KEY",
         "free_tier": "Unlimited (same EIA key as existing source)",
         "refresh_cadence": "weekly",
+        "vendor_url": "https://www.eia.gov/petroleum/gasdiesel/",
+        "subscription_url": "https://www.eia.gov/opendata/register.php",
+        "license_notes": "Public domain.",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T1_EXECUTION")],
         "description": (
             "US average retail diesel price "
             "(PET.EMD_EPD2D_PTE_NUS_DPG.W). The standard index used "
@@ -95,9 +109,16 @@ SOURCE_REGISTRY = {
         "name": "CBP Border Wait Times",
         "base_url": "https://bwt.cbp.gov/api",
         "categories": ["trade"],
+        "commercial": False,
+        "auth_type": "none",
         "requires_key": False,
         "free_tier": "Unlimited (US federal open data)",
         "refresh_cadence": "hourly",
+        "vendor_url": "https://bwt.cbp.gov/",
+        "subscription_url": "",
+        "license_notes": "Public domain (gov_official).",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T1_EXECUTION")],
         "description": (
             "Commercial vehicle wait times at US-Mexico and "
             "US-Canada border crossings. Critical for cross-border "
@@ -112,13 +133,40 @@ SOURCE_REGISTRY = {
         "name": "EPA SmartWay Carrier Performance",
         "base_url": "https://www.epa.gov/smartway",
         "categories": ["sustainability"],
+        "commercial": False,
+        "auth_type": "none",
         "requires_key": False,
         "free_tier": "Unlimited (public EPA data, bulk download)",
         "refresh_cadence": "quarterly",
+        "vendor_url": "https://www.epa.gov/smartway",
+        "subscription_url": "",
+        "license_notes": "Public domain.",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T2_TACTICAL")],
         "description": (
             "Carrier fuel efficiency and emissions data from the "
             "SmartWay program. Feeds carrier scorecard sustainability "
             "score and supports Scope 3 emissions reporting."
+        ),
+    },
+    "tsa_freight_alerts": {
+        "name": "TSA Freight Security Alerts",
+        "base_url": "https://www.tsa.gov/news",
+        "categories": ["regulatory"],
+        "commercial": False,
+        "auth_type": "none",
+        "requires_key": False,
+        "free_tier": "Unlimited",
+        "refresh_cadence": "daily",
+        "vendor_url": "https://www.tsa.gov/for-industry/cargo-security",
+        "subscription_url": "",
+        "license_notes": "Public domain (gov_official).",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T1_EXECUTION")],
+        "description": (
+            "TSA cargo / freight security alerts. Feeds exception "
+            "management and routing TRMs when sectors / shipments "
+            "are restricted."
         ),
     },
     # ── Commercial freight market sources (stubs — require paid subscription)
@@ -126,16 +174,25 @@ SOURCE_REGISTRY = {
         "name": "DAT RateView (Spot & Contract Rates)",
         "base_url": "https://api.dat.com",
         "categories": ["freight_market"],
+        "commercial": True,
+        "auth_type": "api_key",
         "requires_key": True,
         "key_env_var": "DAT_API_KEY",
         "free_tier": None,
         "refresh_cadence": "daily",
+        "vendor_url": "https://www.dat.com/",
+        "subscription_url": "https://www.dat.com/load-boards-and-rates",
+        "license_notes": (
+            "Commercial; per-lane query metering. Outputs licensed "
+            "for the named tenant only."
+        ),
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T2_TACTICAL")],
         "description": (
             "Real-time spot market rates by lane/equipment type. "
             "Critical for FreightProcurementTRM rate benchmarking "
             "and BrokerRoutingTRM spot-vs-contract decisions."
         ),
-        "commercial": True,
         "source_params_example": {
             "lanes": [
                 {"origin": "LAX", "dest": "PHX", "equipment": "V"},
@@ -146,10 +203,17 @@ SOURCE_REGISTRY = {
         "name": "FreightWaves SONAR",
         "base_url": "https://api.freightwaves.com",
         "categories": ["freight_market"],
+        "commercial": True,
+        "auth_type": "api_key",
         "requires_key": True,
         "key_env_var": "SONAR_API_KEY",
         "free_tier": None,
         "refresh_cadence": "daily",
+        "vendor_url": "https://sonar.freightwaves.com/",
+        "subscription_url": "https://sonar.freightwaves.com/subscribe",
+        "license_notes": "Commercial; named-app key.",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T2_TACTICAL")],
         "description": (
             "Outbound Tender Volume Index (OTVI), Outbound Tender "
             "Rejection Index (OTRI), rate forecasts by lane. The "
@@ -157,7 +221,6 @@ SOURCE_REGISTRY = {
             "tightness — when OTRI rises, CapacityBufferTRM and "
             "FreightProcurementTRM must react."
         ),
-        "commercial": True,
         "source_params_example": {
             "indices": ["OTVI.USA", "OTRI.USA", "OTVI.LAX"],
         },
@@ -166,31 +229,165 @@ SOURCE_REGISTRY = {
         "name": "Greenscreens.ai (Rate Intelligence)",
         "base_url": "https://api.greenscreens.ai",
         "categories": ["freight_market"],
+        "commercial": True,
+        "auth_type": "api_key",
         "requires_key": True,
         "key_env_var": "GREENSCREENS_API_KEY",
         "free_tier": None,
         "refresh_cadence": "daily",
+        "vendor_url": "https://www.greenscreens.ai/",
+        "subscription_url": "https://www.greenscreens.ai/contact",
+        "license_notes": "Commercial.",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T2_TACTICAL")],
         "description": (
             "Predictive rate intelligence and market-rate "
             "benchmarking. Feeds FreightProcurementTRM with "
             "confidence-scored rate predictions by lane."
         ),
-        "commercial": True,
     },
     "marinetraffic": {
         "name": "MarineTraffic (AIS Vessel Data)",
         "base_url": "https://services.marinetraffic.com/api",
         "categories": ["ocean_intelligence"],
+        "commercial": True,
+        "auth_type": "api_key",
         "requires_key": True,
         "key_env_var": "MARINETRAFFIC_API_KEY",
         "free_tier": "Limited (100 credits on signup)",
         "refresh_cadence": "daily",
+        "vendor_url": "https://www.marinetraffic.com/",
+        "subscription_url": "https://www.marinetraffic.com/en/p/api-services",
+        "license_notes": "Commercial; credit-metered.",
+        "data_residency": "EU",
+        "min_plane_tier": [("TRANSPORT", "T3_STRATEGIC")],
         "description": (
             "AIS vessel position tracking, port call predictions, "
             "congestion heat maps. Extends p44 ocean visibility "
             "with raw AIS data for IntermodalTransferTRM."
         ),
+    },
+    # ── New TMS-specific commercial sources (added 2026-04-30) ──────
+    "drewry": {
+        "name": "Drewry Container Freight Rate Indices",
+        "base_url": "https://www.drewry.co.uk",
+        "categories": ["freight_market", "ocean_intelligence"],
         "commercial": True,
+        "auth_type": "api_key",
+        "requires_key": True,
+        "key_env_var": "DREWRY_API_KEY",
+        "free_tier": "Headline indices free; full series paid",
+        "refresh_cadence": "weekly",
+        "vendor_url": "https://www.drewry.co.uk/",
+        "subscription_url": "https://www.drewry.co.uk/supply-chain-advisors/supply-chain-expertise/world-container-index-assessed-by-drewry",
+        "license_notes": "Commercial; redistribution restricted.",
+        "data_residency": "UK",
+        "min_plane_tier": [("TRANSPORT", "T2_TACTICAL")],
+        "description": (
+            "Container shipping rate indices (WCI). Complements DAT "
+            "(truckload-only) for ocean-leg rate visibility."
+        ),
+    },
+    "xeneta": {
+        "name": "Xeneta Ocean / Air Freight Rates",
+        "base_url": "https://api.xeneta.com",
+        "categories": ["freight_market", "ocean_intelligence"],
+        "commercial": True,
+        "auth_type": "api_key",
+        "requires_key": True,
+        "key_env_var": "XENETA_API_KEY",
+        "free_tier": None,
+        "refresh_cadence": "daily",
+        "vendor_url": "https://www.xeneta.com/",
+        "subscription_url": "https://www.xeneta.com/contact",
+        "license_notes": "Commercial.",
+        "data_residency": "EU",
+        "min_plane_tier": [("TRANSPORT", "T2_TACTICAL")],
+        "description": (
+            "Ocean + air freight rate benchmarks with crowdsourced "
+            "BCO contract data. Strong fit for shipper-side "
+            "procurement TRMs."
+        ),
+    },
+    "inrix": {
+        "name": "Inrix Traffic + ETA",
+        "base_url": "https://api.inrix.com",
+        "categories": ["visibility"],
+        "commercial": True,
+        "auth_type": "oauth2",
+        "requires_key": True,
+        "key_env_var": "INRIX_CLIENT_ID",
+        "free_tier": None,
+        "refresh_cadence": "streaming",
+        "vendor_url": "https://inrix.com/",
+        "subscription_url": "https://inrix.com/contact/",
+        "license_notes": "Commercial; per-API metered.",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T1_EXECUTION")],
+        "description": (
+            "Real-time traffic + ETA APIs. Feeds last-mile and "
+            "exception-management TRMs with road-network state."
+        ),
+    },
+    "here_traffic": {
+        "name": "HERE Traffic + Routing",
+        "base_url": "https://traffic.api.here.com",
+        "categories": ["visibility"],
+        "commercial": True,
+        "auth_type": "api_key",
+        "requires_key": True,
+        "key_env_var": "HERE_API_KEY",
+        "free_tier": "Limited (free dev tier)",
+        "refresh_cadence": "streaming",
+        "vendor_url": "https://www.here.com/",
+        "subscription_url": "https://www.here.com/get-started/pricing",
+        "license_notes": "Commercial.",
+        "data_residency": "EU",
+        "min_plane_tier": [("TRANSPORT", "T1_EXECUTION")],
+        "description": (
+            "Alternative to Inrix with stronger non-US coverage. "
+            "Tenants typically wire one or the other."
+        ),
+    },
+    "oag_cirium": {
+        "name": "OAG / Cirium (Air Cargo Schedules)",
+        "base_url": "https://api.oag.com",
+        "categories": ["visibility"],
+        "commercial": True,
+        "auth_type": "api_key",
+        "requires_key": True,
+        "key_env_var": "OAG_API_KEY",
+        "free_tier": None,
+        "refresh_cadence": "daily",
+        "vendor_url": "https://www.oag.com/",
+        "subscription_url": "https://www.oag.com/contact",
+        "license_notes": "Commercial.",
+        "data_residency": "UK",
+        "min_plane_tier": [("TRANSPORT", "T3_STRATEGIC")],
+        "description": (
+            "Air-cargo schedule + capacity data. T3 fit for "
+            "air-freight-heavy tenants."
+        ),
+    },
+    "cargometrics": {
+        "name": "CargoMetrics AIS Analytics",
+        "base_url": "https://api.cargometrics.com",
+        "categories": ["ocean_intelligence"],
+        "commercial": True,
+        "auth_type": "api_key",
+        "requires_key": True,
+        "key_env_var": "CARGOMETRICS_API_KEY",
+        "free_tier": None,
+        "refresh_cadence": "daily",
+        "vendor_url": "https://www.cargometrics.com/",
+        "subscription_url": "https://www.cargometrics.com/contact",
+        "license_notes": "Commercial.",
+        "data_residency": "US",
+        "min_plane_tier": [("TRANSPORT", "T3_STRATEGIC")],
+        "description": (
+            "AIS-derived flow analytics beyond MarineTraffic raw "
+            "feeds. Strategic-tier ocean intelligence."
+        ),
     },
 }
 
