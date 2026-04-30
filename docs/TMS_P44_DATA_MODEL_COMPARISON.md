@@ -1,7 +1,16 @@
 # TMS Data Model vs project44 Data Model — Comparison & Advice
 
 **Created:** 2026-04-12
+**Last verified:** 2026-04-30 (all six original gaps confirmed closed in code)
 **Sister doc:** [TMS_DATA_MODEL.md](TMS_DATA_MODEL.md)
+
+> **Status:** Integration is **complete** for the v1 scope. The six gaps
+> originally identified on 2026-04-12 were all closed within the same
+> week (commits `9658a424` + `77b8b925`); 2026-04-30 verification
+> confirmed each in code. The "Gaps worth addressing" section is
+> retained below as a **closed-gaps log** so the audit trail is
+> readable, and the "Summary — what to do" table is updated to reflect
+> the current state.
 
 ## What p44 is and isn't
 
@@ -40,53 +49,57 @@ That distinction is the key to understanding the comparison:
 
 ---
 
-## Gaps worth addressing
+## Closed gaps (audit log — all addressed in the 2026-04-12 sprint)
 
-### 1. p44 Shipment Status model is richer than TMS consumes
+> Each subsection retains the original gap description for context and
+> appends a **Resolution** block citing where the fix landed. Verified
+> in code 2026-04-30.
 
-p44's status model is a nested object (`{ code, description, derivedStatus, health }`) with both a raw status code and a "derived" health assessment. TMS currently flattens this to a single status string via `_map_p44_status()` (line 376-390 of `data_mapper.py`). The `derivedStatus` and `health` score are lost.
+### 1. p44 Shipment Status model is richer than TMS consumes — ✅ CLOSED
 
-**Recommendation:** Add `p44_derived_status` and `p44_health_score` columns to `tms_shipment` (or store in the existing `eta_confidence` JSON). The health score is valuable input to the ExceptionManagementTRM — a degrading health score is a leading indicator of an upcoming exception before p44 formally fires an EXCEPTION event.
+**Gap (as identified 2026-04-12):** p44's status model is a nested object (`{ code, description, derivedStatus, health }`) with both a raw status code and a "derived" health assessment. TMS was flattening this to a single status string via `_map_p44_status()`, losing the `derivedStatus` and `health` score.
 
-### 2. p44 Order/Load model vs TMS Load model
+**Resolution (commit `9658a424`):** Added `p44_derived_status` and `p44_health_score` columns to `tms_shipment` ([`tms_entities.py:622-623`](../backend/app/models/tms_entities.py#L622-L623)). Mapper writes both at [`data_mapper.py:333-336`](../backend/app/integrations/project44/data_mapper.py#L333). The health score is now available to ExceptionManagementTRM as a leading-indicator signal.
 
-p44 recently (v4) introduced Order and Load as first-class entities sitting above individual tracked shipments. An Order can contain multiple Loads; a Load can contain multiple shipment legs. TMS has its own Load and LoadItem entities, but these aren't mapped to p44's — they're TMS-internal planning constructs.
+### 2. p44 Order/Load model vs TMS Load model — ✅ CLOSED
 
-**Recommendation:** Map `tms_shipment.load_id` ↔ p44 `masterShipmentId` (the p44 concept closest to a Load). When p44 publishes `inventory.v1.load.upserted` webhook events, create or update the corresponding TMS Load. This closes the loop between TMS load planning and p44 load-level visibility. Not urgent — individual shipment tracking works fine without it — but it becomes important for multi-stop loads where p44 tracks stops at the load level, not the individual shipment level.
+**Gap (as identified 2026-04-12):** p44's v4 introduced Order and Load as first-class entities sitting above tracked shipments, but TMS's Load entity wasn't mapped to p44's `masterShipmentId`.
 
-### 3. p44 ETA confidence model
+**Resolution (commit `77b8b925`):** Added `p44_master_shipment_id` column on `tms_shipment` ([`tms_entities.py:624`](../backend/app/models/tms_entities.py#L624)) plus `p44_shipment_id` on the Load entity ([`tms_entities.py:1287`](../backend/app/models/tms_entities.py#L1287)). Webhook handler reconciles `inventory.v1.load.upserted` events into TMS Load records.
 
-p44 publishes `estimatedDeliveryWindow` with `startDateTime` and `endDateTime`. TMS stores this as `eta_confidence: { p10, p50, p90, source }` JSON. But TMS's own conformal prediction layer also produces P10/P50/P90 bounds. The two ranges should be compared, not merged. Right now they're likely overwriting each other depending on which updates last.
+### 3. p44 ETA confidence model — ✅ CLOSED
 
-**Recommendation:** Store p44's range and Autonomy's conformal range separately:
+**Gap (as identified 2026-04-12):** p44's `estimatedDeliveryWindow` was overwriting Autonomy's conformal P10/P50/P90 in the same `eta_confidence` JSON column.
+
+**Resolution (commit `9658a424`):** `eta_confidence` JSON now uses the namespaced shape — see column docstring at [`tms_entities.py:617`](../backend/app/models/tms_entities.py#L617):
 
 ```json
 {
-    "p44": { "p10": "...", "p50": "...", "p90": "..." },
-    "autonomy": { "p10": "...", "p50": "...", "p90": "..." },
+    "p44":       { "p10": "...", "p50": "...", "p90": "..." },
+    "autonomy":  { "p10": "...", "p50": "...", "p90": "..." },
     "composite": { "p10": "...", "p50": "...", "p90": "...", "method": "ensemble" }
 }
 ```
 
-The composite is what the ShipmentTrackingTRM should use; the split gives auditability on where the confidence came from and enables a "which model is better" analysis over time.
+Mapper writes p44's range under the `p44` sub-key, leaving Autonomy's conformal layer untouched ([`data_mapper.py:345-350`](../backend/app/integrations/project44/data_mapper.py#L345)). The composite is what ShipmentTrackingTRM consumes; the split preserves audit trail and enables model-comparison analysis.
 
-### 4. p44 Document API
+### 4. p44 Document API — ✅ CLOSED
 
-p44 has a Multi-Modal Document API for fetching BOLs, PODs, invoices, and customs documents attached to shipments. TMS has BillOfLading and ProofOfDelivery models but these are TMS-authored — they don't pull from p44.
+**Gap (as identified 2026-04-12):** TMS's BillOfLading and ProofOfDelivery were TMS-authored only; p44's signed driver receipts (often arriving before the carrier's EDI) weren't being pulled.
 
-**Recommendation:** Add an inbound sync for p44 documents. When a shipment is delivered, call p44's `GET /documents?shipmentId=...` endpoint and populate the TMS BOL/POD records with `source: "P44"`. For POD specifically, p44 often has the signed delivery receipt before the TMS does (because p44 gets it from the driver app). This shortens the POD cycle.
+**Resolution (commit `77b8b925`):** New [`tracking_service.py:415` `sync_documents_for_shipment()`](../backend/app/integrations/project44/tracking_service.py#L415) pulls p44 documents and creates BOL/POD records with `source="P44"`. Webhook handler invokes it on delivery events ([`webhook_handler.py:830`](../backend/app/integrations/project44/webhook_handler.py#L830)). POD cycle shortened by p44's driver-app pipeline.
 
-### 5. p44 Port Intelligence ↔ TMS LaneProfile
+### 5. p44 Port Intelligence ↔ TMS LaneProfile — ✅ CLOSED
 
-The data mapper has `from_p44_port_intelligence()` (line 693) which normalizes p44 port congestion metrics. But these aren't currently written to any TMS entity — the data mapper returns a dict that presumably gets used ephemerally.
+**Gap (as identified 2026-04-12):** `from_p44_port_intelligence()` was returning ephemeral dicts that didn't write through to LaneProfile risk fields.
 
-**Recommendation:** Wire port intelligence data into LaneProfile fields (`disruption_frequency`, `congestion_risk_score`) for lanes that have ocean legs. Run a periodic sync (daily?) that updates lane risk scores based on current port conditions. The DemandSensingTRM and CapacityBufferTRM already read these fields — they'd get free signal quality improvement.
+**Resolution (commit `77b8b925`):** New [`tracking_service.py:306` `sync_port_intelligence_to_lane_profiles()`](../backend/app/integrations/project44/tracking_service.py#L306) writes `lane.congestion_risk_score` ([line 394](../backend/app/integrations/project44/tracking_service.py#L394)) and `lane.disruption_frequency` ([line 401](../backend/app/integrations/project44/tracking_service.py#L401)) for ocean-leg lanes. Scheduled to run periodically via [`tms_extraction_jobs.py:84` `tms_port_intelligence_sync`](../backend/app/services/tms_extraction_jobs.py#L84). DemandSensingTRM and CapacityBufferTRM read these fields directly, so the signal-quality improvement flows through automatically.
 
-### 6. p44 Appointment Update events
+### 6. p44 Appointment Update events — ✅ CLOSED
 
-p44 publishes `APPOINTMENT_SET` and `UPDATED_DELIVERY_APPT` events. TMS maps these to tracking events but doesn't update the TMS Appointment entity. The TMS dock scheduling system and p44's appointment awareness are disconnected.
+**Gap (as identified 2026-04-12):** `APPOINTMENT_SET` and `UPDATED_DELIVERY_APPT` events were being mapped to tracking events but not propagating to the TMS Appointment entity, leaving DockSchedulingTRM's view stale.
 
-**Recommendation:** When a `UPDATED_DELIVERY_APPT` event arrives via webhook, look up the corresponding Appointment by `(shipment_id, site_id)` and update `scheduled_start`/`scheduled_end`. This keeps the DockSchedulingTRM's view of appointments in sync with what the carrier is actually confirming through p44.
+**Resolution (commit `77b8b925`):** Webhook handler now recognises both event types ([`webhook_handler.py:515`](../backend/app/integrations/project44/webhook_handler.py#L515)) and updates the matching Appointment's `scheduled_start` / `scheduled_end` ([lines 572-574](../backend/app/integrations/project44/webhook_handler.py#L572)). DockSchedulingTRM stays in sync with carrier-confirmed times.
 
 ---
 
@@ -126,16 +139,18 @@ These are the planning and execution entities that are core TMS business logic a
 
 ---
 
-## Summary — what to do
+## Summary — current state
 
-| Priority | Action | Effort | Value |
-|---|---|---|---|
-| High | Separate p44 vs Autonomy ETA confidence ranges | Small (schema change + data mapper update) | Prevents silent overwriting of conformal predictions; enables model comparison |
-| High | Wire p44 appointment events to TMS Appointment entity | Small (webhook handler update) | Keeps DockSchedulingTRM in sync with carrier-confirmed times |
-| Medium | Store p44 derivedStatus / health score on shipment | Small (2 columns + mapper update) | Gives ExceptionManagementTRM leading-indicator signal |
-| Medium | Wire port intelligence to LaneProfile risk scores | Medium (periodic sync job + mapper integration) | Free signal improvement for DemandSensing + CapacityBuffer TRMs |
-| Medium | Inbound document sync (BOL/POD from p44) | Medium (new sync service + API calls) | Shortens POD cycle; driver-signed receipts arrive faster |
-| Low | Map p44 Order/Load to TMS Load | Medium (webhook handler + load reconciliation) | Only matters for multi-stop load visibility; individual shipment tracking works without it |
-| None needed | Planning entities (forecast, capacity, rates, tenders, dock, commodities) | — | These are core TMS IP with no p44 counterpart by design |
+| Item | Status (verified 2026-04-30) | Reference |
+|---|---|---|
+| Separate p44 vs Autonomy ETA confidence ranges | ✅ Closed | Gap #3 above |
+| Wire p44 appointment events to TMS Appointment | ✅ Closed | Gap #6 above |
+| Store p44 derivedStatus / health score on shipment | ✅ Closed | Gap #1 above |
+| Wire port intelligence to LaneProfile risk scores | ✅ Closed | Gap #5 above |
+| Inbound document sync (BOL/POD from p44) | ✅ Closed | Gap #4 above |
+| Map p44 Order/Load to TMS Load | ✅ Closed | Gap #2 above |
+| Planning entities (forecast, capacity, rates, tenders, dock, commodities) | n/a — by design | TMS IP, no p44 counterpart |
 
-The TMS data model is architecturally well-positioned relative to p44. The integration covers the full bidirectional mapping for tracking, identifiers, carriers, and events. The gaps above are refinements, not redesigns — they close feedback loops between p44's visibility data and TMS's planning/execution agents.
+The TMS data model is architecturally well-positioned relative to p44. The integration covers the full bidirectional mapping for tracking, identifiers, carriers, events, status health, ETA dual-range, document sync, port intelligence, appointment updates, and load mapping. **No outstanding p44 integration gaps as of 2026-04-30.**
+
+Future p44 work — when it arises — likely falls into one of: new event types as p44 adds them; mode-granularity round-trip refinements (e.g. distinguishing FCL/LCL on inbound shipments — see Transport mode coverage above); or new p44 product surfaces (Order Visibility, Inventory Visibility) that aren't yet in TMS scope. None of these are tracked as live work today.
