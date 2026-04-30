@@ -10,7 +10,8 @@ and any future Autonomy product.
 Same shim pattern as tenant/master/governance/powell/context_engine.
 
 See `Autonomy-TMS/docs/internal/plans/TMS_ERP_INTEGRATION.md` and
-`Autonomy-Core/docs/INTEGRATION_ARCHITECTURE.md` for the architecture.
+`Autonomy-Core/docs/architecture/cross-product/ERP_INTEGRATION_LAYERING.md`
+for the architecture.
 """
 
 from azirella_integrations.base.tms_adapter import (
