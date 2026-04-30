@@ -3,7 +3,7 @@
 Detailed architecture, workflows, and reference material extracted from CLAUDE.md.
 Claude Code reads this file on-demand, not on every message — keeping CLAUDE.md lean.
 
-> **Platform reference:** [Autonomy-Core/docs/PLATFORM_OVERVIEW.md](../../Autonomy-Core/docs/PLATFORM_OVERVIEW.md) and [BUSINESS_FUNCTION_MODELING.md](../../Autonomy-Core/docs/BUSINESS_FUNCTION_MODELING.md). See also [TMS_INSTANTIATION.md](TMS_INSTANTIATION.md) for the TMS-specific six-choice instantiation.
+> **Platform reference:** [Autonomy-Core/docs/PLATFORM_OVERVIEW.md](../../Autonomy-Core/docs/architecture/PLATFORM_OVERVIEW.md) and [BUSINESS_FUNCTION_MODELING.md](../../Autonomy-Core/docs/architecture/BUSINESS_FUNCTION_MODELING.md). See also [TMS_INSTANTIATION.md](TMS_INSTANTIATION.md) for the TMS-specific six-choice instantiation.
 
 > **Platform layer (authoritative in Autonomy-Core, do not re-explain here):** AIIO model, five-layer agent coordination (L1 TRM / L2 Site tGNN / L3 Tactical / L4 S&OP / AAP), decision lifecycle & correlation_id, context broker, temporal knowledge store, scenario engine, digital twin, training lifecycle, governance pipeline, conformal prediction, Claude Skills envelope, integration pattern (bulk / CDC / MCP), user interaction model. Sections of this doc that cover these topics are legacy SCP-derived content and are being trimmed — treat Autonomy-Core docs as the source of truth until the trim pass completes.
 

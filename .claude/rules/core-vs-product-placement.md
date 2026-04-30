@@ -60,7 +60,7 @@ with a target tier.
 - [Autonomy-Core/docs/MIGRATION_REGISTER.md](../../../Autonomy-Core/docs/MIGRATION_REGISTER.md) — Core-bound migrations (includes TMS items slated for extraction / deprecation)
 - [Autonomy-Core/docs/CONSUMER_ADOPTION_LOG.md](../../../Autonomy-Core/docs/CONSUMER_ADOPTION_LOG.md) — Core changes requiring TMS action
 - [Autonomy-Core/docs/SPRINT_1_EXECUTION.md](../../../Autonomy-Core/docs/SPRINT_1_EXECUTION.md) — current partition sprint
-- [Autonomy-Core/docs/TMS_ADOPTION_GUIDE_20260420.md](../../../Autonomy-Core/docs/TMS_ADOPTION_GUIDE_20260420.md) — **directional alert.** STOP list + PREPARE list for TMS. Read before the next commit.
+- [Autonomy-Core/docs/TMS_ADOPTION_GUIDE_20260420.md](../../../Autonomy-Core/docs/adoption/TMS_ADOPTION_GUIDE_20260420.md) — **directional alert.** STOP list + PREPARE list for TMS. Read before the next commit.
 
 Per CLAUDE.md cross-product rule: when ANY change is made to Autonomy-Core,
 update `CONSUMER_ADOPTION_LOG.md` so TMS and SCP can discover and adopt.

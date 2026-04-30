@@ -78,7 +78,7 @@ Apply Rule 1 (cross-product) or Rule 2 (substrate) on every change.
 - [Autonomy-Core/docs/MIGRATION_REGISTER.md](../Autonomy-Core/docs/MIGRATION_REGISTER.md) — items migrating to Core (including TMS items slated for extraction)
 - [Autonomy-Core/docs/CONSUMER_ADOPTION_LOG.md](../Autonomy-Core/docs/CONSUMER_ADOPTION_LOG.md) — Core changes TMS must pick up
 - [Autonomy-Core/docs/SPRINT_1_EXECUTION.md](../Autonomy-Core/docs/SPRINT_1_EXECUTION.md) — current partition sprint (2026-04-21 → 2026-06-01)
-- [Autonomy-Core/docs/TMS_ADOPTION_GUIDE_20260420.md](../Autonomy-Core/docs/TMS_ADOPTION_GUIDE_20260420.md) — **directional alert. Read before next commit.** Contains STOP + PREPARE lists.
+- [Autonomy-Core/docs/TMS_ADOPTION_GUIDE_20260420.md](../Autonomy-Core/docs/adoption/TMS_ADOPTION_GUIDE_20260420.md) — **directional alert. Read before next commit.** Contains STOP + PREPARE lists.
 - [Autonomy-DP/CLAUDE.md](../Autonomy-DP/CLAUDE.md) — sibling product (Demand Planning). TMS lane-volume forecaster reads DP via MCP at `DP_MCP_URL=http://msi-stealth.local:8290` (the cross-plane rule applies — never direct DB). **Clone `Autonomy-DP` next to `Autonomy-TMS` on every dev box** — see `CONSUMER_ADOPTION_LOG.md` 2026-04-30 entry "Clone `Autonomy-DP` on every dev box."
 
 ## Target architecture (2026-04-10)
@@ -186,7 +186,7 @@ make llm-check
 > Container-internal ports unchanged. All host ports are env-driven
 > (`PROXY_HOST_PORT`, `BACKEND_HOST_PORT`, `MCP_HOST_PORT`, …). Copy
 > `deployments/.env.example` to `.env` to override at deploy time.
-> See [Autonomy-Core/docs/DEPLOYMENT_PORTS.md](../Autonomy-Core/docs/DEPLOYMENT_PORTS.md).
+> See [Autonomy-Core/docs/DEPLOYMENT_PORTS.md](../Autonomy-Core/docs/architecture/DEPLOYMENT_PORTS.md).
 
 **Default login**: `systemadmin@autonomy.com` / `Autonomy@2026`
 

@@ -1396,10 +1396,10 @@ Replace heuristic suggestion generation with LLM-powered analysis:
 For issues or questions:
 
 - **Documentation**: See [CLAUDE.md](CLAUDE.md)
-- **Backend Code**: [backend/app/api/endpoints/chat.py](backend/app/api/endpoints/chat.py)
-- **Service Logic**: [backend/app/services/chat_service.py](backend/app/services/chat_service.py)
-- **Database Models**: [backend/app/models/chat.py](backend/app/models/chat.py)
-- **Test Script**: [backend/scripts/test_chat_api.py](backend/scripts/test_chat_api.py)
+- **Backend Code**: [backend/app/api/endpoints/chat.py](../../../../../app/app/api/endpoints/chat.py)
+- **Service Logic**: [backend/app/services/chat_service.py](../../../../../app/app/services/chat_service.py)
+- **Database Models**: [backend/app/models/chat.py](../../../../../app/app/models/chat.py)
+- **Test Script**: [backend/scripts/test_chat_api.py](../../../../../app/scripts/test_chat_api.py)
 
 ---
 

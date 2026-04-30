@@ -1,7 +1,7 @@
 # TMS as an Autonomy Product
 
 **Audience:** Engineers and architects working on Autonomy TMS.
-**Prerequisite:** [Autonomy-Core/docs/PLATFORM_OVERVIEW.md](../../Autonomy-Core/docs/PLATFORM_OVERVIEW.md) and [BUSINESS_FUNCTION_MODELING.md](../../Autonomy-Core/docs/BUSINESS_FUNCTION_MODELING.md).
+**Prerequisite:** [Autonomy-Core/docs/PLATFORM_OVERVIEW.md](../../Autonomy-Core/docs/architecture/PLATFORM_OVERVIEW.md) and [BUSINESS_FUNCTION_MODELING.md](../../Autonomy-Core/docs/architecture/BUSINESS_FUNCTION_MODELING.md).
 **Scope:** How TMS instantiates the Autonomy platform for transportation management. Everything product-agnostic is in Core; this doc covers the six product-level choices for TMS.
 
 ---
@@ -72,7 +72,7 @@ Primary systems of record differ from SCP:
 - **Carrier APIs:** project44 (visibility), FourKites, direct EDI 990/214/990.
 - **Rate repositories:** SMC3, DAT, broker marketplaces.
 
-Same three-mode pattern (bulk extract / CDC / MCP write-back) per [INTEGRATION_MODEL.md](../../Autonomy-Core/docs/INTEGRATION_MODEL.md). TMS-specific details in [TMS_ERP_INTEGRATION.md](TMS_ERP_INTEGRATION.md).
+Same three-mode pattern (bulk extract / CDC / MCP write-back) per [INTEGRATION_MODEL.md](../../Autonomy-Core/docs/architecture/cross-product/INTEGRATION_MODEL.md). TMS-specific details in [TMS_ERP_INTEGRATION.md](TMS_ERP_INTEGRATION.md).
 
 ### 2.5 Role taxonomy
 
@@ -100,14 +100,14 @@ TBD. Initial candidates:
 
 Per Core platform docs — do not re-explain these in TMS docs:
 
-- The AIIO model and the four-step governance pipeline → [AIIO_MODEL.md](../../Autonomy-Core/docs/AIIO_MODEL.md), [GUARDRAILS_AND_GOVERNANCE.md](../../Autonomy-Core/docs/GUARDRAILS_AND_GOVERNANCE.md)
-- Five-layer coordination, AAP, Context Broker, upward feedback → [AGENT_ARCHITECTURE.md](../../Autonomy-Core/docs/AGENT_ARCHITECTURE.md), [CONTEXT_BROKER.md](../../Autonomy-Core/docs/CONTEXT_BROKER.md)
-- Decision lifecycle (correlation_id, escalation, override classifier) → [DECISION_LIFECYCLE.md](../../Autonomy-Core/docs/DECISION_LIFECYCLE.md)
-- Three stores (decision history, Temporal Knowledge, EK) → [KNOWLEDGE_AND_MEMORY.md](../../Autonomy-Core/docs/KNOWLEDGE_AND_MEMORY.md)
-- Scenario engine, digital twin, conformal prediction → [SCENARIO_ENGINE.md](../../Autonomy-Core/docs/SCENARIO_ENGINE.md), [DIGITAL_TWIN.md](../../Autonomy-Core/docs/DIGITAL_TWIN.md), [CONFORMAL_PREDICTION.md](../../Autonomy-Core/docs/CONFORMAL_PREDICTION.md)
-- Training lifecycle (pre-training / provisioning / continuous / periodic) → [TRAINING_LIFECYCLE.md](../../Autonomy-Core/docs/TRAINING_LIFECYCLE.md)
-- User interaction model (tabbed shell, Decision Stream, Azirella) → [USER_INTERACTION_MODEL.md](../../Autonomy-Core/docs/USER_INTERACTION_MODEL.md)
-- Claude Skills envelope → [CLAUDE_SKILLS_ENVELOPE.md](../../Autonomy-Core/docs/CLAUDE_SKILLS_ENVELOPE.md)
+- The AIIO model and the four-step governance pipeline → [AIIO_MODEL.md](../../Autonomy-Core/docs/architecture/AIIO_MODEL.md), [GUARDRAILS_AND_GOVERNANCE.md](../../Autonomy-Core/docs/architecture/GUARDRAILS_AND_GOVERNANCE.md)
+- Five-layer coordination, AAP, Context Broker, upward feedback → [AGENT_ARCHITECTURE.md](../../Autonomy-Core/docs/architecture/AGENT_ARCHITECTURE.md), [CONTEXT_BROKER.md](../../Autonomy-Core/docs/architecture/CONTEXT_BROKER.md)
+- Decision lifecycle (correlation_id, escalation, override classifier) → [DECISION_LIFECYCLE.md](../../Autonomy-Core/docs/architecture/DECISION_LIFECYCLE.md)
+- Three stores (decision history, Temporal Knowledge, EK) → [KNOWLEDGE_AND_MEMORY.md](../../Autonomy-Core/docs/architecture/KNOWLEDGE_AND_MEMORY.md)
+- Scenario engine, digital twin, conformal prediction → [SCENARIO_ENGINE.md](../../Autonomy-Core/docs/architecture/SCENARIO_ENGINE.md), [DIGITAL_TWIN.md](../../Autonomy-Core/docs/architecture/DIGITAL_TWIN.md), [CONFORMAL_PREDICTION.md](../../Autonomy-Core/docs/architecture/CONFORMAL_PREDICTION.md)
+- Training lifecycle (pre-training / provisioning / continuous / periodic) → [TRAINING_LIFECYCLE.md](../../Autonomy-Core/docs/architecture/TRAINING_LIFECYCLE.md)
+- User interaction model (tabbed shell, Decision Stream, Azirella) → [USER_INTERACTION_MODEL.md](../../Autonomy-Core/docs/architecture/USER_INTERACTION_MODEL.md)
+- Claude Skills envelope → [CLAUDE_SKILLS_ENVELOPE.md](../../Autonomy-Core/docs/architecture/CLAUDE_SKILLS_ENVELOPE.md)
 
 TMS docs that re-explain any of these are candidates for deletion.
 

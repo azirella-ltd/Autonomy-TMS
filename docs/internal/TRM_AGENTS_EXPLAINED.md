@@ -1,6 +1,6 @@
 # TRM Agents Explained
 
-> **Platform reference:** [Autonomy-Core/docs/AGENT_ARCHITECTURE.md](../../../Autonomy-Core/docs/AGENT_ARCHITECTURE.md) — product-agnostic treatment. This doc covers the TMS-specific instantiation and TMS-specific agent content.
+> **Platform reference:** [Autonomy-Core/docs/AGENT_ARCHITECTURE.md](../../../Autonomy-Core/docs/architecture/AGENT_ARCHITECTURE.md) — product-agnostic treatment. This doc covers the TMS-specific instantiation and TMS-specific agent content.
 
 
 > **INTERNAL DOCUMENT** — Contains implementation details, file paths, and architecture specifications.
