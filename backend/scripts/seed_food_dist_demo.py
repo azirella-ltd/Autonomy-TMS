@@ -15,10 +15,13 @@ Individual Role Users (for testing specific role flows):
 
 Usage:
     # Run via docker compose
-    docker compose exec backend python scripts/seed_us_foods_demo.py
+    docker compose exec backend python scripts/seed_food_dist_demo.py
 
-    # Or directly with venv
-    cd backend && python scripts/seed_us_foods_demo.py
+    # Wipe-then-seed mode — removes any existing Food Dist tenant +
+    # cascading data before seeding from a clean state. Use this after
+    # a generator change that requires regenerating history (e.g. the
+    # 730→1095 day bump in TMS PR #3).
+    docker compose exec backend python scripts/seed_food_dist_demo.py --reset-tenant
 
 Demo Flow:
     1. Login as demo@distdemo.com (password: Autonomy@2026)
@@ -27,6 +30,7 @@ Demo Flow:
     4. All Powell dashboards accessible without logout
 """
 
+import argparse
 import os
 import sys
 import asyncio
@@ -472,10 +476,80 @@ def _generate_sc_config_for_group(tenant_id: int):
     asyncio.run(_run())
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse CLI flags. The script is normally invoked without
+    arguments; ``--reset-tenant`` opts into the destructive
+    "wipe-then-seed" flow used when regenerating against an existing
+    DB."""
+    p = argparse.ArgumentParser(description="Seed the Food Dist demo tenant.")
+    p.add_argument(
+        "--reset-tenant",
+        action="store_true",
+        help=(
+            "Delete the existing Food Dist tenant + all cascading data "
+            "(users, configs, transactions, hierarchies) before seeding. "
+            "Use this when a generator change requires regenerating history "
+            "— e.g. the 730→1095 day bump in TMS PR #3. Without this flag "
+            "the script reuses any existing tenant and the new transactional "
+            "rows append on top of the old ones, which is rarely what you "
+            "want."
+        ),
+    )
+    return p.parse_args()
+
+
+def reset_existing_tenant(db: Session) -> None:
+    """Delete the existing Food Dist tenant + every dependent row.
+
+    Reuses :class:`TenantService.delete_tenant` which handles the
+    multi-phase deletion (user-FK rows, config-FK rows, tenant-scoped
+    rows, scenarios, agent artifacts) with savepoints so individual
+    table failures don't abort the transaction.
+
+    Tenant lookup mirrors :func:`create_or_get_tenant` so the same
+    name-shape ambiguities ("Food Dist" / "Food Distributor" /
+    slug:food-dist) resolve consistently.
+    """
+    from sqlalchemy import or_
+    from app.services.tenant_service import TenantService
+
+    tenant = (
+        db.query(Tenant)
+        .filter(
+            or_(
+                Tenant.name == FOOD_DIST_CUSTOMER_NAME,
+                Tenant.name.ilike("Food Dist%"),
+                Tenant.name.ilike("%Food%Dist%"),
+                Tenant.slug == "food-dist",
+            )
+        )
+        .first()
+    )
+    if tenant is None:
+        print(f"  No existing Food Dist tenant to reset.")
+        return
+
+    print(f"  Resetting tenant '{tenant.name}' (id={tenant.id})...")
+    try:
+        TenantService(db).delete_tenant(tenant.id)
+        print("  Tenant deleted (cascaded user / config / tx data).")
+    except Exception as exc:
+        print(f"  TenantService.delete_tenant failed: {exc}")
+        db.rollback()
+        raise
+
+    db.commit()
+    print("  Reset complete. Re-seeding from clean state.\n")
+
+
 def main():
     """Seed Food Dist demo setup."""
+    args = parse_args()
+
     print("=" * 70)
     print("Seeding Food Dist Demo - Powell Framework Aligned Users")
+    if args.reset_tenant:
+        print("  --reset-tenant: existing tenant will be wiped before seeding")
     print("=" * 70)
 
     # Create database session
@@ -487,6 +561,10 @@ def main():
     db: Session = SyncSessionLocal()
 
     try:
+        if args.reset_tenant:
+            print("\n0. Resetting existing tenant...")
+            reset_existing_tenant(db)
+
         # Step 1: Ensure permissions are seeded
         print("\n1. Ensuring permissions are seeded...")
         seed_default_permissions(db)
