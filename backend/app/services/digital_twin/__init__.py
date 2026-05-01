@@ -26,6 +26,7 @@ from .shipment_generator import (
     PARAMETRIC_STUB_PRODUCER_SIGNATURE,
     Phase1ShipmentGenerator,
     ShipmentGenerator,
+    lane_series_key,
 )
 from .step_adapter import LaneFlowStepAdapter
 
@@ -39,4 +40,5 @@ __all__ = [
     "PARAMETRIC_STUB_PRODUCER_SIGNATURE",
     "Phase1ShipmentGenerator",
     "ShipmentGenerator",
+    "lane_series_key",
 ]
