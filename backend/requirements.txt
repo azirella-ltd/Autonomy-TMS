@@ -1,7 +1,9 @@
 absl-py==2.3.1
 aiofiles==0.7.0
-azirella-data-model @ git+https://github.com/azirella-ltd/Autonomy-Core.git@30549c4#subdirectory=packages/data-model
-azirella-integrations @ git+https://github.com/azirella-ltd/Autonomy-Core.git@30549c4#subdirectory=packages/integrations
+azirella-data-model @ git+https://github.com/azirella-ltd/Autonomy-Core.git@08c6429#subdirectory=packages/data-model
+azirella-integrations @ git+https://github.com/azirella-ltd/Autonomy-Core.git@08c6429#subdirectory=packages/integrations
+azirella-demand-planning-contract @ git+https://github.com/azirella-ltd/Autonomy-Core.git@08c6429#subdirectory=packages/demand-planning-contract
+azirella-transfer-order-envelope-contract @ git+https://github.com/azirella-ltd/Autonomy-Core.git@08c6429#subdirectory=packages/transfer-order-envelope-contract
 aiohappyeyeballs==2.6.1
 aiohttp==3.13.3
 aiosignal==1.4.0
