@@ -94,7 +94,7 @@ endif
 
 DOCKER_COMPOSE_CMD = $(strip $(COMPOSE_ENV) $(DOCKER_COMPOSE))
 
-.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-demo-configs seed-three-fg-demo seed-variable-demo seed-food-dist seed-food-dist-reset all_demo_configs build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn llm-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models openclaw-setup openclaw-up openclaw-down openclaw-logs picoclaw-workspaces picoclaw-fleet picoclaw-up picoclaw-down picoclaw-logs picoclaw-status aws-init aws-plan aws-apply aws-destroy sap-start sap-stop sap-status
+.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-demo-configs seed-three-fg-demo seed-variable-demo seed-food-dist seed-food-dist-reset rebuild-and-reseed-food-dist verify-food-dist all_demo_configs build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn llm-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models openclaw-setup openclaw-up openclaw-down openclaw-logs picoclaw-workspaces picoclaw-fleet picoclaw-up picoclaw-down picoclaw-logs picoclaw-status aws-init aws-plan aws-apply aws-destroy sap-start sap-stop sap-status
 
 # =========================================================================
 # LOCAL LLM TARGETS (vLLM + Ollama for RAG)
@@ -385,6 +385,21 @@ seed-food-dist:
 seed-food-dist-reset:
 	@echo "\n[+] Resetting + reseeding Food Dist demo tenant..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_food_dist_demo.py --reset-tenant $(SEED_ARGS)
+
+# One-shot: rebuild backend image (picks up the latest TMS code), then
+# wipe + reseed Food Dist with the new shape (1095 days). Use after
+# pulling generator changes. Two stages because the rebuild can take
+# 1-2 minutes and the seed runs against the rebuilt container.
+rebuild-and-reseed-food-dist:
+	@echo "\n[+] Stage 1/2: Rebuilding backend image..."
+	@$(MAKE) --no-print-directory rebuild-backend
+	@echo "\n[+] Stage 2/2: Resetting + reseeding Food Dist tenant..."
+	@$(MAKE) --no-print-directory seed-food-dist-reset
+
+# Quick post-seed sanity check: query expected row counts and fail if
+# any are zero or out-of-range.
+verify-food-dist:
+	@$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/verify_demo_provisioned.py --tenant food_dist
 
 warm-start-all:
 	@echo "\n[+] Generating warm start historical data for all configs..."; \
