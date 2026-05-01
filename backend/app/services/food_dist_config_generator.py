@@ -680,7 +680,13 @@ class FoodDistConfigGenerator:
 
         await self.db.commit()
 
-        # 10. Generate 2-year transactional history
+        # 10. Generate 3-year transactional history.
+        # 1095 days = two full annual cycles for the seasonal-envelope
+        # fitter (Core MIGRATION_REGISTER §3.20) plus a third cycle for
+        # cross-validation. Was 730 (2 years); bumped 2026-05 because
+        # the envelope fitter needs ≥2 cycles per series and 730 is
+        # exactly on the boundary — the third year gives the fitter
+        # genuine multi-year shape to work with.
         history_counts = {}
         try:
             from app.services.food_dist_history_generator import FoodDistHistoryGenerator
@@ -689,7 +695,7 @@ class FoodDistConfigGenerator:
                 config_id=self.sc_config.id,
                 tenant_id=self.tenant.id,
             )
-            history_counts = await history_gen.generate_history(days=730)
+            history_counts = await history_gen.generate_history(days=1095)
             logger.info(f"Generated {history_counts.get('total', 0):,} history records")
         except Exception:
             logger.exception("History generation failed — config created without history")

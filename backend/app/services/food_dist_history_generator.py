@@ -133,7 +133,7 @@ HOLIDAY_SPIKES = [
 ]
 
 # ============================================================================
-# Customer Churn Events (day_offset thresholds over 730-day horizon)
+# Customer Churn Events (day_offset thresholds, fire within the first ~14 months)
 # ============================================================================
 
 # Gained customer: Reno Fresh Markets joins at month 10 (~day 300)
@@ -300,8 +300,11 @@ class FoodDistHistoryGenerator:
         self._promotion_events: Dict[Tuple[int, str], float] = {}
         # All customers including churn-gained ones
         self._all_customers: List[CustomerDefinition] = list(CUSTOMERS) + [CUST_RNO]
-        # Total days of history (set in generate_history, used by NPI gate)
-        self._total_days: int = 730
+        # Total days of history (set in generate_history, used by NPI gate).
+        # Default 1095 = 3 years. Two full annual cycles is the floor for
+        # the seasonal-envelope fitter (Core MIGRATION_REGISTER §3.20);
+        # three gives the fitter clean cross-validation room.
+        self._total_days: int = 1095
 
     # ------------------------------------------------------------------
     # Network loading
@@ -2459,19 +2462,25 @@ class FoodDistHistoryGenerator:
 
     async def generate_history(
         self,
-        days: int = 730,
+        days: int = 1095,
         start_date: Optional[date] = None,
         seed: int = 42,
     ) -> Dict[str, int]:
         """
-        Generate complete 2-year transactional history.
+        Generate complete 3-year transactional history.
 
         Agent evaluation uses the Digital Twin (stochastic simulation) for
         train/test split, not historical data. This history establishes
         the baseline operational data for the tenant.
 
+        The default ``days=1095`` (3 years) gives the seasonal-envelope
+        fitter (Core MIGRATION_REGISTER §3.20) two full annual cycles
+        for fitting plus a third cycle for cross-validation. Older
+        callers that explicitly pass ``days=730`` still get exactly the
+        prior behaviour.
+
         Args:
-            days: Number of days of history (default 730 = 2 years)
+            days: Number of days of history (default 1095 = 3 years)
             start_date: Start date for history (default: today - days)
             seed: Random seed for reproducibility
 
