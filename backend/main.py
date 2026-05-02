@@ -6983,6 +6983,20 @@ api.include_router(equipment_reposition_trm_router, tags=["equipment-reposition-
 # Single API router (all routes at /api/v1/...)
 app.include_router(api)
 
+# TMS A2A surface — §3.32 Phase 4. Adds /.well-known/agent.json
+# + /a2a/ for cross-plane internal-agent callers (SCP rebalancing
+# TRMs evaluating consolidation candidates, DP-side planners
+# requesting lane ETAs, etc.). Per the §3.7-bis four-row taxonomy.
+try:
+    from app.a2a import mount as mount_a2a
+    mount_a2a(app)
+except ImportError as exc:
+    import logging
+    logging.getLogger(__name__).warning(
+        "TMS A2A surface not mounted (azirella-a2a-client not installed?): %s",
+        exc,
+    )
+
 # ------------------------------------------------------------------------------
 # Root
 # ------------------------------------------------------------------------------
