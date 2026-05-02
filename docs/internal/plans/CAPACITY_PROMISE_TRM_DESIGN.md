@@ -14,11 +14,11 @@ bounds, not a carrier selection.
 
 **Core substrate already in place:**
 
-- `azirella_data_model.powell.tms.heuristic_library.base.CapacityPromiseState` —
+- `app.services.powell.tms_heuristic_library.base.CapacityPromiseState` —
   the input dataclass (lane, requested_date, requested_loads, priority,
   committed/total/buffer capacity, forecast/booked, primary carrier context,
   lane acceptance rate, market tightness, allocation compliance).
-- `azirella_data_model.powell.tms.heuristic_library.dispatch._compute_capacity_promise` —
+- `app.services.powell.tms_heuristic_library.dispatch._compute_capacity_promise` —
   the deterministic teacher (composite score with 5 weighted factors; priority
   overrides; 0.6 / 0.35 thresholds for ACCEPT / DEFER / REJECT).
 - `azirella_data_model.powell.tms.agent_capabilities["capacity_promise"]` —
