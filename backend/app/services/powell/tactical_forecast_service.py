@@ -4,7 +4,7 @@ The L3 Tactical Demand Potential service per ``docs/TMS_DECISION_HIERARCHY.md``
 §4.1. Phase 1 ships **heuristic-only aggregation** — the service consumes
 ``LaneVolumeForecastTRM`` outputs from L1 (per-lane forecasts with
 mode/equipment segmentation per §3.36) and writes them to the canonical
-``shipping_forecast`` table.
+``lane_volume_plan`` table.
 
 Phase 2 (deferred to a separate register entry) will add the LightGBM +
 Trigg tracking quality model that §4.1 also specifies. Phase 1 is enough to
@@ -13,7 +13,7 @@ through the canonical plan-of-record.
 
 Plane-module placement: this is TMS-plane decision policy (the *service*
 that decides how / when / what to forecast). The substrate it writes to
-(``ShippingForecast`` ORM in Core) is canonical state that any plane can
+(``LaneVolumePlan`` ORM in Core) is canonical state that any plane can
 read.
 
 Service shape:
@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from azirella_data_model.transport_plan import (
     DEFAULT_PLAN_VERSION,
-    ShippingForecast,
+    LaneVolumePlan,
 )
 
 from app.services.powell.tms_heuristic_library import (
@@ -48,7 +48,7 @@ from app.services.powell.tms_heuristic_library import (
 _NO_SEG_MODE = "ALL"
 """Mode value used when the L1 segmentation helper returns
 ``"no_segmentation"`` (history unavailable). The aggregate forecast still
-lands in ``shipping_forecast`` so consumers see *something*; the
+lands in ``lane_volume_plan`` so consumers see *something*; the
 ``segmentation_method`` column records the unhappy-path provenance."""
 
 
@@ -70,7 +70,7 @@ class PublishResult:
     """``{lane_id: count}``."""
     skipped_deferred: int
     """L1 returned DEFER (insufficient history); no row written."""
-    rows: List[ShippingForecast]
+    rows: List[LaneVolumePlan]
     """The actual ORM rows persisted (caller may want to inspect)."""
 
 
@@ -95,13 +95,13 @@ class TacticalForecastService:
         plan_version: str = DEFAULT_PLAN_VERSION,
     ) -> PublishResult:
         """Compute L1 forecasts per input, write per-mode + per-equipment
-        rows to ``shipping_forecast``.
+        rows to ``lane_volume_plan``.
 
         Returns a :class:`PublishResult` with rows-written + skipped count
         + the actual ORM rows. Caller is responsible for ``commit()``;
         the service ``add()``s and ``flush()``es but does not commit.
         """
-        rows: List[ShippingForecast] = []
+        rows: List[LaneVolumePlan] = []
         per_lane: dict = {}
         skipped_deferred = 0
 
@@ -154,8 +154,8 @@ class TacticalForecastService:
         decision_params: dict,
         produced_by: str,
         plan_version: str,
-    ) -> List[ShippingForecast]:
-        """Build ShippingForecast ORM rows for a single lane.
+    ) -> List[LaneVolumePlan]:
+        """Build LaneVolumePlan ORM rows for a single lane.
 
         Three cases driven by ``segmentation_method``:
 
@@ -183,7 +183,7 @@ class TacticalForecastService:
             plan_version=plan_version,
         )
 
-        rows: List[ShippingForecast] = []
+        rows: List[LaneVolumePlan] = []
 
         if method == "no_segmentation":
             rows.append(self._row_for_share(
@@ -290,8 +290,8 @@ class TacticalForecastService:
         weight_kg_p50: Optional[float],
         volume_m3_p50: Optional[float],
         **common: object,
-    ) -> ShippingForecast:
-        return ShippingForecast(
+    ) -> LaneVolumePlan:
+        return LaneVolumePlan(
             mode=mode,
             equipment_type=equipment_type,
             forecast_loads_p10=round(float(base_p10) * share, 4),

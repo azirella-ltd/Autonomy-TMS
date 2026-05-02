@@ -2,7 +2,7 @@
 
 Pure-orchestration service that consumes L1 ``LaneVolumeForecastTRM``
 outputs (with §3.36 mode + equipment segmentation) and writes
-``ShippingForecast`` rows. Tests verify the fan-out math:
+``LaneVolumePlan`` rows. Tests verify the fan-out math:
 
 - 1 lane × ewma_share_history with N modes + M equipment-within-FTL →
   N + M rows (mode-level + equipment-level coexist per §3.37 schema).
@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from azirella_data_model.base import Base
 from azirella_data_model.transport_plan import (
     DEFAULT_PLAN_VERSION,
-    ShippingForecast,
+    LaneVolumePlan,
 )
 
 from app.services.powell.tactical_forecast_service import (
@@ -43,13 +43,13 @@ from app.services.powell.tms_heuristic_library import LaneVolumeForecastState
 
 @pytest.fixture
 def db() -> Session:
-    """In-memory SQLite session — ShippingForecast plus FK-target stubs.
+    """In-memory SQLite session — LaneVolumePlan plus FK-target stubs.
 
     Avoids the TMS conftest's full DB setup. Stubs the FK targets
     (``supply_chain_configs``, ``scenarios``) the same way Core's conftest
     stubs ``users`` / ``tenants``: minimal columns just sufficient for FK
     resolution, mapped against ``Base.metadata`` so ``create_all`` builds
-    them alongside ``shipping_forecast``.
+    them alongside ``lane_volume_plan``.
     """
     from sqlalchemy import Column, Integer
     from azirella_data_model.base import Base
@@ -75,7 +75,7 @@ def db() -> Session:
         Base.metadata.tables["supply_chain_configs"],
         Base.metadata.tables["scenarios"],
         Base.metadata.tables["transportation_lane"],
-        ShippingForecast.__table__,
+        LaneVolumePlan.__table__,
     ]
     Base.metadata.create_all(bind=engine, tables=tables)
     Sess = sessionmaker(bind=engine)
@@ -127,7 +127,7 @@ def test_no_segmentation_writes_one_mode_all_row(db) -> None:
         inputs=[_input(lane_id=1)],  # no mode_history → no_segmentation
     )
     assert result.rows_written == 1
-    row = db.query(ShippingForecast).one()
+    row = db.query(LaneVolumePlan).one()
     assert row.mode == _NO_SEG_MODE
     assert row.equipment_type is None
     assert row.segmentation_method == "no_segmentation"
@@ -148,7 +148,7 @@ def test_single_mode_passthrough_writes_one_row_at_dominant_mode(db) -> None:
         inputs=[_input(lane_id=1, mode_history={"FTL": 0.97, "LTL": 0.03})],
     )
     assert result.rows_written == 1
-    row = db.query(ShippingForecast).one()
+    row = db.query(LaneVolumePlan).one()
     assert row.mode == "FTL"
     assert row.equipment_type is None
     assert row.segmentation_method == "single_mode_passthrough"
@@ -172,7 +172,7 @@ def test_ewma_writes_per_mode_rows(db) -> None:
     )
     # 2 mode-level rows; no equipment_history → 0 equipment rows
     assert result.rows_written == 2
-    rows = db.query(ShippingForecast).order_by(ShippingForecast.mode).all()
+    rows = db.query(LaneVolumePlan).order_by(LaneVolumePlan.mode).all()
     by_mode = {r.mode: r for r in rows}
     assert set(by_mode.keys()) == {"FTL", "LTL"}
     # FTL row: 100 × 0.7 = 70
@@ -197,15 +197,15 @@ def test_ewma_writes_per_equipment_rows_within_ftl(db) -> None:
     assert result.rows_written == 4
 
     # Mode-level rows have equipment_type IS NULL
-    mode_rows = db.query(ShippingForecast).filter(
-        ShippingForecast.equipment_type.is_(None),
+    mode_rows = db.query(LaneVolumePlan).filter(
+        LaneVolumePlan.equipment_type.is_(None),
     ).all()
     assert len(mode_rows) == 2
     assert {r.mode for r in mode_rows} == {"FTL", "LTL"}
 
     # Equipment-level rows have mode='FTL' AND equipment_type IS NOT NULL
-    equip_rows = db.query(ShippingForecast).filter(
-        ShippingForecast.equipment_type.isnot(None),
+    equip_rows = db.query(LaneVolumePlan).filter(
+        LaneVolumePlan.equipment_type.isnot(None),
     ).all()
     assert len(equip_rows) == 2
     assert {r.equipment_type for r in equip_rows} == {"DRY_VAN", "REEFER"}
@@ -236,7 +236,7 @@ def test_equipment_rows_skipped_when_ltl_only(db) -> None:
     )
     # single_mode_passthrough on LTL → 1 row only
     assert result.rows_written == 1
-    rows = db.query(ShippingForecast).all()
+    rows = db.query(LaneVolumePlan).all()
     assert rows[0].mode == "LTL"
     assert rows[0].equipment_type is None
 
@@ -255,7 +255,7 @@ def test_defer_skips_persistence(db) -> None:
     )
     assert result.rows_written == 0
     assert result.skipped_deferred == 1
-    assert db.query(ShippingForecast).count() == 0
+    assert db.query(LaneVolumePlan).count() == 0
 
 
 def test_escalate_still_persists(db) -> None:
@@ -270,7 +270,7 @@ def test_escalate_still_persists(db) -> None:
         )],
     )
     assert result.rows_written == 1
-    row = db.query(ShippingForecast).one()
+    row = db.query(LaneVolumePlan).one()
     assert row.mode == "FTL"
 
 
@@ -306,7 +306,7 @@ def test_default_plan_version_used(db) -> None:
         tenant_id=1, config_id=1,
         inputs=[_input(lane_id=1, mode_history={"FTL": 1.0})],
     )
-    row = db.query(ShippingForecast).one()
+    row = db.query(LaneVolumePlan).one()
     assert row.plan_version == DEFAULT_PLAN_VERSION
     assert row.plan_version == "unconstrained_reference"
 
@@ -317,7 +317,7 @@ def test_produced_by_default(db) -> None:
         tenant_id=1, config_id=1,
         inputs=[_input(lane_id=1, mode_history={"FTL": 1.0})],
     )
-    row = db.query(ShippingForecast).one()
+    row = db.query(LaneVolumePlan).one()
     assert row.produced_by == "TacticalForecastService"
 
 
@@ -328,7 +328,7 @@ def test_produced_by_override(db) -> None:
         inputs=[_input(lane_id=1, mode_history={"FTL": 1.0})],
         produced_by="custom_l3_runner",
     )
-    row = db.query(ShippingForecast).one()
+    row = db.query(LaneVolumePlan).one()
     assert row.produced_by == "custom_l3_runner"
 
 
@@ -340,7 +340,7 @@ def test_segmentation_method_recorded_for_audit(db) -> None:
         tenant_id=1, config_id=1,
         inputs=[_input(lane_id=1, mode_history={"FTL": 0.70, "LTL": 0.30})],
     )
-    rows = db.query(ShippingForecast).all()
+    rows = db.query(LaneVolumePlan).all()
     assert len(rows) == 2
     for r in rows:
         assert r.segmentation_method == "ewma_share_history"
@@ -352,7 +352,7 @@ def test_forecast_method_and_demand_class_persisted(db) -> None:
         tenant_id=1, config_id=1,
         inputs=[_input(lane_id=1, mode_history={"FTL": 1.0})],
     )
-    row = db.query(ShippingForecast).one()
+    row = db.query(LaneVolumePlan).one()
     # SMOOTH class with covariates absent → HoltWinters
     assert row.forecast_method == "HoltWinters"
     assert row.syntetos_boylan_class == "SMOOTH"
@@ -375,8 +375,8 @@ def test_weight_and_cube_split_by_share(db) -> None:
             mean_volume_m3_per_load=70.0,
         )],
     )
-    rows = db.query(ShippingForecast).filter(
-        ShippingForecast.equipment_type.is_(None),
+    rows = db.query(LaneVolumePlan).filter(
+        LaneVolumePlan.equipment_type.is_(None),
     ).all()
     by_mode = {r.mode: r for r in rows}
     # FTL gets 70% of total weight (18000 × 100 = 1.8M × 0.7 = 1.26M)
@@ -391,6 +391,6 @@ def test_weight_and_cube_null_when_no_signal(db) -> None:
         inputs=[_input(lane_id=1, mode_history={"FTL": 1.0})],
         # no mean_weight_kg_per_load / mean_volume_m3_per_load
     )
-    row = db.query(ShippingForecast).one()
+    row = db.query(LaneVolumePlan).one()
     assert row.forecast_weight_kg_p50 is None
     assert row.forecast_volume_m3_p50 is None
