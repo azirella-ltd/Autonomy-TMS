@@ -1,7 +1,7 @@
 # TMS TRM Heuristic Reference — Implemented Logic, Algorithms & Sources
 
-**Version:** 2.0 (post P1–P4 upgrade, 2026-04-19)
-**Location:** `azirella_data_model.powell.tms.heuristic_library` (Autonomy-Core)
+**Version:** 2.1 (heuristic library moved back to TMS, 2026-05-02)
+**Location:** `app.services.powell.tms_heuristic_library` (this repo)
 **Purpose:** Definitive reference for the deterministic heuristics that serve as
 (a) cold-start fallback logic for live TMS agents, and (b) teacher policy for
 TRM behavioral-cloning training. Every TRM's logic is documented here with

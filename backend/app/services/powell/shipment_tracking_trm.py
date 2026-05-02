@@ -87,10 +87,10 @@ class ShipmentTrackingTRM:
         self.config_id = config_id
         self._model = None
 
-        from azirella_data_model.powell.tms.heuristic_library.dispatch import (
+        from app.services.powell.tms_heuristic_library.dispatch import (
             compute_tms_decision,
         )
-        from azirella_data_model.powell.tms.heuristic_library.base import (
+        from app.services.powell.tms_heuristic_library.base import (
             ShipmentTrackingState,
         )
         self._compute_decision = compute_tms_decision

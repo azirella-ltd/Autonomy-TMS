@@ -1,32 +1,43 @@
-"""TMS Heuristic Library — thin re-export shim.
+"""TMS Heuristic Library — deterministic decision rules for transportation TRMs.
 
-Pure logic lives in Core at
-`azirella_data_model.powell.tms.heuristic_library`. This module keeps
-the existing `app.services.powell.tms_heuristic_library` import path
-working by re-exporting the Core symbols unchanged.
+Each TMS TRM has a corresponding heuristic that encodes industry best practice.
+The heuristic is the bootstrap policy used to seed (state, action, reward)
+trajectories for TRM training, and the deterministic fallback when the
+neural-network model is unavailable.
 
-Extracted to Core on 2026-04-18. See
-`docs/TMS_TRM_TRAINING_DATA_SPECIFICATION.md` for the algorithmic
-reference.
+The library is **single-implementation, ERP-source-agnostic** — transportation
+operations follow standard industry practice across SAP TM / Manhattan /
+Blue Yonder / Oracle TM / MercuryGate. (Contrast with SCP, where heuristics
+branch by ERP source — SAP / D365 / Odoo — because supply-chain field shapes
+diverge per system.)
+
+## Where this library used to live
+
+This module was moved here from Core (``azirella_data_model.powell.tms.heuristic_library``)
+on 2026-05-02 to satisfy the plane-module invariant in
+``Autonomy-Core/CLAUDE.md``: product repos own *only* their decision-policy
+modules; plane-specific TRMs and their heuristic policies belong in the
+product repo, not Core. See ``Autonomy-Core/docs/MIGRATION_REGISTER.md``
+§3.34 for the move-back rationale and §1.13 for the original placement-violation
+context.
 """
 
-from azirella_data_model.powell.tms.heuristic_library.base import (  # noqa: F401
-    TMSHeuristicDecision,
-    CapacityPromiseState,
-    ShipmentTrackingState,
-    DemandSensingState,
+from .base import (
+    BrokerRoutingState,
     CapacityBufferState,
+    CapacityPromiseState,
+    DemandSensingState,
+    DockSchedulingState,
+    EquipmentRepositionState,
     ExceptionManagementState,
     FreightProcurementState,
-    BrokerRoutingState,
-    DockSchedulingState,
-    LoadBuildState,
     IntermodalTransferState,
-    EquipmentRepositionState,
+    LaneVolumeForecastState,
+    LoadBuildState,
+    ShipmentTrackingState,
+    TMSHeuristicDecision,
 )
-from azirella_data_model.powell.tms.heuristic_library.dispatch import (  # noqa: F401
-    compute_tms_decision,
-)
+from .dispatch import compute_tms_decision
 
 __all__ = [
     "TMSHeuristicDecision",
@@ -41,5 +52,6 @@ __all__ = [
     "LoadBuildState",
     "IntermodalTransferState",
     "EquipmentRepositionState",
+    "LaneVolumeForecastState",
     "compute_tms_decision",
 ]

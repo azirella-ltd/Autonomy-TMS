@@ -57,10 +57,10 @@ class FreightProcurementTRM:
         self._heuristic_fn = None
 
         # Import heuristic teacher
-        from azirella_data_model.powell.tms.heuristic_library.dispatch import (
+        from app.services.powell.tms_heuristic_library.dispatch import (
             compute_tms_decision,
         )
-        from azirella_data_model.powell.tms.heuristic_library.base import (
+        from app.services.powell.tms_heuristic_library.base import (
             FreightProcurementState,
         )
         self._compute_decision = compute_tms_decision

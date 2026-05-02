@@ -86,10 +86,10 @@ class ExceptionManagementTRM:
         # one-time WARNING from PolicyCache).
         self._policy = PolicyCache(tenant_id=tenant_id, config_id=config_id)
 
-        from azirella_data_model.powell.tms.heuristic_library.dispatch import (
+        from app.services.powell.tms_heuristic_library.dispatch import (
             compute_tms_decision,
         )
-        from azirella_data_model.powell.tms.heuristic_library.base import (
+        from app.services.powell.tms_heuristic_library.base import (
             ExceptionManagementState,
         )
         self._compute_decision = compute_tms_decision
