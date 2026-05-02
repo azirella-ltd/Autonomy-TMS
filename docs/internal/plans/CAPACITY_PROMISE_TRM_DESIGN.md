@@ -21,7 +21,7 @@ bounds, not a carrier selection.
 - `app.services.powell.tms_heuristic_library.dispatch._compute_capacity_promise` —
   the deterministic teacher (composite score with 5 weighted factors; priority
   overrides; 0.6 / 0.35 thresholds for ACCEPT / DEFER / REJECT).
-- `azirella_data_model.powell.tms.agent_capabilities["capacity_promise"]` —
+- `app.services.powell.tms_agent_capabilities["capacity_promise"]` —
   declares `decision_table="powell_capacity_promise_decisions"` (not yet created
   in any DB schema).
 

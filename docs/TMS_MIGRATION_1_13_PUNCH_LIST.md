@@ -159,5 +159,5 @@ Total: ~7-8 days of focused work, probably spread across 2-3 weeks given the nee
 ## Non-goals for item 1.13
 
 - **Do NOT** rewrite `powell/__init__.py` or other broadly-imported Powell framework files to add fresh TMS functionality. Item 1.13 is pure extraction/rescope. New TMS substrate lands in other register items.
-- **Do NOT** touch `services/powell/hive_signals.py` / `site_capabilities.py` / `agent_capabilities.py` / `agent_contract.py` — these ARE canonical TMS-facing infra (see `azirella_data_model.powell.tms.*`).
+- **Do NOT** touch `services/powell/tms_hive_signals.py` / `tms_site_capabilities.py` / `tms_agent_capabilities.py` — these are now canonical TMS-facing infra (real implementations live here as of 2026-05-02 per Core §3.35; the `AgentCapabilities` dataclass shape lives in Core at `azirella_data_model.powell.agent_contract`).
 - **Do NOT** delete the canonical 11 TMS TRMs' services, endpoints, or training data.
