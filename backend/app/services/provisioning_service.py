@@ -1567,7 +1567,7 @@ class ProvisioningService:
         import time
         from pathlib import Path
         from app.db.session import sync_session_factory
-        from azirella_data_model.powell.tms.site_capabilities import get_active_tms_trms
+        from app.services.powell.tms_site_capabilities import get_active_tms_trms
         from app.services.checkpoint_storage_service import checkpoint_dir
 
         def _master_type_to_facility_type(site) -> str:
