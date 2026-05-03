@@ -973,6 +973,178 @@ def test_phase_3_42_empty_db_resolution_falls_through_to_clone(db) -> None:
     assert result.constraints_applied == 0
 
 
+def test_phase_3_42_p2_irrelevant_equipment_commitments_filtered_out(db) -> None:
+    """§3.42 Phase 2: a REEFER commitment under the same carrier does
+    not boost the carrier's pool when plan items are all DRY_VAN."""
+    from datetime import datetime
+    from azirella_data_model.settlement import (
+        Carrier, Contract, RateCard, CarrierCapacityCommitment,
+    )
+
+    # 1 carrier with 2 contracts: one DRY_VAN with low cap, one REEFER with high cap
+    db.add(Carrier(id=1, tenant_id=1, scac="C1", display_name="C1", carrier_type="TRUCKLOAD"))
+    db.flush()
+    db.add(Contract(id=1, tenant_id=1, carrier_id=1, contract_number="C1-A",
+        contract_type="PRIMARY", effective_from=datetime(2026, 1, 1), currency="USD"))
+    db.add(Contract(id=2, tenant_id=1, carrier_id=1, contract_number="C1-B",
+        contract_type="PRIMARY", effective_from=datetime(2026, 1, 1), currency="USD"))
+    db.flush()
+    db.add(RateCard(id=1, tenant_id=1, contract_id=1, lane_filter={},
+        equipment_type="DRY_VAN", rate_basis="PER_MILE", base_rate=2.50,
+        effective_from=datetime(2026, 1, 1)))
+    db.flush()
+    # Relevant DRY_VAN commitment (low cap)
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={}, equipment_type="DRY_VAN",
+        period_start=date(2026, 5, 4), period_end=date(2026, 5, 10),
+        period_granularity="WEEKLY", commit_volume=4, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    # Irrelevant REEFER commitment (high cap; should NOT count)
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=2, lane_filter={}, equipment_type="REEFER",
+        period_start=date(2026, 5, 4), period_end=date(2026, 5, 10),
+        period_granularity="WEEKLY", commit_volume=100, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+    _seed_lane_profile(db)
+    _seed_lane_volume_plan(db, lane_id=10, mode="FTL", equipment_type="DRY_VAN", forecast_loads_p50=10)
+
+    mp = MovementPlannerService(db)
+    plan_id = mp.plan_movement(tenant_id=1, config_id=1, period_start=date(2026, 5, 4)).plan_id
+
+    ib = IntegratedBalancerService(db)
+    result = ib.balance_plan(unconstrained_plan_id=plan_id, resolve_capacity_from_db=True)
+
+    # Only DRY_VAN cap of 4 counts; 6 of 10 items escalated.
+    # Phase 1 (no filter) would have summed 4 + 100 = 104, escalating 0.
+    assert result.items_escalated == 6
+    items = db.query(TransportationPlanItem).filter_by(
+        plan_id=result.constrained_plan_id,
+    ).all()
+    on_c1 = sum(1 for it in items if it.carrier_id == 1)
+    cancelled = sum(1 for it in items if it.status == PlanItemStatus.CANCELLED)
+    assert on_c1 == 4
+    assert cancelled == 6
+
+
+def test_phase_3_42_p2_lane_filter_mismatch_filtered_out(db) -> None:
+    """§3.42 Phase 2: a commitment scoped to lane_id 99 doesn't count
+    when plan items are all on lane 10."""
+    from datetime import datetime
+    from azirella_data_model.settlement import (
+        Carrier, Contract, RateCard, CarrierCapacityCommitment,
+    )
+
+    db.add(Carrier(id=1, tenant_id=1, scac="C1", display_name="C1", carrier_type="TRUCKLOAD"))
+    db.flush()
+    db.add(Contract(id=1, tenant_id=1, carrier_id=1, contract_number="C1",
+        contract_type="PRIMARY", effective_from=datetime(2026, 1, 1), currency="USD"))
+    db.flush()
+    db.add(RateCard(id=1, tenant_id=1, contract_id=1, lane_filter={},
+        equipment_type="DRY_VAN", rate_basis="PER_MILE", base_rate=2.50,
+        effective_from=datetime(2026, 1, 1)))
+    # Commitment scoped to lane 99 only — items are on lane 10
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={"lane_id": 99},
+        equipment_type="DRY_VAN",
+        period_start=date(2026, 5, 4), period_end=date(2026, 5, 10),
+        period_granularity="WEEKLY", commit_volume=100, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+    _seed_lane_profile(db)
+    _seed_lane_volume_plan(db, lane_id=10, mode="FTL", equipment_type="DRY_VAN", forecast_loads_p50=3)
+
+    plan_id = MovementPlannerService(db).plan_movement(
+        tenant_id=1, config_id=1, period_start=date(2026, 5, 4)).plan_id
+
+    ib = IntegratedBalancerService(db)
+    result = ib.balance_plan(unconstrained_plan_id=plan_id, resolve_capacity_from_db=True)
+
+    # Lane 99 commitment doesn't match lane 10 items → no capacity →
+    # falls through to CLONE_PHASE_1.
+    assert result.optimization_method == "CLONE_PHASE_1"
+
+
+def test_phase_3_42_p2_geographic_filter_fails_closed(db) -> None:
+    """§3.42 Phase 2: geographic lane_filter shapes (origin_state etc.)
+    are not yet supported — the matcher fails closed (commitment
+    excluded). Phase 3 will resolve them via _resolve_lane_geography."""
+    from datetime import datetime
+    from azirella_data_model.settlement import (
+        Carrier, Contract, RateCard, CarrierCapacityCommitment,
+    )
+
+    db.add(Carrier(id=1, tenant_id=1, scac="C1", display_name="C1", carrier_type="TRUCKLOAD"))
+    db.flush()
+    db.add(Contract(id=1, tenant_id=1, carrier_id=1, contract_number="C1",
+        contract_type="PRIMARY", effective_from=datetime(2026, 1, 1), currency="USD"))
+    db.flush()
+    db.add(RateCard(id=1, tenant_id=1, contract_id=1, lane_filter={},
+        equipment_type="DRY_VAN", rate_basis="PER_MILE", base_rate=2.50,
+        effective_from=datetime(2026, 1, 1)))
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={"origin_state": "TX"},
+        equipment_type="DRY_VAN",
+        period_start=date(2026, 5, 4), period_end=date(2026, 5, 10),
+        period_granularity="WEEKLY", commit_volume=100, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+    _seed_lane_profile(db)
+    _seed_lane_volume_plan(db, lane_id=10, mode="FTL", equipment_type="DRY_VAN", forecast_loads_p50=3)
+
+    plan_id = MovementPlannerService(db).plan_movement(
+        tenant_id=1, config_id=1, period_start=date(2026, 5, 4)).plan_id
+
+    ib = IntegratedBalancerService(db)
+    result = ib.balance_plan(unconstrained_plan_id=plan_id, resolve_capacity_from_db=True)
+
+    # Geographic filter not supported in Phase 2 → commitment excluded
+    # → no capacity → CLONE_PHASE_1.
+    assert result.optimization_method == "CLONE_PHASE_1"
+
+
+def test_phase_3_42_p2_mode_filter(db) -> None:
+    """§3.42 Phase 2: a commitment with explicit mode='LTL' doesn't
+    count for FTL plan items."""
+    from datetime import datetime
+    from azirella_data_model.settlement import (
+        Carrier, Contract, RateCard, CarrierCapacityCommitment,
+    )
+
+    db.add(Carrier(id=1, tenant_id=1, scac="C1", display_name="C1", carrier_type="TRUCKLOAD"))
+    db.flush()
+    db.add(Contract(id=1, tenant_id=1, carrier_id=1, contract_number="C1",
+        contract_type="PRIMARY", effective_from=datetime(2026, 1, 1), currency="USD"))
+    db.flush()
+    db.add(RateCard(id=1, tenant_id=1, contract_id=1, lane_filter={},
+        equipment_type="DRY_VAN", rate_basis="PER_MILE", base_rate=2.50,
+        effective_from=datetime(2026, 1, 1)))
+    # Commitment scoped to LTL — items are FTL
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={}, mode="LTL",
+        equipment_type="DRY_VAN",
+        period_start=date(2026, 5, 4), period_end=date(2026, 5, 10),
+        period_granularity="WEEKLY", commit_volume=100, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+    _seed_lane_profile(db)
+    _seed_lane_volume_plan(db, lane_id=10, mode="FTL", equipment_type="DRY_VAN", forecast_loads_p50=3)
+
+    plan_id = MovementPlannerService(db).plan_movement(
+        tenant_id=1, config_id=1, period_start=date(2026, 5, 4)).plan_id
+
+    ib = IntegratedBalancerService(db)
+    result = ib.balance_plan(unconstrained_plan_id=plan_id, resolve_capacity_from_db=True)
+
+    # LTL commitment doesn't match FTL items → CLONE_PHASE_1.
+    assert result.optimization_method == "CLONE_PHASE_1"
+
+
 def test_phase_3_42_expired_commitments_not_used(db) -> None:
     """A CarrierCapacityCommitment with effective_to in the past is
     excluded from the resolved capacity."""

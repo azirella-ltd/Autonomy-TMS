@@ -81,6 +81,37 @@ Large enough that escalation is always worse than any feasible
 assignment. Configurable per-call for tenants with unusual cost scales."""
 
 
+def _commitment_matches_item(commitment, item) -> bool:
+    """Phase 2 (§3.42) — does this commitment plausibly serve this item?
+
+    All three scopes (``lane_filter`` / ``equipment_type`` / ``mode``)
+    are AND-combined per item. ``None`` / empty ``lane_filter`` matches
+    anything. Geographic ``lane_filter`` shapes fail-closed in Phase 2.
+    """
+    # equipment_type: None on commitment = any
+    if commitment.equipment_type is not None:
+        if commitment.equipment_type != item.equipment_type:
+            return False
+    # mode: None on commitment = any
+    if commitment.mode is not None:
+        if commitment.mode != item.mode:
+            return False
+    # lane_filter: empty dict catch-all; {"lane_id": ...} explicit match;
+    # other shapes (geographic) fail-closed in Phase 2.
+    lane_filter = commitment.lane_filter or {}
+    if not lane_filter:
+        return True
+    if "lane_id" in lane_filter:
+        if lane_filter["lane_id"] != item.lane_id:
+            return False
+    # Geographic shapes — Phase 2 fail-closed.
+    geo_keys = {"origin_geo_id", "dest_geo_id", "origin_state", "dest_state",
+                "origin_zip3", "dest_zip3"}
+    if any(k in lane_filter for k in geo_keys):
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class BalanceResult:
     """Per-call summary."""
@@ -191,11 +222,16 @@ class IntegratedBalancerService:
         # `carrier_capacity` dict can override specific carriers (test
         # / what-if pattern). Resolved rows merge with the override:
         # the override dict takes precedence per carrier_id.
+        # Phase 2 (§3.42): pass source_items so commitment rows are
+        # filtered by lane + equipment + mode scope — irrelevant rows
+        # (e.g., REEFER commitments when the plan has no REEFER items)
+        # don't boost the carrier's pool.
         if resolve_capacity_from_db:
             db_capacity = self._resolve_capacity_from_db(
                 tenant_id=source_plan.tenant_id,
                 period_start=source_plan.plan_start_date,
                 period_end=source_plan.plan_end_date,
+                items=source_items,
             )
             if db_capacity:
                 if carrier_capacity is not None:
@@ -591,33 +627,49 @@ class IntegratedBalancerService:
         tenant_id: int,
         period_start,
         period_end,
+        items: Optional[Sequence] = None,
     ) -> Dict[int, float]:
         """Build the ``{carrier_id: max_loads}`` dict by querying
         ``CarrierCapacityCommitment`` rows that overlap the plan's
         ``[period_start, period_end]`` window.
 
-        Resolution rules (Phase 1 of §3.42):
+        Resolution rules:
 
         - Match rows where ``commitment.period_start <= plan.period_end``
           AND ``commitment.period_end >= plan.period_start`` (overlap).
         - Match rows where ``effective_from <= today`` AND
           ``effective_to IS NULL OR effective_to >= today``.
+        - **Phase 2 (§3.42):** when ``items`` is provided, also filter by
+          :meth:`_capacity_filter_matches` — the commitment's
+          ``lane_filter`` + ``equipment_type`` + ``mode`` must match at
+          least one plan item. Without this filter (Phase 1), a contract's
+          REEFER-on-FL-NY commitment would boost the carrier's pool even
+          when the plan has no REEFER FL-NY items. Phase 2 closes that
+          over-permissiveness gap.
         - Per ``contract.id``, sum ``commit_volume`` across all matching
           rows. The carrier id resolves through ``Contract.carrier_id``.
         - Multiple commitments for the same carrier across different
-          contracts roll up additively (carrier may serve multiple
-          contracts; each contract's commitment is independent).
+          contracts roll up additively.
 
-        Returns empty dict when no commitments match. Caller treats
-        that as "no capacity data → fall through to clone-only path".
+        Returns empty dict when no commitments match. Caller treats that
+        as "no capacity data → fall through to clone-only path".
 
-        Phase 2 of §3.42 will add:
-        - Per-period-granularity prorating (``WEEKLY`` commitments
-          should slice their contribution to the plan's actual week
-          coverage; today we sum the full ``commit_volume``).
-        - Lane-filter resolution (Phase 1 ignores ``lane_filter``;
-          all rows for the contract roll up into the carrier total).
-        - Equipment-filter resolution (Phase 1 ignores ``equipment_type``).
+        ``items`` is optional for backward compatibility. When omitted,
+        Phase 1 behaviour (no per-item filter) applies.
+
+        Still NOT in Phase 2 (deferred to Phase 3 of §3.42):
+        - Per-period-granularity prorating (``WEEKLY`` rows still
+          contribute their full ``commit_volume`` regardless of how the
+          plan period slices the commitment's coverage).
+        - Per-(carrier × equipment) capacity dict — the LP shape is
+          still ``{carrier_id: total_loads}``, so a single carrier's
+          DRY_VAN + REEFER commitments still aggregate. Per-equipment
+          LP constraints would require changing the LP shape.
+        - Geographic ``lane_filter`` shapes (``origin_state``,
+          ``origin_zip3``, ``origin_geo_id``, etc.) — Phase 2 supports
+          catch-all ``{}`` and ``{"lane_id": <id>}`` only; geographic
+          shapes need the same ``_resolve_lane_geography`` walk that
+          ``MovementPlannerService`` does.
         """
         try:
             from azirella_data_model.settlement import (
@@ -651,10 +703,46 @@ class IntegratedBalancerService:
                 continue
             if carrier_id is None:
                 continue
+            # Phase 2 (§3.42): require at least one plan item to match
+            # the commitment's scope. Without this filter (Phase 1), a
+            # commitment that no item could plausibly use still adds to
+            # the carrier's cap.
+            if items is not None and not self._capacity_filter_matches(
+                commitment, items,
+            ):
+                continue
             volume = float(commitment.commit_volume)
             capacity[carrier_id] = capacity.get(carrier_id, 0.0) + volume
 
         return capacity
+
+    @staticmethod
+    def _capacity_filter_matches(commitment, items: Sequence) -> bool:
+        """Phase 2 (§3.42) capacity-filter matcher.
+
+        Returns ``True`` if at least one item in ``items`` matches the
+        commitment's ``lane_filter`` + ``equipment_type`` + ``mode``
+        scope. The match is OR across items — a commitment counts if
+        any plan item could plausibly use it.
+
+        Rules (per item, AND-combined):
+
+        - **lane_filter**: empty dict matches all; ``{"lane_id": <id>}``
+          matches when ``item.lane_id`` equals it. Geographic shapes
+          (``origin_state``, ``origin_zip3``, ``origin_geo_id``, etc.)
+          are not supported in Phase 2 — they fail-closed (don't match).
+          Phase 3 will resolve them via ``MovementPlannerService.
+          _resolve_lane_geography``.
+        - **equipment_type**: ``None`` matches any equipment; otherwise
+          must equal ``item.equipment_type``.
+        - **mode**: ``None`` matches any mode; otherwise must equal
+          ``item.mode``.
+        """
+        for item in items:
+            if not _commitment_matches_item(commitment, item):
+                continue
+            return True
+        return False
 
 
 __all__ = [
