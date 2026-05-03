@@ -19,6 +19,7 @@ plane never needed; deleted as part of PR-5.B + 5.C cleanup).
 """
 from __future__ import annotations
 
+import math
 import random
 from collections import deque
 from dataclasses import dataclass, field
@@ -260,6 +261,7 @@ class LaneFlowSimulator:
         spot_rate_model: Any = None,
         spot_rate_contract_per_load: float | None = None,
         exception_model: Any = None,
+        seasonal_envelope: Any = None,
     ):
         self._generator = generator
         self.tenant_id = int(tenant_id)
@@ -354,6 +356,16 @@ class LaneFlowSimulator:
         # See [docs/TMS_TWIN_PHYSICS_DESIGN.md §4.6] for the bootstrap
         # prior used today and the calibration story (PR-6).
         self._exception_model = exception_model
+        # PR-4 — opt-in SeasonalEnvelope reference for regime classification.
+        # When ``None`` (default) the observation surfaces only the
+        # parametric sin/cos calendar phase (always available, no fitted
+        # envelope required). When a fitted envelope is registered,
+        # ``classify_regime`` runs on each bucket_start to populate
+        # ``LaneFlowObservation.seasonal_regime``. The envelope itself is
+        # produced upstream by Core's
+        # ``SeasonalEnvelopeFitPipeline`` (Phase B of MIGRATION_REGISTER
+        # §3.20); this simulator only consumes it.
+        self._seasonal_envelope = seasonal_envelope
 
         if self.horizon_buckets < 1:
             raise ValueError(
@@ -477,6 +489,9 @@ class LaneFlowSimulator:
             cost_per_load_trailing=0.0,
             plan_date=anchor,
             as_of=anchor,
+            season_sin=self._season_phase(anchor)[0],
+            season_cos=self._season_phase(anchor)[1],
+            seasonal_regime=self._classify_regime(anchor),
         )
 
     def step(
@@ -960,6 +975,8 @@ class LaneFlowSimulator:
         reward function and the trajectory.
         """
         carrier_cap = self._capacity_remaining_for_action(action)
+        season_sin, season_cos = self._season_phase(self._state.bucket_start)
+        regime = self._classify_regime(self._state.bucket_start)
         return LaneFlowObservation(
             transportation_lane_id=lane_series_key(
                 self.lane_params.origin_site_id,
@@ -975,6 +992,9 @@ class LaneFlowSimulator:
             cost_per_load_trailing=self._mean(self._state.recent_cost_per_load, default=0.0),
             plan_date=self._state.bucket_start,
             as_of=self._state.bucket_start,
+            season_sin=season_sin,
+            season_cos=season_cos,
+            seasonal_regime=regime,
         )
 
     def _build_next_observation(
@@ -991,6 +1011,8 @@ class LaneFlowSimulator:
             if self._state.bucket_start is not None
             else None
         )
+        season_sin, season_cos = self._season_phase(next_date)
+        regime = self._classify_regime(next_date)
         return LaneFlowObservation(
             transportation_lane_id=lane_series_key(
                 self.lane_params.origin_site_id,
@@ -1006,7 +1028,44 @@ class LaneFlowSimulator:
             cost_per_load_trailing=self._mean(self._state.recent_cost_per_load, default=0.0),
             plan_date=next_date,
             as_of=next_date,
+            season_sin=season_sin,
+            season_cos=season_cos,
+            seasonal_regime=regime,
         )
+
+    # ------------------------------------------------------------------
+    # Seasonal feature helpers (PR-4)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _season_phase(when: date | None) -> tuple[float, float]:
+        """Return ``(sin, cos)`` of the unit-circle calendar phase at ``when``.
+
+        ``when=None`` → ``(0.0, 0.0)`` so unit-test rollouts that don't
+        anchor the calendar still produce defined observation values.
+        """
+        if when is None:
+            return 0.0, 0.0
+        day_of_year = when.timetuple().tm_yday  # 1..366
+        # Normalise to [0, 2π) on a 365-day cycle. Day 366 wraps to ~the
+        # same phase as day 1, which matches the calendar continuity
+        # the policy network needs.
+        phase = 2.0 * math.pi * (day_of_year - 1) / 365.0
+        return math.sin(phase), math.cos(phase)
+
+    def _classify_regime(self, when: date | None) -> str | None:
+        """Classify ``when`` against the registered ``SeasonalEnvelope``.
+
+        Returns ``None`` when no envelope was registered, or when
+        ``when=None``. Imports the Core helper lazily so tests that
+        don't touch seasonal stratification don't pull in
+        ``azirella_data_model.stochastic`` (and its ``numpy`` /
+        ``scipy`` deps) unnecessarily.
+        """
+        if when is None or self._seasonal_envelope is None:
+            return None
+        from azirella_data_model.stochastic.seasonal import classify_regime
+        return classify_regime(self._seasonal_envelope, when).value
 
     # ------------------------------------------------------------------
     # Reward
