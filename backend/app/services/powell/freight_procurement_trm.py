@@ -27,7 +27,7 @@ from sqlalchemy import and_, select, text
 from sqlalchemy.orm import Session
 
 from app.models.tms_entities import (
-    Carrier, CarrierLane, FreightRate, FreightTender,
+    Carrier, CarrierTMSProfile, CarrierLane, FreightRate, FreightTender,
     Load, LoadStatus, TenderStatus, TransportMode, EquipmentType,
     RateType,
 )
@@ -260,12 +260,25 @@ class FreightProcurementTRM:
     # ── Helpers ──────────────────────────────────────────────────────────
 
     def _get_carrier_candidates(self, load: Load) -> List[Dict[str, Any]]:
-        """Build carrier waterfall for a load from CarrierLane + FreightRate."""
-        # Find carrier lanes matching this load's origin→destination
+        """Build carrier waterfall for a load from CarrierLane + FreightRate.
+
+        §3.47 Phase 2: dispatch-side ``code`` lives on
+        ``CarrierTMSProfile`` (1:1 with Carrier via carrier_id). The
+        outer-join keeps the row even when no profile exists yet
+        (graceful for tenants pre-Phase-1 backfill).
+        """
+        # Find carrier lanes matching this load's origin→destination.
+        # OUTER JOIN CarrierTMSProfile so the candidate list survives
+        # carriers without a profile row (defensive — backfill may not
+        # have completed for late-onboarded carriers).
         cls = self.db.execute(
-            select(CarrierLane, Carrier).join(
-                Carrier, CarrierLane.carrier_id == Carrier.id
-            ).where(
+            select(CarrierLane, Carrier, CarrierTMSProfile)
+            .join(Carrier, CarrierLane.carrier_id == Carrier.id)
+            .outerjoin(
+                CarrierTMSProfile,
+                CarrierTMSProfile.carrier_id == Carrier.id,
+            )
+            .where(
                 and_(
                     CarrierLane.tenant_id == self.tenant_id,
                     CarrierLane.is_active.is_(True),
@@ -274,7 +287,7 @@ class FreightProcurementTRM:
         ).all()
 
         candidates = []
-        for cl, carrier in cls:
+        for cl, carrier, profile in cls:
             # Find rate for this carrier
             rate = self.db.execute(
                 select(FreightRate.rate_flat).where(
@@ -288,8 +301,8 @@ class FreightProcurementTRM:
 
             candidates.append({
                 "carrier_id": carrier.id,
-                "carrier_name": carrier.name,
-                "carrier_code": carrier.code,
+                "carrier_name": carrier.display_name,
+                "carrier_code": profile.code if profile else None,
                 "rate": float(rate) if rate else 2500.0,
                 "priority": cl.priority,
                 "acceptance_pct": 0.85,
