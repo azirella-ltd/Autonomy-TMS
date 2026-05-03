@@ -543,13 +543,24 @@ def _seed_carrier_and_rate_cards(db: Session) -> None:
     db.flush()
 
 
-def _seed_lane_profile(db: Session, lane_id: int = 10, distance: float = 750.0) -> None:
-    """Seed a TMS-side LaneProfile with a known distance."""
+def _seed_lane_profile(
+    db: Session,
+    lane_id: int = 10,
+    distance: float = 750.0,
+    tenant_id: int = 1,
+) -> None:
+    """Seed a TMS-side LaneProfile with a known distance.
+
+    ``tenant_id`` is NOT NULL on the underlying table; the parameter
+    defaults to the same fixture-tenant the L3 service tests use, so
+    existing call sites that pass only ``db`` continue to work.
+    """
     from app.models.transportation_config import LaneProfile
 
     db.add(LaneProfile(
         lane_id=lane_id, config_id=1,
         distance_miles=distance, primary_mode="FTL",
+        tenant_id=tenant_id,
     ))
     db.flush()
 
