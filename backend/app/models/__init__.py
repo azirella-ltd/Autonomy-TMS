@@ -387,7 +387,7 @@ from .tms_entities import (
     # Commodity
     CommodityHierarchy, Commodity,
     # Carrier & Equipment
-    Carrier, CarrierLane, Equipment, CarrierScorecard,
+    Carrier, CarrierTMSProfile, CarrierLane, Equipment, CarrierScorecard,
     # Shipment & Load
     Shipment, ShipmentLeg, Load, LoadItem,
     # Freight Rates & Tender
@@ -755,7 +755,7 @@ __all__ = [
     'ExceptionType', 'ExceptionSeverity', 'ExceptionResolutionStatus',
     'CarrierType', 'TenderStatus', 'AppointmentType', 'AppointmentStatus', 'RateType',
     'CommodityHierarchy', 'Commodity',
-    'Carrier', 'CarrierLane', 'Equipment', 'CarrierScorecard',
+    'Carrier', 'CarrierTMSProfile', 'CarrierLane', 'Equipment', 'CarrierScorecard',
     'Shipment', 'ShipmentLeg', 'Load', 'LoadItem',
     'FreightRate', 'FreightTender',
     'DockDoor', 'Appointment',

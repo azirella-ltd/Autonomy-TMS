@@ -382,6 +382,127 @@ class Carrier(Base):
     )
 
 
+# ============================================================================
+# CarrierTMSProfile — §3.47 Phase 1 substrate
+# ============================================================================
+# Per §3.47, Core (`azirella_data_model.settlement.entities.Carrier`)
+# owns canonical carrier identity (id, scac, display_name, carrier_type,
+# status, mc_number, dot_number, tax_id, currency, payment_terms_days,
+# metadata). TMS owns dispatch / capacity / onboarding extensions in
+# this sibling table, joined via `carrier_id`. Phase 1 lands the
+# substrate (additive); Phase 2 retargets TMS code to read dispatch
+# fields from here; Phase 3 drops the now-duplicated columns from
+# `carrier` and deletes the TMS-side `Carrier` ORM above.
+
+
+class CarrierTMSProfile(Base):
+    """TMS dispatch / capacity / onboarding extension to Core's Carrier.
+
+    One profile row per carrier (1:1, FK + unique). All fields here
+    are TMS-specific dispatch policy that other Autonomy products
+    don't consume — keeping them out of Core respects Rule 1 + the
+    plane-module invariant.
+
+    Phase 1 backfills this table from the existing `carrier` rows in
+    the same Alembic migration. Phase 2's code cutover reads dispatch
+    fields from here. Phase 3 drops the duplicated columns from
+    `carrier`.
+    """
+
+    __tablename__ = "carrier_tms_profile"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    carrier_id = Column(
+        Integer,
+        ForeignKey("carrier.id", ondelete="CASCADE"),
+        nullable=False, unique=True,
+        comment="Core carrier identity FK — exactly one profile per carrier.",
+    )
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    # TMS-internal carrier code (distinct from SCAC; tenant-scoped uniqueness).
+    code = Column(
+        String(100),
+        comment="TMS-internal carrier code; tenant-scoped unique.",
+    )
+
+    # FMCSA fleet-safety rating (TMS-side dispatch decision input).
+    usdot_safety_rating = Column(
+        String(20),
+        comment="Satisfactory / Conditional / Unsatisfactory",
+    )
+
+    # Capabilities — what modes / equipment / regions the carrier serves.
+    modes = Column(JSON, comment='e.g., ["FTL", "LTL", "DRAYAGE"]')
+    equipment_types = Column(JSON, comment='e.g., ["DRY_VAN", "REEFER"]')
+    service_regions = Column(JSON, comment='e.g., ["US_DOMESTIC", "TRANSPACIFIC"]')
+    is_hazmat_certified = Column(Boolean, default=False)
+    is_bonded = Column(Boolean, default=False)
+    insurance_limit = Column(Double, comment="Cargo insurance limit (USD)")
+
+    # Contact / dispatch.
+    primary_contact_name = Column(String(200))
+    primary_contact_email = Column(String(200))
+    primary_contact_phone = Column(String(50))
+    dispatch_email = Column(String(200))
+    dispatch_phone = Column(String(50))
+    tracking_api_type = Column(
+        String(50),
+        comment="EDI, API, PORTAL, P44, FOURKITES",
+    )
+    tracking_api_config = Column(
+        JSON, comment="API credentials and endpoint config",
+    )
+
+    # Onboarding lifecycle (TMS-side; orthogonal to Core's settlement
+    # `Carrier.status` which tracks settlement-payable state).
+    onboarding_status = Column(
+        String(20), default="PENDING",
+        comment="PENDING, IN_PROGRESS, ACTIVE, SUSPENDED",
+    )
+    onboarding_date = Column(Date)
+    last_shipment_date = Column(Date)
+
+    # Source tracking + external identifiers.
+    source = Column(String(100))
+    external_identifiers = Column(
+        JSON,
+        comment="Typed external IDs: {sap_vendor, p44_id, ...}",
+    )
+
+    # project44 integration (TMS-specific).
+    p44_carrier_id = Column(String(100))
+    p44_identifier_type = Column(String(20))
+    p44_account_group_code = Column(String(100))
+    p44_account_code = Column(String(100))
+
+    # Tenant-config link (TMS-specific).
+    config_id = Column(
+        Integer,
+        ForeignKey("supply_chain_configs.id", ondelete="CASCADE"),
+    )
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "code",
+            name="uq_carrier_tms_profile_tenant_code",
+        ),
+        Index(
+            "idx_carrier_tms_profile_tenant_onboarding",
+            "tenant_id", "onboarding_status",
+        ),
+    )
+
+
 class CarrierLane(Base):
     """
     Carrier lane coverage — which origin-destination pairs a carrier serves
