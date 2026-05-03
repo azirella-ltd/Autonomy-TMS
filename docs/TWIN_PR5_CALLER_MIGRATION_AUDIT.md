@@ -254,17 +254,24 @@ green (1 pre-existing main-branch failure unrelated to PR-5.B).
 2. **SAP CSV exports useful standalone?** **Yes** — confirmed; salvage `SAPCSVExporter` and the read-only CSV endpoints. The `DeploymentPipelineRun` ORM + table stay (the CSV endpoints look up by `pipeline_id`), but the **write-side** routes (`POST /pipelines`, list / detail / cancel) go.
 3. **Non-TMS demos consuming the SCP-shape NPZ artefacts?** **No.** → Delete the artefacts cleanly; no salvage required.
 
-### 5.C — Delete `dag_simpy_simulator.py`
+### 5.C — Delete `dag_simpy_simulator.py` — **shipped 2026-05-03**
 
-After 5.B lands, the simulator has zero callers in `backend/app/services` and
-`backend/scripts`. Delete:
+After 5.B unblocked it, `dag_simpy_simulator.py` had zero callers in
+`backend/app/services`, `backend/scripts`, and `backend/tests`. The
+remaining grep hits were docstring mentions in
+`digital_twin/__init__.py` and `digital_twin/lane_flow_simulator.py`
+(the new files explaining what role the legacy simulator used to fill).
+Landed by acer-nitro the same day:
 
-1. [`backend/app/services/dag_simpy_simulator.py`](../backend/app/services/dag_simpy_simulator.py) (1,252 lines).
-2. Any tests under `backend/tests/` that import it.
-3. Update [`PHASE_A_TWIN_AUDIT.md`](PHASE_A_TWIN_AUDIT.md) to note the file is gone.
+1. **Deleted** [`backend/app/services/dag_simpy_simulator.py`](../backend/app/services/dag_simpy_simulator.py) (1,252 lines).
+2. **No tests deleted** — pre-flight grep confirmed no test under `backend/tests/` imports the module.
+3. **Updated** [`PHASE_A_TWIN_AUDIT.md`](PHASE_A_TWIN_AUDIT.md) with a "superseded 2026-05-03" banner pointing at this audit.
+4. **Updated** docstrings in `digital_twin/__init__.py` and `digital_twin/lane_flow_simulator.py` to past-tense the legacy reference (the simulator is gone; their text now records that fact rather than a forward-looking deletion plan).
 
-This is the trivial cleanup the original PR-5 framing assumed. It's only
-trivial *after* 5.B unblocks it.
+After 5.A + 5.B + 5.C the **SCP-shape inventory pipeline is fully
+extracted from TMS** — net deletion ~2,910 lines (1,661 in 5.B + 1,249
+in 5.C, ignoring doc / endpoint trims). What remains under
+`digital_twin/` is purely TMS-plane carrier-flow physics.
 
 ---
 

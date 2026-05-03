@@ -1,6 +1,19 @@
 # Phase A — TMS Digital Twin Audit + Implementation Roadmap
 
-**Status:** Audit, 2026-04-27.
+> **Superseded 2026-05-03.** The "extend `dag_simpy_simulator.py` with
+> `step` + action injection" roadmap below is no longer the plan — the
+> file itself was deleted in PR-5.C (2026-05-03) after the rewrite plan
+> in [TWIN_REWRITE_PLAN.md](TWIN_REWRITE_PLAN.md) replaced its role with
+> the carrier-flow `digital_twin/` subpackage (single-channel
+> `lane_flow_simulator` + Phase-1 `shipment_generator`). See
+> [TWIN_PR5_CALLER_MIGRATION_AUDIT.md](TWIN_PR5_CALLER_MIGRATION_AUDIT.md)
+> for why the SCP-shape simulator + its three callers were pulled out.
+>
+> The §1 motivation below (PPO needs an action-conditioned step+reward
+> loop) is still right; the §2-onward implementation specifics are
+> historical.
+
+**Status:** Audit, 2026-04-27. **Superseded** 2026-05-03 — see banner above.
 **Owner:** TMS team (acer-nitro session per TMS_TIER3_FIRST_PLAN §3).
 **Critical path for:** L2 Phase 3b (PPO fine-tune of GATv2+GRU
 Terminal Coordinator), L1 TRM RL fine-tuning beyond BC warmup.

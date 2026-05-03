@@ -13,10 +13,11 @@ keeps the physics tractable for the Phase-1 "rough but unbiased"
 quality bar (TWIN_AND_ENVELOPES.md §6.1) — Phase 2/3 layer richer
 multi-channel coupling on top.
 
-Replaces the role of ``app/services/dag_simpy_simulator.py`` (a
-1,252-line clone of SCP's inventory simulator that the carrier-flow
-plane never needed). The legacy file stays in place during PR-3 and
-is deleted in PR-5.
+Replaces the role of the former ``app/services/dag_simpy_simulator.py``
+— a 1,252-line clone of SCP's inventory simulator that the carrier-flow
+plane never needed. That file was deleted in PR-5.C (2026-05-03) along
+with the SCP-shape deployment-pipeline service that drove it; see
+``docs/TWIN_PR5_CALLER_MIGRATION_AUDIT.md``.
 """
 from __future__ import annotations
 
