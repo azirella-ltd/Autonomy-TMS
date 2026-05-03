@@ -28,6 +28,13 @@ from .observations import (
     LaneFlowReward,
     LaneFlowTransition,
 )
+from .phase2_fitter import (
+    PHASE2_TENANT_CALIBRATED_PRODUCER_SIGNATURE,
+    FitParameters,
+    HistoricalShipment,
+    fit_phase2_shipment_generator,
+    load_history_for_config,
+)
 from .shipment_generator import (
     PARAMETRIC_STUB_PRODUCER_SIGNATURE,
     Phase1ShipmentGenerator,
@@ -39,6 +46,8 @@ from .step_adapter import LaneFlowStepAdapter
 __all__ = [
     "CarrierProfile",
     "EquipmentProfile",
+    "FitParameters",
+    "HistoricalShipment",
     "LaneFlowAction",
     "LaneFlowObservation",
     "LaneFlowReward",
@@ -47,8 +56,11 @@ __all__ = [
     "LaneFlowTransition",
     "LanePhysicsParams",
     "PARAMETRIC_STUB_PRODUCER_SIGNATURE",
+    "PHASE2_TENANT_CALIBRATED_PRODUCER_SIGNATURE",
     "Phase1ShipmentGenerator",
     "RewardFn",
     "ShipmentGenerator",
+    "fit_phase2_shipment_generator",
     "lane_series_key",
+    "load_history_for_config",
 ]

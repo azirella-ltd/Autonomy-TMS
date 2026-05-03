@@ -74,7 +74,7 @@ shipment generator emits.
 | ↳ **PR-3.C–G** | Dock Queue, Equipment Flow, Spot-Rate Market, Exception Generator, Intermodal Ramp, Tracking Jitter — same `PhysicsModel` protocol, same feature-flag pattern. Stage as separate PRs in the order specified by §4 of the physics-design doc. | Each unblocks the TRMs listed at its design-doc anchor. |
 | **PR-4** | `SeasonalEnvelope` Phase-C adoption — sin/cos period features in `LaneFlowObservation`, regime-stratified scenarios. | Twin observations carry seasonal context. |
 | **PR-5** | Delete `dag_simpy_simulator.py`. Drop the feature flag. Update [PHASE_A_TWIN_AUDIT.md](PHASE_A_TWIN_AUDIT.md) status. | Old simulator gone. |
-| **PR-6** | Phase-2 calibration — fit shipment generator parameters to tenant `TransferOrderLineItem` history. | Tenant-realistic training. |
+| **PR-6** | Phase-2 calibration — `phase2_fitter.fit_phase2_shipment_generator(history)` walks tenant `TransferOrder` + `TransferOrderLineItem` history and returns a `Phase1ShipmentGenerator` configured with fitted `candidate_lanes` / `candidate_products` / `candidate_units` / `base_volumes` / `seasonal_envelopes` / `product_unit_overrides`. Stamps `tms:to_arrival_phase2:v0.1.0` on the producer signature so downstream consumers can route between Phase-1 and Phase-2 envelopes. Async `load_history_for_config` is the thin DB-side wrapper. **Shipped 2026-05-03.** | Tenant-realistic training. Lanes with ≥1.5 annual cycles get fitted seasonal envelopes; sparse channels fall through to defaults. Provisioning-step integration is a follow-up. |
 
 Phase-3 producer coupling is not in TMS scope. When SCP ships its producer,
 TMS swaps the registered provider with no code change.

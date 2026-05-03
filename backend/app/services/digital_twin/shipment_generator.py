@@ -169,6 +169,7 @@ class Phase1ShipmentGenerator:
         envelope_spread: tuple[float, float] = DEFAULT_ENVELOPE_SPREAD,
         seed: int = 42,
         product_unit_overrides: Mapping[str, str] | None = None,
+        producer_signature: str = PARAMETRIC_STUB_PRODUCER_SIGNATURE,
     ):
         self.candidate_lanes = list(candidate_lanes or [])
         self.candidate_products = list(candidate_products or [])
@@ -184,6 +185,13 @@ class Phase1ShipmentGenerator:
         self.envelope_spread = (float(low), float(high))
         self.seed = int(seed)
         self.product_unit_overrides = dict(product_unit_overrides or {})
+        # PR-6 — producer signature override. Defaults to the Phase-1
+        # parametric stub signature; tenant-calibrated instances built
+        # by ``phase2_fitter.fit_phase2_shipment_generator`` pass the
+        # PHASE2_TENANT_CALIBRATED_PRODUCER_SIGNATURE so consumers can
+        # tell the envelope was fitted from real history rather than
+        # bootstrap defaults.
+        self.producer_signature = str(producer_signature)
 
     # ------------------------------------------------------------------
 
@@ -226,11 +234,22 @@ class Phase1ShipmentGenerator:
             config_id=config_id,
             tier=tier,
             rows=rows,
-            phase_indicator=PhaseIndicator.PARAMETRIC_STUB,
+            phase_indicator=self._phase_indicator(),
             upstream_supply_plan_signature=None,
             produced_at=produced_at or datetime.now(timezone.utc),
-            produced_by=PARAMETRIC_STUB_PRODUCER_SIGNATURE,
+            produced_by=self.producer_signature,
         )
+
+    def _phase_indicator(self) -> PhaseIndicator:
+        """Resolve PhaseIndicator from the producer_signature.
+
+        PR-6: signatures starting ``tms:to_arrival_phase2`` indicate a
+        tenant-calibrated fit (``TENANT_CALIBRATED``); everything else
+        keeps the bootstrap ``PARAMETRIC_STUB`` indicator.
+        """
+        if self.producer_signature.startswith("tms:to_arrival_phase2"):
+            return PhaseIndicator.TENANT_CALIBRATED
+        return PhaseIndicator.PARAMETRIC_STUB
 
     # ------------------------------------------------------------------
     # Per-cell row construction
