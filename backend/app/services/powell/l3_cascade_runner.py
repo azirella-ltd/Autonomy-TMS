@@ -169,6 +169,14 @@ class L3CascadeRunner:
           Balancer query ``CarrierCapacityCommitment`` rows (§3.42).
           Set False to keep the Phase 1 clone-only behaviour for
           tenants without seeded commitments.
+
+        §3.46 Phase 3-followon: writes a :class:`CascadeRun` row to
+        Core's substrate at the start of each run, updates per-stage
+        counters as stages complete, and finalises status /
+        completed_at / ``run_metadata`` at the end. When Core's
+        ``CascadeRun`` ORM isn't importable (older pin / partial
+        deployment), the writes silently no-op and the runner
+        behaves exactly as before.
         """
         cascade_run_id = self._new_run_id(tenant_id)
         started_at = datetime.utcnow()
@@ -183,6 +191,18 @@ class L3CascadeRunner:
                     existing.id, existing.cascade_run_id,
                     tenant_id, period_start,
                 )
+                # SKIPPED runs still get a CascadeRun row so the
+                # "did the cron consider this period?" question has a
+                # definitive answer in the substrate.
+                self._record_cascade_run(
+                    cascade_run_id=cascade_run_id,
+                    tenant_id=tenant_id,
+                    period_start=period_start,
+                    started_at=started_at,
+                    completed_at=datetime.utcnow(),
+                    status="SKIPPED",
+                    stages=[],
+                )
                 return CascadeRunResult(
                     cascade_run_id=cascade_run_id,
                     tenant_id=tenant_id, config_id=config_id,
@@ -192,6 +212,19 @@ class L3CascadeRunner:
                     started_at=started_at,
                     completed_at=datetime.utcnow(),
                 )
+
+        # Open the cascade-run row at the start of execution
+        # (status=RUNNING). Stage updates and the final status
+        # land via _record_cascade_run on the same row by
+        # cascade_run_id.
+        self._record_cascade_run(
+            cascade_run_id=cascade_run_id,
+            tenant_id=tenant_id,
+            period_start=period_start,
+            started_at=started_at,
+            status="RUNNING",
+            stages=[],
+        )
 
         stages: List[StageResult] = []
 
@@ -205,6 +238,16 @@ class L3CascadeRunner:
         )
         stages.append(movement)
         if movement.status != "OK" or movement.plan_id is None:
+            completed_at = datetime.utcnow()
+            self._record_cascade_run(
+                cascade_run_id=cascade_run_id,
+                tenant_id=tenant_id,
+                period_start=period_start,
+                started_at=started_at,
+                completed_at=completed_at,
+                status="FAILED",
+                stages=stages,
+            )
             return CascadeRunResult(
                 cascade_run_id=cascade_run_id,
                 tenant_id=tenant_id, config_id=config_id,
@@ -212,7 +255,7 @@ class L3CascadeRunner:
                 status="FAILED",
                 stages=stages,
                 started_at=started_at,
-                completed_at=datetime.utcnow(),
+                completed_at=completed_at,
             )
 
         # Stage 2 — Integrated Balancer (constrained_live).
@@ -223,19 +266,109 @@ class L3CascadeRunner:
         )
         stages.append(balancer)
 
+        completed_at = datetime.utcnow()
+        final_status = "OK" if balancer.status == "OK" else "FAILED"
+        self._record_cascade_run(
+            cascade_run_id=cascade_run_id,
+            tenant_id=tenant_id,
+            period_start=period_start,
+            started_at=started_at,
+            completed_at=completed_at,
+            status=final_status,
+            stages=stages,
+        )
+
         return CascadeRunResult(
             cascade_run_id=cascade_run_id,
             tenant_id=tenant_id, config_id=config_id,
             period_start=period_start,
-            status="OK" if balancer.status == "OK" else "FAILED",
+            status=final_status,
             stages=stages,
             started_at=started_at,
-            completed_at=datetime.utcnow(),
+            completed_at=completed_at,
         )
 
     # ------------------------------------------------------------------
     # Stage runners (per-stage transaction boundary)
     # ------------------------------------------------------------------
+
+    def _run_forecast(
+        self, *,
+        tenant_id: int, config_id: int,
+        period_start: date, period_days: int,
+        scenario_id: Optional[int],
+        forecast_plan_version: str,
+        cascade_run_id: str,
+    ) -> StageResult:
+        """Stage 0: build LaneForecastInputs from observed shipments
+        and publish LaneVolumePlan rows via TacticalForecastService.
+
+        Threads the lifecycle reactor (DP→TMS A2A bridge) so NPI/EOL
+        adjustments published in DP propagate into lane volumes
+        before the Movement Planner sees them. Reactor failures are
+        already handled inside publish_forecast (logged WARNING and
+        the run proceeds without overlays); this stage's try/except
+        only catches catastrophic failures (e.g. SQL error during
+        the forecast publish itself).
+
+        Empty-history tenants (no shipment data) get OK status with
+        rows_written=0 — not a failure. The Movement Planner stage
+        will produce an empty plan in that case.
+        """
+        try:
+            from app.services.powell.lane_forecast_input_builder import (
+                LaneForecastInputBuilder,
+            )
+            from app.services.powell.lifecycle_reactor_factory import (
+                make_lifecycle_reactor,
+            )
+            from app.services.powell.tactical_forecast_service import (
+                TacticalForecastService,
+            )
+
+            builder = LaneForecastInputBuilder(period_days=period_days)
+            inputs = builder.build_inputs(
+                self.db,
+                tenant_id=tenant_id,
+                config_id=config_id,
+                period_start=period_start,
+            )
+
+            reactor = make_lifecycle_reactor(
+                self.db, tenant_id=tenant_id, config_id=config_id,
+            )
+
+            svc = TacticalForecastService(self.db)
+            result = svc.publish_forecast(
+                tenant_id=tenant_id,
+                config_id=config_id,
+                inputs=inputs,
+                scenario_id=scenario_id,
+                plan_version=forecast_plan_version,
+                lifecycle_reactor=reactor,
+            )
+            self.db.commit()
+            return StageResult(
+                stage="forecast", status="OK",
+                plan_id=None,  # publish_forecast writes many rows, not one plan
+                summary={
+                    "lanes_evaluated": len(inputs),
+                    "rows_written": result.rows_written,
+                    "skipped_deferred": result.skipped_deferred,
+                    "lifecycle_reactor_active": reactor is not None,
+                },
+            )
+        except Exception as exc:
+            self.db.rollback()
+            logger.exception(
+                "L3 cascade — Tactical Forecast failed "
+                "(cascade_run_id=%s tenant=%s period=%s)",
+                cascade_run_id, tenant_id, period_start,
+            )
+            return StageResult(
+                stage="forecast", status="FAILED",
+                error=f"{type(exc).__name__}: {exc}",
+            )
 
     def _run_movement(
         self, *,
@@ -346,6 +479,138 @@ class L3CascadeRunner:
             )
             .first()
         )
+
+    # ------------------------------------------------------------------
+    # §3.46 Phase 3-followon — CascadeRun substrate writes
+    # ------------------------------------------------------------------
+
+    def _record_cascade_run(
+        self, *,
+        cascade_run_id: str,
+        tenant_id: int,
+        period_start: date,
+        started_at: datetime,
+        completed_at: Optional[datetime] = None,
+        status: str,
+        stages: List[StageResult],
+    ) -> None:
+        """Upsert a :class:`CascadeRun` row in Core's substrate.
+
+        Inserts on first call (status=RUNNING at run start) and
+        updates on subsequent calls (status / completed_at / per-stage
+        counters / run_metadata at terminal states). Keyed by the
+        unique ``cascade_run_id`` string.
+
+        Defensive: when Core's ``CascadeRun`` ORM isn't importable
+        (older Core pin where the §3.46 Phase 3 substrate hasn't
+        landed yet, or a partial-deployment fallback), this method
+        silently no-ops and the runner behaves exactly as before.
+        Same pattern as ``_lane_distance_miles`` in
+        ``MovementPlannerService`` — graceful when the substrate
+        isn't there yet.
+
+        Commits its own write so the substrate row survives
+        independently of the per-stage transaction boundaries.
+        """
+        try:
+            from azirella_data_model.powell import (
+                CascadePlaneType,
+                CascadeRun,
+                CascadeRunStatus,
+            )
+        except ImportError:
+            return
+
+        n_total = len(stages) if stages else 2  # L3 has 2 stages
+        n_ok = sum(1 for s in stages if s.status == "OK")
+        n_failed = sum(1 for s in stages if s.status == "FAILED")
+
+        # Build run_metadata with per-stage plan ids + summary.
+        # Strict shape per plane_type — L3 transport always emits
+        # the same fields so the dashboard / audit query can rely
+        # on them.
+        run_metadata: dict = {
+            "stages": [
+                {
+                    "stage": s.stage,
+                    "status": s.status,
+                    "plan_id": s.plan_id,
+                    "error": s.error,
+                    "summary": s.summary,
+                }
+                for s in stages
+            ],
+        }
+        if stages:
+            mvmt = next((s for s in stages if s.stage == "movement"), None)
+            balncer = next((s for s in stages if s.stage == "balancer"), None)
+            if mvmt and mvmt.plan_id is not None:
+                run_metadata["unconstrained_plan_id"] = mvmt.plan_id
+            if balncer and balncer.plan_id is not None:
+                run_metadata["constrained_plan_id"] = balncer.plan_id
+            if balncer and balncer.summary:
+                opt = balncer.summary.get("optimization_method")
+                if opt is not None:
+                    run_metadata["optimization_method"] = opt
+                escalated = balncer.summary.get("items_escalated")
+                if escalated is not None:
+                    run_metadata["items_escalated"] = escalated
+
+        error_summary: Optional[str] = None
+        if status == "FAILED":
+            failed_stage = next(
+                (s for s in stages if s.status == "FAILED"), None,
+            )
+            if failed_stage:
+                error_summary = (
+                    f"{failed_stage.stage}: {failed_stage.error}"
+                )
+
+        try:
+            existing = (
+                self.db.query(CascadeRun)
+                .filter(CascadeRun.cascade_run_id == cascade_run_id)
+                .first()
+            )
+            if existing is None:
+                self.db.add(CascadeRun(
+                    cascade_run_id=cascade_run_id,
+                    tenant_id=tenant_id,
+                    plane_type=CascadePlaneType.L3_TRANSPORT,
+                    period_start=datetime.combine(
+                        period_start, datetime.min.time(),
+                    ),
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    status=CascadeRunStatus(status),
+                    n_stages_total=n_total,
+                    n_stages_ok=n_ok,
+                    n_stages_failed=n_failed,
+                    error_summary=error_summary,
+                    run_metadata=run_metadata if stages else None,
+                ))
+            else:
+                existing.status = CascadeRunStatus(status)
+                existing.completed_at = completed_at
+                existing.n_stages_total = n_total
+                existing.n_stages_ok = n_ok
+                existing.n_stages_failed = n_failed
+                existing.error_summary = error_summary
+                if stages:
+                    existing.run_metadata = run_metadata
+            self.db.commit()
+        except Exception:
+            # Don't let CascadeRun-write failures surface to the
+            # caller — the cascade's primary outputs (the two
+            # TransportationPlan rows) are already committed by the
+            # stage runners. Substrate emission is observability,
+            # not load-bearing.
+            self.db.rollback()
+            logger.exception(
+                "L3 cascade — failed to record CascadeRun row "
+                "(cascade_run_id=%s); cascade output is unaffected",
+                cascade_run_id,
+            )
 
 
 __all__ = [
