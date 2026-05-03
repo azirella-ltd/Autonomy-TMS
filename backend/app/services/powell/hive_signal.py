@@ -75,6 +75,11 @@ class HiveSignalType(str, Enum):
     PROPAGATION_ALERT = "propagation_alert"
     ALLOCATION_REFRESH = "allocation_refresh"
 
+    # -- Visibility signals (Group A — live exception detection) --
+    LATE_ARRIVAL_DETECTED = "late_arrival_detected"
+    DWELL_BREACH_ALERT = "dwell_breach_alert"
+    GEOFENCE_DEPARTED_EARLY = "geofence_departed_early"
+
 
 # Convenience sets for caste-based filtering
 SCOUT_SIGNALS: FrozenSet[HiveSignalType] = frozenset({
@@ -102,6 +107,11 @@ BUILDER_SIGNALS: FrozenSet[HiveSignalType] = frozenset({
 TGNN_SIGNALS: FrozenSet[HiveSignalType] = frozenset({
     HiveSignalType.NETWORK_SHORTAGE, HiveSignalType.NETWORK_SURPLUS,
     HiveSignalType.PROPAGATION_ALERT, HiveSignalType.ALLOCATION_REFRESH,
+})
+VISIBILITY_SIGNALS: FrozenSet[HiveSignalType] = frozenset({
+    HiveSignalType.LATE_ARRIVAL_DETECTED,
+    HiveSignalType.DWELL_BREACH_ALERT,
+    HiveSignalType.GEOFENCE_DEPARTED_EARLY,
 })
 
 
