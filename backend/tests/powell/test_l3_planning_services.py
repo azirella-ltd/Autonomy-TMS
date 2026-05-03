@@ -877,6 +877,148 @@ def test_phase_2b_falls_back_to_clone_when_capacity_omitted(db) -> None:
 
 
 # ===========================================================================
+# §3.42 — DB-resolved carrier capacity from CarrierCapacityCommitment
+# ===========================================================================
+
+
+def _seed_capacity_commitments(db: Session, period_start, period_end) -> None:
+    """Seed CarrierCapacityCommitment rows for §3.42 DB-resolution tests.
+
+    Carrier 1 (the cheap one from `_seed_two_carriers_with_capacity_test_setup`)
+    gets a 4-load commitment; carrier 2 gets 100. Same shape as the dict
+    that Phase 2B tests pass directly.
+    """
+    from datetime import datetime
+    from azirella_data_model.settlement import CarrierCapacityCommitment
+
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={}, equipment_type="DRY_VAN",
+        period_start=period_start, period_end=period_end,
+        period_granularity="WEEKLY",
+        commit_volume=4, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=2, lane_filter={}, equipment_type="DRY_VAN",
+        period_start=period_start, period_end=period_end,
+        period_granularity="WEEKLY",
+        commit_volume=100, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+
+
+def test_phase_3_42_db_resolved_capacity_drives_lp_projection(db) -> None:
+    """resolve_capacity_from_db=True queries CarrierCapacityCommitment
+    rows and feeds the LP. Same outcome as the dict path."""
+    plan_id = _seed_two_carriers_with_capacity_test_setup(db)
+    plan = db.query(TransportationPlan).filter_by(id=plan_id).one()
+    _seed_capacity_commitments(db, plan.plan_start_date, plan.plan_end_date)
+
+    ib = IntegratedBalancerService(db)
+    result = ib.balance_plan(
+        unconstrained_plan_id=plan_id,
+        resolve_capacity_from_db=True,
+    )
+
+    assert result.optimization_method == "LP_PROJECTION_PHASE_2B"
+    assert result.constraints_applied == 6  # 6 items reassigned to carrier 2
+    items = db.query(TransportationPlanItem).filter_by(
+        plan_id=result.constrained_plan_id,
+    ).all()
+    counts = {}
+    for it in items:
+        counts[it.carrier_id] = counts.get(it.carrier_id, 0) + 1
+    assert counts.get(1) == 4
+    assert counts.get(2) == 6
+
+
+def test_phase_3_42_dict_override_takes_precedence(db) -> None:
+    """When both `carrier_capacity` and `resolve_capacity_from_db=True`
+    are passed, the dict overrides per-carrier values from the DB."""
+    plan_id = _seed_two_carriers_with_capacity_test_setup(db)
+    plan = db.query(TransportationPlan).filter_by(id=plan_id).one()
+    _seed_capacity_commitments(db, plan.plan_start_date, plan.plan_end_date)
+
+    ib = IntegratedBalancerService(db)
+    result = ib.balance_plan(
+        unconstrained_plan_id=plan_id,
+        resolve_capacity_from_db=True,
+        carrier_capacity={1: 2},  # override carrier 1 to 2 (was 4 in DB)
+    )
+
+    items = db.query(TransportationPlanItem).filter_by(
+        plan_id=result.constrained_plan_id,
+    ).all()
+    counts = {}
+    for it in items:
+        counts[it.carrier_id] = counts.get(it.carrier_id, 0) + 1
+    assert counts.get(1) == 2  # capped by override
+    assert counts.get(2) == 8  # rest reassigned
+
+
+def test_phase_3_42_empty_db_resolution_falls_through_to_clone(db) -> None:
+    """No CarrierCapacityCommitment rows + flag set + no dict →
+    fall through to CLONE_PHASE_1."""
+    plan_id = _seed_two_carriers_with_capacity_test_setup(db)
+    # No _seed_capacity_commitments call
+
+    ib = IntegratedBalancerService(db)
+    result = ib.balance_plan(
+        unconstrained_plan_id=plan_id,
+        resolve_capacity_from_db=True,
+    )
+
+    assert result.optimization_method == "CLONE_PHASE_1"
+    assert result.constraints_applied == 0
+
+
+def test_phase_3_42_expired_commitments_not_used(db) -> None:
+    """A CarrierCapacityCommitment with effective_to in the past is
+    excluded from the resolved capacity."""
+    from datetime import datetime
+    from azirella_data_model.settlement import CarrierCapacityCommitment
+
+    plan_id = _seed_two_carriers_with_capacity_test_setup(db)
+    plan = db.query(TransportationPlan).filter_by(id=plan_id).one()
+
+    # Carrier 1: expired commitment (effective_to before now)
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={}, equipment_type="DRY_VAN",
+        period_start=plan.plan_start_date, period_end=plan.plan_end_date,
+        period_granularity="WEEKLY",
+        commit_volume=4, currency="USD",
+        effective_from=datetime(2025, 1, 1),
+        effective_to=datetime(2025, 12, 31),  # expired
+    ))
+    # Carrier 2: active commitment
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=2, lane_filter={}, equipment_type="DRY_VAN",
+        period_start=plan.plan_start_date, period_end=plan.plan_end_date,
+        period_granularity="WEEKLY",
+        commit_volume=100, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+
+    ib = IntegratedBalancerService(db)
+    result = ib.balance_plan(
+        unconstrained_plan_id=plan_id,
+        resolve_capacity_from_db=True,
+    )
+
+    items = db.query(TransportationPlanItem).filter_by(
+        plan_id=result.constrained_plan_id,
+    ).all()
+    counts = {}
+    for it in items:
+        counts[it.carrier_id] = counts.get(it.carrier_id, 0) + 1
+    # Carrier 1 has no active capacity → ALL 10 items go to carrier 2
+    assert counts.get(2) == 10
+    assert 1 not in counts
+
+
+# ===========================================================================
 # §3.38 Phase 2A.1 — ChargeCalculator integration (item 2)
 # ===========================================================================
 
