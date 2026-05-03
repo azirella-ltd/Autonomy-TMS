@@ -115,11 +115,17 @@ class BalanceResult:
 class IntegratedBalancerService:
     """L3 Constrained Balanced Plan service.
 
-    - Phase 1 (clone-only): omit ``carrier_capacity`` → 1:1 clone of
-      unconstrained plan.
-    - Phase 2B (LP-projection): pass ``carrier_capacity={carrier_id:
-      max_loads}`` → solve a transportation LP that respects per-carrier
-      capacity, minimises total cost, escalates items that don't fit.
+    - **Phase 1 (clone-only)**: omit ``carrier_capacity`` and
+      ``resolve_capacity_from_db=False`` → 1:1 clone of unconstrained plan.
+    - **Phase 2B (LP-projection, dict API)**: pass
+      ``carrier_capacity={carrier_id: max_loads}`` → solve a transportation
+      LP that respects per-carrier capacity, minimises total cost,
+      escalates items that don't fit.
+    - **§3.42 (LP-projection, DB API)**: pass
+      ``resolve_capacity_from_db=True`` → query Core's
+      :class:`~azirella_data_model.settlement.CarrierCapacityCommitment`
+      table and build the capacity dict from canonical commitment rows.
+      Production-ready replacement for the ad-hoc dict path.
     """
 
     def __init__(self, db: Session) -> None:
@@ -134,17 +140,28 @@ class IntegratedBalancerService:
         *,
         unconstrained_plan_id: int,
         carrier_capacity: Optional[Dict[int, float]] = None,
+        resolve_capacity_from_db: bool = False,
         cascade_run_id: Optional[str] = None,
         escalation_penalty: float = _DEFAULT_ESCALATION_PENALTY,
     ) -> BalanceResult:
         """Project the unconstrained plan onto the carrier-capacity
         constraint set.
 
-        - ``carrier_capacity is None`` → Phase 1 clone-only stub
+        - ``carrier_capacity is None`` AND ``resolve_capacity_from_db
+          is False`` → Phase 1 clone-only stub
           (``optimization_method='CLONE_PHASE_1'``).
-        - ``carrier_capacity`` provided → Phase 2B LP-projection.
+        - ``carrier_capacity`` provided → Phase 2B LP-projection (dict API).
+        - ``resolve_capacity_from_db=True`` → §3.42 LP-projection. Reads
+          ``CarrierCapacityCommitment`` rows for the source plan's
+          (tenant, period_start, period_end) window, builds the capacity
+          dict, then runs the same LP. Empty result → clone fallback.
         - LP solve fails → fall back to clone with
           ``optimization_method='LP_INFEASIBLE_FALLBACK'``.
+
+        Both ``carrier_capacity`` and ``resolve_capacity_from_db``
+        provided is supported: the dict OVERRIDES the DB query (useful
+        for tests / what-if scenarios where the operator wants to override
+        a specific carrier's commitment).
 
         Caller commits.
         """
@@ -169,6 +186,27 @@ class IntegratedBalancerService:
             .filter(TransportationPlanItem.plan_id == unconstrained_plan_id)
             .all()
         )
+
+        # §3.42 — DB-resolved capacity. Runs first so an explicit
+        # `carrier_capacity` dict can override specific carriers (test
+        # / what-if pattern). Resolved rows merge with the override:
+        # the override dict takes precedence per carrier_id.
+        if resolve_capacity_from_db:
+            db_capacity = self._resolve_capacity_from_db(
+                tenant_id=source_plan.tenant_id,
+                period_start=source_plan.plan_start_date,
+                period_end=source_plan.plan_end_date,
+            )
+            if db_capacity:
+                if carrier_capacity is not None:
+                    # Override merge: dict wins per carrier_id
+                    merged = dict(db_capacity)
+                    merged.update(carrier_capacity)
+                    carrier_capacity = merged
+                else:
+                    carrier_capacity = db_capacity
+            # If db_capacity is empty AND no dict override → fall through
+            # to the Phase 1 clone path below (no capacity = no LP).
 
         # Phase 1 fallback: no capacity → clone-only stub.
         if carrier_capacity is None:
@@ -542,6 +580,81 @@ class IntegratedBalancerService:
         }
 
         return assignments, escalated, utilisation
+
+    # ------------------------------------------------------------------
+    # §3.42 — DB-resolved capacity from CarrierCapacityCommitment
+    # ------------------------------------------------------------------
+
+    def _resolve_capacity_from_db(
+        self,
+        *,
+        tenant_id: int,
+        period_start,
+        period_end,
+    ) -> Dict[int, float]:
+        """Build the ``{carrier_id: max_loads}`` dict by querying
+        ``CarrierCapacityCommitment`` rows that overlap the plan's
+        ``[period_start, period_end]`` window.
+
+        Resolution rules (Phase 1 of §3.42):
+
+        - Match rows where ``commitment.period_start <= plan.period_end``
+          AND ``commitment.period_end >= plan.period_start`` (overlap).
+        - Match rows where ``effective_from <= today`` AND
+          ``effective_to IS NULL OR effective_to >= today``.
+        - Per ``contract.id``, sum ``commit_volume`` across all matching
+          rows. The carrier id resolves through ``Contract.carrier_id``.
+        - Multiple commitments for the same carrier across different
+          contracts roll up additively (carrier may serve multiple
+          contracts; each contract's commitment is independent).
+
+        Returns empty dict when no commitments match. Caller treats
+        that as "no capacity data → fall through to clone-only path".
+
+        Phase 2 of §3.42 will add:
+        - Per-period-granularity prorating (``WEEKLY`` commitments
+          should slice their contribution to the plan's actual week
+          coverage; today we sum the full ``commit_volume``).
+        - Lane-filter resolution (Phase 1 ignores ``lane_filter``;
+          all rows for the contract roll up into the carrier total).
+        - Equipment-filter resolution (Phase 1 ignores ``equipment_type``).
+        """
+        try:
+            from azirella_data_model.settlement import (
+                CarrierCapacityCommitment,
+                Contract,
+            )
+        except ImportError:
+            return {}
+
+        from datetime import datetime
+        now = datetime.utcnow()
+
+        rows = (
+            self.db.query(CarrierCapacityCommitment, Contract.carrier_id)
+            .join(Contract, Contract.id == CarrierCapacityCommitment.contract_id)
+            .filter(
+                CarrierCapacityCommitment.tenant_id == tenant_id,
+                # Period overlap: commitment ends after plan starts AND
+                # commitment starts before plan ends.
+                CarrierCapacityCommitment.period_end >= period_start,
+                CarrierCapacityCommitment.period_start <= period_end,
+                # Effective-window check.
+                CarrierCapacityCommitment.effective_from <= now,
+            )
+            .all()
+        )
+
+        capacity: Dict[int, float] = {}
+        for commitment, carrier_id in rows:
+            if commitment.effective_to is not None and commitment.effective_to < now:
+                continue
+            if carrier_id is None:
+                continue
+            volume = float(commitment.commit_volume)
+            capacity[carrier_id] = capacity.get(carrier_id, 0.0) + volume
+
+        return capacity
 
 
 __all__ = [
