@@ -581,6 +581,14 @@ async def startup_event():
             )
             register_lifecycle_aggregator_jobs(scheduler_service)
 
+            # Register §3.29 Group A live exception detector (every 15 min —
+            # reads GeofenceEvent + ETAEstimate substrate, persists
+            # exceptions as AgentDecision rows, optionally emits HiveSignal).
+            from app.services.powell.live_exception_jobs import (
+                register_live_exception_jobs,
+            )
+            register_live_exception_jobs(scheduler_service)
+
             # Register executive briefing scheduler (hourly check for scheduled generation)
             from app.services.executive_briefing_jobs import register_executive_briefing_jobs
             register_executive_briefing_jobs(scheduler_service)
