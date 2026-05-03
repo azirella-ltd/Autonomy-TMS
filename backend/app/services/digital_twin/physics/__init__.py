@@ -17,13 +17,23 @@ from .carrier_acceptance import (
     TenderContext,
     TenderOutcome,
 )
+from .lane_transit import (
+    LaneTransitModel,
+    LaneTransitParams,
+    TransitContext,
+    TransitOutcome,
+)
 from .protocol import PhysicsModel
 
 __all__ = [
     "CarrierAcceptanceModel",
     "CarrierAcceptanceParams",
     "CarrierKind",
+    "LaneTransitModel",
+    "LaneTransitParams",
     "PhysicsModel",
     "TenderContext",
     "TenderOutcome",
+    "TransitContext",
+    "TransitOutcome",
 ]

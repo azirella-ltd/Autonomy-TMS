@@ -246,6 +246,8 @@ class LaneFlowSimulator:
         outcome_sink: OutcomeSink | None = None,
         carrier_acceptance_model: Any = None,
         scenario_market_tightness: float = 0.0,
+        lane_transit_model: Any = None,
+        scenario_weather_index: float = 0.0,
     ):
         self._generator = generator
         self.tenant_id = int(tenant_id)
@@ -273,6 +275,19 @@ class LaneFlowSimulator:
         # Tune via scenario config when running RL with disruption-class
         # CARRIER_STRIKE / CAPACITY_LOSS scenarios.
         self._scenario_market_tightness = float(scenario_market_tightness)
+        # PR-3.B — opt-in LaneTransitModel for transit-time draws.
+        # ``None`` (default) preserves the static
+        # ``LanePhysicsParams.transit_buckets`` constant for every load.
+        # When supplied, each dispatched load draws its own transit
+        # duration from a lognormal centred on the static mean,
+        # modulated by season + scenario weather. Outcome events for
+        # arrivals carry both the realised duration and the conformal
+        # band metadata for downstream training-corpus / TRM features.
+        self._lane_transit_model = lane_transit_model
+        # Weather-Event physics (§4.5/exception generator) isn't online
+        # yet — feed a constant scenario weather value to the
+        # LaneTransitModel. 0 = clear, 1 = severe closure-class event.
+        self._scenario_weather_index = float(scenario_weather_index)
 
         if self.horizon_buckets < 1:
             raise ValueError(
@@ -330,11 +345,17 @@ class LaneFlowSimulator:
         )
         # Re-seed any attached physics model so its RNG draws are
         # deterministic per scenario_seed alongside the simulator's.
-        # Use seed+1 to keep streams independent (avoids a PhysicsModel's
-        # first-draw correlating with the simulator's first arrival draw).
+        # Use scenario_seed + N for each model to keep streams
+        # independent (carrier_acceptance and lane_transit both draw
+        # per dispatched load; we don't want their first-draw
+        # outcomes to correlate via shared RNG state).
         if self._carrier_acceptance_model is not None:
             self._carrier_acceptance_model.reset(
                 scenario_seed=scenario_seed + 1, twin_mode=self.mode,
+            )
+        if self._lane_transit_model is not None:
+            self._lane_transit_model.reset(
+                scenario_seed=scenario_seed + 2, twin_mode=self.mode,
             )
         self._reset_called = True
 
@@ -435,9 +456,25 @@ class LaneFlowSimulator:
                 i for i, o in enumerate(tender_outcomes) if o.accepted
             ]
 
+        # Per-load transit-time draw (PR-3.B). When no model attached,
+        # use the static lane constant for every load (legacy behaviour).
+        transit_outcomes_by_load_idx: dict[int, Any] = {}
         for load_idx in accepted_load_idxs:
             on_time = self._sample_on_time(carrier, action)
-            arrival_bucket = self._state.bucket + self.lane_params.transit_buckets
+            if self._lane_transit_model is not None:
+                from app.services.digital_twin.physics import TransitContext
+                day_of_year = self._state.bucket_start.timetuple().tm_yday
+                transit_ctx = TransitContext(
+                    deterministic_mean_buckets=self.lane_params.transit_buckets,
+                    day_of_year=day_of_year,
+                    weather_index=self._scenario_weather_index,
+                    equipment_kind=equipment.equipment_kind,
+                )
+                transit_outcome = self._lane_transit_model.step(transit_ctx)
+                transit_outcomes_by_load_idx[load_idx] = transit_outcome
+                arrival_bucket = self._state.bucket + transit_outcome.realised_buckets
+            else:
+                arrival_bucket = self._state.bucket + self.lane_params.transit_buckets
             self._state.in_flight.append(
                 _InFlightLoad(
                     arrival_bucket=arrival_bucket,
@@ -466,6 +503,18 @@ class LaneFlowSimulator:
                 o = tender_outcomes[load_idx]
                 payload["p_accept"] = o.p_accept
                 payload["reason_code"] = o.reason_code
+            # PR-3.B — attach transit-band metadata when the lane-transit
+            # model is attached so downstream consumers (ShipmentTracking
+            # ETA bounds, CapacityPromise deadline-feasibility) can read
+            # the conformal P10/P90 alongside the realised duration.
+            if load_idx in transit_outcomes_by_load_idx:
+                t_o = transit_outcomes_by_load_idx[load_idx]
+                payload["transit_realised_buckets"] = t_o.realised_buckets
+                payload["transit_mean_buckets"] = t_o.mean_buckets
+                payload["transit_p10_buckets"] = t_o.p10_buckets
+                payload["transit_p90_buckets"] = t_o.p90_buckets
+                payload["transit_season_factor"] = t_o.season_factor
+                payload["transit_weather_factor"] = t_o.weather_factor
             self._emit_outcome(
                 decision_id=self._make_decision_id(load_idx),
                 decision_type="load_dispatch",
