@@ -1145,6 +1145,202 @@ def test_phase_3_42_p2_mode_filter(db) -> None:
     assert result.optimization_method == "CLONE_PHASE_1"
 
 
+# ===========================================================================
+# §3.42 Phase 3 — per-(carrier × equipment) LP + prorating + geographic filters
+# ===========================================================================
+
+
+def test_phase_3_42_p3_per_equipment_lp_constraint(db) -> None:
+    """§3.42 Phase 3.2: per-(carrier × equipment) LP constraints.
+    Single carrier with DRY_VAN cap=4 + REEFER cap=10. Plan: 6 DRY_VAN
+    + 2 REEFER. Phase 3.2 fits 4 DRY_VAN + 2 REEFER, escalates 2
+    DRY_VAN. Phase 1 would have summed 14 and fitted all 8."""
+    from datetime import datetime
+    from azirella_data_model.settlement import (
+        Carrier, Contract, RateCard, CarrierCapacityCommitment,
+    )
+
+    db.add(Carrier(id=1, tenant_id=1, scac="C1", display_name="C1", carrier_type="TRUCKLOAD"))
+    db.flush()
+    db.add(Contract(id=1, tenant_id=1, carrier_id=1, contract_number="C1",
+        contract_type="PRIMARY", effective_from=datetime(2026, 1, 1), currency="USD"))
+    db.flush()
+    db.add(RateCard(id=1, tenant_id=1, contract_id=1, lane_filter={},
+        equipment_type="DRY_VAN", rate_basis="PER_MILE", base_rate=2.50,
+        effective_from=datetime(2026, 1, 1)))
+    db.add(RateCard(id=2, tenant_id=1, contract_id=1, lane_filter={},
+        equipment_type="REEFER", rate_basis="PER_MILE", base_rate=3.00,
+        effective_from=datetime(2026, 1, 1)))
+    db.flush()
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={}, equipment_type="DRY_VAN",
+        period_start=date(2026, 5, 4), period_end=date(2026, 5, 10),
+        period_granularity="WEEKLY", commit_volume=4, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={}, equipment_type="REEFER",
+        period_start=date(2026, 5, 4), period_end=date(2026, 5, 10),
+        period_granularity="WEEKLY", commit_volume=10, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+    _seed_lane_profile(db)
+    _seed_lane_volume_plan(db, lane_id=10, mode="FTL", equipment_type="DRY_VAN", forecast_loads_p50=6)
+    _seed_lane_volume_plan(db, lane_id=10, mode="FTL", equipment_type="REEFER", forecast_loads_p50=2)
+
+    plan_id = MovementPlannerService(db).plan_movement(
+        tenant_id=1, config_id=1, period_start=date(2026, 5, 4)).plan_id
+    result = IntegratedBalancerService(db).balance_plan(
+        unconstrained_plan_id=plan_id, resolve_capacity_from_db=True)
+
+    items = db.query(TransportationPlanItem).filter_by(plan_id=result.constrained_plan_id).all()
+    cancelled = [i for i in items if i.status == PlanItemStatus.CANCELLED]
+    assert result.items_escalated == 2
+    # All escalated items should be DRY_VAN (DRY_VAN cap was tight)
+    cancelled_dv = sum(1 for i in cancelled if i.equipment_type == "DRY_VAN")
+    assert cancelled_dv == 2
+
+
+def test_phase_3_42_p3_prorating_weekly_over_quarter(db) -> None:
+    """§3.42 Phase 3.3: a WEEKLY commitment over Q2 (91 days) prorates
+    to ~7/91 of its volume for a 7-day plan. 100 commit_volume → ~7.69
+    effective cap → only 7 of 10 items fit."""
+    from datetime import datetime
+    from azirella_data_model.settlement import (
+        Carrier, Contract, RateCard, CarrierCapacityCommitment,
+    )
+
+    db.add(Carrier(id=1, tenant_id=1, scac="C1", display_name="C1", carrier_type="TRUCKLOAD"))
+    db.flush()
+    db.add(Contract(id=1, tenant_id=1, carrier_id=1, contract_number="C1",
+        contract_type="PRIMARY", effective_from=datetime(2026, 1, 1), currency="USD"))
+    db.flush()
+    db.add(RateCard(id=1, tenant_id=1, contract_id=1, lane_filter={},
+        equipment_type="DRY_VAN", rate_basis="PER_MILE", base_rate=2.50,
+        effective_from=datetime(2026, 1, 1)))
+    db.flush()
+    # Q2 commitment: Apr 1 — Jun 30 (91 days), commit_volume=100 WEEKLY
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={}, equipment_type="DRY_VAN",
+        period_start=date(2026, 4, 1), period_end=date(2026, 6, 30),
+        period_granularity="WEEKLY", commit_volume=100, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+    _seed_lane_profile(db)
+    _seed_lane_volume_plan(db, lane_id=10, mode="FTL", equipment_type="DRY_VAN", forecast_loads_p50=10)
+
+    plan_id = MovementPlannerService(db).plan_movement(
+        tenant_id=1, config_id=1, period_start=date(2026, 5, 4)).plan_id
+    result = IntegratedBalancerService(db).balance_plan(
+        unconstrained_plan_id=plan_id, resolve_capacity_from_db=True)
+
+    items = db.query(TransportationPlanItem).filter_by(plan_id=result.constrained_plan_id).all()
+    on_carrier = sum(1 for i in items if i.carrier_id == 1)
+    # 100 × 7/91 = 7.69 → floor to 7 fittable items, 3 escalated.
+    assert on_carrier == 7
+    assert result.items_escalated == 3
+
+
+def test_phase_3_42_p3_prorating_flat_no_proration(db) -> None:
+    """§3.42 Phase 3.3: FLAT granularity commitment is NOT prorated —
+    full commit_volume applies regardless of period overlap."""
+    from datetime import datetime
+    from azirella_data_model.settlement import (
+        Carrier, Contract, RateCard, CarrierCapacityCommitment,
+    )
+
+    db.add(Carrier(id=1, tenant_id=1, scac="C1", display_name="C1", carrier_type="TRUCKLOAD"))
+    db.flush()
+    db.add(Contract(id=1, tenant_id=1, carrier_id=1, contract_number="C1",
+        contract_type="PRIMARY", effective_from=datetime(2026, 1, 1), currency="USD"))
+    db.flush()
+    db.add(RateCard(id=1, tenant_id=1, contract_id=1, lane_filter={},
+        equipment_type="DRY_VAN", rate_basis="PER_MILE", base_rate=2.50,
+        effective_from=datetime(2026, 1, 1)))
+    db.flush()
+    db.add(CarrierCapacityCommitment(
+        tenant_id=1, contract_id=1, lane_filter={}, equipment_type="DRY_VAN",
+        period_start=date(2026, 4, 1), period_end=date(2026, 6, 30),
+        period_granularity="FLAT", commit_volume=20, currency="USD",
+        effective_from=datetime(2026, 1, 1),
+    ))
+    db.flush()
+    _seed_lane_profile(db)
+    _seed_lane_volume_plan(db, lane_id=10, mode="FTL", equipment_type="DRY_VAN", forecast_loads_p50=10)
+
+    plan_id = MovementPlannerService(db).plan_movement(
+        tenant_id=1, config_id=1, period_start=date(2026, 5, 4)).plan_id
+    result = IntegratedBalancerService(db).balance_plan(
+        unconstrained_plan_id=plan_id, resolve_capacity_from_db=True)
+
+    # FLAT 20-load cap > 10 plan items → all fit
+    items = db.query(TransportationPlanItem).filter_by(plan_id=result.constrained_plan_id).all()
+    assert sum(1 for i in items if i.carrier_id == 1) == 10
+    assert result.items_escalated == 0
+
+
+# ===========================================================================
+# §3.41 Phase 3 — GraphSAGE training pipeline scaffold
+# ===========================================================================
+
+
+def test_phase_3_41_torch_graphsage_untrained_returns_low_confidence(db) -> None:
+    """§3.41 Phase 3.2: an untrained TorchGraphSAGEMovementPlanner
+    returns predictions with carrier_id=None and confidence=0.0 so
+    consumers can detect the untrained state and fall back to Phase 2A."""
+    from app.services.powell.graphsage_movement_planner import (
+        TorchGraphSAGEMovementPlanner,
+        GraphSAGEPredictionInput,
+    )
+
+    model = TorchGraphSAGEMovementPlanner()
+    inp = GraphSAGEPredictionInput(
+        tenant_id=1, config_id=1, period_start=date(2026, 5, 4), period_days=7,
+        lane_volume_forecasts=[
+            {"item_id": 1, "lane_id": 10, "mode": "FTL", "equipment_type": "DRY_VAN",
+             "forecast_loads_p50": 5.0},
+        ],
+        available_carriers=[
+            {"carrier_id": 1, "rate_card_id": 1, "base_rate": 2.5, "capacity_remaining": 50},
+        ],
+    )
+    outputs = model.predict(inp)
+    assert len(outputs) == 1
+    assert outputs[0].carrier_id is None
+    assert outputs[0].confidence == 0.0
+    assert "model_not_trained" in outputs[0].rationale.get("reason", "")
+
+
+def test_phase_3_41_training_extractor_returns_iterator(db) -> None:
+    """§3.41 Phase 3.1: extractor returns an iterator of training
+    examples. Empty when no plan items exist."""
+    from app.services.powell.movement_planner_training_data import (
+        MovementPlannerTrainingDataExtractor,
+    )
+
+    extractor = MovementPlannerTrainingDataExtractor(db)
+    examples = list(extractor.extract(tenant_id=1))
+    assert examples == []  # No plans seeded
+
+
+def test_phase_3_41_trainer_returns_run_result_with_zero_examples(db) -> None:
+    """§3.41 Phase 3.3: trainer produces a TrainingRunResult even when
+    no examples are extracted. Model version reflects the no-data
+    state."""
+    from app.services.powell.movement_planner_trainer import (
+        MovementPlannerTrainer,
+    )
+
+    trainer = MovementPlannerTrainer(db)
+    result = trainer.train(tenant_id=1)
+    assert result.examples_extracted == 0
+    assert result.examples_used == 0
+    assert "no_training_data" in result.model_version
+    assert result.training_run_id.startswith("trainer_1_")
+
+
 def test_phase_3_42_expired_commitments_not_used(db) -> None:
     """A CarrierCapacityCommitment with effective_to in the past is
     excluded from the resolved capacity."""

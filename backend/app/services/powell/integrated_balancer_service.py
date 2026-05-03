@@ -60,10 +60,44 @@ These are GraphSAGE / LP-extension concerns deferred to Phase 3 per
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from sqlalchemy.orm import Session
+
+
+# Type alias for the capacity dict. Backward-compat: integer keys mean
+# "carrier-wide cap" (treated as (carrier_id, None)). Phase 3.2 (§3.42)
+# adds tuple keys (carrier_id, equipment_type) for per-equipment caps.
+_CapacityKey = Union[int, Tuple[int, Optional[str]]]
+_CapacityDict = Dict[_CapacityKey, float]
+
+
+def _normalize_capacity_dict(
+    capacity: Optional[_CapacityDict],
+) -> Dict[Tuple[int, Optional[str]], float]:
+    """Normalize ``Dict[int, float]`` (Phase 1 / 2B) and tuple-keyed
+    ``Dict[Tuple[int, Optional[str]], float]`` (Phase 3.2) shapes
+    into one canonical tuple-keyed dict.
+
+    Integer keys ``c`` are treated as ``(c, None)`` — meaning
+    "carrier-wide cap, any equipment." Tuple keys pass through.
+    """
+    if not capacity:
+        return {}
+    normalized: Dict[Tuple[int, Optional[str]], float] = {}
+    for key, value in capacity.items():
+        if isinstance(key, int):
+            normalized[(key, None)] = float(value)
+        elif isinstance(key, tuple) and len(key) == 2:
+            carrier_id, equipment_type = key
+            normalized[(int(carrier_id), equipment_type)] = float(value)
+        else:
+            raise ValueError(
+                f"Invalid capacity-dict key {key!r}; "
+                "expected int or (int, str|None) tuple."
+            )
+    return normalized
 
 from app.models.tms_planning import (
     PlanStatus,
@@ -81,34 +115,52 @@ Large enough that escalation is always worse than any feasible
 assignment. Configurable per-call for tenants with unusual cost scales."""
 
 
-def _commitment_matches_item(commitment, item) -> bool:
-    """Phase 2 (§3.42) — does this commitment plausibly serve this item?
+_GEO_KEYS = {
+    "origin_geo_id", "dest_geo_id",
+    "origin_state", "dest_state",
+    "origin_zip3", "dest_zip3",
+}
+
+
+def _commitment_matches_item(commitment, item, lane_geo_resolver=None) -> bool:
+    """Does this commitment plausibly serve this item?
 
     All three scopes (``lane_filter`` / ``equipment_type`` / ``mode``)
-    are AND-combined per item. ``None`` / empty ``lane_filter`` matches
-    anything. Geographic ``lane_filter`` shapes fail-closed in Phase 2.
+    are AND-combined per item.
+
+    Phase 2 (§3.42): supports `{}` catch-all + `{"lane_id": <id>}` only;
+    geographic shapes fail-closed.
+
+    Phase 3 (§3.42): geographic shapes (`origin_state`, `origin_zip3`,
+    `origin_geo_id`, `dest_*`) resolved via ``lane_geo_resolver``
+    (a :class:`LaneGeographyResolver`) when provided.
     """
-    # equipment_type: None on commitment = any
     if commitment.equipment_type is not None:
         if commitment.equipment_type != item.equipment_type:
             return False
-    # mode: None on commitment = any
     if commitment.mode is not None:
         if commitment.mode != item.mode:
             return False
-    # lane_filter: empty dict catch-all; {"lane_id": ...} explicit match;
-    # other shapes (geographic) fail-closed in Phase 2.
+
     lane_filter = commitment.lane_filter or {}
     if not lane_filter:
         return True
     if "lane_id" in lane_filter:
         if lane_filter["lane_id"] != item.lane_id:
             return False
-    # Geographic shapes — Phase 2 fail-closed.
-    geo_keys = {"origin_geo_id", "dest_geo_id", "origin_state", "dest_state",
-                "origin_zip3", "dest_zip3"}
-    if any(k in lane_filter for k in geo_keys):
-        return False
+
+    # Phase 3: geographic shapes via resolver.
+    geo_constraints = {k: v for k, v in lane_filter.items() if k in _GEO_KEYS}
+    if geo_constraints:
+        if lane_geo_resolver is None:
+            return False  # Phase 2 fail-closed when no resolver passed
+        meta = lane_geo_resolver.resolve(item.lane_id)
+        if meta is None:
+            return False
+        for key, expected in geo_constraints.items():
+            actual = meta.get(key)
+            if actual is None or actual != expected:
+                return False
     return True
 
 
@@ -170,7 +222,7 @@ class IntegratedBalancerService:
         self,
         *,
         unconstrained_plan_id: int,
-        carrier_capacity: Optional[Dict[int, float]] = None,
+        carrier_capacity: Optional[_CapacityDict] = None,
         resolve_capacity_from_db: bool = False,
         cascade_run_id: Optional[str] = None,
         escalation_penalty: float = _DEFAULT_ESCALATION_PENALTY,
@@ -220,12 +272,12 @@ class IntegratedBalancerService:
 
         # §3.42 — DB-resolved capacity. Runs first so an explicit
         # `carrier_capacity` dict can override specific carriers (test
-        # / what-if pattern). Resolved rows merge with the override:
-        # the override dict takes precedence per carrier_id.
+        # / what-if pattern).
         # Phase 2 (§3.42): pass source_items so commitment rows are
-        # filtered by lane + equipment + mode scope — irrelevant rows
-        # (e.g., REEFER commitments when the plan has no REEFER items)
-        # don't boost the carrier's pool.
+        # filtered by lane + equipment + mode scope.
+        # Phase 3.2 (§3.42): tuple keys (carrier_id, equipment_type)
+        # support per-equipment caps; integer keys still mean carrier-
+        # wide.
         if resolve_capacity_from_db:
             db_capacity = self._resolve_capacity_from_db(
                 tenant_id=source_plan.tenant_id,
@@ -235,14 +287,15 @@ class IntegratedBalancerService:
             )
             if db_capacity:
                 if carrier_capacity is not None:
-                    # Override merge: dict wins per carrier_id
-                    merged = dict(db_capacity)
-                    merged.update(carrier_capacity)
+                    # Override merge in normalised tuple-key space:
+                    # the dict wins per (carrier, equipment) tuple.
+                    merged = _normalize_capacity_dict(db_capacity)
+                    merged.update(_normalize_capacity_dict(carrier_capacity))
                     carrier_capacity = merged
                 else:
                     carrier_capacity = db_capacity
             # If db_capacity is empty AND no dict override → fall through
-            # to the Phase 1 clone path below (no capacity = no LP).
+            # to the Phase 1 clone path below.
 
         # Phase 1 fallback: no capacity → clone-only stub.
         if carrier_capacity is None:
@@ -502,43 +555,47 @@ class IntegratedBalancerService:
         self,
         *,
         items: Sequence[TransportationPlanItem],
-        carrier_capacity: Dict[int, float],
+        carrier_capacity: _CapacityDict,
         escalation_penalty: float,
     ) -> Tuple[Dict[int, int], set, Dict[int, float]]:
         """Solve the transportation LP via ``scipy.optimize.linprog``.
 
+        Phase 3.2 (§3.42): supports per-(carrier × equipment) capacity
+        constraints. Capacity dict keys are normalised to
+        ``(carrier_id, Optional[equipment_type])`` tuples — integer
+        keys (Phase 1 / 2B) become ``(carrier_id, None)`` meaning
+        "carrier-wide cap, any equipment". Per-tuple constraints are
+        added: ``sum_{i: matching equipment} x[i, carrier] ≤
+        capacity[(carrier, equipment)]``. Both per-carrier and per-
+        (carrier, equipment) constraints can coexist; the LP enforces
+        all of them.
+
         Returns ``(assignments, escalated, utilisation)`` where:
 
-        - ``assignments``: ``{item_id: carrier_id}`` for items the LP
-          assigned. Items not in the dict were escalated.
-        - ``escalated``: set of ``item_id`` the LP couldn't fit.
+        - ``assignments``: ``{item_id: carrier_id}``.
+        - ``escalated``: set of ``item_id``.
         - ``utilisation``: ``{carrier_id: utilization_fraction}``
-          post-solve (loads_assigned / capacity).
+          post-solve, computed against the carrier-wide cap or the sum
+          of per-equipment caps when no carrier-wide cap exists.
 
-        Raises ``RuntimeError`` if the LP solver fails (infeasible or
-        numerical issue).
+        Raises ``RuntimeError`` on solver failure.
         """
         from scipy.optimize import linprog
 
         if not items or not carrier_capacity:
             return {}, set(), {}
 
-        carriers = sorted(carrier_capacity.keys())
+        # Normalise to tuple-key shape.
+        normalised = _normalize_capacity_dict(carrier_capacity)
+
+        # Collect distinct carrier IDs from the capacity dict.
+        carriers = sorted({c for (c, _e) in normalised.keys()})
         n_items = len(items)
         n_carriers = len(carriers)
-
         if n_carriers == 0:
             return {}, {item.id for item in items}, {}
 
-        # Cost matrix:
-        #   - cost[i,c] = item.estimated_cost when c == item.carrier_id
-        #     (Phase 2A pick at the original rate).
-        #   - cost[i,c] = item.estimated_cost × 1.5 for fallback carriers
-        #     (Phase 2B simplification: 50% surcharge approximation; Phase
-        #     3 will re-resolve rate cards per fallback carrier).
-        #   - cost[i,c] = ESCALATION_PENALTY × 0.99 (high but below
-        #     escalation) when item has no estimated_cost (Phase 1
-        #     fallback path).
+        # Cost matrix (same Phase 2B logic).
         BIG = escalation_penalty * 0.99
         cost_matrix = np.zeros((n_items, n_carriers))
         for i, item in enumerate(items):
@@ -563,7 +620,7 @@ class IntegratedBalancerService:
         for i in range(n_items):
             c_obj[n_items * n_carriers + i] = escalation_penalty
 
-        # Equality: for each item i, sum_c x[i,c] + e[i] = 1
+        # Equality: per item, sum_c x[i,c] + e[i] = 1.
         A_eq = np.zeros((n_items, n_vars))
         b_eq = np.ones(n_items)
         for i in range(n_items):
@@ -571,13 +628,21 @@ class IntegratedBalancerService:
                 A_eq[i, i * n_carriers + j] = 1
             A_eq[i, n_items * n_carriers + i] = 1
 
-        # Inequality: for each carrier c, sum_i x[i,c] <= capacity[c]
-        A_ub = np.zeros((n_carriers, n_vars))
-        b_ub = np.zeros(n_carriers)
-        for j, carrier_id in enumerate(carriers):
-            for i in range(n_items):
-                A_ub[j, i * n_carriers + j] = 1
-            b_ub[j] = float(carrier_capacity[carrier_id])
+        # Phase 3.2 inequality: one row per (carrier, equipment) tuple.
+        # When equipment_type is None, the row sums all items on that
+        # carrier (carrier-wide cap). When equipment_type is set, the
+        # row sums only items matching that equipment.
+        capacity_keys = sorted(normalised.keys())  # deterministic order
+        n_capacity_constraints = len(capacity_keys)
+        A_ub = np.zeros((n_capacity_constraints, n_vars))
+        b_ub = np.zeros(n_capacity_constraints)
+        carrier_idx_by_id = {c: idx for idx, c in enumerate(carriers)}
+        for k, (carrier_id, equipment_type) in enumerate(capacity_keys):
+            j = carrier_idx_by_id[carrier_id]
+            for i, item in enumerate(items):
+                if equipment_type is None or item.equipment_type == equipment_type:
+                    A_ub[k, i * n_carriers + j] = 1
+            b_ub[k] = float(normalised[(carrier_id, equipment_type)])
 
         bounds = [(0, 1)] * n_vars
 
@@ -593,8 +658,6 @@ class IntegratedBalancerService:
 
         x = result.x
 
-        # Round fractional solutions: each item gets argmax carrier OR
-        # escalation if slack is largest.
         assignments: Dict[int, int] = {}
         escalated: set = set()
         for i, item in enumerate(items):
@@ -606,14 +669,28 @@ class IntegratedBalancerService:
             else:
                 assignments[item.id] = carriers[best_j]
 
+        # Utilisation: compute against carrier-wide cap when present,
+        # else sum per-equipment caps.
         loads_per_carrier: Dict[int, int] = {c: 0 for c in carriers}
         for _, carrier_id in assignments.items():
             loads_per_carrier[carrier_id] += 1
-        utilisation = {
-            c: round(loads_per_carrier[c] / carrier_capacity[c], 4)
-            if carrier_capacity[c] > 0 else 0.0
-            for c in carriers
-        }
+
+        utilisation: Dict[int, float] = {}
+        for carrier_id in carriers:
+            # Prefer the explicit carrier-wide cap if present.
+            cap = normalised.get((carrier_id, None))
+            if cap is None:
+                # Sum per-equipment caps as the carrier's effective cap.
+                cap = sum(
+                    v for (cid, _e), v in normalised.items()
+                    if cid == carrier_id
+                )
+            if cap and cap > 0:
+                utilisation[carrier_id] = round(
+                    loads_per_carrier[carrier_id] / cap, 4,
+                )
+            else:
+                utilisation[carrier_id] = 0.0
 
         return assignments, escalated, utilisation
 
@@ -628,7 +705,7 @@ class IntegratedBalancerService:
         period_start,
         period_end,
         items: Optional[Sequence] = None,
-    ) -> Dict[int, float]:
+    ) -> Dict[Tuple[int, Optional[str]], float]:
         """Build the ``{carrier_id: max_loads}`` dict by querying
         ``CarrierCapacityCommitment`` rows that overlap the plan's
         ``[period_start, period_end]`` window.
@@ -697,28 +774,44 @@ class IntegratedBalancerService:
             .all()
         )
 
-        capacity: Dict[int, float] = {}
+        # Phase 3.2 (§3.42): return per-(carrier_id, equipment_type) keys.
+        # Commitments with `equipment_type IS NULL` contribute to the
+        # carrier-wide cap key `(carrier_id, None)`; equipment-specific
+        # commitments contribute to `(carrier_id, "DRY_VAN")` etc.
+        # The LP enforces all per-tuple constraints.
+        capacity: Dict[Tuple[int, Optional[str]], float] = {}
         for commitment, carrier_id in rows:
             if commitment.effective_to is not None and commitment.effective_to < now:
                 continue
             if carrier_id is None:
                 continue
-            # Phase 2 (§3.42): require at least one plan item to match
-            # the commitment's scope. Without this filter (Phase 1), a
-            # commitment that no item could plausibly use still adds to
-            # the carrier's cap.
+            # Phase 2 (§3.42): scope filter.
             if items is not None and not self._capacity_filter_matches(
                 commitment, items,
             ):
                 continue
-            volume = float(commitment.commit_volume)
-            capacity[carrier_id] = capacity.get(carrier_id, 0.0) + volume
+            # Phase 3.3 (§3.42): prorate by period overlap. A WEEKLY
+            # commitment that spans Q2 (13 weeks) only contributes
+            # ~1/13 of its commit_volume to a single-week plan window.
+            volume = self._prorate_commitment_volume(
+                commitment, period_start, period_end,
+            )
+            key = (carrier_id, commitment.equipment_type)
+            capacity[key] = capacity.get(key, 0.0) + volume
 
+        # Phase 1 backward-compat: when the caller doesn't pass items,
+        # collapse equipment-specific keys to carrier-wide totals so
+        # legacy callers see the simple Dict[int, float] shape.
+        if items is None:
+            collapsed: Dict[Tuple[int, Optional[str]], float] = {}
+            for (carrier_id, _equipment), volume in capacity.items():
+                key = (carrier_id, None)
+                collapsed[key] = collapsed.get(key, 0.0) + volume
+            return collapsed
         return capacity
 
-    @staticmethod
-    def _capacity_filter_matches(commitment, items: Sequence) -> bool:
-        """Phase 2 (§3.42) capacity-filter matcher.
+    def _capacity_filter_matches(self, commitment, items: Sequence) -> bool:
+        """Phase 2+3 (§3.42) capacity-filter matcher.
 
         Returns ``True`` if at least one item in ``items`` matches the
         commitment's ``lane_filter`` + ``equipment_type`` + ``mode``
@@ -728,21 +821,66 @@ class IntegratedBalancerService:
         Rules (per item, AND-combined):
 
         - **lane_filter**: empty dict matches all; ``{"lane_id": <id>}``
-          matches when ``item.lane_id`` equals it. Geographic shapes
-          (``origin_state``, ``origin_zip3``, ``origin_geo_id``, etc.)
-          are not supported in Phase 2 — they fail-closed (don't match).
-          Phase 3 will resolve them via ``MovementPlannerService.
-          _resolve_lane_geography``.
-        - **equipment_type**: ``None`` matches any equipment; otherwise
-          must equal ``item.equipment_type``.
-        - **mode**: ``None`` matches any mode; otherwise must equal
+          matches when ``item.lane_id`` equals it. **Phase 3 (§3.42):**
+          geographic shapes (``origin_state``, ``origin_zip3``,
+          ``origin_geo_id``, ``dest_*``) resolved via the shared
+          :class:`LaneGeographyResolver`.
+        - **equipment_type**: ``None`` matches any; otherwise must
+          equal ``item.equipment_type``.
+        - **mode**: ``None`` matches any; otherwise must equal
           ``item.mode``.
         """
+        if not hasattr(self, "_lane_geo_resolver"):
+            from app.services.powell.lane_geography import LaneGeographyResolver
+            self._lane_geo_resolver = LaneGeographyResolver(self.db)
         for item in items:
-            if not _commitment_matches_item(commitment, item):
+            if not _commitment_matches_item(
+                commitment, item,
+                lane_geo_resolver=self._lane_geo_resolver,
+            ):
                 continue
             return True
         return False
+
+
+    @staticmethod
+    def _prorate_commitment_volume(commitment, plan_start, plan_end) -> float:
+        """Phase 3.3 (§3.42): prorate ``commit_volume`` by the fraction
+        of the commitment's period that overlaps the plan window.
+
+        Granularity-specific behaviour:
+
+        - **FLAT**: total ``commit_volume`` applies to the whole period
+          regardless of plan-window overlap. Returns full volume; no
+          proration.
+        - **WEEKLY / MONTHLY / QUARTERLY**: prorate by overlap-day-
+          fraction. A WEEKLY commitment over Q2 (91 days) overlapping
+          a 7-day plan contributes ``commit_volume × 7 / 91`` to the
+          resolved cap.
+
+        ``plan_start`` / ``plan_end`` are inclusive dates from
+        ``TransportationPlan``.
+        """
+        from datetime import date as _date, timedelta as _timedelta
+
+        full_volume = float(commitment.commit_volume)
+
+        granularity = (commitment.period_granularity or "WEEKLY").upper()
+        if granularity == "FLAT":
+            return full_volume
+
+        # Compute overlap in days (inclusive bounds).
+        overlap_start = max(commitment.period_start, plan_start)
+        overlap_end = min(commitment.period_end, plan_end)
+        if overlap_end < overlap_start:
+            return 0.0  # no overlap (defensive — caller already filtered)
+        overlap_days = (overlap_end - overlap_start).days + 1
+
+        commitment_days = (commitment.period_end - commitment.period_start).days + 1
+        if commitment_days <= 0:
+            return full_volume  # defensive: degenerate period
+        ratio = overlap_days / commitment_days
+        return round(full_volume * ratio, 4)
 
 
 __all__ = [

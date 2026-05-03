@@ -595,8 +595,7 @@ class MovementPlannerService:
 
         meta = self._resolve_lane_geography(lane_id)
         if meta is None:
-            # Couldn't resolve — fail-closed (don't match).
-            return False
+            return False  # fail-closed
 
         for key, expected in lane_filter.items():
             if key == "lane_id":
@@ -607,83 +606,16 @@ class MovementPlannerService:
         return True
 
     def _resolve_lane_geography(self, lane_id: int) -> Optional[dict]:
-        """Resolve geographic metadata for a lane.
+        """Resolve geographic metadata for a lane via shared resolver.
 
-        Returns ``{origin_geo_id, dest_geo_id, origin_state, dest_state,
-        origin_zip3, dest_zip3, mode}`` or ``None`` when the lookup
-        chain breaks. Caches per-lane (per-service-instance) so that
-        N items on the same lane share one DB roundtrip.
+        Delegates to :class:`LaneGeographyResolver` (extracted to a
+        sibling module in §3.42 Phase 3 so `IntegratedBalancerService`
+        can reuse the same logic).
         """
-        cache_key = ("lane_geography", lane_id)
-        cached = getattr(self, "_lane_geo_cache", {}).get(cache_key)
-        if cached is not None:
-            return cached if cached != "MISS" else None
-
-        if not hasattr(self, "_lane_geo_cache"):
-            self._lane_geo_cache = {}
-
-        try:
-            from azirella_data_model.master.config import TransportationLane
-        except ImportError:
-            self._lane_geo_cache[cache_key] = "MISS"
-            return None
-
-        lane = self.db.query(TransportationLane).filter_by(id=lane_id).first()
-        if lane is None:
-            self._lane_geo_cache[cache_key] = "MISS"
-            return None
-
-        meta: dict = {}
-
-        # Mode lookup via TMS-side LaneProfile (more accurate than
-        # transportation_lane).
-        try:
-            from app.models.transportation_config import LaneProfile
-            profile = (
-                self.db.query(LaneProfile)
-                .filter_by(lane_id=lane_id).first()
-            )
-            if profile is not None and profile.primary_mode:
-                meta["mode"] = profile.primary_mode
-        except Exception:
-            pass
-
-        # Origin / destination geography via Site → Geography.
-        for endpoint, prefix in (
-            (getattr(lane, "from_site_id", None), "origin"),
-            (getattr(lane, "to_site_id", None), "dest"),
-        ):
-            if endpoint is None:
-                continue
-            try:
-                from azirella_data_model.master.entities import Geography
-                from azirella_data_model.master.config import Site
-
-                site = self.db.query(Site).filter_by(id=endpoint).first()
-                if site is None:
-                    continue
-                geo_id = getattr(site, "geography_id", None)
-                if geo_id is not None:
-                    meta[f"{prefix}_geo_id"] = geo_id
-                    geo = self.db.query(Geography).filter_by(id=geo_id).first()
-                    if geo is not None:
-                        # State / region / postal_code — names vary by
-                        # AWS SC DM; check available attributes.
-                        for attr in ("state", "region", "country"):
-                            val = getattr(geo, attr, None)
-                            if val:
-                                meta[f"{prefix}_state"] = val
-                                break
-                        postal = getattr(geo, "postal_code", None) or getattr(site, "postal_code", None)
-                        if postal:
-                            zip3 = str(postal)[:3]
-                            meta[f"{prefix}_zip3"] = zip3
-            except Exception:
-                continue
-
-        result = meta if meta else "MISS"
-        self._lane_geo_cache[cache_key] = result
-        return meta if meta else None
+        if not hasattr(self, "_lane_geo_resolver"):
+            from app.services.powell.lane_geography import LaneGeographyResolver
+            self._lane_geo_resolver = LaneGeographyResolver(self.db)
+        return self._lane_geo_resolver.resolve(lane_id)
 
     @staticmethod
     def _estimate_card_cost(
