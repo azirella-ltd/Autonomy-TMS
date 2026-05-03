@@ -41,7 +41,7 @@ from sqlalchemy import and_, func, select, text
 from sqlalchemy.orm import Session
 
 from app.models.tms_entities import (
-    Carrier, CarrierLane, CarrierType, Equipment, EquipmentType,
+    Carrier, CarrierTMSProfile, CarrierLane, CarrierType, Equipment, EquipmentType,
     EquipmentMove, EquipmentMoveReason, EquipmentMoveStatus,
     Load, LoadItem, LoadStatus,
     FreightRate, RateType,
@@ -424,6 +424,43 @@ class FoodDistTMSOverlay:
             )
             self.session.add(carrier)
             self._carriers.append(carrier)
+        self.session.flush()
+
+        # §3.47 Phase 2 — write the dispatch fields to CarrierTMSProfile
+        # too. The seeder's internal `carrier.code` reads still work
+        # against the in-memory Carrier object (column not dropped
+        # until Phase 3); but external consumers query
+        # CarrierTMSProfile, so the substrate has to be populated at
+        # seed time.
+        existing_profile_carrier_ids = set(
+            self.session.execute(
+                select(CarrierTMSProfile.carrier_id)
+                .where(CarrierTMSProfile.tenant_id == self.tms_tenant_id)
+            ).scalars().all()
+        )
+        for carrier in self._carriers:
+            if carrier.id in existing_profile_carrier_ids:
+                continue
+            spec = next(
+                (s for s in TOP_FOODSERVICE_CARRIERS if s.code == carrier.code),
+                None,
+            )
+            if not spec:
+                continue
+            self.session.add(CarrierTMSProfile(
+                carrier_id=carrier.id,
+                tenant_id=self.tms_tenant_id,
+                code=spec.code,
+                modes=list(spec.modes),
+                equipment_types=list(spec.equipment_types),
+                service_regions=list(spec.service_regions),
+                is_hazmat_certified=spec.is_hazmat_certified,
+                insurance_limit=spec.insurance_limit,
+                onboarding_status="ACTIVE",
+                onboarding_date=date(2022, 1, 1),
+                source="food_dist_tms_seed",
+                config_id=self.sc_config_id,
+            ))
         self.session.flush()
 
     def _seed_equipment_fleet(self) -> None:

@@ -20,8 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user
 from app.models.tms_entities import (
-    Load, LoadStatus, Carrier, CarrierLane, FreightRate, FreightTender,
-    TenderStatus,
+    Load, LoadStatus, Carrier, CarrierTMSProfile, CarrierLane, FreightRate,
+    FreightTender, TenderStatus,
 )
 from app.models.user import User
 
@@ -141,9 +141,16 @@ async def get_carrier_waterfall(
         if not load:
             raise HTTPException(404, f"Load {load_id} not found")
 
+        # §3.47 Phase 2 — outer-join CarrierTMSProfile so dispatch
+        # fields (`code` etc.) come from the new substrate. Outer-join
+        # keeps the row when no profile exists yet (defensive).
         lane_q = (
-            select(CarrierLane, Carrier)
+            select(CarrierLane, Carrier, CarrierTMSProfile)
             .join(Carrier, CarrierLane.carrier_id == Carrier.id)
+            .outerjoin(
+                CarrierTMSProfile,
+                CarrierTMSProfile.carrier_id == Carrier.id,
+            )
             .where(CarrierLane.is_active.is_(True))
             .order_by(CarrierLane.priority)
         )
@@ -160,7 +167,7 @@ async def get_carrier_waterfall(
 
         entries = []
         tenant_for_rates = user.tenant_id if user.tenant_id is not None else load.tenant_id
-        for cl, carrier in cls[:20]:
+        for cl, carrier, profile in cls[:20]:
             rate = sync_db.execute(
                 select(FreightRate.rate_flat).where(
                     and_(
@@ -174,7 +181,7 @@ async def get_carrier_waterfall(
             entries.append(WaterfallEntry(
                 carrier_id=carrier.id,
                 carrier_name=carrier.name,
-                carrier_code=carrier.code,
+                carrier_code=profile.code if profile else None,
                 rate=float(rate) if rate else 0,
                 priority=cl.priority,
                 acceptance_pct=0.85,

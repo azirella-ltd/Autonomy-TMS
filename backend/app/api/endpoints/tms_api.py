@@ -28,6 +28,7 @@ from app.models.tms_entities import (
     AppointmentStatus,
     AppointmentType,
     Carrier,
+    CarrierTMSProfile,
     CarrierLane,
     CarrierScorecard,
     DockDoor,
@@ -358,6 +359,13 @@ async def get_carrier_detail(
         if carrier is None:
             return {"error": "Carrier not found"}
 
+        # §3.47 Phase 2 — dispatch fields live on CarrierTMSProfile.
+        profile_stmt = select(CarrierTMSProfile).where(
+            CarrierTMSProfile.carrier_id == carrier_id,
+            CarrierTMSProfile.tenant_id == current_user.tenant_id,
+        )
+        profile = (await db.execute(profile_stmt)).scalar_one_or_none()
+
         # Fetch carrier lanes
         lane_stmt = select(CarrierLane).where(
             CarrierLane.carrier_id == carrier_id,
@@ -380,23 +388,25 @@ async def get_carrier_detail(
 
         detail = CarrierDetail(
             id=carrier.id,
-            code=carrier.code,
+            code=profile.code if profile else None,
             name=carrier.name,
             carrier_type=_safe_str(carrier.carrier_type),
             scac=carrier.scac,
             mc_number=carrier.mc_number,
             dot_number=carrier.dot_number,
-            usdot_safety_rating=carrier.usdot_safety_rating,
-            modes=carrier.modes,
-            equipment_types=carrier.equipment_types,
-            service_regions=carrier.service_regions,
+            usdot_safety_rating=profile.usdot_safety_rating if profile else None,
+            modes=profile.modes if profile else None,
+            equipment_types=profile.equipment_types if profile else None,
+            service_regions=profile.service_regions if profile else None,
             is_active=carrier.is_active,
-            is_hazmat_certified=carrier.is_hazmat_certified,
-            onboarding_status=carrier.onboarding_status,
-            primary_contact_name=carrier.primary_contact_name,
-            primary_contact_email=carrier.primary_contact_email,
-            dispatch_email=carrier.dispatch_email,
-            dispatch_phone=carrier.dispatch_phone,
+            is_hazmat_certified=(
+                profile.is_hazmat_certified if profile else False
+            ),
+            onboarding_status=profile.onboarding_status if profile else None,
+            primary_contact_name=profile.primary_contact_name if profile else None,
+            primary_contact_email=profile.primary_contact_email if profile else None,
+            dispatch_email=profile.dispatch_email if profile else None,
+            dispatch_phone=profile.dispatch_phone if profile else None,
             lane_count=len(lanes_data),
             lanes=lanes_data,
         )
