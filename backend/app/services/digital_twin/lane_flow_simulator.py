@@ -244,6 +244,8 @@ class LaneFlowSimulator:
         on_time_stochastic: bool = True,
         reward_fn: RewardFn | None = None,
         outcome_sink: OutcomeSink | None = None,
+        carrier_acceptance_model: Any = None,
+        scenario_market_tightness: float = 0.0,
     ):
         self._generator = generator
         self.tenant_id = int(tenant_id)
@@ -256,6 +258,21 @@ class LaneFlowSimulator:
         self.on_time_stochastic = bool(on_time_stochastic)
         self._reward_fn: RewardFn = reward_fn or self._default_reward
         self._outcome_sink: OutcomeSink | None = outcome_sink
+        # PR-3.A — opt-in CarrierAcceptanceModel for tender decisions.
+        # ``None`` (default) preserves the legacy "all-tenders-accepted-
+        # within-capacity" behaviour for existing tests. When supplied,
+        # each load to dispatch is gated through the model; rejected
+        # tenders surface as ``tender_declined`` with the model's
+        # ``reason_code`` instead of capacity-based rejection.
+        # See [docs/TMS_TWIN_PHYSICS_DESIGN.md §4.1] for the bootstrap
+        # prior used today and the calibration story (PR-6).
+        self._carrier_acceptance_model = carrier_acceptance_model
+        # Spot-Rate Market physics (§4.5) isn't online yet. Until then
+        # the simulator passes a constant scenario value to the
+        # CarrierAcceptanceModel. 0 = loose market, 1 = tight market.
+        # Tune via scenario config when running RL with disruption-class
+        # CARRIER_STRIKE / CAPACITY_LOSS scenarios.
+        self._scenario_market_tightness = float(scenario_market_tightness)
 
         if self.horizon_buckets < 1:
             raise ValueError(
@@ -311,6 +328,14 @@ class LaneFlowSimulator:
             rng=random.Random(scenario_seed),
             cached_envelope=envelope,
         )
+        # Re-seed any attached physics model so its RNG draws are
+        # deterministic per scenario_seed alongside the simulator's.
+        # Use seed+1 to keep streams independent (avoids a PhysicsModel's
+        # first-draw correlating with the simulator's first arrival draw).
+        if self._carrier_acceptance_model is not None:
+            self._carrier_acceptance_model.reset(
+                scenario_seed=scenario_seed + 1, twin_mode=self.mode,
+            )
         self._reset_called = True
 
         # Initial observation has zero arrivals "this period" because
@@ -356,15 +381,61 @@ class LaneFlowSimulator:
         loads_needed = self._loads_needed(arrivals, equipment)
 
         # 3. Capacity-bound the dispatch.
-        allowed = min(
+        capacity_max = min(
             loads_needed,
             carrier.capacity_per_bucket,
             self._state.equipment_available,
         )
-        unmet = max(0, loads_needed - allowed)
+        capacity_unmet = max(0, loads_needed - capacity_max)
 
-        # 4. Dispatch: equipment leaves origin, loads enter the in-flight queue.
-        for load_idx in range(allowed):
+        # 4. Tender each capacity-feasible load through CarrierAcceptanceModel
+        #    if attached, else legacy "all-tenders-accepted" behaviour.
+        #    Accepted loads enter the in-flight queue and consume equipment;
+        #    tender-rejected loads emit declined events but DON'T touch
+        #    equipment (they were never dispatched). Capacity-rejected
+        #    loads also emit declined events.
+        accepted_count = 0
+        tender_outcomes: list[Any] = []
+        if self._carrier_acceptance_model is not None:
+            from app.services.digital_twin.physics import (
+                CarrierKind, TenderContext,
+            )
+            # Bootstrap prior maps a CarrierProfile.contract_type-like
+            # field to CarrierKind. The simulator's CarrierProfile today
+            # doesn't carry kind explicitly — derive from carrier_id
+            # convention until §3.47-style profile metadata extends.
+            # Default: contracted unless the carrier_id starts with
+            # "spot-" or "broker-" (matches the heuristic library's
+            # naming).
+            kind = self._infer_carrier_kind(carrier.carrier_id)
+            for load_idx in range(capacity_max):
+                ctx = TenderContext(
+                    carrier_id=carrier.carrier_id,
+                    carrier_kind=kind,
+                    rate_offered=getattr(action, "rate_offered", 0.0)
+                    or self.lane_params.cost_target_per_load,
+                    benchmark_rate=self.lane_params.cost_target_per_load,
+                    market_tightness=self._scenario_market_tightness,
+                )
+                outcome = self._carrier_acceptance_model.step(ctx)
+                tender_outcomes.append(outcome)
+                if outcome.accepted:
+                    accepted_count += 1
+        else:
+            # Legacy path: all capacity-feasible loads accepted.
+            accepted_count = capacity_max
+
+        # 4a. Dispatch accepted loads.
+        accept_iter = iter(range(capacity_max)) if self._carrier_acceptance_model is None else None
+        accepted_load_idxs: list[int] = []
+        if self._carrier_acceptance_model is None:
+            accepted_load_idxs = list(range(capacity_max))
+        else:
+            accepted_load_idxs = [
+                i for i, o in enumerate(tender_outcomes) if o.accepted
+            ]
+
+        for load_idx in accepted_load_idxs:
             on_time = self._sample_on_time(carrier, action)
             arrival_bucket = self._state.bucket + self.lane_params.transit_buckets
             self._state.in_flight.append(
@@ -375,42 +446,70 @@ class LaneFlowSimulator:
                     carrier_id=carrier.carrier_id,
                 )
             )
-        # §3.31 OutcomeEvents — tender_accepted per dispatched load,
-        # tender_declined per unmet (capacity-rejected) load. Emitted
-        # at decision time so downstream training corpus / BSC reward
-        # attribution can correlate with the action that produced them.
-        for load_idx in range(allowed):
+
+        # §3.31 OutcomeEvents — emit tender_accepted / tender_declined
+        # per load. Decision-id stable per (load_idx, bucket) so
+        # downstream training corpus / BSC reward attribution can
+        # correlate with the action that produced them.
+        lane_id = lane_series_key(
+            self.lane_params.origin_site_id,
+            self.lane_params.destination_site_id,
+        )
+        for load_idx in accepted_load_idxs:
+            payload = {
+                "carrier_id": carrier.carrier_id,
+                "equipment_kind": equipment.equipment_kind,
+                "bucket": self._state.bucket,
+                "transportation_lane_id": lane_id,
+            }
+            if self._carrier_acceptance_model is not None and load_idx < len(tender_outcomes):
+                o = tender_outcomes[load_idx]
+                payload["p_accept"] = o.p_accept
+                payload["reason_code"] = o.reason_code
             self._emit_outcome(
                 decision_id=self._make_decision_id(load_idx),
                 decision_type="load_dispatch",
                 outcome_kind="tender_accepted",
-                payload={
-                    "carrier_id": carrier.carrier_id,
-                    "equipment_kind": equipment.equipment_kind,
-                    "bucket": self._state.bucket,
-                    "transportation_lane_id": lane_series_key(
-                        self.lane_params.origin_site_id,
-                        self.lane_params.destination_site_id,
-                    ),
-                },
+                payload=payload,
             )
-        for unmet_idx in range(unmet):
+        # Tender-rejected (model returned False) — fired BEFORE
+        # capacity-rejected so consumers can disambiguate the two
+        # reject reasons by reason_code.
+        if self._carrier_acceptance_model is not None:
+            for load_idx, outcome in enumerate(tender_outcomes):
+                if outcome.accepted:
+                    continue
+                self._emit_outcome(
+                    decision_id=self._make_decision_id(load_idx),
+                    decision_type="load_dispatch",
+                    outcome_kind="tender_declined",
+                    payload={
+                        "carrier_id": carrier.carrier_id,
+                        "reason": "tender_rejected",
+                        "reason_code": outcome.reason_code,
+                        "p_accept": outcome.p_accept,
+                        "bucket": self._state.bucket,
+                        "transportation_lane_id": lane_id,
+                    },
+                )
+        # Capacity-rejected (never made it to a tender attempt).
+        for unmet_idx in range(capacity_unmet):
             self._emit_outcome(
-                decision_id=self._make_decision_id(allowed + unmet_idx),
+                decision_id=self._make_decision_id(capacity_max + unmet_idx),
                 decision_type="load_dispatch",
                 outcome_kind="tender_declined",
                 payload={
                     "carrier_id": carrier.carrier_id,
                     "reason": "capacity_or_equipment_exhausted",
                     "bucket": self._state.bucket,
-                    "transportation_lane_id": lane_series_key(
-                        self.lane_params.origin_site_id,
-                        self.lane_params.destination_site_id,
-                    ),
+                    "transportation_lane_id": lane_id,
                 },
             )
-        self._state.equipment_available -= allowed
-        self._state.dock_queue_depth += unmet
+        self._state.equipment_available -= accepted_count
+        self._state.dock_queue_depth += capacity_unmet
+        # Backward-compat names used by reward / observation code below.
+        allowed = accepted_count
+        unmet = capacity_unmet
 
         # 5. Resolve in-flight loads scheduled to arrive at the *new* bucket.
         next_bucket = self._state.bucket + 1
@@ -716,6 +815,22 @@ class LaneFlowSimulator:
                 f"Unknown carrier_id {carrier_id!r}; known: "
                 f"{list(self.lane_params.carriers.keys())}"
             ) from exc
+
+    def _infer_carrier_kind(self, carrier_id: str) -> Any:
+        """Naming-convention fallback until §3.47 CarrierTMSProfile carries an
+        explicit ``contract_type`` field surfaced on ``CarrierProfile``.
+
+        IDs starting with ``"spot-"`` or ``"broker-"`` map to
+        ``CarrierKind.SPOT``; everything else to ``CarrierKind.CONTRACTED``.
+        Matches the heuristic library's existing naming convention; will
+        be replaced by a profile-driven lookup once the simulator-side
+        ``CarrierProfile`` carries the contract-type metadata.
+        """
+        from app.services.digital_twin.physics import CarrierKind
+        prefix = (carrier_id or "").lower()
+        if prefix.startswith("spot-") or prefix.startswith("broker-"):
+            return CarrierKind.SPOT
+        return CarrierKind.CONTRACTED
 
     def _resolve_equipment(self, equipment_kind: str) -> EquipmentProfile:
         try:
