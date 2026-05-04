@@ -1,0 +1,34 @@
+[project]
+name = "autonomy-tms-mcp-adapters"
+version = "0.1.0"
+description = "TMS-team-owned MCP adapters for THIRD_PARTY tier (SAP TM, Manhattan, Oracle OTM, MercuryGate, BlueYonder TMS). Skeleton only in v0.1.0; vendor adapters ship per-customer."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+authors = [{ name = "Azirella Ltd — TMS Team" }]
+keywords = ["autonomy", "tms", "mcp", "third-party-adapter", "ad-12"]
+
+dependencies = [
+    "azirella-data-model>=0.13.0",
+    "azirella-heuristics-common>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+# Per-vendor entry points are registered in vendor sub-packages once
+# they ship. v0.1.0 has none.
+[project.entry-points."azirella_router.mcp_adapters"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autonomy_tms_mcp_adapters"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
