@@ -10,7 +10,13 @@ that Ask Why can return instantly (<1ms).
 
 from typing import Any, Dict, List, Optional, Tuple
 
-# Re-export all Core reasoning generators for backward compatibility
+# Re-export Core reasoning generators for backward compatibility.
+# PR-5.E follow-up (2026-05-05): the four SCP-shape tactical-tGNN
+# reasoning generators (demand / supply / inventory / capacity_rccp) are
+# no longer re-exported — TMS deleted the corresponding services in
+# PR-5.E, so they have no inbound TMS callers. Generators still exist in
+# Core for SCP/other planes; if any TMS code wants them in the future,
+# import directly from azirella_data_model.powell.decision_reasoning.
 from azirella_data_model.powell.decision_reasoning import (  # noqa: F401
     atp_reasoning,
     po_reasoning,
@@ -26,10 +32,6 @@ from azirella_data_model.powell.decision_reasoning import (  # noqa: F401
     capture_hive_context,
     sop_graphsage_reasoning,
     execution_tgnn_reasoning,
-    demand_planning_tgnn_reasoning,
-    supply_planning_tgnn_reasoning,
-    inventory_optimization_tgnn_reasoning,
-    capacity_rccp_tgnn_reasoning,
     site_tgnn_reasoning,
     _SIGNAL_SOURCE_LABELS,
 )
