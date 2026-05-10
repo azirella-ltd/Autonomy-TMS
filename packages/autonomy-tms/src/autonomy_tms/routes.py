@@ -15,6 +15,6 @@ def get_router() -> APIRouter:
     directly; the host backend mounts it at prefix='' to avoid
     double-prefixing.
     """
-    from main import api as _tms_api  # type: ignore
+    from main import api as _tms_api  # type: ignore[import-not-found]
 
     return _tms_api
