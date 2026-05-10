@@ -159,12 +159,19 @@ class _InFlightLoad:
     ``decision_id`` and ``carrier_id`` are carried so the §3.31
     OutcomeEvent emitted on arrival can be joined back to the
     dispatch tender that produced it.
+
+    ``exception_*`` carry the PR-3.F (Exception Generator) draw if one
+    fired at dispatch — surfaced in the arrival outcome's payload so
+    consumers can join the exception event to its parent shipment.
     """
 
     arrival_bucket: int
     on_time: bool
     decision_id: str = ""
     carrier_id: str = ""
+    exception_kind: str | None = None
+    exception_severity: str | None = None
+    exception_recovery_cost: float = 0.0
 
 
 @dataclass
@@ -252,6 +259,7 @@ class LaneFlowSimulator:
         equipment_flow_model: Any = None,
         spot_rate_model: Any = None,
         spot_rate_contract_per_load: float | None = None,
+        exception_model: Any = None,
     ):
         self._generator = generator
         self.tenant_id = int(tenant_id)
@@ -337,6 +345,15 @@ class LaneFlowSimulator:
             else float(lane_params.cost_target_per_load)
         )
         self._latest_spot_outcome: Any = None
+        # PR-3.F — opt-in ExceptionModel for typed disruption events.
+        # ``None`` (default) preserves the legacy "no typed exceptions"
+        # behaviour. When supplied, each accepted load is checked for
+        # an exception draw at dispatch; fires surface as a
+        # ``shipment_exception`` OutcomeEvent and decorate the in-flight
+        # load so the arrival event can carry the exception metadata.
+        # See [docs/TMS_TWIN_PHYSICS_DESIGN.md §4.6] for the bootstrap
+        # prior used today and the calibration story (PR-6).
+        self._exception_model = exception_model
 
         if self.horizon_buckets < 1:
             raise ValueError(
@@ -436,6 +453,10 @@ class LaneFlowSimulator:
                 initial_spot_rate=self._spot_rate_contract_per_load,
             )
             self._latest_spot_outcome = None
+        if self._exception_model is not None:
+            self._exception_model.reset(
+                scenario_seed=scenario_seed + 6, twin_mode=self.mode,
+            )
         self._reset_called = True
 
         # Initial observation has zero arrivals "this period" because
@@ -550,11 +571,15 @@ class LaneFlowSimulator:
                 i for i, o in enumerate(tender_outcomes) if o.accepted
             ]
 
-        # Per-load transit-time draw (PR-3.B). When no model attached,
-        # use the static lane constant for every load (legacy behaviour).
+        # Per-load transit-time draw (PR-3.B) + per-load exception draw
+        # (PR-3.F). Both are gated on their respective opt-in models
+        # being attached; when neither is, the legacy "static transit
+        # buckets, no typed exceptions" behaviour applies.
         transit_outcomes_by_load_idx: dict[int, Any] = {}
+        exception_outcomes_by_load_idx: dict[int, Any] = {}
         for load_idx in accepted_load_idxs:
             on_time = self._sample_on_time(carrier, action)
+            transit_buckets_for_load: int
             if self._lane_transit_model is not None:
                 from app.services.digital_twin.physics import TransitContext
                 day_of_year = self._state.bucket_start.timetuple().tm_yday
@@ -566,15 +591,47 @@ class LaneFlowSimulator:
                 )
                 transit_outcome = self._lane_transit_model.step(transit_ctx)
                 transit_outcomes_by_load_idx[load_idx] = transit_outcome
-                arrival_bucket = self._state.bucket + transit_outcome.realised_buckets
+                transit_buckets_for_load = transit_outcome.realised_buckets
             else:
-                arrival_bucket = self._state.bucket + self.lane_params.transit_buckets
+                transit_buckets_for_load = self.lane_params.transit_buckets
+            arrival_bucket = self._state.bucket + transit_buckets_for_load
+
+            # PR-3.F — per-load exception draw. Lifetime-probability
+            # design: one Bernoulli per accepted load at dispatch.
+            # Phase-2 will gain a per-tick variant if a TRM needs the
+            # within-transit timing signal.
+            exception_kind: str | None = None
+            exception_severity: str | None = None
+            exception_recovery_cost: float = 0.0
+            if self._exception_model is not None:
+                from app.services.digital_twin.physics import ExceptionContext
+                ex_ctx = ExceptionContext(
+                    carrier_id=carrier.carrier_id,
+                    lane_id=lane_series_key(
+                        self.lane_params.origin_site_id,
+                        self.lane_params.destination_site_id,
+                    ),
+                    equipment_kind=equipment.equipment_kind,
+                    in_transit_buckets=transit_buckets_for_load,
+                )
+                ex_outcome = self._exception_model.step(ex_ctx)
+                exception_outcomes_by_load_idx[load_idx] = ex_outcome
+                if ex_outcome.fires:
+                    exception_kind = ex_outcome.kind.value if ex_outcome.kind else None
+                    exception_severity = (
+                        ex_outcome.severity.value if ex_outcome.severity else None
+                    )
+                    exception_recovery_cost = ex_outcome.recovery_cost
+
             self._state.in_flight.append(
                 _InFlightLoad(
                     arrival_bucket=arrival_bucket,
                     on_time=on_time,
                     decision_id=self._make_decision_id(load_idx),
                     carrier_id=carrier.carrier_id,
+                    exception_kind=exception_kind,
+                    exception_severity=exception_severity,
+                    exception_recovery_cost=exception_recovery_cost,
                 )
             )
 
@@ -625,6 +682,30 @@ class LaneFlowSimulator:
                 decision_type="load_dispatch",
                 outcome_kind="tender_accepted",
                 payload=payload,
+            )
+        # PR-3.F — shipment_exception OutcomeEvents per fired exception.
+        # ExceptionManagement TRM trains on this stream (decision_type
+        # split by `decision_type=load_dispatch`; subscribers filter on
+        # `outcome_kind=shipment_exception`). decision_id matches the
+        # tender_accepted event so consumers can join exception → tender.
+        for load_idx, ex_outcome in exception_outcomes_by_load_idx.items():
+            if not ex_outcome.fires:
+                continue
+            self._emit_outcome(
+                decision_id=self._make_decision_id(load_idx),
+                decision_type="load_dispatch",
+                outcome_kind="shipment_exception",
+                payload={
+                    "carrier_id": carrier.carrier_id,
+                    "transportation_lane_id": lane_id,
+                    "bucket": self._state.bucket,
+                    "kind": ex_outcome.kind.value if ex_outcome.kind else None,
+                    "severity": (
+                        ex_outcome.severity.value if ex_outcome.severity else None
+                    ),
+                    "recovery_cost": ex_outcome.recovery_cost,
+                    "p_exception": ex_outcome.p_exception,
+                },
             )
         # Tender-rejected (model returned False) — fired BEFORE
         # capacity-rejected so consumers can disambiguate the two
@@ -689,7 +770,7 @@ class LaneFlowSimulator:
         # so consumers can join arrival outcomes back to the dispatch
         # tender that produced them.
         for load in arriving:
-            payload = {
+            arrival_payload: dict[str, Any] = {
                 "carrier_id": load.carrier_id,
                 "arrival_bucket": load.arrival_bucket,
                 "transportation_lane_id": lane_series_key(
@@ -711,18 +792,28 @@ class LaneFlowSimulator:
                     appointment_type=AppointmentType(self._scenario_appointment_type),
                 )
                 appt_outcome = self._dock_queue_model.step(appt_ctx)
-                payload["dwell_minutes"] = appt_outcome.dwell_minutes
-                payload["dwell_mean_minutes"] = appt_outcome.mean_minutes
-                payload["detention_minutes_over_free"] = appt_outcome.detention_minutes_over_free
-                payload["detention_cost"] = appt_outcome.detention_cost
-                payload["appointment_type"] = self._scenario_appointment_type
+                arrival_payload["dwell_minutes"] = appt_outcome.dwell_minutes
+                arrival_payload["dwell_mean_minutes"] = appt_outcome.mean_minutes
+                arrival_payload["detention_minutes_over_free"] = appt_outcome.detention_minutes_over_free
+                arrival_payload["detention_cost"] = appt_outcome.detention_cost
+                arrival_payload["appointment_type"] = self._scenario_appointment_type
+            # PR-3.F — surface dispatch-time exception draw on the
+            # arrival event so the arrival event carries a complete
+            # picture of the load's outcome (no need to join back to
+            # the dispatch-time `shipment_exception` event for reward
+            # calculation, though that event remains for consumers
+            # that want it as a separate stream).
+            if load.exception_kind is not None:
+                arrival_payload["exception_kind"] = load.exception_kind
+                arrival_payload["exception_severity"] = load.exception_severity
+                arrival_payload["exception_recovery_cost"] = load.exception_recovery_cost
             self._emit_outcome(
                 decision_id=load.decision_id,
                 decision_type="load_dispatch",
                 outcome_kind=(
                     "shipment_delivered" if load.on_time else "shipment_late"
                 ),
-                payload=payload,
+                payload=arrival_payload,
             )
         # Equipment returns at destination — Phase 1 collapses dwell to zero,
         # so it's available again next bucket. Phase 2 layers dwell + reposition.
