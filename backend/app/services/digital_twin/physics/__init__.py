@@ -24,6 +24,12 @@ from .dock_queue import (
     DockQueueModel,
     DockQueueParams,
 )
+from .equipment_flow import (
+    EquipmentDispatch,
+    EquipmentFlowModel,
+    EquipmentFlowParams,
+    EquipmentRequest,
+)
 from .intermodal_ramp import (
     IntermodalContext,
     IntermodalCostBreakdown,
@@ -57,6 +63,10 @@ __all__ = [
     "CarrierTrackingTier",
     "DockQueueModel",
     "DockQueueParams",
+    "EquipmentDispatch",
+    "EquipmentFlowModel",
+    "EquipmentFlowParams",
+    "EquipmentRequest",
     "IntermodalContext",
     "IntermodalCostBreakdown",
     "IntermodalOutcome",

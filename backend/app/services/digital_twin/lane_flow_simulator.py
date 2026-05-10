@@ -249,6 +249,7 @@ class LaneFlowSimulator:
         scenario_weather_index: float = 0.0,
         dock_queue_model: Any = None,
         scenario_appointment_type: str = "live_unload",
+        equipment_flow_model: Any = None,
     ):
         self._generator = generator
         self.tenant_id = int(tenant_id)
@@ -302,6 +303,18 @@ class LaneFlowSimulator:
         # ``scenario_appointment_type``.
         self._dock_queue_model = dock_queue_model
         self._scenario_appointment_type = str(scenario_appointment_type)
+        # PR-3.D — opt-in EquipmentFlowModel for per-site availability.
+        # ``None`` (default) keeps the simulator's existing behaviour
+        # (single ``equipment_available`` counter at origin). When
+        # attached, the model's per-site balances are surfaced on
+        # ``tender_accepted`` and ``shipment_delivered`` outcome
+        # events so EquipmentReposition TRM training has a non-trivial
+        # state signal. Phase-1 doesn't gate dispatch on the model's
+        # availability — the existing counter is still authoritative
+        # for the dispatch decision; the model is observation-only.
+        # Full delegation lands when EquipmentReposition RL training
+        # requires it.
+        self._equipment_flow_model = equipment_flow_model
 
         if self.horizon_buckets < 1:
             raise ValueError(
@@ -375,6 +388,25 @@ class LaneFlowSimulator:
             self._dock_queue_model.reset(
                 scenario_seed=scenario_seed + 3, twin_mode=self.mode,
             )
+        if self._equipment_flow_model is not None:
+            self._equipment_flow_model.reset(
+                scenario_seed=scenario_seed + 4, twin_mode=self.mode,
+            )
+            # Pre-register the lane's origin and destination sites so
+            # subsequent observations can surface their balances.
+            for site_id in (
+                self.lane_params.origin_site_id,
+                self.lane_params.destination_site_id,
+            ):
+                for kind in self.lane_params.equipment_kinds:
+                    self._equipment_flow_model.register_site(
+                        site_id, kind,
+                        initial=(
+                            self.lane_params.initial_equipment
+                            if site_id == self.lane_params.origin_site_id
+                            else 0
+                        ),
+                    )
         self._reset_called = True
 
         # Initial observation has zero arrivals "this period" because
@@ -574,6 +606,18 @@ class LaneFlowSimulator:
             )
         self._state.equipment_available -= accepted_count
         self._state.dock_queue_depth += capacity_unmet
+        # PR-3.D — mirror the per-site balance into the equipment-flow
+        # model when attached. Observation-only: the simulator's
+        # ``equipment_available`` counter is still authoritative for
+        # dispatch gating; this just makes per-site balances visible
+        # to outcome consumers (EquipmentReposition TRM features).
+        if self._equipment_flow_model is not None and accepted_count > 0:
+            from app.services.digital_twin.physics import EquipmentRequest
+            self._equipment_flow_model.step(EquipmentRequest(
+                site_id=self.lane_params.origin_site_id,
+                equipment_kind=action.equipment_kind,
+                count=accepted_count,
+            ))
         # Backward-compat names used by reward / observation code below.
         allowed = accepted_count
         unmet = capacity_unmet
@@ -628,6 +672,19 @@ class LaneFlowSimulator:
         # Equipment returns at destination — Phase 1 collapses dwell to zero,
         # so it's available again next bucket. Phase 2 layers dwell + reposition.
         self._state.equipment_available += len(arriving)
+        # PR-3.D — when the equipment-flow model is attached, mirror
+        # the return into the destination-site pool so the model's
+        # per-site balances stay accurate for downstream consumers.
+        # Phase-1 returns equipment to ORIGIN to keep the simulator's
+        # legacy "equipment cycles back" assumption intact; Phase 2
+        # will route returns to destination so EquipmentReposition has
+        # a real imbalance signal.
+        if self._equipment_flow_model is not None and arriving:
+            self._equipment_flow_model.return_equipment(
+                self.lane_params.origin_site_id,
+                action.equipment_kind,
+                len(arriving),
+            )
 
         # 6. Step metrics.
         loads_dispatched = allowed
