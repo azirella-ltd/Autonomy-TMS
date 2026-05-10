@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autonomy-tms"
+version = "0.1.0"
+description = "TMS plane package — exposes Autonomy-TMS's backend FastAPI router via the autonomy_app.plane_routers entry point (AD-13)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "UNLICENSED" }
+authors = [{ name = "Azirella Ltd — TMS Team" }]
+keywords = ["autonomy", "tms", "transportation", "ad-13"]
+
+# Runtime substrate. The wrapper imports `app.*` directly via sys.path
+# manipulation in ``autonomy_tms.__init__``; the substrate it depends
+# on is what the existing TMS backend already pip-installs.
+dependencies = [
+  "fastapi>=0.115",
+  "azirella-data-model",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+# Entry-point contract per AD-13 / §3.56. The host backend
+# (``Autonomy-Core/apps/backend``) discovers and mounts these at boot.
+[project.entry-points."autonomy_app.plane_routers"]
+tms = "autonomy_tms.routes:get_router"
+
+[project.entry-points."azirella_router.azirella_handlers"]
+tms = "autonomy_tms.handlers:get_handler_bundle"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autonomy_tms"]
