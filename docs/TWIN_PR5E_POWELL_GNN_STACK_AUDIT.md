@@ -12,6 +12,16 @@ PR-5.B deleted.
 [these files]? We're on TMS here, not SCP. Some of this sounds very
 much like TBG baggage."*
 
+**Decision (2026-05-10):** Q1 answered **YES** — there is a near-term
+plan to build TMS-shape strategic / tactical GNN inference
+(carrier-portfolio S&OP, lane-volume tGNN, equipment tGNN). This
+selects audit Option 5.B (replace with TMS-shape) over Option 5.A
+(delete) — the staged-delete plan in §6 is **not** executed; the
+plane-agnostic substrate stays as the foundation for the rewrite.
+Q2 (frontend usage) is deferred until the rewrite reaches the point
+where the SCP-shape admin pages need to be retired or repurposed.
+The rewrite workstream is tracked separately from TWIN_REWRITE_PLAN.md.
+
 ---
 
 ## 1. The headline finding
