@@ -66,10 +66,30 @@ class LaneFlowObservation:
     cost_per_load_trailing: float
     """Mean realised carrier cost per load over the trailing 4 buckets."""
 
-    # Calendar-anchoring (populated when seasonal stratification is on —
-    # PR-4 wires this).
+    # Calendar-anchoring (populated when seasonal stratification is on).
     plan_date: Any = None
     as_of: Any = None
+
+    # Seasonal context (PR-4). Sin/cos of the bucket date's day-of-year
+    # encoded as a unit-circle pair so the policy network sees calendar
+    # phase as two continuous features (vs. raw day_of_year which is
+    # discontinuous at year boundaries). Defaults are 0.0 when the
+    # simulator has no calendar anchor (unit-test rollouts that don't
+    # pass anchor_date).
+    season_sin: float = 0.0
+    """``sin(2π × day_of_year / 365)`` at ``bucket_start``. In ``[-1, 1]``.
+    Pairs with ``season_cos`` to form a unit-circle calendar phase."""
+    season_cos: float = 0.0
+    """``cos(2π × day_of_year / 365)`` at ``bucket_start``. In ``[-1, 1]``."""
+
+    # Optional categorical regime — populated when the simulator was
+    # constructed with a ``SeasonalEnvelope`` reference. ``None`` when
+    # no envelope is registered (the sin/cos features are still useful
+    # without a fitted envelope; the regime needs one).
+    seasonal_regime: str | None = None
+    """One of ``PEAK`` / ``RAMP_DOWN`` / ``TROUGH`` / ``RAMP_UP`` per
+    Core ``SeasonalRegime``, derived via ``classify_regime`` against
+    the registered envelope. ``None`` when no envelope is registered."""
 
 
 @dataclass(frozen=True)
