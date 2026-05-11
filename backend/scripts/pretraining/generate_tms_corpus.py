@@ -75,10 +75,13 @@ from autonomy_tms_heuristics.library.base import (
 # Load tms_reward_weights via importlib so this script stays runnable
 # in CPU dev (the powell package's __init__ transitively requires torch
 # for SiteAgentModel; the reward-weights module itself is pure Python).
+#
+# Only stub ``app.services.powell`` — leave ``app`` and ``app.services``
+# as real PEP-420 namespace packages so the twin-state-sampler module
+# can resolve ``app.services.digital_twin.*`` normally when needed.
 import importlib.util as _importlib_util
 from types import ModuleType as _ModuleType
-for _stub in ("app", "app.services", "app.services.powell"):
-    sys.modules.setdefault(_stub, _ModuleType(_stub))
+sys.modules.setdefault("app.services.powell", _ModuleType("app.services.powell"))
 _rw_path = BACKEND_ROOT / "app" / "services" / "powell" / "tms_reward_weights.py"
 _rw_spec = _importlib_util.spec_from_file_location(
     "app.services.powell.tms_reward_weights", _rw_path,
@@ -783,6 +786,9 @@ _ACTION_NAME = {
 }
 
 
+_TWIN_SUPPORTED_TRMS = ("capacity_promise",)
+
+
 def generate_corpus(
     trm_type: str,
     n_samples: int,
@@ -790,6 +796,7 @@ def generate_corpus(
     output_dir: Optional[Path] = None,
     phase: int = DEFAULT_PHASE,
     secondary_teachers: bool = False,
+    state_source: str = "synthetic",
 ) -> Path:
     """Generate n_samples of (state, action, reward) for one TRM.
 
@@ -803,26 +810,52 @@ def generate_corpus(
     (currently ``freight_procurement`` and ``exception_management``).
     When on, each row gains ``consensus_action`` / ``disagreement``
     / per-teacher action / reasoning columns.
+
+    ``state_source`` chooses ``"synthetic"`` (default — independent
+    marginal distributions) or ``"twin"`` (correlated state from
+    ``LaneFlowSimulator`` rollouts with physics models attached).
+    Twin source currently supports ``capacity_promise`` only; other
+    TRMs fall back to synthetic with a warning.
     """
     if phase not in PHASES:
         raise ValueError(f"phase must be one of {sorted(PHASES)}; got {phase}")
+    if state_source not in ("synthetic", "twin"):
+        raise ValueError(
+            f"state_source must be 'synthetic' or 'twin'; got {state_source!r}"
+        )
     sampler_fn, state_cls = SAMPLERS[trm_type]
     rng = random.Random(seed)
     use_secondaries = bool(secondary_teachers) and has_secondary_teachers(trm_type)
+
+    twin_sampler = None
+    if state_source == "twin":
+        if trm_type in _TWIN_SUPPORTED_TRMS:
+            from scripts.pretraining.twin_state_sampler import TwinStateSampler
+            twin_sampler = TwinStateSampler(seed=seed, phase=phase)
+        else:
+            logger.warning(
+                f"{trm_type}: twin state source not yet supported — "
+                f"falling back to synthetic"
+            )
+
     logger.info(
         f"{trm_type}: phase={phase} ({PHASES[phase].name})"
         f"{' [+secondary teachers]' if use_secondaries else ''}"
+        f"{' [twin state source]' if twin_sampler is not None else ''}"
     )
 
     rows: List[Dict[str, Any]] = []
     t0 = time.time()
     disagreement_count = 0
     for i in range(n_samples):
-        try:
-            state = sampler_fn(rng, phase=phase)
-        except TypeError:
-            # Sampler not yet phase-aware — fall back to legacy signature.
-            state = sampler_fn(rng)
+        if twin_sampler is not None and trm_type == "capacity_promise":
+            state = twin_sampler.sample_capacity_promise(rng)
+        else:
+            try:
+                state = sampler_fn(rng, phase=phase)
+            except TypeError:
+                # Sampler not yet phase-aware — fall back to legacy signature.
+                state = sampler_fn(rng)
 
         if use_secondaries:
             consensus = compute_with_consensus(trm_type, state)
@@ -932,6 +965,17 @@ def main():
             "and a consensus_action column."
         ),
     )
+    ap.add_argument(
+        "--state-source", type=str, default="synthetic",
+        choices=("synthetic", "twin"),
+        help=(
+            "State sampling source: 'synthetic' (default — independent "
+            "marginal distributions) or 'twin' (LaneFlowSimulator "
+            "rollouts; correlated physics-respecting state). Twin source "
+            "currently supports capacity_promise only; other TRMs fall "
+            "back to synthetic."
+        ),
+    )
     args = ap.parse_args()
 
     if not args.trm and not args.all:
@@ -943,7 +987,8 @@ def main():
     logger.info(
         f"Generating corpus: {len(trms)} TRMs × {args.samples} samples, "
         f"seed={args.seed}, phase={args.phase}, "
-        f"secondaries={'on' if args.secondary_teachers else 'off'}"
+        f"secondaries={'on' if args.secondary_teachers else 'off'}, "
+        f"state_source={args.state_source}"
     )
     paths = []
     for trm in trms:
@@ -951,6 +996,7 @@ def main():
             trm, args.samples, seed=args.seed, output_dir=output_dir,
             phase=args.phase,
             secondary_teachers=args.secondary_teachers,
+            state_source=args.state_source,
         )
         paths.append(p)
 

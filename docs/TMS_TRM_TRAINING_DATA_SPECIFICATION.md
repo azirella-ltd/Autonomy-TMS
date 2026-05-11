@@ -29,13 +29,25 @@ market rates, spot premiums).
 ## Corpus Pipeline
 
 ```
-Network Generator → Transport State Sampler → Single-Teacher Labeler → Parquet Corpus
-       ↓                      ↓                          ↓                        ↓
-  Lane topology       Load archetypes             1 deterministic            (state, action,
-  Carrier pool        Capacity scenarios          teacher per TRM            reward) tuples
-  Dock network        Exception scenarios         (no multi-teacher          × 50K per TRM
-  Equipment fleet     Seasonal patterns            consensus — unlike SCP)
+                                ┌──→ Synthetic State Sampler   ─┐
+Network Generator               │     (independent marginals)   │
+       │                        ├──→ Twin Rollout State Sampler ┼─→ Heuristic Teacher → Parquet Corpus
+  Lane topology                 │     (LaneFlowSimulator +      │   (+ optional secondaries)
+  Carrier pool                  │      physics models;          │     ↓
+  Dock network                  │      correlated state)        │   (state, action, reward,
+  Equipment fleet               └────────────────────────────────┘    consensus_action?,
+  Seasonal patterns                                                   teacher_<name>_action?)
+                                                                      × 50K per TRM
 ```
+
+**State source** (CLI: `--state-source synthetic | twin`, default
+synthetic). The twin source steps a `LaneFlowSimulator` with
+`CarrierAcceptanceModel`, `LaneTransitModel`, and `SpotRateModel`
+attached, and maps each observation to the TRM's state dataclass.
+Currently wired for `capacity_promise`; other TRMs fall back to
+synthetic. The twin produces *correlated* state across time (AR(1)
+spot-rate dynamics × CarrierAcceptance logistic × dock-queue
+depth) that no marginal sampler captures.
 
 **Key difference from SCP:** TMS uses a **single deterministic teacher
 per state by default** (one call into `compute_tms_decision()` in
