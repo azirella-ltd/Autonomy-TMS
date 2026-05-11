@@ -1,18 +1,24 @@
 absl-py==2.3.1
 aiofiles==0.7.0
-azirella-data-model @ git+https://github.com/azirella-ltd/Autonomy-Core.git@37d22c7#subdirectory=packages/data-model
-azirella-integrations @ git+https://github.com/azirella-ltd/Autonomy-Core.git@37d22c7#subdirectory=packages/integrations
-azirella-demand-planning-contract @ git+https://github.com/azirella-ltd/Autonomy-Core.git@37d22c7#subdirectory=packages/demand-planning-contract
-azirella-transfer-order-envelope-contract @ git+https://github.com/azirella-ltd/Autonomy-Core.git@37d22c7#subdirectory=packages/transfer-order-envelope-contract
-azirella-a2a-client @ git+https://github.com/azirella-ltd/Autonomy-Core.git@37d22c7#subdirectory=packages/a2a-client
+azirella-data-model @ git+https://github.com/azirella-ltd/Autonomy-Core.git@8c6cd00#subdirectory=packages/data-model
+azirella-integrations @ git+https://github.com/azirella-ltd/Autonomy-Core.git@8c6cd00#subdirectory=packages/integrations
+azirella-demand-planning-contract @ git+https://github.com/azirella-ltd/Autonomy-Core.git@8c6cd00#subdirectory=packages/demand-planning-contract
+azirella-transfer-order-envelope-contract @ git+https://github.com/azirella-ltd/Autonomy-Core.git@8c6cd00#subdirectory=packages/transfer-order-envelope-contract
+azirella-a2a-client @ git+https://github.com/azirella-ltd/Autonomy-Core.git@8c6cd00#subdirectory=packages/a2a-client
 # AD-12 v3 router substrate (CONSUMER_ADOPTION_LOG 2026-05-04 §3.48). Used by
 # lifecycle_reactor_factory.py for cross-plane DP calls; supports HEURISTIC +
 # AZIRELLA tier dispatch transparently. heuristics-common is a router dep.
-azirella-router @ git+https://github.com/azirella-ltd/Autonomy-Core.git@37d22c7#subdirectory=packages/azirella-router
+azirella-router @ git+https://github.com/azirella-ltd/Autonomy-Core.git@8c6cd00#subdirectory=packages/azirella-router
 # azirella-heuristics-common — warning regime + exception substrate. Dep
 # of autonomy-tms-heuristics' cross-plane handlers; canonical home for
 # AZIRELLA-STUB-WARNING marker + HeuristicWriteRefused.
-azirella-heuristics-common @ git+https://github.com/azirella-ltd/Autonomy-Core.git@37d22c7#subdirectory=packages/azirella-heuristics-common
+azirella-heuristics-common @ git+https://github.com/azirella-ltd/Autonomy-Core.git@8c6cd00#subdirectory=packages/azirella-heuristics-common
+# azirella-powell-core — Powell GNN substrate (POWELL_GNN_SUBSTRATE.md
+# §4). Provides SignalBus, CheckpointStorage, SchedulerHook, TrainingLoop,
+# GraphSAGEScaffolding, tGNNScaffolding. Used by GNN-3 / GNN-4 / GNN-5 /
+# GNN-6 in TMS_POWELL_GNN_REWRITE.md; without it the TMS-shape heads
+# can't be built. ``gnn`` extra pulls torch + torch-geometric.
+azirella-powell-core[gnn,scheduler] @ git+https://github.com/azirella-ltd/Autonomy-Core.git@8c6cd00#subdirectory=packages/powell-core
 # autonomy-tms-heuristics — single authoritative source of TMS conservative-
 # default heuristic math (PR-LOCK, 2026-05-04, §3.52). Used by (1) internal
 # TRM runtime fallback via compute_tms_decision, (2) BC training-corpus
