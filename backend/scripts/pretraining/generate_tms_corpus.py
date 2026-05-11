@@ -786,7 +786,12 @@ _ACTION_NAME = {
 }
 
 
-_TWIN_SUPPORTED_TRMS = ("capacity_promise",)
+_TWIN_SUPPORTED_TRMS = (
+    "capacity_promise",
+    "capacity_buffer",
+    "dock_scheduling",
+    "equipment_reposition",
+)
 
 
 def generate_corpus(
@@ -847,9 +852,14 @@ def generate_corpus(
     rows: List[Dict[str, Any]] = []
     t0 = time.time()
     disagreement_count = 0
+    twin_method_name = None
+    if twin_sampler is not None:
+        from scripts.pretraining.twin_state_sampler import TWIN_SAMPLER_METHODS
+        twin_method_name = TWIN_SAMPLER_METHODS.get(trm_type)
+
     for i in range(n_samples):
-        if twin_sampler is not None and trm_type == "capacity_promise":
-            state = twin_sampler.sample_capacity_promise(rng)
+        if twin_sampler is not None and twin_method_name is not None:
+            state = getattr(twin_sampler, twin_method_name)(rng)
         else:
             try:
                 state = sampler_fn(rng, phase=phase)

@@ -27,7 +27,12 @@ for p in (
         sys.path.insert(0, p)
 
 
-from autonomy_tms_heuristics.library import CapacityPromiseState  # noqa: E402
+from autonomy_tms_heuristics.library import (  # noqa: E402
+    CapacityBufferState,
+    CapacityPromiseState,
+    DockSchedulingState,
+    EquipmentRepositionState,
+)
 
 # Other test modules in the suite (test_tms_reward_weights,
 # test_corpus_phase_curriculum) stub ``app`` / ``app.services`` /
@@ -42,9 +47,13 @@ for _stale in ("app", "app.services", "app.services.powell"):
         _sys.modules.pop(_stale, None)
 
 from scripts.pretraining.twin_state_sampler import (  # noqa: E402
+    TWIN_SAMPLER_METHODS,
     TwinStateSampler,
     _PHASE_SCENARIO,
+    sample_capacity_buffer_from_twin,
     sample_capacity_promise_from_twin,
+    sample_dock_scheduling_from_twin,
+    sample_equipment_reposition_from_twin,
 )
 
 
@@ -177,3 +186,101 @@ def test_phase_changes_are_observable_over_long_runs() -> None:
     assert any(d > 0.05 for d in diffs.values()), (
         f"No KPI showed measurable phase shift: {diffs}"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Extended TRM coverage: CapacityBuffer / DockScheduling / EquipmentReposition
+# ─────────────────────────────────────────────────────────────────────
+
+
+def test_dispatch_table_lists_four_supported_trms() -> None:
+    assert set(TWIN_SAMPLER_METHODS) == {
+        "capacity_promise", "capacity_buffer",
+        "dock_scheduling", "equipment_reposition",
+    }
+
+
+def test_dispatch_methods_resolve_on_sampler() -> None:
+    sampler = TwinStateSampler(seed=42, phase=2)
+    for method_name in TWIN_SAMPLER_METHODS.values():
+        assert hasattr(sampler, method_name)
+        assert callable(getattr(sampler, method_name))
+
+
+def test_capacity_buffer_sampler_returns_valid_state() -> None:
+    rng = random.Random(0)
+    sampler = TwinStateSampler(seed=42, phase=2)
+    state = sampler.sample_capacity_buffer(rng)
+    assert isinstance(state, CapacityBufferState)
+    assert state.forecast_loads >= 1
+    assert 0 <= state.forecast_p10 <= state.forecast_loads <= state.forecast_p90
+    assert 0.0 <= state.recent_tender_reject_rate <= 1.0
+    assert 0.0 <= state.demand_cv <= 1.0
+    assert state.contract_capacity > 0
+
+
+def test_dock_scheduling_sampler_returns_valid_state() -> None:
+    rng = random.Random(0)
+    sampler = TwinStateSampler(seed=42, phase=2)
+    state = sampler.sample_dock_scheduling(rng)
+    assert isinstance(state, DockSchedulingState)
+    assert state.total_dock_doors > 0
+    assert 0 <= state.available_dock_doors <= state.total_dock_doors
+    assert state.current_queue_depth >= 0
+    assert state.shipment_priority in (1, 2, 3, 4, 5)
+    assert state.carrier_avg_dwell_minutes > 0
+
+
+def test_equipment_reposition_sampler_returns_valid_state() -> None:
+    rng = random.Random(0)
+    sampler = TwinStateSampler(seed=42, phase=2)
+    state = sampler.sample_equipment_reposition(rng)
+    assert isinstance(state, EquipmentRepositionState)
+    assert state.source_equipment_count > 0
+    assert state.target_equipment_count >= 0
+    assert state.reposition_miles > 0
+    assert state.reposition_cost > 0
+    assert 0.0 <= state.fleet_utilization_pct <= 1.0
+
+
+@pytest.mark.parametrize(
+    "method,from_fn",
+    [
+        ("sample_capacity_buffer", sample_capacity_buffer_from_twin),
+        ("sample_dock_scheduling", sample_dock_scheduling_from_twin),
+        ("sample_equipment_reposition", sample_equipment_reposition_from_twin),
+    ],
+)
+def test_free_function_matches_method_for_each_trm(method: str, from_fn) -> None:
+    s1 = TwinStateSampler(seed=42, phase=2)
+    s2 = TwinStateSampler(seed=42, phase=2)
+    rng1 = random.Random(7)
+    rng2 = random.Random(7)
+    method_state = getattr(s1, method)(rng1)
+    free_state = from_fn(s2, rng2)
+    # Compare a stable structural field (sims are independent so the
+    # rng-driven fields will differ, but anything sim-derived agrees).
+    assert type(method_state) is type(free_state)
+
+
+def test_dock_scheduling_carrier_dwell_scales_with_phase() -> None:
+    """Phase 3 should produce higher mean carrier dwell than phase 1
+    (the per-knob mapping uses the phase scenario's market_tightness
+    to shift the dwell distribution centre)."""
+    rng = random.Random(0)
+    s1 = TwinStateSampler(seed=42, phase=1)
+    s3 = TwinStateSampler(seed=42, phase=3)
+    p1 = [s1.sample_dock_scheduling(rng).carrier_avg_dwell_minutes for _ in range(300)]
+    p3 = [s3.sample_dock_scheduling(rng).carrier_avg_dwell_minutes for _ in range(300)]
+    assert statistics.mean(p3) > statistics.mean(p1) + 20  # at least 20 min gap
+
+
+def test_equipment_reposition_cost_of_not_repositioning_scales_with_phase() -> None:
+    """Phase 3's higher market tightness widens the avoided-spot-premium
+    range, so cost_of_not_repositioning has a higher mean."""
+    rng = random.Random(0)
+    s1 = TwinStateSampler(seed=42, phase=1)
+    s3 = TwinStateSampler(seed=42, phase=3)
+    p1 = [s1.sample_equipment_reposition(rng).cost_of_not_repositioning for _ in range(300)]
+    p3 = [s3.sample_equipment_reposition(rng).cost_of_not_repositioning for _ in range(300)]
+    assert statistics.mean(p3) > statistics.mean(p1)
