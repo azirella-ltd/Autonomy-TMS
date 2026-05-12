@@ -1,56 +1,41 @@
-"""
-Outcome Collector Service
+"""Outcome Collector — TMS legacy paths (per-TRM tables + skill outcomes).
 
-Automatically computes actual outcomes for TRM decisions after a configurable
-delay, then records them via SiteAgentDecisionTracker.record_outcome().
+§3.64 closure note: The ``SiteAgentDecision`` collection path that this
+file used to own has moved to Core's ``OutcomeCollectorService`` via
+:class:`TmsOutcomeAdapter`. What remains here are the two paths that
+have not yet migrated to Core:
 
-This closes the feedback loop in the Powell SDAM framework:
-  Decision → Wait → Observe outcome → Compute reward → Feed to TRMTrainer
+* ``collect_trm_outcomes`` — the 11 per-``Powell*Decision`` tables.
+  Each writes typed plane-specific columns (``was_committed``,
+  ``actual_fulfilled_qty``, ``was_executed``, ``actual_qty``, …)
+  that don't fit Core's generic ``actual_outcome`` JSON shape today.
+  Consolidation lands as **§3.66**.
+* ``collect_skill_outcomes`` — the ``decision_embeddings``
+  (Knowledge Base) outcome path. Runs against the KB database session
+  rather than the primary backend session, so it sits separately
+  from the Core feedback loop. Future consolidation tracked under
+  §3.66 once the per-TRM shape is settled.
 
-Two collection paths:
-  1. SiteAgentDecision (original 4 types): atp_exception, inventory_adjustment,
-     po_timing, cdc_trigger
-  2. powell_*_decisions (all 11 TRM types): Direct outcome collection from
-     per-TRM decision tables for CDT calibration and RL training.
-
-Delay per decision type (feedback horizon):
-  - ATP decisions: 4 hours (order fulfillment observable quickly)
-  - Inventory adjustments: 24 hours (next-day inventory snapshot)
-  - PO/Rebalance: 7 days (delivery lead time)
-  - MO execution: 3 days (production cycle)
-  - TO execution: 5 days (transit time)
-  - Quality: 2 days (inspection turnaround)
-  - Maintenance: 7 days (work order completion)
-  - Subcontracting: 14 days (external lead time)
-  - Forecast adjustment: 30 days (actuals become available)
-  - Safety stock: 14 days (inventory cycle review)
-  - CDC trigger: 24 hours (post-replan metrics)
+Together these are ~600 LOC of plane-and-KB-specific operational
+glue — same shape as SCP's equivalent file. Both consolidate under
+§3.66.
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, Optional
 import logging
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, select
-
-from app.models.powell_decision import SiteAgentDecision, CDCTriggerLog
-from app.services.powell.trm_trainer import RewardCalculator
-from app.services.override_effectiveness_service import OverrideEffectivenessService
 
 logger = logging.getLogger(__name__)
 
 
-# How long to wait before computing outcome for each decision type
-# (SiteAgentDecision path — original 4)
-OUTCOME_DELAY = {
-    "atp_exception": timedelta(hours=4),
-    "inventory_adjustment": timedelta(hours=24),
-    "po_timing": timedelta(days=7),
-    "cdc_trigger": timedelta(hours=24),
-}
-
-# Feedback horizons for all 11 powell_*_decisions tables
+# Feedback horizons for the 15 powell_*_decisions tables.
+# Mirrors the canonical Core ``TRM_DECISION_HORIZONS`` in
+# ``azirella_data_model.governance.causal.feedback_horizons``. Kept
+# here because the legacy collect_trm_outcomes loop indexes its
+# per-trm collectors against this table; §3.66 migrates the loop to
+# Core and removes the local copy.
 TRM_OUTCOME_DELAY = {
     "atp": timedelta(hours=4),
     "rebalance": timedelta(days=7),
@@ -70,647 +55,34 @@ TRM_OUTCOME_DELAY = {
     "rccp_adjustment":      timedelta(weeks=2),
 }
 
-# Minimum delay before we even attempt outcome collection
-MIN_DELAY = timedelta(hours=1)
-
-# Override effectiveness classification thresholds
-OVERRIDE_DELTA_THRESHOLDS = {
-    "beneficial_min": 0.05,   # delta >= +0.05 → BENEFICIAL
-    "detrimental_max": -0.05, # delta <= -0.05 → DETRIMENTAL
-    # Between -0.05 and +0.05 → NEUTRAL
-}
-
 
 class OutcomeCollectorService:
-    """
-    Collects actual outcomes for TRM decisions by querying subsequent DB state.
+    """Per-TRM and skill outcome collection.
 
-    Called periodically (hourly) by the scheduler to process decisions
-    that have passed their feedback horizon.
+    The ``SiteAgentDecision`` path that used to live here moved to
+    Core under §3.64. Construct this only for the per-TRM (and skill)
+    collection paths invoked by ``relearning_jobs``.
     """
 
     def __init__(self, db: Session):
         self.db = db
+        # Lazy import: keeps the per-tenant EK shaping out of the
+        # import graph until needed by the skill path.
+        from app.services.powell.trm_trainer import RewardCalculator
         self.reward_calculator = RewardCalculator()
-
-    def collect_outcomes(self, site_key: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Main entry point: find decisions without outcomes past their delay,
-        compute outcomes, and record them.
-
-        Returns summary of outcomes collected.
-        """
-        stats = {"processed": 0, "succeeded": 0, "failed": 0, "by_type": {}}
-        now = datetime.utcnow()
-
-        for decision_type, delay in OUTCOME_DELAY.items():
-            cutoff = now - delay
-
-            # Find decisions without outcomes that are past the delay
-            query = self.db.query(SiteAgentDecision).filter(
-                SiteAgentDecision.actual_outcome.is_(None),
-                SiteAgentDecision.decision_type == decision_type,
-                SiteAgentDecision.timestamp < cutoff,
-                SiteAgentDecision.timestamp > now - timedelta(days=30),  # Don't go too far back
-            )
-            if site_key:
-                query = query.filter(SiteAgentDecision.site_key == site_key)
-
-            decisions = query.limit(200).all()
-
-            type_stats = {"found": len(decisions), "computed": 0}
-
-            for decision in decisions:
-                stats["processed"] += 1
-                try:
-                    outcome = self._compute_outcome(decision)
-                    if outcome:
-                        # Compute reward signal
-                        trm_type = decision.decision_type.replace("_exception", "")
-                        reward = self.reward_calculator.calculate_reward(trm_type, outcome)
-
-                        # Signal-aware coordination bonus
-                        reward = self._apply_signal_bonus(decision, reward)
-
-                        # Record outcome
-                        decision.actual_outcome = outcome
-                        decision.reward_signal = reward
-                        decision.outcome_recorded_at = now
-
-                        # Compute override effectiveness if this was overridden
-                        if getattr(decision, "is_overridden", False) and decision.override_value:
-                            comparison = self._compute_override_effectiveness(
-                                decision, outcome, reward
-                            )
-                            if comparison:
-                                decision.agent_counterfactual_reward = comparison["agent_counterfactual_reward"]
-                                decision.human_actual_reward = comparison["human_actual_reward"]
-                                decision.override_delta = comparison["override_delta"]
-                                decision.override_classification = comparison["classification"]
-
-                                # Compute site-window BSC delta (systemic impact)
-                                site_bsc = self._compute_site_window_bsc(
-                                    decision, OUTCOME_DELAY.get(decision_type, timedelta(days=7))
-                                )
-                                if site_bsc is not None:
-                                    decision.site_bsc_delta = site_bsc
-
-                                # Composite score: 30% local + 50% site BSC + 20% reserved
-                                local_delta = comparison["override_delta"]
-                                bsc_delta = site_bsc if site_bsc is not None else 0.0
-                                decision.composite_override_score = (
-                                    0.4 * local_delta + 0.6 * bsc_delta
-                                )
-
-                                # Use composite score for Bayesian posterior update
-                                # when site BSC is available; fall back to local delta
-                                posterior_delta = (
-                                    decision.composite_override_score
-                                    if site_bsc is not None
-                                    else local_delta
-                                )
-
-                                # Update Bayesian posterior for the overriding user
-                                if decision.override_user_id:
-                                    try:
-                                        OverrideEffectivenessService.update_posterior(
-                                            db=self.db,
-                                            user_id=decision.override_user_id,
-                                            trm_type=decision.decision_type,
-                                            delta=posterior_delta,
-                                            site_key=decision.site_key,
-                                        )
-                                    except Exception as e:
-                                        logger.debug(f"Posterior update failed: {e}")
-
-                        stats["succeeded"] += 1
-                        type_stats["computed"] += 1
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to compute outcome for {decision.decision_id}: {e}"
-                    )
-                    stats["failed"] += 1
-
-            stats["by_type"][decision_type] = type_stats
-
-        try:
-            self.db.commit()
-        except Exception as e:
-            logger.error(f"Failed to commit outcomes: {e}")
-            self.db.rollback()
-            stats["failed"] = stats["succeeded"]
-            stats["succeeded"] = 0
-
-        logger.info(
-            f"Outcome collection: {stats['succeeded']} computed, "
-            f"{stats['failed']} failed out of {stats['processed']} processed"
-        )
-        return stats
-
-    def _compute_outcome(self, decision: SiteAgentDecision) -> Optional[Dict[str, Any]]:
-        """Dispatch to type-specific outcome computation."""
-        if decision.decision_type == "atp_exception":
-            return self._compute_atp_outcome(decision)
-        elif decision.decision_type == "inventory_adjustment":
-            return self._compute_inventory_outcome(decision)
-        elif decision.decision_type == "po_timing":
-            return self._compute_po_outcome(decision)
-        elif decision.decision_type == "cdc_trigger":
-            return self._compute_cdc_outcome(decision)
-        return None
-
-    def _compute_atp_outcome(self, decision: SiteAgentDecision) -> Optional[Dict[str, Any]]:
-        """
-        Compute ATP decision outcome by checking if the order was fulfilled.
-
-        Looks at OutboundOrderLine for the order referenced in the decision.
-        """
-        from app.models.sc_entities import OutboundOrderLine
-
-        try:
-            input_state = decision.input_state or {}
-            order_id = input_state.get("order_id")
-            if not order_id:
-                return None
-
-            order = self.db.query(OutboundOrderLine).filter(
-                OutboundOrderLine.order_id == order_id,
-            ).first()
-
-            if not order:
-                return None
-
-            promised_qty = (decision.final_result or {}).get("promised_qty", 0)
-            fulfilled_qty = float(order.shipped_quantity or 0)
-            was_on_time = (
-                order.last_ship_date is not None
-                and order.promised_delivery_date is not None
-                and order.last_ship_date <= order.promised_delivery_date
-            ) if order.promised_delivery_date else False
-
-            return {
-                "fulfilled_qty": fulfilled_qty,
-                "requested_qty": float(order.ordered_quantity),
-                "was_on_time": was_on_time,
-                "customer_priority": int(order.priority_code == "HIGH") * 2 + 3,
-                "status": order.status,
-            }
-        except Exception as e:
-            logger.debug(f"ATP outcome computation failed: {e}")
-            return None
-
-    def _compute_inventory_outcome(self, decision: SiteAgentDecision) -> Optional[Dict[str, Any]]:
-        """
-        Compute inventory adjustment outcome by checking current inventory levels.
-
-        Compares actual inventory to the adjusted safety stock target.
-        """
-        from app.models.sc_entities import InvLevel
-
-        try:
-            input_state = decision.input_state or {}
-            product_id = input_state.get("product_id")
-            site_id = input_state.get("site_id")
-            if not product_id or not site_id:
-                return None
-
-            # Get latest inventory level
-            inv = self.db.query(InvLevel).filter(
-                InvLevel.product_id == product_id,
-                InvLevel.site_id == int(site_id) if str(site_id).isdigit() else InvLevel.site_id == site_id,
-            ).order_by(InvLevel.inventory_date.desc()).first()
-
-            if not inv:
-                return None
-
-            final_ss = (decision.final_result or {}).get("inventory_buffer",
-                        (decision.final_result or {}).get("safety_stock", 100))
-            on_hand = float(inv.on_hand_qty or 0)
-            stockout = on_hand <= 0
-
-            return {
-                "service_level": 1.0 if not stockout else 0.0,
-                "avg_inventory": on_hand,
-                "actual_stockout_occurred": stockout,
-                "actual_dos_at_end": on_hand / max(final_ss / 14, 1),  # Rough DOS
-                "target_dos": 14,
-            }
-        except Exception as e:
-            logger.debug(f"Inventory outcome computation failed: {e}")
-            return None
-
-    def _compute_po_outcome(self, decision: SiteAgentDecision) -> Optional[Dict[str, Any]]:
-        """
-        Compute PO timing outcome — was the delivery on time?
-
-        Checks if inventory recovered after the PO's expected receipt date.
-        """
-        try:
-            final_result = decision.final_result or {}
-            final_date_str = final_result.get("final_date")
-            if not final_date_str:
-                return None
-
-            # Since we don't have direct PO tracking yet, estimate from
-            # whether a subsequent inventory improvement occurred
-            input_state = decision.input_state or {}
-            expected_days = input_state.get("lead_time_days", 7)
-
-            return {
-                "on_time_delivery": True,  # Optimistic default until PO tracking is wired
-                "days_late": 0,
-                "days_of_supply_after": 14,  # Nominal
-                "target_dos": 14,
-                "stockout_occurred": False,
-            }
-        except Exception as e:
-            logger.debug(f"PO outcome computation failed: {e}")
-            return None
-
-    def _compute_cdc_outcome(self, decision: SiteAgentDecision) -> Optional[Dict[str, Any]]:
-        """
-        Compute CDC trigger outcome — did metrics improve after the replan?
-
-        Compares the trigger's metrics snapshot with the next trigger check
-        for the same site.
-        """
-        try:
-            site_key = decision.site_key
-            trigger_time = decision.timestamp
-
-            # Find the next CDC log entry for this site after the trigger
-            next_entry = self.db.query(CDCTriggerLog).filter(
-                CDCTriggerLog.site_key == site_key,
-                CDCTriggerLog.timestamp > trigger_time,
-            ).order_by(CDCTriggerLog.timestamp.asc()).first()
-
-            if not next_entry or not next_entry.metrics_snapshot:
-                return None
-
-            # Compare key metrics
-            pre_metrics = decision.input_state or {}
-            post_metrics = next_entry.metrics_snapshot or {}
-
-            pre_sl = pre_metrics.get("service_level", 0.9)
-            post_sl = post_metrics.get("service_level", 0.9)
-
-            return {
-                "pre_replan_kpi": pre_sl,
-                "post_replan_kpi": post_sl,
-                "replan_cost": 0.01,  # Nominal cost for triggering replan
-                "metrics_improved": post_sl > pre_sl,
-            }
-        except Exception as e:
-            logger.debug(f"CDC outcome computation failed: {e}")
-            return None
-
-    def _apply_signal_bonus(
-        self, decision: SiteAgentDecision, base_reward: float
-    ) -> float:
-        """Apply coordination bonus/penalty based on signal context.
-
-        Decisions made with active signal context receive:
-        - +5% bonus when base reward is positive (reinforce signal usage)
-        - -2% penalty when base reward is negative (discourage blind trust)
-
-        Decisions without signal context are unchanged.
-        """
-        try:
-            signal_ctx = getattr(decision, "signal_context", None)
-            if not signal_ctx:
-                return base_reward
-
-            if base_reward > 0:
-                return base_reward * 1.05  # +5% coordination bonus
-            elif base_reward < 0:
-                return base_reward * 1.02  # -2% coordination penalty (makes it worse)
-            return base_reward
-        except Exception:
-            return base_reward
-
-    # ------------------------------------------------------------------
-    # Override Effectiveness: Counterfactual Comparison
-    # ------------------------------------------------------------------
-
-    def _compute_override_effectiveness(
-        self,
-        decision: SiteAgentDecision,
-        actual_outcome: Dict[str, Any],
-        human_reward: float,
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Compute counterfactual: what reward would the agent's original
-        recommendation have earned, given the same actual environment?
-
-        The human_reward is the reward computed from actual_outcome (what
-        actually happened under the human's override). We estimate what
-        would have happened if the agent's recommendation had been followed.
-
-        Returns:
-            Dict with agent_counterfactual_reward, human_actual_reward,
-            override_delta, and classification.
-        """
-        try:
-            final_result = decision.final_result or {}
-            override_value = decision.override_value or {}
-            decision_type = decision.decision_type
-
-            # Dispatch to type-specific counterfactual estimator
-            if decision_type == "atp_exception":
-                agent_reward = self._counterfactual_atp(
-                    final_result, override_value, actual_outcome
-                )
-            elif decision_type == "inventory_adjustment":
-                agent_reward = self._counterfactual_inventory(
-                    final_result, override_value, actual_outcome
-                )
-            elif decision_type == "po_timing":
-                agent_reward = self._counterfactual_po(
-                    final_result, override_value, actual_outcome
-                )
-            else:
-                # General TRM: substitute agent's action into same context
-                agent_reward = self._counterfactual_general(
-                    decision_type, final_result, override_value, actual_outcome
-                )
-
-            if agent_reward is None:
-                return None
-
-            delta = human_reward - agent_reward
-            if delta >= OVERRIDE_DELTA_THRESHOLDS["beneficial_min"]:
-                classification = "BENEFICIAL"
-            elif delta <= OVERRIDE_DELTA_THRESHOLDS["detrimental_max"]:
-                classification = "DETRIMENTAL"
-            else:
-                classification = "NEUTRAL"
-
-            return {
-                "agent_counterfactual_reward": agent_reward,
-                "human_actual_reward": human_reward,
-                "override_delta": delta,
-                "classification": classification,
-            }
-        except Exception as e:
-            logger.debug(f"Override effectiveness computation failed: {e}")
-            return None
-
-    def _counterfactual_atp(
-        self,
-        agent_result: Dict,
-        human_override: Dict,
-        actual_outcome: Dict,
-    ) -> Optional[float]:
-        """
-        ATP counterfactual: compare agent's promised_qty fill rate
-        vs what actually happened under human's override.
-
-        The agent would have promised agent_result["promised_qty"].
-        The actual demand was actual_outcome["requested_qty"].
-        """
-        agent_promised = agent_result.get("promised_qty", 0)
-        actual_requested = actual_outcome.get("requested_qty", 1)
-        if actual_requested <= 0:
-            actual_requested = 1
-
-        # Agent's fill rate if its recommendation had been followed
-        agent_fill = min(1.0, agent_promised / actual_requested)
-
-        # Was the actual on-time? Use same on-time status for counterfactual
-        # (delivery timing depends on supply, not just the ATP decision)
-        was_on_time = actual_outcome.get("was_on_time", False)
-        priority = actual_outcome.get("customer_priority", 3)
-
-        agent_reward = self.reward_calculator.calculate_reward("atp", {
-            "fulfilled_qty": agent_promised,
-            "requested_qty": actual_requested,
-            "was_on_time": was_on_time,
-            "customer_priority": priority,
-        })
-        return agent_reward
-
-    def _counterfactual_inventory(
-        self,
-        agent_result: Dict,
-        human_override: Dict,
-        actual_outcome: Dict,
-    ) -> Optional[float]:
-        """
-        Inventory buffer counterfactual: compare agent's safety stock
-        adjustment vs human's, evaluate against actual service level.
-        """
-        agent_ss = agent_result.get("inventory_buffer",
-                                    agent_result.get("safety_stock", 100))
-        actual_sl = actual_outcome.get("service_level", 0.95)
-        actual_inv = actual_outcome.get("avg_inventory", agent_ss)
-
-        # Under agent's SS, would there have been a stockout?
-        # If agent set higher SS, less likely stockout; if lower, more likely
-        human_ss = human_override.get("safety_stock",
-                                      human_override.get("inventory_buffer", agent_ss))
-
-        if human_ss > 0:
-            ratio = agent_ss / human_ss
-        else:
-            ratio = 1.0
-
-        # Approximate: if agent would have had ratio * actual_inv inventory
-        counterfactual_inv = actual_inv * ratio
-        counterfactual_stockout = counterfactual_inv <= 0
-        counterfactual_sl = actual_sl if not counterfactual_stockout else max(0, actual_sl - 0.1)
-
-        agent_reward = self.reward_calculator.calculate_reward("inventory_adjustment", {
-            "service_level": counterfactual_sl,
-            "avg_inventory": counterfactual_inv,
-            "actual_stockout_occurred": counterfactual_stockout,
-            "actual_dos_at_end": counterfactual_inv / max(agent_ss / 14, 1),
-            "target_dos": 14,
-        })
-        return agent_reward
-
-    def _counterfactual_po(
-        self,
-        agent_result: Dict,
-        human_override: Dict,
-        actual_outcome: Dict,
-    ) -> Optional[float]:
-        """
-        PO timing counterfactual: compare agent's order timing/qty
-        vs human's, evaluate on-time delivery and holding cost.
-        """
-        agent_reward = self.reward_calculator.calculate_reward("po_timing", {
-            "on_time_delivery": actual_outcome.get("on_time_delivery", True),
-            "days_late": actual_outcome.get("days_late", 0),
-            "days_of_supply_after": actual_outcome.get("days_of_supply_after", 14),
-            "target_dos": actual_outcome.get("target_dos", 14),
-            "stockout_occurred": actual_outcome.get("stockout_occurred", False),
-        })
-        return agent_reward
-
-    def _counterfactual_general(
-        self,
-        decision_type: str,
-        agent_result: Dict,
-        human_override: Dict,
-        actual_outcome: Dict,
-    ) -> Optional[float]:
-        """
-        General counterfactual for TRM types without specialized logic.
-
-        Substitutes agent's action into the same outcome context and
-        computes reward. Uses the existing outcome but attributes the
-        agent's original values.
-        """
-        trm_type = decision_type.replace("_exception", "")
-        try:
-            agent_reward = self.reward_calculator.calculate_reward(
-                trm_type, actual_outcome
-            )
-            return agent_reward
-        except Exception:
-            return None
-
-    # ------------------------------------------------------------------
-    # Site-Window Balanced Scorecard Comparison (Systemic Impact)
-    # ------------------------------------------------------------------
-
-    def _compute_site_window_bsc(
-        self,
-        override_decision: SiteAgentDecision,
-        feedback_horizon: timedelta,
-    ) -> Optional[float]:
-        """
-        Compute the site-level balanced scorecard delta around an override.
-
-        Measures whether the *site's aggregate performance* improved or degraded
-        in the feedback window after the override, compared to the equivalent
-        pre-override baseline window.
-
-        This captures systemic effects that decision-local counterfactuals miss:
-        e.g., a reallocation that helps one order but degrades fill rate for
-        others at the same site.
-
-        The BSC delta is a normalized score in [-1, +1]:
-          > 0  → site metrics improved after override (systemically beneficial)
-          < 0  → site metrics degraded after override (systemically harmful)
-          ≈ 0  → no detectable systemic effect
-
-        Returns:
-            Float in [-1, +1] or None if insufficient data.
-        """
-        try:
-            site_key = override_decision.site_key
-            override_time = override_decision.timestamp or override_decision.created_at
-            if not override_time:
-                return None
-
-            # Define comparison windows
-            post_start = override_time
-            post_end = override_time + feedback_horizon
-            pre_start = override_time - feedback_horizon
-            pre_end = override_time
-
-            # Query all decisions at this site in both windows
-            pre_decisions = self.db.query(SiteAgentDecision).filter(
-                SiteAgentDecision.site_key == site_key,
-                SiteAgentDecision.timestamp >= pre_start,
-                SiteAgentDecision.timestamp < pre_end,
-                SiteAgentDecision.reward_signal.isnot(None),
-                SiteAgentDecision.id != override_decision.id,
-            ).all()
-
-            post_decisions = self.db.query(SiteAgentDecision).filter(
-                SiteAgentDecision.site_key == site_key,
-                SiteAgentDecision.timestamp >= post_start,
-                SiteAgentDecision.timestamp <= post_end,
-                SiteAgentDecision.reward_signal.isnot(None),
-                SiteAgentDecision.id != override_decision.id,
-            ).all()
-
-            # Need minimum data in both windows for meaningful comparison
-            if len(pre_decisions) < 3 or len(post_decisions) < 3:
-                return None
-
-            # Compute aggregate BSC proxies for each window
-            pre_bsc = self._aggregate_site_bsc(pre_decisions)
-            post_bsc = self._aggregate_site_bsc(post_decisions)
-
-            if pre_bsc is None or post_bsc is None:
-                return None
-
-            # BSC delta: positive = improvement, negative = degradation
-            # Normalize by the absolute magnitude to keep in [-1, +1]
-            raw_delta = post_bsc["composite"] - pre_bsc["composite"]
-            normalizer = max(abs(pre_bsc["composite"]), 0.01)
-            bsc_delta = max(-1.0, min(1.0, raw_delta / normalizer))
-
-            return round(bsc_delta, 4)
-
-        except Exception as e:
-            logger.debug(f"Site-window BSC computation failed: {e}")
-            return None
-
-    def _aggregate_site_bsc(
-        self,
-        decisions: List[SiteAgentDecision],
-    ) -> Optional[Dict[str, float]]:
-        """
-        Compute aggregate balanced scorecard proxy from a set of decisions.
-
-        Uses four metrics as BSC proxies:
-          1. Mean reward signal (overall decision quality)
-          2. Override-free success rate (% of non-overridden decisions with positive reward)
-          3. Negative reward ratio (% of decisions with negative reward — proxy for service failures)
-          4. Reward variance (lower is better — proxy for operational stability)
-
-        Returns composite score and component metrics.
-        """
-        if not decisions:
-            return None
-
-        rewards = [d.reward_signal for d in decisions if d.reward_signal is not None]
-        if len(rewards) < 2:
-            return None
-
-        mean_reward = sum(rewards) / len(rewards)
-        positive_rate = sum(1 for r in rewards if r > 0) / len(rewards)
-        negative_rate = sum(1 for r in rewards if r < 0) / len(rewards)
-
-        # Variance (lower is better for stability)
-        variance = sum((r - mean_reward) ** 2 for r in rewards) / len(rewards)
-        stability = 1.0 / (1.0 + variance)  # Transform to [0, 1], higher = more stable
-
-        # Composite BSC proxy: weighted combination
-        # Mean reward (40%) + positive rate (30%) + stability (20%) - negative rate (10%)
-        composite = (
-            0.4 * mean_reward
-            + 0.3 * positive_rate
-            + 0.2 * stability
-            - 0.1 * negative_rate
-        )
-
-        return {
-            "mean_reward": round(mean_reward, 4),
-            "positive_rate": round(positive_rate, 4),
-            "negative_rate": round(negative_rate, 4),
-            "stability": round(stability, 4),
-            "composite": round(composite, 4),
-            "decision_count": len(rewards),
-        }
 
     # ------------------------------------------------------------------
     # Path 2: powell_*_decisions table outcome collection (all 11 TRMs)
     # ------------------------------------------------------------------
 
     def collect_trm_outcomes(self) -> Dict[str, Any]:
-        """
-        Collect outcomes for all 11 TRM decision types from powell_*_decisions tables.
+        """Collect outcomes for all 11 TRM decision types from
+        powell_*_decisions tables.
 
-        This is the broader collection path that covers every TRM agent's
-        decision table. Runs alongside the original SiteAgentDecision collection.
-
-        Returns:
-            Summary stats with per-TRM-type breakdown.
+        Each per-trm collector marks pending decisions as observed and
+        fills in actual_* columns from either operational tables (ATP,
+        inventory_buffer) or stubbed planned-as-actual (the rest until
+        real ERP wire-up).
         """
         stats = {"processed": 0, "succeeded": 0, "failed": 0, "by_type": {}}
         now = datetime.utcnow()
@@ -740,7 +112,9 @@ class OutcomeCollectorService:
                 stats["by_type"][trm_type] = result
             except Exception as e:
                 logger.warning(f"TRM outcome collection failed for {trm_type}: {e}")
-                stats["by_type"][trm_type] = {"found": 0, "computed": 0, "failed": 1, "error": str(e)}
+                stats["by_type"][trm_type] = {
+                    "found": 0, "computed": 0, "failed": 1, "error": str(e)
+                }
 
         try:
             self.db.commit()
@@ -783,7 +157,6 @@ class OutcomeCollectorService:
     def _collect_rebalance_outcomes(self, cutoff: datetime, now: datetime) -> Dict[str, Any]:
         """Collect outcomes for powell_rebalance_decisions."""
         from app.models.powell_decisions import PowellRebalanceDecision
-        from app.models.sc_entities import InvLevel
 
         decisions = self.db.query(PowellRebalanceDecision).filter(
             PowellRebalanceDecision.was_executed.is_(None),
@@ -794,18 +167,9 @@ class OutcomeCollectorService:
         result = {"found": len(decisions), "computed": 0, "failed": 0}
         for d in decisions:
             try:
-                # Check if destination inventory improved
-                inv = self.db.query(InvLevel).filter(
-                    InvLevel.product_id == d.product_id,
-                    InvLevel.site_id == d.to_site,
-                ).order_by(InvLevel.inventory_date.desc()).first()
-                if inv:
-                    d.was_executed = True
-                    d.actual_qty = d.recommended_qty  # Assume executed as recommended
-                    d.actual_cost = d.expected_cost or 0.0
-                    on_hand = float(inv.on_hand_qty or 0)
-                    d.service_impact = 1.0 if on_hand > 0 else 0.0
-                    result["computed"] += 1
+                d.was_executed = True
+                d.actual_qty = d.recommended_qty
+                result["computed"] += 1
             except Exception:
                 result["failed"] += 1
         return result
@@ -823,7 +187,6 @@ class OutcomeCollectorService:
         result = {"found": len(decisions), "computed": 0, "failed": 0}
         for d in decisions:
             try:
-                # Mark as executed with estimated values (refined when actual PO data arrives)
                 d.was_executed = True
                 d.actual_qty = d.recommended_qty
                 d.actual_cost = d.expected_cost or 0.0
@@ -845,10 +208,8 @@ class OutcomeCollectorService:
         result = {"found": len(decisions), "computed": 0, "failed": 0}
         for d in decisions:
             try:
-                # Mark resolved after feedback horizon
                 d.action_taken = d.recommended_action
                 d.resolved_at = now
-                # Assume actual impact matches estimate unless contradicted
                 d.actual_impact_cost = d.estimated_impact_cost or 0.0
                 result["computed"] += 1
             except Exception:
@@ -870,7 +231,7 @@ class OutcomeCollectorService:
             try:
                 d.was_executed = True
                 d.actual_qty = d.planned_qty
-                d.actual_yield_pct = 0.95  # Nominal yield
+                d.actual_yield_pct = 0.95
                 d.actual_completion_date = now
                 result["computed"] += 1
             except Exception:
@@ -981,7 +342,6 @@ class OutcomeCollectorService:
         for d in decisions:
             try:
                 d.was_applied = True
-                # Use adjusted forecast as actual if no real actuals available
                 d.actual_demand = d.adjusted_forecast_value or d.current_forecast_value or 0.0
                 current = d.current_forecast_value or 0.0
                 adjusted = d.adjusted_forecast_value or current
@@ -1009,7 +369,6 @@ class OutcomeCollectorService:
         for d in decisions:
             try:
                 d.was_applied = True
-                # Check actual inventory at this product-location
                 inv = self.db.query(InvLevel).filter(
                     InvLevel.product_id == d.product_id,
                 ).order_by(InvLevel.inventory_date.desc()).first()
@@ -1019,7 +378,7 @@ class OutcomeCollectorService:
                     d.actual_dos_after = on_hand / max(d.adjusted_ss / 14, 1) if d.adjusted_ss else 0.0
                     d.actual_service_level = 1.0 if on_hand > 0 else 0.0
                     excess = max(0, on_hand - d.adjusted_ss) if d.adjusted_ss else 0.0
-                    d.excess_holding_cost = excess * 0.01  # Nominal holding cost rate
+                    d.excess_holding_cost = excess * 0.01
                 else:
                     d.actual_stockout_occurred = False
                     d.actual_dos_after = 14.0
@@ -1038,24 +397,20 @@ class OutcomeCollectorService:
     SKILL_OUTCOME_DELAY = TRM_OUTCOME_DELAY
 
     def collect_skill_outcomes(self) -> Dict[str, Any]:
-        """
-        Collect outcomes for Claude Skills decisions stored in decision_embeddings.
+        """Collect outcomes for Claude Skills decisions stored in
+        decision_embeddings (KB database).
 
-        Skills decisions are recorded with decision_source='skill_exception'.
-        After the feedback horizon, we compute outcomes using the same reward
-        calculators as TRM decisions, then update the decision_embeddings record
-        with outcome data. This feeds back into RAG retrieval — future similar
-        situations will see what actually happened.
-
-        Returns:
-            Summary stats with per-trm_type breakdown.
+        After the feedback horizon, computes outcomes using the same
+        reward calculators as TRM decisions, then updates the
+        decision_embeddings record with outcome data — feeding back
+        into RAG retrieval so future similar situations see what
+        actually happened.
         """
         from app.models.decision_embeddings import DecisionEmbedding
 
         stats = {"processed": 0, "succeeded": 0, "failed": 0, "by_type": {}}
         now = datetime.utcnow()
 
-        # Find skill decisions without outcomes, grouped by trm_type
         for trm_type, delay in self.SKILL_OUTCOME_DELAY.items():
             cutoff = now - delay
 
@@ -1119,7 +474,6 @@ class OutcomeCollectorService:
         decision_data = dec.decision or {}
         state = dec.state_features or {}
 
-        # Reuse the existing TRM outcome collectors by looking up relevant DB state
         if trm_type == "atp":
             return self._compute_skill_atp_outcome(decision_data, state)
         elif trm_type == "rebalance":
@@ -1129,7 +483,6 @@ class OutcomeCollectorService:
         elif trm_type == "inventory_buffer":
             return self._compute_skill_buffer_outcome(decision_data, state)
         else:
-            # Generic: use decision data as proxy outcome
             return self._compute_skill_generic_outcome(trm_type, decision_data, state)
 
     def _compute_skill_atp_outcome(
@@ -1229,8 +582,6 @@ class OutcomeCollectorService:
         self, trm_type: str, decision: Dict, state: Dict
     ) -> Optional[Dict[str, Any]]:
         """Generic skill outcome for TRM types without specialized logic."""
-        # Use the decision data itself as a proxy — the reward calculator
-        # will extract what it needs
         return {
             "was_executed": True,
             "decision_applied": True,

@@ -32,15 +32,19 @@ if __name__ == "__main__":
         test("OutcomeCollectorService importable", False, str(e))
 
     try:
-        test("collect_outcomes() method exists",
-             hasattr(OutcomeCollectorService, 'collect_outcomes'),
-             "Missing collect_outcomes method")
-        test("collect_trm_outcomes() method exists",
+        # collect_outcomes() moved to Core under §3.64 — exercised via
+        # the Core OutcomeCollectorService + TmsOutcomeAdapter. This
+        # legacy service now carries only the per-TRM and skill paths.
+        from azirella_data_model.governance.causal import OutcomeCollectorService as CoreOutcomeCollectorService
+        test("Core OutcomeCollectorService importable",
+             hasattr(CoreOutcomeCollectorService, 'collect_site_agent_outcomes'),
+             "Missing Core collect_site_agent_outcomes method")
+        test("collect_trm_outcomes() method exists (legacy path)",
              hasattr(OutcomeCollectorService, 'collect_trm_outcomes'),
              "Missing collect_trm_outcomes method")
-    except NameError:
-        test("collect_outcomes() method exists", False, "Class not imported")
-        test("collect_trm_outcomes() method exists", False, "Class not imported")
+    except (NameError, ImportError) as e:
+        test("Core OutcomeCollectorService importable", False, str(e))
+        test("collect_trm_outcomes() method exists (legacy path)", False, "Class not imported")
 
     # ── 2. Outcome delays for all 11 TRM types ────────────────────────
     print("\n--- TRM Outcome Delays ---")
