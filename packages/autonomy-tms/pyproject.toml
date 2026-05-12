@@ -33,5 +33,8 @@ tms = "autonomy_tms.routes:get_router"
 [project.entry-points."azirella_router.azirella_handlers"]
 tms = "autonomy_tms.handlers:get_handler_bundle"
 
+[project.entry-points."autonomy_app.plane_schedulers"]
+tms = "autonomy_tms.scheduler:register_jobs"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/autonomy_tms"]
