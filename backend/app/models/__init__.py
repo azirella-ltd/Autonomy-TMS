@@ -272,8 +272,12 @@ from .trm_training_data import (
 )
 
 # 22. Condition Monitoring & Scenario Evaluation
+# ConditionAlert ORM retired 2026-05-12 (§3.62 Phase 3 follow-up) —
+# no producer, 0 rows; consumer retargeted to Core Alert. Siblings
+# (ScenarioEvaluation, SupplyRequest) stay — they're independently
+# used by condition_monitor_service.
 from .condition_alert import (
-    ConditionAlert, ScenarioEvaluation, SupplyRequest,
+    ScenarioEvaluation, SupplyRequest,
     ConditionType as ConditionAlertType, ConditionSeverity as ConditionAlertSeverity,
     ConditionResolution
 )
@@ -672,7 +676,7 @@ __all__ = [
     'PowellSubcontractingDecision',
     'PowellForecastAdjustmentDecision',
     # Condition Monitoring & Scenario Evaluation
-    'ConditionAlert',
+    # (ConditionAlert retired 2026-05-12 — §3.62 Phase 3 follow-up.)
     'ScenarioEvaluation',
     'SupplyRequest',
     'ConditionAlertType',

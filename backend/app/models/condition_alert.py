@@ -62,97 +62,26 @@ class ConditionResolution(str, enum.Enum):
     SUPPRESSED = "suppressed"
 
 
-class ConditionAlert(Base):
-    """
-    Persistent storage for detected conditions.
-
-    Tracks the full lifecycle of a condition from detection through resolution,
-    including severity escalation and agent/human actions taken.
-    """
-    __tablename__ = "condition_alerts"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-
-    # Scope
-    tenant_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("tenants.id", ondelete="CASCADE"),
-        nullable=False, index=True
-    )
-    condition_type: Mapped[ConditionType] = mapped_column(
-        Enum(ConditionType, name="conditiontype"), nullable=False, index=True
-    )
-
-    # Entity context
-    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)  # product, site, order
-    entity_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-
-    # Status
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
-    severity: Mapped[ConditionSeverity] = mapped_column(
-        Enum(ConditionSeverity, name="conditionseverity"), default=ConditionSeverity.INFO, nullable=False
-    )
-
-    # Timing
-    first_detected_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    last_checked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    duration_hours: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-
-    # Values
-    current_value: Mapped[float] = mapped_column(Float, nullable=True)
-    threshold_value: Mapped[float] = mapped_column(Float, nullable=True)
-    deviation_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-
-    # Context (JSON storage for flexible metadata)
-    context: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-
-    # Related conditions (for network-wide patterns)
-    related_condition_ids: Mapped[Optional[List]] = mapped_column(JSON, nullable=True)
-
-    # Resolution
-    resolution: Mapped[Optional[ConditionResolution]] = mapped_column(
-        Enum(ConditionResolution, name="conditionresolution"), nullable=True
-    )
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    resolved_by_agent: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    resolved_by_user_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
-    resolution_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    # Actions taken
-    actions_triggered: Mapped[Optional[List]] = mapped_column(JSON, nullable=True)
-    scenario_evaluation_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("scenario_evaluations.id", ondelete="SET NULL"), nullable=True
-    )
-
-    # Supply requests (for inter-agent communication)
-    supply_requests: Mapped[Optional[List]] = mapped_column(JSON, nullable=True)
-
-    # S&OP escalation
-    triggered_soop: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    soop_cycle_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("planning_cycles.id", ondelete="SET NULL"), nullable=True
-    )
-
-    # Audit
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
-
-    # Relationships
-    tenant = relationship("Tenant")
-    resolved_by_user = relationship("User", foreign_keys=[resolved_by_user_id])
-
-    __table_args__ = (
-        Index("ix_condition_alert_tenant_type", "tenant_id", "condition_type"),
-        Index("ix_condition_alert_entity", "entity_type", "entity_id"),
-        Index("ix_condition_alert_active_severity", "is_active", "severity"),
-        Index("ix_condition_alert_tenant_active", "tenant_id", "is_active"),
-    )
-
-    def __repr__(self):
-        return f"<ConditionAlert(id={self.id}, type={self.condition_type.value}, entity={self.entity_id}, severity={self.severity.value})>"
+# ConditionAlert retired 2026-05-12 — §3.62 Phase 3 follow-up.
+#
+# The ORM class previously defined here (multi-plane condition-state
+# substrate) was never produced (zero ``db.add(ConditionAlert(...))``
+# in the entire TMS backend per the §3.62 Phase 3 audit) and the live
+# ``condition_alerts`` table had zero rows. The single consumer
+# (``executive_briefing_service._collect_condition_alerts``) was
+# retargeted to query Core's unified ``Alert`` ORM in the same
+# commit.
+#
+# The DB table is left in place so any historical data the migration
+# might have missed is preserved; a follow-up PR can drop it once
+# the briefing has been live on Core Alert for a week.
+#
+# The ``ConditionType`` / ``ConditionSeverity`` / ``ConditionResolution``
+# enums above are kept (no longer used by an ORM, but retained as a
+# vocabulary record — TMS plane semantics around what kinds of
+# conditions the platform anticipated. If TMS later builds a real
+# condition-monitor surface that needs richer state than Core Alert
+# provides, these enums are the starting point.)
 
 
 class ScenarioEvaluation(Base):
@@ -230,11 +159,10 @@ class ScenarioEvaluation(Base):
 
     # Relationships
     tenant = relationship("Tenant")
-    triggering_condition = relationship(
-        "ConditionAlert",
-        foreign_keys=[triggered_by_condition_id],
-        back_populates="scenario_evaluation"
-    )
+    # ``triggering_condition`` relationship retired with ConditionAlert
+    # (2026-05-12 — §3.62 Phase 3 follow-up). The FK column
+    # ``triggered_by_condition_id`` is kept on this table for any
+    # pre-migration rows; callers join on it manually when needed.
     action_taken_by = relationship("User", foreign_keys=[action_taken_by_user_id])
     agent_action = relationship("AgentAction", foreign_keys=[agent_action_id])
 
@@ -317,10 +245,10 @@ class SupplyRequest(Base):
         return f"<SupplyRequest(id={self.id}, from={self.requesting_entity_id}, to={self.requested_entity_id}, qty={self.quantity_needed})>"
 
 
-# Add back-reference to ConditionAlert
-ConditionAlert.scenario_evaluation = relationship(
-    "ScenarioEvaluation",
-    foreign_keys=[ScenarioEvaluation.triggered_by_condition_id],
-    back_populates="triggering_condition",
-    uselist=False
-)
+# The retired ``ConditionAlert.scenario_evaluation = relationship(...)``
+# back-reference used to live here. ScenarioEvaluation still carries
+# its forward FK column (``triggered_by_condition_id``) for any
+# pre-migration rows, but with ConditionAlert gone there's no class
+# to attach the reverse relationship to. Callers that want to find
+# the triggering ConditionAlert for an evaluation can JOIN through
+# the FK column at query time.

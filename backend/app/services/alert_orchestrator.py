@@ -1,10 +1,10 @@
 """TMS Alert Orchestrator — §3.62 Phase 3.
 
 Plane-side orchestrator for the unified Risk Engine. TMS canonical
-state (ShipmentLeg actual vs planned timestamps, ConditionAlert
-legacy table, ForecastException legacy table) maps into Core's
-``Alert`` ORM via this module. Plane-specific TRMs / dashboards
-consume from the unified ``risk_alerts`` table.
+state (ShipmentLeg actual vs planned timestamps, ForecastException
+demand-variance signals) maps into Core's ``Alert`` ORM via this
+module. Plane-specific TRMs / dashboards consume from the unified
+``risk_alerts`` table.
 
 Phase 3 scope:
 
@@ -27,19 +27,20 @@ Phase 3 scope:
   policy on what "high CV%" means for carrier selection differs
   from SCP's vendor-lead-time policy).
 
-Deferred from Phase 3 (separate PR):
+Sibling cleanup landed alongside (§3.62 Phase 3 follow-up,
+2026-05-12):
 
-* TMS ``ForecastException`` migration — actively produced by
-  ``forecast_exception_detector.py`` with full CRUD endpoints +
-  workflow escalation. Its richer surface (root_cause_category,
-  ai_recommendation, sla_deadline, workflow_template_id) deserves a
-  focused PR that preserves UX semantics; folding it in here would
-  rush it.
+* ``ConditionAlert`` ORM retired — no producer existed, 0 rows;
+  ``executive_briefing_service`` was retargeted to read from Core's
+  unified ``Alert`` table joined through ``supply_chain_configs``.
 
-* TMS ``ConditionAlert`` retirement — no producer exists today but
-  ``executive_briefing_service`` reads it as a fallback. Leave the
-  ORM in place; remove when ConditionAlert is also migrated /
-  graveyarded.
+* TMS ``ForecastException`` migration — handled in the same follow-up
+  via dual-write: ``forecast_exception_detector`` keeps writing to
+  the legacy ``forecast_exception`` table (existing CRUD endpoints +
+  workflow surface stay live), AND emits a parallel Alert row
+  (plane=DEMAND, type=VARIANCE_RELIABILITY) so the variance signal
+  surfaces in the unified operator dashboard. The legacy table can
+  retire once consumers are cut over in a future PR.
 """
 from __future__ import annotations
 

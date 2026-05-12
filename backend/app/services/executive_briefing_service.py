@@ -188,18 +188,28 @@ class BriefingDataCollector:
             return {"available": False, "error": str(e)}
 
     def _collect_condition_alerts(self) -> dict:
-        """Active CRITICAL/WARNING alerts from last 7 days."""
+        """Active HIGH/CRITICAL alerts (any plane) for this tenant — last 7 days.
+
+        Retargeted 2026-05-12 (§3.62 Phase 3 follow-up): the legacy
+        ConditionAlert table was never produced; the briefing now reads
+        Core's unified ``Alert`` table joined through
+        ``supply_chain_configs`` to scope by tenant.
+        """
         try:
-            from app.models.condition_alert import ConditionAlert
+            from azirella_data_model.risk_engine import Alert
+            from azirella_data_model.master.config import SupplyChainConfig
             cutoff = datetime.utcnow() - timedelta(days=7)
             result = self.db.execute(
-                select(ConditionAlert).where(
-                    ConditionAlert.tenant_id == self.tenant_id,
-                    ConditionAlert.severity.in_(["critical", "warning", "emergency"]),
-                    ConditionAlert.created_at >= cutoff,
-                ).order_by(desc(ConditionAlert.created_at)).limit(20)
+                select(Alert)
+                .join(SupplyChainConfig, Alert.config_id == SupplyChainConfig.id)
+                .where(
+                    SupplyChainConfig.tenant_id == self.tenant_id,
+                    Alert.severity.in_(["HIGH", "CRITICAL"]),
+                    Alert.created_at >= cutoff,
+                )
+                .order_by(desc(Alert.created_at))
+                .limit(20)
             )
-            # Handle both sync and async result patterns
             try:
                 alerts = result.scalars().all()
             except Exception:
@@ -211,13 +221,16 @@ class BriefingDataCollector:
                     "alerts": [
                         {
                             "id": a.id,
-                            "condition_type": a.condition_type.value if hasattr(a.condition_type, 'value') else str(a.condition_type),
-                            "severity": a.severity.value if hasattr(a.severity, 'value') else str(a.severity),
-                            "site_key": getattr(a, 'site_key', None),
-                            "product_id": getattr(a, 'product_id', None),
-                            "message": getattr(a, 'message', None),
+                            "alert_id": a.alert_id,
+                            "type": a.type,
+                            "plane": a.plane,
+                            "severity": a.severity,
+                            "site_key": a.site_id,
+                            "product_id": a.product_id,
+                            "message": a.message,
+                            "recommended_action": a.recommended_action,
                             "created_at": a.created_at.isoformat() if a.created_at else None,
-                            "resolved": getattr(a, 'resolved', False),
+                            "resolved": a.status == "ACTIONED",
                         }
                         for a in alerts
                     ],
@@ -225,7 +238,7 @@ class BriefingDataCollector:
             }
         except Exception as e:
             self._safe_rollback()
-            logger.warning("Failed to collect condition alerts: %s", e)
+            logger.warning("Failed to collect condition alerts (Core Alert table): %s", e)
             return {"available": False, "error": str(e)}
 
     def _collect_cdc_triggers(self) -> dict:
