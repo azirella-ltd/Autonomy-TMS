@@ -1,12 +1,21 @@
 """TMS-side plane adapter for Core's ``OutcomeCollectorService``.
 
 §3.64 adoption: implements :class:`OutcomePlaneAdapter` (Core) by
-reading actual decision outcomes from TMS's operational tables —
+reading actual decision outcomes from operational tables —
 ``OutboundOrderLine`` for ATP fulfilment, ``InvLevel`` for inventory
 state, ``CDCTriggerLog`` for replan effect. The plane-agnostic
 orchestration (schedule decisions past horizon, compute reward,
 compute counterfactual, update Bayesian posterior, emit OutcomeEvent)
 lives in Core.
+
+**AD-13 DB topology note (§3.71 closure, 2026-05-12):** the
+operational tables read here (``OutboundOrderLine``, ``InvLevel``,
+``CDCTriggerLog``) are Core-owned ORMs in ``packages/data-model/``.
+Under AD-13's single-DB invariant they live in one shared schema; this
+adapter therefore returns the same answers no matter which plane's
+cron invokes it. The "TMS-specific real-integration reads" framing
+predates AD-13's unification and is retained only for historical
+context — there is nothing TMS-specific about the queries themselves.
 
 Migration scope:
 
