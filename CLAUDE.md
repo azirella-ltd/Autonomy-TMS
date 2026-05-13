@@ -115,6 +115,28 @@ for the 5-phase migration.
 
 ---
 
+## Vibe-coding discipline (for this repo)
+
+This codebase follows the "leaf-node vibe coding" model from Anthropic's Erik Schluntz.
+
+**Before executing any non-trivial task:**
+1. Explore first. Identify the relevant files, classes, and patterns before writing a line.
+2. Produce a written plan. List what changes, what patterns to follow, what constraints apply.
+3. Classify placement: is this task touching a leaf node or core architecture?
+   - Leaf node (end feature, nothing depends on it): vibe coding is acceptable.
+   - Core architecture (trunks, foundational systems): requires human review of the shape before execution.
+
+**Design for verifiability:**
+- Every non-trivial change should have human-verifiable inputs and outputs.
+- Prefer end-to-end tests (happy path + 2 error cases) over implementation-specific unit tests.
+- When asked to write tests, default to minimalist end-to-end tests unless told otherwise.
+
+**Context management:**
+- When planning a large task, write the plan to a document before executing so it survives a /compact.
+- After a major logical milestone, suggest a compact point.
+
+---
+
 ## Prerequisite: GitHub PAT for `@azirella-ltd/autonomy-frontend`
 
 The frontend Docker image installs `@azirella-ltd/autonomy-frontend`
