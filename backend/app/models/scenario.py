@@ -73,9 +73,8 @@ Scenario.agent_configs = relationship(
 # `Scenario.chat_messages` / `.agent_suggestions` / `.what_if_analyses`
 # back-relations live in Core (§3.73 Step 3, 2026-05-14) — targets are
 # `azirella_data_model.simulation.chat`.
-Scenario.function_assignments = relationship(
-    "FunctionAssignment", back_populates="scenario", lazy="selectin"
-)
+# `Scenario.function_assignments` also moved to Core (§3.73 Step 2b,
+# 2026-05-14).
 
 
 # ── TMS-specific relationships on ScenarioUserAction ────────────────────

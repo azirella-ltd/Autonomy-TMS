@@ -40,17 +40,14 @@ from azirella_data_model.simulation.scenario_user import (  # noqa: F401
 from .supply_chain import ScenarioUserInventory, ScenarioUserPeriod, Order  # noqa: F401
 from .function_assignment import FunctionAssignment  # noqa: F401
 
-# `ScenarioUser.inventory` / `.orders` / `.scenario_user_periods`
-# back-relations live in Core (§3.73 Step 2, 2026-05-14) — targets in
-# `azirella_data_model.simulation.supply_chain`.
-# `ScenarioUser.agent_suggestions` / `.what_if_analyses` live in Core
-# too (§3.73 Step 3, 2026-05-14) — targets in
-# `azirella_data_model.simulation.chat`.
-#
-# `function_assignments` remains plane-side pending §3.73 Step 2b.
-ScenarioUser.function_assignments = relationship(
-    "FunctionAssignment", back_populates="scenario_user", lazy="selectin"
-)
+# All ScenarioUser back-relations whose targets live in Core are now
+# declared in Core too:
+#   - `.inventory` / `.orders` / `.scenario_user_periods` — §3.73 Step 2
+#     (`azirella_data_model.simulation.supply_chain`).
+#   - `.agent_suggestions` / `.what_if_analyses` — §3.73 Step 3
+#     (`azirella_data_model.simulation.chat`).
+#   - `.function_assignments` — §3.73 Step 2b
+#     (`azirella_data_model.simulation.function_assignment`).
 
 
 # Backward-compatibility aliases (temporary - remove after full migration)
