@@ -40,17 +40,14 @@ from azirella_data_model.simulation.scenario_user import (  # noqa: F401
 from .supply_chain import ScenarioUserInventory, ScenarioUserPeriod, Order  # noqa: F401
 from .function_assignment import FunctionAssignment  # noqa: F401
 
-# TMS-specific relationships attached to the canonical ScenarioUser.
-# The previously-attached `inventory`, `orders`, `scenario_user_periods`
-# back-relations now live in Core (§3.73 Step 2, 2026-05-14) because
-# their target classes were promoted to
+# `ScenarioUser.inventory` / `.orders` / `.scenario_user_periods`
+# back-relations live in Core (§3.73 Step 2, 2026-05-14) — targets in
 # `azirella_data_model.simulation.supply_chain`.
-ScenarioUser.agent_suggestions = relationship(
-    "AgentSuggestion", back_populates="scenario_user", lazy="selectin"
-)
-ScenarioUser.what_if_analyses = relationship(
-    "WhatIfAnalysis", back_populates="scenario_user", lazy="selectin"
-)
+# `ScenarioUser.agent_suggestions` / `.what_if_analyses` live in Core
+# too (§3.73 Step 3, 2026-05-14) — targets in
+# `azirella_data_model.simulation.chat`.
+#
+# `function_assignments` remains plane-side pending §3.73 Step 2b.
 ScenarioUser.function_assignments = relationship(
     "FunctionAssignment", back_populates="scenario_user", lazy="selectin"
 )

@@ -70,15 +70,9 @@ Scenario.supervisor_actions = relationship(
 Scenario.agent_configs = relationship(
     "AgentConfig", back_populates="scenario", lazy="selectin"
 )
-Scenario.chat_messages = relationship(
-    "ChatMessage", back_populates="scenario", lazy="selectin"
-)
-Scenario.agent_suggestions = relationship(
-    "AgentSuggestion", back_populates="scenario", lazy="selectin"
-)
-Scenario.what_if_analyses = relationship(
-    "WhatIfAnalysis", back_populates="scenario", lazy="selectin"
-)
+# `Scenario.chat_messages` / `.agent_suggestions` / `.what_if_analyses`
+# back-relations live in Core (§3.73 Step 3, 2026-05-14) — targets are
+# `azirella_data_model.simulation.chat`.
 Scenario.function_assignments = relationship(
     "FunctionAssignment", back_populates="scenario", lazy="selectin"
 )
