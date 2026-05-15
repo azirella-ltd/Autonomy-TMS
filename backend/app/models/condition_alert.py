@@ -101,9 +101,12 @@ class ScenarioEvaluation(Base):
         nullable=False, index=True
     )
 
-    # Triggering context
+    # Triggering context. ForeignKey to ``condition_alerts.id`` removed
+    # 2026-05-15 (§3.62 final cleanup); the table was dropped
+    # 2026-05-12 so the constraint was orphan. Column kept as plain
+    # Integer for backfill / historical-data compatibility.
     triggered_by_condition_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("condition_alerts.id", ondelete="SET NULL"), nullable=True
+        Integer, nullable=True
     )
     trigger_type: Mapped[str] = mapped_column(String(50), nullable=False)  # condition, manual, soop
     trigger_entity_type: Mapped[str] = mapped_column(String(50), nullable=True)
@@ -215,9 +218,12 @@ class SupplyRequest(Base):
     priority: Mapped[int] = mapped_column(Integer, default=5, nullable=False)  # 1=highest
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)  # pending, accepted, rejected, fulfilled
 
-    # Triggering condition
+    # Triggering condition. ForeignKey to ``condition_alerts.id``
+    # removed 2026-05-15 (§3.62 final cleanup); the table was dropped
+    # 2026-05-12 so the constraint was orphan. Column kept as plain
+    # Integer for backfill / historical-data compatibility.
     condition_alert_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("condition_alerts.id", ondelete="SET NULL"), nullable=True
+        Integer, nullable=True
     )
 
     # Context

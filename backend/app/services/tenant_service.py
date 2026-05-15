@@ -681,7 +681,9 @@ class TenantService:
             "supply_baseline_pack", "supply_commit",
             "solver_baseline_pack", "allocation_commit",
             "planning_feedback_signal", "planning_policy_envelope",
-            "condition_alerts",
+            # condition_alerts retired 2026-05-12 (§3.62 — table dropped
+            # by migration 20260512b_drop_condition_alerts_table.py;
+            # consumers retargeted to Core `Alert` table).
             # Decision governance & authority
             "guardrail_directives", "decision_governance_policies",
             "authority_definitions",
