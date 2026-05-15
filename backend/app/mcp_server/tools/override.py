@@ -16,7 +16,6 @@ def register(mcp):
 
     @mcp.tool()
     async def override_decision(
-        tenant_id: int,
         decision_id: int,
         decision_type: str,
         action: str,
@@ -39,7 +38,6 @@ def register(mcp):
         - SOC II audit trail
 
         Args:
-            tenant_id: Organization ID
             decision_id: Decision record ID
             decision_type: TRM type (po_creation, mo_release, etc.)
             action: "accept", "override", or "cancel"
@@ -61,7 +59,7 @@ def register(mcp):
         from .db import get_db
         from app.services.decision_stream_service import DecisionStreamService
 
-        async with get_db() as db:
+        async with get_db() as (db, _user):
             service = DecisionStreamService(db)
             result = await service.act_on_decision(
                 decision_id=decision_id,
@@ -75,21 +73,20 @@ def register(mcp):
 
     @mcp.tool()
     async def reverse_erp_writeback(
-        tenant_id: int,
         writeback_id: int,
         reason: str,
-        user_id: int,
     ) -> dict:
         """Reverse a previously executed ERP write-back.
 
         Creates a compensating ERP document (e.g., PO cancellation, reverse
         stock transfer) via MCP. Only works on write-backs with status='executed'.
 
+        The reversal is attributed to the authenticated user — the caller
+        does not supply a user_id, the session does.
+
         Args:
-            tenant_id: Organization ID
             writeback_id: ID from mcp_pending_writeback table
             reason: Mandatory business reason
-            user_id: User requesting the reversal
 
         Returns:
             Reversal result with correlation ID for audit tracing.
@@ -101,11 +98,11 @@ def register(mcp):
         from app.integrations.mcp.writeback_service import reverse_writeback
         from app.integrations.mcp.client import mcp_pool
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
             result = await reverse_writeback(
                 db=db,
                 writeback_id=writeback_id,
-                user_id=user_id,
+                user_id=user.user_id,
                 reason=reason,
                 mcp_pool=mcp_pool,
             )

@@ -1,15 +1,18 @@
 """
-Autonomy MCP Server — Main Entry Point.
+Autonomy TMS MCP Server — orphaned post-AD-13.
 
-Exposes supply chain intelligence via MCP using FastMCP.
-Runs as a sidecar service in Docker alongside the main backend.
+Pre-AD-13 this booted a standalone FastMCP HTTP server on :8002 as a
+sidecar to the TMS backend. After AD-13 the TMS tools are registered
+onto the unified ``/mcp`` endpoint inside ``autonomy-app`` (see
+``Autonomy-Core/apps/backend/autonomy_app/mcp_server.py``) and that
+endpoint is JWT-auth-wrapped by ``autonomy_app.mcp_auth``. Auth at the
+unified endpoint is therefore the source of truth — this file's
+standalone runner is retained only for local debugging of the tool
+modules in isolation and does NOT carry production auth itself.
 
-Transport: Streamable HTTP on port 8002 (proxied via Nginx at /mcp)
-Auth: Bearer token (same JWT as REST API) or API key
-
-Usage:
-    python -m app.mcp_server.server          # Production (HTTP)
-    python -m app.mcp_server.server --stdio   # Development (STDIO for Claude Code)
+Usage (local debugging only):
+    python -m app.mcp_server.server          # HTTP on :8002, no auth
+    python -m app.mcp_server.server --stdio   # STDIO for Claude Code
 """
 
 import logging

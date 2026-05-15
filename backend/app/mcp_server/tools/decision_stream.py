@@ -17,7 +17,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_decision_stream(
-        tenant_id: int,
         config_id: Optional[int] = None,
         decision_level: Optional[str] = None,
         limit: int = 50,
@@ -29,19 +28,21 @@ def register(mcp):
         by decision level (governance, strategic, tactical, execution).
 
         Args:
-            tenant_id: Organization ID (required for tenant isolation)
-            config_id: Supply chain config ID (optional — uses active config if omitted)
+            config_id: Supply chain config ID (optional — uses the authenticated
+                user's default config if omitted; must belong to the user's tenant)
             decision_level: Filter by level: governance, strategic, tactical, execution
             limit: Max decisions to return (default 50)
 
         Returns:
             Dictionary with decisions list, level counts, total pending, and display metadata.
         """
-        from .db import get_db
+        from .db import get_db, require_config
         from app.services.decision_stream_service import DecisionStreamService
 
-        async with get_db() as db:
-            service = DecisionStreamService(db, tenant_id=tenant_id)
+        async with get_db() as (db, user):
+            if config_id is not None:
+                config_id = await require_config(db, user, config_id)
+            service = DecisionStreamService(db, tenant_id=user.tenant_id)
             digest = await service.get_decision_digest(
                 decision_level=decision_level,
                 config_id=config_id,
@@ -58,7 +59,6 @@ def register(mcp):
 
     @mcp.tool()
     async def chat_with_decisions(
-        tenant_id: int,
         message: str,
         config_id: Optional[int] = None,
         conversation_id: Optional[str] = None,
@@ -85,9 +85,9 @@ def register(mcp):
         - "What changed in the last hour?"
 
         Args:
-            tenant_id: Organization ID
             message: Natural-language question
-            config_id: Supply chain config ID (optional)
+            config_id: Supply chain config ID (optional; must belong to the
+                authenticated user's tenant when provided)
             conversation_id: Continue an existing conversation (optional)
 
         Returns:
@@ -95,11 +95,13 @@ def register(mcp):
             Output is freeform — DO NOT parse downstream. Use a structured
             tool instead.
         """
-        from .db import get_db
+        from .db import get_db, require_config
         from app.services.decision_stream_service import DecisionStreamService
 
-        async with get_db() as db:
-            service = DecisionStreamService(db, tenant_id=tenant_id)
+        async with get_db() as (db, user):
+            if config_id is not None:
+                config_id = await require_config(db, user, config_id)
+            service = DecisionStreamService(db, tenant_id=user.tenant_id)
             result = await service.chat(
                 message=message,
                 conversation_id=conversation_id,

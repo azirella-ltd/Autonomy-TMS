@@ -16,7 +16,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_kpi_metrics(
-        tenant_id: int,
         config_id: int,
         site_id: Optional[str] = None,
         product_id: Optional[str] = None,
@@ -32,8 +31,7 @@ def register(mcp):
         Filter by site and/or product for drilldown.
 
         Args:
-            tenant_id: Organization ID
-            config_id: Supply chain config ID
+            config_id: Supply chain config ID (must belong to authenticated tenant)
             site_id: Optional site filter for drilldown
             product_id: Optional product filter for drilldown
 
@@ -41,9 +39,10 @@ def register(mcp):
             Metrics dictionary organized by BSC quadrant.
         """
         from sqlalchemy import text as sql_text
-        from .db import get_db
+        from .db import get_db, require_config
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
+            config_id = await require_config(db, user, config_id)
             # Touchless rate (AUTOMATE decisions / total decisions)
             try:
                 touchless_result = await db.execute(

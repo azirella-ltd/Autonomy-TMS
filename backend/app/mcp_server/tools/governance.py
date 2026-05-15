@@ -16,21 +16,20 @@ def register(mcp):
 
     @mcp.tool()
     async def get_governance_status(
-        tenant_id: int,
         config_id: Optional[int] = None,
     ) -> dict:
-        """Get the current AIIO governance status for a tenant.
+        """Get the current AIIO governance status for the authenticated tenant.
 
         Returns active policies, their thresholds, active guardrail directives,
         write-back delay settings, and the operating schedule.
 
         Args:
-            tenant_id: Organization ID (REQUIRED).
             config_id: Optional supply-chain config scope. **Currently advisory** —
                 the underlying tables (`decision_governance_policies`,
                 `guardrail_directives`, `tenant_oversight_config`) are tenant-scoped,
                 not config-scoped, so this argument is accepted for symmetry with
-                other MCP tools but does not filter rows. If the schema gains
+                other MCP tools but does not filter rows. When provided, it is
+                verified to belong to the authenticated tenant. If the schema gains
                 `config_id` later, this becomes enforced. The `config_id_enforced`
                 flag in the response makes the current state explicit.
 
@@ -39,9 +38,12 @@ def register(mcp):
             an `echoed` block with the input parameters + enforcement flags.
         """
         from sqlalchemy import text as sql_text
-        from .db import get_db
+        from .db import get_db, require_config
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
+            tenant_id = user.tenant_id
+            if config_id is not None:
+                config_id = await require_config(db, user, config_id)
             # Active policies
             policies_result = await db.execute(
                 sql_text("""

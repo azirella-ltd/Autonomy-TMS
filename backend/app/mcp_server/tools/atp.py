@@ -17,7 +17,6 @@ def register(mcp):
 
     @mcp.tool()
     async def check_availability(
-        tenant_id: int,
         config_id: int,
         product_id: str,
         site_id: str,
@@ -36,8 +35,7 @@ def register(mcp):
           5 = Lowest (only own tier)
 
         Args:
-            tenant_id: Organization ID
-            config_id: Supply chain config ID
+            config_id: Supply chain config ID (must belong to authenticated tenant)
             product_id: Material/product identifier
             site_id: Plant/warehouse identifier
             quantity: Requested quantity
@@ -49,15 +47,16 @@ def register(mcp):
             stage-by-stage breakdown, and pegging preview.
         """
         from datetime import date as date_type
-        from .db import get_db
+        from .db import get_db, require_config
         from app.services.multi_stage_ctp_service import MultiStageCTPService
 
         parsed_date = None
         if target_date:
             parsed_date = date_type.fromisoformat(target_date)
 
-        async with get_db() as db:
-            service = MultiStageCTPService(db, config_id)
+        async with get_db() as (db, user):
+            cfg = await require_config(db, user, config_id)
+            service = MultiStageCTPService(db, cfg, user.tenant_id)
             result = service.calculate_multi_stage_ctp(
                 product_id=product_id,
                 site_id=site_id,
@@ -87,7 +86,6 @@ def register(mcp):
 
     @mcp.tool()
     async def promise_order(
-        tenant_id: int,
         config_id: int,
         order_id: str,
         product_id: str,
@@ -102,8 +100,7 @@ def register(mcp):
         linkage). This is a write operation — it consumes ATP buckets.
 
         Args:
-            tenant_id: Organization ID
-            config_id: Supply chain config ID
+            config_id: Supply chain config ID (must belong to authenticated tenant)
             order_id: Customer order reference
             product_id: Material/product identifier
             site_id: Plant/warehouse identifier
@@ -115,13 +112,14 @@ def register(mcp):
             Promise result with confirmed quantity, date, and pegging chain ID.
         """
         from datetime import date as date_type
-        from .db import get_db
+        from .db import get_db, require_config
         from app.services.multi_stage_ctp_service import MultiStageCTPService
 
         parsed_date = date_type.fromisoformat(target_date)
 
-        async with get_db() as db:
-            service = MultiStageCTPService(db, config_id)
+        async with get_db() as (db, user):
+            cfg = await require_config(db, user, config_id)
+            service = MultiStageCTPService(db, cfg, user.tenant_id)
             result = service.promise_order(
                 order_id=order_id,
                 product_id=product_id,

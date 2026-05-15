@@ -16,7 +16,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_forecast(
-        tenant_id: int,
         config_id: int,
         product_id: Optional[str] = None,
         site_id: Optional[str] = None,
@@ -31,8 +30,7 @@ def register(mcp):
         falls within [P10, P90] with 80% probability.
 
         Args:
-            tenant_id: Organization ID
-            config_id: Supply chain config ID
+            config_id: Supply chain config ID (must belong to authenticated tenant)
             product_id: Filter by product (optional — returns all if omitted)
             site_id: Filter by site (optional)
             horizon_periods: Number of future periods to return (default 12)
@@ -42,9 +40,10 @@ def register(mcp):
             Forecast data with P10/P50/P90 per period, product, and site.
         """
         from sqlalchemy import text as sql_text
-        from .db import get_db
+        from .db import get_db, require_config
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
+            config_id = await require_config(db, user, config_id)
             # Schema note: forecast table uses forecast_p10/p50/p90 + forecast_date
             # (no quantity_p* aliases, no plan_version or period_start/end columns).
             filters = ["f.config_id = :config_id"]

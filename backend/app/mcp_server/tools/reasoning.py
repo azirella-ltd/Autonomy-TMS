@@ -16,7 +16,6 @@ def register(mcp):
 
     @mcp.tool()
     async def ask_why(
-        tenant_id: int,
         decision_id: int,
         decision_type: str,
     ) -> dict:
@@ -33,8 +32,11 @@ def register(mcp):
         transfer_order, atp_allocation, order_tracking, quality_disposition,
         maintenance_scheduling, subcontracting, forecast_adjustment, inventory_buffer
 
+        Tenant scoping is enforced by RLS via the authenticated session — a
+        decision_id outside the caller's tenant returns ``decision not
+        found`` rather than leaking cross-tenant data.
+
         Args:
-            tenant_id: Organization ID
             decision_id: Decision record ID from the powell_*_decisions table
             decision_type: TRM type that made the decision
 
@@ -62,7 +64,7 @@ def register(mcp):
         if not table:
             return {"error": f"Unknown decision type: {decision_type}"}
 
-        async with get_db() as db:
+        async with get_db() as (db, _user):
             result = await db.execute(
                 sql_text(f"""
                     SELECT id, product_id, site_id, confidence, urgency_at_time,

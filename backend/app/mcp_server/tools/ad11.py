@@ -117,7 +117,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_carrier_capacity(
-        tenant_id: int,
         config_id: int,
         lane_id: int,
         date_from: str,
@@ -129,9 +128,11 @@ def register(mcp):
         requirement to verify TMS can take the volume on the requested
         lane × date band. Per AD-11 §5.1.
 
+        Tenant is taken from the authenticated session; ``config_id`` is
+        verified to belong to that tenant before any read.
+
         Args:
-            tenant_id: canonical tenant boundary
-            config_id: supply-chain config scope
+            config_id: supply-chain config scope (must belong to authenticated tenant)
             lane_id: canonical TransportationLane.id
             date_from / date_to: ISO date strings (inclusive bounds)
 
@@ -146,7 +147,7 @@ def register(mcp):
             * `carrier_count` — distinct carriers serving the lane
             * `as_of_utc` — timestamp the snapshot was computed
         """
-        from .db import get_db
+        from .db import get_db, require_config
         from app.models.tms_entities import (
             FreightTender, Load, TenderStatus,
         )
@@ -157,7 +158,9 @@ def register(mcp):
         d_from = date_type.fromisoformat(date_from)
         d_to = date_type.fromisoformat(date_to)
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
+            config_id = await require_config(db, user, config_id)
+            tenant_id = user.tenant_id
             # Capacity rollup from CapacityTarget over the window
             cap_query = select(
                 func.coalesce(func.sum(CapacityTarget.committed_loads), 0),
@@ -259,7 +262,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_dock_availability(
-        tenant_id: int,
         config_id: int,
         site_id: int,
         date_from: str,
@@ -272,8 +274,12 @@ def register(mcp):
         given site over a planning horizon, without needing direct
         access to TMS's `dock_door` / `appointment` tables.
 
+        Tenant is taken from the authenticated session; ``config_id``
+        is verified to belong to that tenant.
+
         Args:
-            tenant_id, config_id, site_id: canonical scope
+            config_id: supply-chain config scope (must belong to authenticated tenant)
+            site_id: canonical site id
             date_from / date_to: ISO date strings (inclusive bounds)
 
         Returns dict with:
@@ -288,7 +294,7 @@ def register(mcp):
               dicts for the window
             * `as_of_utc`
         """
-        from .db import get_db
+        from .db import get_db, require_config
         from app.models.tms_entities import (
             Appointment, AppointmentStatus, DockDoor,
         )
@@ -296,7 +302,9 @@ def register(mcp):
         d_from = date_type.fromisoformat(date_from)
         d_to = date_type.fromisoformat(date_to)
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
+            config_id = await require_config(db, user, config_id)
+            tenant_id = user.tenant_id
             total_doors = (await db.execute(
                 select(func.count(DockDoor.id)).where(
                     DockDoor.tenant_id == tenant_id,
@@ -383,7 +391,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_active_exceptions(
-        tenant_id: int,
         config_id: int,
         site_id: Optional[int] = None,
         severity_min: Optional[str] = None,
@@ -395,7 +402,7 @@ def register(mcp):
         from carriers / lanes / sites that are currently in trouble.
 
         Args:
-            tenant_id, config_id: canonical scope
+            config_id: supply-chain config scope (must belong to authenticated tenant)
             site_id: optional — restrict to exceptions on shipments
                 touching this site (origin or destination)
             severity_min: optional — one of LOW / MEDIUM / HIGH /
@@ -411,7 +418,7 @@ def register(mcp):
             * `severity_breakdown` — count per severity
             * `as_of_utc`
         """
-        from .db import get_db
+        from .db import get_db, require_config
         from app.models.tms_entities import (
             ExceptionResolutionStatus, ExceptionSeverity, ShipmentException,
             TMSShipment,
@@ -426,7 +433,9 @@ def register(mcp):
         )
         limit = max(1, min(200, int(limit)))
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
+            config_id = await require_config(db, user, config_id)
+            tenant_id = user.tenant_id
             # Base WHERE clause
             conds = [
                 ShipmentException.tenant_id == tenant_id,
@@ -530,7 +539,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_realized_shipments(
-        tenant_id: int,
         config_id: int,
         delivered_after: str,
         delivered_before: str,
@@ -561,8 +569,8 @@ def register(mcp):
         null in that case).
 
         Args:
-            tenant_id: canonical tenant boundary (REQUIRED).
-            config_id: supply-chain config scope. Currently advisory —
+            config_id: supply-chain config scope (must belong to
+                authenticated tenant). Currently advisory for filtering —
                 feedback rows are tenant-scoped, not config-scoped, so
                 this argument is accepted for symmetry with other AD-11
                 tools but does not filter rows. If the schema gains
@@ -606,7 +614,7 @@ def register(mcp):
         when TMS is absent is the caller's responsibility (see
         `cross-plane-mcp-only.md`).
         """
-        from .db import get_db
+        from .db import get_db, require_config
         from azirella_data_model.intersections.supply_transport.feedback import (
             LanePerformanceActuals,
             ServiceCommitmentOutcomes,
@@ -618,7 +626,9 @@ def register(mcp):
         before_dt = datetime.combine(d_before, datetime.max.time())
         limit = max(1, min(5000, int(limit)))
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
+            config_id = await require_config(db, user, config_id)
+            tenant_id = user.tenant_id
             # Outer-join LPA → SCO on (tenant_id, correlation_id).
             # LPA is the driving table; SCO fills in terminal-outcome
             # context where it exists.
@@ -760,7 +770,6 @@ def register(mcp):
 
     @mcp.tool()
     async def propose_service_window(
-        tenant_id: int,
         config_id: int,
         correlation_id: str,
         order_id: str,
@@ -817,6 +826,10 @@ def register(mcp):
         import asyncio
         from datetime import datetime as _dt
         from app.db.session import sync_session_factory
+        from autonomy_app.mcp_auth import (
+            ensure_tenant_owns_config_sync,
+            resolve_mcp_user_sync,
+        )
         from azirella_data_model.intersections.supply_transport import (
             upsert_service_window_promise_if_live,
             PromiseState,
@@ -840,11 +853,18 @@ def register(mcp):
             state = PromiseState.PROPOSED
 
         def _do():
+            # contextvars propagate to asyncio.to_thread workers so the
+            # JWT claims are visible here; resolve + bind RLS on the
+            # sync session, then verify config ownership before the
+            # upsert. The resolved tenant_id is the load-bearing value
+            # we pass into the helper.
             db = sync_session_factory()
             try:
+                user = resolve_mcp_user_sync(db)
+                ensure_tenant_owns_config_sync(db, user.tenant_id, config_id)
                 row = upsert_service_window_promise_if_live(
                     db,
-                    tenant_id=tenant_id,
+                    tenant_id=user.tenant_id,
                     correlation_id=correlation_id,
                     source_plane=Plane.TRANSPORT,
                     order_id=order_id,
@@ -862,17 +882,18 @@ def register(mcp):
                     config_id=config_id,
                 )
                 db.commit()
-                return _swp_to_dict(row) if row else None
+                snapshot = _swp_to_dict(row) if row else None
+                return snapshot, user.tenant_id
             finally:
                 db.close()
 
-        snapshot = await asyncio.to_thread(_do)
+        snapshot, resolved_tenant_id = await asyncio.to_thread(_do)
         now_iso = datetime.utcnow().isoformat() + "Z"
         if snapshot is None:
             return {
                 "status": "skipped",
                 "reason": "supply plane not registered for this tenant",
-                "tenant_id": tenant_id,
+                "tenant_id": resolved_tenant_id,
                 "config_id": config_id,
                 "correlation_id": correlation_id,
                 "as_of_utc": now_iso,
@@ -885,7 +906,6 @@ def register(mcp):
 
     @mcp.tool()
     async def confirm_service_window(
-        tenant_id: int,
         config_id: int,
         correlation_id: str,
         new_state: str,
@@ -905,7 +925,7 @@ def register(mcp):
         not update.
 
         Args:
-            tenant_id, config_id: canonical scope.
+            config_id: supply-chain config scope (must belong to authenticated tenant).
             correlation_id: identifies the existing promise to transition.
             new_state: "FULFILLED" or "MISSED". Other values rejected.
             fulfilled_at: optional ISO datetime. Defaults to now if
@@ -922,6 +942,10 @@ def register(mcp):
         import asyncio
         from datetime import datetime as _dt
         from app.db.session import sync_session_factory
+        from autonomy_app.mcp_auth import (
+            ensure_tenant_owns_config_sync,
+            resolve_mcp_user_sync,
+        )
         from azirella_data_model.intersections.supply_transport import (
             get_service_window_promise,
             PromiseState,
@@ -947,31 +971,34 @@ def register(mcp):
         def _do():
             db = sync_session_factory()
             try:
+                user = resolve_mcp_user_sync(db)
+                ensure_tenant_owns_config_sync(db, user.tenant_id, config_id)
+                tenant_id = user.tenant_id
                 if not PlaneRegistry.is_registered(
                     db, tenant_id, Plane.SUPPLY, config_id=config_id,
                 ):
-                    return ("peer_absent", None)
+                    return ("peer_absent", None, tenant_id)
                 row = get_service_window_promise(
                     db, tenant_id=tenant_id, correlation_id=correlation_id,
                 )
                 if row is None:
-                    return ("not_found", None)
+                    return ("not_found", None, tenant_id)
                 row.promise_state = target.value
                 if fulfilled_dt is not None:
                     row.fulfilled_at = fulfilled_dt
                 row.source_plane_last_updated = Plane.TRANSPORT.value
                 db.commit()
-                return ("ok", _swp_to_dict(row))
+                return ("ok", _swp_to_dict(row), tenant_id)
             finally:
                 db.close()
 
-        status, snapshot = await asyncio.to_thread(_do)
+        status, snapshot, resolved_tenant_id = await asyncio.to_thread(_do)
         now_iso = datetime.utcnow().isoformat() + "Z"
         if status == "peer_absent":
             return {
                 "status": "skipped",
                 "reason": "supply plane not registered for this tenant",
-                "tenant_id": tenant_id,
+                "tenant_id": resolved_tenant_id,
                 "config_id": config_id,
                 "correlation_id": correlation_id,
                 "as_of_utc": now_iso,
@@ -980,7 +1007,7 @@ def register(mcp):
             return {
                 "status": "not_found",
                 "reason": f"no ServiceWindowPromise with correlation_id={correlation_id!r}",
-                "tenant_id": tenant_id,
+                "tenant_id": resolved_tenant_id,
                 "config_id": config_id,
                 "correlation_id": correlation_id,
                 "as_of_utc": now_iso,
@@ -993,7 +1020,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_pending_commitments(
-        tenant_id: int,
         config_id: int,
         lane_id: Optional[str] = None,
         site_id: Optional[str] = None,
@@ -1007,10 +1033,10 @@ def register(mcp):
         own joint promises).
 
         Args:
-            tenant_id, config_id: canonical scope. config_id is
-                advisory (ServiceWindowPromise table is tenant-scoped,
-                not config-scoped); echoed back in `filters_applied`
-                with `config_id_enforced=False`.
+            config_id: supply-chain config scope (must belong to authenticated
+                tenant). config_id is advisory for filtering
+                (ServiceWindowPromise table is tenant-scoped, not config-scoped);
+                echoed back in `filters_applied` with `config_id_enforced=False`.
             lane_id: optional — filter by canonical lane id (string).
             site_id: optional — filter by origin OR destination site
                 (string).
@@ -1026,14 +1052,16 @@ def register(mcp):
 
         Per MIGRATION_REGISTER §3.8.3.
         """
-        from .db import get_db
+        from .db import get_db, require_config
         from azirella_data_model.intersections.supply_transport import (
             ServiceWindowPromise, PromiseState,
         )
 
         limit = max(1, min(2000, int(limit)))
 
-        async with get_db() as db:
+        async with get_db() as (db, user):
+            config_id = await require_config(db, user, config_id)
+            tenant_id = user.tenant_id
             stmt = select(ServiceWindowPromise).where(
                 ServiceWindowPromise.tenant_id == tenant_id,
                 ServiceWindowPromise.promise_state.in_([

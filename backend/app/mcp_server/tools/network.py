@@ -16,7 +16,6 @@ def register(mcp):
 
     @mcp.tool()
     async def get_network_status(
-        tenant_id: int,
         config_id: int,
     ) -> dict:
         """Get the supply chain network topology and health status.
@@ -28,43 +27,21 @@ def register(mcp):
         - Bottleneck indicators: sites with capacity constraints
 
         Args:
-            tenant_id: Organization ID
-            config_id: Supply chain config ID
+            config_id: Supply chain config ID (must belong to authenticated tenant)
 
         Returns:
             Network topology with health indicators.
         """
         from sqlalchemy import text as sql_text
-        from .db import get_db
+        from .db import get_db, require_config
 
-        async with get_db() as db:
-            # Tenant-isolation gate. site / transportation_lane have no
-            # tenant_id column; they scope through supply_chain_configs.
-            # Verify the config belongs to the requesting tenant before
-            # returning rows. Without this check, a request with
-            # mismatched (tenant_id, config_id) would leak the config
-            # owner's topology. Fixed 2026-04-30 typed-empty audit.
-            tenant_check = await db.execute(
-                sql_text(
-                    "SELECT 1 FROM supply_chain_configs "
-                    "WHERE id = :config_id AND tenant_id = :tenant_id"
-                ),
-                {"config_id": config_id, "tenant_id": tenant_id},
-            )
-            if tenant_check.scalar() is None:
-                return {
-                    "site_count": 0,
-                    "lane_count": 0,
-                    "alert_count": 0,
-                    "sites": [],
-                    "lanes": [],
-                    "alerts": [],
-                    "echoed": {
-                        "tenant_id": tenant_id,
-                        "config_id": config_id,
-                        "tenant_isolation_check": "failed",
-                    },
-                }
+        async with get_db() as (db, user):
+            # Tenant-isolation gate. ``require_config`` raises
+            # PermissionError if config_id is not owned by the
+            # authenticated tenant; the FastMCP transport surfaces
+            # that as a structured tool error so callers see a clear
+            # 4xx-style failure rather than a typed-empty rollback.
+            config_id = await require_config(db, user, config_id)
 
             # Sites — column names match canonical Core Site (azirella_data_model
             # .master.config.Site): name, type, master_type. Earlier draft of
