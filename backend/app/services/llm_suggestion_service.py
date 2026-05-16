@@ -3,7 +3,9 @@ LLM-powered suggestion generation service.
 Phase 7 Sprint 3
 
 This service generates intelligent order recommendations using LLM reasoning.
-Supports OpenAI GPT-4 and Anthropic Claude with fallback to heuristic strategies.
+Every LLM call routes through Core's ``azirella_assistant.LLMClient``
+substrate (§3.16) — no direct OpenAI or Anthropic SDK calls.
+Falls back to heuristic strategies when the substrate is unavailable.
 """
 
 from typing import Dict, Any, Optional, List
@@ -37,32 +39,45 @@ class LLMSuggestionService:
         logger.info(f"LLM service initialized: {provider}/{model}")
 
     def _init_client(self):
-        """Initialize OpenAI-compatible async client (lazy loading).
+        """Lazily instantiate the LLM substrate client.
 
-        Works with vLLM, Ollama, or any OpenAI-compatible API.
+        Routes through Core's ``azirella_assistant`` substrate (§3.16) —
+        no direct OpenAI / Anthropic SDK use. ``OpenAICompatibleClient``
+        wraps vLLM / Ollama / any OpenAI-compatible endpoint;
+        ``AnthropicClient`` is the native Messages-API transport.
         """
         if self._client_initialized:
             return
 
         try:
-            import os
-            from openai import AsyncOpenAI
-            kwargs = {}
-            base_url = os.getenv("LLM_API_BASE")
-            if base_url:
-                kwargs["base_url"] = base_url
-            api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "not-needed"
-            kwargs["api_key"] = api_key
-            self.client = AsyncOpenAI(**kwargs)
-            logger.info(f"LLM client initialized (base_url={base_url or 'default'})")
-            self._client_initialized = True
-
+            from azirella_assistant import (
+                AnthropicClient,
+                OpenAICompatibleClient,
+                Workload,
+            )
         except ImportError as e:
-            logger.error(f"Failed to import openai library: {e}")
+            logger.error(f"Failed to import azirella_assistant: {e}")
             logger.warning("LLM suggestions will fall back to heuristic mode")
             self.client = None
+            return
+
+        try:
+            if self.provider == "anthropic":
+                self.client = AnthropicClient(
+                    workload=Workload.CHAT, model=self.model,
+                )
+            else:
+                # provider == "openai" / "openai-compatible" / fallback
+                self.client = OpenAICompatibleClient(
+                    workload=Workload.CHAT, model=self.model,
+                )
+            logger.info(
+                "LLM client initialized via substrate (provider=%s model=%s)",
+                self.provider, self.model,
+            )
+            self._client_initialized = True
         except Exception as e:
-            logger.error(f"Failed to initialize LLM client: {e}")
+            logger.error(f"Failed to initialize LLM substrate client: {e}")
             self.client = None
 
     async def generate_suggestion(
@@ -291,50 +306,44 @@ IMPORTANT:
         return "\n".join(lines)
 
     async def _call_openai(self, prompt: str) -> str:
-        """Call OpenAI API."""
+        """Call OpenAI-compat endpoint via Core substrate.
+
+        Substrate ``complete()`` doesn't expose response_format, so JSON
+        is implicit (prompt-induced); ``_parse_response`` already
+        handles fenced + raw JSON output.
+        """
+        from azirella_assistant import ChatMessage
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            response = await self.client.complete(
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a supply chain optimization expert. Use the provided knowledge base context to ground your recommendations in established supply chain theory and best practices."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
+                    ChatMessage(role="system", content=(
+                        "You are a supply chain optimization expert. Use the "
+                        "provided knowledge base context to ground your "
+                        "recommendations in established supply chain theory "
+                        "and best practices."
+                    )),
+                    ChatMessage(role="user", content=prompt),
                 ],
                 temperature=0.7,
                 max_tokens=1000,
-                response_format={"type": "json_object"},  # Force JSON output
             )
-
-            return response.choices[0].message.content
-
+            return response.content or ""
         except Exception as e:
-            logger.error(f"OpenAI API call failed: {e}")
+            logger.error(f"LLM (openai-compat) call failed: {e}")
             raise
 
     async def _call_anthropic(self, prompt: str) -> str:
-        """Call Anthropic Claude API."""
+        """Call Anthropic Messages API via Core substrate."""
+        from azirella_assistant import ChatMessage
         try:
-            response = await self.client.messages.create(
-                model=self.model,
+            response = await self.client.complete(
+                messages=[ChatMessage(role="user", content=prompt)],
                 max_tokens=1000,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
                 temperature=0.7,
             )
-
-            return response.content[0].text
-
+            return response.content or ""
         except Exception as e:
-            logger.error(f"Anthropic API call failed: {e}")
+            logger.error(f"LLM (anthropic) call failed: {e}")
             raise
 
     def _parse_response(self, response: str) -> Dict[str, Any]:
@@ -506,32 +515,38 @@ IMPORTANT:
             return self._fallback_conversation_response(context)
 
     async def _call_openai_conversation(self, prompt: str, kb_context: str = "") -> str:
-        """Call OpenAI for conversation response."""
-        system_msg = "You are a helpful supply chain advisor. Answer the user's question directly and concisely."
+        """Call OpenAI-compat endpoint via Core substrate for conversation."""
+        from azirella_assistant import ChatMessage
+        system_msg = (
+            "You are a helpful supply chain advisor. Answer the user's "
+            "question directly and concisely."
+        )
         if kb_context:
-            system_msg += f"\n\nUse this reference knowledge to inform your response:\n{kb_context}"
-        response = await self.client.chat.completions.create(
-            model=self.model,
+            system_msg += (
+                f"\n\nUse this reference knowledge to inform your "
+                f"response:\n{kb_context}"
+            )
+        response = await self.client.complete(
             messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": prompt}
+                ChatMessage(role="system", content=system_msg),
+                ChatMessage(role="user", content=prompt),
             ],
             temperature=0.7,
             max_tokens=2000,
         )
-        return response.choices[0].message.content
+        return response.content or ""
 
     async def _call_anthropic_conversation(self, prompt: str, kb_context: str = "") -> str:
-        """Call Anthropic for conversation response."""
+        """Call Anthropic Messages API via Core substrate for conversation."""
+        from azirella_assistant import ChatMessage
         full_prompt = prompt
         if kb_context:
             full_prompt = f"Reference Knowledge:\n{kb_context}\n\n{prompt}"
-        response = await self.client.messages.create(
-            model=self.model,
+        response = await self.client.complete(
+            messages=[ChatMessage(role="user", content=full_prompt)],
             max_tokens=500,
-            messages=[{"role": "user", "content": full_prompt}],
         )
-        return response.content[0].text
+        return response.content or ""
 
     def _parse_conversation_response(self, response: str) -> Dict[str, Any]:
         """Parse JSON conversation response from LLM."""

@@ -23,7 +23,11 @@ import numpy as np
 import json
 
 try:
-    import anthropic
+    from azirella_assistant import (
+        AnthropicClient,
+        ChatMessage,
+        Workload,
+    )
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
@@ -65,15 +69,21 @@ class ClaudeSchemaAssistant:
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        """Initialize Claude assistant."""
+        """Initialize Claude assistant via Core substrate (§3.16).
+
+        Routes through ``azirella_assistant.AnthropicClient`` — no
+        direct ``anthropic`` SDK use. SDK-direct usage is banned in
+        plane code by the §3.16 audit guard.
+        """
         if not ANTHROPIC_AVAILABLE:
-            logger.warning("anthropic package not available. AI assistance disabled.")
+            logger.warning(
+                "azirella_assistant not available. AI assistance disabled.")
             self.client = None
             return
 
         if not api_key:
             import os
-            api_key = os.getenv("ANTHROPIC_API_KEY")
+            api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY")
 
         if not api_key:
             logger.warning("No Anthropic API key found. AI assistance disabled.")
@@ -81,11 +91,34 @@ class ClaudeSchemaAssistant:
             return
 
         try:
-            self.client = anthropic.Anthropic(api_key=api_key)
-            logger.info("Claude assistant initialized")
+            self.client = AnthropicClient(
+                workload=Workload.CHAT, api_key=api_key,
+            )
+            logger.info("Claude assistant initialized via Core substrate")
         except Exception as e:
             logger.error(f"Failed to initialize Claude: {e}")
             self.client = None
+
+    @staticmethod
+    def _run_complete(coro):
+        """Bridge async substrate to this class's sync API.
+
+        ``ClaudeSchemaAssistant`` runs inside the synchronous SAP
+        ingestion pipeline (``sync_scheduler_service._run_sync`` →
+        ``IntelligentSAPLoader.load_table`` → validator). The substrate
+        is async-only, so we drive it from a fresh event loop on the
+        calling thread. Safe because this code path is never invoked
+        from inside an existing event loop.
+        """
+        import asyncio
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+        # Inside a loop — fall back to a worker thread + its own loop.
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(asyncio.run, coro).result()
 
     def analyze_z_fields(
         self,
@@ -143,13 +176,12 @@ Respond in JSON format:
 }}"""
 
         try:
-            message = self.client.messages.create(
+            response = self._run_complete(self.client.complete(
+                messages=[ChatMessage(role="user", content=prompt)],
                 model="claude-sonnet-4-5-20250929",
                 max_tokens=2000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            response_text = message.content[0].text
+            ))
+            response_text = response.content or ""
 
             # Extract JSON from response
             start_idx = response_text.find("{")
@@ -164,7 +196,7 @@ Respond in JSON format:
                 return {}
 
         except Exception as e:
-            logger.error(f"Error calling Claude API: {e}")
+            logger.error(f"Error calling Claude substrate: {e}")
             return {}
 
     def suggest_missing_field_mapping(
@@ -229,13 +261,12 @@ Respond in JSON format:
 }}"""
 
         try:
-            message = self.client.messages.create(
+            response = self._run_complete(self.client.complete(
+                messages=[ChatMessage(role="user", content=prompt)],
                 model="claude-sonnet-4-5-20250929",
                 max_tokens=1500,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            response_text = message.content[0].text
+            ))
+            response_text = response.content or ""
 
             # Extract JSON
             start_idx = response_text.find("{")
@@ -253,10 +284,10 @@ Respond in JSON format:
                 }
 
         except Exception as e:
-            logger.error(f"Error calling Claude API: {e}")
+            logger.error(f"Error calling Claude substrate: {e}")
             return {
                 "strategy": "default",
-                "description": "Use default due to API error",
+                "description": "Use default due to substrate error",
                 "confidence": "LOW"
             }
 
@@ -304,13 +335,12 @@ Respond in JSON format:
 }}"""
 
         try:
-            message = self.client.messages.create(
+            response = self._run_complete(self.client.complete(
+                messages=[ChatMessage(role="user", content=prompt)],
                 model="claude-sonnet-4-5-20250929",
                 max_tokens=1000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            response_text = message.content[0].text
+            ))
+            response_text = response.content or ""
             start_idx = response_text.find("{")
             end_idx = response_text.rfind("}") + 1
 
@@ -325,7 +355,7 @@ Respond in JSON format:
                 }
 
         except Exception as e:
-            logger.error(f"Error calling Claude API: {e}")
+            logger.error(f"Error calling Claude substrate: {e}")
             return {"strategy": "coerce", "confidence": "LOW"}
 
 

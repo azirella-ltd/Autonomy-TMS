@@ -25,8 +25,6 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from datetime import datetime
 
-from openai import OpenAI
-
 from app.services.synthetic_data_generator import (
     CompanyArchetype,
     AgentMode,
@@ -366,25 +364,25 @@ class SyntheticDataWizard:
     """
 
     def __init__(self, model: str = None):
-        """Initialize the wizard with OpenAI-compatible client."""
-        self.model = model or os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "qwen3-8b"
+        """Initialize the wizard with a Core LLM-substrate client.
 
-        api_key = (
-            os.getenv("LLM_API_KEY")
-            or os.getenv("OPENAI_API_KEY")
-            or "not-needed"
-        )
+        Routes through ``azirella_assistant.OpenAICompatibleClient``
+        (§3.16) — env vars (``LLM_API_BASE``, ``LLM_API_KEY``,
+        ``LLM_MODEL_NAME``) resolved inside the substrate, not here.
+        """
+        self.model = model or os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "qwen3-8b"
         base_url = os.getenv("LLM_API_BASE")
-        kwargs: dict = {"api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
+        api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "not-needed"
         if not base_url and api_key == "not-needed":
             raise ValueError(
                 "No LLM provider configured. Set LLM_API_BASE for local LLM "
                 "(vLLM/Ollama) or LLM_API_KEY for a hosted API."
             )
 
-        self.client = OpenAI(**kwargs)
+        from azirella_assistant import OpenAICompatibleClient, Workload
+        self.client = OpenAICompatibleClient(
+            workload=Workload.CHAT, model=self.model,
+        )
 
         # In-memory session storage (should be replaced with Redis in production)
         self._sessions: Dict[str, WizardState] = {}
@@ -531,29 +529,31 @@ class SyntheticDataWizard:
             except Exception as e:
                 logger.debug(f"RAG context not available for wizard: {e}")
 
-        messages = [{"role": "system", "content": system_prompt}]
-
-        # Add conversation history
-        for msg in state.messages[-10:]:  # Keep last 10 messages for context
-            messages.append(msg)
-
-        # Add current user message if provided
+        from azirella_assistant import ChatMessage
+        chat_messages: List[ChatMessage] = [
+            ChatMessage(role="system", content=system_prompt)
+        ]
+        # Add conversation history (last 10 turns).
+        for msg in state.messages[-10:]:
+            chat_messages.append(
+                ChatMessage(role=msg["role"], content=msg.get("content", ""))
+            )
+        # Add current user message if provided.
         if user_message:
-            messages.append({"role": "user", "content": user_message})
+            chat_messages.append(ChatMessage(role="user", content=user_message))
         else:
-            # For initial message, prompt the assistant to start
-            messages.append({"role": "user", "content": "Please start the wizard and guide me."})
+            chat_messages.append(ChatMessage(
+                role="user",
+                content="Please start the wizard and guide me.",
+            ))
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
+            response = await self.client.complete(
+                messages=chat_messages,
                 temperature=0.7,
                 max_tokens=1000,
-                response_format={"type": "json_object"}
             )
-
-            content = response.choices[0].message.content
+            content = response.content or "{}"
             return json.loads(content)
 
         except json.JSONDecodeError as e:
