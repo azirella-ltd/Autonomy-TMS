@@ -86,6 +86,42 @@ class ProvisioningService:
         if step_key not in ConfigProvisioningStatus.STEPS:
             return {"error": f"Unknown step: {step_key}"}
 
+        # Plane-licensing gate — MIGRATION_REGISTER §1.17 Phase 3.
+        # Consults Core's canonical
+        # ``ConfigProvisioningStatus.STEP_REQUIRED_PLANES`` via
+        # ``step_is_licensed(step_key, codes)`` (OR-semantics:
+        # substrate steps always run; plane-specific steps run when
+        # at least one of their required planes is licensed). The
+        # SCP service applies the same gate (commit 731655ba); both
+        # planes now share the Core source of truth.
+        tenant_id = await self._resolve_tenant_id(config_id)
+        if tenant_id:
+            from app.db.session import sync_session_factory
+            from azirella_data_model.planes import licensed_plane_codes
+
+            sync_db = sync_session_factory()
+            try:
+                licensed = licensed_plane_codes(sync_db, tenant_id, config_id)
+            finally:
+                sync_db.close()
+            if not ConfigProvisioningStatus.step_is_licensed(step_key, licensed):
+                required = ConfigProvisioningStatus.step_required_planes(step_key)
+                setattr(status, f"{step_key}_status", "not_licensed")
+                setattr(status, f"{step_key}_at", datetime.utcnow())
+                setattr(
+                    status,
+                    f"{step_key}_error",
+                    f"Plane(s) not licensed: required={sorted(required)}, "
+                    f"licensed={sorted(licensed)}",
+                )
+                await self.db.commit()
+                return {
+                    "status": "not_licensed",
+                    "step": step_key,
+                    "required_planes": sorted(required),
+                    "licensed_planes": sorted(licensed),
+                }
+
         # Check dependencies
         deps = ConfigProvisioningStatus.STEP_DEPENDS.get(step_key, [])
         for dep in deps:
