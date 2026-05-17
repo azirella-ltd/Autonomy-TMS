@@ -274,7 +274,7 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
 
     # Conformal auto-calibration (every 12h at 04:15 and 16:15)
     # Refreshes P10/P50/P90 intervals for TMS TRMs (capacity_buffer,
-    # demand_sensing, equipment_reposition, shipment_tracking) from
+    # load_volume_sensing, equipment_reposition, shipment_tracking) from
     # outcome-measured agent_decisions. Only variables with ≥20 samples
     # get recalibrated — smaller buckets log-and-skip rather than
     # substitute a default (no-fallbacks invariant).

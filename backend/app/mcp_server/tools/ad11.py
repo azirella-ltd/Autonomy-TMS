@@ -552,7 +552,7 @@ def register(mcp):
         + ServiceCommitmentOutcomes rows.
 
         Closes the SCP-side feedback loop (forecast retraining, FVA
-        metrics, demand-sensing TRM updates, inventory-buffer learning)
+        metrics, load-volume-sensing TRM updates, inventory-buffer learning)
         without a direct DB read against TMS. Per Autonomy-Core
         MIGRATION_REGISTER §3.8.1.
 

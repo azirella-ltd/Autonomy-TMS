@@ -671,15 +671,15 @@ class SignalIngestionService:
         """No-op in TMS after SCP-fork ForecastAdjustmentTRM retirement.
 
         The SCP-era ForecastAdjustmentTRM routed SKU-level demand-forecast
-        overrides from external signals. TMS's DemandSensingTRM is the
+        overrides from external signals. TMS's LoadVolumeSensingTRM is the
         transport-plane analog (ShippingForecast.forecast_loads, not
-        per-SKU). Wiring the signal stream into DemandSensingTRM is
+        per-SKU). Wiring the signal stream into LoadVolumeSensingTRM is
         item 1.13 scope. Until then this method returns None so the
         caller treats the signal as "no TRM-driven adjustment".
         """
         logger.debug(
             "Signal %s targets forecast_adjustment — SCP-fork TRM retired; "
-            "TMS DemandSensingTRM routing pending (item 1.13).",
+            "TMS LoadVolumeSensingTRM routing pending (item 1.13).",
             getattr(signal, "signal_id", "<unknown>"),
         )
         return None

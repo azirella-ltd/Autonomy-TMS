@@ -234,7 +234,7 @@ class ForecastAdjustmentState:
     product_id: str
     site_id: str
     current_forecast: float
-    signal_type: str              # email, voice, market_intel, demand_sensing
+    signal_type: str              # email, voice, market_intel, load_volume_sensing
     signal_direction: str         # increase, decrease, unchanged
     signal_magnitude_pct: float   # suggested adjustment percentage
     signal_confidence: float      # 0.0-1.0

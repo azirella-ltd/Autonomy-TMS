@@ -12,7 +12,7 @@ The output writes into TMS tables only — source SCP rows are read-only.
 Produces training-grade data for all 11 TMS TRM behavioral-cloning runs:
   CapacityPromiseState ← lane/date capacity snapshot
   ShipmentTrackingState ← tracking events + ETA drift
-  DemandSensingState ← rolling lane volumes + forecast bias
+  LoadVolumeSensingState ← rolling lane volumes + forecast bias
   CapacityBufferState ← tender reject rate + demand CV rollups
   ExceptionManagementState ← ShipmentException rows
   FreightProcurementState ← FreightTender waterfall

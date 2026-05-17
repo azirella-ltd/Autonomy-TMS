@@ -429,12 +429,12 @@ class SlackSignalService:
         sites = signal.resolved_site_ids or []
 
         # SCP-fork ForecastAdjustmentTRM routing removed 2026-04-23.
-        # TMS DemandSensingTRM is the transport-plane analog; Slack-signal
-        # → DemandSensingTRM routing is item 1.13 scope.
+        # TMS LoadVolumeSensingTRM is the transport-plane analog; Slack-signal
+        # → LoadVolumeSensingTRM routing is item 1.13 scope.
         if "forecast_adjustment" in trm_types:
             logger.debug(
                 "Slack signal %d targets forecast_adjustment — SCP-fork TRM retired; "
-                "TMS DemandSensingTRM routing pending (item 1.13).",
+                "TMS LoadVolumeSensingTRM routing pending (item 1.13).",
                 signal.id,
             )
 

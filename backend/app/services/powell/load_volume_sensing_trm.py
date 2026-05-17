@@ -1,8 +1,12 @@
 """
-DemandSensingTRM — Short-Horizon Demand Adjustment (SENSE phase)
+LoadVolumeSensingTRM — Short-Horizon Load-Volume Forecast Adjustment (SENSE phase)
 
 Eighth TMS-native TRM. Fills out the SENSE phase alongside
 CapacityPromiseTRM (item 1) and ShipmentTrackingTRM (item 2).
+
+TMS-side sensing of *load volume* (loads/lane/period) — distinct from
+DP's DemandSensing domain which senses *product demand*. Renamed from
+DemandSensingTRM on 2026-05-17 to disambiguate.
 
 Evaluates shipping-volume forecasts (`ShippingForecast` rows) against
 actual order-pipeline velocity + trailing actuals + structural bias
@@ -37,7 +41,7 @@ Not yet sourced (honest defaults):
 No persistence in v1 — same observational pattern as ShipmentTrackingTRM.
 MODIFY decisions are logged at warning level with the proposed
 adjustment; a forecast mutation path lands alongside PREPARE.3's
-dual-write to core.agent_decisions with decision_type=DEMAND_SENSING.
+dual-write to core.agent_decisions with decision_type=LOAD_VOLUME_SENSING.
 """
 from __future__ import annotations
 
@@ -61,12 +65,12 @@ logger = logging.getLogger(__name__)
 _PERIOD_DAYS = {"DAY": 1, "WEEK": 7, "MONTH": 30}
 
 
-class DemandSensingTRM:
+class LoadVolumeSensingTRM:
     """
     Evaluates shipping-volume forecasts and detects demand-side bias.
 
     Lifecycle:
-        trm = DemandSensingTRM(db_session, tenant_id, config_id)
+        trm = LoadVolumeSensingTRM(db_session, tenant_id, config_id)
         decisions = trm.evaluate_pending_forecasts()
 
     Unlike LoadBuild / BrokerRouting, this TRM does NOT mutate the
@@ -86,15 +90,15 @@ class DemandSensingTRM:
         from autonomy_tms_heuristics.library.dispatch import (
             compute_tms_decision,
         )
-        from autonomy_tms_heuristics.library.base import (
-            DemandSensingState,
+        from autonomy_tms_heuristics.library import (
+            LoadVolumeSensingState,
         )
         self._compute_decision = compute_tms_decision
-        self._StateClass = DemandSensingState
+        self._StateClass = LoadVolumeSensingState
 
     def load_checkpoint(self, checkpoint_path: str) -> bool:
         """Load a trained BC checkpoint. Returns True on success."""
-        ckpt = load_bc_checkpoint(checkpoint_path, "demand_sensing")
+        ckpt = load_bc_checkpoint(checkpoint_path, "load_volume_sensing")
         if ckpt is None:
             return False
         self._model = ckpt
@@ -123,7 +127,7 @@ class DemandSensingTRM:
         return list(self.db.execute(query).scalars().all())
 
     def evaluate_forecast(self, forecast: ShippingForecast) -> Optional[Dict[str, Any]]:
-        """Evaluate demand-sensing decision for one forecast. Never mutates it."""
+        """Evaluate load-volume-sensing decision for one forecast. Never mutates it."""
         state = self._build_state(forecast)
 
         action_name_map = {
@@ -166,11 +170,11 @@ class DemandSensingTRM:
                 }
             except Exception as e:
                 logger.warning(
-                    "DemandSensing BC inference failed (falling back "
+                    "LoadVolumeSensing BC inference failed (falling back "
                     "to heuristic): %s", e,
                 )
 
-        decision = self._compute_decision("demand_sensing", state)
+        decision = self._compute_decision("load_volume_sensing", state)
 
         action_name = action_name_map.get(decision.action, "UNKNOWN")
 
@@ -217,7 +221,7 @@ class DemandSensingTRM:
         action_name = result["action_name"]
         if action_name == "MODIFY":
             logger.warning(
-                "DemandSensing MODIFY: forecast %s (lane=%s, %s) — %s "
+                "LoadVolumeSensing MODIFY: forecast %s (lane=%s, %s) — %s "
                 "(Δ=%+.1f, proposed=%.1f, urg=%.2f)",
                 forecast.id,
                 forecast.lane_id,
@@ -229,7 +233,7 @@ class DemandSensingTRM:
             )
         else:
             logger.info(
-                "DemandSensing %s: forecast %s (lane=%s, loads=%.1f, urg=%.2f)",
+                "LoadVolumeSensing %s: forecast %s (lane=%s, loads=%.1f, urg=%.2f)",
                 action_name,
                 forecast.id,
                 forecast.lane_id,
@@ -242,7 +246,7 @@ class DemandSensingTRM:
             self.db,
             tenant_id=self.tenant_id,
             config_id=self.config_id,
-            trm_type="demand_sensing",
+            trm_type="load_volume_sensing",
             result=result,
             item_code=f"forecast-{forecast.id}",
             item_name=f"lane {forecast.lane_id} ({forecast.mode or 'ANY'})",
@@ -268,7 +272,7 @@ class DemandSensingTRM:
     # ── State-builder helpers ────────────────────────────────────────────
 
     def _build_state(self, forecast: ShippingForecast):
-        """Construct DemandSensingState from ShippingForecast + Load history."""
+        """Construct LoadVolumeSensingState from ShippingForecast + Load history."""
         period_days = _PERIOD_DAYS.get(
             (forecast.period_type or "WEEK").upper(), self.DEFAULT_PERIOD_DAYS
         )

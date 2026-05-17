@@ -314,7 +314,7 @@ class P44TrackingService:
 
         Fetches congestion/dwell data from p44 for ocean-leg ports and
         updates the corresponding LaneProfile entries' disruption_frequency
-        and congestion_risk_score fields. The DemandSensingTRM and
+        and congestion_risk_score fields. The LoadVolumeSensingTRM and
         CapacityBufferTRM already read these fields — this gives them
         real-time signal quality from p44.
 

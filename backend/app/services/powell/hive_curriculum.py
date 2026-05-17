@@ -1090,7 +1090,7 @@ class ForecastAdjustmentCurriculum(TRMCurriculumBase):
         else:
             direction_str = "unchanged"
 
-        signal_types = ["email", "voice", "market_intel", "demand_sensing"]
+        signal_types = ["email", "voice", "market_intel", "load_volume_sensing"]
         signal_type = signal_types[np.random.randint(0, len(signal_types))]
 
         current_forecast = max(1.0, s[3] * 1000.0)

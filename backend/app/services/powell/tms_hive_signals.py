@@ -9,7 +9,7 @@ These enable the 11 TMS TRM agents to communicate asynchronously:
   - Dock signals: appointment conflicts, dwell time alerts
 
 Signal flow example (freight procurement cycle):
-1. DemandSensingTRM emits VOLUME_SURGE on lane →
+1. LoadVolumeSensingTRM emits VOLUME_SURGE on lane →
 2. CapacityBufferTRM reads, emits CAPACITY_GAP →
 3. FreightProcurementTRM reads, emits TENDER_SENT →
 4. ShipmentTrackingTRM reads, monitors execution →

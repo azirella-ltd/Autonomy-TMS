@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 _TRM_TO_DECISION_TYPE = {
     "capacity_promise": "CAPACITY_PROMISE",
     "shipment_tracking": "SHIPMENT_TRACKING",
-    "demand_sensing": "DEMAND_SENSING",
+    "load_volume_sensing": "LOAD_VOLUME_SENSING",
     "capacity_buffer": "CAPACITY_BUFFER",
     "exception_management": "EXCEPTION_MANAGEMENT",
     "freight_procurement": "FREIGHT_PROCUREMENT",
@@ -87,7 +87,7 @@ def record_trm_decision(
     Args:
         db: sync SQLAlchemy session (commits on this session).
         tenant_id: tenant owning the trigger entity.
-        trm_type: canonical key (e.g. "demand_sensing"). See
+        trm_type: canonical key (e.g. "load_volume_sensing"). See
             `_TRM_TO_DECISION_TYPE` for the full set.
         result: the TRM service's `evaluate_and_log` / `evaluate_*`
             return dict. Must contain at least `action_name`,

@@ -385,7 +385,7 @@ def add_tms_decision_types(db: Session):
     tms_types = [
         "LOAD_BUILD", "FREIGHT_PROCUREMENT", "SHIPMENT_TRACKING",
         "DOCK_SCHEDULING", "CAPACITY_PROMISE", "EQUIPMENT_REPOSITION",
-        "BROKER_ROUTING", "INTERMODAL_TRANSFER", "DEMAND_SENSING",
+        "BROKER_ROUTING", "INTERMODAL_TRANSFER", "LOAD_VOLUME_SENSING",
         "CAPACITY_BUFFER", "EXCEPTION_MANAGEMENT",
     ]
     existing = db.execute(text(
@@ -450,7 +450,7 @@ def seed_agent_decisions(db: Session, target=120):
             ("Carrier breakdown — Werner", "Werner tractor breakdown Lane 24 (CDC_WEST→SLC). Load stranded.", "Knight-Swift rescue unit dispatched. ETA 3 hours."),
             ("Refused delivery — CUST_MES", "CUST_MES refused partial delivery (18 of 22 pallets)", "Investigating origin. Return-to-shipper in progress."),
         ]),
-        ("DEMAND_SENSING", [
+        ("LOAD_VOLUME_SENSING", [
             ("Volume spike — Portland metro", "PDX+EUG+SAL volumes up 15% vs 4-week average", "Back-to-school season. Recommend capacity pre-commit Weeks 17-19."),
         ]),
         ("CAPACITY_BUFFER", [

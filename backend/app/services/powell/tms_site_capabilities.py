@@ -26,7 +26,7 @@ _FACILITY_TRM_MAP = {
         "lane_volume_forecast", # Forecast customer-facing lane volume (Execution orchestrator)
         "capacity_promise",     # Promise capacity to orders
         "shipment_tracking",    # Track outbound shipments
-        "demand_sensing",       # Adjust forecasts for signals / bias
+        "load_volume_sensing",  # Adjust load-volume forecasts for signals / bias
         "capacity_buffer",      # Buffer capacity above forecast
         "exception_management", # Handle outbound exceptions
         "freight_procurement",  # Tender loads to carriers
@@ -40,7 +40,7 @@ _FACILITY_TRM_MAP = {
     "terminal": frozenset({
         "capacity_promise",     # Capacity through terminal
         "shipment_tracking",    # Track in-terminal shipments
-        "demand_sensing",       # Forecast terminal throughput
+        "load_volume_sensing",  # Forecast terminal throughput
         "capacity_buffer",      # Terminal capacity buffers
         "exception_management", # Handle transload exceptions
         "freight_procurement",  # Outbound leg procurement
@@ -64,7 +64,7 @@ _FACILITY_TRM_MAP = {
     # Consignee / Destination: inbound receiving
     "consignee": frozenset({
         "shipment_tracking",    # Track inbound shipments
-        "demand_sensing",       # Forecast inbound volume
+        "load_volume_sensing",  # Forecast inbound volume
         "exception_management", # Handle delivery exceptions
         "dock_scheduling",      # Manage receiving dock
     }),  # 4 — receiving operations only

@@ -6990,10 +6990,11 @@ api.include_router(dock_scheduling_router, tags=["dock-scheduling"])
 from app.api.endpoints.load_build import router as load_build_router
 api.include_router(load_build_router, tags=["load-build"])
 
-# Demand Sensing TRM — SENSE-phase short-horizon forecast adjustment
-# (Trigg's tracking signal + order-pipeline velocity + asymmetric loss)
-from app.api.endpoints.demand_sensing import router as demand_sensing_trm_router
-api.include_router(demand_sensing_trm_router, tags=["demand-sensing-trm"])
+# Load Volume Sensing TRM — SENSE-phase short-horizon load-volume forecast
+# adjustment (Trigg's tracking signal + order-pipeline velocity + asymmetric
+# loss). TMS-side load-volume sensing; distinct from DP's product DemandSensing.
+from app.api.endpoints.load_volume_sensing import router as load_volume_sensing_trm_router
+api.include_router(load_volume_sensing_trm_router, tags=["load-volume-sensing-trm"])
 
 # Capacity Buffer TRM — ASSESS-phase lane-level capacity buffer sizing
 # (conformal P90-P50 + tender reject rate + newsvendor-inspired multiplier)

@@ -1,5 +1,9 @@
 """
-Demand Sensing TRM API — Short-Horizon Forecast Adjustment (SENSE phase)
+Load Volume Sensing TRM API — Short-Horizon Load-Volume Forecast Adjustment
+
+TMS-side sensing of *load volume* (loads/lane/period) — distinct from
+DP's DemandSensing domain which senses *product demand*. Renamed from
+demand_sensing on 2026-05-17 to disambiguate.
 
 Eighth TMS-native TRM endpoint. Fills out the SENSE phase alongside
 `/capacity-promise-trm/*` and `/shipment-tracking-trm/*`.
@@ -10,9 +14,9 @@ forecast into ACCEPT (nominal) or MODIFY (adjust by proposed Δ). No
 ShippingForecast mutation — demand sensing is observational in v1.
 
 Endpoints:
-  POST /demand-sensing-trm/evaluate/{forecast_id} — evaluate one + log
-  POST /demand-sensing-trm/evaluate-all           — evaluate every pending forecast
-  GET  /demand-sensing-trm/status/{forecast_id}   — stateless preview
+  POST /load-volume-sensing-trm/evaluate/{forecast_id} — evaluate one + log
+  POST /load-volume-sensing-trm/evaluate-all           — evaluate every pending forecast
+  GET  /load-volume-sensing-trm/status/{forecast_id}   — stateless preview
 """
 from __future__ import annotations
 
@@ -31,10 +35,10 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/demand-sensing-trm", tags=["demand-sensing-trm"])
+router = APIRouter(prefix="/load-volume-sensing-trm", tags=["load-volume-sensing-trm"])
 
 
-class DemandSensingResult(BaseModel):
+class LoadVolumeSensingResult(BaseModel):
     forecast_id: int
     lane_id: Optional[int] = None
     forecast_date: Optional[str] = None
@@ -54,21 +58,21 @@ class DemandSensingResult(BaseModel):
     decision_method: str = "heuristic"
 
 
-def _result_to_schema(result: dict) -> DemandSensingResult:
+def _result_to_schema(result: dict) -> LoadVolumeSensingResult:
     """Filter dict to fields the pydantic schema accepts."""
-    return DemandSensingResult(**{
+    return LoadVolumeSensingResult(**{
         k: v for k, v in result.items()
-        if k in DemandSensingResult.model_fields
+        if k in LoadVolumeSensingResult.model_fields
     })
 
 
-@router.post("/evaluate/{forecast_id}", response_model=DemandSensingResult)
-async def evaluate_demand_sensing(
+@router.post("/evaluate/{forecast_id}", response_model=LoadVolumeSensingResult)
+async def evaluate_load_volume_sensing(
     forecast_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Evaluate demand-sensing for one ShippingForecast and emit the log line.
+    """Evaluate load-volume-sensing for one ShippingForecast and emit the log line.
 
     No ShippingForecast mutation — demand sensing is observational.
     """
@@ -90,20 +94,20 @@ async def evaluate_demand_sensing(
             if not cfg or cfg.tenant_id != user.tenant_id:
                 raise HTTPException(404, f"ShippingForecast {forecast_id} not found")
 
-        from app.services.powell.demand_sensing_trm import DemandSensingTRM
+        from app.services.powell.load_volume_sensing_trm import LoadVolumeSensingTRM
         effective_tenant_id = (
             user.tenant_id if user.tenant_id is not None else forecast.config_id
         )
-        trm = DemandSensingTRM(sync_db, effective_tenant_id, forecast.config_id)
+        trm = LoadVolumeSensingTRM(sync_db, effective_tenant_id, forecast.config_id)
 
         result = trm.evaluate_and_log(forecast)
         if not result:
-            raise HTTPException(422, "No demand-sensing decision produced")
+            raise HTTPException(422, "No load-volume-sensing decision produced")
 
         return _result_to_schema(result)
 
 
-@router.post("/evaluate-all", response_model=List[DemandSensingResult])
+@router.post("/evaluate-all", response_model=List[LoadVolumeSensingResult])
 async def evaluate_all_forecasts(
     config_id: int = Query(..., description="SupplyChainConfig id"),
     as_of: Optional[date] = Query(
@@ -132,9 +136,9 @@ async def evaluate_all_forecasts(
         if user.tenant_id is not None and cfg.tenant_id != user.tenant_id:
             raise HTTPException(403, "Config belongs to a different tenant")
 
-        from app.services.powell.demand_sensing_trm import DemandSensingTRM
+        from app.services.powell.load_volume_sensing_trm import LoadVolumeSensingTRM
         effective_tenant_id = user.tenant_id if user.tenant_id is not None else cfg.tenant_id
-        trm = DemandSensingTRM(sync_db, effective_tenant_id, config_id)
+        trm = LoadVolumeSensingTRM(sync_db, effective_tenant_id, config_id)
 
         results = trm.evaluate_pending_forecasts(
             plan_version=plan_version, as_of=as_of
@@ -142,13 +146,13 @@ async def evaluate_all_forecasts(
         return [_result_to_schema(r) for r in results]
 
 
-@router.get("/status/{forecast_id}", response_model=DemandSensingResult)
-async def get_demand_sensing_status(
+@router.get("/status/{forecast_id}", response_model=LoadVolumeSensingResult)
+async def get_load_volume_sensing_status(
     forecast_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Live demand-sensing preview for any ShippingForecast. Pure read — no log."""
+    """Live load-volume-sensing preview for any ShippingForecast. Pure read — no log."""
     from app.db.session import sync_session_factory
 
     with sync_session_factory() as sync_db:
@@ -165,14 +169,14 @@ async def get_demand_sensing_status(
             if not cfg or cfg.tenant_id != user.tenant_id:
                 raise HTTPException(404, f"ShippingForecast {forecast_id} not found")
 
-        from app.services.powell.demand_sensing_trm import DemandSensingTRM
+        from app.services.powell.load_volume_sensing_trm import LoadVolumeSensingTRM
         effective_tenant_id = (
             user.tenant_id if user.tenant_id is not None else forecast.config_id
         )
-        trm = DemandSensingTRM(sync_db, effective_tenant_id, forecast.config_id)
+        trm = LoadVolumeSensingTRM(sync_db, effective_tenant_id, forecast.config_id)
 
         result = trm.evaluate_forecast(forecast)
         if not result:
-            raise HTTPException(422, "No demand-sensing decision produced")
+            raise HTTPException(422, "No load-volume-sensing decision produced")
 
         return _result_to_schema(result)

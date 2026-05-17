@@ -399,7 +399,7 @@ SOURCE_REGISTRY = {
 SIGNAL_TMS_IMPACT = {
     # ── Shared economic / macro signals ──────────────────────────────
     "cpi_change": {
-        "trm_types": ["demand_sensing", "freight_procurement"],
+        "trm_types": ["load_volume_sensing", "freight_procurement"],
         "planning_layer": "strategic",
         "description": (
             "Consumer price changes shift shipping volumes and "
@@ -407,7 +407,7 @@ SIGNAL_TMS_IMPACT = {
         ),
     },
     "demand_trend_shift": {
-        "trm_types": ["demand_sensing"],
+        "trm_types": ["load_volume_sensing"],
         "planning_layer": "tactical",
         "description": (
             "Consumer interest shifts affect shipping volume "
@@ -529,7 +529,7 @@ SIGNAL_TMS_IMPACT = {
     "capacity_index_shift": {
         "trm_types": [
             "capacity_promise", "capacity_buffer",
-            "demand_sensing",
+            "load_volume_sensing",
         ],
         "planning_layer": "strategic",
         "description": (

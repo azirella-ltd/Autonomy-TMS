@@ -34,7 +34,6 @@ from autonomy_tms_heuristics.library.base import (  # noqa: E402
     BrokerRoutingState,
     CapacityBufferState,
     CapacityPromiseState,
-    DemandSensingState,
     DockSchedulingState,
     EquipmentRepositionState,
     ExceptionManagementState,
@@ -42,6 +41,7 @@ from autonomy_tms_heuristics.library.base import (  # noqa: E402
     IntermodalTransferState,
     LaneVolumeForecastState,
     LoadBuildState,
+    LoadVolumeSensingState,
     ShipmentTrackingState,
 )
 
@@ -51,7 +51,7 @@ _STATE_CLASSES = {
     "broker_routing": BrokerRoutingState,
     "capacity_buffer": CapacityBufferState,
     "capacity_promise": CapacityPromiseState,
-    "demand_sensing": DemandSensingState,
+    "load_volume_sensing": LoadVolumeSensingState,
     "dock_scheduling": DockSchedulingState,
     "equipment_reposition": EquipmentRepositionState,
     "exception_management": ExceptionManagementState,

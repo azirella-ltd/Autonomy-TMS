@@ -22,7 +22,7 @@ from .base import (
     TMSHeuristicDecision,
     CapacityPromiseState,
     ShipmentTrackingState,
-    DemandSensingState,
+    LoadVolumeSensingState,
     CapacityBufferState,
     ExceptionManagementState,
     FreightProcurementState,
@@ -72,7 +72,7 @@ def compute_tms_decision(trm_type: str, state: Any) -> TMSHeuristicDecision:
     dispatch_map = {
         "capacity_promise": _compute_capacity_promise,
         "shipment_tracking": _compute_shipment_tracking,
-        "demand_sensing": _compute_demand_sensing,
+        "load_volume_sensing": _compute_load_volume_sensing,
         "capacity_buffer": _compute_capacity_buffer,
         "exception_management": _compute_exception_management,
         "freight_procurement": _compute_freight_procurement,
@@ -293,12 +293,12 @@ def _compute_shipment_tracking(state: ShipmentTrackingState) -> TMSHeuristicDeci
 
 
 # ============================================================================
-# 3. Demand Sensing
+# 3. Load Volume Sensing (TMS-native; distinct from DP's product DemandSensing)
 # ============================================================================
 
-def _compute_demand_sensing(state: DemandSensingState) -> TMSHeuristicDecision:
+def _compute_load_volume_sensing(state: LoadVolumeSensingState) -> TMSHeuristicDecision:
     """
-    Demand sensing with Trigg's tracking signal + order pipeline velocity +
+    Load-volume sensing with Trigg's tracking signal + order pipeline velocity +
     asymmetric loss (under-forecasting costs more than over-forecasting).
 
     Industry algorithm (E2open / Terra Technology pattern):
@@ -332,7 +332,7 @@ def _compute_demand_sensing(state: DemandSensingState) -> TMSHeuristicDecision:
             correction_factor = 0.60 if pipeline_change > 0 else 0.40
             adjustment = pipeline_change * state.forecast_loads * correction_factor
             return TMSHeuristicDecision(
-                trm_type="demand_sensing", action=Actions.MODIFY,
+                trm_type="load_volume_sensing", action=Actions.MODIFY,
                 quantity=adjustment,
                 reasoning=f"Order pipeline {pipeline_change*100:+.0f}% vs prior (asymmetric correction {correction_factor:.0%})",
                 urgency=0.6 + abs(pipeline_change) * 0.3,
@@ -347,7 +347,7 @@ def _compute_demand_sensing(state: DemandSensingState) -> TMSHeuristicDecision:
         correction = 0.60 if tracking_signal < 0 else 0.40
         adjustment = -bias * state.forecast_loads * correction
         return TMSHeuristicDecision(
-            trm_type="demand_sensing", action=Actions.MODIFY,
+            trm_type="load_volume_sensing", action=Actions.MODIFY,
             quantity=adjustment,
             reasoning=f"Tracking signal {tracking_signal:.1f} (threshold ±4): structural bias, adjusting {direction} {correction:.0%}",
             urgency=0.7,
@@ -358,7 +358,7 @@ def _compute_demand_sensing(state: DemandSensingState) -> TMSHeuristicDecision:
     if state.signal_type and state.signal_magnitude > 0 and state.signal_confidence > 0.5:
         adjustment = state.signal_magnitude * state.forecast_loads * state.signal_confidence * 0.5
         return TMSHeuristicDecision(
-            trm_type="demand_sensing", action=Actions.MODIFY,
+            trm_type="load_volume_sensing", action=Actions.MODIFY,
             quantity=adjustment,
             reasoning=f"Signal {state.signal_type}: magnitude {state.signal_magnitude:.2f} × confidence {state.signal_confidence:.2f}",
             urgency=0.4 + state.signal_confidence * 0.2,
@@ -371,7 +371,7 @@ def _compute_demand_sensing(state: DemandSensingState) -> TMSHeuristicDecision:
         correction = 0.60 if bias < 0 else 0.40  # Larger correction for under-forecast
         adjustment = -bias * state.forecast_loads * correction
         return TMSHeuristicDecision(
-            trm_type="demand_sensing", action=Actions.MODIFY,
+            trm_type="load_volume_sensing", action=Actions.MODIFY,
             quantity=adjustment,
             reasoning=f"Bias {bias*100:.0f}%: adjusting {direction} (asymmetric {correction:.0%})",
             urgency=0.5 + abs(bias),
@@ -381,7 +381,7 @@ def _compute_demand_sensing(state: DemandSensingState) -> TMSHeuristicDecision:
     # WoW volume shift
     if abs(state.week_over_week_change_pct) > 0.20:
         return TMSHeuristicDecision(
-            trm_type="demand_sensing", action=Actions.MODIFY,
+            trm_type="load_volume_sensing", action=Actions.MODIFY,
             quantity=state.week_over_week_change_pct * state.forecast_loads * 0.3,
             reasoning=f"WoW change {state.week_over_week_change_pct*100:+.0f}%",
             urgency=0.4,
@@ -391,7 +391,7 @@ def _compute_demand_sensing(state: DemandSensingState) -> TMSHeuristicDecision:
     # Peak season precautionary buffer
     if state.is_peak_season and state.forecast_mape > 0.20:
         return TMSHeuristicDecision(
-            trm_type="demand_sensing", action=Actions.MODIFY,
+            trm_type="load_volume_sensing", action=Actions.MODIFY,
             quantity=state.forecast_loads * 0.10,
             reasoning=f"Peak season with {state.forecast_mape*100:.0f}% MAPE; +10% buffer",
             urgency=0.4,
@@ -399,7 +399,7 @@ def _compute_demand_sensing(state: DemandSensingState) -> TMSHeuristicDecision:
         )
 
     return TMSHeuristicDecision(
-        trm_type="demand_sensing", action=Actions.ACCEPT,
+        trm_type="load_volume_sensing", action=Actions.ACCEPT,
         reasoning=f"Forecast OK (bias {bias*100:.0f}%, TS {tracking_signal:.1f}, MAPE {state.forecast_mape*100:.0f}%)",
         urgency=0.1,
         params_used=sensing_detail,

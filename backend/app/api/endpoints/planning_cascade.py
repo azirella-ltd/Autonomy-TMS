@@ -1393,7 +1393,7 @@ async def get_trm_decisions(
         # TMS TRM types
         "capacity_promise": DecisionType.CAPACITY_PROMISE,
         "shipment_tracking": DecisionType.SHIPMENT_TRACKING,
-        "demand_sensing": DecisionType.DEMAND_SENSING,
+        "load_volume_sensing": DecisionType.LOAD_VOLUME_SENSING,
         "capacity_buffer": DecisionType.CAPACITY_BUFFER,
         "exception_management": DecisionType.EXCEPTION_MANAGEMENT,
         "freight_procurement": DecisionType.FREIGHT_PROCUREMENT,
@@ -1644,7 +1644,7 @@ async def get_trm_summary(
         # TMS TRM types
         "capacity_promise": DecisionType.CAPACITY_PROMISE,
         "shipment_tracking": DecisionType.SHIPMENT_TRACKING,
-        "demand_sensing": DecisionType.DEMAND_SENSING,
+        "load_volume_sensing": DecisionType.LOAD_VOLUME_SENSING,
         "capacity_buffer": DecisionType.CAPACITY_BUFFER,
         "exception_management": DecisionType.EXCEPTION_MANAGEMENT,
         "freight_procurement": DecisionType.FREIGHT_PROCUREMENT,

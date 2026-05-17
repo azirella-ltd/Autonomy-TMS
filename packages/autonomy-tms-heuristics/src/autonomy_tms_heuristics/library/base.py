@@ -142,15 +142,17 @@ class ShipmentTrackingState:
 
 
 # ============================================================================
-# 3. Demand Sensing State (replaces ForecastAdjustmentState)
+# 3. Load Volume Sensing State (TMS-native; distinct from DP's product DemandSensing)
 # ============================================================================
 
 @dataclass
-class DemandSensingState:
-    """Input state for DemandSensingTRM.
+class LoadVolumeSensingState:
+    """Input state for LoadVolumeSensingTRM.
 
-    Evaluates whether shipping volume forecasts need adjustment
-    based on signals, patterns, and external data.
+    Evaluates whether shipping-volume forecasts (loads/lane/period) need
+    adjustment based on order-pipeline velocity, structural bias signals,
+    and external data. TMS-side sensing of *load volume* — distinct from
+    DP's DemandSensing domain which senses *product demand*.
     """
     lane_id: int = 0
     period_start: Optional[date] = None

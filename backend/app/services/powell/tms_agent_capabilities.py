@@ -16,7 +16,7 @@ but at lane × time-bucket grain rather than SKU × site).
 |  7 | QualityDisposition   | ExceptionManagement    | ASSESS   | execution |
 |  8 | MaintenanceScheduling| DockScheduling         | PROTECT  | execution |
 |  9 | Subcontracting       | BrokerRouting          | ACQUIRE  | execution |
-| 10 | ForecastAdjustment   | DemandSensing          | SENSE    | tactical  |
+| 10 | ForecastAdjustment   | LoadVolumeSensing      | SENSE    | tactical  |
 | 11 | Rebalancing          | EquipmentReposition    | REFLECT  | tactical  |
 | 12 | (TMS-native)         | LaneVolumeForecast     | SENSE    | execution |
 
@@ -100,9 +100,9 @@ TMS_TRM_CAPABILITIES: Dict[str, AgentCapabilities] = {
         skill_name="shipment_tracking",
     ),
 
-    "demand_sensing": AgentCapabilities(
-        trm_type="demand_sensing",
-        display_name="Demand Sensing Agent",
+    "load_volume_sensing": AgentCapabilities(
+        trm_type="load_volume_sensing",
+        display_name="Load Volume Sensing Agent",
         decision_phase="SENSE",
         decision_level="tactical",
         reads_signals=frozenset({
@@ -117,7 +117,7 @@ TMS_TRM_CAPABILITIES: Dict[str, AgentCapabilities] = {
             S.SEASONAL_SHIFT,
             S.FORECAST_ADJUSTED,
         }),
-        decision_table="powell_demand_sensing_decisions",
+        decision_table="powell_load_volume_sensing_decisions",
         site_types=frozenset({"shipper", "terminal", "consignee"}),
         has_skill_escalation=False,
     ),
@@ -353,10 +353,10 @@ TMS_TRM_CAPABILITIES: Dict[str, AgentCapabilities] = {
 ALL_TMS_TRM_NAMES = frozenset(TMS_TRM_CAPABILITIES.keys())
 
 # Phase → TRM ordering (decision cycle execution order).
-# lane_volume_forecast runs first within SENSE because demand_sensing and
-# capacity_buffer downstream both react to the published forecast.
+# lane_volume_forecast runs first within SENSE because load_volume_sensing
+# and capacity_buffer downstream both react to the published forecast.
 TMS_TRM_PHASE_MAP = {
-    "SENSE": ["lane_volume_forecast", "capacity_promise", "shipment_tracking", "demand_sensing"],
+    "SENSE": ["lane_volume_forecast", "capacity_promise", "shipment_tracking", "load_volume_sensing"],
     "ASSESS": ["capacity_buffer", "exception_management"],
     "ACQUIRE": ["freight_procurement", "broker_routing"],
     "PROTECT": ["dock_scheduling"],

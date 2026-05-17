@@ -125,8 +125,9 @@ class RewardCalculator(_CoreRewardCalculator):
             'order_tracking':    self.order_tracking_reward,
             'inventory_buffer':  self.inventory_buffer_reward,
             'forecast_baseline': self.forecast_baseline_reward,
-            'forecast_adjustment': self.demand_sensing_reward,
-            'demand_sensing':      self.demand_sensing_reward,
+            'forecast_adjustment': self.demand_sensing_reward,  # DP intent-tracking reward
+            # TMS load_volume_sensing falls through to _generic_reward; a dedicated
+            # forecast-error-reduction reward should ship before BC→RL refinement.
         }
 
         calculator = legacy_calculators.get(trm_type, self._generic_reward)

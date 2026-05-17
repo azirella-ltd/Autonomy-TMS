@@ -18,7 +18,7 @@ Of the 11 TMS TRMs, only 4 emit a continuous `recommended_value` that
 an outcome can meaningfully be compared against:
 
   * capacity_buffer        → proposed buffer loads vs actual need
-  * demand_sensing         → proposed forecast adjustment vs actual
+  * load_volume_sensing    → proposed load-volume forecast adjustment vs actual
   * equipment_reposition   → proposed quantity to move vs actual shortfall
   * shipment_tracking      → predicted hours-late vs actual hours-late
 
@@ -83,7 +83,7 @@ DRIFT_THRESHOLD = 0.10  # Coverage deviation triggering is_stale=True
 # AgentDecision.item_code or category.
 _CALIBRATABLE = {
     DecisionType.CAPACITY_BUFFER: ("capacity_buffer", "global"),
-    DecisionType.DEMAND_SENSING: ("demand_sensing", "global"),
+    DecisionType.LOAD_VOLUME_SENSING: ("load_volume_sensing", "global"),
     DecisionType.EQUIPMENT_REPOSITION: ("equipment_reposition", "global"),
     DecisionType.SHIPMENT_TRACKING: ("shipment_tracking_hours_late", "global"),
 }
