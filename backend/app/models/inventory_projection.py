@@ -89,9 +89,11 @@ class InvProjection(Base):
     stockout_probability: Mapped[Optional[float]] = mapped_column(Double, comment="Probability of stockout (0-1)")
     days_of_supply: Mapped[Optional[float]] = mapped_column(Double, comment="Inventory coverage in days")
 
-    # Extension: Scenario Tracking
-    scenario_id: Mapped[Optional[str]] = mapped_column(String(100), comment="What-if scenario identifier")
-    scenario_name: Mapped[Optional[str]] = mapped_column(String(255), comment="Scenario description")
+    # Legacy scenario tracking removed 2026-05-18 (§3.80 Category 2,
+    # migration 20260518_soc2_cat2_drop_inv_projection_scope_strings).
+    # ``config_id`` (below) is now the canonical scenario-branching
+    # mechanism — the prior free-text ``scenario_id`` / ``scenario_name``
+    # columns were dead code (no readers, no writers).
 
     # SC Source Tracking
     source: Mapped[Optional[str]] = mapped_column(String(100), comment="Source system")
@@ -115,8 +117,8 @@ class InvProjection(Base):
 
     __table_args__ = (
         Index('idx_inventory_projection_lookup', 'product_id', 'site_id', 'projection_date'),
-        Index('idx_inv_projection_scenario', 'scenario_id', 'projection_date'),
-        Index('idx_inv_projection_scenario_round', 'scenario_id', 'period_number'),
+        # idx_inv_projection_scenario + idx_inv_projection_scenario_round
+        # dropped with the scenario_id column 2026-05-18 — see comment above.
     )
 
     def calculate_atp(self) -> float:
