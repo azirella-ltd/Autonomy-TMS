@@ -11,6 +11,7 @@ from typing import Generator, Optional, Union
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select, update
+from sqlalchemy import text as _text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -113,14 +114,25 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Try lookup by email first, then by ID
+    # Try lookup by email first, then by ID. Use the auth.find_user_by_*
+    # SECURITY DEFINER helpers (migration 20260518_users_rls_and_auth_helpers)
+    # so the lookup bypasses RLS — at this point in the request lifecycle
+    # the session's app.tenant_id hasn't been set yet, so a direct
+    # `db.query(User).filter(...)` would be filtered to zero rows by
+    # the tenant_isolation policy on public.users.
     if email:
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(User).from_statement(
+            _text("SELECT * FROM auth.find_user_by_email(:e)")
+        ).params(e=email).first()
     elif user_id and user_id.isdigit():
-        user = db.query(User).filter(User.id == int(user_id)).first()
+        user = db.query(User).from_statement(
+            _text("SELECT * FROM auth.find_user_by_id(:uid)")
+        ).params(uid=int(user_id)).first()
     else:
         # Assume user_id is actually an email (old token format)
-        user = db.query(User).filter(User.email == user_id).first()
+        user = db.query(User).from_statement(
+            _text("SELECT * FROM auth.find_user_by_email(:e)")
+        ).params(e=user_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
